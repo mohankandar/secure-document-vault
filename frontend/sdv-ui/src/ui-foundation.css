@@ -1662,3 +1662,281 @@ textarea:disabled {
     border-radius: var(--radius-surface);
   }
 }
+
+
+/* =============================================================
+   SDV Premium Business Workspace — v0-informed hero polish
+   Visual-only refinement. Existing workflow/security behavior is preserved.
+   ============================================================= */
+
+.business-search-screen,
+.business-results-hero {
+  width: min(100%, 1500px);
+  margin-inline: auto;
+}
+
+.business-search-hero,
+.business-results-hero {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 18px;
+}
+
+.business-search-title {
+  max-width: 760px;
+}
+
+.business-search-title h2,
+.business-results-hero h2 {
+  margin: 2px 0 6px;
+  color: var(--ui-text-strong);
+  font-size: clamp(1.45rem, 2vw, 1.9rem);
+  line-height: 1.15;
+  letter-spacing: -.025em;
+}
+
+.business-search-title .muted,
+.business-results-hero .muted {
+  max-width: 720px;
+  margin: 0;
+  color: var(--ui-text-muted);
+  line-height: 1.5;
+}
+
+.business-source-context {
+  min-width: 280px;
+  max-width: 360px;
+  padding: 10px 12px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-surface);
+  background: var(--ui-surface-subtle);
+  box-shadow: var(--shadow-surface);
+}
+
+.business-source-context > span {
+  display: block;
+  margin-bottom: 3px;
+  color: var(--ui-text-muted);
+  font-size: var(--type-xs);
+  font-weight: var(--weight-bold);
+  letter-spacing: .07em;
+  text-transform: uppercase;
+}
+
+.business-source-context select {
+  width: 100%;
+  min-height: 34px;
+  padding: 0 30px 0 0;
+  border: 0;
+  background-color: transparent;
+  color: var(--ui-text-strong);
+  font-size: var(--type-body);
+  font-weight: var(--weight-semibold);
+  box-shadow: none;
+}
+
+.business-source-context select:focus-visible {
+  outline-offset: 2px;
+}
+
+.business-source-context small {
+  display: block;
+  margin-top: 2px;
+  color: var(--ui-text-muted);
+  font-size: var(--type-xs);
+}
+
+.business-search-form-premium {
+  max-width: 1040px;
+  padding: 0;
+  overflow: hidden;
+}
+
+.business-search-form-premium .business-search-grid {
+  padding: 22px 22px 20px;
+}
+
+.business-search-form-premium .common-filter-grid {
+  margin: 0;
+  padding: 18px 22px 20px;
+  border-top: 1px solid var(--ui-border-soft);
+}
+
+.business-search-form-premium .common-filter-grid fieldset {
+  background: transparent;
+}
+
+.business-search-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 18px 14px 22px;
+  border-top: 1px solid var(--ui-border-soft);
+  background: var(--ui-surface-subtle);
+}
+
+.business-search-guidance {
+  color: var(--ui-text-muted);
+  font-size: var(--type-body-sm);
+}
+
+.business-search-footer .form-actions {
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 0;
+}
+
+.business-results-hero {
+  padding: 2px 0 0;
+}
+
+.business-results-hero > div:first-child {
+  min-width: 220px;
+}
+
+.business-results-hero h2 strong {
+  color: var(--brand-accent);
+}
+
+.business-results-summary {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.business-search-chips {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.business-search-chips > span {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  min-height: 30px;
+  padding: 5px 9px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-pill);
+  background: var(--ui-surface);
+  color: var(--ui-text-secondary);
+  box-shadow: var(--shadow-surface);
+  white-space: nowrap;
+}
+
+.business-search-chips small {
+  color: var(--ui-text-muted);
+  font-size: var(--type-xs);
+}
+
+.business-search-chips strong {
+  color: var(--ui-text-strong);
+  font-size: var(--type-body-sm);
+  font-weight: var(--weight-semibold);
+}
+
+.business-modify-search {
+  flex: 0 0 auto;
+}
+
+.selected-record-heading {
+  min-height: 68px;
+}
+
+.selected-record-heading .muted {
+  margin: 4px 0 0;
+  font-size: var(--type-body-sm);
+  line-height: 1.45;
+}
+
+.business-results-layout {
+  align-items: start;
+}
+
+.business-results-panel {
+  overflow: hidden;
+}
+
+.business-results-panel .business-result-table tbody tr {
+  transition: background-color var(--motion-fast), box-shadow var(--motion-fast);
+}
+
+.business-results-panel .business-result-table tbody tr.selected {
+  background: var(--ui-selected);
+  box-shadow: inset 3px 0 0 var(--brand-accent);
+}
+
+@media (max-width: 1024px) {
+  .business-search-hero,
+  .business-results-hero {
+    gap: 18px;
+  }
+
+  .business-source-context {
+    min-width: 250px;
+  }
+
+  .business-results-summary {
+    align-items: flex-end;
+    flex-direction: column;
+  }
+
+  .business-search-chips {
+    justify-content: flex-end;
+  }
+}
+
+@media (max-width: 900px) {
+  .business-search-hero,
+  .business-results-hero {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .business-source-context {
+    width: 100%;
+    max-width: none;
+    min-width: 0;
+  }
+
+  .business-results-summary {
+    align-items: stretch;
+  }
+
+  .business-search-chips {
+    justify-content: flex-start;
+  }
+
+  .business-modify-search {
+    align-self: flex-start;
+  }
+}
+
+@media (max-width: 640px) {
+  .business-search-form-premium .business-search-grid,
+  .business-search-form-premium .common-filter-grid {
+    padding-inline: 14px;
+  }
+
+  .business-search-footer {
+    align-items: stretch;
+    flex-direction: column;
+    padding: 12px 14px;
+  }
+
+  .business-search-footer .form-actions {
+    width: 100%;
+  }
+
+  .business-search-footer .form-actions > button {
+    flex: 1;
+  }
+}
