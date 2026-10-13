@@ -47,7 +47,8 @@ public class BusinessExperienceController {
                 request.dateTo(),
                 request.lastUpdatedFrom(),
                 request.lastUpdatedTo(),
-                request.limit(),
+                request.page(),
+                request.pageSize() == null ? request.limit() : request.pageSize(),
                 principal.subject(),
                 correlationId());
     }
@@ -79,6 +80,8 @@ public class BusinessExperienceController {
             Instant dateTo,
             Instant lastUpdatedFrom,
             Instant lastUpdatedTo,
+            Integer page,
+            Integer pageSize,
             Integer limit) {
         public SearchRequest {
             if (sourceId == null) throw new IllegalArgumentException("sourceId is required.");
