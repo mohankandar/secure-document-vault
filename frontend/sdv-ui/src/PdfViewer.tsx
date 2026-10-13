@@ -64,6 +64,7 @@ const clamp = (value: number, min: number, max: number) => Math.min(max, Math.ma
 
 export function PdfViewer({ documentId, filename, documents = [], selectedDocumentId, onSelectDocument, persona, canRedact, canDownload, canPrint, canTag, canComment, embedded = false, onClose }: Props) {
   const [metadata, setMetadata] = useState<ViewerMetadata | null>(null)
+  const [metadataLoading, setMetadataLoading] = useState(true)
   const [page, setPage] = useState(1)
   const [jump, setJump] = useState('1')
   const [zoom, setZoom] = useState(1)
@@ -159,9 +160,16 @@ export function PdfViewer({ documentId, filename, documents = [], selectedDocume
     setDetailsPanelOpen(false)
     setShowAllComments(false)
 
+    setMetadataLoading(true)
     contentApi<ViewerMetadata>(`/api/v1/business/documents/${documentId}/viewer`, persona)
       .then((value) => {
         if (active) setMetadata(value)
+      })
+      .catch((reasonValue: unknown) => {
+        if (active) setError(reasonValue instanceof Error ? reasonValue.message : 'Could not load document page information.')
+      })
+      .finally(() => {
+        if (active) setMetadataLoading(false)
       })
     contentApi<DocumentTag[]>(`/api/v1/business/documents/${documentId}/tags`, persona)
       .then((value) => { if (active) setTags(value) })
@@ -471,7 +479,7 @@ export function PdfViewer({ documentId, filename, documents = [], selectedDocume
           <form className="viewer-jump viewer-control-cluster" onSubmit={jumpToPage}>
             <button type="button" className="viewer-icon-button" aria-label="Previous page" disabled={page <= 1} onClick={() => goToPage(page - 1)}>‹</button>
             <input inputMode="numeric" value={jump} onChange={(event) => setJump(event.target.value)} aria-label="Page number" />
-            <span>of {pageCount || '—'}</span>
+            <span>of {pageCount || (metadataLoading ? '…' : '—')}</span>
             <button type="button" className="viewer-icon-button" aria-label="Next page" disabled={!metadata || page >= pageCount} onClick={() => goToPage(page + 1)}>›</button>
           </form>
 
@@ -596,7 +604,7 @@ export function PdfViewer({ documentId, filename, documents = [], selectedDocume
             <footer className="viewer-seal" aria-label="Secure document context">
               <span className="viewer-seal-mark"><Icon name="eye" />Secure view</span>
               <span className="viewer-seal-file">{metadata?.originalFilename ?? filename}</span>
-              <span>Page {page} of {pageCount || '—'}</span>
+              <span>Page {page} of {pageCount || (metadataLoading ? '…' : '—')}</span>
               {formatSealDate(currentDocument?.ingestedAt) && <span>Ingested {formatSealDate(currentDocument?.ingestedAt)}</span>}
               {formatSealDate(currentDocument?.availableAt) && <span>Available {formatSealDate(currentDocument?.availableAt)}</span>}
               {formatSealDate(currentDocument?.expiresAt) && <span className="viewer-seal-retention">Retained until {formatSealDate(currentDocument?.expiresAt)}</span>}
