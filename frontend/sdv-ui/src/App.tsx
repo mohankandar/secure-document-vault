@@ -963,7 +963,7 @@ function App() {
       )}
 
       {view === 'admin' && canViewAdministration && (
-        <div className="admin-workspace">
+        <div className={`admin-workspace ${selectedPersona === 'tenantIt' ? 'tenant-it-workspace' : 'business-admin-workspace'}`}>
           {selectedPersona === 'businessAdmin' ? (
             <>
               <nav className="workspace-tabs" aria-label="Business administration sections">
@@ -998,14 +998,14 @@ function App() {
             </>
           ) : (
             <>
-              <nav className="workspace-tabs" aria-label="Tenant IT administration sections">
+              <nav className="workspace-tabs tenant-it-tabs" aria-label="Tenant IT administration sections">
                 <button className={tenantItTab === 'storage' ? 'active' : ''} onClick={() => setTenantItTab('storage')}>Storage</button>
                 <button className={tenantItTab === 'authentication' ? 'active' : ''} onClick={() => setTenantItTab('authentication')}>Authentication</button>
                 <button className={tenantItTab === 'integrations' ? 'active' : ''} onClick={() => setTenantItTab('integrations')}>Integrations</button>
                 <button className={tenantItTab === 'environment' ? 'active' : ''} onClick={() => setTenantItTab('environment')}>Environment</button>
               </nav>
               {tenantItTab === 'storage' && canConfigureStorage && (
-                <section className="panel top-gap">
+                <section className="panel top-gap tenant-it-panel tenant-it-storage-panel">
                   <div className="panel-heading"><div><span className="kicker">Tenant IT</span><h2>Storage volumes</h2></div><div className="panel-heading-actions"><span className="count">{storageVolumes.length}</span><button type="button" className="info-button" aria-label="About storage volumes" aria-expanded={storageHelpOpen} onClick={() => setStorageHelpOpen((current) => !current)}>i</button><button type="button" className="primary-action admin-heading-action" onClick={() => setAdminDrawerMode('storage-create')}><Icon name="plus" /> Add storage volume</button></div></div>
                   {storageHelpOpen && <div className="context-help"><strong>How SDV storage works</strong><p>Storage volumes contain encrypted SDV document objects. Priority controls preferred placement. Warning % raises capacity attention; Stop-write % blocks new writes before the filesystem becomes critically full. Changing a path does not relocate documents already stored there.</p></div>}
                   {storageVolumes.length === 0 ? <div className="empty-state compact"><Icon name="storage" /><strong>No storage volume configured</strong><span>Add an ACTIVE volume before ingesting production documents.</span></div> : <div className="admin-row-table storage-row-table">
@@ -1014,7 +1014,7 @@ function App() {
                   </div>}
                 </section>
               )}
-              {tenantItTab === 'authentication' && canConfigureTenantAuth && <div className="drawer-section-stack top-gap">
+              {tenantItTab === 'authentication' && canConfigureTenantAuth && <div className="drawer-section-stack top-gap tenant-it-auth-stack">
                 <section className="panel">
                   <div className="panel-heading"><div><span className="kicker">Tenant IT</span><h2>Enterprise authentication</h2><p className="muted">Stage, validate, activate, and roll back the trusted OIDC binding for this tenant. Tokens, private keys, and client secrets are never returned here.</p></div><span className="pill">{identityOverview?.active?.status ?? 'Unavailable'}</span></div>
                   {identityOverview?.active ? <div className="auth-config-grid"><div><span className="label">Provider</span><strong>{identityOverview.active.displayName}</strong></div><div><span className="label">Type</span><strong>{identityOverview.active.providerType}</strong></div><div><span className="label">Issuer</span><strong>{identityOverview.active.issuerUri}</strong></div><div><span className="label">Browser client</span><strong>{identityOverview.active.browserClientId ?? 'Not configured'}</strong></div><div><span className="label">API audience</span><strong>{identityOverview.active.apiAudience}</strong></div><div><span className="label">Version</span><strong>{identityOverview.active.configurationVersion}</strong></div></div> : <p className="muted">No ACTIVE enterprise identity connection is available. Automatic bootstrap will not overwrite existing administered identity records.</p>}
@@ -1030,7 +1030,7 @@ function App() {
                 </section>
               </div>}
               {tenantItTab === 'integrations' && canConfigureSources && (
-                <section className="panel top-gap">
+                <section className="panel top-gap tenant-it-panel tenant-it-integrations-panel">
                   <div className="panel-heading"><div><span className="kicker">Tenant IT</span><h2>Ingestion integrations</h2><p className="muted">Define the producer identity, authentication reference, and technical metadata contract. Business Administration separately decides how those fields are exposed for search.</p></div><div className="panel-heading-actions"><span className="count">{sources.length}</span><button type="button" className="primary-action admin-heading-action" onClick={() => setAdminDrawerMode('integration-create')}><Icon name="plus" /> Add source</button></div></div>
                   {sources.length === 0 ? <div className="empty-state compact"><strong>No integrations configured</strong><span>Add a producer source to define its technical contract.</span></div> : <div className="admin-row-table integration-row-table">
                     <div className="admin-row admin-row-head"><span>Integration</span><span>Source key</span><span>Status</span><span>Authentication</span><span>Action</span></div>
@@ -1038,7 +1038,7 @@ function App() {
                   </div>}
                 </section>
               )}
-              {tenantItTab === 'environment' && <section className="panel top-gap"><div className="panel-heading"><div><span className="kicker">Customer Environment</span><h2>Environment</h2></div><button className="secondary" onClick={() => navigate('operations')}>Open operational readiness</button></div><div className="auth-config-grid"><div><span className="label">Product</span><strong>{system?.productName ?? 'Secure Document Vault'}</strong></div><div><span className="label">Version</span><strong>{system?.version ?? 'Unknown'}</strong></div><div><span className="label">Status</span><strong>{system?.status ?? 'Unknown'}</strong></div><div><span className="label">Profiles</span><strong>{system?.activeProfiles?.join(', ') || 'Not exposed'}</strong></div></div></section>}
+              {tenantItTab === 'environment' && <section className="panel top-gap tenant-it-panel tenant-it-environment-panel"><div className="panel-heading"><div><span className="kicker">Customer Environment</span><h2>Environment</h2></div><button className="secondary" onClick={() => navigate('operations')}>Open operational readiness</button></div><div className="auth-config-grid"><div><span className="label">Product</span><strong>{system?.productName ?? 'Secure Document Vault'}</strong></div><div><span className="label">Version</span><strong>{system?.version ?? 'Unknown'}</strong></div><div><span className="label">Status</span><strong>{system?.status ?? 'Unknown'}</strong></div><div><span className="label">Profiles</span><strong>{system?.activeProfiles?.join(', ') || 'Not exposed'}</strong></div></div></section>}
             </>
           )}
         </div>
