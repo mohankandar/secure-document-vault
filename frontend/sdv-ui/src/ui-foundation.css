@@ -3861,3 +3861,185 @@ textarea:disabled {
   .business-result-table-v0 th:nth-child(8),
   .business-result-table-v0 td:nth-child(8) { width: 22%; }
 }
+
+
+/* =============================================================
+   Workspace density pass — reduce dead gutters, make Results inspector-like,
+   and visually group the Viewer toolbar.
+   ============================================================= */
+
+/* Search: keep useful containment, but remove the oversized floating-page gutters. */
+.business-search-hero-v0 {
+  padding: 18px 18px 20px;
+}
+
+.business-search-body-v0 {
+  padding: 16px 18px 24px;
+}
+
+.business-search-form-v0 {
+  max-width: none;
+}
+
+/* Results: use the working canvas more efficiently. */
+.business-results-topbar-v0 {
+  padding: 14px 18px;
+}
+
+.business-results-content-v0 {
+  padding: 14px 18px 26px;
+}
+
+.business-results-layout-v0 {
+  grid-template-columns: minmax(0, 1fr) 336px;
+  gap: 16px;
+}
+
+/* Turn Selected Record from a floating card into a quieter inspector rail. */
+.selected-record-panel-v0 {
+  border: 0 !important;
+  border-left: 1px solid var(--ui-border) !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.selected-record-panel-v0 .selected-record-identity-v0,
+.selected-record-panel-v0 .selected-record-details-v0,
+.selected-record-panel-v0 .selected-record-documents-v0,
+.selected-record-panel-v0 .selected-record-actions-v0 {
+  background: transparent;
+}
+
+.selected-record-panel-v0 .selected-record-identity-v0 {
+  padding-top: 10px;
+}
+
+.selected-record-panel-v0 .compact-document-list-v0 button {
+  background: transparent;
+}
+
+.selected-record-panel-v0 .compact-document-list-v0 button.selected {
+  background: var(--ui-selected);
+}
+
+.selected-record-panel-v0 .selected-record-actions-v0 {
+  padding-inline: 12px;
+}
+
+.selected-record-panel-v0 .business-primary-action {
+  box-shadow: none;
+}
+
+/* Viewer: express clear functional zones without adding more chrome. */
+.viewer-toolbar-premium {
+  gap: 10px !important;
+  padding-inline: 12px !important;
+}
+
+.viewer-toolbar-premium .viewer-document-picker {
+  padding-right: 10px;
+  border-right: 1px solid var(--ui-border-soft);
+}
+
+.viewer-toolbar-premium .viewer-control-cluster + .viewer-control-cluster {
+  margin-left: 2px;
+}
+
+.viewer-toolbar-premium .viewer-search {
+  position: relative;
+  margin-left: 4px !important;
+  padding-left: 12px;
+}
+
+.viewer-toolbar-premium .viewer-search::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 5px;
+  bottom: 5px;
+  width: 1px;
+  background: var(--ui-border-soft);
+}
+
+.viewer-toolbar-premium .viewer-toolbar-actions {
+  margin-left: 2px;
+  padding-left: 10px;
+  border-left: 1px solid var(--ui-border-soft);
+}
+
+.viewer-toolbar-premium .viewer-control-cluster {
+  background: var(--ui-surface-subtle) !important;
+}
+
+.viewer-toolbar-premium .viewer-document-picker select,
+.viewer-toolbar-premium .viewer-search input {
+  background: var(--ui-surface);
+}
+
+/* Activity: table workspace should use the available width, not sit in a narrow island. */
+.activity-page-v0 {
+  width: 100%;
+  max-width: none;
+  padding: 18px 18px 26px;
+}
+
+.activity-card-v0 {
+  border-radius: 8px;
+}
+
+@media (max-width: 1180px) {
+  .business-results-layout-v0 {
+    grid-template-columns: minmax(0, 1fr) 304px;
+  }
+}
+
+@media (max-width: 1024px) {
+  .business-results-layout-v0 {
+    grid-template-columns: 1fr;
+  }
+
+  .selected-record-panel-v0 {
+    border-left: 0 !important;
+    border-top: 1px solid var(--ui-border) !important;
+  }
+
+  .viewer-toolbar-premium .viewer-search {
+    margin-left: 0 !important;
+    padding-left: 0;
+  }
+
+  .viewer-toolbar-premium .viewer-search::before {
+    display: none;
+  }
+
+  .viewer-toolbar-premium .viewer-toolbar-actions {
+    padding-left: 0;
+    border-left: 0;
+  }
+}
+
+@media (max-width: 900px) {
+  .business-search-hero-v0,
+  .business-search-body-v0,
+  .business-results-topbar-v0,
+  .business-results-content-v0,
+  .activity-page-v0 {
+    padding-inline: 14px;
+  }
+
+  .viewer-toolbar-premium .viewer-document-picker {
+    padding-right: 0;
+    border-right: 0;
+  }
+}
+
+@media (max-width: 640px) {
+  .business-search-hero-v0,
+  .business-search-body-v0,
+  .business-results-topbar-v0,
+  .business-results-content-v0,
+  .activity-page-v0 {
+    padding-inline: 10px;
+  }
+}
