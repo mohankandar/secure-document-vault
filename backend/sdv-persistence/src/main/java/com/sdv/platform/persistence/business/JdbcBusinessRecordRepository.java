@@ -34,12 +34,14 @@ public class JdbcBusinessRecordRepository implements BusinessRecordRepository {
             Instant createdTo,
             Instant updatedFrom,
             Instant updatedTo,
+            int offset,
             int limit) {
         StringBuilder sql = new StringBuilder(submissionSelect())
                 .append(" where s.tenant_id=:tenantId and s.source_id=:sourceId");
         MapSqlParameterSource params = new MapSqlParameterSource()
                 .addValue("tenantId", tenantId)
                 .addValue("sourceId", sourceId)
+                .addValue("offset", offset)
                 .addValue("limit", limit);
 
         if (createdFrom != null) { sql.append(" and s.created_at>=:createdFrom"); params.addValue("createdFrom", Timestamp.from(createdFrom)); }
@@ -78,7 +80,7 @@ public class JdbcBusinessRecordRepository implements BusinessRecordRepository {
             sql.append("))");
         }
 
-        sql.append(" order by s.created_at desc, s.submission_id limit :limit");
+        sql.append(" order by s.created_at desc, s.submission_id offset :offset limit :limit");
         return jdbc.query(sql.toString(), params, submissionMapper());
     }
 
