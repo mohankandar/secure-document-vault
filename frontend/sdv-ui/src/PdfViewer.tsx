@@ -7,6 +7,7 @@ import {
   useState,
 } from 'react'
 import { contentApi, contentBinary, DocumentComment, DocumentTag, RecordDocument } from './api'
+import Icon from './Icon'
 
 type ViewerMetadata = {
   documentId: string
@@ -437,13 +438,13 @@ export function PdfViewer({ documentId, filename, documents = [], selectedDocume
               <span className="sr-only">Search document</span>
               <input value={query} maxLength={100} onChange={(event) => setQuery(event.target.value)} placeholder="Search in document" disabled={redactionMode} />
             </label>
-            <button type="submit" className="secondary viewer-search-action" disabled={redactionMode || searching || !query.trim()}>{searching ? 'Searching…' : 'Search'}</button>
+            <button type="submit" className="secondary viewer-search-action" disabled={redactionMode || searching || !query.trim()}><Icon name="search" />{searching ? 'Searching…' : 'Search'}</button>
           </form>
 
           <div className="viewer-toolbar-actions" aria-label="Document actions">
-            {canDownload && <button type="button" className="viewer-icon-button" title="Download" aria-label="Download" onClick={downloadCurrent} disabled={downloading || redactionMode}>⇩</button>}
-            {canPrint && <button type="button" className="viewer-icon-button" title="Print" aria-label="Print" onClick={printCurrent} disabled={redactionMode}>⌑</button>}
-            {canRedact && <button type="button" className="viewer-redact-action" onClick={() => { setRedactionMode(true); setRedactionMessage(''); setTagPanelOpen(false); setCommentPanelOpen(false); setDetailsPanelOpen(false) }} disabled={redactionMode}>Redact</button>}
+            {canDownload && <button type="button" className="viewer-icon-button" title="Download" aria-label="Download" onClick={downloadCurrent} disabled={downloading || redactionMode}><Icon name="download" /></button>}
+            {canPrint && <button type="button" className="viewer-icon-button" title="Print" aria-label="Print" onClick={printCurrent} disabled={redactionMode}><Icon name="print" /></button>}
+            {canRedact && <button type="button" className="viewer-redact-action" onClick={() => { setRedactionMode(true); setRedactionMessage(''); setTagPanelOpen(false); setCommentPanelOpen(false); setDetailsPanelOpen(false) }} disabled={redactionMode}><Icon name="redaction" />Redact</button>}
             <button type="button" className={`viewer-info-action ${detailsPanelOpen ? 'active' : ''}`} aria-pressed={detailsPanelOpen} onClick={() => { setDetailsPanelOpen((v) => !v); setCommentPanelOpen(false); setTagPanelOpen(false) }} disabled={redactionMode}>Details</button>
             <button type="button" className={`viewer-info-action ${commentPanelOpen ? 'active' : ''}`} aria-pressed={commentPanelOpen} onClick={() => { setCommentPanelOpen((v) => !v); setTagPanelOpen(false); setDetailsPanelOpen(false) }} disabled={redactionMode}>Comments{comments.length ? ` ${comments.length}` : ''}</button>
             {canTag && <button type="button" className={`viewer-info-action ${tagPanelOpen ? 'active' : ''}`} aria-pressed={tagPanelOpen} onClick={() => { setTagPanelOpen((v) => !v); setCommentPanelOpen(false); setDetailsPanelOpen(false) }} disabled={redactionMode}>Tags{tags.length ? ` ${tags.length}` : ''}</button>}
