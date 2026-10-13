@@ -3817,3 +3817,47 @@ textarea:disabled {
   display: inline;
   white-space: nowrap;
 }
+
+
+/* Runtime polish: prevent unnecessary desktop horizontal scroll in Results. */
+@media (min-width: 1025px) {
+  .business-results-panel-v0 .business-result-table-wrap {
+    overflow-x: hidden;
+  }
+
+  .business-result-table-v0 {
+    width: 100%;
+    min-width: 0;
+    table-layout: fixed;
+  }
+
+  .business-result-table-v0 th,
+  .business-result-table-v0 td {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .business-result-table-v0 th:nth-child(1),
+  .business-result-table-v0 td:nth-child(1) { width: 44px; }
+
+  .business-result-table-v0 th:nth-child(2),
+  .business-result-table-v0 td:nth-child(2) { width: 17%; }
+
+  .business-result-table-v0 th:nth-child(3),
+  .business-result-table-v0 td:nth-child(3),
+  .business-result-table-v0 th:nth-child(4),
+  .business-result-table-v0 td:nth-child(4) { width: 11%; }
+
+  .business-result-table-v0 th:nth-child(5),
+  .business-result-table-v0 td:nth-child(5) { width: 16%; }
+
+  .business-result-table-v0 th:nth-child(6),
+  .business-result-table-v0 td:nth-child(6) { width: 12%; }
+
+  .business-result-table-v0 th:nth-child(7),
+  .business-result-table-v0 td:nth-child(7) { width: 11%; }
+
+  .business-result-table-v0 th:nth-child(8),
+  .business-result-table-v0 td:nth-child(8) { width: 22%; }
+}
