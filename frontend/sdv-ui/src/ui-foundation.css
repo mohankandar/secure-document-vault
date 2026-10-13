@@ -4726,3 +4726,315 @@ textarea:disabled {
     padding-inline: 14px;
   }
 }
+
+
+/* =============================================================
+   SDV Tenant IT Administration — premium enterprise refinement.
+   Presentation only; existing capabilities, APIs and workflows remain intact.
+   ============================================================= */
+
+.tenant-it-workspace {
+  width: min(100%, 1500px);
+  margin-inline: auto;
+  gap: 16px;
+}
+
+.tenant-it-workspace .tenant-it-tabs {
+  display: inline-flex;
+  width: auto;
+  max-width: 100%;
+  gap: 2px;
+  padding: 4px;
+  border: 1px solid var(--ui-border);
+  border-radius: 10px;
+  background: var(--ui-surface-subtle);
+  box-shadow: var(--shadow-surface);
+  overflow-x: auto;
+}
+
+.tenant-it-workspace .tenant-it-tabs button {
+  min-height: 36px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 7px;
+  color: var(--ui-text-secondary);
+  background: transparent;
+  font-size: var(--type-body-sm);
+  font-weight: var(--weight-semibold);
+  white-space: nowrap;
+}
+
+.tenant-it-workspace .tenant-it-tabs button:hover:not(.active) {
+  background: var(--ui-hover);
+  color: var(--ui-text-strong);
+}
+
+.tenant-it-workspace .tenant-it-tabs button.active {
+  background: var(--ui-surface);
+  color: var(--brand-accent);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, .08);
+}
+
+.tenant-it-workspace .tenant-it-panel,
+.tenant-it-workspace .tenant-it-auth-stack > .panel {
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--ui-border);
+  border-radius: 10px;
+  background: var(--ui-surface);
+  box-shadow: var(--shadow-surface);
+}
+
+.tenant-it-workspace .tenant-it-panel > .panel-heading,
+.tenant-it-workspace .tenant-it-auth-stack > .panel > .panel-heading {
+  margin: 0;
+  padding: 18px 20px 14px;
+  border-bottom: 1px solid var(--ui-border-soft);
+}
+
+.tenant-it-workspace .tenant-it-panel > .panel-heading h2,
+.tenant-it-workspace .tenant-it-auth-stack > .panel > .panel-heading h2 {
+  margin-top: 2px;
+  font-size: 1.15rem;
+  letter-spacing: -.015em;
+}
+
+.tenant-it-workspace .tenant-it-panel > .panel-heading .muted,
+.tenant-it-workspace .tenant-it-auth-stack > .panel > .panel-heading .muted {
+  max-width: 840px;
+  margin-top: 5px;
+  line-height: 1.45;
+}
+
+.tenant-it-workspace .panel-heading-actions {
+  gap: 8px;
+}
+
+.tenant-it-workspace .admin-heading-action {
+  min-height: 36px;
+  padding-inline: 12px;
+}
+
+.tenant-it-workspace .context-help {
+  margin: 14px 20px 0;
+  padding: 12px 14px;
+  border: 1px solid var(--ui-border);
+  border-radius: 8px;
+  background: var(--ui-surface-subtle);
+}
+
+.tenant-it-workspace .context-help p {
+  margin: 4px 0 0;
+  color: var(--ui-text-secondary);
+  line-height: 1.5;
+}
+
+.tenant-it-workspace .storage-row-table,
+.tenant-it-workspace .integration-row-table {
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+}
+
+.tenant-it-workspace .storage-row-table .admin-row,
+.tenant-it-workspace .integration-row-table .admin-row {
+  min-height: 54px;
+  padding-inline: 20px;
+}
+
+.tenant-it-workspace .storage-row-table .admin-row-head,
+.tenant-it-workspace .integration-row-table .admin-row-head {
+  min-height: 38px;
+  background: var(--ui-surface-subtle);
+  color: var(--ui-text-muted);
+  font-size: 11px;
+  font-weight: var(--weight-bold);
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.tenant-it-workspace .admin-row-primary strong {
+  font-size: var(--type-body-sm);
+}
+
+.tenant-it-workspace .admin-row-primary small {
+  margin-top: 3px;
+  color: var(--ui-text-muted);
+}
+
+.tenant-it-workspace .row-icon-button {
+  width: 32px;
+  height: 32px;
+  border-radius: 7px;
+}
+
+.tenant-it-workspace .empty-state.compact {
+  margin: 18px 20px 20px;
+  padding: 28px 18px;
+  border: 1px dashed var(--ui-border-strong);
+  border-radius: 8px;
+  background: var(--ui-surface-subtle);
+}
+
+.tenant-it-auth-stack {
+  display: grid;
+  grid-template-columns: minmax(0, .85fr) minmax(0, 1.15fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.tenant-it-auth-stack > .panel:first-child,
+.tenant-it-auth-stack > .panel:nth-child(3) {
+  grid-column: 1;
+}
+
+.tenant-it-auth-stack > .panel:nth-child(2) {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+}
+
+.tenant-it-auth-stack .auth-config-grid {
+  gap: 0;
+  margin: 0;
+  padding: 4px 20px 18px;
+  border: 0;
+  background: transparent;
+}
+
+.tenant-it-auth-stack .auth-config-grid > div {
+  padding: 12px 0;
+  border-bottom: 1px solid var(--ui-border-soft);
+}
+
+.tenant-it-auth-stack .auth-config-grid > div:nth-last-child(-n+2) {
+  border-bottom: 0;
+}
+
+.tenant-it-auth-stack .form-stack {
+  gap: 12px;
+  padding: 18px 20px 20px;
+}
+
+.tenant-it-auth-stack .form-stack label {
+  gap: 5px;
+  color: var(--ui-text-secondary);
+  font-size: var(--type-body-sm);
+  font-weight: var(--weight-semibold);
+}
+
+.tenant-it-auth-stack .form-stack input {
+  min-height: 38px;
+}
+
+.tenant-it-auth-stack .identity-action-row {
+  justify-content: flex-end;
+  padding-top: 4px;
+}
+
+.tenant-it-auth-stack .identity-action-row .secondary,
+.tenant-it-auth-stack .identity-action-row .primary-action {
+  min-height: 36px;
+}
+
+.tenant-it-auth-stack .banner {
+  margin: 0 20px 20px;
+}
+
+.tenant-it-auth-stack .admin-list {
+  padding: 6px 0;
+}
+
+.tenant-it-auth-stack .admin-list .admin-row {
+  padding: 12px 20px;
+  border-top: 1px solid var(--ui-border-soft);
+}
+
+.tenant-it-auth-stack .admin-list .admin-row:first-child {
+  border-top: 0;
+}
+
+.tenant-it-environment-panel .auth-config-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0;
+  margin: 0;
+  padding: 0 20px 20px;
+  border: 0;
+  background: transparent;
+}
+
+.tenant-it-environment-panel .auth-config-grid > div {
+  min-width: 0;
+  padding: 14px 16px;
+  border-left: 1px solid var(--ui-border-soft);
+  background: var(--ui-surface-subtle);
+}
+
+.tenant-it-environment-panel .auth-config-grid > div:first-child {
+  border-left: 0;
+  border-radius: 8px 0 0 8px;
+}
+
+.tenant-it-environment-panel .auth-config-grid > div:last-child {
+  border-radius: 0 8px 8px 0;
+}
+
+.tenant-it-environment-panel .auth-config-grid strong {
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 1180px) {
+  .tenant-it-auth-stack {
+    grid-template-columns: 1fr;
+  }
+
+  .tenant-it-auth-stack > .panel:first-child,
+  .tenant-it-auth-stack > .panel:nth-child(2),
+  .tenant-it-auth-stack > .panel:nth-child(3) {
+    grid-column: 1;
+    grid-row: auto;
+  }
+
+  .tenant-it-environment-panel .auth-config-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1px;
+    background: var(--ui-border-soft);
+  }
+
+  .tenant-it-environment-panel .auth-config-grid > div {
+    border-left: 0;
+    border-radius: 0 !important;
+  }
+}
+
+@media (max-width: 760px) {
+  .tenant-it-workspace .tenant-it-tabs {
+    display: flex;
+    width: 100%;
+  }
+
+  .tenant-it-workspace .tenant-it-tabs button {
+    flex: 1 0 auto;
+  }
+
+  .tenant-it-workspace .tenant-it-panel > .panel-heading,
+  .tenant-it-workspace .tenant-it-auth-stack > .panel > .panel-heading {
+    align-items: flex-start;
+    gap: 12px;
+    padding-inline: 14px;
+  }
+
+  .tenant-it-workspace .storage-row-table .admin-row,
+  .tenant-it-workspace .integration-row-table .admin-row {
+    padding-inline: 14px;
+  }
+
+  .tenant-it-auth-stack .form-stack,
+  .tenant-it-auth-stack .auth-config-grid {
+    padding-inline: 14px;
+  }
+
+  .tenant-it-environment-panel .auth-config-grid {
+    grid-template-columns: 1fr;
+    padding-inline: 14px;
+  }
+}
