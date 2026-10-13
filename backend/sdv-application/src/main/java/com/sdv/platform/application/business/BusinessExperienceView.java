@@ -44,6 +44,9 @@ public final class BusinessExperienceView {
     public record SearchResponse(
             UUID sourceId,
             List<RecordSummary> records,
+            int page,
+            int pageSize,
+            boolean hasMore,
             boolean truncated) {
         public SearchResponse {
             records = List.copyOf(records);
