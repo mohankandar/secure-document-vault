@@ -453,7 +453,7 @@ export function PdfViewer({ documentId, filename, documents = [], selectedDocume
 
         <div className={`viewer-toolbar ${embedded ? 'viewer-toolbar-premium' : ''}`}>
           {embedded && (
-            <>
+            <div className="viewer-toolbar-leading">
               <button type="button" className="viewer-back-action" onClick={onClose} aria-label="Back to results">←</button>
               <label className="viewer-document-picker">
                 <span className="sr-only">Document</span>
@@ -461,7 +461,7 @@ export function PdfViewer({ documentId, filename, documents = [], selectedDocume
                   {(documents.length ? documents : [{ documentId, originalFilename: filename } as RecordDocument]).map((document) => <option key={document.documentId} value={document.documentId}>{document.originalFilename}</option>)}
                 </select>
               </label>
-            </>
+            </div>
           )}
 
           <form className="viewer-jump viewer-control-cluster" onSubmit={jumpToPage}>
