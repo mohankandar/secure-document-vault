@@ -455,12 +455,16 @@ export function PdfViewer({ documentId, filename, documents = [], selectedDocume
           {embedded && (
             <div className="viewer-toolbar-leading">
               <button type="button" className="viewer-back-action" onClick={onClose} aria-label="Back to results">←</button>
-              <label className="viewer-document-picker">
-                <span className="sr-only">Document</span>
-                <select value={selectedDocumentId ?? documentId} onChange={(event) => onSelectDocument?.(event.target.value)} disabled={redactionMode || documents.length <= 1}>
-                  {(documents.length ? documents : [{ documentId, originalFilename: filename } as RecordDocument]).map((document) => <option key={document.documentId} value={document.documentId}>{document.originalFilename}</option>)}
-                </select>
-              </label>
+              {documents.length > 1 ? (
+                <label className="viewer-document-picker">
+                  <span className="sr-only">Document</span>
+                  <select value={selectedDocumentId ?? documentId} onChange={(event) => onSelectDocument?.(event.target.value)} disabled={redactionMode}>
+                    {documents.map((document) => <option key={document.documentId} value={document.documentId}>{document.originalFilename}</option>)}
+                  </select>
+                </label>
+              ) : (
+                <div className="viewer-document-single" aria-label="Document">{metadata?.originalFilename ?? filename}</div>
+              )}
             </div>
           )}
 
