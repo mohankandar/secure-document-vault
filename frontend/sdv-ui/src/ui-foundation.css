@@ -3765,3 +3765,24 @@ textarea:disabled {
     margin-left: 0;
   }
 }
+
+
+/* Results action sizing: keep the edit icon from using the SVG intrinsic 300x150 size. */
+.business-modify-search {
+  display: inline-flex;
+  min-height: 34px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 7px;
+  font-size: 13px;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.business-modify-search svg {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 14px;
+}
