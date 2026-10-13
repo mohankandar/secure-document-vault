@@ -34,6 +34,7 @@ import java.util.stream.Collectors;
 public class BusinessExperienceService {
     private static final int DEFAULT_LIMIT = 25;
     private static final int MAX_LIMIT = 50;
+    private static final int MAX_PAGE = 10_000;
     private static final int MAX_CRITERIA = 10;
     private static final int MAX_QUERY_VALUE_LENGTH = 500;
 
@@ -129,8 +130,8 @@ public class BusinessExperienceService {
 
         int page = requestedPage == null ? 1 : requestedPage;
         int pageSize = requestedPageSize == null ? DEFAULT_LIMIT : requestedPageSize;
-        if (page < 1) {
-            throw new IllegalArgumentException("Search page must be at least 1.");
+        if (page < 1 || page > MAX_PAGE) {
+            throw new IllegalArgumentException("Search page must be between 1 and " + MAX_PAGE + ".");
         }
         if (pageSize < 1 || pageSize > MAX_LIMIT) {
             throw new IllegalArgumentException("Search page size must be between 1 and " + MAX_LIMIT + ".");
