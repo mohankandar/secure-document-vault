@@ -4321,3 +4321,264 @@ textarea:disabled {
 @media print {
   .viewer-seal { display: none; }
 }
+
+
+/* =============================================================
+   Final structural refinement: fluid Search, scalable Results inspector,
+   and a single horizontal Viewer toolbar rhythm.
+   ============================================================= */
+
+/* Search should grow with the workspace, especially after sidebar collapse. */
+.business-search-hero-v0,
+.business-search-body-v0 {
+  width: 100%;
+  max-width: none;
+}
+
+.business-search-hero-v0 {
+  padding: 16px 18px 18px;
+}
+
+.business-search-body-v0 {
+  padding: 14px 18px 24px;
+}
+
+.business-search-title h2 {
+  margin-top: 2px;
+  font-size: clamp(22px, 1.8vw, 27px);
+  line-height: 1.12;
+  letter-spacing: -.025em;
+}
+
+.business-search-title .muted {
+  margin-top: 6px;
+}
+
+.business-search-form-v0 {
+  width: 100%;
+  max-width: none;
+}
+
+/* Results defaults to the full table width. The inspector is contextual,
+   overlays the workspace only after a row is selected, and can be closed. */
+.business-results-content-v0 {
+  position: relative;
+}
+
+.business-results-layout-v0,
+.business-results-layout-v0.inspector-open {
+  position: relative;
+  display: block;
+}
+
+.business-results-panel-v0 {
+  width: 100%;
+}
+
+.selected-record-panel-v0 {
+  position: absolute !important;
+  z-index: 6;
+  top: 0 !important;
+  right: 0;
+  width: min(360px, calc(100% - 32px));
+  max-height: min(620px, calc(100vh - 190px));
+  overflow: auto !important;
+  border: 1px solid var(--ui-border) !important;
+  border-right: 0 !important;
+  border-radius: 10px 0 0 10px !important;
+  background: var(--ui-surface) !important;
+  box-shadow: -10px 12px 30px rgba(15, 23, 42, .12) !important;
+}
+
+.selected-record-close-v0 {
+  position: absolute;
+  z-index: 2;
+  top: 9px;
+  right: 10px;
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--ui-text-secondary);
+  font-size: 22px;
+  line-height: 1;
+}
+
+.selected-record-close-v0:hover {
+  border-color: var(--ui-border);
+  background: var(--ui-hover);
+  color: var(--ui-text-strong);
+}
+
+.selected-record-panel-v0 .selected-record-identity-v0 {
+  padding-right: 52px;
+}
+
+/* Large result sets remain the primary workspace. */
+.business-result-table-wrap {
+  max-height: calc(100vh - 260px);
+  overflow: auto;
+}
+
+.business-result-table-v0 thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+/* Viewer: every toolbar group uses the same control height and vertical center. */
+.viewer-toolbar-premium {
+  display: grid !important;
+  grid-template-columns: minmax(210px, 1.1fr) auto auto minmax(220px, 1fr) auto;
+  align-items: center !important;
+  gap: 10px !important;
+  min-height: 56px;
+  padding: 8px 12px !important;
+}
+
+.viewer-toolbar-leading {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.viewer-toolbar-premium .viewer-back-action,
+.viewer-toolbar-premium .viewer-icon-button,
+.viewer-toolbar-premium .viewer-fit-action,
+.viewer-toolbar-premium .viewer-redact-action,
+.viewer-toolbar-premium .viewer-info-action,
+.viewer-toolbar-premium .viewer-search-action,
+.viewer-toolbar-premium .viewer-document-picker select,
+.viewer-toolbar-premium .viewer-jump input,
+.viewer-toolbar-premium .viewer-search input {
+  min-height: 34px;
+  height: 34px;
+}
+
+.viewer-toolbar-premium .viewer-document-picker {
+  min-width: 0;
+  padding-right: 0;
+  border-right: 0;
+}
+
+.viewer-toolbar-premium .viewer-document-picker select {
+  width: 100%;
+}
+
+.viewer-toolbar-premium .viewer-jump,
+.viewer-toolbar-premium .viewer-group,
+.viewer-toolbar-premium .viewer-search,
+.viewer-toolbar-premium .viewer-toolbar-actions,
+.viewer-toolbar-premium .viewer-info-group {
+  align-items: center;
+  align-self: center;
+  margin: 0 !important;
+}
+
+.viewer-toolbar-premium .viewer-jump,
+.viewer-toolbar-premium .viewer-group {
+  min-height: 34px;
+}
+
+.viewer-toolbar-premium .viewer-search {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px;
+  padding-left: 0;
+}
+
+.viewer-toolbar-premium .viewer-search::before {
+  display: none;
+}
+
+.viewer-toolbar-premium .viewer-toolbar-actions {
+  display: inline-flex;
+  gap: 4px;
+  padding-left: 0;
+  border-left: 0;
+  white-space: nowrap;
+}
+
+.viewer-toolbar-premium .viewer-info-group {
+  height: 34px;
+}
+
+.viewer-toolbar-premium .viewer-info-group .viewer-info-action {
+  height: 32px;
+  min-height: 32px;
+}
+
+@media (max-width: 1180px) {
+  .viewer-toolbar-premium {
+    grid-template-columns: minmax(180px, 1fr) auto auto minmax(180px, 1fr);
+  }
+
+  .viewer-toolbar-premium .viewer-toolbar-actions {
+    grid-column: 1 / -1;
+    justify-self: end;
+  }
+}
+
+@media (max-width: 1024px) {
+  .selected-record-panel-v0 {
+    position: fixed !important;
+    top: auto !important;
+    right: 12px;
+    bottom: 12px;
+    left: 12px;
+    width: auto;
+    max-height: min(72vh, 620px);
+    border-right: 1px solid var(--ui-border) !important;
+    border-radius: 12px !important;
+  }
+
+  .viewer-toolbar-premium {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .viewer-toolbar-leading,
+  .viewer-toolbar-premium .viewer-search,
+  .viewer-toolbar-premium .viewer-toolbar-actions {
+    grid-column: 1 / -1;
+  }
+
+  .viewer-toolbar-premium .viewer-toolbar-actions {
+    justify-self: stretch;
+    justify-content: flex-end;
+  }
+}
+
+@media (max-width: 640px) {
+  .business-search-title h2 {
+    font-size: 22px;
+  }
+
+  .selected-record-panel-v0 {
+    right: 8px;
+    bottom: 8px;
+    left: 8px;
+  }
+
+  .viewer-toolbar-premium {
+    grid-template-columns: 1fr;
+  }
+
+  .viewer-toolbar-leading,
+  .viewer-toolbar-premium .viewer-jump,
+  .viewer-toolbar-premium .viewer-group,
+  .viewer-toolbar-premium .viewer-search,
+  .viewer-toolbar-premium .viewer-toolbar-actions {
+    grid-column: 1;
+  }
+
+  .viewer-toolbar-premium .viewer-toolbar-actions {
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+}
