@@ -106,13 +106,38 @@ public class BusinessExperienceService {
             Integer requestedLimit,
             String actorId,
             String correlationId) {
+        return search(
+                tenantId, sourceId, requestedCriteria,
+                createdFrom, createdTo, updatedFrom, updatedTo,
+                1, requestedLimit, actorId, correlationId);
+    }
+
+    public BusinessExperienceView.SearchResponse search(
+            UUID tenantId,
+            UUID sourceId,
+            Map<String, String> requestedCriteria,
+            Instant createdFrom,
+            Instant createdTo,
+            Instant updatedFrom,
+            Instant updatedTo,
+            Integer requestedPage,
+            Integer requestedPageSize,
+            String actorId,
+            String correlationId) {
         requireActiveTenant(tenantId);
         IngestionSource source = requireSource(tenantId, sourceId);
-        int limit = requestedLimit == null ? DEFAULT_LIMIT : requestedLimit;
-        if (limit < 1 || limit > MAX_LIMIT) {
-            throw new IllegalArgumentException("Search limit must be between 1 and " + MAX_LIMIT + ".");
+
+        int page = requestedPage == null ? 1 : requestedPage;
+        int pageSize = requestedPageSize == null ? DEFAULT_LIMIT : requestedPageSize;
+        if (page < 1) {
+            throw new IllegalArgumentException("Search page must be at least 1.");
         }
-        if ((requestedCriteria == null || requestedCriteria.isEmpty())
+        if (pageSize < 1 || pageSize > MAX_LIMIT) {
+            throw new IllegalArgumentException("Search page size must be between 1 and " + MAX_LIMIT + ".");
+        }
+
+        Map<String, String> safeCriteria = requestedCriteria == null ? Map.of() : requestedCriteria;
+        if (safeCriteria.isEmpty()
                 && createdFrom == null && createdTo == null && updatedFrom == null && updatedTo == null) {
             throw new IllegalArgumentException("At least one configured metadata field or common date filter is required.");
         }
@@ -122,51 +147,72 @@ public class BusinessExperienceService {
         if (updatedFrom != null && updatedTo != null && updatedFrom.isAfter(updatedTo)) {
             throw new IllegalArgumentException("lastUpdatedFrom cannot be after lastUpdatedTo.");
         }
-        if (requestedCriteria.size() > MAX_CRITERIA) {
+        if (safeCriteria.size() > MAX_CRITERIA) {
             throw new IllegalArgumentException("At most " + MAX_CRITERIA + " search fields may be combined.");
         }
 
         Map<String, MetadataFieldDefinition> current = definitions.findCurrent(tenantId, sourceId).stream()
                 .collect(Collectors.toMap(MetadataFieldDefinition::fieldKey, Function.identity()));
 
-        Map<String, String> safeCriteria = requestedCriteria == null ? Map.of() : requestedCriteria;
         List<SearchCriterion> criteria = safeCriteria.entrySet().stream()
                 .sorted(Map.Entry.comparingByKey())
                 .map(entry -> buildCriterion(tenantId, sourceId, current, entry.getKey(), entry.getValue()))
                 .toList();
 
-        int scanLimit = Math.max(200, limit * 20);
-        List<Submission> matching = records.findMatchingSubmissions(
-                tenantId, sourceId, criteria, createdFrom, createdTo, updatedFrom, updatedTo, scanLimit);
-        if (matching.isEmpty()) {
-            appendSearchAudit(tenantId, actorId, sourceId, criteria.size(), 0, correlationId);
-            return new BusinessExperienceView.SearchResponse(sourceId, List.of(), false);
-        }
-
-        List<UUID> matchingIds = matching.stream().map(Submission::submissionId).toList();
-        Map<UUID, List<MetadataSnapshot>> matchedMetadata = groupMetadata(
-                records.findMetadataSnapshots(tenantId, sourceId, matchingIds));
+        int firstIndex = Math.multiplyExact(page - 1, pageSize);
+        int requiredCandidateCount = Math.addExact(firstIndex, pageSize + 1);
+        int scanOffset = 0;
+        int scanBatchSize = Math.max(200, pageSize * 4);
+        boolean exhausted = false;
 
         LinkedHashMap<String, BusinessRecordRefCodec.RecordIdentity> candidates = new LinkedHashMap<>();
-        for (Submission submission : matching) {
-            BusinessRecordRefCodec.RecordIdentity identity = identityFor(
-                    sourceId, submission.submissionId(),
-                    matchedMetadata.getOrDefault(submission.submissionId(), List.of()));
-            candidates.putIfAbsent(identity.canonicalKey(), identity);
+        while (candidates.size() < requiredCandidateCount && !exhausted) {
+            List<Submission> matching = records.findMatchingSubmissions(
+                    tenantId, sourceId, criteria,
+                    createdFrom, createdTo, updatedFrom, updatedTo,
+                    scanOffset, scanBatchSize);
+
+            if (matching.isEmpty()) {
+                exhausted = true;
+                break;
+            }
+
+            List<UUID> matchingIds = matching.stream().map(Submission::submissionId).toList();
+            Map<UUID, List<MetadataSnapshot>> matchedMetadata = groupMetadata(
+                    records.findMetadataSnapshots(tenantId, sourceId, matchingIds));
+
+            for (Submission submission : matching) {
+                BusinessRecordRefCodec.RecordIdentity identity = identityFor(
+                        sourceId,
+                        submission.submissionId(),
+                        matchedMetadata.getOrDefault(submission.submissionId(), List.of()));
+                candidates.putIfAbsent(identity.canonicalKey(), identity);
+            }
+
+            scanOffset += matching.size();
+            exhausted = matching.size() < scanBatchSize;
         }
 
-        boolean truncated = matching.size() >= scanLimit || candidates.size() > limit;
+        List<BusinessRecordRefCodec.RecordIdentity> ordered = new ArrayList<>(candidates.values());
+        if (firstIndex >= ordered.size()) {
+            appendSearchAudit(tenantId, actorId, sourceId, criteria.size(), 0, correlationId);
+            return new BusinessExperienceView.SearchResponse(
+                    sourceId, List.of(), page, pageSize, false, false);
+        }
+
+        int pageEndExclusive = Math.min(firstIndex + pageSize, ordered.size());
         List<BusinessExperienceView.RecordSummary> results = new ArrayList<>();
-        for (BusinessRecordRefCodec.RecordIdentity identity : candidates.values()) {
-            if (results.size() >= limit) break;
+        for (BusinessRecordRefCodec.RecordIdentity identity : ordered.subList(firstIndex, pageEndExclusive)) {
             RecordAggregate aggregate = aggregate(tenantId, source, identity);
             if (!aggregate.submissions().isEmpty()) {
                 results.add(summary(aggregate));
             }
         }
 
+        boolean hasMore = ordered.size() > firstIndex + pageSize || !exhausted;
         appendSearchAudit(tenantId, actorId, sourceId, criteria.size(), results.size(), correlationId);
-        return new BusinessExperienceView.SearchResponse(sourceId, results, truncated);
+        return new BusinessExperienceView.SearchResponse(
+                sourceId, results, page, pageSize, hasMore, hasMore);
     }
 
     public BusinessExperienceView.RecordView record(
