@@ -3786,3 +3786,34 @@ textarea:disabled {
   height: 14px;
   flex: 0 0 14px;
 }
+
+
+/* Final visual cleanup from runtime review. */
+@media (min-width: 1025px) {
+  .business-result-table-v0 {
+    min-width: 0;
+    table-layout: auto;
+  }
+}
+
+.activity-meta-v0 label {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  white-space: nowrap;
+}
+
+.activity-meta-v0 input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+  min-height: 0;
+  flex: 0 0 14px;
+  margin: 0;
+  padding: 0;
+  border-radius: 3px;
+}
+
+.activity-meta-v0 label small {
+  display: inline;
+  white-space: nowrap;
+}
