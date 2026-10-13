@@ -69,7 +69,8 @@ export default function BusinessWorkspace({ persona, capabilities, onViewerState
   const [selectedDocumentId, setSelectedDocumentId] = useState('')
   const [searching, setSearching] = useState(false)
   const [opening, setOpening] = useState(false)
-  const [truncated, setTruncated] = useState(false)
+  const [searchPage, setSearchPage] = useState(1)
+  const [searchHasMore, setSearchHasMore] = useState(false)
   const [error, setError] = useState('')
   const [includeViews, setIncludeViews] = useState(false)
   const [activityRange, setActivityRange] = useState('90')
@@ -112,6 +113,8 @@ export default function BusinessWorkspace({ persona, capabilities, onViewerState
     if (sourceId) window.localStorage.setItem(sourcePreferenceKey, sourceId)
     setCriteria({})
     setResults([])
+    setSearchPage(1)
+    setSearchHasMore(false)
     setSelectedRecord(null)
     setSelectedDocumentId('')
     setTab('search')
@@ -120,14 +123,14 @@ export default function BusinessWorkspace({ persona, capabilities, onViewerState
   const isoStart = (value: string) => value ? new Date(`${value}T00:00:00`).toISOString() : null
   const isoEnd = (value: string) => value ? new Date(`${value}T23:59:59.999`).toISOString() : null
 
-  async function runSearch(event: FormEvent) {
-    event.preventDefault()
+  async function loadSearchPage(requestedPage: number) {
     if (!sourceId) return
     const submitted = Object.fromEntries(Object.entries(criteria).filter(([, value]) => value.trim()).map(([key, value]) => [key, value.trim()]))
     if (Object.keys(submitted).length === 0 && !dateFrom && !dateTo && !updatedFrom && !updatedTo) {
       setError('Enter at least one source field, Date Range, or Last Updated filter.')
       return
     }
+
     setSearching(true)
     setError('')
     try {
@@ -140,11 +143,13 @@ export default function BusinessWorkspace({ persona, capabilities, onViewerState
           dateTo: isoEnd(dateTo),
           lastUpdatedFrom: isoStart(updatedFrom),
           lastUpdatedTo: isoEnd(updatedTo),
-          limit: 50,
+          page: requestedPage,
+          pageSize: 25,
         }),
       })
       setResults(response.records)
-      setTruncated(response.truncated)
+      setSearchPage(response.page)
+      setSearchHasMore(response.hasMore)
       setSelectedRecord(null)
       setSelectedDocumentId('')
       setTab('results')
@@ -153,6 +158,11 @@ export default function BusinessWorkspace({ persona, capabilities, onViewerState
     } finally {
       setSearching(false)
     }
+  }
+
+  async function runSearch(event: FormEvent) {
+    event.preventDefault()
+    await loadSearchPage(1)
   }
 
   async function openRecord(recordRef: string) {
@@ -297,8 +307,8 @@ export default function BusinessWorkspace({ persona, capabilities, onViewerState
     {tab === 'results' && <>
       <div className="business-results-topbar-v0">
         <div className="business-results-title-v0">
-          <h2><strong>{results.length}</strong> matching {results.length === 1 ? 'record' : 'records'}</h2>
-          <span>in {source?.displayName ?? 'selected source'}</span>
+          <h2><strong>{results.length}</strong> {searchPage === 1 && !searchHasMore ? `matching ${results.length === 1 ? 'record' : 'records'}` : 'records on this page'}</h2>
+          <span>Page {searchPage} · in {source?.displayName ?? 'selected source'}</span>
         </div>
         <div className="business-results-summary">
           <div className="business-search-chips" aria-label="Applied search criteria">
@@ -310,7 +320,6 @@ export default function BusinessWorkspace({ persona, capabilities, onViewerState
         </div>
       </div>
       <div className="business-results-content-v0">
-        {truncated && <div className="banner notice">Result window reached. Refine the search to narrow the list.</div>}
         <div className={`business-results-layout business-results-layout-v0 ${selectedRecord ? 'inspector-open' : ''}`}>
           <section className="panel business-results-panel business-results-panel-v0">
             <div className="business-result-table-wrap"><table className="business-result-table business-result-table-v0"><thead><tr><th></th>{(source?.fields ?? []).slice(0, 5).map((field) => <th key={field.fieldKey}>{field.displayLabel}</th>)}<th>Documents</th><th>Last Updated</th></tr></thead><tbody>{results.map((item) => {
@@ -318,6 +327,11 @@ export default function BusinessWorkspace({ persona, capabilities, onViewerState
               return <tr key={item.recordRef} className={selectedRecord?.recordRef === item.recordRef ? 'selected' : ''} onClick={() => openRecord(item.recordRef)}><td data-label="Select"><input type="radio" name="selected-record" aria-label={`Select record ${item.recordRef}`} readOnly checked={selectedRecord?.recordRef === item.recordRef} /></td>{(source?.fields ?? []).slice(0,5).map((field, index) => <td key={field.fieldKey} data-label={field.displayLabel} className={index === 0 ? 'primary-cell' : ''}>{values.get(field.fieldKey) ?? '—'}</td>)}<td data-label="Documents"><span className="document-count-pill"><Icon name="document" />{item.availableDocumentCount || 'None'}</span></td><td data-label="Last Updated">{formatDate(item.latestSubmissionAt)}</td></tr>
             })}</tbody></table></div>
             {results.length === 0 && <div className="empty-state"><Icon name="search" /><strong>No matching records</strong><span>Try fewer fields or a wider date range.</span><button type="button" onClick={() => setTab('search')}>Modify search</button></div>}
+            {results.length > 0 && <nav className="business-results-pagination" aria-label="Search result pages">
+              <button type="button" className="secondary" disabled={searching || searchPage <= 1} onClick={() => loadSearchPage(searchPage - 1)}>← Previous</button>
+              <span>Page <strong>{searchPage}</strong></span>
+              <button type="button" className="secondary" disabled={searching || !searchHasMore} onClick={() => loadSearchPage(searchPage + 1)}>Next →</button>
+            </nav>}
           </section>
 
           {selectedRecord && <aside className="selected-record-panel selected-record-panel-v0" aria-label="Selected record inspector">
