@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useMemo, useState } from 'react'
+import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
 import { PdfViewer } from './PdfViewer'
 import BusinessWorkspace from './BusinessWorkspace'
 import Icon, { type IconName } from './Icon'
@@ -817,6 +817,14 @@ function App() {
     })
   }
 
+  const handleBusinessViewerState = useCallback((active: boolean) => {
+    if (active) {
+      setSidebarCollapsed(true)
+      return
+    }
+    setSidebarCollapsed(localStorage.getItem('sdv.ui.sidebarCollapsed') === 'true')
+  }, [])
+
   const signOut = () => {
     setSession(null)
     if (localMode) {
@@ -949,13 +957,7 @@ function App() {
           <BusinessWorkspace
             persona={selectedPersona}
             capabilities={session.capabilities}
-            onViewerStateChange={(active) => {
-              if (active) {
-                setSidebarCollapsed(true)
-                return
-              }
-              setSidebarCollapsed(localStorage.getItem('sdv.ui.sidebarCollapsed') === 'true')
-            }}
+            onViewerStateChange={handleBusinessViewerState}
           />
         )
       )}
