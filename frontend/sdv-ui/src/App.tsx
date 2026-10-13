@@ -946,7 +946,17 @@ function App() {
         ) : !canSearchRecords ? (
           <section className="panel top-gap"><span className="kicker">Permission Boundary</span><h2>Business record search is not assigned</h2><p className="muted">Your current roles do not grant business-record search.</p></section>
         ) : (
-          <BusinessWorkspace persona={selectedPersona} capabilities={session.capabilities} />
+          <BusinessWorkspace
+            persona={selectedPersona}
+            capabilities={session.capabilities}
+            onViewerStateChange={(active) => {
+              if (active) {
+                setSidebarCollapsed(true)
+                return
+              }
+              setSidebarCollapsed(localStorage.getItem('sdv.ui.sidebarCollapsed') === 'true')
+            }}
+          />
         )
       )}
 
