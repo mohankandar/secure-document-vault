@@ -6,7 +6,7 @@ import {
   useRef,
   useState,
 } from 'react'
-import { contentApi, contentBinary, DocumentComment, DocumentTag } from './api'
+import { contentApi, contentBinary, DocumentComment, DocumentTag, RecordDocument } from './api'
 
 type ViewerMetadata = {
   documentId: string
@@ -46,6 +46,9 @@ type RedactionResult = {
 type Props = {
   documentId: string
   filename: string
+  documents?: RecordDocument[]
+  selectedDocumentId?: string
+  onSelectDocument?: (documentId: string) => void
   persona: 'business' | 'steward'
   canRedact: boolean
   canDownload: boolean
@@ -58,7 +61,7 @@ type Props = {
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value))
 
-export function PdfViewer({ documentId, filename, persona, canRedact, canDownload, canPrint, canTag, canComment, embedded = false, onClose }: Props) {
+export function PdfViewer({ documentId, filename, documents = [], selectedDocumentId, onSelectDocument, persona, canRedact, canDownload, canPrint, canTag, canComment, embedded = false, onClose }: Props) {
   const [metadata, setMetadata] = useState<ViewerMetadata | null>(null)
   const [page, setPage] = useState(1)
   const [jump, setJump] = useState('1')
@@ -387,69 +390,65 @@ export function PdfViewer({ documentId, filename, persona, canRedact, canDownloa
   return (
     <div className={embedded ? 'viewer-embedded' : 'viewer-backdrop'} role={embedded ? undefined : 'dialog'} aria-modal={embedded ? undefined : true} aria-label={`Secure PDF viewer for ${filename}`}>
       <section className={`viewer-shell ${embedded ? 'embedded' : ''}`}>
-        <header className="viewer-header">
-          <div>
-            <span className="kicker">Secure PDF Viewer</span>
-            <h2>{metadata?.originalFilename ?? filename}</h2>
-            <p>View permission is separate from download. Pages are decrypted and rendered only through authorized SDV requests.</p>
-          </div>
-          <div className="viewer-header-actions" aria-label="Document actions">
-            {canDownload && <button type="button" className="secondary" onClick={downloadCurrent} disabled={downloading || redactionMode}>{downloading ? 'Downloading…' : 'Download'}</button>}
-            {canPrint && <button type="button" className="secondary" onClick={printCurrent} disabled={redactionMode}>Print</button>}
-            {canRedact && <button type="button" className="secondary danger-outline" onClick={() => { setRedactionMode(true); setRedactionMessage(''); setTagPanelOpen(false); setCommentPanelOpen(false); setDetailsPanelOpen(false) }} disabled={redactionMode}>Redact</button>}
-            <button type="button" className={`secondary viewer-close ${embedded ? 'viewer-navigation-action' : ''}`} onClick={onClose} aria-label={embedded ? 'Back to results' : 'Close secure PDF viewer'}>{embedded ? '← Back to Results' : 'Close'}</button>
-          </div>
-        </header>
+        {!embedded && (
+          <header className="viewer-header">
+            <div>
+              <span className="kicker">Secure PDF Viewer</span>
+              <h2>{metadata?.originalFilename ?? filename}</h2>
+              <p>View permission is separate from download. Pages are decrypted and rendered only through authorized SDV requests.</p>
+            </div>
+            <div className="viewer-header-actions" aria-label="Document actions">
+              {canDownload && <button type="button" className="secondary" onClick={downloadCurrent} disabled={downloading || redactionMode}>{downloading ? 'Downloading…' : 'Download'}</button>}
+              {canPrint && <button type="button" className="secondary" onClick={printCurrent} disabled={redactionMode}>Print</button>}
+              {canRedact && <button type="button" className="secondary danger-outline" onClick={() => { setRedactionMode(true); setRedactionMessage(''); setTagPanelOpen(false); setCommentPanelOpen(false); setDetailsPanelOpen(false) }} disabled={redactionMode}>Redact</button>}
+              <button type="button" className="secondary viewer-close" onClick={onClose} aria-label="Close secure PDF viewer">Close</button>
+            </div>
+          </header>
+        )}
 
-        <div className="viewer-toolbar">
-          <div className="viewer-group">
-            <button className="secondary" disabled={page <= 1} onClick={() => goToPage(page - 1)}>Previous</button>
-            <button className="secondary" disabled={!metadata || page >= pageCount} onClick={() => goToPage(page + 1)}>Next</button>
-          </div>
+        <div className={`viewer-toolbar ${embedded ? 'viewer-toolbar-premium' : ''}`}>
+          {embedded && (
+            <>
+              <button type="button" className="viewer-back-action" onClick={onClose} aria-label="Back to results">←</button>
+              <label className="viewer-document-picker">
+                <span className="sr-only">Document</span>
+                <select value={selectedDocumentId ?? documentId} onChange={(event) => onSelectDocument?.(event.target.value)} disabled={redactionMode || documents.length <= 1}>
+                  {(documents.length ? documents : [{ documentId, originalFilename: filename } as RecordDocument]).map((document) => <option key={document.documentId} value={document.documentId}>{document.originalFilename}</option>)}
+                </select>
+              </label>
+            </>
+          )}
 
-          <form className="viewer-jump" onSubmit={jumpToPage}>
-            <label>
-              Page
-              <input
-                inputMode="numeric"
-                value={jump}
-                onChange={(event) => setJump(event.target.value)}
-                aria-label="Page number"
-              />
-            </label>
+          <form className="viewer-jump viewer-control-cluster" onSubmit={jumpToPage}>
+            <button type="button" className="viewer-icon-button" aria-label="Previous page" disabled={page <= 1} onClick={() => goToPage(page - 1)}>‹</button>
+            <input inputMode="numeric" value={jump} onChange={(event) => setJump(event.target.value)} aria-label="Page number" />
             <span>of {pageCount || '—'}</span>
-            <button type="submit" className="secondary">Go</button>
+            <button type="button" className="viewer-icon-button" aria-label="Next page" disabled={!metadata || page >= pageCount} onClick={() => goToPage(page + 1)}>›</button>
           </form>
 
-          <div className="viewer-group">
-            <button className="secondary" disabled={zoom <= 0.5 || redactionMode} onClick={() => setZoom((current) => clamp(current - 0.25, 0.5, 2.5))}>−</button>
+          <div className="viewer-group viewer-control-cluster" aria-label="Zoom controls">
+            <button className="viewer-icon-button" aria-label="Zoom out" disabled={zoom <= 0.5 || redactionMode} onClick={() => setZoom((current) => clamp(current - 0.25, 0.5, 2.5))}>−</button>
             <strong>{zoomPercent}%</strong>
-            <button className="secondary" disabled={zoom >= 2.5 || redactionMode} onClick={() => setZoom((current) => clamp(current + 0.25, 0.5, 2.5))}>+</button>
+            <button className="viewer-icon-button" aria-label="Zoom in" disabled={zoom >= 2.5 || redactionMode} onClick={() => setZoom((current) => clamp(current + 0.25, 0.5, 2.5))}>+</button>
           </div>
 
           <form className="viewer-search" onSubmit={search}>
             <label>
-              Search document
-              <input
-                value={query}
-                maxLength={100}
-                onChange={(event) => setQuery(event.target.value)}
-                placeholder="Find text"
-                disabled={redactionMode}
-              />
+              <span className="sr-only">Search document</span>
+              <input value={query} maxLength={100} onChange={(event) => setQuery(event.target.value)} placeholder="Search in document" disabled={redactionMode} />
             </label>
-            <button type="submit" className="secondary" disabled={redactionMode || searching || !query.trim()}>
-              {searching ? 'Searching…' : 'Search'}
-            </button>
+            <button type="submit" className="secondary viewer-search-action" disabled={redactionMode || searching || !query.trim()}>{searching ? 'Searching…' : 'Search'}</button>
           </form>
-        </div>
 
-        <nav className="viewer-context-bar" aria-label="Document information panels">
-          <span className="viewer-context-caption">DOCUMENT</span>
-          <button type="button" className={detailsPanelOpen ? 'active' : ''} aria-pressed={detailsPanelOpen} onClick={() => { setDetailsPanelOpen((v) => !v); setCommentPanelOpen(false); setTagPanelOpen(false) }} disabled={redactionMode}>Details</button>
-          <button type="button" className={commentPanelOpen ? 'active' : ''} aria-pressed={commentPanelOpen} onClick={() => { setCommentPanelOpen((v) => !v); setTagPanelOpen(false); setDetailsPanelOpen(false) }} disabled={redactionMode}>Comments{comments.length ? ` (${comments.length})` : ''}</button>
-          {canTag && <button type="button" className={tagPanelOpen ? 'active' : ''} aria-pressed={tagPanelOpen} onClick={() => { setTagPanelOpen((v) => !v); setCommentPanelOpen(false); setDetailsPanelOpen(false) }} disabled={redactionMode}>Tags{tags.length ? ` (${tags.length})` : ''}</button>}
-        </nav>
+          <div className="viewer-toolbar-actions" aria-label="Document actions">
+            {canDownload && <button type="button" className="viewer-icon-button" title="Download" aria-label="Download" onClick={downloadCurrent} disabled={downloading || redactionMode}>⇩</button>}
+            {canPrint && <button type="button" className="viewer-icon-button" title="Print" aria-label="Print" onClick={printCurrent} disabled={redactionMode}>⌑</button>}
+            {canRedact && <button type="button" className="viewer-redact-action" onClick={() => { setRedactionMode(true); setRedactionMessage(''); setTagPanelOpen(false); setCommentPanelOpen(false); setDetailsPanelOpen(false) }} disabled={redactionMode}>Redact</button>}
+            <button type="button" className={`viewer-info-action ${detailsPanelOpen ? 'active' : ''}`} aria-pressed={detailsPanelOpen} onClick={() => { setDetailsPanelOpen((v) => !v); setCommentPanelOpen(false); setTagPanelOpen(false) }} disabled={redactionMode}>Details</button>
+            <button type="button" className={`viewer-info-action ${commentPanelOpen ? 'active' : ''}`} aria-pressed={commentPanelOpen} onClick={() => { setCommentPanelOpen((v) => !v); setTagPanelOpen(false); setDetailsPanelOpen(false) }} disabled={redactionMode}>Comments{comments.length ? ` ${comments.length}` : ''}</button>
+            {canTag && <button type="button" className={`viewer-info-action ${tagPanelOpen ? 'active' : ''}`} aria-pressed={tagPanelOpen} onClick={() => { setTagPanelOpen((v) => !v); setCommentPanelOpen(false); setDetailsPanelOpen(false) }} disabled={redactionMode}>Tags{tags.length ? ` ${tags.length}` : ''}</button>}
+          </div>
+        </div>
 
         {redactionMode && (
           <form className="redaction-panel" onSubmit={submitRedaction}>
