@@ -4625,3 +4625,45 @@ textarea:disabled {
   white-space: nowrap !important;
   border: 0 !important;
 }
+
+
+/* Business Results pagination — server-backed, record-aware pages. */
+.business-results-pagination {
+  display: flex;
+  min-height: 52px;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 9px 12px;
+  border-top: 1px solid var(--ui-border);
+  background: var(--ui-surface);
+}
+
+.business-results-pagination > span {
+  min-width: 72px;
+  color: var(--ui-text-secondary);
+  font-size: 12.5px;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.business-results-pagination > span strong {
+  color: var(--ui-text-strong);
+  font-variant-numeric: tabular-nums;
+}
+
+.business-results-pagination .secondary {
+  min-height: 34px;
+  padding: 0 11px;
+  font-size: 12.5px;
+}
+
+@media (max-width: 640px) {
+  .business-results-pagination {
+    justify-content: space-between;
+  }
+
+  .business-results-pagination .secondary {
+    flex: 1 1 0;
+  }
+}
