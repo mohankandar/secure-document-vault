@@ -312,7 +312,7 @@ export default function BusinessWorkspace({ persona, capabilities, onViewerState
       </div>
       <div className="business-results-content-v0">
         {truncated && <div className="banner notice">Result window reached. Refine the search to narrow the list.</div>}
-        <div className="business-results-layout business-results-layout-v0">
+        <div className={`business-results-layout business-results-layout-v0 ${selectedRecord ? 'inspector-open' : ''}`}>
           <section className="panel business-results-panel business-results-panel-v0">
             <div className="business-result-table-wrap"><table className="business-result-table business-result-table-v0"><thead><tr><th></th>{(source?.fields ?? []).slice(0, 5).map((field) => <th key={field.fieldKey}>{field.displayLabel}</th>)}<th>Documents</th><th>Last Updated</th></tr></thead><tbody>{results.map((item) => {
               const values = new Map([...item.identifiers, ...item.metadataPreview].map((value) => [value.fieldKey, value.value]))
@@ -320,34 +320,25 @@ export default function BusinessWorkspace({ persona, capabilities, onViewerState
             })}</tbody></table></div>
             {results.length === 0 && <div className="empty-state"><Icon name="search" /><strong>No matching records</strong><span>Try fewer fields or a wider date range.</span><button type="button" onClick={() => setTab('search')}>Modify search</button></div>}
           </section>
-          <aside className="panel selected-record-panel selected-record-panel-v0">
-            {!selectedRecord ? <div className="result-overview-v0">
-              <span className="business-section-label">This search</span>
-              <dl>
-                <div><dt>Records</dt><dd>{results.length}</dd></div>
-                <div><dt>Documents</dt><dd>{results.reduce((total, item) => total + (item.availableDocumentCount || 0), 0)}</dd></div>
-                <div><dt>Most recent update</dt><dd>{results.length ? formatDate(results.map((item) => item.latestSubmissionAt).filter(Boolean).sort().at(-1) ?? null) : '—'}</dd></div>
-                <div><dt>Source</dt><dd>{source?.displayName ?? '—'}</dd></div>
-              </dl>
-              <p>Select a row to see the record&apos;s details and open its documents.</p>
-            </div> : <>
-              <div className="selected-record-identity-v0">
-                <span className="business-section-label">Selected record</span>
-                <small>{primaryIdentifier?.displayLabel}</small>
-                <h2>{primaryIdentifier?.value}</h2>
-                {selectedRecord.identifiers.length > 1 && <p>{selectedRecord.identifiers.slice(1).map((value) => `${value.displayLabel} ${value.value}`).join(' · ')}</p>}
-              </div>
-              {selectedRecordDetails.length > 0 && <div className="selected-record-details-v0">{selectedRecordDetails.map((value) => <div key={value.fieldKey}><span>{value.displayLabel}</span><strong>{value.value}</strong></div>)}<div><span>Last Updated</span><strong>{formatDate(selectedRecord.latestSubmissionAt)}</strong></div></div>}
-              <div className="selected-record-documents-v0">
-                <div className="selected-record-documents-heading"><strong>Documents</strong><span>{selectedRecord.documents.length} available</span></div>
-                <div className="compact-document-list compact-document-list-v0">{selectedRecord.documents.map((document) => <button key={document.documentId} className={selectedDocumentId === document.documentId ? 'selected' : ''} onClick={() => setSelectedDocumentId(document.documentId)} onDoubleClick={() => canView && openViewer(document.documentId)}><span className="document-tile-icon"><Icon name="document" /></span><span><strong>{document.originalFilename}</strong><small>{formatDate(document.availableAt)}</small></span>{selectedDocumentId === document.documentId && <span className="document-selected-check">✓</span>}</button>)}</div>
-              </div>
-              <div className="selected-record-actions-v0">
-                <button className="business-primary-action wide-action" disabled={!selectedDocumentId || !canView} onClick={() => openViewer()}>Open document <span aria-hidden="true">→</span></button>
-                <button className="business-ghost-action" onClick={() => setTab('activity')}><Icon name="operations" />Record activity</button>
-              </div>
-            </>}
-          </aside>
+
+          {selectedRecord && <aside className="selected-record-panel selected-record-panel-v0" aria-label="Selected record inspector">
+            <button type="button" className="selected-record-close-v0" onClick={() => { setSelectedRecord(null); setSelectedDocumentId('') }} aria-label="Close selected record details">×</button>
+            <div className="selected-record-identity-v0">
+              <span className="business-section-label">Selected record</span>
+              <small>{primaryIdentifier?.displayLabel}</small>
+              <h2>{primaryIdentifier?.value}</h2>
+              {selectedRecord.identifiers.length > 1 && <p>{selectedRecord.identifiers.slice(1).map((value) => `${value.displayLabel} ${value.value}`).join(' · ')}</p>}
+            </div>
+            {selectedRecordDetails.length > 0 && <div className="selected-record-details-v0">{selectedRecordDetails.map((value) => <div key={value.fieldKey}><span>{value.displayLabel}</span><strong>{value.value}</strong></div>)}<div><span>Last Updated</span><strong>{formatDate(selectedRecord.latestSubmissionAt)}</strong></div></div>}
+            <div className="selected-record-documents-v0">
+              <div className="selected-record-documents-heading"><strong>Documents</strong><span>{selectedRecord.documents.length} available</span></div>
+              <div className="compact-document-list compact-document-list-v0">{selectedRecord.documents.map((document) => <button key={document.documentId} className={selectedDocumentId === document.documentId ? 'selected' : ''} onClick={() => setSelectedDocumentId(document.documentId)} onDoubleClick={() => canView && openViewer(document.documentId)}><span className="document-tile-icon"><Icon name="document" /></span><span><strong>{document.originalFilename}</strong><small>{formatDate(document.availableAt)}</small></span>{selectedDocumentId === document.documentId && <span className="document-selected-check">✓</span>}</button>)}</div>
+            </div>
+            <div className="selected-record-actions-v0">
+              <button className="business-primary-action wide-action" disabled={!selectedDocumentId || !canView} onClick={() => openViewer()}>Open document <span aria-hidden="true">→</span></button>
+              <button className="business-ghost-action" onClick={() => setTab('activity')}><Icon name="operations" />Record activity</button>
+            </div>
+          </aside>}
         </div>
       </div>
     </>}
