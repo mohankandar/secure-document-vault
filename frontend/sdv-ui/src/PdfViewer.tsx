@@ -94,11 +94,52 @@ export function PdfViewer({ documentId, filename, documents = [], selectedDocume
   const [commentPanelOpen, setCommentPanelOpen] = useState(false)
   const [showAllComments, setShowAllComments] = useState(false)
   const [detailsPanelOpen, setDetailsPanelOpen] = useState(false)
+  const [fitToPage, setFitToPage] = useState(true)
+  const [pageSize, setPageSize] = useState<{ width: number; height: number } | null>(null)
+  const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 })
   const imageRef = useRef<HTMLImageElement | null>(null)
+  const canvasRef = useRef<HTMLDivElement | null>(null)
+  const renderedScaleRef = useRef(1)
   const draftAnchor = useRef<{ x: number; y: number } | null>(null)
 
   const pageCount = metadata?.pageCount ?? 0
-  const zoomPercent = useMemo(() => Math.round(zoom * 100), [zoom])
+  const fitScale = useMemo(() => {
+    if (!pageSize || !canvasSize.width || !canvasSize.height) return null
+    const gutter = 40
+    return clamp(Math.min((canvasSize.width - gutter) / pageSize.width, (canvasSize.height - gutter) / pageSize.height), 0.25, 2.5)
+  }, [pageSize, canvasSize])
+  const displayScale = fitToPage && fitScale ? fitScale : zoom
+  const renderScale = useMemo(() => {
+    if (!fitToPage || !fitScale) return zoom
+    const density = typeof window === 'undefined' ? 1 : Math.min(window.devicePixelRatio || 1, 2)
+    return clamp(Math.ceil(fitScale * density * 4) / 4, 0.5, 2.5)
+  }, [fitToPage, fitScale, zoom])
+  const zoomPercent = useMemo(() => Math.round(displayScale * 100), [displayScale])
+  const currentDocument = documents.find((item) => item.documentId === (selectedDocumentId ?? documentId))
+  const formatSealDate = (value: string | null | undefined) => value ? new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', year: 'numeric' }).format(new Date(value)) : null
+  const stepZoom = (delta: number) => {
+    setFitToPage(false)
+    setZoom(clamp(Math.round((displayScale + delta) * 4) / 4, 0.5, 2.5))
+  }
+
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas || typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(([entry]) => {
+      const { width, height } = entry.contentRect
+      setCanvasSize((current) => Math.abs(current.width - width) < 8 && Math.abs(current.height - height) < 8 ? current : { width, height })
+    })
+    observer.observe(canvas)
+    return () => observer.disconnect()
+  }, [])
+
+  const measurePage = () => {
+    const image = imageRef.current
+    if (!image?.naturalWidth) return
+    const width = image.naturalWidth / renderedScaleRef.current
+    const height = image.naturalHeight / renderedScaleRef.current
+    setPageSize((current) => current && Math.abs(current.width - width) < 1 && Math.abs(current.height - height) < 1 ? current : { width, height })
+  }
   const currentMarks = redactionMarks.filter((mark) => mark.pageNumber === page)
   const visibleComments = showAllComments ? comments : comments.slice(0, 3)
 
@@ -108,6 +149,8 @@ export function PdfViewer({ documentId, filename, documents = [], selectedDocume
     setPage(1)
     setJump('1')
     setZoom(1)
+    setFitToPage(true)
+    setPageSize(null)
     setMatches([])
     setTotalMatches(0)
     setError('')
@@ -140,11 +183,12 @@ export function PdfViewer({ documentId, filename, documents = [], selectedDocume
     setError('')
 
     contentBinary(
-      `/api/v1/business/documents/${documentId}/viewer/pages/${page}?scale=${zoom.toFixed(2)}`,
+      `/api/v1/business/documents/${documentId}/viewer/pages/${page}?scale=${renderScale.toFixed(2)}`,
       persona,
     )
       .then((blob) => {
         if (!active) return
+        renderedScaleRef.current = renderScale
         localUrl = URL.createObjectURL(blob)
         setImageUrl((previous) => {
           if (previous) URL.revokeObjectURL(previous)
@@ -162,7 +206,7 @@ export function PdfViewer({ documentId, filename, documents = [], selectedDocume
       active = false
       if (localUrl) URL.revokeObjectURL(localUrl)
     }
-  }, [documentId, metadata, page, zoom, persona, reloadToken])
+  }, [documentId, metadata, page, renderScale, persona, reloadToken])
 
   useEffect(() => () => {
     if (imageUrl) URL.revokeObjectURL(imageUrl)
@@ -428,9 +472,10 @@ export function PdfViewer({ documentId, filename, documents = [], selectedDocume
           </form>
 
           <div className="viewer-group viewer-control-cluster" aria-label="Zoom controls">
-            <button className="viewer-icon-button" aria-label="Zoom out" disabled={zoom <= 0.5 || redactionMode} onClick={() => setZoom((current) => clamp(current - 0.25, 0.5, 2.5))}>−</button>
-            <strong>{zoomPercent}%</strong>
-            <button className="viewer-icon-button" aria-label="Zoom in" disabled={zoom >= 2.5 || redactionMode} onClick={() => setZoom((current) => clamp(current + 0.25, 0.5, 2.5))}>+</button>
+            <button className="viewer-icon-button" aria-label="Zoom out" disabled={displayScale <= 0.5 || redactionMode} onClick={() => stepZoom(-0.25)}>−</button>
+            <strong aria-live="polite">{zoomPercent}%</strong>
+            <button className="viewer-icon-button" aria-label="Zoom in" disabled={displayScale >= 2.5 || redactionMode} onClick={() => stepZoom(0.25)}>+</button>
+            <button type="button" className={`viewer-fit-action ${fitToPage ? 'active' : ''}`} aria-pressed={fitToPage} disabled={redactionMode} onClick={() => setFitToPage(true)}>Fit</button>
           </div>
 
           <form className="viewer-search" onSubmit={search}>
@@ -438,16 +483,18 @@ export function PdfViewer({ documentId, filename, documents = [], selectedDocume
               <span className="sr-only">Search document</span>
               <input value={query} maxLength={100} onChange={(event) => setQuery(event.target.value)} placeholder="Search in document" disabled={redactionMode} />
             </label>
-            <button type="submit" className="secondary viewer-search-action" disabled={redactionMode || searching || !query.trim()}><Icon name="search" />{searching ? 'Searching…' : 'Search'}</button>
+            <button type="submit" className="secondary viewer-search-action" disabled={redactionMode || searching || !query.trim()}><Icon name="search" /><span className="viewer-search-label">{searching ? 'Searching…' : 'Search'}</span></button>
           </form>
 
           <div className="viewer-toolbar-actions" aria-label="Document actions">
             {canDownload && <button type="button" className="viewer-icon-button" title="Download" aria-label="Download" onClick={downloadCurrent} disabled={downloading || redactionMode}><Icon name="download" /></button>}
             {canPrint && <button type="button" className="viewer-icon-button" title="Print" aria-label="Print" onClick={printCurrent} disabled={redactionMode}><Icon name="print" /></button>}
             {canRedact && <button type="button" className="viewer-redact-action" onClick={() => { setRedactionMode(true); setRedactionMessage(''); setTagPanelOpen(false); setCommentPanelOpen(false); setDetailsPanelOpen(false) }} disabled={redactionMode}><Icon name="redaction" />Redact</button>}
+            <div className="viewer-info-group" role="group" aria-label="Document information panels">
             <button type="button" className={`viewer-info-action ${detailsPanelOpen ? 'active' : ''}`} aria-pressed={detailsPanelOpen} onClick={() => { setDetailsPanelOpen((v) => !v); setCommentPanelOpen(false); setTagPanelOpen(false) }} disabled={redactionMode}>Details</button>
             <button type="button" className={`viewer-info-action ${commentPanelOpen ? 'active' : ''}`} aria-pressed={commentPanelOpen} onClick={() => { setCommentPanelOpen((v) => !v); setTagPanelOpen(false); setDetailsPanelOpen(false) }} disabled={redactionMode}>Comments{comments.length ? ` ${comments.length}` : ''}</button>
             {canTag && <button type="button" className={`viewer-info-action ${tagPanelOpen ? 'active' : ''}`} aria-pressed={tagPanelOpen} onClick={() => { setTagPanelOpen((v) => !v); setCommentPanelOpen(false); setDetailsPanelOpen(false) }} disabled={redactionMode}>Tags{tags.length ? ` ${tags.length}` : ''}</button>}
+            </div>
           </div>
         </div>
 
@@ -514,7 +561,8 @@ export function PdfViewer({ documentId, filename, documents = [], selectedDocume
         {error && <div className="banner error viewer-error">{error}</div>}
 
         <div className={`viewer-workspace-body ${detailsPanelOpen || tagPanelOpen || commentPanelOpen ? 'context-open' : ''}`}>
-        <div className={`viewer-canvas ${redactionMode ? 'redaction-active' : ''}`} aria-busy={loadingPage}>
+        <div className="viewer-canvas-column">
+        <div ref={canvasRef} className={`viewer-canvas ${redactionMode ? 'redaction-active' : ''} ${fitToPage ? 'fit-page' : ''}`} aria-busy={loadingPage}>
           {loadingPage && <div className="viewer-loading">Rendering page securely…</div>}
           {imageUrl && (
             <div
@@ -524,7 +572,7 @@ export function PdfViewer({ documentId, filename, documents = [], selectedDocume
               onPointerUp={finishRedaction}
               onPointerCancel={() => { setDraftMark(null); draftAnchor.current = null }}
             >
-              <img ref={imageRef} src={imageUrl} alt={`Page ${page} of ${pageCount}`} draggable={false} />
+              <img ref={imageRef} src={imageUrl} alt={`Page ${page} of ${pageCount}`} draggable={false} onLoad={measurePage} style={pageSize ? { width: `${Math.round(pageSize.width * displayScale)}px`, height: 'auto' } : undefined} />
               {overlayMarks.map((mark) => (
                 <div
                   key={mark.id}
@@ -538,6 +586,17 @@ export function PdfViewer({ documentId, filename, documents = [], selectedDocume
                 />
               ))}
             </div>
+          )}
+        </div>
+          {embedded && (
+            <footer className="viewer-seal" aria-label="Secure document context">
+              <span className="viewer-seal-mark"><Icon name="eye" />Secure view</span>
+              <span className="viewer-seal-file">{metadata?.originalFilename ?? filename}</span>
+              <span>Page {page} of {pageCount || '—'}</span>
+              {formatSealDate(currentDocument?.ingestedAt) && <span>Ingested {formatSealDate(currentDocument?.ingestedAt)}</span>}
+              {formatSealDate(currentDocument?.availableAt) && <span>Available {formatSealDate(currentDocument?.availableAt)}</span>}
+              {formatSealDate(currentDocument?.expiresAt) && <span className="viewer-seal-retention">Retained until {formatSealDate(currentDocument?.expiresAt)}</span>}
+            </footer>
           )}
         </div>
 
