@@ -18,6 +18,7 @@ type ContentPersona = 'business' | 'steward'
 type Props = {
   persona: LocalPersona
   capabilities: string[]
+  onViewerStateChange?: (active: boolean) => void
 }
 
 type ActivityRow = DocumentActivity & { documentId: string; documentName: string }
@@ -52,7 +53,7 @@ function iconForAction(action: string) {
   return 'document' as const
 }
 
-export default function BusinessWorkspace({ persona, capabilities }: Props) {
+export default function BusinessWorkspace({ persona, capabilities, onViewerStateChange }: Props) {
   const sourcePreferenceKey = `sdv.businessWorkspace.sourceId.${persona}`
   const contentPersona: ContentPersona = persona === 'steward' ? 'steward' : 'business'
   const [tab, setTab] = useState<BusinessTab>('search')
@@ -86,6 +87,11 @@ export default function BusinessWorkspace({ persona, capabilities }: Props) {
   const canTag = capabilities.includes('ADD_DOCUMENT_TAG')
   const canComment = capabilities.includes('ADD_DOCUMENT_COMMENT')
   const canRedact = capabilities.includes('PERMANENT_REDACTION')
+
+  useEffect(() => {
+    onViewerStateChange?.(tab === 'viewer')
+    return () => onViewerStateChange?.(false)
+  }, [tab, onViewerStateChange])
 
   useEffect(() => {
     setError('')
