@@ -72,7 +72,8 @@ export default function BusinessWorkspace({ persona, capabilities, onViewerState
   const [truncated, setTruncated] = useState(false)
   const [error, setError] = useState('')
   const [includeViews, setIncludeViews] = useState(false)
-  const [activityRange, setActivityRange] = useState('30')
+  const [activityRange, setActivityRange] = useState('90')
+  const [activityDocumentId, setActivityDocumentId] = useState('')
   const [activityAction, setActivityAction] = useState('')
   const [activityActor, setActivityActor] = useState('')
   const [activityRows, setActivityRows] = useState<ActivityRow[]>([])
@@ -200,9 +201,16 @@ export default function BusinessWorkspace({ persona, capabilities, onViewerState
   }
 
   useEffect(() => {
-    if (tab === 'activity' && selectedRecord) loadActivity().catch(() => undefined)
+    if (tab === 'activity' && selectedRecord) {
+      setActivityDocumentId((current) => current || selectedDocumentId || selectedRecord.documents[0]?.documentId || '')
+      loadActivity().catch(() => undefined)
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, selectedRecord?.recordRef, includeViews])
+
+  const filteredActivityRows = activityDocumentId
+    ? activityRows.filter((row) => row.documentId === activityDocumentId)
+    : activityRows
 
   const primaryIdentifier = selectedRecord?.identifiers[0]
   const selectedIdentifierKeys = new Set(selectedRecord?.identifiers.map((value) => value.fieldKey) ?? [])
@@ -226,40 +234,72 @@ export default function BusinessWorkspace({ persona, capabilities, onViewerState
 
     {error && <div className="banner error top-gap">{error}</div>}
 
-    {tab === 'search' && <section className="business-search-screen">
-      <div className="business-search-hero">
-        <div className="business-search-title">
-          <span className="kicker">Business Search</span>
-          <h2>Find a business record</h2>
-          <p className="muted">Search by any identifier or detail below, then securely open the documents associated with the record.</p>
+    {tab === 'search' && <>
+      <section className="business-search-screen business-search-v0">
+        <div className="business-search-hero business-search-hero-v0">
+          <div className="business-search-title">
+            <span className="kicker">Business Search</span>
+            <h2>Find a business record</h2>
+            <p className="muted">Search by any identifier or detail below, then open the record's documents in the secure viewer.</p>
+          </div>
+          <label className="business-source-context business-source-context-v0">
+            <Icon name="storage" />
+            <span className="business-source-context-copy">
+              <small>Searching in</small>
+              <select value={sourceId} onChange={(event) => setSourceId(event.target.value)} aria-label="Search source">{schema.sources.map((item) => <option key={item.sourceId} value={item.sourceId}>{item.displayName}</option>)}</select>
+            </span>
+            <strong>{source?.fields.length ?? 0} fields</strong>
+          </label>
         </div>
-        <label className="business-source-context">
-          <span>Searching in</span>
-          <select value={sourceId} onChange={(event) => setSourceId(event.target.value)} aria-label="Search source">{schema.sources.map((item) => <option key={item.sourceId} value={item.sourceId}>{item.displayName}</option>)}</select>
-          <small>{source?.fields.length ?? 0} configured search fields</small>
-        </label>
+      </section>
+      <div className="business-search-body-v0">
+        <form className="panel business-search-form business-search-form-premium business-search-form-v0" onSubmit={runSearch}>
+          <section className="business-search-record-section">
+            <div className="business-search-section-heading">
+              <h3>{source?.displayName} record</h3>
+              <span>Fields shown match the selected source</span>
+            </div>
+            <div className="business-search-grid business-search-grid-v0">
+              {source?.fields.map((field) => <label key={field.fieldKey}>
+                <span className="business-field-label">
+                  <span>{field.displayLabel}{field.businessIdentifier && <em>ID</em>}</span>
+                  <small>{searchHint(field)}</small>
+                </span>
+                <input
+                  value={criteria[field.fieldKey] ?? ''}
+                  inputMode={field.normalization === 'DIGITS_ONLY' ? 'numeric' : undefined}
+                  autoComplete="off"
+                  onChange={(event) => setCriteria((current) => ({ ...current, [field.fieldKey]: event.target.value }))}
+                />
+              </label>)}
+            </div>
+          </section>
+          <section className="business-search-date-section">
+            <span className="business-section-label">Narrow by date</span>
+            <div className="business-date-grid-v0">
+              <fieldset>
+                <legend><span>Date Range</span><small>Document date</small></legend>
+                <div><input aria-label="Date Range from" type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} /><span>–</span><input aria-label="Date Range to" type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} /></div>
+              </fieldset>
+              <fieldset>
+                <legend><span>Last Updated</span><small>Latest submission</small></legend>
+                <div><input aria-label="Last Updated from" type="date" value={updatedFrom} onChange={(e) => setUpdatedFrom(e.target.value)} /><span>–</span><input aria-label="Last Updated to" type="date" value={updatedTo} onChange={(e) => setUpdatedTo(e.target.value)} /></div>
+              </fieldset>
+            </div>
+          </section>
+          <div className="business-search-footer business-search-footer-v0">
+            <span className="business-search-guidance">Any one field or date filter is enough to search.</span>
+            <div className="form-actions"><button type="button" className="business-clear-action" onClick={() => { setCriteria({}); setDateFrom(''); setDateTo(''); setUpdatedFrom(''); setUpdatedTo('') }}>Clear</button><button type="submit" className="business-primary-action" disabled={searching || !sourceId}><Icon name="search" />{searching ? 'Searching…' : 'Search records'}</button></div>
+          </div>
+        </form>
       </div>
-      <form className="panel business-search-form business-search-form-premium" onSubmit={runSearch}>
-        <div className="business-search-grid">
-          {source?.fields.map((field) => <label key={field.fieldKey}><span>{field.displayLabel}{field.businessIdentifier && <em>ID</em>}</span><input value={criteria[field.fieldKey] ?? ''} onChange={(event) => setCriteria((current) => ({ ...current, [field.fieldKey]: event.target.value }))} placeholder={`${searchHint(field)} · ${field.fieldType.toLowerCase()}`} /></label>)}
-        </div>
-        <div className="common-filter-grid">
-          <fieldset><legend>Date Range</legend><label>From<input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} /></label><label>To<input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} /></label></fieldset>
-          <fieldset><legend>Last Updated</legend><label>From<input type="date" value={updatedFrom} onChange={(e) => setUpdatedFrom(e.target.value)} /></label><label>To<input type="date" value={updatedTo} onChange={(e) => setUpdatedTo(e.target.value)} /></label></fieldset>
-        </div>
-        <div className="business-search-footer">
-          <span className="business-search-guidance">Any one field or date filter is enough to search.</span>
-          <div className="form-actions"><button type="button" className="secondary" onClick={() => { setCriteria({}); setDateFrom(''); setDateTo(''); setUpdatedFrom(''); setUpdatedTo('') }}>Clear</button><button type="submit" disabled={searching || !sourceId}>{searching ? 'Searching…' : 'Search records'}</button></div>
-        </div>
-      </form>
-    </section>}
+    </>}
 
     {tab === 'results' && <>
-      <div className="business-results-hero">
-        <div>
-          <span className="kicker">Results</span>
+      <div className="business-results-topbar-v0">
+        <div className="business-results-title-v0">
           <h2><strong>{results.length}</strong> matching {results.length === 1 ? 'record' : 'records'}</h2>
-          <p className="muted">in {source?.displayName ?? 'selected source'}</p>
+          <span>in {source?.displayName ?? 'selected source'}</span>
         </div>
         <div className="business-results-summary">
           <div className="business-search-chips" aria-label="Applied search criteria">
@@ -267,23 +307,40 @@ export default function BusinessWorkspace({ persona, capabilities, onViewerState
             {(dateFrom || dateTo) && <span><small>Date Range</small><strong>{dateFrom || '…'} – {dateTo || '…'}</strong></span>}
             {(updatedFrom || updatedTo) && <span><small>Last Updated</small><strong>{updatedFrom || '…'} – {updatedTo || '…'}</strong></span>}
           </div>
-          <button type="button" className="secondary business-modify-search" onClick={() => setTab('search')}>Modify search</button>
+          <button type="button" className="secondary business-modify-search" onClick={() => setTab('search')}><Icon name="edit" />Modify search</button>
         </div>
       </div>
-      <div className="business-results-layout">
-      <section className="panel business-results-panel">
+      <div className="business-results-content-v0">
         {truncated && <div className="banner notice">Result window reached. Refine the search to narrow the list.</div>}
-        <div className="business-result-table-wrap"><table className="business-result-table"><thead><tr><th></th>{(source?.fields ?? []).slice(0, 5).map((field) => <th key={field.fieldKey}>{field.displayLabel}</th>)}<th>Documents</th><th>Last Updated</th></tr></thead><tbody>{results.map((item) => {
-          const values = new Map([...item.identifiers, ...item.metadataPreview].map((value) => [value.fieldKey, value.value]))
-          return <tr key={item.recordRef} className={selectedRecord?.recordRef === item.recordRef ? 'selected' : ''} onClick={() => openRecord(item.recordRef)}><td data-label="Select"><input type="radio" aria-label={`Select record ${item.recordRef}`} readOnly checked={selectedRecord?.recordRef === item.recordRef} /></td>{(source?.fields ?? []).slice(0,5).map((field) => <td key={field.fieldKey} data-label={field.displayLabel}>{values.get(field.fieldKey) ?? '—'}</td>)}<td data-label="Documents">{item.availableDocumentCount}</td><td data-label="Last Updated">{formatDate(item.latestSubmissionAt)}</td></tr>
-        })}</tbody></table></div>
-        {results.length === 0 && <div className="empty-state"><Icon name="search" /><strong>No matching records</strong><span>Change your criteria in the Search tab and try again.</span></div>}
-      </section>
-      <aside className="panel selected-record-panel">
-        <div className="panel-heading selected-record-heading"><div><span className="kicker">Selected record</span><h2>{primaryIdentifier?.value ?? (opening ? 'Opening…' : 'No record selected')}</h2>{selectedRecord && selectedRecord.identifiers.length > 1 && <p className="selected-record-secondary">{selectedRecord.identifiers.slice(1).map((value) => `${value.displayLabel} ${value.value}`).join(' · ')}</p>}{!selectedRecord && !opening && <p className="muted">Choose a row to review its details and available documents.</p>}</div></div>
-        {selectedRecord && <>{selectedRecordDetails.length > 0 && <div className="compact-record-grid">{selectedRecordDetails.map((value) => <div key={value.fieldKey}><span>{value.displayLabel}</span><strong>{value.value}</strong></div>)}</div>}<div className="section-heading"><h3>Documents</h3><span className="muted">{selectedRecord.documents.length} available</span></div><div className="compact-document-list">{selectedRecord.documents.map((document) => <button key={document.documentId} className={selectedDocumentId === document.documentId ? 'selected' : ''} onClick={() => setSelectedDocumentId(document.documentId)}><Icon name="document" /><span><strong>{document.originalFilename}</strong><small>Available {formatDate(document.availableAt)}</small></span></button>)}</div><button className="wide-action" disabled={!selectedDocumentId || !canView} onClick={() => openViewer()}>Open document</button></>}
-      </aside>
-    </div>
+        <div className="business-results-layout business-results-layout-v0">
+          <section className="panel business-results-panel business-results-panel-v0">
+            <div className="business-result-table-wrap"><table className="business-result-table business-result-table-v0"><thead><tr><th></th>{(source?.fields ?? []).slice(0, 5).map((field) => <th key={field.fieldKey}>{field.displayLabel}</th>)}<th>Documents</th><th>Last Updated</th></tr></thead><tbody>{results.map((item) => {
+              const values = new Map([...item.identifiers, ...item.metadataPreview].map((value) => [value.fieldKey, value.value]))
+              return <tr key={item.recordRef} className={selectedRecord?.recordRef === item.recordRef ? 'selected' : ''} onClick={() => openRecord(item.recordRef)}><td data-label="Select"><input type="radio" name="selected-record" aria-label={`Select record ${item.recordRef}`} readOnly checked={selectedRecord?.recordRef === item.recordRef} /></td>{(source?.fields ?? []).slice(0,5).map((field, index) => <td key={field.fieldKey} data-label={field.displayLabel} className={index === 0 ? 'primary-cell' : ''}>{values.get(field.fieldKey) ?? '—'}</td>)}<td data-label="Documents"><span className="document-count-pill"><Icon name="document" />{item.availableDocumentCount || 'None'}</span></td><td data-label="Last Updated">{formatDate(item.latestSubmissionAt)}</td></tr>
+            })}</tbody></table></div>
+            {results.length === 0 && <div className="empty-state"><Icon name="search" /><strong>No matching records</strong><span>Try fewer fields or a wider date range.</span><button type="button" onClick={() => setTab('search')}>Modify search</button></div>}
+          </section>
+          <aside className="panel selected-record-panel selected-record-panel-v0">
+            {!selectedRecord ? <div className="selected-record-empty-v0"><span className="selected-record-empty-icon"><Icon name="document" /></span><strong>No record selected</strong><p>Choose a row to review its details and documents here.</p></div> : <>
+              <div className="selected-record-identity-v0">
+                <span className="business-section-label">Selected record</span>
+                <small>{primaryIdentifier?.displayLabel}</small>
+                <h2>{primaryIdentifier?.value}</h2>
+                {selectedRecord.identifiers.length > 1 && <p>{selectedRecord.identifiers.slice(1).map((value) => `${value.displayLabel} ${value.value}`).join(' · ')}</p>}
+              </div>
+              {selectedRecordDetails.length > 0 && <div className="selected-record-details-v0">{selectedRecordDetails.map((value) => <div key={value.fieldKey}><span>{value.displayLabel}</span><strong>{value.value}</strong></div>)}<div><span>Last Updated</span><strong>{formatDate(selectedRecord.latestSubmissionAt)}</strong></div></div>}
+              <div className="selected-record-documents-v0">
+                <div className="selected-record-documents-heading"><strong>Documents</strong><span>{selectedRecord.documents.length} available</span></div>
+                <div className="compact-document-list compact-document-list-v0">{selectedRecord.documents.map((document) => <button key={document.documentId} className={selectedDocumentId === document.documentId ? 'selected' : ''} onClick={() => setSelectedDocumentId(document.documentId)} onDoubleClick={() => canView && openViewer(document.documentId)}><span className="document-tile-icon"><Icon name="document" /></span><span><strong>{document.originalFilename}</strong><small>{formatDate(document.availableAt)}</small></span>{selectedDocumentId === document.documentId && <span className="document-selected-check">✓</span>}</button>)}</div>
+              </div>
+              <div className="selected-record-actions-v0">
+                <button className="business-primary-action wide-action" disabled={!selectedDocumentId || !canView} onClick={() => openViewer()}>Open document <span aria-hidden="true">→</span></button>
+                <button className="business-ghost-action" onClick={() => setTab('activity')}><Icon name="operations" />Record activity</button>
+              </div>
+            </>}
+          </aside>
+        </div>
+      </div>
     </>}
 
     {tab === 'viewer' && selectedRecord && selectedDocument && <div className="viewer-tab-layout premium-viewer-tab-layout">
@@ -305,18 +362,26 @@ export default function BusinessWorkspace({ persona, capabilities, onViewerState
       />
     </div>}
 
-    {tab === 'activity' && selectedRecord && <section className="panel business-tab-panel activity-workspace activity-workspace-premium">
-      <div className="activity-hero">
-        <div><span className="kicker">Activity</span><h2>Activity history</h2><p className="muted">Who did what, and when, on documents in this record. Newest first.</p></div>
+    {tab === 'activity' && selectedRecord && <div className="activity-page-v0">
+      <div className="activity-page-heading-v0">
+        <div><h2>Activity</h2><p>Who did what, and when, on documents in this record. Newest first.</p></div>
         <button type="button" className="secondary" onClick={() => selectedDocument ? setTab('viewer') : setTab('results')}>← Back to document</button>
       </div>
-      <div className="activity-filter-surface">
-        <div className="activity-filters"><label>Date Range<select value={activityRange} onChange={(e) => setActivityRange(e.target.value)}><option value="30">Last 30 days</option><option value="90">Last 90 days</option><option value="365">Last year</option><option value="all">All time</option></select></label><label>Action Type<select value={activityAction} onChange={(e) => setActivityAction(e.target.value)}><option value="">All actions</option><option value="DOCUMENT_DOWNLOADED">Download</option><option value="DOCUMENT_PRINTED">Print</option><option value="DOCUMENT_TAG_ADDED">Tag added</option><option value="DOCUMENT_COMMENT_ADDED">Comment added</option><option value="DOCUMENT_PERMANENTLY_REDACTED">Permanent redaction</option><option value="DOCUMENT_AVAILABLE">Document available</option>{includeViews && <option value="DOCUMENT_VIEW_OPENED">Document viewed</option>}</select></label><label>Performed By<input value={activityActor} onChange={(e) => setActivityActor(e.target.value)} placeholder="All users" /></label><button className="secondary" onClick={() => loadActivity()} disabled={activityLoading}>{activityLoading ? 'Loading…' : 'Apply filters'}</button></div>
-        <label className="activity-view-toggle activity-view-toggle-inline"><input type="checkbox" checked={includeViews} onChange={(e) => setIncludeViews(e.target.checked)} /><span>Include document view events</span><small>Hidden by default</small></label>
-      </div>
-      <div className="activity-table-meta"><strong>{activityRows.length} {activityRows.length === 1 ? 'event' : 'events'}</strong></div>
-      <div className="business-result-table-wrap"><table className="business-result-table activity-table"><thead><tr><th>Date & Time</th><th>Action Type</th><th>Details</th><th>Performed By</th><th>Document</th><th>Source</th></tr></thead><tbody>{activityRows.map((row) => <tr key={row.auditEventId}><td data-label="Date & Time">{formatDate(row.occurredAt)}</td><td data-label="Action Type"><span className="activity-action"><Icon name={iconForAction(row.action)} />{actionLabel(row.action)}</span></td><td data-label="Details">{row.outcome === 'SUCCESS' ? actionLabel(row.action) : `${actionLabel(row.action)} · ${row.outcome}`}</td><td data-label="Performed By">{row.actorId}</td><td data-label="Document"><button className="link-button" onClick={() => openViewer(row.documentId)}>{row.documentName}</button></td><td data-label="Source">{selectedRecord.sourceDisplayName}</td></tr>)}</tbody></table></div>
-      {!activityLoading && activityRows.length === 0 && <p className="muted activity-empty">No activity matches the current filters.</p>}
-    </section>}
+      <section className="activity-card-v0">
+        <div className="activity-filters-v0">
+          <label><span>Document</span><select value={activityDocumentId} onChange={(e) => setActivityDocumentId(e.target.value)}><option value="">All documents in record ({selectedRecord.documents.length})</option>{selectedRecord.documents.map((document) => <option key={document.documentId} value={document.documentId}>{document.originalFilename}</option>)}</select></label>
+          <label><span>Action Type</span><select value={activityAction} onChange={(e) => setActivityAction(e.target.value)}><option value="">All actions</option><option value="DOCUMENT_DOWNLOADED">Download</option><option value="DOCUMENT_PRINTED">Print</option><option value="DOCUMENT_TAG_ADDED">Tag added</option><option value="DOCUMENT_COMMENT_ADDED">Comment added</option><option value="DOCUMENT_PERMANENTLY_REDACTED">Permanent redaction</option><option value="DOCUMENT_AVAILABLE">Document available</option>{includeViews && <option value="DOCUMENT_VIEW_OPENED">Document viewed</option>}</select></label>
+          <label><span>Performed By</span><input value={activityActor} onChange={(e) => setActivityActor(e.target.value)} placeholder="All users" /></label>
+          <label><span>Date Range</span><select value={activityRange} onChange={(e) => setActivityRange(e.target.value)}><option value="30">Last 30 days</option><option value="90">Last 90 days</option><option value="365">Last year</option><option value="all">All time</option></select></label>
+        </div>
+        <div className="activity-meta-v0">
+          <span>{filteredActivityRows.length} {filteredActivityRows.length === 1 ? 'event' : 'events'}</span>
+          <label><input type="checkbox" checked={includeViews} onChange={(e) => setIncludeViews(e.target.checked)} />Include document view events <small>· hidden by default</small></label>
+          <button type="button" className="business-ghost-action activity-apply-v0" onClick={() => loadActivity()} disabled={activityLoading}>{activityLoading ? 'Loading…' : 'Refresh'}</button>
+        </div>
+        <div className="business-result-table-wrap"><table className="business-result-table activity-table activity-table-v0"><thead><tr><th>Date & Time</th><th>Event</th><th>Document</th><th>User</th><th>Outcome</th></tr></thead><tbody>{filteredActivityRows.map((row) => <tr key={row.auditEventId}><td data-label="Date & Time">{formatDate(row.occurredAt)}</td><td data-label="Event"><span className="activity-event-pill">{actionLabel(row.action)}</span></td><td data-label="Document"><button className="activity-document-link" onClick={() => openViewer(row.documentId)}><Icon name="document" />{row.documentName}</button></td><td data-label="User">{row.actorId}</td><td data-label="Outcome"><span className={row.outcome === 'SUCCESS' ? 'activity-outcome-success' : 'activity-outcome-failed'}><i />{row.outcome === 'SUCCESS' ? 'Success' : 'Failed'}</span></td></tr>)}</tbody></table></div>
+        {!activityLoading && filteredActivityRows.length === 0 && <p className="activity-empty-v0">No activity matches these filters.</p>}
+      </section>
+    </div>}
   </div>
 }
