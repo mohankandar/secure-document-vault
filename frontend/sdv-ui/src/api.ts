@@ -175,6 +175,9 @@ export type RecordSummary = {
 export type SearchResponse = {
   sourceId: string
   records: RecordSummary[]
+  page: number
+  pageSize: number
+  hasMore: boolean
   truncated: boolean
 }
 
