@@ -4667,3 +4667,62 @@ textarea:disabled {
     flex: 1 1 0;
   }
 }
+
+
+/* Viewer reading-layout correction: keep document selector compact and fit PDF to workspace width. */
+.viewer-toolbar-premium .viewer-document-picker > .sr-only {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0 0 0 0) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+}
+
+.viewer-toolbar-premium .viewer-document-picker {
+  display: block;
+  min-width: 0;
+  height: 34px;
+  margin: 0;
+}
+
+.viewer-toolbar-premium .viewer-document-picker select {
+  display: block;
+  width: 100%;
+  height: 34px !important;
+  min-height: 34px !important;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0 34px 0 11px;
+  line-height: 32px;
+  font-size: var(--type-body-sm);
+  font-weight: var(--weight-semibold);
+  vertical-align: middle;
+}
+
+.viewer-canvas.fit-page {
+  align-content: start !important;
+  justify-content: center;
+}
+
+.viewer-shell.embedded .viewer-canvas-column > .viewer-canvas.fit-page {
+  padding: 16px 24px 24px;
+}
+
+.viewer-canvas.fit-page .viewer-page-stage {
+  margin: 0 auto 32px !important;
+}
+
+.viewer-canvas.fit-page .viewer-page-stage,
+.viewer-canvas.fit-page .viewer-page-stage img {
+  max-width: none;
+}
+
+@media (max-width: 1024px) {
+  .viewer-shell.embedded .viewer-canvas-column > .viewer-canvas.fit-page {
+    padding-inline: 14px;
+  }
+}
