@@ -4582,3 +4582,31 @@ textarea:disabled {
     flex-wrap: wrap;
   }
 }
+
+
+/* Final toolbar/source simplification. */
+.business-source-context-v0 {
+  padding-right: 12px;
+}
+
+.viewer-document-single {
+  display: flex;
+  min-width: 0;
+  height: 34px;
+  align-items: center;
+  padding: 0 10px;
+  border: 1px solid var(--ui-border-strong);
+  border-radius: var(--radius-control);
+  background: var(--ui-surface);
+  color: var(--ui-text-strong);
+  font-size: var(--type-body-sm);
+  font-weight: var(--weight-semibold);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.viewer-toolbar-leading .viewer-document-single,
+.viewer-toolbar-leading .viewer-document-picker {
+  min-width: 0;
+}
