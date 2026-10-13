@@ -248,7 +248,6 @@ export default function BusinessWorkspace({ persona, capabilities, onViewerState
               <small>Searching in</small>
               <select value={sourceId} onChange={(event) => setSourceId(event.target.value)} aria-label="Search source">{schema.sources.map((item) => <option key={item.sourceId} value={item.sourceId}>{item.displayName}</option>)}</select>
             </span>
-            <strong>{source?.fields.length ?? 0} fields</strong>
           </label>
         </div>
       </section>
