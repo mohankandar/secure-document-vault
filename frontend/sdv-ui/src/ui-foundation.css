@@ -1940,3 +1940,484 @@ textarea:disabled {
     flex: 1;
   }
 }
+
+
+/* =============================================================
+   SDV Premium Viewer — document-first hero treatment
+   Visual-only. Secure viewer APIs and permission semantics are unchanged.
+   ============================================================= */
+
+.viewer-tab-layout {
+  min-width: 0;
+}
+
+.viewer-record-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 0;
+  margin-bottom: 10px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-surface);
+  background: var(--ui-surface);
+  overflow: hidden;
+  box-shadow: var(--shadow-surface);
+}
+
+.viewer-record-strip > div {
+  min-width: 0;
+  padding: 10px 12px;
+  border-right: 1px solid var(--ui-border-soft);
+}
+
+.viewer-record-strip > div:last-child {
+  border-right: 0;
+}
+
+.viewer-record-strip span {
+  display: block;
+  margin-bottom: 2px;
+  color: var(--ui-text-muted);
+  font-size: var(--type-xs);
+}
+
+.viewer-record-strip strong {
+  display: block;
+  overflow: hidden;
+  color: var(--ui-text-strong);
+  font-size: var(--type-body-sm);
+  font-weight: var(--weight-semibold);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.viewer-document-switch {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+  min-width: 0;
+}
+
+.viewer-document-switch > span {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ui-text-secondary);
+  font-size: var(--type-body-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.viewer-shell.embedded {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-surface-lg);
+  background: var(--ui-surface);
+  box-shadow: 0 8px 28px rgba(16, 24, 40, .08);
+}
+
+.viewer-shell.embedded .viewer-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--ui-border-soft);
+  background: var(--ui-surface);
+}
+
+.viewer-shell.embedded .viewer-header > div:first-child {
+  min-width: 0;
+}
+
+.viewer-shell.embedded .viewer-header h2 {
+  margin: 2px 0 3px;
+  overflow: hidden;
+  color: var(--ui-text-strong);
+  font-size: 1rem;
+  font-weight: var(--weight-semibold);
+  letter-spacing: -.01em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.viewer-shell.embedded .viewer-header p {
+  max-width: 760px;
+  margin: 0;
+  color: var(--ui-text-muted);
+  font-size: var(--type-sm);
+  line-height: 1.4;
+}
+
+.viewer-shell.embedded .viewer-header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  flex: 0 0 auto;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.viewer-shell.embedded .viewer-header-actions .secondary {
+  min-height: 36px;
+  padding-inline: 10px;
+}
+
+.viewer-shell.embedded .viewer-navigation-action {
+  order: -1;
+  color: var(--ui-text-secondary);
+  background: transparent;
+  border-color: transparent;
+}
+
+.viewer-shell.embedded .viewer-navigation-action:hover:not(:disabled) {
+  border-color: var(--ui-border);
+  background: var(--ui-hover);
+}
+
+.viewer-shell.embedded .viewer-toolbar {
+  display: flex;
+  align-items: end;
+  gap: 8px 10px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--ui-border);
+  background: var(--ui-surface-subtle);
+}
+
+.viewer-shell.embedded .viewer-group,
+.viewer-shell.embedded .viewer-jump {
+  display: flex;
+  align-items: end;
+  gap: 5px;
+  min-height: 40px;
+  padding: 4px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-control);
+  background: var(--ui-surface);
+}
+
+.viewer-shell.embedded .viewer-group .secondary,
+.viewer-shell.embedded .viewer-jump .secondary {
+  min-height: 32px;
+}
+
+.viewer-shell.embedded .viewer-group strong {
+  min-width: 54px;
+  text-align: center;
+  color: var(--ui-text-strong);
+  font-size: var(--type-body-sm);
+}
+
+.viewer-shell.embedded .viewer-jump label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--ui-text-muted);
+  font-size: var(--type-xs);
+}
+
+.viewer-shell.embedded .viewer-jump input {
+  width: 56px;
+  min-height: 32px;
+}
+
+.viewer-shell.embedded .viewer-jump > span {
+  color: var(--ui-text-muted);
+  font-size: var(--type-xs);
+  white-space: nowrap;
+}
+
+.viewer-shell.embedded .viewer-search {
+  display: flex;
+  min-width: 240px;
+  flex: 1 1 320px;
+  align-items: end;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.viewer-shell.embedded .viewer-search label {
+  min-width: 0;
+  flex: 1;
+  color: var(--ui-text-muted);
+  font-size: var(--type-xs);
+}
+
+.viewer-shell.embedded .viewer-search input {
+  width: 100%;
+}
+
+.viewer-context-bar {
+  display: flex;
+  align-items: center;
+  min-height: 42px;
+  gap: 2px;
+  padding: 0 10px;
+  border-bottom: 1px solid var(--ui-border);
+  background: var(--ui-surface);
+}
+
+.viewer-context-caption {
+  margin-right: 6px;
+  color: var(--ui-text-muted);
+  font-size: var(--type-xs);
+  font-weight: var(--weight-bold);
+  letter-spacing: .08em;
+}
+
+.viewer-context-bar button {
+  min-height: 34px;
+  padding: 0 10px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--ui-text-secondary);
+  font-size: var(--type-body-sm);
+  font-weight: var(--weight-semibold);
+}
+
+.viewer-context-bar button:hover:not(:disabled) {
+  color: var(--ui-text-strong);
+  background: var(--ui-hover);
+}
+
+.viewer-context-bar button.active {
+  color: var(--brand-accent);
+  border-bottom-color: var(--brand-accent);
+  background: transparent;
+}
+
+.viewer-workspace-body {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  min-height: 560px;
+  height: min(70vh, 760px);
+  background: var(--ui-canvas, #d7dfe6);
+}
+
+.viewer-workspace-body.context-open {
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 340px);
+}
+
+.viewer-canvas {
+  min-width: 0;
+  overflow: auto;
+  background:
+    radial-gradient(circle at 50% 0, rgba(255,255,255,.35), transparent 45%),
+    #d7dfe6;
+}
+
+.viewer-page-stage {
+  margin: 28px auto 40px;
+}
+
+.viewer-page-stage img {
+  box-shadow: 0 12px 30px rgba(16, 24, 40, .16);
+}
+
+.viewer-context-panel {
+  min-width: 0;
+  overflow: auto;
+  border-left: 1px solid var(--ui-border);
+  background: var(--ui-surface);
+}
+
+.viewer-context-heading {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--ui-border-soft);
+  background: rgba(255,255,255,.98);
+}
+
+.viewer-context-heading strong {
+  color: var(--ui-text-strong);
+  font-size: var(--type-body);
+}
+
+.viewer-context-heading .secondary {
+  min-height: 32px;
+  padding-inline: 8px;
+}
+
+.viewer-details-list,
+.tag-panel,
+.comment-panel {
+  margin: 0;
+  padding: 14px;
+  border: 0;
+  background: var(--ui-surface);
+}
+
+.viewer-details-list > div {
+  display: grid;
+  grid-template-columns: 96px minmax(0,1fr);
+  gap: 10px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--ui-border-soft);
+}
+
+.viewer-details-list > div:last-child {
+  border-bottom: 0;
+}
+
+.viewer-details-list dt {
+  color: var(--ui-text-muted);
+  font-size: var(--type-xs);
+}
+
+.viewer-details-list dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--ui-text-strong);
+  font-size: var(--type-body-sm);
+}
+
+.viewer-footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--ui-border);
+  background: var(--ui-surface-subtle);
+  color: var(--ui-text-muted);
+  font-size: var(--type-xs);
+}
+
+/* Laptop and tablet: keep the PDF full width and overlay contextual tools. */
+@media (max-width: 1280px) {
+  .viewer-workspace-body.context-open {
+    display: block;
+  }
+
+  .viewer-context-panel {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: min(360px, 44%);
+    z-index: 8;
+    border-left: 1px solid var(--ui-border);
+    box-shadow: var(--shadow-overlay);
+  }
+
+  .viewer-shell.embedded .viewer-toolbar {
+    display: grid;
+    grid-template-columns: auto auto minmax(230px, 1fr);
+  }
+
+  .viewer-shell.embedded .viewer-search {
+    margin-left: 0;
+  }
+}
+
+@media (max-width: 1024px) {
+  .viewer-record-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .viewer-shell.embedded .viewer-header {
+    padding: 12px;
+  }
+
+  .viewer-shell.embedded .viewer-header p {
+    display: none;
+  }
+
+  .viewer-shell.embedded .viewer-header-actions {
+    max-width: 52%;
+  }
+
+  .viewer-shell.embedded .viewer-toolbar {
+    grid-template-columns: auto auto minmax(200px, 1fr);
+    padding: 8px 10px;
+  }
+
+  .viewer-workspace-body {
+    min-height: 520px;
+    height: 68vh;
+  }
+}
+
+@media (max-width: 900px) {
+  .viewer-record-strip {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .viewer-record-strip > div {
+    border-bottom: 1px solid var(--ui-border-soft);
+  }
+
+  .viewer-shell.embedded {
+    border-radius: var(--radius-surface);
+  }
+
+  .viewer-shell.embedded .viewer-header {
+    display: block;
+  }
+
+  .viewer-shell.embedded .viewer-header-actions {
+    max-width: none;
+    justify-content: flex-start;
+    margin-top: 8px;
+  }
+
+  .viewer-shell.embedded .viewer-toolbar {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .viewer-shell.embedded .viewer-search {
+    grid-column: 1 / -1;
+  }
+
+  .viewer-context-panel {
+    width: min(390px, 88%);
+  }
+
+  .viewer-context-caption {
+    display: none;
+  }
+
+  .viewer-workspace-body {
+    min-height: 500px;
+    height: 70dvh;
+  }
+
+  .viewer-footer span:last-child {
+    display: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .viewer-record-strip {
+    grid-template-columns: 1fr;
+  }
+
+  .viewer-document-switch {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .viewer-shell.embedded .viewer-header-actions .secondary {
+    flex: 1 1 auto;
+  }
+
+  .viewer-shell.embedded .viewer-toolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .viewer-shell.embedded .viewer-group,
+  .viewer-shell.embedded .viewer-jump,
+  .viewer-shell.embedded .viewer-search {
+    width: 100%;
+  }
+
+  .viewer-context-panel {
+    width: 94%;
+  }
+}
