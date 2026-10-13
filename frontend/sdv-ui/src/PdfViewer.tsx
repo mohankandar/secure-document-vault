@@ -105,10 +105,10 @@ export function PdfViewer({ documentId, filename, documents = [], selectedDocume
 
   const pageCount = metadata?.pageCount ?? 0
   const fitScale = useMemo(() => {
-    if (!pageSize || !canvasSize.width || !canvasSize.height) return null
-    const gutter = 40
-    return clamp(Math.min((canvasSize.width - gutter) / pageSize.width, (canvasSize.height - gutter) / pageSize.height), 0.25, 2.5)
-  }, [pageSize, canvasSize])
+    if (!pageSize || !canvasSize.width) return null
+    const horizontalGutter = 48
+    return clamp((canvasSize.width - horizontalGutter) / pageSize.width, 0.5, 2.5)
+  }, [pageSize, canvasSize.width])
   const displayScale = fitToPage && fitScale ? fitScale : zoom
   const renderScale = useMemo(() => {
     if (!fitToPage || !fitScale) return zoom
@@ -487,7 +487,7 @@ export function PdfViewer({ documentId, filename, documents = [], selectedDocume
             <button className="viewer-icon-button" aria-label="Zoom out" disabled={displayScale <= 0.5 || redactionMode} onClick={() => stepZoom(-0.25)}>−</button>
             <strong aria-live="polite">{zoomPercent}%</strong>
             <button className="viewer-icon-button" aria-label="Zoom in" disabled={displayScale >= 2.5 || redactionMode} onClick={() => stepZoom(0.25)}>+</button>
-            <button type="button" className={`viewer-fit-action ${fitToPage ? 'active' : ''}`} aria-pressed={fitToPage} disabled={redactionMode} onClick={() => setFitToPage(true)}>Fit</button>
+            <button type="button" className={`viewer-fit-action ${fitToPage ? 'active' : ''}`} aria-label="Fit document to viewer width" title="Fit to width" aria-pressed={fitToPage} disabled={redactionMode} onClick={() => setFitToPage(true)}>Fit</button>
           </div>
 
           <form className="viewer-search" onSubmit={search}>
