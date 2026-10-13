@@ -16,6 +16,7 @@ public interface BusinessRecordRepository {
             Instant createdTo,
             Instant updatedFrom,
             Instant updatedTo,
+            int offset,
             int limit);
 
     List<Submission> findSubmissionsByIds(
