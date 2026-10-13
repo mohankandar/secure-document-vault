@@ -67,7 +67,6 @@ export default function BusinessWorkspace({ persona, capabilities, onViewerState
   const [results, setResults] = useState<RecordSummary[]>([])
   const [selectedRecord, setSelectedRecord] = useState<BusinessRecord | null>(null)
   const [selectedDocumentId, setSelectedDocumentId] = useState('')
-  const [documentListExpanded, setDocumentListExpanded] = useState<boolean | null>(null)
   const [searching, setSearching] = useState(false)
   const [opening, setOpening] = useState(false)
   const [truncated, setTruncated] = useState(false)
@@ -206,14 +205,24 @@ export default function BusinessWorkspace({ persona, capabilities, onViewerState
   }, [tab, selectedRecord?.recordRef, includeViews])
 
   const primaryIdentifier = selectedRecord?.identifiers[0]
+  const selectedIdentifierKeys = new Set(selectedRecord?.identifiers.map((value) => value.fieldKey) ?? [])
+  const selectedRecordDetails = selectedRecord?.metadata.filter((value) => !selectedIdentifierKeys.has(value.fieldKey)) ?? []
 
   return <div className="business-workspace">
-    <nav className="business-tabs" aria-label="Business document workflow">
-      <button className={tab === 'search' ? 'active' : ''} onClick={() => setTab('search')}><Icon name="search" />Search</button>
-      <button className={tab === 'results' ? 'active' : ''} disabled={results.length === 0} onClick={() => setTab('results')}><Icon name="list" />Results</button>
-      <button className={tab === 'viewer' ? 'active' : ''} disabled={!selectedDocument || !canView} onClick={() => setTab('viewer')}><Icon name="document" />Document Viewer</button>
-      <button className={tab === 'activity' ? 'active' : ''} disabled={!selectedRecord} onClick={() => setTab('activity')}><Icon name="operations" />Activity</button>
-    </nav>
+    <div className="business-workflow-bar">
+      <nav className="business-tabs" aria-label="Business document workflow">
+        <button className={tab === 'search' ? 'active' : ''} onClick={() => setTab('search')}><Icon name="search" />Search</button>
+        <button className={tab === 'results' ? 'active' : ''} disabled={results.length === 0} onClick={() => setTab('results')}><Icon name="list" />Results</button>
+        <button className={tab === 'viewer' ? 'active' : ''} disabled={!selectedDocument || !canView} onClick={() => setTab('viewer')}><Icon name="document" />Document Viewer</button>
+        <button className={tab === 'activity' ? 'active' : ''} disabled={!selectedRecord} onClick={() => setTab('activity')}><Icon name="operations" />Activity</button>
+      </nav>
+      {(tab === 'viewer' || tab === 'activity') && selectedRecord && (
+        <div className="business-workflow-record-context" aria-label="Selected record context">
+          {selectedRecord.identifiers.slice(0, 3).map((value) => <span key={value.fieldKey}><small>{value.displayLabel}</small><strong>{value.value}</strong></span>)}
+          <span><small>Source</small><strong>{selectedRecord.sourceDisplayName}</strong></span>
+        </div>
+      )}
+    </div>
 
     {error && <div className="banner error top-gap">{error}</div>}
 
@@ -232,7 +241,7 @@ export default function BusinessWorkspace({ persona, capabilities, onViewerState
       </div>
       <form className="panel business-search-form business-search-form-premium" onSubmit={runSearch}>
         <div className="business-search-grid">
-          {source?.fields.map((field) => <label key={field.fieldKey}><span>{field.displayLabel}{field.businessIdentifier && <em>Identifier</em>}</span><input value={criteria[field.fieldKey] ?? ''} onChange={(event) => setCriteria((current) => ({ ...current, [field.fieldKey]: event.target.value }))} placeholder={`${searchHint(field)} · ${field.fieldType.toLowerCase()}`} /></label>)}
+          {source?.fields.map((field) => <label key={field.fieldKey}><span>{field.displayLabel}{field.businessIdentifier && <em>ID</em>}</span><input value={criteria[field.fieldKey] ?? ''} onChange={(event) => setCriteria((current) => ({ ...current, [field.fieldKey]: event.target.value }))} placeholder={`${searchHint(field)} · ${field.fieldType.toLowerCase()}`} /></label>)}
         </div>
         <div className="common-filter-grid">
           <fieldset><legend>Date Range</legend><label>From<input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} /></label><label>To<input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} /></label></fieldset>
@@ -271,22 +280,29 @@ export default function BusinessWorkspace({ persona, capabilities, onViewerState
         {results.length === 0 && <div className="empty-state"><Icon name="search" /><strong>No matching records</strong><span>Change your criteria in the Search tab and try again.</span></div>}
       </section>
       <aside className="panel selected-record-panel">
-        <div className="panel-heading selected-record-heading"><div><span className="kicker">Selected record</span><h2>{primaryIdentifier?.value ?? (opening ? 'Opening…' : 'No record selected')}</h2>{!selectedRecord && !opening && <p className="muted">Choose a row to review its details and available documents.</p>}</div></div>
-        {selectedRecord && <><div className="compact-record-grid">{selectedRecord.metadata.map((value) => <div key={value.fieldKey}><span>{value.displayLabel}</span><strong>{value.value}</strong></div>)}</div><div className="section-heading"><h3>Available documents ({selectedRecord.documents.length})</h3></div><div className="compact-document-list">{selectedRecord.documents.map((document) => <button key={document.documentId} className={selectedDocumentId === document.documentId ? 'selected' : ''} onClick={() => setSelectedDocumentId(document.documentId)}><Icon name="document" /><span><strong>{document.originalFilename}</strong><small>Available {formatDate(document.availableAt)}</small></span></button>)}</div><button className="wide-action" disabled={!selectedDocumentId || !canView} onClick={() => openViewer()}>Open selected document</button></>}
+        <div className="panel-heading selected-record-heading"><div><span className="kicker">Selected record</span><h2>{primaryIdentifier?.value ?? (opening ? 'Opening…' : 'No record selected')}</h2>{selectedRecord && selectedRecord.identifiers.length > 1 && <p className="selected-record-secondary">{selectedRecord.identifiers.slice(1).map((value) => `${value.displayLabel} ${value.value}`).join(' · ')}</p>}{!selectedRecord && !opening && <p className="muted">Choose a row to review its details and available documents.</p>}</div></div>
+        {selectedRecord && <>{selectedRecordDetails.length > 0 && <div className="compact-record-grid">{selectedRecordDetails.map((value) => <div key={value.fieldKey}><span>{value.displayLabel}</span><strong>{value.value}</strong></div>)}</div>}<div className="section-heading"><h3>Documents</h3><span className="muted">{selectedRecord.documents.length} available</span></div><div className="compact-document-list">{selectedRecord.documents.map((document) => <button key={document.documentId} className={selectedDocumentId === document.documentId ? 'selected' : ''} onClick={() => setSelectedDocumentId(document.documentId)}><Icon name="document" /><span><strong>{document.originalFilename}</strong><small>Available {formatDate(document.availableAt)}</small></span></button>)}</div><button className="wide-action" disabled={!selectedDocumentId || !canView} onClick={() => openViewer()}>Open document</button></>}
       </aside>
     </div>
     </>}
 
-    {tab === 'viewer' && selectedRecord && selectedDocument && <div className="viewer-tab-layout">
-      <div className="viewer-record-strip">{selectedRecord.identifiers.map((value) => <div key={value.fieldKey}><span>{value.displayLabel}</span><strong>{value.value}</strong></div>)}<div><span>Source</span><strong>{selectedRecord.sourceDisplayName}</strong></div></div>
-      <div className={`viewer-tab-body ${(documentListExpanded ?? (selectedRecord.documents.length > 1)) ? 'documents-open' : 'documents-collapsed'}`}>
-        <div className="viewer-document-switch">
-          <button type="button" className="secondary viewer-document-toggle" aria-expanded={documentListExpanded ?? (selectedRecord.documents.length > 1)} onClick={() => setDocumentListExpanded((value) => !(value ?? (selectedRecord.documents.length > 1)))}><span>Documents ({selectedRecord.documents.length})</span><span className="viewer-document-toggle-chevron" aria-hidden="true">{documentListExpanded ?? (selectedRecord.documents.length > 1) ? '▴' : '▾'}</span></button>
-          <span title={selectedDocument.originalFilename}>{selectedDocument.originalFilename}</span>
-        </div>
-        {(documentListExpanded ?? (selectedRecord.documents.length > 1)) && <aside className="panel viewer-document-rail" aria-label="Documents for selected record"><h3>Available documents ({selectedRecord.documents.length})</h3>{selectedRecord.documents.map((document) => <button key={document.documentId} type="button" aria-current={selectedDocumentId === document.documentId ? 'true' : undefined} className={selectedDocumentId === document.documentId ? 'selected' : ''} onClick={() => setSelectedDocumentId(document.documentId)}><Icon name="document" /><span><strong>{document.originalFilename}</strong><small>{formatDate(document.availableAt)}</small></span></button>)}</aside>}
-        <PdfViewer key={selectedDocument.documentId} documentId={selectedDocument.documentId} filename={selectedDocument.originalFilename} persona={contentPersona} canRedact={canRedact} canDownload={canDownload} canPrint={canPrint} canTag={canTag} canComment={canComment} embedded onClose={() => setTab('results')} />
-      </div>
+    {tab === 'viewer' && selectedRecord && selectedDocument && <div className="viewer-tab-layout premium-viewer-tab-layout">
+      <PdfViewer
+        key={selectedDocument.documentId}
+        documentId={selectedDocument.documentId}
+        filename={selectedDocument.originalFilename}
+        documents={selectedRecord.documents}
+        selectedDocumentId={selectedDocumentId}
+        onSelectDocument={setSelectedDocumentId}
+        persona={contentPersona}
+        canRedact={canRedact}
+        canDownload={canDownload}
+        canPrint={canPrint}
+        canTag={canTag}
+        canComment={canComment}
+        embedded
+        onClose={() => setTab('results')}
+      />
     </div>}
 
     {tab === 'activity' && selectedRecord && <section className="panel business-tab-panel activity-workspace">
