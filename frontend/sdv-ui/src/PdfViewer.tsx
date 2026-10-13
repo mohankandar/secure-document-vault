@@ -106,8 +106,12 @@ export function PdfViewer({ documentId, filename, documents = [], selectedDocume
   const pageCount = metadata?.pageCount ?? 0
   const fitScale = useMemo(() => {
     if (!pageSize || !canvasSize.width) return null
-    const horizontalGutter = 48
-    return clamp((canvasSize.width - horizontalGutter) / pageSize.width, 0.5, 2.5)
+    const wideWorkspace = canvasSize.width >= 1360
+    const horizontalGutter = wideWorkspace ? 64 : 48
+    const targetWidth = wideWorkspace
+      ? Math.min(canvasSize.width - horizontalGutter, 1280)
+      : canvasSize.width - horizontalGutter
+    return clamp(targetWidth / pageSize.width, 0.5, 2.5)
   }, [pageSize, canvasSize.width])
   const displayScale = fitToPage && fitScale ? fitScale : zoom
   const renderScale = useMemo(() => {
