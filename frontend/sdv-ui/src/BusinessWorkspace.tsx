@@ -211,12 +211,20 @@ export default function BusinessWorkspace({ persona, capabilities }: Props) {
 
     {error && <div className="banner error top-gap">{error}</div>}
 
-    {tab === 'search' && <section className="panel business-tab-panel">
-      <div className="panel-heading business-search-heading">
-        <div><span className="kicker">Search</span><h2>Search criteria</h2><p className="muted">Source-specific metadata changes automatically when the source changes.</p></div>
-        <label className="business-source-picker"><span>Source</span><select value={sourceId} onChange={(event) => setSourceId(event.target.value)}>{schema.sources.map((item) => <option key={item.sourceId} value={item.sourceId}>{item.displayName}</option>)}</select></label>
+    {tab === 'search' && <section className="business-search-screen">
+      <div className="business-search-hero">
+        <div className="business-search-title">
+          <span className="kicker">Business Search</span>
+          <h2>Find a business record</h2>
+          <p className="muted">Search by any identifier or detail below, then securely open the documents associated with the record.</p>
+        </div>
+        <label className="business-source-context">
+          <span>Searching in</span>
+          <select value={sourceId} onChange={(event) => setSourceId(event.target.value)} aria-label="Search source">{schema.sources.map((item) => <option key={item.sourceId} value={item.sourceId}>{item.displayName}</option>)}</select>
+          <small>{source?.fields.length ?? 0} configured search fields</small>
+        </label>
       </div>
-      <form className="business-search-form" onSubmit={runSearch}>
+      <form className="panel business-search-form business-search-form-premium" onSubmit={runSearch}>
         <div className="business-search-grid">
           {source?.fields.map((field) => <label key={field.fieldKey}><span>{field.displayLabel}{field.businessIdentifier && <em>Identifier</em>}</span><input value={criteria[field.fieldKey] ?? ''} onChange={(event) => setCriteria((current) => ({ ...current, [field.fieldKey]: event.target.value }))} placeholder={`${searchHint(field)} · ${field.fieldType.toLowerCase()}`} /></label>)}
         </div>
@@ -224,13 +232,31 @@ export default function BusinessWorkspace({ persona, capabilities }: Props) {
           <fieldset><legend>Date Range</legend><label>From<input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} /></label><label>To<input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} /></label></fieldset>
           <fieldset><legend>Last Updated</legend><label>From<input type="date" value={updatedFrom} onChange={(e) => setUpdatedFrom(e.target.value)} /></label><label>To<input type="date" value={updatedTo} onChange={(e) => setUpdatedTo(e.target.value)} /></label></fieldset>
         </div>
-        <div className="form-actions"><button type="button" className="secondary" onClick={() => { setCriteria({}); setDateFrom(''); setDateTo(''); setUpdatedFrom(''); setUpdatedTo('') }}>Clear</button><button type="submit" disabled={searching || !sourceId}>{searching ? 'Searching…' : 'Search'}</button></div>
+        <div className="business-search-footer">
+          <span className="business-search-guidance">Any one field or date filter is enough to search.</span>
+          <div className="form-actions"><button type="button" className="secondary" onClick={() => { setCriteria({}); setDateFrom(''); setDateTo(''); setUpdatedFrom(''); setUpdatedTo('') }}>Clear</button><button type="submit" disabled={searching || !sourceId}>{searching ? 'Searching…' : 'Search records'}</button></div>
+        </div>
       </form>
     </section>}
 
-    {tab === 'results' && <div className="business-results-layout">
+    {tab === 'results' && <>
+      <div className="business-results-hero">
+        <div>
+          <span className="kicker">Results</span>
+          <h2><strong>{results.length}</strong> matching {results.length === 1 ? 'record' : 'records'}</h2>
+          <p className="muted">in {source?.displayName ?? 'selected source'}</p>
+        </div>
+        <div className="business-results-summary">
+          <div className="business-search-chips" aria-label="Applied search criteria">
+            {(source?.fields ?? []).filter((field) => criteria[field.fieldKey]?.trim()).map((field) => <span key={field.fieldKey}><small>{field.displayLabel}</small><strong>{criteria[field.fieldKey].trim()}</strong></span>)}
+            {(dateFrom || dateTo) && <span><small>Date Range</small><strong>{dateFrom || '…'} – {dateTo || '…'}</strong></span>}
+            {(updatedFrom || updatedTo) && <span><small>Last Updated</small><strong>{updatedFrom || '…'} – {updatedTo || '…'}</strong></span>}
+          </div>
+          <button type="button" className="secondary business-modify-search" onClick={() => setTab('search')}>Modify search</button>
+        </div>
+      </div>
+      <div className="business-results-layout">
       <section className="panel business-results-panel">
-        <div className="panel-heading"><div><span className="kicker">Results</span><h2>Matching records</h2></div><span className="count">{results.length}</span></div>
         {truncated && <div className="banner notice">Result window reached. Refine the search to narrow the list.</div>}
         <div className="business-result-table-wrap"><table className="business-result-table"><thead><tr><th></th>{(source?.fields ?? []).slice(0, 5).map((field) => <th key={field.fieldKey}>{field.displayLabel}</th>)}<th>Documents</th><th>Last Updated</th></tr></thead><tbody>{results.map((item) => {
           const values = new Map([...item.identifiers, ...item.metadataPreview].map((value) => [value.fieldKey, value.value]))
@@ -239,10 +265,11 @@ export default function BusinessWorkspace({ persona, capabilities }: Props) {
         {results.length === 0 && <div className="empty-state"><Icon name="search" /><strong>No matching records</strong><span>Change your criteria in the Search tab and try again.</span></div>}
       </section>
       <aside className="panel selected-record-panel">
-        <div className="panel-heading"><div><span className="kicker">Selected record</span><h2>{primaryIdentifier?.value ?? (opening ? 'Opening…' : 'Select a record')}</h2></div></div>
+        <div className="panel-heading selected-record-heading"><div><span className="kicker">Selected record</span><h2>{primaryIdentifier?.value ?? (opening ? 'Opening…' : 'No record selected')}</h2>{!selectedRecord && !opening && <p className="muted">Choose a row to review its details and available documents.</p>}</div></div>
         {selectedRecord && <><div className="compact-record-grid">{selectedRecord.metadata.map((value) => <div key={value.fieldKey}><span>{value.displayLabel}</span><strong>{value.value}</strong></div>)}</div><div className="section-heading"><h3>Available documents ({selectedRecord.documents.length})</h3></div><div className="compact-document-list">{selectedRecord.documents.map((document) => <button key={document.documentId} className={selectedDocumentId === document.documentId ? 'selected' : ''} onClick={() => setSelectedDocumentId(document.documentId)}><Icon name="document" /><span><strong>{document.originalFilename}</strong><small>Available {formatDate(document.availableAt)}</small></span></button>)}</div><button className="wide-action" disabled={!selectedDocumentId || !canView} onClick={() => openViewer()}>Open selected document</button></>}
       </aside>
-    </div>}
+    </div>
+    </>}
 
     {tab === 'viewer' && selectedRecord && selectedDocument && <div className="viewer-tab-layout">
       <div className="viewer-record-strip">{selectedRecord.identifiers.map((value) => <div key={value.fieldKey}><span>{value.displayLabel}</span><strong>{value.value}</strong></div>)}<div><span>Source</span><strong>{selectedRecord.sourceDisplayName}</strong></div></div>
