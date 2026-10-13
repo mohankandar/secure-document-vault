@@ -2421,3 +2421,395 @@ textarea:disabled {
     width: 94%;
   }
 }
+
+
+/* =============================================================
+   SDV Premium Business Workspace — final hero-screen consolidation
+   Keeps the document dominant and removes duplicated context.
+   ============================================================= */
+
+.business-workflow-bar {
+  display: flex;
+  align-items: stretch;
+  gap: 18px;
+  min-width: 0;
+  border-bottom: 1px solid var(--ui-border);
+}
+
+.business-workflow-bar .business-tabs {
+  flex: 0 0 auto;
+  margin: 0;
+  border-bottom: 0;
+}
+
+.business-workflow-record-context {
+  margin-left: auto;
+  display: flex;
+  min-width: 0;
+  align-items: stretch;
+}
+
+.business-workflow-record-context > span {
+  display: flex;
+  min-width: 132px;
+  flex-direction: column;
+  justify-content: center;
+  padding: 5px 12px;
+  border-left: 1px solid var(--ui-border-soft);
+}
+
+.business-workflow-record-context small {
+  overflow: hidden;
+  color: var(--ui-text-muted);
+  font-size: 10px;
+  font-weight: var(--weight-semibold);
+  letter-spacing: .05em;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.business-workflow-record-context strong {
+  overflow: hidden;
+  color: var(--ui-text-strong);
+  font-size: var(--type-body-sm);
+  font-weight: var(--weight-semibold);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.business-search-grid em {
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: var(--ui-selected);
+  color: var(--brand-accent);
+  font-size: 10px;
+  font-style: normal;
+  font-weight: var(--weight-bold);
+  letter-spacing: .02em;
+}
+
+.selected-record-secondary {
+  margin: 4px 0 0;
+  overflow: hidden;
+  color: var(--ui-text-secondary);
+  font-size: var(--type-body-sm);
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.selected-record-panel .section-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.premium-viewer-tab-layout {
+  min-width: 0;
+}
+
+.premium-viewer-tab-layout .viewer-shell.embedded {
+  border-radius: 0;
+  border-left: 0;
+  border-right: 0;
+  box-shadow: none;
+}
+
+.viewer-toolbar-premium {
+  display: flex !important;
+  min-height: 58px;
+  align-items: center !important;
+  gap: 8px !important;
+  padding: 8px 10px !important;
+  border-bottom: 1px solid var(--ui-border) !important;
+  background: var(--ui-surface) !important;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.viewer-back-action,
+.viewer-icon-button,
+.viewer-info-action,
+.viewer-redact-action {
+  display: inline-flex;
+  min-width: 38px;
+  min-height: 38px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--ui-text-secondary);
+  font: inherit;
+  font-size: var(--type-body-sm);
+  font-weight: var(--weight-semibold);
+  white-space: nowrap;
+}
+
+.viewer-back-action:hover:not(:disabled),
+.viewer-icon-button:hover:not(:disabled),
+.viewer-info-action:hover:not(:disabled) {
+  border-color: var(--ui-border);
+  background: var(--ui-hover);
+  color: var(--ui-text-strong);
+}
+
+.viewer-icon-button svg,
+.viewer-redact-action svg,
+.viewer-search-action svg {
+  width: 17px;
+  height: 17px;
+  flex: 0 0 auto;
+}
+
+.viewer-redact-action {
+  border-color: color-mix(in srgb, var(--ui-danger) 32%, var(--ui-border));
+  color: var(--ui-danger);
+  background: var(--ui-surface);
+}
+
+.viewer-redact-action:hover:not(:disabled) {
+  background: var(--ui-danger-bg);
+}
+
+.viewer-info-action {
+  border-color: var(--ui-border);
+  background: var(--ui-surface);
+}
+
+.viewer-info-action.active {
+  border-color: color-mix(in srgb, var(--brand-accent) 38%, var(--ui-border));
+  background: var(--ui-selected);
+  color: var(--brand-accent);
+}
+
+.viewer-document-picker {
+  flex: 0 1 260px;
+  min-width: 170px;
+}
+
+.viewer-document-picker select {
+  width: 100%;
+  min-height: 38px;
+  padding-inline: 11px 30px;
+  border: 1px solid var(--ui-border-strong);
+  border-radius: var(--radius-control);
+  background-color: var(--ui-surface);
+  color: var(--ui-text-strong);
+  font-weight: var(--weight-semibold);
+  text-overflow: ellipsis;
+}
+
+.viewer-control-cluster {
+  display: inline-flex !important;
+  min-height: 40px !important;
+  align-items: center !important;
+  gap: 4px !important;
+  padding: 2px 4px !important;
+  border: 1px solid var(--ui-border) !important;
+  border-radius: var(--radius-control) !important;
+  background: var(--ui-surface-subtle) !important;
+  flex: 0 0 auto;
+}
+
+.viewer-control-cluster input {
+  width: 46px !important;
+  min-height: 32px !important;
+  padding: 4px 6px !important;
+  text-align: center;
+}
+
+.viewer-control-cluster > span {
+  color: var(--ui-text-muted);
+  font-size: var(--type-body-sm);
+  white-space: nowrap;
+}
+
+.viewer-control-cluster strong {
+  min-width: 52px !important;
+  color: var(--ui-text-strong);
+  font-size: var(--type-body-sm);
+  text-align: center;
+}
+
+.viewer-search {
+  min-width: 190px !important;
+  flex: 1 1 280px !important;
+  align-items: center !important;
+}
+
+.viewer-search label {
+  min-width: 120px !important;
+}
+
+.viewer-search input {
+  min-height: 38px !important;
+}
+
+.viewer-search-action {
+  display: inline-flex;
+  min-height: 38px;
+  align-items: center;
+  gap: 6px;
+}
+
+.viewer-toolbar-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+  margin-left: 2px;
+}
+
+.premium-viewer-tab-layout .viewer-workspace-body {
+  min-height: calc(100dvh - 210px);
+  height: calc(100dvh - 210px);
+  border-top: 0;
+}
+
+.premium-viewer-tab-layout .viewer-canvas {
+  background: #d9dfe7;
+}
+
+.premium-viewer-tab-layout .viewer-page-stage {
+  margin-top: 24px;
+}
+
+.premium-viewer-tab-layout .viewer-footer {
+  display: none;
+}
+
+.premium-viewer-tab-layout .viewer-context-panel {
+  z-index: 10;
+}
+
+.premium-viewer-tab-layout .viewer-context-heading {
+  min-height: 52px;
+}
+
+@media (max-width: 1280px) {
+  .business-workflow-record-context > span {
+    min-width: 112px;
+    padding-inline: 9px;
+  }
+
+  .viewer-toolbar-premium {
+    flex-wrap: wrap;
+    overflow-x: visible;
+  }
+
+  .viewer-document-picker {
+    flex-basis: 230px;
+  }
+
+  .viewer-search {
+    order: 10;
+    flex-basis: 100% !important;
+  }
+
+  .viewer-toolbar-actions {
+    margin-left: auto;
+  }
+
+  .premium-viewer-tab-layout .viewer-workspace-body {
+    min-height: calc(100dvh - 260px);
+    height: calc(100dvh - 260px);
+  }
+}
+
+@media (max-width: 1024px) {
+  .business-workflow-bar {
+    gap: 8px;
+  }
+
+  .business-workflow-record-context > span {
+    min-width: 96px;
+    padding-inline: 7px;
+  }
+
+  .business-workflow-record-context > span:nth-child(n+4) {
+    display: none;
+  }
+
+  .viewer-document-picker {
+    flex: 1 1 210px;
+  }
+
+  .viewer-toolbar-actions {
+    width: 100%;
+    justify-content: flex-end;
+    margin-left: 0;
+  }
+
+  .viewer-info-action {
+    min-height: 40px;
+  }
+
+  .premium-viewer-tab-layout .viewer-workspace-body {
+    min-height: 66dvh;
+    height: 66dvh;
+  }
+}
+
+@media (max-width: 900px) {
+  .business-workflow-bar {
+    display: block;
+  }
+
+  .business-workflow-record-context {
+    display: none;
+  }
+
+  .viewer-toolbar-premium {
+    gap: 6px !important;
+  }
+
+  .viewer-back-action {
+    min-width: 40px;
+  }
+
+  .viewer-document-picker {
+    flex: 1 1 calc(100% - 48px);
+  }
+
+  .viewer-control-cluster {
+    flex: 1 1 auto;
+  }
+
+  .viewer-toolbar-actions {
+    justify-content: flex-start;
+    overflow-x: auto;
+    padding-bottom: 1px;
+  }
+
+  .viewer-search {
+    flex-basis: 100% !important;
+  }
+
+  .premium-viewer-tab-layout .viewer-workspace-body {
+    min-height: 70dvh;
+    height: 70dvh;
+  }
+
+  .premium-viewer-tab-layout .viewer-context-panel {
+    width: min(390px, 90%);
+  }
+}
+
+@media (max-width: 640px) {
+  .viewer-control-cluster {
+    flex: 1 1 calc(50% - 4px);
+  }
+
+  .viewer-document-picker {
+    min-width: 0;
+  }
+
+  .viewer-redact-action,
+  .viewer-info-action {
+    min-height: 40px;
+  }
+}
