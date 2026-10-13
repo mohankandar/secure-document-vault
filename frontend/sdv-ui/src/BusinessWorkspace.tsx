@@ -321,7 +321,16 @@ export default function BusinessWorkspace({ persona, capabilities, onViewerState
             {results.length === 0 && <div className="empty-state"><Icon name="search" /><strong>No matching records</strong><span>Try fewer fields or a wider date range.</span><button type="button" onClick={() => setTab('search')}>Modify search</button></div>}
           </section>
           <aside className="panel selected-record-panel selected-record-panel-v0">
-            {!selectedRecord ? <div className="selected-record-empty-v0"><span className="selected-record-empty-icon"><Icon name="document" /></span><strong>No record selected</strong><p>Choose a row to review its details and documents here.</p></div> : <>
+            {!selectedRecord ? <div className="result-overview-v0">
+              <span className="business-section-label">This search</span>
+              <dl>
+                <div><dt>Records</dt><dd>{results.length}</dd></div>
+                <div><dt>Documents</dt><dd>{results.reduce((total, item) => total + (item.availableDocumentCount || 0), 0)}</dd></div>
+                <div><dt>Most recent update</dt><dd>{results.length ? formatDate(results.map((item) => item.latestSubmissionAt).filter(Boolean).sort().at(-1) ?? null) : '—'}</dd></div>
+                <div><dt>Source</dt><dd>{source?.displayName ?? '—'}</dd></div>
+              </dl>
+              <p>Select a row to see the record&apos;s details and open its documents.</p>
+            </div> : <>
               <div className="selected-record-identity-v0">
                 <span className="business-section-label">Selected record</span>
                 <small>{primaryIdentifier?.displayLabel}</small>
