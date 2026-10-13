@@ -1,0 +1,15 @@
+spring:
+  liquibase:
+    contexts: local
+  datasource:
+    url: jdbc:postgresql://localhost:5433/sdv
+    username: sdv
+    password: sdv_local_only
+
+server:
+  port: 8280
+
+
+sdv:
+  auth:
+    mode: ${SDV_AUTH_MODE:local-header}

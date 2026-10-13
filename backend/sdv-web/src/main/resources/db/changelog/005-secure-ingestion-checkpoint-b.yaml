@@ -1,0 +1,10 @@
+databaseChangeLog:
+  - changeSet:
+      id: 005-secure-ingestion-checkpoint-b
+      author: openai
+      changes:
+        - sqlFile:
+            path: 005-secure-ingestion-checkpoint-b.sql
+            relativeToChangelogFile: true
+            splitStatements: true
+            stripComments: true

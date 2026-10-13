@@ -1,0 +1,80 @@
+spring:
+  application:
+    name: secure-document-vault
+  datasource:
+    url: ${SDV_DB_URL:}
+    username: ${SDV_DB_USERNAME:}
+    password: ${SDV_DB_PASSWORD:}
+    hikari:
+      maximum-pool-size: ${SDV_DB_POOL_MAX:10}
+      minimum-idle: ${SDV_DB_POOL_MIN:1}
+  liquibase:
+    change-log: classpath:db/changelog/db.changelog-master.yaml
+
+server:
+  port: ${SDV_SERVER_PORT:8280}
+  shutdown: graceful
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: never
+  health:
+    defaults:
+      enabled: true
+
+logging:
+  pattern:
+    console: "%d{yyyy-MM-dd'T'HH:mm:ss.SSSXXX} %-5level [%thread] [%X{correlationId:-no-correlation}] %logger{40} - %msg%n"
+
+sdv:
+  auth:
+    # Production defaults fail closed. Local acceptance explicitly switches to local-header in application-local.yml.
+    # Enterprise deployments set SDV_AUTH_MODE=enterprise-jwt and configure issuer/JWKS/audience below.
+    mode: ${SDV_AUTH_MODE:disabled}
+    jwt:
+      issuer: ${SDV_AUTH_JWT_ISSUER:}
+      jwk-set-uri: ${SDV_AUTH_JWT_JWK_SET_URI:}
+      audience: ${SDV_AUTH_JWT_AUDIENCE:}
+      # Optional defense-in-depth. 0 disables the maximum token-lifetime check.
+      max-token-lifetime-seconds: ${SDV_AUTH_JWT_MAX_TOKEN_LIFETIME_SECONDS:0}
+      # Human OIDC tenant is resolved from the configured IdP connection. The token claim remains a legacy/M2M fallback.
+      tenant-id: ${SDV_AUTH_JWT_TENANT_ID:}
+      tenant-claim: ${SDV_AUTH_JWT_TENANT_CLAIM:sdv_tenant_id}
+      provider-id: ${SDV_AUTH_JWT_PROVIDER_ID:customer-oidc}
+      username-claim: ${SDV_AUTH_JWT_USERNAME_CLAIM:preferred_username}
+      email-claim: ${SDV_AUTH_JWT_EMAIL_CLAIM:email}
+      display-name-claim: ${SDV_AUTH_JWT_DISPLAY_NAME_CLAIM:name}
+      groups-claim: ${SDV_AUTH_JWT_GROUPS_CLAIM:groups}
+      source-id-claim: ${SDV_AUTH_JWT_SOURCE_ID_CLAIM:sdv_source_id}
+      # Product authorization stays in SDV: map customer-managed IdP groups to SDV roles.
+      role-mappings:
+        business-user: ${SDV_AUTH_GROUP_BUSINESS_USER:}
+        document-steward: ${SDV_AUTH_GROUP_DOCUMENT_STEWARD:}
+        business-admin: ${SDV_AUTH_GROUP_BUSINESS_ADMIN:}
+        tenant-it-admin: ${SDV_AUTH_GROUP_TENANT_IT_ADMIN:}
+        platform-operations-admin: ${SDV_AUTH_GROUP_PLATFORM_OPERATIONS_ADMIN:}
+      # Transitional compatibility for the frozen enterprise-jwt contract. Disable after group mappings are configured.
+      legacy-direct-role-claim-enabled: ${SDV_AUTH_LEGACY_DIRECT_ROLE_CLAIM_ENABLED:true}
+      roles-claim: ${SDV_AUTH_JWT_ROLES_CLAIM:sdv_roles}
+
+  crypto:
+    # 'disabled' keeps Foundation/local admin runtime independent of a key service until document upload is enabled.
+    # Set SDV_KEY_PROVIDER=vault for Vault Transit-backed SDV-ENC-001 operations.
+    key-provider: ${SDV_KEY_PROVIDER:disabled}
+    vault:
+      base-url: ${SDV_VAULT_BASE_URL:}
+      # Supply exactly one: direct token (local/dev) or token-file (recommended for mounted secret injection).
+      token: ${SDV_VAULT_TOKEN:}
+      token-file: ${SDV_VAULT_TOKEN_FILE:}
+      mount: ${SDV_VAULT_TRANSIT_MOUNT:transit}
+      key-prefix: ${SDV_VAULT_KEY_PREFIX:sdv-tenant-}
+
+  retention:
+    initial-delay-ms: ${SDV_RETENTION_INITIAL_DELAY_MS:15000}
+    sweep-delay-ms: ${SDV_RETENTION_SWEEP_DELAY_MS:60000}
+

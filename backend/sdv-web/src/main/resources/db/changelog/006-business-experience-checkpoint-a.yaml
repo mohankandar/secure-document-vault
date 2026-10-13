@@ -1,0 +1,10 @@
+databaseChangeLog:
+  - changeSet:
+      id: 006-business-experience-checkpoint-a
+      author: sdv
+      changes:
+        - sqlFile:
+            path: 006-business-experience-checkpoint-a.sql
+            relativeToChangelogFile: true
+            splitStatements: true
+            stripComments: true

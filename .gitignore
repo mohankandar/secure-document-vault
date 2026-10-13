@@ -1,0 +1,49 @@
+# Java / Maven
+**/target/
+*.class
+.gradle/
+
+# Node / Vite
+**/node_modules/
+**/dist/
+*.tsbuildinfo
+coverage/
+
+# Runtime / generated evidence
+.runtime/
+.run/
+logs/
+*.log
+performance-results/
+performance-logs/
+performance-cluster/
+release-readiness-results/
+
+# Local SDV document/storage roots
+sdv-storage/
+sdv-intake/
+sdv-output/
+
+# Release/package artifacts
+release/
+*.zip
+*.tar
+*.tar.gz
+
+# IDE / editor / OS
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db
+
+# Local environment overrides / secrets
+.env
+.env.local
+.env.*.local
+
+# Keep committed templates
+!.env.example
+!.env.sample
+!.env.template
+!.env.oidc-demo.example

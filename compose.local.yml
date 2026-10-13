@@ -1,0 +1,37 @@
+services:
+  sdv-postgres:
+    image: postgres:16.4-alpine
+    container_name: sdv-postgres
+    environment:
+      POSTGRES_DB: sdv
+      POSTGRES_USER: sdv
+      POSTGRES_PASSWORD: sdv_local_only
+    ports:
+      - "5433:5432"
+    volumes:
+      - sdv-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sdv -d sdv"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+      start_period: 3s
+    restart: unless-stopped
+
+  sdv-vault:
+    image: hashicorp/vault:1.17.6
+    container_name: sdv-vault
+    cap_add:
+      - IPC_LOCK
+    environment:
+      VAULT_DEV_ROOT_TOKEN_ID: sdv-local-root
+    command: ["server", "-dev", "-dev-root-token-id=sdv-local-root", "-dev-listen-address=0.0.0.0:8200"]
+    ports:
+      - "8200:8200"
+
+volumes:
+  sdv-postgres-data:
+    # Unit 25 can override this with a disposable named volume so the full
+    # frozen regression runs against clean database state without touching
+    # the developer's normal local SDV database volume.
+    name: ${SDV_POSTGRES_VOLUME:-sdv-postgres-data}

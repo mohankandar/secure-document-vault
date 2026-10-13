@@ -1,0 +1,10 @@
+databaseChangeLog:
+  - changeSet:
+      id: 007-permanent-corrective-redaction
+      author: sdv
+      changes:
+        - sqlFile:
+            path: 007-permanent-corrective-redaction.sql
+            relativeToChangelogFile: true
+            splitStatements: true
+            stripComments: true

@@ -1,0 +1,9 @@
+databaseChangeLog:
+  - changeSet:
+      id: 014-enterprise-identity-connection
+      author: openai
+      changes:
+        - sqlFile:
+            path: db/changelog/014-enterprise-identity-connection.sql
+            splitStatements: true
+            stripComments: true

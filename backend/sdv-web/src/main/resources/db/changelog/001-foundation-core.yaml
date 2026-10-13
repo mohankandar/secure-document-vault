@@ -1,0 +1,9 @@
+databaseChangeLog:
+  - changeSet:
+      id: 001-foundation-core
+      author: sdv
+      changes:
+        - sqlFile:
+            path: db/changelog/001-foundation-core.sql
+            splitStatements: true
+            stripComments: true

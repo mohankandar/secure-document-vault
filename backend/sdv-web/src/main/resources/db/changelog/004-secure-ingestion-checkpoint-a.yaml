@@ -1,0 +1,9 @@
+databaseChangeLog:
+  - changeSet:
+      id: 004-secure-ingestion-checkpoint-a
+      author: sdv
+      changes:
+        - sqlFile:
+            path: db/changelog/004-secure-ingestion-checkpoint-a.sql
+            splitStatements: true
+            stripComments: false

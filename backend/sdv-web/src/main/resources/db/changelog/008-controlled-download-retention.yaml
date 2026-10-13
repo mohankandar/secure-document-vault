@@ -1,0 +1,10 @@
+databaseChangeLog:
+  - changeSet:
+      id: 008-controlled-download-retention
+      author: sdv
+      changes:
+        - sqlFile:
+            path: 008-controlled-download-retention.sql
+            relativeToChangelogFile: true
+            splitStatements: true
+            stripComments: true

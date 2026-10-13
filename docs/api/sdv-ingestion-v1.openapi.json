@@ -1,0 +1,248 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Secure Document Vault Ingestion API",
+    "version": "1.0.0",
+    "description": "Public integration-neutral V1 contract for authenticated document producers. Tenant and source scope are derived from the validated bearer identity. SDV-generated identifiers are opaque."
+  },
+  "servers": [
+    {"url": "{baseUrl}", "variables": {"baseUrl": {"default": "https://sdv.example.invalid"}}}
+  ],
+  "security": [{"bearerAuth": []}],
+  "paths": {
+    "/api/v1/ingestion/submissions": {
+      "post": {
+        "operationId": "createSubmission",
+        "summary": "Create or idempotently replay a producer submission",
+        "parameters": [{"$ref": "#/components/parameters/CorrelationId"}],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {"$ref": "#/components/schemas/CreateSubmissionRequest"},
+              "examples": {"twoDocuments": {"$ref": "#/components/examples/CreateSubmissionTwoDocuments"}}
+            }
+          }
+        },
+        "responses": {
+          "201": {"description": "Submission created", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/SubmissionResponse"}}}},
+          "200": {"description": "Exact idempotent create replay", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/SubmissionResponse"}}}},
+          "400": {"$ref": "#/components/responses/BadRequest"},
+          "401": {"$ref": "#/components/responses/Unauthorized"},
+          "403": {"$ref": "#/components/responses/Forbidden"},
+          "409": {"$ref": "#/components/responses/Conflict"}
+        }
+      },
+      "get": {
+        "operationId": "getSubmissionBySourceIdentity",
+        "summary": "Retrieve by producer-owned sourceSubmissionId",
+        "parameters": [
+          {"$ref": "#/components/parameters/CorrelationId"},
+          {"name": "sourceSubmissionId", "in": "query", "required": true, "schema": {"type": "string", "minLength": 1, "maxLength": 200}}
+        ],
+        "responses": {
+          "200": {"description": "Submission", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/SubmissionResponse"}}}},
+          "401": {"$ref": "#/components/responses/Unauthorized"},
+          "404": {"$ref": "#/components/responses/NotFound"}
+        }
+      }
+    },
+    "/api/v1/ingestion/submissions/{submissionId}": {
+      "get": {
+        "operationId": "getSubmission",
+        "parameters": [
+          {"$ref": "#/components/parameters/CorrelationId"},
+          {"$ref": "#/components/parameters/SubmissionId"}
+        ],
+        "responses": {
+          "200": {"description": "Submission", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/SubmissionResponse"}}}},
+          "401": {"$ref": "#/components/responses/Unauthorized"},
+          "404": {"$ref": "#/components/responses/NotFound"}
+        }
+      }
+    },
+    "/api/v1/ingestion/submissions/{submissionId}/documents": {
+      "post": {
+        "operationId": "uploadDocument",
+        "summary": "Upload one PDF independently",
+        "parameters": [
+          {"$ref": "#/components/parameters/CorrelationId"},
+          {"$ref": "#/components/parameters/SubmissionId"},
+          {"name": "X-SDV-Filename", "in": "header", "required": true, "schema": {"type": "string", "minLength": 1}},
+          {"name": "X-SDV-Source-Document-Id", "in": "header", "required": false, "schema": {"type": "string", "maxLength": 200}},
+          {"name": "Idempotency-Key", "in": "header", "required": false, "schema": {"type": "string"}, "description": "Reuse after an ambiguous network or acknowledgement failure."}
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {"application/pdf": {"schema": {"type": "string", "contentMediaType": "application/pdf", "contentEncoding": "binary"}}}
+        },
+        "responses": {
+          "201": {"description": "Document durably received", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/DocumentReceipt"}}}},
+          "200": {"description": "Idempotent upload replay", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/DocumentReceipt"}}}},
+          "400": {"$ref": "#/components/responses/BadRequest"},
+          "401": {"$ref": "#/components/responses/Unauthorized"},
+          "404": {"$ref": "#/components/responses/NotFound"},
+          "409": {"$ref": "#/components/responses/Conflict"},
+          "413": {"$ref": "#/components/responses/PayloadTooLarge"}
+        }
+      },
+      "get": {
+        "operationId": "listSubmissionDocuments",
+        "parameters": [
+          {"$ref": "#/components/parameters/CorrelationId"},
+          {"$ref": "#/components/parameters/SubmissionId"}
+        ],
+        "responses": {
+          "200": {"description": "Received documents", "content": {"application/json": {"schema": {"type": "array", "items": {"$ref": "#/components/schemas/DocumentSummary"}}}}},
+          "401": {"$ref": "#/components/responses/Unauthorized"},
+          "404": {"$ref": "#/components/responses/NotFound"}
+        }
+      }
+    },
+    "/api/v1/ingestion/submissions/{submissionId}/documents/{documentId}/retry-finalization": {
+      "post": {
+        "operationId": "retryDocumentFinalization",
+        "summary": "Retry safe finalization for a received document",
+        "parameters": [
+          {"$ref": "#/components/parameters/CorrelationId"},
+          {"$ref": "#/components/parameters/SubmissionId"},
+          {"$ref": "#/components/parameters/DocumentId"}
+        ],
+        "responses": {
+          "200": {"description": "Current document state", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/DocumentSummary"}}}},
+          "401": {"$ref": "#/components/responses/Unauthorized"},
+          "404": {"$ref": "#/components/responses/NotFound"},
+          "409": {"$ref": "#/components/responses/Conflict"}
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "Deployment-issued OAuth2/OIDC ingestion-source bearer token. SDV validates and maps tenant/source claims using deployment configuration."
+      }
+    },
+    "parameters": {
+      "CorrelationId": {"name": "X-Correlation-Id", "in": "header", "required": false, "schema": {"type": "string", "maxLength": 128, "pattern": "^[A-Za-z0-9._:-]+$"}},
+      "SubmissionId": {"name": "submissionId", "in": "path", "required": true, "schema": {"type": "string", "format": "uuid"}, "description": "Opaque SDV-generated identity."},
+      "DocumentId": {"name": "documentId", "in": "path", "required": true, "schema": {"type": "string", "format": "uuid"}, "description": "Opaque SDV-generated identity."}
+    },
+    "schemas": {
+      "ScalarMetadataValue": {"oneOf": [{"type": "string"}, {"type": "number"}, {"type": "integer"}, {"type": "boolean"}]},
+      "ExpectedDocumentRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["sourceDocumentId"],
+        "properties": {"sourceDocumentId": {"type": "string", "minLength": 1, "maxLength": 200}}
+      },
+      "CreateSubmissionRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["sourceSubmissionId", "expectedDocumentCount", "metadata"],
+        "properties": {
+          "sourceSubmissionId": {"type": "string", "minLength": 1, "maxLength": 200},
+          "expectedDocumentCount": {"type": "integer", "minimum": 1},
+          "expectedDocuments": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/components/schemas/ExpectedDocumentRequest"}},
+          "metadata": {"type": "object", "additionalProperties": {"$ref": "#/components/schemas/ScalarMetadataValue"}}
+        }
+      },
+      "ExpectedDocument": {
+        "type": "object",
+        "properties": {"sourceDocumentId": {"type": "string"}, "state": {"type": "string", "enum": ["EXPECTED", "RECEIVED"]}}
+      },
+      "DocumentStatus": {
+        "type": "object",
+        "properties": {
+          "documentId": {"type": "string", "format": "uuid"},
+          "sourceDocumentId": {"type": ["string", "null"]},
+          "originalFilename": {"type": "string"},
+          "status": {"type": "string"}
+        }
+      },
+      "SubmissionProgress": {
+        "type": ["object", "null"],
+        "properties": {
+          "expectedCount": {"type": "integer"},
+          "receivedCount": {"type": "integer"},
+          "missingCount": {"type": "integer"},
+          "missingSourceDocumentIds": {"type": "array", "items": {"type": "string"}}
+        }
+      },
+      "SubmissionResponse": {
+        "type": "object",
+        "properties": {
+          "submissionId": {"type": "string", "format": "uuid"},
+          "sourceId": {"type": "string", "format": "uuid"},
+          "sourceSubmissionId": {"type": "string"},
+          "expectedDocumentCount": {"type": "integer"},
+          "status": {"type": "string", "enum": ["OPEN", "RECEIVING", "COMPLETE", "INCOMPLETE"]},
+          "expectedDocuments": {"type": "array", "items": {"$ref": "#/components/schemas/ExpectedDocument"}},
+          "documents": {"type": "array", "items": {"$ref": "#/components/schemas/DocumentStatus"}},
+          "progress": {"$ref": "#/components/schemas/SubmissionProgress"},
+          "metadata": {"type": "object", "additionalProperties": {"type": "string"}},
+          "idempotentReplay": {"type": "boolean"}
+        }
+      },
+      "DocumentReceipt": {
+        "type": "object",
+        "properties": {
+          "documentId": {"type": "string", "format": "uuid"},
+          "sourceDocumentId": {"type": ["string", "null"]},
+          "receiptAcknowledgement": {"type": "string"},
+          "currentStatus": {"type": "string"},
+          "contentSha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+          "contentSizeBytes": {"type": "integer", "minimum": 0},
+          "idempotentReplay": {"type": "boolean"},
+          "exactDuplicateContent": {"type": "boolean"}
+        }
+      },
+      "DocumentSummary": {
+        "type": "object",
+        "properties": {
+          "documentId": {"type": "string", "format": "uuid"},
+          "sourceDocumentId": {"type": ["string", "null"]},
+          "originalFilename": {"type": "string"},
+          "status": {"type": "string"},
+          "contentSizeBytes": {"type": "integer"},
+          "contentSha256": {"type": ["string", "null"]},
+          "processingAttemptCount": {"type": "integer"},
+          "processingErrorCode": {"type": ["string", "null"]}
+        }
+      },
+      "Error": {
+        "type": "object",
+        "properties": {"code": {"type": "string"}, "message": {"type": "string"}, "timestamp": {"type": "string", "format": "date-time"}}
+      }
+    },
+    "responses": {
+      "BadRequest": {"description": "Invalid producer request", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
+      "Unauthorized": {"description": "Missing or invalid producer authentication"},
+      "Forbidden": {"description": "Authenticated principal is not permitted"},
+      "NotFound": {"description": "Tenant/source-scoped resource not found", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
+      "Conflict": {"description": "Existing identity/state conflicts with this request", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
+      "PayloadTooLarge": {"description": "PDF exceeds configured limits", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}}
+    },
+    "examples": {
+      "CreateSubmissionTwoDocuments": {
+        "value": {
+          "sourceSubmissionId": "producer-case-2026-00017",
+          "expectedDocumentCount": 2,
+          "expectedDocuments": [
+            {"sourceDocumentId": "producer-doc-001"},
+            {"sourceDocumentId": "producer-doc-002"}
+          ],
+          "metadata": {"contractNumber": "990023450001", "memberName": "Example Customer"}
+        }
+      }
+    }
+  },
+  "x-sdv-compatibility": {
+    "contract": "sdv-ingestion-v1",
+    "producerIsolation": "No shared SDV code, schema, database, internal IDs or runtime dependency is required.",
+    "forwardCompatibility": "Within V1 producers must ignore unknown response fields and must not depend on undocumented implementation details."
+  }
+}

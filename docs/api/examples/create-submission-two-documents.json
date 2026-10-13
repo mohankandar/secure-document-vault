@@ -1,0 +1,12 @@
+{
+  "sourceSubmissionId": "producer-case-2026-00017",
+  "expectedDocumentCount": 2,
+  "expectedDocuments": [
+    {"sourceDocumentId": "producer-doc-001"},
+    {"sourceDocumentId": "producer-doc-002"}
+  ],
+  "metadata": {
+    "contractNumber": "990023450001",
+    "memberName": "Example Customer"
+  }
+}

@@ -1,0 +1,1664 @@
+/* SDV UI Modernization R1A — shell + shared visual foundation.
+   This layer intentionally changes presentation only; frozen business/security behavior stays intact. */
+
+html, body, #root { min-height: 100%; background: var(--ui-bg); }
+body {
+  color: var(--ui-text);
+  font-size: var(--type-body);
+  line-height: var(--leading-body);
+  -webkit-font-smoothing: antialiased;
+}
+
+button, input, select, textarea { font: inherit; }
+button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {
+  outline: 3px solid var(--ui-focus-ring);
+  outline-offset: 2px;
+}
+
+.modern-app-shell { min-height: 100vh; background: var(--ui-bg); }
+.modern-sidebar {
+  width: var(--ui-sidebar-width);
+  background: var(--ui-sidebar);
+  border-right: 1px solid rgba(255,255,255,.06);
+  transition: width var(--motion-fast), transform 180ms ease;
+}
+.modern-main-content {
+  margin-left: var(--ui-sidebar-width);
+  padding: var(--space-5) var(--space-6) var(--space-8);
+  transition: margin-left var(--motion-fast);
+}
+.sidebar-collapsed .modern-sidebar { width: var(--ui-sidebar-collapsed-width); }
+.sidebar-collapsed .modern-main-content { margin-left: var(--ui-sidebar-collapsed-width); }
+.sdv-page { width: min(100%, 1480px); margin: 0 auto; }
+
+.sidebar-brand-row { min-height: 76px; padding: 14px 12px 14px 16px; }
+.brand-lettermark { width: 36px; height: 36px; flex-basis: 36px; border-radius: var(--radius-surface); background: var(--brand-accent); box-shadow: none; }
+.sidebar-brand-copy strong { font-size: var(--type-body); letter-spacing: -.01em; }
+.sidebar-brand-copy span, .sidebar-identity-copy span, .sidebar-environment { color: var(--ui-sidebar-muted); font-size: var(--type-xs); }
+.app-nav-group { gap: var(--space-1); }
+.app-nav-group-title { color: var(--ui-sidebar-muted); font-size: var(--type-xs); letter-spacing: .08em; }
+.app-nav-link { min-height: 40px; border-radius: var(--radius-control); padding: 8px 10px; color: var(--ui-sidebar-text); }
+.app-nav-link:hover { background: rgba(255,255,255,.06); }
+.app-nav-link.active { background: rgba(255,255,255,.1); color: #fff; box-shadow: inset 3px 0 0 var(--brand-accent); }
+.sidebar-collapse-button, .shell-icon-button { border-radius: var(--radius-control); }
+.sidebar-footer { padding-bottom: 14px; }
+
+.ui-page-header { gap: var(--space-5); margin: 0 0 var(--space-5); }
+.ui-page-header-copy { max-width: 760px; }
+.ui-page-header h1 { margin: 0 0 6px; color: var(--ui-text-strong); font-size: var(--type-page-title); line-height: var(--leading-tight); letter-spacing: -.025em; }
+.ui-page-header-copy > p:not(.ui-eyebrow) { color: var(--ui-text-muted); font-size: var(--type-body); line-height: var(--leading-relaxed); }
+.ui-eyebrow, .kicker { color: var(--brand-accent); font-size: var(--type-xs); font-weight: var(--weight-bold); letter-spacing: .08em; }
+
+.panel, .status-card {
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-surface-lg);
+  background: var(--ui-surface);
+  box-shadow: var(--shadow-surface);
+}
+.panel { padding: 20px; }
+.panel-heading { margin-bottom: var(--space-4); }
+.panel h2 { color: var(--ui-text-strong); font-size: var(--type-card-title); font-weight: var(--weight-semibold); letter-spacing: -.012em; }
+.panel h3 { color: var(--ui-text-strong); }
+.muted, small { color: var(--ui-text-muted); }
+
+input, select, textarea {
+  min-height: var(--control-height);
+  border: 1px solid var(--ui-border-strong);
+  border-radius: var(--radius-control);
+  background: var(--ui-surface);
+  color: var(--ui-text);
+}
+input:hover, select:hover, textarea:hover { border-color: color-mix(in srgb, var(--ui-border-strong) 65%, var(--ui-text-secondary)); }
+
+button[type="submit"], .primary-action, .wide-action {
+  min-height: var(--control-height);
+  border-radius: var(--radius-control);
+  background: var(--brand-accent);
+  border-color: var(--brand-accent);
+  color: #fff;
+  font-weight: var(--weight-semibold);
+}
+.secondary {
+  min-height: var(--control-height);
+  border-radius: var(--radius-control);
+  border-color: var(--ui-border-strong);
+  background: var(--ui-surface);
+  color: var(--ui-text-secondary);
+  font-weight: var(--weight-semibold);
+}
+.secondary:hover:not(:disabled) { background: var(--ui-hover); border-color: var(--ui-border-strong); }
+
+.banner { border-radius: var(--radius-surface); box-shadow: none; }
+.banner.error { background: var(--ui-danger-bg); color: var(--ui-danger); }
+.banner.success { background: var(--ui-success-bg); color: var(--ui-success); }
+.banner.notice { background: var(--ui-info-bg); color: var(--ui-info); }
+
+/* Shared tab treatment learned from LexaVault: quiet, aligned, scroll only inside the tab strip. */
+.business-tabs, .workspace-tabs {
+  gap: 2px;
+  padding: 0;
+  border-bottom: 1px solid var(--ui-border);
+  background: transparent;
+  scrollbar-width: thin;
+}
+.business-tabs button, .workspace-tabs button {
+  min-height: 44px;
+  padding: 0 14px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  background: transparent;
+  color: var(--ui-text-secondary);
+  font-size: var(--type-body-sm);
+  font-weight: var(--weight-semibold);
+  box-shadow: none;
+}
+.business-tabs button:hover:not(:disabled), .workspace-tabs button:hover:not(:disabled) { background: var(--ui-hover); color: var(--ui-text); }
+.business-tabs button.active, .workspace-tabs button.active {
+  color: var(--brand-accent);
+  background: transparent;
+  border-bottom-color: var(--brand-accent);
+  box-shadow: none;
+}
+
+.business-workspace { gap: var(--space-4); }
+.business-search-grid { gap: 14px; }
+.business-search-grid label, .common-filter-grid label, .activity-filters label { color: var(--ui-text-secondary); font-weight: var(--weight-semibold); }
+.business-search-grid em { background: var(--ui-info-bg); color: var(--ui-info); }
+.common-filter-grid fieldset { border-color: var(--ui-border); border-radius: var(--radius-surface); }
+.common-filter-grid legend { color: var(--ui-text-secondary); font-weight: var(--weight-semibold); }
+.business-result-table-wrap { border-color: var(--ui-border); border-radius: var(--radius-surface); }
+.business-result-table th { background: var(--ui-surface-subtle); color: var(--ui-text-secondary); border-bottom-color: var(--ui-border); font-size: var(--type-sm); }
+.business-result-table td { color: var(--ui-text); border-bottom-color: var(--ui-border-soft); }
+.business-result-table tbody tr:hover, .business-result-table tbody tr.selected { background: var(--ui-selected); }
+.selected-record-panel { top: var(--space-4); }
+.compact-document-list button, .viewer-document-rail button { border-color: var(--ui-border); border-radius: var(--radius-control); color: var(--ui-text-secondary); }
+.compact-document-list button.selected, .viewer-document-rail button.selected { background: var(--ui-selected); border-color: color-mix(in srgb, var(--brand-accent) 45%, var(--ui-border)); }
+.viewer-record-strip { border-color: var(--ui-border); border-radius: var(--radius-surface-lg); }
+.viewer-record-strip > div { border-right-color: var(--ui-border-soft); }
+.viewer-shell.embedded { border-color: var(--ui-border); border-radius: var(--radius-surface-lg); }
+.activity-record-context, .activity-heading { border-color: var(--ui-border); }
+
+/* Admin/technical sections: fewer decorative boxes and calmer surfaces. */
+.summary-tile, .role-matrix > div, .auth-config-grid > div, .metadata-form, .storage-form, .storage-volume-card, .health-card {
+  border-color: var(--ui-border);
+  border-radius: var(--radius-surface);
+  background: var(--ui-surface);
+  box-shadow: none;
+}
+.summary-tile span, .summary-tile small { color: var(--ui-text-muted); }
+.summary-tile strong { color: var(--ui-text-strong); }
+.role-matrix span { background: var(--ui-selected); color: var(--brand-accent); }
+
+.empty-state { background: var(--ui-surface-subtle); border-color: var(--ui-border-strong); border-radius: var(--radius-surface); }
+.empty-state strong { color: var(--ui-text-secondary); }
+.empty-state svg { color: var(--ui-text-disabled); }
+
+/* Tablet/laptop corrections carried over from LexaVault R1D feedback. */
+@media (max-width: 1200px) {
+  .modern-main-content { padding: 22px 24px 40px; }
+  .ui-page-header { margin-bottom: 20px; }
+}
+
+@media (max-width: 1024px) {
+  .modern-main-content { padding: 20px 20px 36px; }
+  .ui-page-header { gap: 16px; }
+  .ui-page-header h1 { font-size: 1.5rem; }
+  .business-results-layout { grid-template-columns: 1fr; }
+  .selected-record-panel { position: static; }
+  .business-search-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .admin-summary-grid, .role-matrix, .auth-config-grid, .two-column-admin, .metadata-admin-layout, .storage-admin-layout { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 900px) {
+  /* FIX1: 900px portrait was landing between the legacy 899px drawer breakpoint
+     and the R1A 900px tablet overrides. That left the fixed sidebar visible on top
+     of content. Make the drawer contract inclusive through 900px. */
+  .mobile-app-bar {
+    position: sticky;
+    top: 0;
+    z-index: 45;
+    height: 58px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 8px 12px;
+    background: rgba(255,255,255,.97);
+    border-bottom: 1px solid var(--ui-border);
+    backdrop-filter: blur(10px);
+  }
+  .mobile-app-bar .shell-icon-button { color: var(--ui-text-secondary); }
+  .mobile-brand { min-width: 0; flex: 1; display: flex; align-items: center; justify-content: center; gap: 8px; }
+  .mobile-brand strong { max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .9rem; }
+  .mobile-brand .brand-lettermark { width: 32px; height: 32px; flex-basis: 32px; }
+
+  .modern-sidebar, .sidebar-collapsed .modern-sidebar {
+    width: min(320px, 86vw);
+    transform: translateX(-102%);
+    box-shadow: 18px 0 38px rgba(16,24,40,.18);
+  }
+  .modern-sidebar.drawer-open { transform: translateX(0); }
+
+  .sidebar-collapsed .sidebar-brand-copy,
+  .sidebar-collapsed .app-nav-group-title,
+  .sidebar-collapsed .app-nav-label,
+  .sidebar-collapsed .sidebar-identity-copy,
+  .sidebar-collapsed .demo-role-control > span,
+  .sidebar-collapsed .sidebar-environment { display: initial; }
+  .sidebar-collapsed .sidebar-brand-row { padding: 14px 12px 14px 16px; flex-direction: row; }
+  .sidebar-collapsed .sidebar-brand { justify-content: flex-start; }
+  .sidebar-collapsed .app-nav-link { justify-content: flex-start; padding: 8px 10px; }
+  .sidebar-collapse-button { display: none; }
+
+  .nav-drawer-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 49;
+    border: 0;
+    background: rgba(15,23,42,.42);
+  }
+
+  .modern-main-content, .sidebar-collapsed .modern-main-content {
+    margin-left: 0;
+    padding: 18px 18px 36px;
+  }
+  .admin-grid, .business-layout, .operations-layout, .health-grid { grid-template-columns: 1fr; }
+  .admin-span-2, .operations-wide { grid-column: auto; }
+  .record-panel { position: static; }
+  .business-tabs, .workspace-tabs { margin-inline: -2px; }
+}
+
+@media (max-width: 640px) {
+  .modern-main-content, .sidebar-collapsed .modern-main-content { padding: 14px 12px 28px; }
+  .ui-page-header { margin-bottom: 16px; }
+  .ui-page-header h1 { font-size: 1.375rem; }
+  .panel { padding: 14px; }
+  .business-search-grid, .common-filter-grid, .compact-record-grid, .viewer-record-strip, .activity-context-values { grid-template-columns: 1fr; }
+  .business-tabs button, .workspace-tabs button { min-height: 42px; padding-inline: 12px; }
+  .form-actions { flex-direction: column-reverse; }
+  .form-actions > button { width: 100%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; }
+}
+
+
+/* =========================================================
+   SDV UI Modernization R1B — Business Workspace refinement
+   Builds on R1A/FIX1. Presentation-only; no workflow/security changes.
+   ========================================================= */
+
+/* Search: keep the source selector visually important without competing
+   with the actual business identifiers. */
+.business-search-heading {
+  align-items: start;
+  margin-bottom: 18px;
+}
+.business-search-heading > div:first-child {
+  min-width: 0;
+  max-width: 760px;
+}
+.business-source-picker {
+  width: min(340px, 36vw);
+  min-width: 280px;
+}
+.business-search-form {
+  gap: 16px;
+}
+.business-search-grid input,
+.common-filter-grid input,
+.business-source-picker select {
+  width: 100%;
+}
+.common-filter-grid fieldset {
+  background: var(--ui-surface);
+}
+.form-actions {
+  padding-top: 2px;
+}
+
+/* Results: reduce cardiness, strengthen selected-record hierarchy,
+   and keep long records/doc names usable. */
+.business-results-panel .panel-heading,
+.selected-record-panel .panel-heading {
+  align-items: center;
+}
+.business-result-table-wrap {
+  background: var(--ui-surface);
+}
+.business-result-table tbody tr {
+  min-height: 52px;
+}
+.business-result-table tbody tr.selected {
+  box-shadow: inset 3px 0 0 var(--brand-accent);
+}
+.selected-record-panel {
+  overflow: hidden;
+}
+.compact-record-grid {
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--ui-border-soft);
+}
+.compact-record-grid strong,
+.compact-document-list strong,
+.viewer-document-rail strong {
+  overflow-wrap: anywhere;
+}
+.selected-record-panel .section-heading {
+  margin-top: 18px;
+}
+.compact-document-list {
+  margin-bottom: 12px;
+}
+.compact-document-list button,
+.viewer-document-rail button {
+  min-height: 58px;
+}
+.wide-action {
+  width: 100%;
+}
+
+/* Viewer: establish a clearer hierarchy between record context,
+   document selector, viewer actions, controls, and canvas. */
+.viewer-record-strip {
+  overflow: hidden;
+}
+.viewer-record-strip > div {
+  padding-block: 2px;
+}
+.viewer-tab-body {
+  align-items: stretch;
+}
+.viewer-document-rail {
+  align-self: start;
+}
+.viewer-document-rail h3 {
+  line-height: 1.35;
+}
+.viewer-shell.embedded {
+  min-width: 0;
+  background: var(--ui-surface);
+}
+.viewer-shell.embedded .viewer-header {
+  gap: 16px;
+}
+.viewer-shell.embedded .viewer-header > div:first-child {
+  min-width: 0;
+}
+.viewer-shell.embedded .viewer-header-actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.viewer-shell.embedded .viewer-toolbar {
+  gap: 10px 14px;
+}
+.viewer-shell.embedded .viewer-search {
+  margin-left: auto;
+}
+.viewer-shell.embedded .viewer-canvas {
+  background: #d7dfe6;
+}
+
+/* Tags/comments retain their existing SDV behavior. The comments list
+   remains bounded when expanded so it never pushes the PDF far down. */
+.tag-panel,
+.comment-panel {
+  border-color: var(--ui-border);
+  background: var(--ui-surface-subtle);
+  box-shadow: none;
+}
+.comment-list {
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+.comment-list:has(.comment-row:nth-child(4)) {
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+/* Activity: keep record identity compact and make filters read as one
+   utility row rather than four independent cards. */
+.activity-record-context {
+  background: var(--ui-surface);
+}
+.activity-context-values {
+  align-items: start;
+}
+.activity-heading {
+  margin-bottom: 0;
+}
+.activity-view-toggle {
+  padding: 8px 10px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-control);
+  background: var(--ui-surface-subtle);
+}
+.activity-filters {
+  background: var(--ui-surface);
+}
+.activity-filters > button {
+  min-height: var(--control-height);
+  white-space: nowrap;
+}
+.activity-table .link-button {
+  overflow-wrap: anywhere;
+}
+
+/* Laptop/tablet — retain R1A's 1024 compact rail, but reduce viewer
+   pressure before portrait mode. */
+@media (max-width: 1024px) {
+  .business-tab-panel,
+  .business-results-panel,
+  .selected-record-panel {
+    min-width: 0;
+  }
+
+  .business-source-picker {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .viewer-shell.embedded .viewer-header {
+    align-items: flex-start;
+  }
+
+  .viewer-shell.embedded .viewer-header-actions {
+    max-width: 48%;
+  }
+
+  .viewer-shell.embedded .viewer-search {
+    margin-left: 0;
+  }
+
+  .activity-filters {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .activity-filters > button {
+    width: 100%;
+  }
+}
+
+/* Portrait/tablet — use a true drawer and give the PDF viewer the full
+   content width. This also eliminates the faint hidden-sidebar footer
+   artifact seen in the R1A screenshots. */
+@media (max-width: 900px) {
+  .modern-sidebar,
+  .sidebar-collapsed .modern-sidebar {
+    visibility: hidden;
+    pointer-events: none;
+  }
+
+  .modern-sidebar.drawer-open {
+    visibility: visible;
+    pointer-events: auto;
+  }
+
+  .viewer-tab-body {
+    grid-template-columns: 1fr;
+  }
+
+  .viewer-document-rail {
+    position: static;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    padding: 14px;
+  }
+
+  .viewer-document-rail h3 {
+    grid-column: 1 / -1;
+  }
+
+  .viewer-shell.embedded .viewer-header {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .viewer-shell.embedded .viewer-header-actions {
+    max-width: none;
+    justify-content: flex-start;
+  }
+
+  .viewer-shell.embedded .viewer-toolbar {
+    display: grid;
+    grid-template-columns: auto minmax(170px, auto) auto minmax(220px, 1fr);
+    align-items: end;
+  }
+
+  .viewer-shell.embedded .viewer-search {
+    min-width: 0;
+  }
+
+  .activity-record-context {
+    padding: 16px 18px;
+  }
+
+  .activity-context-values {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .activity-filters {
+    grid-template-columns: 1fr 1fr;
+    padding: 12px 18px 16px;
+  }
+}
+
+@media (max-width: 720px) {
+  .viewer-document-rail {
+    grid-template-columns: 1fr;
+  }
+
+  .viewer-document-rail h3 {
+    grid-column: auto;
+  }
+
+  .viewer-shell.embedded .viewer-toolbar {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .viewer-shell.embedded .viewer-search {
+    grid-column: 1 / -1;
+  }
+
+  .activity-context-values,
+  .activity-filters {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .business-search-heading {
+    gap: 14px;
+  }
+
+  .business-source-picker {
+    width: 100%;
+  }
+
+  .viewer-record-strip {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .viewer-record-strip > div {
+    padding: 4px 0;
+    border-right: 0;
+  }
+
+  .viewer-shell.embedded .viewer-header-actions > button {
+    flex: 1 1 auto;
+  }
+
+  .activity-view-toggle {
+    width: 100%;
+  }
+}
+
+/* =============================================================
+   SDV R1B FIX2 + Viewer R2 candidate — PDF-first workspace
+   ============================================================= */
+
+/* Keep the entire record results visible at 1024px without horizontal scroll.
+   The compact cards retain each source-defined field's label. */
+@media (max-width: 1180px) {
+  .business-results-panel .business-result-table-wrap,
+  .activity-workspace .business-result-table-wrap { overflow: visible; border: 0; }
+  .business-results-panel .business-result-table,
+  .activity-workspace .activity-table { min-width: 0; width: 100%; display: block; }
+  .business-results-panel .business-result-table thead,
+  .activity-workspace .activity-table thead { display: none; }
+  .business-results-panel .business-result-table tbody,
+  .activity-workspace .activity-table tbody { display: grid; gap: 8px; }
+  .business-results-panel .business-result-table tbody tr,
+  .activity-workspace .activity-table tbody tr {
+    display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px 16px; padding: 14px; border: 1px solid var(--ui-border);
+    border-radius: var(--radius-surface); background: var(--ui-surface);
+    min-width: 0;
+  }
+  .business-results-panel .business-result-table tbody tr.selected {
+    border-left: 3px solid var(--brand-accent);
+    background: var(--ui-selected);
+    box-shadow: none;
+  }
+  .business-results-panel .business-result-table td,
+  .activity-workspace .activity-table td {
+    display: grid; gap: 4px; padding: 0; border: 0;
+    min-width: 0; overflow-wrap: anywhere; line-height: 1.35;
+  }
+  .business-results-panel .business-result-table td::before,
+  .activity-workspace .activity-table td::before {
+    content: attr(data-label); display: block;
+    font-size: var(--type-xs); color: var(--ui-text-muted);
+    font-weight: var(--weight-semibold); letter-spacing: .01em;
+  }
+  .business-results-panel .business-result-table td:first-child { grid-column: 1 / -1; }
+  .activity-workspace .activity-table td:first-child { grid-column: 1 / -1; }
+}
+
+/* The PDF owns the workspace; document navigation is collapsible even with a
+   single file, and must not reserve an empty column when collapsed. */
+.viewer-tab-layout { gap: 10px; }
+.viewer-record-strip { padding: 10px 14px; }
+.viewer-tab-body { grid-template-columns: 220px minmax(0, 1fr); gap: 10px; align-items: stretch; }
+.viewer-tab-body.documents-collapsed { grid-template-columns: minmax(0, 1fr); }
+.viewer-document-switch {
+  grid-column: 1 / -1; display: flex; align-items: center;
+  gap: 12px; min-width: 0;
+}
+.viewer-document-switch button { min-height: 34px; padding: 6px 11px; font-size: var(--type-body-sm); }
+.viewer-document-switch span {
+  min-width: 0; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; color: var(--ui-text-muted); font-size: var(--type-body-sm);
+}
+.viewer-document-rail {
+  position: static; align-self: start; max-height: min(68dvh, 750px);
+  overflow: auto; padding: 12px; scrollbar-width: thin;
+}
+.viewer-document-rail h3 { margin-bottom: 9px; font-size: var(--type-body); }
+.viewer-tab-body .viewer-embedded { min-width: 0; }
+.viewer-tab-body .viewer-shell.embedded {
+  min-height: 0; height: auto; max-height: none;
+  border-radius: var(--radius-surface-lg); overflow: hidden;
+}
+.viewer-shell.embedded .viewer-header {
+  padding: 13px 16px; align-items: center; gap: 12px;
+}
+.viewer-shell.embedded .viewer-header h2 {
+  margin: 2px 0 3px; font-size: 1.08rem; line-height: 1.3;
+}
+.viewer-shell.embedded .viewer-header p { max-width: 560px; font-size: .73rem; }
+.viewer-shell.embedded .viewer-header-actions {
+  max-width: none; justify-content: flex-end; gap: 6px;
+}
+.viewer-shell.embedded .viewer-header-actions button { min-height: 34px; padding: 6px 10px; font-size: .76rem; }
+.viewer-shell.embedded .viewer-toolbar {
+  padding: 8px 12px; gap: 8px 12px; background: var(--ui-surface-subtle);
+}
+.viewer-shell.embedded .viewer-toolbar .secondary { min-height: 34px; padding: 6px 9px; }
+.viewer-shell.embedded .viewer-jump input,
+.viewer-shell.embedded .viewer-search input { min-height: 34px; }
+.viewer-shell.embedded .viewer-jump label { width: 62px; }
+.viewer-shell.embedded .viewer-search label { min-width: min(160px, 22vw); }
+.viewer-shell.embedded .viewer-group { min-height: 34px; }
+.viewer-context-bar {
+  display: flex; align-items: center; gap: 4px;
+  padding: 5px 12px; border-bottom: 1px solid var(--ui-border);
+  background: var(--ui-surface); overflow-x: auto;
+}
+.viewer-context-caption {
+  margin-right: auto; color: var(--ui-text-muted); font-size: var(--type-xs);
+  font-weight: var(--weight-semibold); letter-spacing: .08em;
+}
+.viewer-context-bar button {
+  min-height: 32px; padding: 5px 10px; flex-shrink: 0; border: 1px solid transparent;
+  border-radius: var(--radius-control); background: transparent;
+  color: var(--ui-text-secondary); font-weight: var(--weight-semibold);
+}
+.viewer-context-bar button.active {
+  background: var(--ui-selected); border-color: var(--ui-border-strong);
+  color: var(--brand-accent);
+}
+.viewer-context-bar button:hover:not(:disabled) { background: var(--ui-hover); }
+.viewer-workspace-body {
+  display: grid; grid-template-columns: minmax(0, 1fr); min-width: 0;
+  height: clamp(520px, 72dvh, 950px); min-height: 0; overflow: hidden;
+}
+.viewer-workspace-body.context-open { grid-template-columns: minmax(0, 1fr) minmax(260px, 320px); }
+.viewer-shell.embedded .viewer-workspace-body > .viewer-canvas {
+  min-height: 0; height: 100%; overflow: auto; padding: 22px 14px;
+  background: #d7dfe6; scrollbar-width: thin;
+}
+.viewer-context-panel {
+  min-width: 0; display: flex; flex-direction: column; overflow: auto;
+  padding: 10px; background: var(--ui-surface); border-left: 1px solid var(--ui-border);
+  scrollbar-width: thin;
+}
+.viewer-context-heading {
+  display: flex; justify-content: space-between; align-items: center;
+  gap: 8px; padding: 3px 2px 10px; border-bottom: 1px solid var(--ui-border-soft);
+}
+.viewer-context-heading > strong { font-size: var(--type-body); }
+.viewer-context-heading button { min-height: 30px; padding: 4px 9px; }
+.viewer-context-panel .tag-panel,
+.viewer-context-panel .comment-panel {
+  margin: 10px 0 0; border: 0; border-radius: 0; padding: 0;
+  background: transparent; box-shadow: none;
+}
+.viewer-context-panel .comment-panel-heading { flex-direction: column; align-items: start; gap: 8px; }
+.viewer-context-panel .comment-panel-heading p { line-height: 1.4; }
+.viewer-context-panel .comment-view-all { align-self: start; }
+.viewer-context-panel .comment-list {
+  max-height: none; overflow: visible; padding-right: 0;
+}
+.viewer-context-panel .comment-list.is-expanded,
+.viewer-context-panel .comment-list.is-expanded:has(.comment-row:nth-child(4)) {
+  max-height: min(42dvh, 480px); overflow-y: auto; padding-right: 4px;
+}
+.viewer-context-panel .comment-list.is-collapsed:has(.comment-row:nth-child(4)) { max-height: none; overflow: visible; }
+.viewer-context-panel .comment-row { display: grid; grid-template-columns: 1fr; gap: 7px; padding: 9px; }
+.viewer-context-panel .comment-author strong { font-size: .75rem; }
+.viewer-context-panel .comment-entry { display: grid; grid-template-columns: 1fr; }
+.viewer-context-panel .comment-entry button { justify-self: end; }
+.viewer-context-panel .tag-entry { flex-direction: column; }
+.viewer-details-list { display: grid; gap: 0; margin: 10px 0 0; }
+.viewer-details-list > div { display: grid; gap: 4px; padding: 12px 2px; border-bottom: 1px solid var(--ui-border-soft); }
+.viewer-details-list dt { font-size: .75rem; color: var(--ui-text-muted); }
+.viewer-details-list dd { margin: 0; font-weight: var(--weight-semibold); overflow-wrap: anywhere; }
+.viewer-shell.embedded .viewer-footer { padding: 6px 12px; }
+
+@media (max-width: 1180px) {
+  .viewer-tab-body.documents-open { grid-template-columns: minmax(0, 1fr); }
+  .viewer-document-rail { position: static; display: flex; flex-wrap: wrap; align-items: center; max-height: 165px; overflow: auto; }
+  .viewer-document-rail h3 { flex-basis: 100%; }
+  .viewer-document-rail button { width: min(260px, 100%); }
+  .viewer-shell.embedded .viewer-header { display: flex; flex-wrap: wrap; }
+  .viewer-shell.embedded .viewer-header-actions { justify-content: flex-start; }
+  .viewer-shell.embedded .viewer-toolbar { display: flex; flex-wrap: wrap; align-items: end; }
+  .viewer-shell.embedded .viewer-search { margin-left: auto; }
+}
+@media (max-width: 900px) {
+  .viewer-record-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .viewer-record-strip > div { border-right: 0; padding: 4px 8px; }
+  .viewer-workspace-body { height: clamp(500px, 68dvh, 820px); }
+  .viewer-workspace-body.context-open { grid-template-columns: minmax(0, 1fr); position: relative; }
+  .viewer-context-panel {
+    position: absolute; top: 0; right: 0; bottom: 0;
+    width: min(360px, 92%); max-width: 100%; z-index: 5;
+    box-shadow: var(--shadow-overlay);
+  }
+  .viewer-shell.embedded .viewer-search { margin-left: 0; }
+}
+@media (max-width: 640px) {
+  .business-results-panel .business-result-table tbody tr,
+  .activity-workspace .activity-table tbody tr { grid-template-columns: 1fr; }
+  .viewer-shell.embedded .viewer-header { padding: 11px; }
+  .viewer-shell.embedded .viewer-header-actions { gap: 5px; }
+  .viewer-shell.embedded .viewer-toolbar { padding: 8px; }
+  .viewer-shell.embedded .viewer-search { width: 100%; }
+  .viewer-shell.embedded .viewer-search label { flex: 1; min-width: 0; }
+  .viewer-context-caption { display: none; }
+  .viewer-context-bar { justify-content: space-between; }
+  .viewer-workspace-body { height: max(490px, 70dvh); }
+}
+@media print {
+  .viewer-context-bar, .viewer-context-panel, .viewer-document-switch { display: none !important; }
+  .viewer-workspace-body, .viewer-workspace-body.context-open { display: block !important; height: auto !important; }
+  .viewer-workspace-body .viewer-canvas { overflow: visible !important; }
+}
+
+
+/* =============================================================
+   SDV Viewer R2 FIX1 — tablet polish and result-card refinement
+   ============================================================= */
+
+/* Compact document-list affordance */
+.viewer-document-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  white-space: nowrap;
+}
+.viewer-document-toggle-chevron {
+  color: var(--ui-text-muted);
+  font-size: .72rem;
+  line-height: 1;
+}
+.viewer-document-switch > span {
+  padding-left: 2px;
+}
+
+/* "Back" is navigation, not a peer document operation. */
+.viewer-navigation-action {
+  color: var(--ui-text-secondary);
+  background: transparent;
+  border-color: transparent;
+}
+.viewer-navigation-action:hover:not(:disabled) {
+  background: var(--ui-hover);
+  border-color: var(--ui-border);
+}
+
+/* Make the viewer toolbar read as one compact control band. */
+.viewer-shell.embedded .viewer-toolbar {
+  border-top: 0;
+  border-bottom: 1px solid var(--ui-border);
+}
+.viewer-shell.embedded .viewer-group,
+.viewer-shell.embedded .viewer-jump,
+.viewer-shell.embedded .viewer-search {
+  align-items: end;
+}
+.viewer-shell.embedded .viewer-jump,
+.viewer-shell.embedded .viewer-group {
+  flex-shrink: 0;
+}
+
+/* Tablet Results: deliberately become a compact labeled record card instead
+   of a stretched desktop table. The selector is a small leading control. */
+@media (min-width: 901px) and (max-width: 1180px) {
+  .business-results-panel .business-result-table tbody tr {
+    grid-template-columns: 26px repeat(3, minmax(0, 1fr));
+    gap: 10px 14px;
+    padding: 12px 14px;
+    align-items: start;
+  }
+
+  .business-results-panel .business-result-table td:first-child {
+    grid-column: 1;
+    grid-row: 1 / span 3;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding-top: 18px;
+  }
+
+  .business-results-panel .business-result-table td:first-child::before {
+    display: none;
+  }
+
+  .business-results-panel .business-result-table td:first-child input[type="radio"] {
+    width: 18px;
+    height: 18px;
+    margin: 0;
+  }
+
+  .business-results-panel .business-result-table td:not(:first-child) {
+    min-height: 38px;
+  }
+
+  /* At tablet width the contextual tool panel overlays the document rather
+     than permanently shrinking the PDF canvas. */
+  .viewer-workspace-body.context-open {
+    grid-template-columns: minmax(0, 1fr);
+    position: relative;
+  }
+
+  .viewer-context-panel {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: min(340px, 46%);
+    max-width: 340px;
+    z-index: 6;
+    border-left: 1px solid var(--ui-border);
+    box-shadow: var(--shadow-overlay);
+  }
+
+  .viewer-shell.embedded .viewer-header-actions {
+    margin-left: auto;
+  }
+
+  .viewer-shell.embedded .viewer-toolbar {
+    display: grid;
+    grid-template-columns: auto auto auto minmax(230px, 1fr);
+    align-items: end;
+    column-gap: 10px;
+    row-gap: 8px;
+  }
+
+  .viewer-shell.embedded .viewer-search {
+    margin-left: 0;
+    justify-self: stretch;
+  }
+
+  .viewer-shell.embedded .viewer-search label {
+    min-width: 0;
+    width: 100%;
+  }
+}
+
+/* Portrait keeps the existing full-width record-card model. */
+@media (max-width: 900px) {
+  .business-results-panel .business-result-table td:first-child input[type="radio"] {
+    width: 17px;
+    height: 17px;
+  }
+}
+
+
+/* =============================================================
+   SDV UI Modernization R1C — Administration / Operations
+   Presentation-only. Preserves frozen SDV behavior and security.
+   ============================================================= */
+
+/* Page anatomy: compact enterprise header, then primary admin tabs. */
+.admin-workspace {
+  gap: 0;
+}
+
+.admin-workspace > .workspace-tabs {
+  margin-top: 0;
+  margin-bottom: 16px;
+  min-height: 48px;
+  background: transparent;
+  border-radius: 0;
+}
+
+.admin-workspace > .workspace-tabs button {
+  min-height: 48px;
+  padding-inline: 16px;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.admin-workspace > .workspace-tabs button.active {
+  background: transparent;
+  border-left-color: transparent;
+  border-right-color: transparent;
+  border-top-color: transparent;
+  box-shadow: none;
+}
+
+.admin-workspace > .panel.top-gap,
+.admin-workspace > .operations-layout.top-gap,
+.admin-workspace > .health-grid.top-gap {
+  margin-top: 0;
+}
+
+/* Admin panels: information hierarchy comes from spacing/separators rather
+   than a large number of floating cards. */
+.admin-workspace .panel,
+.audit-panel {
+  border-color: var(--ui-border);
+  box-shadow: var(--shadow-card);
+}
+
+.admin-workspace .panel-heading {
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+.admin-workspace .panel-heading h2,
+.audit-panel .panel-heading h2 {
+  margin-top: 2px;
+}
+
+.admin-workspace .panel-heading > div:first-child {
+  min-width: 0;
+}
+
+.admin-workspace .panel-heading .muted {
+  max-width: 880px;
+}
+
+/* Business Admin overview / roles. */
+.admin-summary-grid {
+  gap: 0;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-panel);
+  overflow: hidden;
+  background: var(--ui-surface);
+}
+
+.summary-tile {
+  border: 0;
+  border-right: 1px solid var(--ui-border-soft);
+  border-radius: 0;
+  background: var(--ui-surface);
+  padding: 15px 16px;
+}
+
+.summary-tile:last-child {
+  border-right: 0;
+}
+
+.summary-tile strong {
+  color: var(--ui-text);
+}
+
+.permission-matrix {
+  border-radius: var(--radius-panel);
+}
+
+.permission-matrix-row {
+  min-height: 54px;
+}
+
+.permission-matrix-head {
+  background: var(--ui-surface-subtle);
+}
+
+/* Retention: current state reads as status, history reads as evidence. */
+.current-policy-card {
+  margin-top: 4px;
+  padding: 14px 16px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-panel);
+  background: var(--ui-surface-subtle);
+  box-shadow: none;
+}
+
+.retention-history-full {
+  border: 0;
+  border-top: 1px solid var(--ui-border);
+  border-radius: 0;
+  padding: 16px 0 0;
+  max-height: 500px;
+}
+
+.retention-history-row {
+  padding: 12px 4px;
+}
+
+/* Metadata, storage, integrations: compact enterprise rows. */
+.source-context-inline {
+  justify-content: flex-start;
+  margin-bottom: 12px;
+}
+
+.source-context-inline label {
+  min-width: 280px;
+  max-width: 420px;
+}
+
+.admin-row-table {
+  margin-top: 12px;
+  border-radius: var(--radius-panel);
+  box-shadow: none;
+}
+
+.admin-row {
+  min-height: 54px;
+  padding-block: 9px;
+}
+
+.admin-row-head {
+  min-height: 38px;
+  background: var(--ui-surface-subtle);
+}
+
+.row-icon-button {
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+}
+
+.integration-ops-grid {
+  gap: 0;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-panel);
+  overflow: hidden;
+}
+
+.integration-ops-grid > div {
+  border: 0;
+  border-right: 1px solid var(--ui-border-soft);
+  border-bottom: 1px solid var(--ui-border-soft);
+  border-radius: 0;
+  background: var(--ui-surface);
+  padding: 11px 12px;
+}
+
+.integration-ops-grid > div:nth-child(3n) {
+  border-right: 0;
+}
+
+/* Identity administration: make destructive/commit actions clear without
+   turning every action into a primary CTA. */
+.identity-action-row {
+  gap: 8px;
+  justify-content: flex-start;
+}
+
+.identity-save-action {
+  order: 1;
+}
+
+.identity-test-action {
+  order: 2;
+}
+
+.identity-activate-action {
+  order: 3;
+}
+
+.identity-rollback-action {
+  order: 4;
+  margin-left: auto;
+}
+
+.auth-config-grid {
+  gap: 0;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-panel);
+  overflow: hidden;
+}
+
+.auth-config-grid > div {
+  border: 0;
+  border-right: 1px solid var(--ui-border-soft);
+  border-bottom: 1px solid var(--ui-border-soft);
+  border-radius: 0;
+  background: var(--ui-surface);
+}
+
+.auth-config-grid > div:nth-child(2n) {
+  border-right: 0;
+}
+
+/* Platform operations: fewer floating boxes, stronger operational density. */
+.operations-layout {
+  gap: 14px;
+}
+
+.operations-layout .panel {
+  min-width: 0;
+}
+
+.health-grid {
+  gap: 0;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-panel);
+  overflow: hidden;
+  background: var(--ui-surface);
+}
+
+.health-card {
+  border: 0;
+  border-right: 1px solid var(--ui-border-soft);
+  border-bottom: 1px solid var(--ui-border-soft);
+  border-radius: 0;
+  background: var(--ui-surface);
+  padding: 13px 14px;
+  min-height: 96px;
+}
+
+.health-card:nth-child(4n) {
+  border-right: 0;
+}
+
+.ops-item {
+  padding: 11px 2px;
+}
+
+.ops-table-wrap {
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-panel);
+  background: var(--ui-surface);
+  max-width: 100%;
+}
+
+.ops-table th {
+  background: var(--ui-surface-subtle);
+}
+
+.ops-table th,
+.ops-table td {
+  padding: 10px 11px;
+}
+
+/* Audit: filters are one utility surface; event data remains the focal point. */
+.audit-panel > .muted {
+  max-width: 920px;
+}
+
+.audit-filters-grid {
+  margin: 14px 0 16px;
+  padding: 14px;
+  gap: 12px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-panel);
+  background: var(--ui-surface-subtle);
+}
+
+.audit-filters-grid label {
+  min-width: 0;
+}
+
+.audit-filters-grid .audit-toggle {
+  padding-inline: 2px;
+  background: transparent;
+}
+
+.audit-filters-grid button[type='submit'] {
+  align-self: end;
+}
+
+.audit-table td {
+  max-width: 260px;
+}
+
+/* Drawers: focused editor rather than another page. */
+.admin-drawer {
+  width: min(520px, calc(100vw - 48px));
+}
+
+.admin-drawer-header {
+  min-height: 76px;
+  padding: 17px 20px 14px;
+}
+
+.admin-drawer-body {
+  padding: 18px 20px 26px;
+}
+
+.drawer-subsection {
+  padding-top: 16px;
+}
+
+/* Tablet / 1024 class: keep navigation horizontal, collapse content
+   deliberately, and avoid horizontal page overflow. */
+@media (max-width: 1100px) {
+  .admin-workspace > .workspace-tabs {
+    margin-inline: -2px;
+    overflow-x: auto;
+    scrollbar-width: thin;
+  }
+
+  .admin-summary-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .summary-tile {
+    border-right: 0;
+    border-bottom: 1px solid var(--ui-border-soft);
+  }
+
+  .summary-tile:last-child {
+    border-bottom: 0;
+  }
+
+  .permission-matrix-row {
+    grid-template-columns: minmax(180px, 1fr) 105px 120px;
+  }
+
+  .auth-config-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .auth-config-grid > div {
+    border-right: 0;
+  }
+
+  .integration-ops-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .integration-ops-grid > div:nth-child(3n) {
+    border-right: 1px solid var(--ui-border-soft);
+  }
+
+  .integration-ops-grid > div:nth-child(2n) {
+    border-right: 0;
+  }
+
+  .health-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .health-card:nth-child(4n) {
+    border-right: 1px solid var(--ui-border-soft);
+  }
+
+  .health-card:nth-child(2n) {
+    border-right: 0;
+  }
+
+  .audit-filters-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .admin-row-table {
+    overflow-x: auto;
+    overscroll-behavior-inline: contain;
+  }
+
+  .admin-drawer {
+    width: min(500px, calc(100vw - 32px));
+  }
+
+  .identity-rollback-action {
+    margin-left: 0;
+  }
+}
+
+/* Portrait / mobile drawer mode: admin screens become one clean column. */
+@media (max-width: 900px) {
+  .admin-workspace > .workspace-tabs {
+    margin-inline: 0;
+    padding-bottom: 0;
+  }
+
+  .admin-workspace > .workspace-tabs button {
+    min-height: 44px;
+    padding-inline: 12px;
+  }
+
+  .admin-workspace .panel-heading,
+  .audit-panel .panel-heading,
+  .section-heading-inline {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .admin-heading-action,
+  .panel-heading-actions {
+    width: 100%;
+  }
+
+  .admin-heading-action {
+    justify-content: center;
+  }
+
+  .permission-matrix {
+    overflow-x: auto;
+  }
+
+  .permission-matrix-row {
+    min-width: 560px;
+  }
+
+  .source-context-inline label {
+    width: 100%;
+    max-width: none;
+  }
+
+  .operations-layout,
+  .health-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .health-card {
+    border-right: 0;
+  }
+
+  .audit-filters-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .audit-filters-grid button[type='submit'] {
+    width: 100%;
+  }
+
+  .ops-table-wrap {
+    overflow-x: auto;
+    overscroll-behavior-inline: contain;
+  }
+
+  .admin-drawer {
+    width: 100vw;
+    max-width: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .admin-workspace > .workspace-tabs button {
+    min-height: 42px;
+    padding-inline: 10px;
+    font-size: .82rem;
+  }
+
+  .identity-action-row > button {
+    width: 100%;
+  }
+
+  .admin-row-table {
+    margin-inline: 0;
+  }
+}
+
+
+/* =============================================================
+   SDV UI Modernization R1C FIX1
+   Final administration polish after desktop / 1024 / 900 review.
+   Presentation only; frozen behavior is unchanged.
+   ============================================================= */
+
+/* Enterprise Identity: keep exactly one dominant commit action.
+   Save/Test remain available but do not compete visually with activation. */
+.identity-save-action,
+.identity-test-action {
+  background: var(--ui-surface);
+  border-color: var(--ui-border-strong);
+  color: var(--ui-text-secondary);
+}
+
+.identity-save-action:hover:not(:disabled),
+.identity-test-action:hover:not(:disabled) {
+  background: var(--ui-hover);
+  border-color: var(--ui-border-strong);
+}
+
+.identity-activate-action {
+  background: var(--brand-accent);
+  border-color: var(--brand-accent);
+  color: #fff;
+}
+
+/* Tablet Audit: do not turn the filter surface into one very long column.
+   768–900 keeps an intentional two-column layout; phones remain one column. */
+@media (min-width: 768px) and (max-width: 900px) {
+  .audit-filters-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px 12px;
+    padding: 12px;
+  }
+
+  .audit-filters-grid button[type='submit'] {
+    width: 100%;
+  }
+
+  .audit-filters-grid .audit-toggle {
+    align-self: end;
+    min-height: var(--control-height);
+  }
+}
+
+/* Audit evidence is intrinsically wide. At tablet sizes preserve readable
+   column widths rather than compressing identifiers into illegible text. */
+@media (max-width: 1024px) {
+  .audit-table {
+    min-width: 900px;
+  }
+
+  .audit-panel {
+    overflow-x: hidden;
+  }
+
+  .audit-panel .audit-table {
+    display: table;
+  }
+}
+
+/* Admin drawer already tested well at desktop and 1024; tighten tablet
+   padding slightly while preserving a focused editing surface. */
+@media (min-width: 768px) and (max-width: 1100px) {
+  .admin-drawer-header {
+    padding: 15px 18px 13px;
+  }
+
+  .admin-drawer-body {
+    padding: 16px 18px 24px;
+  }
+}
+
+
+/* =============================================================
+   SDV UI Modernization R1D — Final accessibility / regression polish
+   No redesign. No workflow/security semantics changed.
+   ============================================================= */
+
+/* Keep keyboard location obvious across tabs, navigation and compact controls. */
+.business-tabs button:focus-visible,
+.workspace-tabs button:focus-visible,
+.app-nav-link:focus-visible,
+.row-icon-button:focus-visible,
+.shell-icon-button:focus-visible,
+.sidebar-collapse-button:focus-visible {
+  position: relative;
+  z-index: 2;
+}
+
+/* Disabled controls must remain clearly disabled without becoming illegible. */
+button:disabled,
+input:disabled,
+select:disabled,
+textarea:disabled {
+  cursor: not-allowed;
+}
+
+/* Windows High Contrast / forced-colors support.
+   Preserve selected navigation, tabs and focus without depending on fills. */
+@media (forced-colors: active) {
+  .app-nav-link.active,
+  .business-tabs button.active,
+  .workspace-tabs button.active {
+    forced-color-adjust: auto;
+    border-color: Highlight;
+  }
+
+  .app-nav-link.active {
+    border-left: 3px solid Highlight;
+  }
+
+  button:focus-visible,
+  a:focus-visible,
+  input:focus-visible,
+  select:focus-visible,
+  textarea:focus-visible {
+    outline: 2px solid Highlight;
+    outline-offset: 2px;
+  }
+}
+
+/* Users requesting stronger contrast get slightly stronger structure,
+   without changing the normal visual language. */
+@media (prefers-contrast: more) {
+  .panel,
+  .status-card,
+  .viewer-shell.embedded,
+  .viewer-record-strip,
+  .admin-row-table,
+  .ops-table-wrap,
+  .audit-filters-grid {
+    border-color: var(--ui-text-secondary);
+  }
+
+  .muted,
+  small,
+  .ui-page-header-copy > p:not(.ui-eyebrow) {
+    color: var(--ui-text-secondary);
+  }
+}
+
+/* =============================================================
+   SDV UI R1E — Desktop density refinement
+   Goal: at normal 100% browser zoom, desktop should visually match
+   the previously preferred ~90% density without shrinking tablet UX.
+   Presentation only; business/security/workflow behavior is unchanged.
+   ============================================================= */
+@media (min-width: 1201px) {
+  /* Recover useful workspace width from the desktop shell. */
+  .modern-sidebar {
+    width: 248px;
+  }
+
+  .modern-main-content {
+    margin-left: 248px;
+    padding: 24px 24px 40px;
+  }
+
+  .sidebar-brand-row {
+    min-height: 70px;
+    padding: 12px 10px 12px 14px;
+  }
+
+  .modern-sidebar-nav {
+    padding: 12px 10px 16px;
+  }
+
+  .app-nav-group {
+    margin-bottom: 14px;
+  }
+
+  .app-nav-link {
+    min-height: 38px;
+    padding: 7px 9px;
+  }
+
+  .sidebar-footer {
+    padding: 10px;
+    gap: 8px;
+  }
+
+  /* Tighten page rhythm while preserving the established hierarchy. */
+  .sdv-page {
+    width: min(100%, 1500px);
+  }
+
+  .ui-page-header {
+    gap: 18px;
+    margin-bottom: 18px;
+  }
+
+  .ui-page-header h1 {
+    font-size: clamp(1.6rem, 2vw, 2rem);
+    margin-bottom: 4px;
+  }
+
+  .ui-page-header-copy > p:not(.ui-eyebrow) {
+    line-height: 1.45;
+  }
+
+  .business-tabs button,
+  .workspace-tabs button {
+    min-height: 40px;
+    padding-inline: 12px;
+  }
+
+  .panel {
+    padding: 18px;
+  }
+
+  .panel-heading {
+    margin-bottom: 13px;
+  }
+
+  .business-workspace {
+    gap: 14px;
+  }
+
+  .business-search-grid {
+    gap: 12px;
+  }
+
+  /* Desktop controls should feel compact, not miniature. */
+  input:not([type='checkbox']):not([type='radio']),
+  select,
+  textarea,
+  button[type='submit'],
+  .primary-action,
+  .wide-action,
+  .secondary {
+    min-height: 40px;
+  }
+
+  .form-actions {
+    gap: 8px;
+  }
+
+  /* Denser enterprise data surfaces. */
+  .business-result-table th,
+  .business-result-table td,
+  .admin-row-table th,
+  .admin-row-table td,
+  .ops-table th,
+  .ops-table td,
+  .audit-table th,
+  .audit-table td {
+    padding-top: 10px;
+    padding-bottom: 10px;
+  }
+
+  .summary-tile,
+  .role-matrix > div,
+  .auth-config-grid > div,
+  .metadata-form,
+  .storage-form,
+  .storage-volume-card,
+  .health-card {
+    padding-top: 14px;
+    padding-bottom: 14px;
+  }
+
+  /* Viewer is intentionally not scaled down: recovered space goes to the
+     document workspace. Only surrounding chrome becomes more compact. */
+  .viewer-record-strip > div {
+    padding-top: 10px;
+    padding-bottom: 10px;
+  }
+
+  .viewer-shell.embedded .viewer-header {
+    padding-top: 14px;
+    padding-bottom: 14px;
+  }
+
+  .viewer-shell.embedded .viewer-toolbar {
+    padding-top: 10px;
+    padding-bottom: 10px;
+  }
+
+  .viewer-workspace-body {
+    min-height: 560px;
+  }
+
+  /* Admin and operational surfaces benefit most from the recovered width. */
+  .admin-workspace,
+  .operations-workspace {
+    gap: 14px;
+  }
+
+  .audit-filters-grid {
+    gap: 10px 12px;
+    padding: 14px;
+  }
+
+  .admin-row-table,
+  .ops-table-wrap,
+  .audit-filters-grid {
+    border-radius: var(--radius-surface);
+  }
+}

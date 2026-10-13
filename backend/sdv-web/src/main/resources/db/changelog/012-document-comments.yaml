@@ -1,0 +1,9 @@
+databaseChangeLog:
+  - changeSet:
+      id: 012-document-comments
+      author: sdv
+      changes:
+        - sqlFile:
+            path: db/changelog/012-document-comments.sql
+            splitStatements: true
+            stripComments: true

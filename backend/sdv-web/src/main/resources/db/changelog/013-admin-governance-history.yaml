@@ -1,0 +1,9 @@
+databaseChangeLog:
+  - changeSet:
+      id: 013-admin-governance-history
+      author: sdv
+      changes:
+        - sqlFile:
+            path: db/changelog/013-admin-governance-history.sql
+            splitStatements: true
+            stripComments: true

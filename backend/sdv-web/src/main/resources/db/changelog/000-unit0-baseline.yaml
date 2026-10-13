@@ -1,0 +1,8 @@
+databaseChangeLog:
+  - changeSet:
+      id: 000-unit0-baseline
+      author: sdv
+      comment: Unit 0 Liquibase wiring marker; business-domain schema begins in Unit 1.
+      changes:
+        - tagDatabase:
+            tag: sdv-unit0

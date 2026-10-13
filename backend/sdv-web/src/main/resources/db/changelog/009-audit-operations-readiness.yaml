@@ -1,0 +1,10 @@
+databaseChangeLog:
+  - changeSet:
+      id: 009-audit-operations-readiness
+      author: sdv
+      changes:
+        - sqlFile:
+            path: db/changelog/009-audit-operations-readiness.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true

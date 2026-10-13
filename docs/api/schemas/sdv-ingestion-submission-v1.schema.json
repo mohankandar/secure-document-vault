@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sdv.example.invalid/contracts/sdv-ingestion-submission-v1.schema.json",
+  "title": "SDV V1 Producer Submission",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["sourceSubmissionId", "expectedDocumentCount", "metadata"],
+  "properties": {
+    "sourceSubmissionId": {"type": "string", "minLength": 1, "maxLength": 200},
+    "expectedDocumentCount": {"type": "integer", "minimum": 1},
+    "expectedDocuments": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["sourceDocumentId"],
+        "properties": {"sourceDocumentId": {"type": "string", "minLength": 1, "maxLength": 200}}
+      }
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": {"type": ["string", "number", "integer", "boolean"]}
+    }
+  }
+}

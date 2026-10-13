@@ -1,0 +1,44 @@
+databaseChangeLog:
+  - include:
+      file: db/changelog/000-unit0-baseline.yaml
+  - include:
+      file: db/changelog/001-foundation-core.yaml
+  - include:
+      file: db/changelog/002-local-foundation-seed.yaml
+  - include:
+      file: db/changelog/003-foundation-integrity-hardening.yaml
+  - include:
+      file: db/changelog/004-secure-ingestion-checkpoint-a.yaml
+
+  - include:
+      file: db/changelog/005-secure-ingestion-checkpoint-b.yaml
+
+  - include:
+      file: db/changelog/006-business-experience-checkpoint-a.yaml
+
+  - include:
+      file: db/changelog/007-permanent-corrective-redaction.yaml
+
+  - include:
+      file: db/changelog/008-controlled-download-retention.yaml
+  - include:
+      file: db/changelog/009-audit-operations-readiness.yaml
+  - include:
+      file: db/changelog/010-performance-resilience-hardening.yaml
+  - include:
+      file: db/changelog/011-business-ui-actions.yaml
+
+  - include:
+      file: db/changelog/012-document-comments.yaml
+
+  - include:
+      file: db/changelog/013-admin-governance-history.yaml
+
+  - include:
+      file: db/changelog/014-enterprise-identity-connection.yaml
+
+  - include:
+      file: db/changelog/015-enterprise-identity-admin.yaml
+
+  - include:
+      file: db/changelog/016-enterprise-identity-activation.yaml

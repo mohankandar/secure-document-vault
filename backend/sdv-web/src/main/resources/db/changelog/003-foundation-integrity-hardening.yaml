@@ -1,0 +1,9 @@
+databaseChangeLog:
+  - changeSet:
+      id: 003-foundation-integrity-hardening
+      author: sdv
+      changes:
+        - sqlFile:
+            path: db/changelog/003-foundation-integrity-hardening.sql
+            splitStatements: true
+            stripComments: true

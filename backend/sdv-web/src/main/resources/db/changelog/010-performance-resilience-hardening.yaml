@@ -1,0 +1,9 @@
+databaseChangeLog:
+  - changeSet:
+      id: 010-performance-resilience-hardening
+      author: sdv
+      changes:
+        - sqlFile:
+            path: db/changelog/010-performance-resilience-hardening.sql
+            splitStatements: true
+            stripComments: true
