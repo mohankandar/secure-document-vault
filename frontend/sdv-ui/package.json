@@ -6,7 +6,11 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "typecheck": "tsc -b --pretty false"
+    "typecheck": "tsc -b --pretty false",
+    "test:e2e": "playwright test",
+    "ui:capture": "playwright test e2e/sdv-screen-tour.spec.ts",
+    "ui:capture:headed": "playwright test e2e/sdv-screen-tour.spec.ts --headed",
+    "ui:report": "playwright show-report"
   },
   "dependencies": {
     "react": "18.3.1",
@@ -17,6 +21,7 @@
     "@types/react-dom": "18.3.5",
     "@vitejs/plugin-react": "4.3.4",
     "typescript": "5.7.2",
-    "vite": "5.4.14"
+    "vite": "5.4.14",
+    "@playwright/test": "1.55.1"
   }
 }
