@@ -1,8 +1,9 @@
 import type { ReactNode, SVGProps } from 'react'
 
-export type IconName = 'search' | 'admin' | 'operations' | 'audit' | 'menu' | 'chevronLeft' | 'chevronRight' | 'user' | 'storage' | 'list' | 'document' | 'download' | 'redaction' | 'eye' | 'print' | 'edit' | 'close' | 'plus'
+export type IconName = 'search' | 'admin' | 'operations' | 'audit' | 'menu' | 'chevronLeft' | 'chevronRight' | 'user' | 'storage' | 'list' | 'document' | 'download' | 'redaction' | 'eye' | 'print' | 'edit' | 'close' | 'plus' | 'alert'
 
 const paths: Record<IconName, ReactNode> = {
+  alert: <><circle cx="12" cy="12" r="9"/><path d="M12 7.5v5.5"/><path d="M12 16.5h.01"/></>,
   search: <><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></>,
   admin: <><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21h-4v-.1a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3v-4h.1a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-1.5V3h4v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.5 1h.1v4h-.1a1.7 1.7 0 0 0-1.5 1z"/></>,
   operations: <><path d="M4 20V10"/><path d="M10 20V4"/><path d="M16 20v-7"/><path d="M22 20H2"/></>,
