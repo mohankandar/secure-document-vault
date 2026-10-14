@@ -58,10 +58,15 @@ async function navigatePrimary(page: Page, name: string, workspaceLabel?: string
 }
 
 async function capture(page: Page, testInfo: TestInfo, name: string) {
-  await page.screenshot({
-    path: testInfo.outputPath(`${name}.png`),
+  const path = testInfo.outputPath(`${name}.png`)
+  const screenshot = await page.screenshot({
+    path,
     fullPage: true,
     animations: 'disabled',
+  })
+  await testInfo.attach(name, {
+    body: screenshot,
+    contentType: 'image/png',
   })
 }
 
