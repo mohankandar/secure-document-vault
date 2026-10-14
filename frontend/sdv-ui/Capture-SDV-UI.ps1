@@ -26,8 +26,22 @@ if ($Headed) {
   npm run ui:capture
 }
 
+$bundle = Join-Path (Get-Location) "sdv-ui-capture.zip"
+if (Test-Path $bundle) { Remove-Item $bundle -Force }
+
+$items = @()
+if (Test-Path "test-results") { $items += "test-results" }
+if (Test-Path "playwright-report") { $items += "playwright-report" }
+
+if ($items.Count -gt 0) {
+  Compress-Archive -Path $items -DestinationPath $bundle -Force
+}
+
 Write-Host ""
 Write-Host "Capture complete." -ForegroundColor Green
 Write-Host "Screenshots/traces: frontend/sdv-ui/test-results"
 Write-Host "HTML report: frontend/sdv-ui/playwright-report/index.html"
-Write-Host "Run 'npm run ui:report' to open the report."
+if (Test-Path $bundle) {
+  Write-Host "Share this single file with ChatGPT: $bundle" -ForegroundColor Cyan
+}
+Write-Host "Run 'npm run ui:report' to open the report locally."
