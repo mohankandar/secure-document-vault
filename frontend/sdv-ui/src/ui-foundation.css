@@ -5442,3 +5442,22 @@ textarea:disabled {
     width: 100%;
   }
 }
+
+/* Vero shell exploration: existing SDV tokens and role-gated navigation retained. */
+.vero-brand-row { min-height: 60px; padding-bottom: 6px; }
+.vero-wordmark { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.vero-wordmark strong { color: var(--ui-sidebar-text); font-size: 23px; font-weight: 750; letter-spacing: -.06em; line-height: 1; }
+.vero-brand-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ui-success); flex: none; }
+.vero-tenant-card { display: flex; align-items: center; gap: 10px; margin: 0 10px 16px; padding: 10px; min-width: 0; border-radius: var(--radius-control); background: rgba(255,255,255,.09); color: var(--ui-sidebar-text); }
+.vero-tenant-monogram { display: grid; place-items: center; flex: 0 0 34px; height: 34px; border-radius: 7px; background: rgba(0,0,0,.35); color: var(--ui-sidebar-text); font-size: 14px; font-weight: 700; }
+.vero-tenant-name { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: var(--type-body-sm); font-weight: var(--weight-semibold); }
+.vero-context-bar { display: flex; align-items: center; min-height: 46px; margin: calc(-1 * var(--space-5)) 0 var(--space-5); padding: 0 var(--space-2); border-bottom: 1px solid var(--ui-border); background: var(--ui-surface); }
+.vero-breadcrumb { display: flex; align-items: center; gap: 10px; min-width: 0; flex-wrap: wrap; font-size: var(--type-body-sm); color: var(--ui-text-secondary); }
+.vero-breadcrumb > span:last-child { color: var(--ui-text-strong); font-weight: var(--weight-semibold); }
+.sidebar-collapsed .vero-wordmark strong, .sidebar-collapsed .vero-brand-dot, .sidebar-collapsed .vero-tenant-name { display: none; }
+.sidebar-collapsed .vero-brand-row { justify-content: center; }
+.sidebar-collapsed .vero-tenant-card { justify-content: center; margin-left: 5px; margin-right: 5px; padding: 6px; }
+@media (max-width: 760px) {
+  .vero-context-bar { margin-top: 0; padding: 8px var(--space-3); }
+  .vero-breadcrumb { gap: 6px; font-size: var(--type-sm); }
+}
