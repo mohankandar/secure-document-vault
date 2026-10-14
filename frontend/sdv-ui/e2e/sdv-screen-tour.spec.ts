@@ -143,7 +143,7 @@ test.describe('SDV role-based screen capture', () => {
 
   test('Business Administrator screens', async ({ page }, testInfo) => {
     await selectRole(page, 'Business Administrator')
-    await navigatePrimary(page, 'Administration', 'Business administration sections')
+    await expect(page.getByLabel('Business administration sections')).toBeVisible()
     await captureAdminTabs(page, testInfo, [
       'Users & Access',
       'Roles & Permissions',
@@ -154,7 +154,7 @@ test.describe('SDV role-based screen capture', () => {
 
   test('Tenant IT Administrator screens', async ({ page }, testInfo) => {
     await selectRole(page, 'Tenant IT Administrator')
-    await navigatePrimary(page, 'Administration', 'Tenant IT administration sections')
+    await expect(page.getByLabel('Tenant IT administration sections')).toBeVisible()
     await captureAdminTabs(page, testInfo, [
       'Storage',
       'Authentication',
@@ -165,7 +165,7 @@ test.describe('SDV role-based screen capture', () => {
 
   test('Platform Operations Administrator screens', async ({ page }, testInfo) => {
     await selectRole(page, 'Platform Operations Administrator')
-    await navigatePrimary(page, 'Operations', 'Platform operations sections')
+    await expect(page.getByLabel('Platform operations sections')).toBeVisible()
     await captureAdminTabs(page, testInfo, [
       'Overview',
       'Storage',
