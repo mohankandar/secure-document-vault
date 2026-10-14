@@ -43,7 +43,18 @@ async function selectRole(page: Page, role: string) {
   }
   const workspace = workspaceByRole[role]
   if (workspace) {
-    await expect(page.getByLabel(workspace)).toBeVisible({ timeout: 15000 })
+    const workspaceLocator = page.getByLabel(workspace)
+    if (!(await workspaceLocator.isVisible().catch(() => false))) {
+      try {
+        await expect(workspaceLocator).toBeVisible({ timeout: 5000 })
+      } catch {
+        await ensureNavigationOpen(page)
+        const retryRoleSelect = page.getByLabel('Demo role')
+        await retryRoleSelect.selectOption({ label: role })
+        await expect(retryRoleSelect.locator('option:checked')).toHaveText(role)
+      }
+    }
+    await expect(workspaceLocator).toBeVisible({ timeout: 15000 })
   } else {
     await expect(
       page.getByLabel('Business document workflow').getByRole('button', { name: 'Search', exact: true }),
