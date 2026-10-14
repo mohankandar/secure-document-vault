@@ -880,7 +880,7 @@ function App() {
   const initials = (session?.subject || 'Local user').split(/[.@\s_-]+/).filter(Boolean).slice(0, 2).map((part) => part[0]?.toUpperCase()).join('') || 'LU'
 
   return (
-    <div className={`modern-app-shell ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
+    <div className={`modern-app-shell ${sidebarCollapsed ? 'sidebar-collapsed' : ''} ${view === 'search' ? 'bw-shell' : ''}`}>
       <header className="mobile-app-bar">
         <button className="shell-icon-button" type="button" onClick={() => setDrawerOpen(true)} aria-label="Open navigation"><Icon name="menu" /></button>
         <div className="mobile-brand"><span className="brand-lettermark">S</span><strong>Secure Document Vault</strong></div>
