@@ -440,10 +440,14 @@ function App() {
   }, [])
 
   useEffect(() => {
+    // Ignore responses from a superseded persona/session request. Otherwise an older
+    // principal can overwrite capabilities after the demo role has changed.
+    let cancelled = false
     if (!localMode && (authLoading || !getAccessToken())) {
       setSession(null)
-      return
+      return () => { cancelled = true }
     }
+    setSession(null)
     setError('')
     setMessage('')
     setViewerDocument(null)
@@ -451,6 +455,7 @@ function App() {
     setResults([])
     roleApi<SessionInfo>('/api/v1/session', selectedPersona)
       .then(async (current) => {
+        if (cancelled) return
         setSession(current)
         if (!localMode) {
           const resolvedPersona = personaForRoles(current.roles)
@@ -505,7 +510,8 @@ function App() {
           setIdentityOverview(null)
         }
       })
-      .catch((reason: unknown) => { setSession(null); if (!localMode && reason instanceof ApiRequestError) { if (reason.status === 403) { setAuthDenied(true); setAuthError('You are signed in, but this account does not have access to Secure Document Vault. Contact your administrator if you believe you should have access.'); } else if (reason.status === 401) { clearOidcSession(); setAuthDenied(false); setAuthError('Your organization session has expired or could not be verified. Please sign in again.'); } } })
+      .catch((reason: unknown) => { if (cancelled) return; setSession(null); if (!localMode && reason instanceof ApiRequestError) { if (reason.status === 403) { setAuthDenied(true); setAuthError('You are signed in, but this account does not have access to Secure Document Vault. Contact your administrator if you believe you should have access.'); } else if (reason.status === 401) { clearOidcSession(); setAuthDenied(false); setAuthError('Your organization session has expired or could not be verified. Please sign in again.'); } } })
+    return () => { cancelled = true }
   }, [selectedPersona, localMode, authLoading])
 
   useEffect(() => {
