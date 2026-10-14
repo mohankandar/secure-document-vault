@@ -149,7 +149,7 @@ foreach ($row in $records) {
 
 Write-Host ''
 Write-Host '=== DEMO SEARCH VALUES ===' -ForegroundColor Cyan
-$records | ForEach-Object { Write-Host ("  Contract {0} | Member {1} | Service Entity {2} | {3} PDF(s)" -f $_.contract,$_.member,$_.service,$_.files.Count) }
+$records | ForEach-Object { Write-Host ("  Contract {0} | Member {1} | Service Entity {2} | {3} PDF(s)" -f $_.contract,$_.member,$_.service,@($_.files).Count) }
 Write-Host ''
 Write-Host "Use Source: $ResolvedName" -ForegroundColor Cyan
 Write-Host 'Demo seed complete.' -ForegroundColor Green
