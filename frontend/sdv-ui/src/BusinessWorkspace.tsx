@@ -288,30 +288,30 @@ export default function BusinessWorkspace({ persona, capabilities, onViewerState
 
     {error && <div className="bw-alert" role="alert"><Icon name="alert" /><span>{error}</span></div>}
 
-    {tab === 'search' && <section className="bw-search" aria-labelledby="bw-search-title">
-      <header className="bw-search-head">
-        <div className="bw-search-intro">
+    {tab === 'search' && <section className="bw-search ui-workspace-fluid" aria-labelledby="bw-search-title">
+      <header className="bw-search-head ui-workspace-header">
+        <div className="bw-search-intro ui-workspace-intro">
           <p className="bw-eyebrow">Business search</p>
           <h2 id="bw-search-title">Find a business record</h2>
-          <p className="bw-lede">Search by any identifier or detail, then open the record&apos;s documents in the secure viewer.</p>
+          <p className="bw-lede ui-workspace-lede">Search by any identifier or detail, then open the record&apos;s documents in the secure viewer.</p>
         </div>
-        <label className="bw-source">
+        <label className="bw-source ui-workspace-aside">
           <span className="bw-source-label"><Icon name="storage" />Searching in</span>
           <select value={sourceId} onChange={(event) => setSourceId(event.target.value)} aria-label="Search source">{schema.sources.map((item) => <option key={item.sourceId} value={item.sourceId}>{item.displayName}</option>)}</select>
         </label>
       </header>
 
-      <form className="bw-sheet" onSubmit={runSearch}>
+      <form className="bw-sheet ui-workspace-surface" onSubmit={runSearch}>
         {!source && <div className="bw-sheet-loading" aria-busy="true">Loading search fields…</div>}
-        {identifierFields.length > 0 && <fieldset className="bw-group">
+        {identifierFields.length > 0 && <fieldset className="bw-group ui-workspace-section">
           <legend>Identifiers</legend>
           <div className="bw-field-grid">{identifierFields.map(renderField)}</div>
         </fieldset>}
-        {detailFields.length > 0 && <fieldset className="bw-group">
+        {detailFields.length > 0 && <fieldset className="bw-group ui-workspace-section">
           <legend>Record details</legend>
           <div className="bw-field-grid">{detailFields.map(renderField)}</div>
         </fieldset>}
-        <fieldset className="bw-group">
+        <fieldset className="bw-group ui-workspace-section">
           <legend>Dates</legend>
           <div className="bw-date-grid">
             <div className="bw-range" role="group" aria-label="Date Range">
@@ -324,9 +324,9 @@ export default function BusinessWorkspace({ persona, capabilities, onViewerState
             </div>
           </div>
         </fieldset>
-        <footer className="bw-sheet-actions">
+        <footer className="bw-sheet-actions ui-workspace-action-bar">
           <p>Any one field or date filter is enough to search.</p>
-          <div className="bw-actions-row">
+          <div className="bw-actions-row ui-action-row">
             <button type="button" className="bw-btn bw-btn-quiet" onClick={clearSearch} disabled={!hasCriteria}>Clear</button>
             <button type="submit" className="bw-btn bw-btn-primary" disabled={searching || !sourceId}><Icon name="search" />{searching ? 'Searching…' : 'Search records'}</button>
           </div>
@@ -334,8 +334,8 @@ export default function BusinessWorkspace({ persona, capabilities, onViewerState
       </form>
     </section>}
 
-    {tab === 'results' && <section className="bw-results" aria-labelledby="bw-results-title">
-      <header className="bw-results-head">
+    {tab === 'results' && <section className="bw-results ui-workspace-fluid" aria-labelledby="bw-results-title">
+      <header className="bw-results-head ui-workspace-toolbar">
         <div className="bw-results-title">
           <h2 id="bw-results-title"><span className="bw-tabular">{results.length}</span> {searchPage === 1 && !searchHasMore ? `matching ${results.length === 1 ? 'record' : 'records'}` : 'records on this page'}</h2>
           <p>{source?.displayName ?? 'Selected source'} <span aria-hidden="true">·</span> Page {searchPage}</p>
@@ -349,7 +349,7 @@ export default function BusinessWorkspace({ persona, capabilities, onViewerState
       </header>
 
       <div className={`bw-results-body ${selectedRecord ? 'has-inspector' : ''}`}>
-        <section className="bw-ledger" aria-busy={opening || searching}>
+        <section className="bw-ledger ui-workspace-surface" aria-busy={opening || searching}>
           {(opening || searching) && <div className="bw-progress" aria-hidden="true" />}
           {results.length > 0 && <div className="bw-table-scroll">
             <table className="bw-table business-result-table">
