@@ -1,0 +1,33 @@
+param(
+  [string]$BaseUrl = "http://localhost:5183",
+  [string]$ContractNumber = "300000000001",
+  [switch]$Headed
+)
+
+$ErrorActionPreference = "Stop"
+$env:SDV_UI_BASE_URL = $BaseUrl
+$env:SDV_DEMO_CONTRACT = $ContractNumber
+
+Write-Host "SDV UI capture" -ForegroundColor Cyan
+Write-Host "Base URL: $BaseUrl"
+Write-Host "Demo contract: $ContractNumber"
+
+if (-not (Test-Path "node_modules/@playwright/test")) {
+  Write-Host "Installing frontend dependencies..." -ForegroundColor Yellow
+  npm install
+}
+
+Write-Host "Ensuring Chromium is installed..." -ForegroundColor Yellow
+npx playwright install chromium
+
+if ($Headed) {
+  npm run ui:capture:headed
+} else {
+  npm run ui:capture
+}
+
+Write-Host ""
+Write-Host "Capture complete." -ForegroundColor Green
+Write-Host "Screenshots/traces: frontend/sdv-ui/test-results"
+Write-Host "HTML report: frontend/sdv-ui/playwright-report/index.html"
+Write-Host "Run 'npm run ui:report' to open the report."
