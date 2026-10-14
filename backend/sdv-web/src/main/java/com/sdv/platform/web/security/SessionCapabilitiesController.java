@@ -1,5 +1,6 @@
 package com.sdv.platform.web.security;
 
+import com.sdv.platform.application.port.TenantRepository;
 import com.sdv.platform.security.Capability;
 import com.sdv.platform.security.SdvRole;
 import com.sdv.platform.security.auth.CapabilityPolicyService;
@@ -18,10 +19,12 @@ import java.util.UUID;
 public class SessionCapabilitiesController {
     private final SecurityContextFacade security;
     private final CapabilityPolicyService capabilities;
+    private final TenantRepository tenants;
 
-    public SessionCapabilitiesController(SecurityContextFacade security, CapabilityPolicyService capabilities) {
+    public SessionCapabilitiesController(SecurityContextFacade security, CapabilityPolicyService capabilities, TenantRepository tenants) {
         this.security = security;
         this.capabilities = capabilities;
+        this.tenants = tenants;
     }
 
     @GetMapping
@@ -35,10 +38,14 @@ public class SessionCapabilitiesController {
                 .sorted(Comparator.comparing(Enum::name))
                 .map(Capability::name)
                 .toList();
-        return new SessionResponse(principal.tenantId(), principal.subject(), roles, effectiveCapabilities);
+        String tenantDisplayName = tenants.findById(principal.tenantId())
+                .map(tenant -> tenant.displayName())
+                .filter(name -> !name.isBlank())
+                .orElse("Unavailable");
+        return new SessionResponse(principal.tenantId(), tenantDisplayName, principal.subject(), roles, effectiveCapabilities);
     }
 
-    public record SessionResponse(UUID tenantId, String subject, List<String> roles, List<String> capabilities) {
+    public record SessionResponse(UUID tenantId, String tenantDisplayName, String subject, List<String> roles, List<String> capabilities) {
         public SessionResponse {
             roles = List.copyOf(roles);
             capabilities = List.copyOf(capabilities);
