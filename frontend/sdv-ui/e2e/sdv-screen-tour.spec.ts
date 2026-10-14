@@ -34,7 +34,21 @@ async function selectRole(page: Page, role: string) {
   const currentRoleSelect = page.getByLabel('Demo role')
   await currentRoleSelect.selectOption({ label: role })
   await expect(currentRoleSelect.locator('option:checked')).toHaveText(role)
-  await expect(page.locator('.sidebar-identity strong')).not.toHaveText('Local user')
+  // Wait for the actual principal, not merely a non-placeholder user label.
+  // The previous role's identity can otherwise satisfy the assertion during a switch.
+  const expectedSubjectByRole: Record<string, string> = {
+    'Business User': 'local-business-user',
+    'Document Steward': 'local-document-steward',
+    'Business Administrator': 'local-business-admin',
+    'Tenant IT Administrator': 'local-tenant-it-admin',
+    'Platform Operations Administrator': 'local-platform-operations-admin',
+  }
+  const expectedSubject = expectedSubjectByRole[role]
+  if (expectedSubject) {
+    await expect(page.locator('.sidebar-identity strong')).toHaveText(expectedSubject, { timeout: 15000 })
+  } else {
+    await expect(page.locator('.sidebar-identity strong')).not.toHaveText('Local user')
+  }
 
   const workspaceByRole: Record<string, string> = {
     'Business Administrator': 'Business administration sections',
