@@ -1,6 +1,6 @@
 param(
   [string]$BaseUrl = "http://localhost:5183",
-  [string]$ContractNumber = "300000000001",
+  [string]$ContractNumber = $(if ($env:SDV_DEMO_CONTRACT) { $env:SDV_DEMO_CONTRACT } else { "300000000076" }),
   [switch]$Headed
 )
 
