@@ -8,7 +8,7 @@ services:
     # Local-only root user ensures the named Docker volume is writable on Windows Docker Desktop.
     # Production deployments must use dedicated non-root ownership.
     user: "0:0"
-    command: ["server", "-config=/vault/config/vault.hcl"]
+    command: ["server"]
     volumes:
       - sdv-vault-data:/vault/data
       - ./config/vault-local-persistent.hcl:/vault/config/vault.hcl:ro
