@@ -79,7 +79,7 @@ if ($FreshTestData) {
         $existingContract = DbScalar "select count(distinct submission_id) from business_metadata_values where tenant_id='$Tenant' and source_id='$SourceId' and field_key='contractNumber' and normalized_value='$contract';"
         $existingSubmission = DbScalar "select count(*) from submissions where tenant_id='$Tenant' and source_id='$SourceId' and source_submission_id='vault-persistence-test-$contract';"
         if ([int]$existingContract -gt 0 -or [int]$existingSubmission -gt 0) { throw "Contract $contract already exists. No records created. Choose an unused range." }
-        $records += @{ contract=$contract; member=$member; firstName=$firstNames[$j % $firstNames.Count]; lastName=$lastNames[([int][math]::Floor($j / $firstNames.Count)) % $lastNames.Count]; service='001'; files=@('Vault Persistence Test.pdf') }
+        $records += @{ contract=$contract; member=$member; firstName=$firstNames[$j % $firstNames.Count]; lastName=$lastNames[([int][math]::Floor($j / $firstNames.Count)) % $lastNames.Count]; service='001'; files=$(if ($j -eq 0) { @('Member Agreement.pdf', 'Identity Verification.pdf', 'Terms and Conditions.pdf') } elseif ($j -eq 1) { @('Application Form.pdf', 'Supporting Document.pdf') } else { @('Vault Persistence Test.pdf') }) }
     }
     EnsureField $SourceId 'contractNumber' 'Contract Number' $true $true 'DIGITS_ONLY' 'EXACT'
     EnsureField $SourceId 'memberNumber' 'Member Number' $true $true 'DIGITS_ONLY' 'EXACT'
