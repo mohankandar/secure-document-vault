@@ -45,7 +45,9 @@ async function selectRole(page: Page, role: string) {
   if (workspace) {
     await expect(page.getByLabel(workspace)).toBeVisible({ timeout: 15000 })
   } else {
-    await expect(page.getByRole('button', { name: 'Search', exact: true })).toBeVisible({ timeout: 15000 })
+    await expect(
+      page.getByLabel('Business document workflow').getByRole('button', { name: 'Search', exact: true }),
+    ).toBeVisible({ timeout: 15000 })
   }
 }
 
