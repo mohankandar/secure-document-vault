@@ -337,7 +337,7 @@
   gap: 20px 32px;
   padding-top: 8px;
 }
-.bw .bw-search-intro { min-width: 0; }
+.bw .bw-search-intro { min-width: 0; flex: 1 1 640px; }
 .bw .bw-search-intro h2 {
   margin: 6px 0;
   font-family: var(--bw-display);
@@ -347,7 +347,7 @@
   letter-spacing: -0.015em;
   text-wrap: balance;
 }
-.bw .bw-lede { max-width: 58ch; margin: 0; color: var(--bw-text-2); font-size: 0.9375rem; line-height: 1.5; text-wrap: pretty; }
+.bw .bw-lede { max-width: none; margin: 0; color: var(--bw-text-2); font-size: 0.9375rem; line-height: 1.5; text-wrap: pretty; }
 .bw .bw-source { display: grid; gap: 6px; width: min(100%, 300px); color: inherit; font-weight: inherit; }
 .bw .bw-source-label {
   display: inline-flex;
