@@ -2,19 +2,49 @@ import { expect, test, type Page, type TestInfo } from '@playwright/test'
 
 const demoRecord = process.env.SDV_DEMO_CONTRACT ?? '300000000001'
 
+async function ensureNavigationOpen(page: Page) {
+  const roleSelect = page.getByLabel('Demo role')
+  if (await roleSelect.isVisible().catch(() => false)) return
+
+  const openNavigation = page.getByRole('button', { name: 'Open navigation' })
+  if (await openNavigation.isVisible().catch(() => false)) {
+    await openNavigation.click()
+    await expect(page.getByLabel('Demo role')).toBeVisible()
+  }
+}
+
 async function selectRole(page: Page, role: string) {
-  let roleSelect = page.getByLabel('Demo role')
-  if (!(await roleSelect.isVisible().catch(() => false))) {
-    const openNavigation = page.getByRole('button', { name: 'Open navigation' })
-    if (await openNavigation.isVisible().catch(() => false)) {
-      await openNavigation.click()
-      roleSelect = page.getByLabel('Demo role')
+  await ensureNavigationOpen(page)
+  const roleSelect = page.getByLabel('Demo role')
+  await expect(roleSelect).toBeVisible()
+
+  const selectedLabel = await roleSelect.locator('option:checked').textContent()
+  if (selectedLabel?.trim() === role) {
+    const alternate = await roleSelect.locator('option').evaluateAll((options, desired) => {
+      const match = options.find((option) => option.textContent?.trim() !== desired) as HTMLOptionElement | undefined
+      return match?.value ?? ''
+    }, role)
+    if (alternate) {
+      await roleSelect.selectOption(alternate)
+      await page.waitForTimeout(100)
+      await ensureNavigationOpen(page)
     }
   }
-  await expect(roleSelect).toBeVisible()
-  await roleSelect.selectOption({ label: role })
+
+  await page.getByLabel('Demo role').selectOption({ label: role })
   await expect(page.locator('.sidebar-identity strong')).not.toHaveText('Local user')
   await page.waitForTimeout(150)
+}
+
+async function navigatePrimary(page: Page, name: string) {
+  let button = page.getByRole('button', { name, exact: true })
+  if (!(await button.isVisible().catch(() => false))) {
+    await ensureNavigationOpen(page)
+    button = page.getByRole('button', { name, exact: true })
+  }
+  await expect(button).toBeVisible()
+  await button.click()
+  await page.waitForTimeout(200)
 }
 
 async function capture(page: Page, testInfo: TestInfo, name: string) {
@@ -71,7 +101,7 @@ async function tryBusinessRecordJourney(page: Page, testInfo: TestInfo) {
   if (!(await openDocument.isVisible().catch(() => false))) return
 
   await openDocument.click()
-  await expect(page.locator('.viewer-page-canvas, .pdf-page-canvas, canvas').first()).toBeVisible({ timeout: 15000 })
+  await expect(page.locator('.viewer-page-stage img').first()).toBeVisible({ timeout: 15000 })
   await page.waitForTimeout(300)
   await capture(page, testInfo, 'document-viewer')
 
@@ -103,7 +133,7 @@ test.describe('SDV role-based screen capture', () => {
 
   test('Business Administrator screens', async ({ page }, testInfo) => {
     await selectRole(page, 'Business Administrator')
-    await page.getByRole('button', { name: 'Administration', exact: true }).click()
+    await navigatePrimary(page, 'Administration')
     await captureAdminTabs(page, testInfo, [
       'Users & Access',
       'Roles & Permissions',
@@ -114,7 +144,7 @@ test.describe('SDV role-based screen capture', () => {
 
   test('Tenant IT Administrator screens', async ({ page }, testInfo) => {
     await selectRole(page, 'Tenant IT Administrator')
-    await page.getByRole('button', { name: 'Administration', exact: true }).click()
+    await navigatePrimary(page, 'Administration')
     await captureAdminTabs(page, testInfo, [
       'Storage',
       'Authentication',
@@ -125,7 +155,7 @@ test.describe('SDV role-based screen capture', () => {
 
   test('Platform Operations Administrator screens', async ({ page }, testInfo) => {
     await selectRole(page, 'Platform Operations Administrator')
-    await page.getByRole('button', { name: 'Operations', exact: true }).click()
+    await navigatePrimary(page, 'Operations')
     await captureAdminTabs(page, testInfo, [
       'Overview',
       'Storage',
