@@ -4,7 +4,7 @@ param(
     [string]$SourceDisplayName = 'laxavault',
     [string]$PdfPath = (Join-Path $PSScriptRoot 'test-tools\fixtures\business-viewer-two-page.pdf'),
     [switch]$FreshTestData,
-    [ValidatePattern('^[0-9]{12}
+    [ValidatePattern('^[0-9]{12}$')][string]$ContractNumber = '300000000076'
 )
 
 $ErrorActionPreference = 'Stop'
