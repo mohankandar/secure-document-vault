@@ -248,6 +248,7 @@ export default function BusinessWorkspace({ persona, capabilities, onViewerState
     </span>
     <input
       className={field.businessIdentifier ? 'bw-mono' : undefined}
+      data-vero-field-kind={field.fieldKey === 'serviceEntity' ? 'short-code' : undefined}
       value={criteria[field.fieldKey] ?? ''}
       inputMode={field.normalization === 'DIGITS_ONLY' ? 'numeric' : undefined}
       autoComplete="off"
