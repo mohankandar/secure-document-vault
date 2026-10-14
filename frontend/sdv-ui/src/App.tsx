@@ -959,23 +959,21 @@ function App() {
     <div className={`modern-app-shell ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
       <header className="mobile-app-bar">
         <button className="shell-icon-button" type="button" onClick={() => setDrawerOpen(true)} aria-label="Open navigation"><Icon name="menu" /></button>
-        <div className="mobile-brand"><span className="brand-lettermark">S</span><strong>Secure Document Vault</strong></div>
+        <div className="mobile-brand"><span className="brand-lettermark">S</span><strong>vero</strong></div>
         <div className="mobile-user-avatar" title={session?.subject || 'Local user'}>{initials}</div>
       </header>
 
       {drawerOpen && <button className="nav-drawer-backdrop" aria-label="Close navigation" onClick={() => setDrawerOpen(false)} />}
       <aside className={`modern-sidebar ${drawerOpen ? 'drawer-open' : ''}`}>
-        <div className="sidebar-brand-row">
-          <div className="sidebar-brand" title="Secure Document Vault">
-            <span className="brand-lettermark">S</span>
-            <div className="sidebar-brand-copy">
-              <strong>Secure Document Vault</strong>
-              <span>{localMode ? 'Local / Demo' : 'Enterprise'}</span>
-            </div>
-          </div>
+        <div className="sidebar-brand-row vero-brand-row">
+          <div className="sidebar-brand vero-wordmark" title="vero"><strong>vero</strong><span className="vero-brand-dot" aria-hidden="true" /></div>
           <button className="sidebar-collapse-button" type="button" onClick={toggleSidebar} aria-label={sidebarCollapsed ? 'Expand navigation' : 'Collapse navigation'}>
             <Icon name={sidebarCollapsed ? 'chevronRight' : 'chevronLeft'} />
           </button>
+        </div>
+        <div className="vero-tenant-card" title={session?.tenantDisplayName || 'Company name unavailable'}>
+          <span className="vero-tenant-monogram" aria-hidden="true">{(session?.tenantDisplayName || '—').trim().charAt(0).toUpperCase()}</span>
+          <span className="vero-tenant-name">{session?.tenantDisplayName || 'Company name unavailable'}</span>
         </div>
 
         <nav className="modern-sidebar-nav" aria-label="Primary navigation">
@@ -1007,7 +1005,7 @@ function App() {
             <div className="sidebar-avatar">{initials}</div>
             <div className="sidebar-identity-copy">
               <strong>{session?.subject || 'Local user'}</strong>
-              <span>{localMode ? 'Local Demo Tenant' : 'Enterprise tenant'}</span>
+              <span>{session?.tenantDisplayName || 'Company name unavailable'}</span>
             </div>
           </div>
           {!localMode && <button type="button" className="sidebar-signout" onClick={signOut}>Sign out</button>}
@@ -1022,6 +1020,15 @@ function App() {
 
       <main className="modern-main-content">
         <div className="sdv-page">
+          <div className="vero-context-bar" aria-label="Current location">
+            <div className="vero-breadcrumb">
+              <span className="vero-breadcrumb-company">{session?.tenantDisplayName || 'Company name unavailable'}</span>
+              <span aria-hidden="true">›</span>
+              <span>{pageMeta.title}</span>
+              {view === 'admin' && <><span aria-hidden="true">›</span><span>{selectedPersona === 'tenantIt' ? humanize(tenantItTab) : humanize(businessAdminTab)}</span></>}
+              {view === 'operations' && <><span aria-hidden="true">›</span><span>{humanize(platformTab)}</span></>}
+            </div>
+          </div>
           {view !== 'search' && <header className="ui-page-header">
             <div className="ui-page-header-copy">
               {view === 'audit' && <p className="ui-eyebrow">{pageMeta.eyebrow}</p>}
