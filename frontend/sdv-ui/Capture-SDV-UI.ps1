@@ -17,8 +17,8 @@ if (-not (Test-Path "node_modules/@playwright/test")) {
   npm install
 }
 
-Write-Host "Ensuring Chromium is installed..." -ForegroundColor Yellow
-npx playwright install chromium
+Write-Host "Ensuring Chromium and WebKit are installed..." -ForegroundColor Yellow
+npx playwright install chromium webkit
 
 if ($Headed) {
   npm run ui:capture:headed
