@@ -5,6 +5,9 @@ services:
   sdv-vault:
     environment:
       VAULT_DEV_ROOT_TOKEN_ID: null
+    # Local-only root user ensures the named Docker volume is writable on Windows Docker Desktop.
+    # Production deployments must use dedicated non-root ownership.
+    user: "0:0"
     command: ["server", "-config=/vault/config/vault.hcl"]
     volumes:
       - sdv-vault-data:/vault/data
