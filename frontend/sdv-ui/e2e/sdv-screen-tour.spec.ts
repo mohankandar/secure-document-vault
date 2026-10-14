@@ -71,7 +71,8 @@ async function tryBusinessRecordJourney(page: Page, testInfo: TestInfo) {
   if (!(await openDocument.isVisible().catch(() => false))) return
 
   await openDocument.click()
-  await page.waitForTimeout(750)
+  await expect(page.locator('.viewer-page-canvas, .pdf-page-canvas, canvas').first()).toBeVisible({ timeout: 15000 })
+  await page.waitForTimeout(300)
   await capture(page, testInfo, 'document-viewer')
 
   const activity = page.getByRole('button', { name: 'Activity', exact: true })
