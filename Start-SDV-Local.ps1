@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [switch]$WithVault
+    [switch]$WithVault = $true
 )
 
 $ErrorActionPreference = 'Stop'
@@ -104,9 +104,18 @@ if (-not $healthy) { throw 'sdv-postgres did not become healthy.' }
 
 
 if ($WithVault) {
-    # Do not silently recreate a persistent Vault using the default dev-mode compose.
-    # Recreating a dev-mode Vault destroys in-memory Transit keys.
-    $existingVault = (& docker ps -a --filter 'name=^/sdv-vault
+    # Never reconcile a persistent container using ephemeral dev-mode Compose.
+    $existingVault = (& docker ps -a --filter 'name=^/sdv-vault$' --format '{{.Names}}' | Out-String).Trim()
+    if ($existingVault -ne 'sdv-vault') {
+        throw 'Persistent sdv-vault was not found. Configure and initialize it using compose.vault-persistent.yml first. Refusing ephemeral dev-mode startup.'
+    }
+    $vaultRunning = (& docker inspect --format='{{.State.Running}}' sdv-vault | Out-String).Trim()
+    if ($vaultRunning -ne 'true') {
+        Write-Host 'Starting existing persistent sdv-vault container...'
+        & docker start sdv-vault | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw 'Could not start existing sdv-vault container.' }
+    }
+    Write-Host 'Checking existing Vault (without recreating it)...'
 
     $vaultReady = $false
     for ($i = 0; $i -lt 60; $i++) {
@@ -123,7 +132,7 @@ if ($WithVault) {
     }
     if (-not $vaultReady) {
         $vaultLogs = (& docker logs sdv-vault --tail 80 2>&1 | Out-String)
-        throw "sdv-vault did not become healthy on http://127.0.0.1:8200.`n$vaultLogs"
+        throw "sdv-vault is not healthy/unsealed. Unseal the existing persistent Vault, then retry. Do not reinitialize it.`n$vaultLogs"
     }
     Write-Host 'Vault health is UP.'
 
@@ -137,10 +146,7 @@ if ($WithVault) {
     }
 
     if ($secrets -notmatch '"transit/"') {
-        & docker exec -e VAULT_ADDR=http://127.0.0.1:8200 -e VAULT_TOKEN=sdv-local-root sdv-vault vault secrets enable transit *> $null
-        if ($LASTEXITCODE -ne 0) {
-            throw 'Could not enable Vault Transit for local SDV runtime.'
-        }
+        throw 'Vault Transit is not enabled. Configure transit/ in the persistent Vault before starting SDV.'
     }
     Write-Host 'Vault Transit is ready.'
 }
