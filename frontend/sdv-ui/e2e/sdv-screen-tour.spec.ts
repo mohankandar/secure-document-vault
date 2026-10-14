@@ -154,7 +154,9 @@ async function tryBusinessRecordJourney(page: Page, testInfo: TestInfo) {
   if (!(await recordRow.isVisible().catch(() => false))) return
 
   await recordRow.click()
-  await page.waitForTimeout(250)
+  await expect(page.getByLabel('Selected record inspector')).toBeVisible({ timeout: 15000 })
+  await expect(page.getByRole('button', { name: /open document/i })).toBeVisible({ timeout: 15000 })
+  await page.waitForTimeout(150)
   await capture(page, testInfo, 'record-inspector')
 
   const openDocument = page.getByRole('button', { name: /open document/i })
