@@ -44,14 +44,7 @@ const actionLabel = (action: string) => ({
   DOCUMENT_TEXT_SEARCHED: 'Document searched',
 }[action] ?? action.replaceAll('_', ' ').toLowerCase().replace(/^./, (m) => m.toUpperCase()))
 
-function iconForAction(action: string) {
-  if (action.includes('DOWNLOAD')) return 'download' as const
-  if (action.includes('REDACT')) return 'redaction' as const
-  if (action.includes('VIEW')) return 'eye' as const
-  if (action.includes('PRINT')) return 'print' as const
-  if (action.includes('COMMENT')) return 'document' as const
-  return 'document' as const
-}
+const actionTone = (action: string) => action.includes('REDACT') ? 'redaction' : action.includes('VIEW') || action.includes('PAGE') || action.includes('SEARCHED') ? 'view' : 'default'
 
 export default function BusinessWorkspace({ persona, capabilities, onViewerStateChange }: Props) {
   const sourcePreferenceKey = `sdv.businessWorkspace.sourceId.${persona}`
@@ -186,6 +179,19 @@ export default function BusinessWorkspace({ persona, capabilities, onViewerState
     setTab('viewer')
   }
 
+  function closeRecord() {
+    setSelectedRecord(null)
+    setSelectedDocumentId('')
+  }
+
+  function clearSearch() {
+    setCriteria({})
+    setDateFrom('')
+    setDateTo('')
+    setUpdatedFrom('')
+    setUpdatedTo('')
+  }
+
   async function loadActivity() {
     if (!selectedRecord) return
     setActivityLoading(true)
@@ -223,140 +229,204 @@ export default function BusinessWorkspace({ persona, capabilities, onViewerState
     : activityRows
 
   const primaryIdentifier = selectedRecord?.identifiers[0]
+  const secondaryIdentifiers = selectedRecord?.identifiers.slice(1) ?? []
   const selectedIdentifierKeys = new Set(selectedRecord?.identifiers.map((value) => value.fieldKey) ?? [])
   const selectedRecordDetails = selectedRecord?.metadata.filter((value) => !selectedIdentifierKeys.has(value.fieldKey)) ?? []
 
-  return <div className="business-workspace">
-    <div className="business-workflow-bar">
-      <nav className="business-tabs" aria-label="Business document workflow">
-        <button className={tab === 'search' ? 'active' : ''} onClick={() => setTab('search')}><Icon name="search" />Search</button>
-        <button className={tab === 'results' ? 'active' : ''} disabled={results.length === 0} onClick={() => setTab('results')}><Icon name="list" />Results</button>
-        <button className={tab === 'viewer' ? 'active' : ''} disabled={!selectedDocument || !canView} onClick={() => setTab('viewer')}><Icon name="document" />Document Viewer</button>
-        <button className={tab === 'activity' ? 'active' : ''} disabled={!selectedRecord} onClick={() => setTab('activity')}><Icon name="operations" />Activity</button>
+  const sourceFields = source?.fields ?? []
+  const identifierFields = sourceFields.filter((field) => field.businessIdentifier)
+  const detailFields = sourceFields.filter((field) => !field.businessIdentifier)
+  const resultFields = sourceFields.slice(0, 5)
+  const appliedCriteria = sourceFields.filter((field) => criteria[field.fieldKey]?.trim())
+  const hasCriteria = appliedCriteria.length > 0 || dateFrom || dateTo || updatedFrom || updatedTo
+  const showRecordContext = (tab === 'viewer' || tab === 'activity') && selectedRecord
+
+  const renderField = (field: SearchField) => <label key={field.fieldKey} className="bw-field">
+    <span className="bw-field-label">
+      <span>{field.displayLabel}</span>
+      <small>{searchHint(field)}</small>
+    </span>
+    <input
+      className={field.businessIdentifier ? 'bw-mono' : undefined}
+      value={criteria[field.fieldKey] ?? ''}
+      inputMode={field.normalization === 'DIGITS_ONLY' ? 'numeric' : undefined}
+      autoComplete="off"
+      onChange={(event) => setCriteria((current) => ({ ...current, [field.fieldKey]: event.target.value }))}
+    />
+  </label>
+
+  const stages: { id: BusinessTab; label: string; icon: Parameters<typeof Icon>[0]['name']; disabled: boolean; count?: number }[] = [
+    { id: 'search', label: 'Search', icon: 'search', disabled: false },
+    { id: 'results', label: 'Results', icon: 'list', disabled: results.length === 0, count: results.length || undefined },
+    { id: 'viewer', label: 'Document Viewer', icon: 'document', disabled: !selectedDocument || !canView },
+    { id: 'activity', label: 'Activity', icon: 'operations', disabled: !selectedRecord },
+  ]
+
+  return <div className={`bw bw-stage-${tab}`}>
+    <div className="bw-bar">
+      <nav className="bw-rail" aria-label="Business document workflow">
+        {stages.map((stage) => <button
+          key={stage.id}
+          type="button"
+          className={tab === stage.id ? 'active' : ''}
+          aria-current={tab === stage.id ? 'step' : undefined}
+          disabled={stage.disabled}
+          onClick={() => setTab(stage.id)}
+        >
+          <Icon name={stage.icon} />
+          <span>{stage.label}</span>
+          {stage.count !== undefined && <span className="bw-rail-count" aria-hidden="true">{stage.count}</span>}
+        </button>)}
       </nav>
-      {(tab === 'viewer' || tab === 'activity') && selectedRecord && (
-        <div className="business-workflow-record-context" aria-label="Selected record context">
-          {selectedRecord.identifiers.slice(0, 3).map((value) => <span key={value.fieldKey}><small>{value.displayLabel}</small><strong>{value.value}</strong></span>)}
-          <span><small>Source</small><strong>{selectedRecord.sourceDisplayName}</strong></span>
-        </div>
+      {showRecordContext && (
+        <dl className="bw-context" aria-label="Selected record context">
+          {selectedRecord.identifiers.slice(0, 3).map((value) => <div key={value.fieldKey}><dt>{value.displayLabel}</dt><dd className="bw-mono">{value.value}</dd></div>)}
+          <div className="bw-context-source"><dt>Source</dt><dd>{selectedRecord.sourceDisplayName}</dd></div>
+        </dl>
       )}
     </div>
 
-    {error && <div className="banner error top-gap">{error}</div>}
+    {error && <div className="bw-alert" role="alert"><Icon name="alert" /><span>{error}</span></div>}
 
-    {tab === 'search' && <>
-      <section className="business-search-screen business-search-v0">
-        <div className="business-search-hero business-search-hero-v0">
-          <div className="business-search-title">
-            <span className="kicker">Business Search</span>
-            <h2>Find a business record</h2>
-            <p className="muted">Search by any identifier or detail below, then open the record's documents in the secure viewer.</p>
+    {tab === 'search' && <section className="bw-search" aria-labelledby="bw-search-title">
+      <header className="bw-search-head">
+        <div className="bw-search-intro">
+          <p className="bw-eyebrow">Business search</p>
+          <h2 id="bw-search-title">Find a business record</h2>
+          <p className="bw-lede">Search by any identifier or detail, then open the record&apos;s documents in the secure viewer.</p>
+        </div>
+        <label className="bw-source">
+          <span className="bw-source-label"><Icon name="storage" />Searching in</span>
+          <select value={sourceId} onChange={(event) => setSourceId(event.target.value)} aria-label="Search source">{schema.sources.map((item) => <option key={item.sourceId} value={item.sourceId}>{item.displayName}</option>)}</select>
+        </label>
+      </header>
+
+      <form className="bw-sheet" onSubmit={runSearch}>
+        {!source && <div className="bw-sheet-loading" aria-busy="true">Loading search fields…</div>}
+        {identifierFields.length > 0 && <fieldset className="bw-group">
+          <legend>Identifiers</legend>
+          <div className="bw-field-grid">{identifierFields.map(renderField)}</div>
+        </fieldset>}
+        {detailFields.length > 0 && <fieldset className="bw-group">
+          <legend>Record details</legend>
+          <div className="bw-field-grid">{detailFields.map(renderField)}</div>
+        </fieldset>}
+        <fieldset className="bw-group">
+          <legend>Dates</legend>
+          <div className="bw-date-grid">
+            <div className="bw-range" role="group" aria-label="Date Range">
+              <span className="bw-field-label"><span>Date Range</span><small>Document date</small></span>
+              <div className="bw-range-inputs"><input aria-label="Date Range from" type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} /><span aria-hidden="true">to</span><input aria-label="Date Range to" type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} /></div>
+            </div>
+            <div className="bw-range" role="group" aria-label="Last Updated">
+              <span className="bw-field-label"><span>Last Updated</span><small>Latest submission</small></span>
+              <div className="bw-range-inputs"><input aria-label="Last Updated from" type="date" value={updatedFrom} onChange={(e) => setUpdatedFrom(e.target.value)} /><span aria-hidden="true">to</span><input aria-label="Last Updated to" type="date" value={updatedTo} onChange={(e) => setUpdatedTo(e.target.value)} /></div>
+            </div>
           </div>
-          <label className="business-source-context business-source-context-v0">
-            <Icon name="storage" />
-            <span className="business-source-context-copy">
-              <small>Searching in</small>
-              <select value={sourceId} onChange={(event) => setSourceId(event.target.value)} aria-label="Search source">{schema.sources.map((item) => <option key={item.sourceId} value={item.sourceId}>{item.displayName}</option>)}</select>
-            </span>
-          </label>
-        </div>
-      </section>
-      <div className="business-search-body-v0">
-        <form className="panel business-search-form business-search-form-premium business-search-form-v0" onSubmit={runSearch}>
-          <section className="business-search-record-section">
-            <div className="business-search-section-heading">
-              <h3>{source?.displayName} record</h3>
-              <span>Fields shown match the selected source</span>
-            </div>
-            <div className="business-search-grid business-search-grid-v0">
-              {source?.fields.map((field) => <label key={field.fieldKey}>
-                <span className="business-field-label">
-                  <span>{field.displayLabel}{field.businessIdentifier && <em>ID</em>}</span>
-                  <small>{searchHint(field)}</small>
-                </span>
-                <input
-                  value={criteria[field.fieldKey] ?? ''}
-                  inputMode={field.normalization === 'DIGITS_ONLY' ? 'numeric' : undefined}
-                  autoComplete="off"
-                  onChange={(event) => setCriteria((current) => ({ ...current, [field.fieldKey]: event.target.value }))}
-                />
-              </label>)}
-            </div>
-          </section>
-          <section className="business-search-date-section">
-            <span className="business-section-label">Narrow by date</span>
-            <div className="business-date-grid-v0">
-              <fieldset>
-                <legend><span>Date Range</span><small>Document date</small></legend>
-                <div><input aria-label="Date Range from" type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} /><span>–</span><input aria-label="Date Range to" type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} /></div>
-              </fieldset>
-              <fieldset>
-                <legend><span>Last Updated</span><small>Latest submission</small></legend>
-                <div><input aria-label="Last Updated from" type="date" value={updatedFrom} onChange={(e) => setUpdatedFrom(e.target.value)} /><span>–</span><input aria-label="Last Updated to" type="date" value={updatedTo} onChange={(e) => setUpdatedTo(e.target.value)} /></div>
-              </fieldset>
-            </div>
-          </section>
-          <div className="business-search-footer business-search-footer-v0">
-            <span className="business-search-guidance">Any one field or date filter is enough to search.</span>
-            <div className="form-actions"><button type="button" className="business-clear-action" onClick={() => { setCriteria({}); setDateFrom(''); setDateTo(''); setUpdatedFrom(''); setUpdatedTo('') }}>Clear</button><button type="submit" className="business-primary-action" disabled={searching || !sourceId}><Icon name="search" />{searching ? 'Searching…' : 'Search records'}</button></div>
+        </fieldset>
+        <footer className="bw-sheet-actions">
+          <p>Any one field or date filter is enough to search.</p>
+          <div className="bw-actions-row">
+            <button type="button" className="bw-btn bw-btn-quiet" onClick={clearSearch} disabled={!hasCriteria}>Clear</button>
+            <button type="submit" className="bw-btn bw-btn-primary" disabled={searching || !sourceId}><Icon name="search" />{searching ? 'Searching…' : 'Search records'}</button>
           </div>
-        </form>
-      </div>
-    </>}
+        </footer>
+      </form>
+    </section>}
 
-    {tab === 'results' && <>
-      <div className="business-results-topbar-v0">
-        <div className="business-results-title-v0">
-          <h2><strong>{results.length}</strong> {searchPage === 1 && !searchHasMore ? `matching ${results.length === 1 ? 'record' : 'records'}` : 'records on this page'}</h2>
-          <span>Page {searchPage} · in {source?.displayName ?? 'selected source'}</span>
+    {tab === 'results' && <section className="bw-results" aria-labelledby="bw-results-title">
+      <header className="bw-results-head">
+        <div className="bw-results-title">
+          <h2 id="bw-results-title"><span className="bw-tabular">{results.length}</span> {searchPage === 1 && !searchHasMore ? `matching ${results.length === 1 ? 'record' : 'records'}` : 'records on this page'}</h2>
+          <p>{source?.displayName ?? 'Selected source'} <span aria-hidden="true">·</span> Page {searchPage}</p>
         </div>
-        <div className="business-results-summary">
-          <div className="business-search-chips" aria-label="Applied search criteria">
-            {(source?.fields ?? []).filter((field) => criteria[field.fieldKey]?.trim()).map((field) => <span key={field.fieldKey}><small>{field.displayLabel}</small><strong>{criteria[field.fieldKey].trim()}</strong></span>)}
-            {(dateFrom || dateTo) && <span><small>Date Range</small><strong>{dateFrom || '…'} – {dateTo || '…'}</strong></span>}
-            {(updatedFrom || updatedTo) && <span><small>Last Updated</small><strong>{updatedFrom || '…'} – {updatedTo || '…'}</strong></span>}
-          </div>
-          <button type="button" className="secondary business-modify-search" onClick={() => setTab('search')}><Icon name="edit" />Modify search</button>
-        </div>
-      </div>
-      <div className="business-results-content-v0">
-        <div className={`business-results-layout business-results-layout-v0 ${selectedRecord ? 'inspector-open' : ''}`}>
-          <section className="panel business-results-panel business-results-panel-v0">
-            <div className="business-result-table-wrap"><table className="business-result-table business-result-table-v0"><thead><tr><th></th>{(source?.fields ?? []).slice(0, 5).map((field) => <th key={field.fieldKey}>{field.displayLabel}</th>)}<th>Documents</th><th>Last Updated</th></tr></thead><tbody>{results.map((item) => {
-              const values = new Map([...item.identifiers, ...item.metadataPreview].map((value) => [value.fieldKey, value.value]))
-              return <tr key={item.recordRef} className={selectedRecord?.recordRef === item.recordRef ? 'selected' : ''} onClick={() => openRecord(item.recordRef)}><td data-label="Select"><input type="radio" name="selected-record" aria-label={`Select record ${item.recordRef}`} readOnly checked={selectedRecord?.recordRef === item.recordRef} /></td>{(source?.fields ?? []).slice(0,5).map((field, index) => <td key={field.fieldKey} data-label={field.displayLabel} className={index === 0 ? 'primary-cell' : ''}>{values.get(field.fieldKey) ?? '—'}</td>)}<td data-label="Documents"><span className="document-count-pill"><Icon name="document" />{item.availableDocumentCount || 'None'}</span></td><td data-label="Last Updated">{formatDate(item.latestSubmissionAt)}</td></tr>
-            })}</tbody></table></div>
-            {results.length === 0 && <div className="empty-state"><Icon name="search" /><strong>No matching records</strong><span>Try fewer fields or a wider date range.</span><button type="button" onClick={() => setTab('search')}>Modify search</button></div>}
-            {results.length > 0 && <nav className="business-results-pagination" aria-label="Search result pages">
-              <button type="button" className="secondary" disabled={searching || searchPage <= 1} onClick={() => loadSearchPage(searchPage - 1)}>← Previous</button>
-              <span>Page <strong>{searchPage}</strong></span>
-              <button type="button" className="secondary" disabled={searching || !searchHasMore} onClick={() => loadSearchPage(searchPage + 1)}>Next →</button>
-            </nav>}
-          </section>
+        <ul className="bw-criteria" aria-label="Applied search criteria">
+          {appliedCriteria.map((field) => <li key={field.fieldKey}><span>{field.displayLabel}</span><strong className={field.businessIdentifier ? 'bw-mono' : undefined}>{criteria[field.fieldKey].trim()}</strong></li>)}
+          {(dateFrom || dateTo) && <li><span>Date Range</span><strong>{dateFrom || '…'} – {dateTo || '…'}</strong></li>}
+          {(updatedFrom || updatedTo) && <li><span>Last Updated</span><strong>{updatedFrom || '…'} – {updatedTo || '…'}</strong></li>}
+        </ul>
+        <button type="button" className="bw-btn bw-btn-secondary" onClick={() => setTab('search')}><Icon name="edit" />Modify search</button>
+      </header>
 
-          {selectedRecord && <aside className="selected-record-panel selected-record-panel-v0" aria-label="Selected record inspector">
-            <button type="button" className="selected-record-close-v0" onClick={() => { setSelectedRecord(null); setSelectedDocumentId('') }} aria-label="Close selected record details">×</button>
-            <div className="selected-record-identity-v0">
-              <span className="business-section-label">Selected record</span>
-              <small>{primaryIdentifier?.displayLabel}</small>
-              <h2>{primaryIdentifier?.value}</h2>
-              {selectedRecord.identifiers.length > 1 && <p>{selectedRecord.identifiers.slice(1).map((value) => `${value.displayLabel} ${value.value}`).join(' · ')}</p>}
-            </div>
-            {selectedRecordDetails.length > 0 && <div className="selected-record-details-v0">{selectedRecordDetails.map((value) => <div key={value.fieldKey}><span>{value.displayLabel}</span><strong>{value.value}</strong></div>)}<div><span>Last Updated</span><strong>{formatDate(selectedRecord.latestSubmissionAt)}</strong></div></div>}
-            <div className="selected-record-documents-v0">
-              <div className="selected-record-documents-heading"><strong>Documents</strong><span>{selectedRecord.documents.length} available</span></div>
-              <div className="compact-document-list compact-document-list-v0">{selectedRecord.documents.map((document) => <button key={document.documentId} className={selectedDocumentId === document.documentId ? 'selected' : ''} onClick={() => setSelectedDocumentId(document.documentId)} onDoubleClick={() => canView && openViewer(document.documentId)}><span className="document-tile-icon"><Icon name="document" /></span><span><strong>{document.originalFilename}</strong><small>{formatDate(document.availableAt)}</small></span>{selectedDocumentId === document.documentId && <span className="document-selected-check">✓</span>}</button>)}</div>
-            </div>
-            <div className="selected-record-actions-v0">
-              <button className="business-primary-action wide-action" disabled={!selectedDocumentId || !canView} onClick={() => openViewer()}>Open document <span aria-hidden="true">→</span></button>
-              <button className="business-ghost-action" onClick={() => setTab('activity')}><Icon name="operations" />Record activity</button>
-            </div>
-          </aside>}
-        </div>
-      </div>
-    </>}
+      <div className={`bw-results-body ${selectedRecord ? 'has-inspector' : ''}`}>
+        <section className="bw-ledger" aria-busy={opening || searching}>
+          {(opening || searching) && <div className="bw-progress" aria-hidden="true" />}
+          {results.length > 0 && <div className="bw-table-scroll">
+            <table className="bw-table business-result-table">
+              <thead><tr>
+                <th className="bw-col-select"><span className="sr-only">Selected</span></th>
+                {resultFields.map((field) => <th key={field.fieldKey}>{field.displayLabel}</th>)}
+                <th className="bw-col-num">Documents</th>
+                <th>Last Updated</th>
+              </tr></thead>
+              <tbody>{results.map((item) => {
+                const values = new Map([...item.identifiers, ...item.metadataPreview].map((value) => [value.fieldKey, value.value]))
+                const isSelected = selectedRecord?.recordRef === item.recordRef
+                return <tr key={item.recordRef} className={isSelected ? 'selected' : ''} onClick={() => openRecord(item.recordRef)}>
+                  <td className="bw-col-select" data-label="Select"><input type="radio" name="selected-record" aria-label={`Select record ${item.recordRef}`} readOnly checked={isSelected} /></td>
+                  {resultFields.map((field, index) => <td key={field.fieldKey} data-label={field.displayLabel} className={`${index === 0 ? 'bw-cell-primary' : ''} ${field.businessIdentifier ? 'bw-mono' : ''}`}>{values.get(field.fieldKey) ?? '—'}</td>)}
+                  <td className="bw-col-num" data-label="Documents"><span className={`bw-doc-count ${item.availableDocumentCount ? '' : 'is-empty'}`}><Icon name="document" />{item.availableDocumentCount || 'None'}</span></td>
+                  <td className="bw-cell-date" data-label="Last Updated">{formatDate(item.latestSubmissionAt)}</td>
+                </tr>
+              })}</tbody>
+            </table>
+          </div>}
+          {results.length === 0 && <div className="bw-empty">
+            <Icon name="search" />
+            <strong>No matching records</strong>
+            <span>Try fewer fields or a wider date range.</span>
+            <button type="button" className="bw-btn bw-btn-secondary" onClick={() => setTab('search')}>Modify search</button>
+          </div>}
+          {results.length > 0 && <nav className="bw-pagination" aria-label="Search result pages">
+            <button type="button" className="bw-btn bw-btn-quiet" disabled={searching || searchPage <= 1} onClick={() => loadSearchPage(searchPage - 1)}><Icon name="chevronLeft" />Previous</button>
+            <span>Page <strong className="bw-tabular">{searchPage}</strong></span>
+            <button type="button" className="bw-btn bw-btn-quiet" disabled={searching || !searchHasMore} onClick={() => loadSearchPage(searchPage + 1)}>Next<Icon name="chevronRight" /></button>
+          </nav>}
+        </section>
 
-    {tab === 'viewer' && selectedRecord && selectedDocument && <div className="viewer-tab-layout premium-viewer-tab-layout">
+        {selectedRecord && <>
+          <div className="bw-scrim" role="presentation" onClick={closeRecord} />
+          <aside className="bw-inspector" aria-label="Selected record inspector">
+            <header className="bw-inspector-head">
+              <div className="bw-inspector-identity">
+                <p className="bw-eyebrow">Selected record</p>
+                <p className="bw-inspector-label">{primaryIdentifier?.displayLabel}</p>
+                <h3 className="bw-mono">{primaryIdentifier?.value}</h3>
+              </div>
+              <button type="button" className="bw-icon-btn" onClick={closeRecord} aria-label="Close selected record details"><span aria-hidden="true">×</span></button>
+            </header>
+
+            <dl className="bw-facts">
+              {secondaryIdentifiers.map((value) => <div key={value.fieldKey}><dt>{value.displayLabel}</dt><dd className="bw-mono">{value.value}</dd></div>)}
+              {selectedRecordDetails.map((value) => <div key={value.fieldKey}><dt>{value.displayLabel}</dt><dd>{value.value}</dd></div>)}
+              <div><dt>Last Updated</dt><dd>{formatDate(selectedRecord.latestSubmissionAt)}</dd></div>
+            </dl>
+
+            <section className="bw-docs" aria-labelledby="bw-docs-title">
+              <header><h4 id="bw-docs-title">Documents</h4><span>{selectedRecord.documents.length} available</span></header>
+              {selectedRecord.documents.length === 0 && <p className="bw-docs-empty">No documents are available on this record.</p>}
+              <ul>{selectedRecord.documents.map((document) => {
+                const isActive = selectedDocumentId === document.documentId
+                return <li key={document.documentId}>
+                  <button type="button" className={isActive ? 'selected' : ''} aria-pressed={isActive} onClick={() => setSelectedDocumentId(document.documentId)} onDoubleClick={() => canView && openViewer(document.documentId)}>
+                    <span className="bw-doc-icon"><Icon name="document" /></span>
+                    <span className="bw-doc-copy"><strong>{document.originalFilename}</strong><small>{formatDate(document.availableAt)}</small></span>
+                    <span className={`bw-doc-check${isActive ? ' is-on' : ''}`} aria-hidden="true" />
+                  </button>
+                </li>
+              })}</ul>
+            </section>
+
+            <footer className="bw-inspector-actions">
+              <button type="button" className="bw-btn bw-btn-primary bw-btn-block" disabled={!selectedDocumentId || !canView} onClick={() => openViewer()}>Open document <span aria-hidden="true">→</span></button>
+              <button type="button" className="bw-btn bw-btn-quiet bw-btn-block" onClick={() => setTab('activity')}><Icon name="operations" />Record activity</button>
+            </footer>
+          </aside>
+        </>}
+      </div>
+    </section>}
+
+    {tab === 'viewer' && selectedRecord && selectedDocument && <div className="bw-viewer">
       <PdfViewer
         key={selectedDocument.documentId}
         documentId={selectedDocument.documentId}
@@ -375,26 +445,42 @@ export default function BusinessWorkspace({ persona, capabilities, onViewerState
       />
     </div>}
 
-    {tab === 'activity' && selectedRecord && <div className="activity-page-v0">
-      <div className="activity-page-heading-v0">
-        <div><h2>Activity</h2><p>Who did what, and when, on documents in this record. Newest first.</p></div>
-        <button type="button" className="secondary" onClick={() => selectedDocument ? setTab('viewer') : setTab('results')}>← Back to document</button>
+    {tab === 'activity' && selectedRecord && <section className="bw-activity" aria-labelledby="bw-activity-title">
+      <header className="bw-activity-head">
+        <div>
+          <h2 id="bw-activity-title">Activity</h2>
+          <p>Who did what, and when, on documents in this record. Newest first.</p>
+        </div>
+        <button type="button" className="bw-btn bw-btn-secondary" onClick={() => selectedDocument ? setTab('viewer') : setTab('results')}><Icon name="chevronLeft" />Back to document</button>
+      </header>
+
+      <div className="bw-ledger">
+        <div className="bw-filters">
+          <label className="bw-field"><span className="bw-field-label"><span>Document</span></span><select value={activityDocumentId} onChange={(e) => setActivityDocumentId(e.target.value)}><option value="">All documents in record ({selectedRecord.documents.length})</option>{selectedRecord.documents.map((document) => <option key={document.documentId} value={document.documentId}>{document.originalFilename}</option>)}</select></label>
+          <label className="bw-field"><span className="bw-field-label"><span>Action Type</span></span><select value={activityAction} onChange={(e) => setActivityAction(e.target.value)}><option value="">All actions</option><option value="DOCUMENT_DOWNLOADED">Download</option><option value="DOCUMENT_PRINTED">Print</option><option value="DOCUMENT_TAG_ADDED">Tag added</option><option value="DOCUMENT_COMMENT_ADDED">Comment added</option><option value="DOCUMENT_PERMANENTLY_REDACTED">Permanent redaction</option><option value="DOCUMENT_AVAILABLE">Document available</option>{includeViews && <option value="DOCUMENT_VIEW_OPENED">Document viewed</option>}</select></label>
+          <label className="bw-field"><span className="bw-field-label"><span>Performed By</span></span><input value={activityActor} onChange={(e) => setActivityActor(e.target.value)} placeholder="All users" /></label>
+          <label className="bw-field"><span className="bw-field-label"><span>Date Range</span></span><select value={activityRange} onChange={(e) => setActivityRange(e.target.value)}><option value="30">Last 30 days</option><option value="90">Last 90 days</option><option value="365">Last year</option><option value="all">All time</option></select></label>
+        </div>
+        <div className="bw-activity-meta">
+          <span className="bw-tabular">{filteredActivityRows.length} {filteredActivityRows.length === 1 ? 'event' : 'events'}</span>
+          <label className="bw-check"><input type="checkbox" checked={includeViews} onChange={(e) => setIncludeViews(e.target.checked)} /><span>Include document view events</span><small>Hidden by default</small></label>
+          <button type="button" className="bw-btn bw-btn-secondary" onClick={() => loadActivity()} disabled={activityLoading}>{activityLoading ? 'Loading…' : 'Refresh'}</button>
+        </div>
+        {activityLoading && <div className="bw-progress" aria-hidden="true" />}
+        {filteredActivityRows.length > 0 && <div className="bw-table-scroll">
+          <table className="bw-table bw-activity-table">
+            <thead><tr><th>Date &amp; Time</th><th>Event</th><th>Document</th><th>User</th><th>Outcome</th></tr></thead>
+            <tbody>{filteredActivityRows.map((row) => <tr key={row.auditEventId}>
+              <td className="bw-cell-date" data-label="Date & Time">{formatDate(row.occurredAt)}</td>
+              <td data-label="Event"><span className={`bw-event bw-event-${actionTone(row.action)}`}>{actionLabel(row.action)}</span></td>
+              <td data-label="Document"><button type="button" className="bw-link" onClick={() => openViewer(row.documentId)}><Icon name="document" />{row.documentName}</button></td>
+              <td className="bw-mono bw-cell-actor" data-label="User">{row.actorId}</td>
+              <td data-label="Outcome"><span className={`bw-outcome ${row.outcome === 'SUCCESS' ? 'is-success' : 'is-failed'}`}>{row.outcome === 'SUCCESS' ? 'Success' : 'Failed'}</span></td>
+            </tr>)}</tbody>
+          </table>
+        </div>}
+        {!activityLoading && filteredActivityRows.length === 0 && <div className="bw-empty bw-empty-compact"><Icon name="operations" /><strong>No activity matches these filters</strong><span>Widen the date range or include document view events.</span></div>}
       </div>
-      <section className="activity-card-v0">
-        <div className="activity-filters-v0">
-          <label><span>Document</span><select value={activityDocumentId} onChange={(e) => setActivityDocumentId(e.target.value)}><option value="">All documents in record ({selectedRecord.documents.length})</option>{selectedRecord.documents.map((document) => <option key={document.documentId} value={document.documentId}>{document.originalFilename}</option>)}</select></label>
-          <label><span>Action Type</span><select value={activityAction} onChange={(e) => setActivityAction(e.target.value)}><option value="">All actions</option><option value="DOCUMENT_DOWNLOADED">Download</option><option value="DOCUMENT_PRINTED">Print</option><option value="DOCUMENT_TAG_ADDED">Tag added</option><option value="DOCUMENT_COMMENT_ADDED">Comment added</option><option value="DOCUMENT_PERMANENTLY_REDACTED">Permanent redaction</option><option value="DOCUMENT_AVAILABLE">Document available</option>{includeViews && <option value="DOCUMENT_VIEW_OPENED">Document viewed</option>}</select></label>
-          <label><span>Performed By</span><input value={activityActor} onChange={(e) => setActivityActor(e.target.value)} placeholder="All users" /></label>
-          <label><span>Date Range</span><select value={activityRange} onChange={(e) => setActivityRange(e.target.value)}><option value="30">Last 30 days</option><option value="90">Last 90 days</option><option value="365">Last year</option><option value="all">All time</option></select></label>
-        </div>
-        <div className="activity-meta-v0">
-          <span>{filteredActivityRows.length} {filteredActivityRows.length === 1 ? 'event' : 'events'}</span>
-          <label><input type="checkbox" checked={includeViews} onChange={(e) => setIncludeViews(e.target.checked)} />Include document view events <small>· hidden by default</small></label>
-          <button type="button" className="business-ghost-action activity-apply-v0" onClick={() => loadActivity()} disabled={activityLoading}>{activityLoading ? 'Loading…' : 'Refresh'}</button>
-        </div>
-        <div className="business-result-table-wrap"><table className="business-result-table activity-table activity-table-v0"><thead><tr><th>Date & Time</th><th>Event</th><th>Document</th><th>User</th><th>Outcome</th></tr></thead><tbody>{filteredActivityRows.map((row) => <tr key={row.auditEventId}><td data-label="Date & Time">{formatDate(row.occurredAt)}</td><td data-label="Event"><span className="activity-event-pill">{actionLabel(row.action)}</span></td><td data-label="Document"><button className="activity-document-link" onClick={() => openViewer(row.documentId)}><Icon name="document" />{row.documentName}</button></td><td data-label="User">{row.actorId}</td><td data-label="Outcome"><span className={row.outcome === 'SUCCESS' ? 'activity-outcome-success' : 'activity-outcome-failed'}><i />{row.outcome === 'SUCCESS' ? 'Success' : 'Failed'}</span></td></tr>)}</tbody></table></div>
-        {!activityLoading && filteredActivityRows.length === 0 && <p className="activity-empty-v0">No activity matches these filters.</p>}
-      </section>
-    </div>}
+    </section>}
   </div>
 }
