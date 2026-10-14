@@ -26,14 +26,27 @@ async function selectRole(page: Page, role: string) {
     }, role)
     if (alternate) {
       await roleSelect.selectOption(alternate)
-      await page.waitForTimeout(100)
+      await page.waitForTimeout(150)
       await ensureNavigationOpen(page)
     }
   }
 
-  await page.getByLabel('Demo role').selectOption({ label: role })
+  const currentRoleSelect = page.getByLabel('Demo role')
+  await currentRoleSelect.selectOption({ label: role })
+  await expect(currentRoleSelect.locator('option:checked')).toHaveText(role)
   await expect(page.locator('.sidebar-identity strong')).not.toHaveText('Local user')
-  await page.waitForTimeout(150)
+
+  const workspaceByRole: Record<string, string> = {
+    'Business Administrator': 'Business administration sections',
+    'Tenant IT Administrator': 'Tenant IT administration sections',
+    'Platform Operations Administrator': 'Platform operations sections',
+  }
+  const workspace = workspaceByRole[role]
+  if (workspace) {
+    await expect(page.getByLabel(workspace)).toBeVisible({ timeout: 15000 })
+  } else {
+    await expect(page.getByRole('button', { name: 'Search', exact: true })).toBeVisible({ timeout: 15000 })
+  }
 }
 
 async function navigatePrimary(page: Page, name: string, workspaceLabel?: string) {
