@@ -78,7 +78,15 @@ if ($FreshTestData) {
         $member = ($startMember + $j).ToString('D11')
         $existingContract = DbScalar "select count(distinct submission_id) from business_metadata_values where tenant_id='$Tenant' and source_id='$SourceId' and field_key='contractNumber' and normalized_value='$contract';"
         $existingSubmission = DbScalar "select count(*) from submissions where tenant_id='$Tenant' and source_id='$SourceId' and source_submission_id='vault-persistence-test-$contract';"
-        if ([int]$existingContract -gt 0 -or [int]$existingSubmission -gt 0) { throw "Contract $contract already exists. No records created. Choose an unused range." }
+        if ([int]$existingContract -gt 0 -or [int]$existingSubmission -gt 0) {
+            # Resume only the exact fixture created by this script, never a pre-existing
+            # business record or a different source submission using this contract.
+            $matchingMember = DbScalar "select count(*) from business_metadata_values v join submissions s on s.submission_id=v.submission_id and s.tenant_id=v.tenant_id where v.tenant_id='$Tenant' and v.source_id='$SourceId' and v.field_key='memberNumber' and v.normalized_value='$member' and s.source_submission_id='vault-persistence-test-$contract';"
+            if ([int]$existingContract -ne 1 -or [int]$existingSubmission -ne 1 -or [int]$matchingMember -ne 1) {
+                throw "Contract $contract is occupied by another or inconsistent record. Nothing new was created during preflight."
+            }
+            Ok "Existing matching test fixture will be resumed: $contract"
+        }
         $records += @{ contract=$contract; member=$member; firstName=$firstNames[$j % $firstNames.Count]; lastName=$lastNames[([int][math]::Floor($j / $firstNames.Count)) % $lastNames.Count]; service='001'; files=$(if ($j -eq 0) { @('Member Agreement.pdf', 'Identity Verification.pdf', 'Terms and Conditions.pdf') } elseif ($j -eq 1) { @('Application Form.pdf', 'Supporting Document.pdf') } else { @('Vault Persistence Test.pdf') }) }
     }
     EnsureField $SourceId 'contractNumber' 'Contract Number' $true $true 'DIGITS_ONLY' 'EXACT'
@@ -98,18 +106,19 @@ if ($FreshTestData) {
 }
 
 foreach ($row in $records) {
+    $files = @($row.files)  # Always an array, even for one PDF under StrictMode.
     $sourceSubmissionId = if ($FreshTestData) { "vault-persistence-test-$($row.contract)" } else { "r3-demo-contract-$($row.contract)" }
     $escapedSubmission = $sourceSubmissionId.Replace("'", "''")
     $submissionId = DbScalar "select submission_id from submissions where tenant_id='$Tenant' and source_id='$SourceId' and source_submission_id='$escapedSubmission' limit 1;"
 
     $manifest=@()
-    for($i=0;$i -lt $row.files.Count;$i++) { $manifest += @{ sourceDocumentId=$(if ($FreshTestData) { "vault-persistence-doc-$($row.contract)-$($i+1)" } else { "r3-demo-doc-$($row.contract)-$($i+1)" }) } }
+    for($i=0;$i -lt $files.Count;$i++) { $manifest += @{ sourceDocumentId=$(if ($FreshTestData) { "vault-persistence-doc-$($row.contract)-$($i+1)" } else { "r3-demo-doc-$($row.contract)-$($i+1)" }) } }
 
     if ([string]::IsNullOrWhiteSpace($submissionId)) {
         $sourceHeaders=SourceHeaders $SourceId 'local-demo-producer'
         $submission=InvokeJson 'POST' "$Base/api/v1/ingestion/submissions" $sourceHeaders @{
             sourceSubmissionId=$sourceSubmissionId
-            expectedDocumentCount=$row.files.Count
+            expectedDocumentCount=$files.Count
             expectedDocuments=$manifest
             metadata=$(if ($FreshTestData) { @{ contractNumber=$row.contract; memberNumber=$row.member; serviceEntity=$row.service; firstName=$row.firstName; lastName=$row.lastName } } else { @{ contractNumber=$row.contract; memberNumber=$row.member; serviceEntity=$row.service } })
         }
@@ -119,9 +128,9 @@ foreach ($row in $records) {
         Ok "Business record already exists: $($row.contract)"
     }
 
-    for($i=0;$i -lt $row.files.Count;$i++) {
+    for($i=0;$i -lt $files.Count;$i++) {
         $sourceDocumentId=if ($FreshTestData) { "vault-persistence-doc-$($row.contract)-$($i+1)" } else { "r3-demo-doc-$($row.contract)-$($i+1)" }
-        $filename=[string]$row.files[$i]
+        $filename=[string]$files[$i]
         $escapedDoc=$sourceDocumentId.Replace("'", "''")
         $available=DbScalar "select count(*) from documents where tenant_id='$Tenant' and submission_id='$submissionId' and source_document_id='$escapedDoc' and status='AVAILABLE';"
         if ([int]$available -eq 0) {
