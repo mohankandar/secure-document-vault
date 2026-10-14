@@ -1019,7 +1019,7 @@ function App() {
           </button>
         </div>
         <div className="vero-tenant-card" title={session?.tenantDisplayName || 'Company name unavailable'}>
-          <span className="vero-tenant-monogram" aria-hidden="true">{(session?.tenantDisplayName || '—').trim().charAt(0).toUpperCase()}</span>
+          <span className="vero-tenant-monogram" aria-hidden="true">{session?.tenantDisplayName?.trim() ? session.tenantDisplayName.trim().charAt(0).toUpperCase() : <Icon name="storage" />}</span>
           <span className="vero-tenant-name">{session?.tenantDisplayName || 'Company name unavailable'}</span>
         </div>
 
