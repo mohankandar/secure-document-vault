@@ -4,6 +4,8 @@ import App from './App'
 import './tokens.css'
 import './styles.css'
 import './ui-foundation.css'
+import './business-workspace.css'
+import './admin-framework.css'
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>

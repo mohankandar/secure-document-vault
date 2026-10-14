@@ -2,6 +2,7 @@ import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
 import { PdfViewer } from './PdfViewer'
 import BusinessWorkspace from './BusinessWorkspace'
 import Icon, { type IconName } from './Icon'
+import { AdminSection, AdminTabs, AttentionRow, CapacityMeter, EmptyState, StateSheet, StatusPill, humanize, statusTone } from './AdminKit'
 import { beginOidcLogin, clearOidcSession, endOidcSession, getAccessToken, handleOidcCallback, isLocalSecurityMode, OIDC_SESSION_EXPIRED_EVENT } from './auth'
 import {
   roleApi,
@@ -61,27 +62,6 @@ const personaForRoles = (roles: string[]): LocalPersona => {
   return 'business'
 }
 
-function humanize(value: string | null | undefined): string {
-  if (!value) return '—'
-  if (!/^[A-Z0-9_]+$/.test(value)) return value
-  const words = value.toLowerCase().split('_').filter(Boolean).join(' ')
-  return words.charAt(0).toUpperCase() + words.slice(1)
-}
-
-type StatusTone = 'ok' | 'warn' | 'danger' | 'neutral'
-
-function statusTone(value: string | null | undefined): StatusTone {
-  const key = (value ?? '').toUpperCase()
-  if (['UP', 'HEALTHY', 'SUCCESS', 'ACTIVE', 'PASSED', 'VALIDATED', 'COMPLETE', 'COMPLETED'].includes(key)) return 'ok'
-  if (['DEGRADED', 'WARNING', 'READ_ONLY', 'INCOMPLETE', 'PROCESSING', 'PARTIAL', 'STAGED', 'DRAFT'].includes(key)) return 'warn'
-  if (['DOWN', 'FAILED', 'FAILURE', 'CRITICAL', 'OFFLINE', 'ERROR', 'DENIED', 'UNHEALTHY'].includes(key)) return 'danger'
-  return 'neutral'
-}
-
-function StatusPill({ value }: { value: string | null | undefined }) {
-  return <span className={`status-pill status-pill-${statusTone(value)}`}><span className="status-pill-dot" aria-hidden="true" />{humanize(value)}</span>
-}
-
 const VIEW_META: Record<View, { eyebrow: string; title: string; description: string }> = {
   search: { eyebrow: 'Work', title: 'Search documents', description: 'Find source-aware business records and securely open the documents associated with them.' },
   admin: { eyebrow: 'Administration', title: 'Administration', description: 'Configure retention, ingestion sources, searchable metadata, and tenant storage.' },
@@ -115,6 +95,18 @@ const CAPABILITY_LABELS: Record<string, string> = {
   CONFIGURE_METADATA_SEARCH: 'Configure metadata & search',
   CONFIGURE_RETENTION: 'Configure retention policy',
   CONFIGURE_BUSINESS_LIMITS: 'Configure business limits',
+}
+
+const BUSINESS_ROLE_DIRECTORY = [
+  { name: 'Business User', code: 'BUSINESS_USER', responsibility: 'Search and view authorized documents.', configurable: true },
+  { name: 'Document Steward', code: 'DOCUMENT_STEWARD', responsibility: 'Controlled download and permanent corrective redaction.', configurable: true },
+  { name: 'Business Administrator', code: 'BUSINESS_ADMIN', responsibility: 'Business policy and metadata administration.', configurable: false },
+]
+
+const AUTH_TYPE_LABELS: Record<string, string> = {
+  OAUTH2_CLIENT_CREDENTIALS: 'OAuth 2.0 client credentials',
+  JWT_BEARER: 'JWT bearer',
+  MTLS: 'Mutual TLS',
 }
 
 const capabilityLabel = (capability: string) => CAPABILITY_LABELS[capability] ?? capability
@@ -198,6 +190,8 @@ function App() {
   const [loadingOperations, setLoadingOperations] = useState(false)
   const [loadingAudit, setLoadingAudit] = useState(false)
   const [includeAuditViews, setIncludeAuditViews] = useState(false)
+  const [auditMoreFilters, setAuditMoreFilters] = useState(false)
+  const [selectedAuditEvent, setSelectedAuditEvent] = useState<AuditEventView | null>(null)
 
   const businessSource = useMemo(
     () => schema.sources.find((source) => source.sourceId === businessSourceId),
@@ -446,10 +440,14 @@ function App() {
   }, [])
 
   useEffect(() => {
+    // Ignore responses from a superseded persona/session request. Otherwise an older
+    // principal can overwrite capabilities after the demo role has changed.
+    let cancelled = false
     if (!localMode && (authLoading || !getAccessToken())) {
       setSession(null)
-      return
+      return () => { cancelled = true }
     }
+    setSession(null)
     setError('')
     setMessage('')
     setViewerDocument(null)
@@ -457,6 +455,7 @@ function App() {
     setResults([])
     roleApi<SessionInfo>('/api/v1/session', selectedPersona)
       .then(async (current) => {
+        if (cancelled) return
         setSession(current)
         if (!localMode) {
           const resolvedPersona = personaForRoles(current.roles)
@@ -511,7 +510,8 @@ function App() {
           setIdentityOverview(null)
         }
       })
-      .catch((reason: unknown) => { setSession(null); if (!localMode && reason instanceof ApiRequestError) { if (reason.status === 403) { setAuthDenied(true); setAuthError('You are signed in, but this account does not have access to Secure Document Vault. Contact your administrator if you believe you should have access.'); } else if (reason.status === 401) { clearOidcSession(); setAuthDenied(false); setAuthError('Your organization session has expired or could not be verified. Please sign in again.'); } } })
+      .catch((reason: unknown) => { if (cancelled) return; setSession(null); if (!localMode && reason instanceof ApiRequestError) { if (reason.status === 403) { setAuthDenied(true); setAuthError('You are signed in, but this account does not have access to Secure Document Vault. Contact your administrator if you believe you should have access.'); } else if (reason.status === 401) { clearOidcSession(); setAuthDenied(false); setAuthError('Your organization session has expired or could not be verified. Please sign in again.'); } } })
+    return () => { cancelled = true }
   }, [selectedPersona, localMode, authLoading])
 
   useEffect(() => {
@@ -879,27 +879,107 @@ function App() {
         : VIEW_META[view]
   const initials = (session?.subject || 'Local user').split(/[.@\s_-]+/).filter(Boolean).slice(0, 2).map((part) => part[0]?.toUpperCase()).join('') || 'LU'
 
+  const attentionVolumes = operations?.storageVolumes.filter(volumeNeedsAttention) ?? []
+  const incidentTotal = (operations?.processingFailureCount ?? 0) + (operations?.stuckDocumentCount ?? 0) + (operations?.attentionSubmissionCount ?? 0)
+  const adminStorageAttention = storageVolumes.filter((item) => item.observationError != null || item.warningThresholdReached || item.stopWriteThresholdReached).length
+  const stagedIdentity = identityOverview?.staged ?? null
+  const identityReadyToActivate = stagedIdentity?.status === 'VALIDATED' && stagedIdentity?.lastTestStatus === 'PASSED'
+  const visibleAuditEvents = auditEvents.filter((event) => includeAuditViews || event.action !== 'AUDIT_VIEWED')
+  const advancedAuditFilterCount = [auditTargetType, auditTargetId, auditActorType, auditActorId, auditCorrelationId].filter((value) => value.trim()).length
+
+  const renderAuditPanel = (title: string, description: string) => (
+    <AdminSection flush className="audit-panel" title={title} meta={visibleAuditEvents.length} description={description}>
+      <form className="ax-filters" onSubmit={(event) => { event.preventDefault(); loadAudit(true).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : 'Audit query failed.')) }}>
+        <div className="ax-filters-primary">
+          <label>Action<input value={auditAction} onChange={(event) => setAuditAction(event.target.value)} placeholder="e.g. DOCUMENT_DOWNLOADED" /></label>
+          <label>Outcome<select value={auditOutcome} onChange={(event) => setAuditOutcome(event.target.value)}><option value="">All outcomes</option><option value="SUCCESS">Success</option><option value="DENIED">Denied</option><option value="FAILED">Failed</option></select></label>
+          <label>From<input type="datetime-local" value={auditFrom} onChange={(event) => setAuditFrom(event.target.value)} /></label>
+          <label>To<input type="datetime-local" value={auditTo} onChange={(event) => setAuditTo(event.target.value)} /></label>
+          <button type="submit" disabled={loadingAudit}>{loadingAudit ? 'Loading…' : 'Apply filters'}</button>
+        </div>
+        {auditMoreFilters && (
+          <div className="ax-filters-more" id="audit-more-filters">
+            <label>Resource type<input value={auditTargetType} onChange={(event) => setAuditTargetType(event.target.value)} placeholder="e.g. DOCUMENT" /></label>
+            <label>Resource ID<input value={auditTargetId} onChange={(event) => setAuditTargetId(event.target.value)} placeholder="Exact resource ID" /></label>
+            <label>Actor type<input value={auditActorType} onChange={(event) => setAuditActorType(event.target.value)} placeholder="e.g. USER" /></label>
+            <label>Actor ID<input value={auditActorId} onChange={(event) => setAuditActorId(event.target.value)} placeholder="Exact actor ID" /></label>
+            <label>Correlation ID<input value={auditCorrelationId} onChange={(event) => setAuditCorrelationId(event.target.value)} placeholder="Exact correlation ID" /></label>
+          </div>
+        )}
+        <div className="ax-filters-toolbar">
+          <button type="button" className="ax-disclosure" aria-expanded={auditMoreFilters} aria-controls="audit-more-filters" onClick={() => setAuditMoreFilters((current) => !current)}>
+            {auditMoreFilters ? 'Fewer filters' : `More filters${advancedAuditFilterCount ? ` (${advancedAuditFilterCount} set)` : ''}`}
+          </button>
+          <label className="ax-check"><input type="checkbox" checked={includeAuditViews} onChange={(event) => setIncludeAuditViews(event.target.checked)} /> Include view events</label>
+        </div>
+      </form>
+      {visibleAuditEvents.length === 0 ? <EmptyState title={loadingAudit ? 'Loading audit events…' : 'No audit events match these filters'} /> : (
+        <div className="ax-table-wrap">
+          <table className="ax-table audit-table audit-ledger">
+            <thead><tr><th>Time</th><th>Event</th><th>Actor</th><th>Outcome</th><th>Details</th></tr></thead>
+            <tbody>
+              {visibleAuditEvents.map((event) => (
+                <tr key={event.auditEventId}>
+                  <td className="audit-ledger-time">{formatDate(event.occurredAt)}</td>
+                  <td><strong className="audit-ledger-event">{humanize(event.action)}</strong></td>
+                  <td><span className="audit-ledger-actor" title={event.actorId || ''}>{event.actorId || humanize(event.actorType)}</span></td>
+                  <td><StatusPill value={event.outcome} /></td>
+                  <td><button type="button" className="audit-detail-link" onClick={() => setSelectedAuditEvent(event)} aria-label={`View details for ${humanize(event.action)} at ${formatDate(event.occurredAt)}`}>View details <span aria-hidden="true">›</span></button></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {auditHasMore && <div className="ax-load-more"><button className="secondary" onClick={() => loadAudit(false)} disabled={loadingAudit}>{loadingAudit ? 'Loading…' : 'Load older events'}</button></div>}
+      {selectedAuditEvent && (
+        <>
+          <button type="button" className="admin-drawer-backdrop" aria-label="Close audit event details" onClick={() => setSelectedAuditEvent(null)} />
+          <aside className="admin-drawer audit-event-drawer" role="dialog" aria-modal="true" aria-label="Audit event details">
+            <div className="admin-drawer-header">
+              <div><span className="kicker">Audit evidence</span><h2>{humanize(selectedAuditEvent.action)}</h2></div>
+              <button type="button" className="drawer-close-button" aria-label="Close audit details" onClick={() => setSelectedAuditEvent(null)}><Icon name="close" /></button>
+            </div>
+            <div className="admin-drawer-body">
+              <dl className="audit-evidence-fields">
+                <div><dt>Time</dt><dd>{formatDate(selectedAuditEvent.occurredAt)}</dd></div>
+                <div><dt>Outcome</dt><dd><StatusPill value={selectedAuditEvent.outcome} /></dd></div>
+                <div><dt>Action code</dt><dd className="mono">{selectedAuditEvent.action}</dd></div>
+                <div><dt>Actor type</dt><dd>{humanize(selectedAuditEvent.actorType)}</dd></div>
+                <div><dt>Actor ID</dt><dd className="mono">{selectedAuditEvent.actorId || '—'}</dd></div>
+                <div><dt>Resource type</dt><dd>{humanize(selectedAuditEvent.targetType)}</dd></div>
+                <div><dt>Resource ID</dt><dd className="mono">{selectedAuditEvent.targetId || '—'}</dd></div>
+                <div><dt>Correlation ID</dt><dd className="mono">{selectedAuditEvent.correlationId || '—'}{selectedAuditEvent.correlationId && <button type="button" className="audit-copy" onClick={() => { void navigator.clipboard?.writeText(selectedAuditEvent.correlationId || '') }}>Copy</button>}</dd></div>
+              </dl>
+              <h3 className="audit-evidence-title">Safe details</h3>
+              <pre className="audit-evidence-json">{(() => { try { return JSON.stringify(JSON.parse(selectedAuditEvent.safeDetailsJson || '{}'), null, 2) } catch { return selectedAuditEvent.safeDetailsJson || '—' } })()}</pre>
+            </div>
+          </aside>
+        </>
+      )}
+    </AdminSection>
+  )
+
+
   return (
     <div className={`modern-app-shell ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
       <header className="mobile-app-bar">
         <button className="shell-icon-button" type="button" onClick={() => setDrawerOpen(true)} aria-label="Open navigation"><Icon name="menu" /></button>
-        <div className="mobile-brand"><span className="brand-lettermark">S</span><strong>Secure Document Vault</strong></div>
+        <div className="mobile-brand"><span className="brand-lettermark">S</span><strong>vero</strong></div>
         <div className="mobile-user-avatar" title={session?.subject || 'Local user'}>{initials}</div>
       </header>
 
       {drawerOpen && <button className="nav-drawer-backdrop" aria-label="Close navigation" onClick={() => setDrawerOpen(false)} />}
       <aside className={`modern-sidebar ${drawerOpen ? 'drawer-open' : ''}`}>
-        <div className="sidebar-brand-row">
-          <div className="sidebar-brand" title="Secure Document Vault">
-            <span className="brand-lettermark">S</span>
-            <div className="sidebar-brand-copy">
-              <strong>Secure Document Vault</strong>
-              <span>{localMode ? 'Local / Demo' : 'Enterprise'}</span>
-            </div>
-          </div>
+        <div className="sidebar-brand-row vero-brand-row">
+          <div className="sidebar-brand vero-wordmark" title="vero"><strong>vero</strong><span className="vero-brand-dot" aria-hidden="true" /></div>
           <button className="sidebar-collapse-button" type="button" onClick={toggleSidebar} aria-label={sidebarCollapsed ? 'Expand navigation' : 'Collapse navigation'}>
             <Icon name={sidebarCollapsed ? 'chevronRight' : 'chevronLeft'} />
           </button>
+        </div>
+        <div className="vero-tenant-card" title={session?.tenantDisplayName || 'Company name unavailable'}>
+          <span className="vero-tenant-monogram" aria-hidden="true">{(session?.tenantDisplayName || '—').trim().charAt(0).toUpperCase()}</span>
+          <span className="vero-tenant-name">{session?.tenantDisplayName || 'Company name unavailable'}</span>
         </div>
 
         <nav className="modern-sidebar-nav" aria-label="Primary navigation">
@@ -931,7 +1011,7 @@ function App() {
             <div className="sidebar-avatar">{initials}</div>
             <div className="sidebar-identity-copy">
               <strong>{session?.subject || 'Local user'}</strong>
-              <span>{localMode ? 'Local Demo Tenant' : 'Enterprise tenant'}</span>
+              <span>{session?.tenantDisplayName || 'Company name unavailable'}</span>
             </div>
           </div>
           {!localMode && <button type="button" className="sidebar-signout" onClick={signOut}>Sign out</button>}
@@ -946,6 +1026,15 @@ function App() {
 
       <main className="modern-main-content">
         <div className="sdv-page">
+          <div className="vero-context-bar" aria-label="Current location">
+            <div className="vero-breadcrumb">
+              <span className="vero-breadcrumb-company">{session?.tenantDisplayName || 'Company name unavailable'}</span>
+              <span aria-hidden="true">›</span>
+              <span>{pageMeta.title}</span>
+              {view === 'admin' && <><span aria-hidden="true">›</span><span>{selectedPersona === 'tenantIt' ? humanize(tenantItTab) : humanize(businessAdminTab)}</span></>}
+              {view === 'operations' && <><span aria-hidden="true">›</span><span>{humanize(platformTab)}</span></>}
+            </div>
+          </div>
           {view !== 'search' && <header className="ui-page-header">
             <div className="ui-page-header-copy">
               {view === 'audit' && <p className="ui-eyebrow">{pageMeta.eyebrow}</p>}
@@ -984,128 +1073,540 @@ function App() {
       )}
 
       {view === 'admin' && canViewAdministration && (
-        <div className={`admin-workspace ${selectedPersona === 'tenantIt' ? 'tenant-it-workspace' : 'business-admin-workspace'}`}>
+        <div className={`ax-workspace ${selectedPersona === 'tenantIt' ? 'tenant-it-workspace' : 'business-admin-workspace'}`}>
           {selectedPersona === 'businessAdmin' ? (
             <>
-              <nav className="workspace-tabs" aria-label="Business administration sections">
-                <button className={businessAdminTab === 'access' ? 'active' : ''} onClick={() => setBusinessAdminTab('access')}>Users & Access</button>
-                <button className={businessAdminTab === 'roles' ? 'active' : ''} onClick={() => setBusinessAdminTab('roles')}>Roles & Permissions</button>
-                <button className={businessAdminTab === 'retention' ? 'active' : ''} onClick={() => setBusinessAdminTab('retention')}>Retention Policies</button>
-                <button className={businessAdminTab === 'metadata' ? 'active' : ''} onClick={() => setBusinessAdminTab('metadata')}>Metadata Configuration</button>
-              </nav>
-              {businessAdminTab === 'access' && <section className="panel top-gap"><div className="panel-heading"><div><span className="kicker">Business Administration</span><h2>Users & access</h2></div></div><p className="muted">Sign-in and user-to-role assignment are managed in your identity provider. SDV reads each user&apos;s role from their sign-in token, so assignments are changed there, not here.</p><div className="admin-summary-grid"><div className="summary-tile"><strong>Business User</strong><small>Search and view authorized documents.</small><code className="role-code">BUSINESS_USER</code></div><div className="summary-tile"><strong>Document Steward</strong><small>Controlled download and permanent corrective redaction.</small><code className="role-code">DOCUMENT_STEWARD</code></div><div className="summary-tile"><strong>Business Administrator</strong><small>Business policy and metadata administration.</small><code className="role-code">BUSINESS_ADMIN</code></div></div></section>}
-              {businessAdminTab === 'roles' && <section className="panel top-gap"><div className="panel-heading"><div><span className="kicker">Authorization</span><h2>Roles & permissions</h2><p className="muted">Business Administrators control document actions for business content roles. Search and View are baseline access and stay enabled.</p></div></div>{roleCapabilities ? <><div className="permission-matrix"><div className="permission-matrix-row permission-matrix-head"><strong>Permission</strong><strong>Business User</strong><strong>Document Steward</strong></div><div className="permission-matrix-row"><span>Search business records</span><span className="permission-locked">Locked on</span><span className="permission-locked">Locked on</span></div><div className="permission-matrix-row"><span>View documents</span><span className="permission-locked">Locked on</span><span className="permission-locked">Locked on</span></div>{roleCapabilities.configurableCapabilities.map((capability) => <div className="permission-matrix-row" key={capability}><span>{capabilityLabel(capability)}</span>{(['BUSINESS_USER','DOCUMENT_STEWARD'] as const).map((role) => <label className="permission-switch" key={`${role}-${capability}`}><input type="checkbox" role="switch" aria-label={`${capabilityLabel(capability)} for ${role === 'BUSINESS_USER' ? 'Business User' : 'Document Steward'}`} checked={Boolean(roleCapabilities.roles[role]?.[capability])} disabled={!canConfigureRolePermissions} onChange={(event) => setRoleCapabilities((current) => current ? { ...current, roles: { ...current.roles, [role]: { ...current.roles[role], [capability]: event.target.checked } } } : current)} /><span aria-hidden="true" /></label>)}</div>)}</div><div className="form-actions permission-save-actions"><button className="primary-action" onClick={saveRoleCapabilities} disabled={savingRoleCapabilities || !canConfigureRolePermissions}>{savingRoleCapabilities ? 'Saving…' : 'Save permissions'}</button></div></> : <p className="muted">Loading role permissions…</p>}</section>}
+              <AdminTabs
+                label="Business administration sections"
+                value={businessAdminTab}
+                onChange={setBusinessAdminTab}
+                tabs={[
+                  { id: 'access', label: 'Users & Access' },
+                  { id: 'roles', label: 'Roles & Permissions' },
+                  { id: 'retention', label: 'Retention Policies' },
+                  { id: 'metadata', label: 'Metadata Configuration' },
+                ]}
+              />
+
+              {businessAdminTab === 'access' && (
+                <div className="ax-split">
+                  <AdminSection flush title="Business roles" meta={BUSINESS_ROLE_DIRECTORY.length} description="The roles SDV recognises for business content, and what each one is responsible for.">
+                    <div className="ax-table-wrap">
+                      <table className="ax-table">
+                        <thead><tr><th>Role</th><th>Responsibility</th><th>Token role</th><th className="ax-col-action">Document actions</th></tr></thead>
+                        <tbody>
+                          {BUSINESS_ROLE_DIRECTORY.map((role) => (
+                            <tr key={role.code}>
+                              <td><span className="ax-cell-primary"><strong>{role.name}</strong></span></td>
+                              <td>{role.responsibility}</td>
+                              <td><span className="ax-role-code">{role.code}</span></td>
+                              <td className="ax-col-action">{role.configurable ? <button type="button" className="ax-link-button" onClick={() => setBusinessAdminTab('roles')}>Configure</button> : <span className="ax-muted">Not configurable here</span>}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </AdminSection>
+                  <AdminSection title="Where assignments live">
+                    <div className="ax-stack">
+                      <p className="ax-note">Sign-in and user-to-role assignment are managed in your identity provider. SDV reads each user&apos;s role from their sign-in token, so assignments are changed there, not here.</p>
+                      <p className="ax-note">What each business role can do with a document is set in <strong>Roles &amp; Permissions</strong>.</p>
+                    </div>
+                  </AdminSection>
+                </div>
+              )}
+
+              {businessAdminTab === 'roles' && (
+                <AdminSection flush title="Roles & permissions" description="Choose which document actions each business content role can perform. Search and View are baseline access for every business role and cannot be turned off.">
+                  {roleCapabilities ? (
+                    <>
+                      <div className="ax-table-wrap">
+                        <table className="ax-table">
+                          <thead><tr><th>Permission</th><th className="ax-perm-col">Business User</th><th className="ax-perm-col">Document Steward</th></tr></thead>
+                          <tbody>
+                            <tr className="ax-row-group"><td colSpan={3}>Baseline access · always on</td></tr>
+                            {['Search business records', 'View documents'].map((label) => (
+                              <tr key={label}><td><span className="ax-cell-primary"><strong>{label}</strong></span></td><td className="ax-perm-col"><span className="ax-lock">Locked on</span></td><td className="ax-perm-col"><span className="ax-lock">Locked on</span></td></tr>
+                            ))}
+                            <tr className="ax-row-group"><td colSpan={3}>Document actions · configurable</td></tr>
+                            {roleCapabilities.configurableCapabilities.map((capability) => (
+                              <tr key={capability}>
+                                <td><span className="ax-cell-primary"><strong>{capabilityLabel(capability)}</strong></span></td>
+                                {(['BUSINESS_USER', 'DOCUMENT_STEWARD'] as const).map((role) => (
+                                  <td className="ax-perm-col" key={`${role}-${capability}`}>
+                                    <label className="permission-switch">
+                                      <input type="checkbox" role="switch" aria-label={`${capabilityLabel(capability)} for ${role === 'BUSINESS_USER' ? 'Business User' : 'Document Steward'}`} checked={Boolean(roleCapabilities.roles[role]?.[capability])} disabled={!canConfigureRolePermissions} onChange={(event) => setRoleCapabilities((current) => current ? { ...current, roles: { ...current.roles, [role]: { ...current.roles[role], [capability]: event.target.checked } } } : current)} />
+                                      <span aria-hidden="true" />
+                                    </label>
+                                  </td>
+                                ))}
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                      <div className="ax-actionbar ax-actionbar-sticky">
+                        <span className="ax-actionbar-note">{canConfigureRolePermissions ? 'Changes take effect for new sessions.' : 'You can view these permissions but not change them.'}</span>
+                        <div className="ax-actionbar-buttons">
+                          <button className="primary-action" onClick={saveRoleCapabilities} disabled={savingRoleCapabilities || !canConfigureRolePermissions}>{savingRoleCapabilities ? 'Saving…' : 'Save permissions'}</button>
+                        </div>
+                      </div>
+                    </>
+                  ) : <EmptyState title="Loading role permissions…" />}
+                </AdminSection>
+              )}
+
               {businessAdminTab === 'retention' && canConfigureRetention && (
-                <section className="panel top-gap">
-                  <div className="panel-heading">
-                    <div><span className="kicker">Business Policy</span><h2>Retention policies</h2><p className="muted">Each activation creates an immutable policy version. Documents snapshot the retention days in force when they are ingested; older documents are never rewritten.</p></div>
-                    <button type="button" className="primary-action admin-heading-action" onClick={() => { setRetentionNameInput(''); setRetentionDescriptionInput(''); setRetentionDaysInput(''); setAdminDrawerMode('retention-create') }}><Icon name="plus" /> Activate new policy</button>
-                  </div>
-                  {retentionPolicy && <div className="current-policy-card"><div><span className="label">Current policy</span><strong>{retentionPolicy.policyName}</strong><small>Version {retentionPolicy.version} · Effective {formatDate(retentionPolicy.effectiveFrom)}</small></div><span className="pill up">{retentionPolicy.indefinite ? 'Indefinite' : `${retentionPolicy.defaultRetentionDays} days`}</span></div>}
-                  <div className="retention-history retention-history-full"><div className="section-heading-inline"><h3>Policy history</h3><span className="count">{retentionPolicy?.history?.length ?? 0}</span></div>{retentionPolicy?.history?.length ? retentionPolicy.history.map((policy) => <div className="retention-history-row" key={policy.policyVersionId}><div><strong>{policy.policyName}</strong><small>v{policy.version} · {policy.indefinite ? 'Indefinite' : `${policy.defaultRetentionDays} days`}</small>{policy.description && <small>{policy.description}</small>}<small>Created by {policy.createdBy}</small></div><div><span>{formatDate(policy.effectiveFrom)}</span><small>{policy.effectiveUntil ? `to ${formatDate(policy.effectiveUntil)}` : 'Current'}</small></div></div>) : <p className="muted">No policy history available.</p>}</div>
-                </section>
+                <>
+                  <AdminSection
+                    className="ax-section-live"
+                    title={<>Active retention policy <span className="ax-live-badge">In force</span></>}
+                    actions={<button type="button" className="primary-action" onClick={() => { setRetentionNameInput(''); setRetentionDescriptionInput(''); setRetentionDaysInput(''); setAdminDrawerMode('retention-create') }}><Icon name="plus" /> Activate new policy</button>}
+                  >
+                    {retentionPolicy ? (
+                      <div className="ax-policy-hero">
+                        <div className="ax-policy-hero-main">
+                          <h3>{retentionPolicy.policyName}</h3>
+                          {retentionPolicy.description && <p>{retentionPolicy.description}</p>}
+                          <span className="ax-sub">Version {retentionPolicy.version} · Effective {formatDate(retentionPolicy.effectiveFrom)} · Set by {retentionPolicy.createdBy}</span>
+                        </div>
+                        <div className="ax-policy-value">
+                          <strong>{retentionPolicy.indefinite ? 'Indefinite' : `${retentionPolicy.defaultRetentionDays} days`}</strong>
+                          <span>Snapshotted onto each document at ingestion</span>
+                        </div>
+                      </div>
+                    ) : <p className="ax-note">Loading retention policy…</p>}
+                  </AdminSection>
+                  <AdminSection flush title="Version history" meta={retentionPolicy?.history?.length ?? 0} description="Each activation creates an immutable version. Documents keep the retention they were ingested with; older documents are never rewritten.">
+                    {retentionPolicy?.history?.length ? (
+                      <div className="ax-table-wrap">
+                        <table className="ax-table">
+                          <thead><tr><th>Version</th><th>Policy</th><th>Retention</th><th>Effective from</th><th>Effective until</th><th>Created by</th></tr></thead>
+                          <tbody>
+                            {retentionPolicy.history.map((policy) => {
+                              const current = policy.policyVersionId === retentionPolicy.policyVersionId
+                              return (
+                                <tr key={policy.policyVersionId} className={current ? 'ax-row-current' : ''}>
+                                  <td className="ax-col-num">v{policy.version}</td>
+                                  <td><span className="ax-cell-primary"><strong>{policy.policyName}</strong>{policy.description && <small>{policy.description}</small>}</span></td>
+                                  <td>{policy.indefinite ? 'Indefinite' : `${policy.defaultRetentionDays} days`}</td>
+                                  <td>{formatDate(policy.effectiveFrom)}</td>
+                                  <td>{policy.effectiveUntil ? formatDate(policy.effectiveUntil) : <StatusPill value="ACTIVE" label="Current" />}</td>
+                                  <td>{policy.createdBy}</td>
+                                </tr>
+                              )
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    ) : <EmptyState title="No policy history available" />}
+                  </AdminSection>
+                </>
               )}
+
               {businessAdminTab === 'metadata' && canConfigureMetadata && (
-                <section className="panel top-gap">
-                  <div className="panel-heading"><div><span className="kicker">Business Configuration</span><h2>Metadata configuration</h2><p className="muted">Tenant IT defines the fields supplied by each integration. Business Administration controls how those existing fields are labeled and searched in SDV; fields cannot be created or deleted here.</p></div><span className="count">{fields.length}</span></div>
-                  <div className="source-context-inline"><label>Source context<select value={selectedSource} onChange={(event) => { setSelectedSource(event.target.value); setSelectedMetadataFieldKey(''); setAdminDrawerMode(null) }}>{sources.map((source) => <option key={source.sourceId} value={source.sourceId}>{source.displayName}</option>)}</select></label></div>
-                  {!selectedAdminSource ? <div className="empty-state compact"><strong>Select a source</strong><span>Choose a source to configure its business search behavior.</span></div> : fields.length === 0 ? <div className="empty-state compact"><strong>No source fields defined</strong><span>Tenant IT must define the integration metadata contract first.</span></div> : <div className="admin-row-table metadata-row-table">
-                    <div className="admin-row admin-row-head"><span>Field</span><span>Type</span><span>Search</span><span>Business ID</span><span>Action</span></div>
-                    {fields.map((field) => <div className="admin-row" key={field.definitionId}><span className="admin-row-primary"><strong>{field.displayLabel}</strong><small>{field.fieldKey}{field.required ? ' · required by source' : ''}</small></span><span>{field.fieldType === 'STRING' ? 'Text' : humanize(field.fieldType)}</span><span>{field.searchable ? <span className="search-mode-chip">{humanize(field.searchMode)} match</span> : <span className="muted">Not searchable</span>}</span><span>{field.businessIdentifier ? <span className="status-pill status-pill-ok"><span className="status-pill-dot" aria-hidden="true" />Business ID</span> : <span className="muted">—</span>}</span><span className="admin-row-actions"><button type="button" className="row-icon-button" aria-label={`Edit ${field.displayLabel}`} title="Edit" onClick={() => { setSelectedMetadataFieldKey(field.fieldKey); setAdminDrawerMode('metadata-edit') }}><Icon name="edit" /></button></span></div>)}
-                  </div>}
-                </section>
+                <AdminSection flush title="Metadata configuration" meta={fields.length} description="Control how each source's fields are labelled and searched in SDV.">
+                  <div className="ax-context-bar">
+                    <label>Source context
+                      <select value={selectedSource} onChange={(event) => { setSelectedSource(event.target.value); setSelectedMetadataFieldKey(''); setAdminDrawerMode(null) }}>
+                        {sources.map((source) => <option key={source.sourceId} value={source.sourceId}>{source.displayName}</option>)}
+                      </select>
+                    </label>
+                    {selectedAdminSource && (
+                      <div className="ax-context-facts">
+                        <span>Source key <span className="ax-code">{selectedAdminSource.sourceKey}</span></span>
+                        <StatusPill value={selectedAdminSource.status} />
+                      </div>
+                    )}
+                  </div>
+                  <div className="ax-ownership">
+                    <div className="ax-owner-other"><strong>Defined by Tenant IT</strong><span>Field key, data type, and whether the source requires it. Fields can&apos;t be created or deleted here.</span></div>
+                    <div className="ax-owner-here"><strong>Configured here</strong><span>Display label, normalization, whether the field is searchable, its search mode, and business identifier.</span></div>
+                  </div>
+                  {!selectedAdminSource ? <EmptyState title="Select a source">Choose a source to configure its business search behavior.</EmptyState> : fields.length === 0 ? <EmptyState title="No source fields defined">Tenant IT must define the integration metadata contract first.</EmptyState> : (
+                    <div className="ax-table-wrap">
+                      <table className="ax-table">
+                        <thead><tr><th>Field</th><th>Type</th><th>Source requirement</th><th>Search</th><th>Business ID</th><th className="ax-col-action"><span className="visually-hidden">Edit</span></th></tr></thead>
+                        <tbody>
+                          {fields.map((field) => (
+                            <tr key={field.definitionId}>
+                              <td><span className="ax-cell-primary"><strong>{field.displayLabel}</strong><small className="mono">{field.fieldKey}</small></span></td>
+                              <td>{field.fieldType === 'STRING' ? 'Text' : humanize(field.fieldType)}</td>
+                              <td>{field.required ? 'Required' : <span className="ax-muted">Optional</span>}</td>
+                              <td>{field.searchable ? <StatusPill value="ACTIVE" tone="neutral" label={`${humanize(field.searchMode)} match`} /> : <span className="ax-muted">Not searchable</span>}</td>
+                              <td>{field.businessIdentifier ? <StatusPill value="ACTIVE" label="Business ID" /> : <span className="ax-muted">—</span>}</td>
+                              <td className="ax-col-action"><button type="button" className="ax-icon-button" aria-label={`Edit ${field.displayLabel}`} title="Edit" onClick={() => { setSelectedMetadataFieldKey(field.fieldKey); setAdminDrawerMode('metadata-edit') }}><Icon name="edit" /></button></td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </AdminSection>
               )}
-              
             </>
           ) : (
             <>
-              <nav className="workspace-tabs tenant-it-tabs" aria-label="Tenant IT administration sections">
-                <button className={tenantItTab === 'storage' ? 'active' : ''} onClick={() => setTenantItTab('storage')}>Storage</button>
-                <button className={tenantItTab === 'authentication' ? 'active' : ''} onClick={() => setTenantItTab('authentication')}>Authentication</button>
-                <button className={tenantItTab === 'integrations' ? 'active' : ''} onClick={() => setTenantItTab('integrations')}>Integrations</button>
-                <button className={tenantItTab === 'environment' ? 'active' : ''} onClick={() => setTenantItTab('environment')}>Environment</button>
-              </nav>
+              <AdminTabs
+                label="Tenant IT administration sections"
+                value={tenantItTab}
+                onChange={setTenantItTab}
+                tabs={[
+                  { id: 'storage', label: 'Storage', attention: adminStorageAttention > 0 },
+                  { id: 'authentication', label: 'Authentication' },
+                  { id: 'integrations', label: 'Integrations' },
+                  { id: 'environment', label: 'Environment' },
+                ]}
+              />
+
               {tenantItTab === 'storage' && canConfigureStorage && (
-                <section className="panel top-gap tenant-it-panel tenant-it-storage-panel">
-                  <div className="panel-heading"><div><span className="kicker">Tenant IT</span><h2>Storage volumes</h2></div><div className="panel-heading-actions"><span className="count">{storageVolumes.length}</span><button type="button" className="info-button" aria-label="About storage volumes" aria-expanded={storageHelpOpen} onClick={() => setStorageHelpOpen((current) => !current)}>i</button><button type="button" className="primary-action admin-heading-action" onClick={() => setAdminDrawerMode('storage-create')}><Icon name="plus" /> Add storage volume</button></div></div>
-                  {storageHelpOpen && <div className="context-help"><strong>How SDV storage works</strong><p>Storage volumes contain encrypted SDV document objects. Priority controls preferred placement. Warning % raises capacity attention; Stop-write % blocks new writes before the filesystem becomes critically full. Changing a path does not relocate documents already stored there.</p></div>}
-                  {storageVolumes.length === 0 ? <div className="empty-state compact"><Icon name="storage" /><strong>No storage volume configured</strong><span>Add an ACTIVE volume before ingesting production documents.</span></div> : <div className="admin-row-table storage-row-table">
-                    <div className="admin-row admin-row-head"><span>Volume</span><span>State</span><span>Priority</span><span>Capacity</span><span>Health</span><span>Action</span></div>
-                    {storageVolumes.map((item) => <div className="admin-row" key={item.volume.volumeId}><span className="admin-row-primary"><strong>{item.volume.displayName}</strong><small className="mono">{item.volume.rootPath}</small></span><span>{item.volume.state}</span><span>{item.volume.priority}</span><span>{item.capacity ? `${item.capacity.usedPercent}% used` : 'Unavailable'}</span><span><span className={`pill ${item.observationError || item.stopWriteThresholdReached ? 'critical' : item.warningThresholdReached ? 'warning' : 'up'}`}>{item.observationError ? 'UNAVAILABLE' : item.stopWriteThresholdReached ? 'CRITICAL' : item.warningThresholdReached ? 'WARNING' : 'HEALTHY'}</span></span><span className="admin-row-actions"><button type="button" className="row-icon-button" aria-label={`Edit ${item.volume.displayName}`} title="Edit" onClick={() => { setSelectedStorageVolumeId(item.volume.volumeId); setAdminDrawerMode('storage-edit') }}><Icon name="edit" /></button></span></div>)}
-                  </div>}
-                </section>
+                <AdminSection
+                  flush
+                  title="Storage volumes"
+                  meta={storageVolumes.length}
+                  description={adminStorageAttention > 0 ? `${adminStorageAttention} of ${storageVolumes.length} volume(s) need attention.` : 'Encrypted document storage in your environment. Priority controls preferred placement.'}
+                  actions={<>
+                    <button type="button" className="secondary" aria-label="About storage volumes" aria-expanded={storageHelpOpen} onClick={() => setStorageHelpOpen((current) => !current)}>How storage works</button>
+                    <button type="button" className="primary-action" onClick={() => setAdminDrawerMode('storage-create')}><Icon name="plus" /> Add storage volume</button>
+                  </>}
+                >
+                  {storageHelpOpen && <p className="ax-help"><strong>How SDV storage works.</strong> Storage volumes contain encrypted SDV document objects. Priority controls preferred placement. Warning % raises capacity attention; Stop-write % blocks new writes before the filesystem becomes critically full. Changing a path does not relocate documents already stored there.</p>}
+                  {storageVolumes.length === 0 ? <EmptyState title="No storage volume configured">Add an ACTIVE volume before ingesting production documents.</EmptyState> : (
+                    <div className="ax-table-wrap">
+                      <table className="ax-table">
+                        <thead><tr><th>Volume</th><th>State</th><th className="ax-col-num">Priority</th><th>Capacity</th><th>Thresholds</th><th>Health</th><th className="ax-col-action"><span className="visually-hidden">Edit</span></th></tr></thead>
+                        <tbody>
+                          {storageVolumes.map((item) => {
+                            const health = item.observationError ? 'UNAVAILABLE' : item.stopWriteThresholdReached ? 'CRITICAL' : item.warningThresholdReached ? 'WARNING' : 'HEALTHY'
+                            return (
+                              <tr key={item.volume.volumeId}>
+                                <td><span className="ax-cell-primary"><strong>{item.volume.displayName}</strong><small className="mono">{item.volume.rootPath}</small></span></td>
+                                <td><StatusPill value={item.volume.state} /></td>
+                                <td className="ax-col-num">{item.volume.priority}</td>
+                                <td><CapacityMeter usedPercent={item.capacity ? item.capacity.usedPercent : null} warningPercent={item.volume.warningPercent} stopWritePercent={item.volume.stopWritePercent} /></td>
+                                <td><span className="ax-sub">Warn {item.volume.warningPercent}% · Stop {item.volume.stopWritePercent}%</span></td>
+                                <td><StatusPill value={health} /></td>
+                                <td className="ax-col-action"><button type="button" className="ax-icon-button" aria-label={`Edit ${item.volume.displayName}`} title="Edit" onClick={() => { setSelectedStorageVolumeId(item.volume.volumeId); setAdminDrawerMode('storage-edit') }}><Icon name="edit" /></button></td>
+                              </tr>
+                            )
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </AdminSection>
               )}
-              {tenantItTab === 'authentication' && canConfigureTenantAuth && <div className="drawer-section-stack top-gap tenant-it-auth-stack">
-                <section className="panel">
-                  <div className="panel-heading"><div><span className="kicker">Tenant IT</span><h2>Enterprise authentication</h2><p className="muted">Stage, validate, activate, and roll back the trusted OIDC binding for this tenant. Tokens, private keys, and client secrets are never returned here.</p></div><span className="pill">{identityOverview?.active?.status ?? 'Unavailable'}</span></div>
-                  {identityOverview?.active ? <div className="auth-config-grid"><div><span className="label">Provider</span><strong>{identityOverview.active.displayName}</strong></div><div><span className="label">Type</span><strong>{identityOverview.active.providerType}</strong></div><div><span className="label">Issuer</span><strong>{identityOverview.active.issuerUri}</strong></div><div><span className="label">Browser client</span><strong>{identityOverview.active.browserClientId ?? 'Not configured'}</strong></div><div><span className="label">API audience</span><strong>{identityOverview.active.apiAudience}</strong></div><div><span className="label">Version</span><strong>{identityOverview.active.configurationVersion}</strong></div></div> : <p className="muted">No ACTIVE enterprise identity connection is available. Automatic bootstrap will not overwrite existing administered identity records.</p>}
-                </section>
-                <section className="panel">
-                  <div className="panel-heading"><div><span className="kicker">Staged configuration</span><h2>OIDC draft</h2><p className="muted">Activation is allowed only for the exact VALIDATED version with a successful connection test from the last 15 minutes. The previous ACTIVE binding is retained for rollback.</p></div>{identityOverview?.staged && <span className={`pill ${identityOverview.staged.lastTestStatus === 'PASSED' ? 'healthy' : ''}`}>{identityOverview.staged.status}</span>}</div>
-                  <form className="form-stack" onSubmit={saveIdentityDraft}><label>Provider ID<input value={identityDraft.providerId} onChange={(event) => setIdentityDraft({...identityDraft, providerId:event.target.value})} required /></label><label>Display name<input value={identityDraft.displayName} onChange={(event) => setIdentityDraft({...identityDraft, displayName:event.target.value})} required /></label><label>Issuer URI<input value={identityDraft.issuerUri} onChange={(event) => setIdentityDraft({...identityDraft, issuerUri:event.target.value})} placeholder="https://login.example.com/tenant/v2.0" required /></label><label>Browser client ID<input value={identityDraft.browserClientId} onChange={(event) => setIdentityDraft({...identityDraft, browserClientId:event.target.value})} required /></label><label>API audience<input value={identityDraft.apiAudience} onChange={(event) => setIdentityDraft({...identityDraft, apiAudience:event.target.value})} required /></label><div className="panel-heading-actions identity-action-row"><button type="submit" className="secondary identity-save-action" disabled={savingIdentity || activatingIdentity}>{savingIdentity ? 'Saving…' : 'Save draft'}</button><button type="button" className="secondary identity-test-action" disabled={testingIdentity || activatingIdentity || !identityOverview?.staged} onClick={() => void testIdentityDraft()}>{testingIdentity ? 'Testing…' : 'Test connection'}</button><button type="button" className="primary-action identity-activate-action" disabled={activatingIdentity || testingIdentity || savingIdentity || identityOverview?.staged?.status !== 'VALIDATED' || identityOverview?.staged?.lastTestStatus !== 'PASSED'} onClick={() => void activateIdentityDraft()}>{activatingIdentity ? 'Activating…' : 'Activate validated version'}</button></div></form>
-                  {identityOverview?.staged?.lastTestStatus && <div className={`banner ${identityOverview.staged.lastTestStatus === 'PASSED' ? 'notice' : 'error'}`}><strong>Last test: {identityOverview.staged.lastTestStatus}</strong><span>{identityOverview.staged.lastTestMessage}</span></div>}
-                </section>
-                <section className="panel">
-                  <div className="panel-heading"><div><span className="kicker">Recovery</span><h2>Known-good rollback</h2><p className="muted">Only tenant-scoped configurations that were previously ACTIVE are eligible. Rollback atomically replaces the current ACTIVE binding.</p></div><span className="pill">{identityOverview?.rollbackCandidates?.length ?? 0} available</span></div>
-                  {identityOverview?.rollbackCandidates?.length ? <div className="admin-list">{identityOverview.rollbackCandidates.map((candidate) => <div className="admin-row" key={candidate.connectionId}><span><strong>{candidate.displayName}</strong><small>{candidate.issuerUri}</small></span><span>Version {candidate.configurationVersion}</span><span>{candidate.status}</span><button type="button" className="secondary identity-rollback-action" disabled={Boolean(rollingBackIdentity) || activatingIdentity} onClick={() => void rollbackIdentity(candidate)}>{rollingBackIdentity === candidate.connectionId ? 'Rolling back…' : 'Rollback'}</button></div>)}</div> : <div className="empty-state compact"><strong>No rollback target yet</strong><span>The previously ACTIVE configuration will appear here after the first activation.</span></div>}
-                </section>
-              </div>}
+
+              {tenantItTab === 'authentication' && canConfigureTenantAuth && (
+                <>
+                  <AdminSection
+                    className="ax-section-live"
+                    title={<>Active binding {identityOverview?.active && <span className="ax-live-badge">Live</span>}</>}
+                    description="The trusted OIDC binding SDV uses for sign-in right now. Tokens, private keys, and client secrets are never returned here."
+                  >
+                    {identityOverview?.active ? (
+                      <StateSheet columns={3} items={[
+                        { label: 'Provider', value: identityOverview.active.displayName },
+                        { label: 'Type', value: identityOverview.active.providerType },
+                        { label: 'Version', value: `v${identityOverview.active.configurationVersion}` },
+                        { label: 'Issuer', value: identityOverview.active.issuerUri, mono: true, wide: true },
+                        { label: 'Browser client', value: identityOverview.active.browserClientId ?? 'Not configured', mono: true },
+                        { label: 'API audience', value: identityOverview.active.apiAudience, mono: true },
+                        { label: 'Last changed', value: formatDate(identityOverview.active.updatedAt) },
+                      ]} />
+                    ) : <p className="ax-note">No ACTIVE enterprise identity connection is available. Automatic bootstrap will not overwrite existing administered identity records.</p>}
+                  </AdminSection>
+
+                  <div className="ax-split">
+                    <AdminSection
+                      flush
+                      className="ax-section-staged"
+                      title={<>Staged configuration <span className="ax-staged-badge">{stagedIdentity ? `${humanize(stagedIdentity.status)} · not live` : 'Not live'}</span></>}
+                      description="Edits here never touch the active binding. Activation is allowed only for the exact VALIDATED version with a successful connection test from the last 15 minutes."
+                    >
+                      <form onSubmit={saveIdentityDraft}>
+                        <div className="ax-section-body">
+                          <ol className="ax-steps" aria-label="Activation steps">
+                            <li className={stagedIdentity ? 'is-done' : ''}><span>1 · Save draft</span><strong>{stagedIdentity ? `Saved as v${stagedIdentity.configurationVersion}` : 'Not saved yet'}</strong><small>{stagedIdentity ? formatDate(stagedIdentity.updatedAt) : 'Save to stage a version'}</small></li>
+                            <li className={stagedIdentity?.lastTestStatus === 'PASSED' ? 'is-done' : stagedIdentity?.lastTestStatus === 'FAILED' ? 'is-failed' : ''}><span>2 · Test connection</span><strong>{stagedIdentity?.lastTestStatus === 'PASSED' ? 'Passed' : stagedIdentity?.lastTestStatus === 'FAILED' ? 'Failed' : 'Not tested'}</strong><small>{stagedIdentity?.lastTestedAt ? formatDate(stagedIdentity.lastTestedAt) : 'Requires a saved draft'}</small></li>
+                            <li className={identityReadyToActivate ? 'is-done' : ''}><span>3 · Activate</span><strong>{identityReadyToActivate ? 'Ready to activate' : 'Locked'}</strong><small>{identityReadyToActivate ? 'Replaces the active binding' : 'Needs a validated, passing test'}</small></li>
+                          </ol>
+                          <div className="ax-form-grid">
+                            <label>Provider ID<input value={identityDraft.providerId} onChange={(event) => setIdentityDraft({ ...identityDraft, providerId: event.target.value })} required /></label>
+                            <label>Display name<input value={identityDraft.displayName} onChange={(event) => setIdentityDraft({ ...identityDraft, displayName: event.target.value })} required /></label>
+                            <label className="ax-span-2">Issuer URI<input value={identityDraft.issuerUri} onChange={(event) => setIdentityDraft({ ...identityDraft, issuerUri: event.target.value })} placeholder="https://login.example.com/tenant/v2.0" required /></label>
+                            <label>Browser client ID<input value={identityDraft.browserClientId} onChange={(event) => setIdentityDraft({ ...identityDraft, browserClientId: event.target.value })} required /></label>
+                            <label>API audience<input value={identityDraft.apiAudience} onChange={(event) => setIdentityDraft({ ...identityDraft, apiAudience: event.target.value })} required /></label>
+                          </div>
+                          {stagedIdentity?.lastTestStatus && <div className={`banner ax-inset-banner ${stagedIdentity.lastTestStatus === 'PASSED' ? 'notice' : 'error'}`}><strong>Last test: {humanize(stagedIdentity.lastTestStatus)}</strong> <span>{stagedIdentity.lastTestMessage}</span></div>}
+                        </div>
+                        <div className="ax-actionbar">
+                          <span className="ax-actionbar-note">The previous active binding is kept as a rollback target.</span>
+                          <div className="ax-actionbar-buttons">
+                            <button type="submit" className="secondary identity-save-action" disabled={savingIdentity || activatingIdentity}>{savingIdentity ? 'Saving…' : 'Save draft'}</button>
+                            <button type="button" className="secondary identity-test-action" disabled={testingIdentity || activatingIdentity || !identityOverview?.staged} onClick={() => void testIdentityDraft()}>{testingIdentity ? 'Testing…' : 'Test connection'}</button>
+                            <button type="button" className="primary-action identity-activate-action" disabled={activatingIdentity || testingIdentity || savingIdentity || identityOverview?.staged?.status !== 'VALIDATED' || identityOverview?.staged?.lastTestStatus !== 'PASSED'} onClick={() => void activateIdentityDraft()}>{activatingIdentity ? 'Activating…' : 'Activate validated version'}</button>
+                          </div>
+                        </div>
+                      </form>
+                    </AdminSection>
+
+                    <AdminSection flush title="Known-good rollback" meta={identityOverview?.rollbackCandidates?.length ?? 0} description="Previously active configurations for this tenant. Rollback atomically replaces the current active binding.">
+                      {identityOverview?.rollbackCandidates?.length ? (
+                        <ul className="ax-list">
+                          {identityOverview.rollbackCandidates.map((candidate) => (
+                            <li key={candidate.connectionId}>
+                              <span className="ax-cell-primary"><strong>{candidate.displayName} · v{candidate.configurationVersion}</strong><small className="mono">{candidate.issuerUri}</small><small>Recorded status: {humanize(candidate.status)}</small></span>
+                              <button type="button" className="secondary identity-rollback-action" disabled={Boolean(rollingBackIdentity) || activatingIdentity} onClick={() => void rollbackIdentity(candidate)}>{rollingBackIdentity === candidate.connectionId ? 'Rolling back…' : 'Rollback'}</button>
+                            </li>
+                          ))}
+                        </ul>
+                      ) : <EmptyState title="No rollback target yet">The previously active configuration will appear here after the first activation.</EmptyState>}
+                    </AdminSection>
+                  </div>
+                </>
+              )}
+
               {tenantItTab === 'integrations' && canConfigureSources && (
-                <section className="panel top-gap tenant-it-panel tenant-it-integrations-panel">
-                  <div className="panel-heading"><div><span className="kicker">Tenant IT</span><h2>Ingestion integrations</h2><p className="muted">Define the producer identity, authentication reference, and technical metadata contract. Business Administration separately decides how those fields are exposed for search.</p></div><div className="panel-heading-actions"><span className="count">{sources.length}</span><button type="button" className="primary-action admin-heading-action" onClick={() => setAdminDrawerMode('integration-create')}><Icon name="plus" /> Add source</button></div></div>
-                  {sources.length === 0 ? <div className="empty-state compact"><strong>No integrations configured</strong><span>Add a producer source to define its technical contract.</span></div> : <div className="admin-row-table integration-row-table">
-                    <div className="admin-row admin-row-head"><span>Integration</span><span>Source key</span><span>Status</span><span>Authentication</span><span>Action</span></div>
-                    {sources.map((source) => <div className="admin-row" key={source.sourceId}><span className="admin-row-primary"><strong>{source.displayName}</strong></span><span className="mono">{source.sourceKey}</span><span><span className={`pill ${source.status === 'ACTIVE' ? 'up' : ''}`}>{source.status}</span></span><span>{source.authType ?? '—'}</span><span className="admin-row-actions"><button type="button" className="row-icon-button" aria-label={`Edit ${source.displayName}`} title="Edit" onClick={() => { setSelectedSource(source.sourceId); setAdminDrawerMode('integration-edit') }}><Icon name="edit" /></button></span></div>)}
-                  </div>}
-                </section>
+                <AdminSection
+                  flush
+                  title="Ingestion integrations"
+                  meta={sources.length}
+                  description="Each integration is a producer system: its identity, authentication reference, and technical metadata contract. Business Administration separately decides how those fields are searched."
+                  actions={<button type="button" className="primary-action" onClick={() => setAdminDrawerMode('integration-create')}><Icon name="plus" /> Add source</button>}
+                >
+                  {sources.length === 0 ? <EmptyState title="No integrations configured">Add a producer source to define its technical contract.</EmptyState> : (
+                    <div className="ax-table-wrap">
+                      <table className="ax-table">
+                        <thead><tr><th>Integration</th><th>Source key</th><th>Status</th><th>Authentication</th><th className="ax-col-action"><span className="visually-hidden">Edit</span></th></tr></thead>
+                        <tbody>
+                          {sources.map((source) => (
+                            <tr key={source.sourceId}>
+                              <td><span className="ax-cell-primary"><strong>{source.displayName}</strong></span></td>
+                              <td><span className="ax-code">{source.sourceKey}</span></td>
+                              <td><StatusPill value={source.status} /></td>
+                              <td>{source.authType ? AUTH_TYPE_LABELS[source.authType] ?? source.authType : '—'}</td>
+                              <td className="ax-col-action"><button type="button" className="ax-icon-button" aria-label={`Edit ${source.displayName}`} title="Edit" onClick={() => { setSelectedSource(source.sourceId); setAdminDrawerMode('integration-edit') }}><Icon name="edit" /></button></td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </AdminSection>
               )}
-              {tenantItTab === 'environment' && <section className="panel top-gap tenant-it-panel tenant-it-environment-panel"><div className="panel-heading"><div><span className="kicker">Customer Environment</span><h2>Environment</h2></div><button className="secondary" onClick={() => navigate('operations')}>Open operational readiness</button></div><div className="auth-config-grid"><div><span className="label">Product</span><strong>{system?.productName ?? 'Secure Document Vault'}</strong></div><div><span className="label">Version</span><strong>{system?.version ?? 'Unknown'}</strong></div><div><span className="label">Status</span><strong>{system?.status ?? 'Unknown'}</strong></div><div><span className="label">Profiles</span><strong>{system?.activeProfiles?.join(', ') || 'Not exposed'}</strong></div></div></section>}
+
+              {tenantItTab === 'environment' && (
+                <AdminSection
+                  title="Customer environment"
+                  description="The SDV deployment running in this customer environment."
+                  actions={<button className="secondary" onClick={() => navigate('operations')}>Open operational readiness</button>}
+                >
+                  <StateSheet columns={4} items={[
+                    { label: 'Product', value: system?.productName ?? 'Secure Document Vault' },
+                    { label: 'Version', value: system?.version ?? 'Unknown', mono: true },
+                    { label: 'Status', value: system?.status ? <StatusPill value={system.status} /> : 'Unknown' },
+                    { label: 'Profiles', value: system?.activeProfiles?.join(', ') || 'Not exposed', mono: true },
+                  ]} />
+                </AdminSection>
+              )}
             </>
           )}
         </div>
       )}
 
       {view === 'operations' && canViewTechnicalFailures && (
-        <div className="admin-workspace">
-          <nav className="workspace-tabs" aria-label="Platform operations sections">
-            <button className={platformTab === 'overview' ? 'active' : ''} onClick={() => setPlatformTab('overview')}>Overview</button>
-            <button className={platformTab === 'storage' ? 'active' : ''} onClick={() => setPlatformTab('storage')}>Storage</button>
-            <button className={platformTab === 'health' ? 'active' : ''} onClick={() => setPlatformTab('health')}>Platform Health</button>
-            <button className={platformTab === 'incidents' ? 'active' : ''} onClick={() => setPlatformTab('incidents')}>Incidents</button>
-            <button className={platformTab === 'audit' ? 'active' : ''} onClick={() => setPlatformTab('audit')}>Audit</button>
-            <button className={platformTab === 'configuration' ? 'active' : ''} onClick={() => setPlatformTab('configuration')}>Configuration</button>
-          </nav>
-          {platformTab === 'overview' && <div className="operations-layout top-gap"><section className="panel operations-wide"><div className="panel-heading"><div><span className="kicker">Customer Deployment</span><h2>Operational overview</h2></div></div>{!operations ? <p className="muted">Loading operational health…</p> : <><div className="health-grid">{[operations.application, operations.database, operations.keyService].map((item) => <div className="health-card" key={item.component}><span className="label">{humanize(item.component)}</span><StatusPill value={item.status} /><small>{item.message}</small></div>)}<div className={`health-card health-card-overall health-card-${statusTone(operations.overallStatus)}`}><span className="label">Overall</span><StatusPill value={operations.overallStatus} /><small>Observed {formatDate(operations.observedAt)}</small></div><div className="health-card"><span className="label">Retention sweep</span>{retentionSweepStatus ? <StatusPill value={retentionSweepStatus.outcome} /> : <strong>Loading</strong>}<small>{retentionSweepStatus?.completedAt ? `${retentionSweepStatus.deleted} deleted · ${retentionSweepStatus.failed} failed · ${formatDate(retentionSweepStatus.completedAt)}` : 'No sweep evidence yet'}</small></div></div></>}</section><section className="panel"><div className="panel-heading"><div><span className="kicker">Storage</span><h2>Volume readiness</h2></div><span className="count">{operations?.storageVolumes.filter(volumeNeedsAttention).length ?? 0}</span></div>{operations && operations.storageVolumes.filter(volumeNeedsAttention).length === 0 ? <p className="muted">All active storage volumes are healthy.</p> : <p className="muted">{operations?.storageVolumes.filter(volumeNeedsAttention).length ?? 0} volume(s) require attention.</p>}</section><section className="panel"><div className="panel-heading"><div><span className="kicker">Incidents</span><h2>Processing failures</h2></div><span className="count">{operations ? (operations.processingFailureCount ?? '—') : '—'}</span></div><p className="muted">Open Incidents for failure, stuck-transition, and incomplete-submission detail.</p></section></div>}
-          {platformTab === 'storage' && <section className="panel top-gap"><div className="panel-heading"><div><span className="kicker">Platform Operations</span><h2>Processing storage</h2></div><span className="count">{operations?.storageVolumes.length ?? 0}</span></div><div className="ops-table-wrap"><table className="ops-table"><thead><tr><th>Volume</th><th>State</th><th>Health</th><th>Used</th><th>Warn / stop writes</th><th>Change state</th></tr></thead><tbody>{operations?.storageVolumes.map((volume) => <tr key={volume.volumeId}><td><strong>{volume.displayName}</strong><small className="mono">{volume.rootPath}</small></td><td><StatusPill value={volume.state} /></td><td><StatusPill value={volume.health} /></td><td>{volume.usedPercent == null ? 'Unavailable' : `${volume.usedPercent}%`}</td><td>{volume.warningPercent}% / {volume.stopWritePercent}%</td><td>{canConfigureStorage ? <select className="ops-state-select" aria-label={`Change state for ${volume.displayName}`} value={volume.state} onChange={(event) => updateVolumeState(volume, event.target.value as StorageVolumeStatus['state'])}><option value="ACTIVE">Active</option><option value="READ_ONLY">Read only</option><option value="OFFLINE">Offline</option></select> : <span className="muted">No permission</span>}</td></tr>)}</tbody></table></div></section>}
-          {platformTab === 'health' && <section className="panel top-gap"><div className="panel-heading"><div><span className="kicker">Platform Health</span><h2>Core services</h2></div></div>{!operations ? <p className="muted">Loading health…</p> : <div className="health-grid">{[operations.application, operations.database, operations.keyService].map((item) => <div className="health-card" key={item.component}><span className="label">{humanize(item.component)}</span><StatusPill value={item.status} /><small>{item.message}</small></div>)}</div>}</section>}
-          {platformTab === 'incidents' && <div className="operations-layout top-gap"><section className="panel"><div className="panel-heading"><div><span className="kicker">Processing</span><h2>Failures</h2></div><span className="count">{operations ? (operations.processingFailureCount ?? 'Unavailable') : '—'}</span></div>{operations?.processingFailures.length ? operations.processingFailures.map((item) => <div className="ops-item" key={item.documentId}><span className="ops-item-title"><strong>{humanize(item.errorCode || 'PROCESSING_FAILED')}</strong><code className="ops-code">{item.errorCode || 'PROCESSING_FAILED'}</code></span><small className="mono">Document {item.documentId}</small><small>{item.processingAttemptCount} attempt(s) · {formatDate(item.ingestedAt)}</small></div>) : <p className="muted">No processing failures.</p>}</section><section className="panel"><div className="panel-heading"><div><span className="kicker">Workflow</span><h2>Stuck transitions</h2></div><span className="count">{operations ? (operations.stuckDocumentCount ?? 'Unavailable') : '—'}</span></div>{operations?.stuckDocuments.length ? operations.stuckDocuments.map((item) => <div className="ops-item" key={item.documentId}><span className="ops-item-title"><strong>Stuck in {humanize(item.status).toLowerCase()}</strong><StatusPill value={item.status} /></span><small className="mono">Document {item.documentId}</small><small>Since {formatDate(item.stateSince)}</small></div>) : <p className="muted">No stuck transitions.</p>}</section><section className="panel operations-wide"><div className="panel-heading"><div><span className="kicker">Submissions</span><h2>Incomplete / attention</h2></div><span className="count">{operations ? (operations.attentionSubmissionCount ?? 'Unavailable') : '—'}</span></div>{operations?.attentionSubmissions.length ? operations.attentionSubmissions.map((item) => <div className="ops-item" key={item.submissionId}><span className="ops-item-title"><strong>{item.receivedDocumentCount} of {item.expectedDocumentCount} documents received</strong><StatusPill value={item.status} /></span><small>{item.sourceSubmissionId}</small><small>Last activity {formatDate(item.lastActivityAt)}</small></div>) : <p className="muted">No incomplete submissions need attention.</p>}</section></div>}
-          {platformTab === 'audit' && <section className="panel top-gap audit-panel"><div className="panel-heading"><div><span className="kicker">Platform Operations</span><h2>Audit</h2></div><span className="count">{auditEvents.length}</span></div><form className="audit-filters audit-filters-grid" onSubmit={(event) => { event.preventDefault(); loadAudit(true).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : 'Audit query failed.')) }}><label>Action<input value={auditAction} onChange={(event) => setAuditAction(event.target.value)} placeholder="e.g. DOCUMENT_DOWNLOADED" /></label><label>Outcome<select value={auditOutcome} onChange={(event) => setAuditOutcome(event.target.value)}><option value="">All outcomes</option><option>SUCCESS</option><option>DENIED</option><option>FAILED</option></select></label><label>Resource type<input value={auditTargetType} onChange={(event) => setAuditTargetType(event.target.value)} placeholder="e.g. DOCUMENT" /></label><label>Resource ID<input value={auditTargetId} onChange={(event) => setAuditTargetId(event.target.value)} placeholder="Exact resource ID" /></label><label>Actor type<input value={auditActorType} onChange={(event) => setAuditActorType(event.target.value)} placeholder="e.g. USER" /></label><label>Actor ID<input value={auditActorId} onChange={(event) => setAuditActorId(event.target.value)} placeholder="Exact actor ID" /></label><label>Correlation ID<input value={auditCorrelationId} onChange={(event) => setAuditCorrelationId(event.target.value)} placeholder="Exact correlation ID" /></label><label>From<input type="datetime-local" value={auditFrom} onChange={(event) => setAuditFrom(event.target.value)} /></label><label>To<input type="datetime-local" value={auditTo} onChange={(event) => setAuditTo(event.target.value)} /></label><label className="audit-toggle"><input type="checkbox" checked={includeAuditViews} onChange={(event) => setIncludeAuditViews(event.target.checked)} /> Include view events</label><button type="submit" disabled={loadingAudit}>{loadingAudit ? 'Loading…' : 'Apply filters'}</button></form><div className="ops-table-wrap"><table className="ops-table audit-table"><thead><tr><th>Time</th><th>Action</th><th>Outcome</th><th>Actor</th><th>Resource</th><th>Correlation ID</th><th>Safe details</th></tr></thead><tbody>{auditEvents.filter((event) => includeAuditViews || event.action !== 'AUDIT_VIEWED').map((event) => <tr key={event.auditEventId}><td>{formatDate(event.occurredAt)}</td><td><strong>{event.action}</strong></td><td>{event.outcome}</td><td>{event.actorType}<small>{event.actorId}</small></td><td>{event.targetType}<small className="mono">{event.targetId}</small></td><td><small className="mono">{event.correlationId || '—'}</small></td><td><code>{event.safeDetailsJson}</code></td></tr>)}</tbody></table></div>{auditHasMore && <button className="secondary" onClick={() => loadAudit(false)} disabled={loadingAudit}>{loadingAudit ? 'Loading…' : 'Load older events'}</button>}</section>}
-          {platformTab === 'configuration' && <section className="panel top-gap"><div className="panel-heading"><div><span className="kicker">Customer Deployment</span><h2>Configuration</h2></div></div><p className="muted">Settings here apply only to this customer&apos;s SDV environment. Licensing and branding are not editable yet.</p></section>}
+        <div className="ax-workspace operations-workspace">
+          <AdminTabs
+            label="Platform operations sections"
+            value={platformTab}
+            onChange={setPlatformTab}
+            tabs={[
+              { id: 'overview', label: 'Overview' },
+              { id: 'storage', label: 'Storage', attention: attentionVolumes.length > 0 },
+              { id: 'health', label: 'Platform Health' },
+              { id: 'incidents', label: 'Incidents', attention: incidentTotal > 0 },
+              { id: 'audit', label: 'Audit' },
+              { id: 'configuration', label: 'Configuration' },
+            ]}
+          />
+
+          {platformTab === 'overview' && (!operations ? <AdminSection title="Operational overview"><p className="ax-note">Loading operational health…</p></AdminSection> : (
+            <>
+              <div className={`ax-status-strip ax-status-strip-${statusTone(operations.overallStatus)}`}>
+                <div className="ax-status-strip-main">
+                  <span>Overall</span>
+                  <strong>{humanize(operations.overallStatus)}</strong>
+                </div>
+                <span className="ax-status-strip-meta">Observed {formatDate(operations.observedAt)} · refreshes every 30 seconds</span>
+              </div>
+
+              <AdminSection flush title="Needs attention" description="Conditions that may need an operator, in priority order.">
+                <div className="ax-attention-list">
+                  <AttentionRow
+                    tone={(operations.processingFailureCount ?? 0) > 0 ? 'danger' : operations.processingFailureCount == null ? 'neutral' : 'ok'}
+                    count={operations.processingFailureCount ?? '—'}
+                    title="Processing failures"
+                    detail={operations.processingFailureCount == null ? 'Count unavailable' : operations.processingFailureCount > 0 ? 'Documents that failed processing' : 'No processing failures'}
+                    onOpen={() => setPlatformTab('incidents')}
+                    openLabel="View incidents"
+                  />
+                  <AttentionRow
+                    tone={attentionVolumes.length > 0 ? 'warn' : 'ok'}
+                    count={attentionVolumes.length}
+                    title="Storage volumes"
+                    detail={attentionVolumes.length > 0 ? attentionVolumes.map((volume) => volume.displayName).join(', ') : 'All active storage volumes are healthy'}
+                    onOpen={() => setPlatformTab('storage')}
+                    openLabel="View storage"
+                  />
+                  <AttentionRow
+                    tone={(operations.stuckDocumentCount ?? 0) > 0 ? 'warn' : operations.stuckDocumentCount == null ? 'neutral' : 'ok'}
+                    count={operations.stuckDocumentCount ?? '—'}
+                    title="Stuck transitions"
+                    detail={operations.stuckDocumentCount == null ? 'Count unavailable' : operations.stuckDocumentCount > 0 ? 'Documents not progressing through workflow' : 'No stuck transitions'}
+                    onOpen={() => setPlatformTab('incidents')}
+                    openLabel="View incidents"
+                  />
+                  <AttentionRow
+                    tone={(operations.attentionSubmissionCount ?? 0) > 0 ? 'warn' : operations.attentionSubmissionCount == null ? 'neutral' : 'ok'}
+                    count={operations.attentionSubmissionCount ?? '—'}
+                    title="Incomplete submissions"
+                    detail={operations.attentionSubmissionCount == null ? 'Count unavailable' : operations.attentionSubmissionCount > 0 ? 'Submissions missing expected documents' : 'No incomplete submissions'}
+                    onOpen={() => setPlatformTab('incidents')}
+                    openLabel="View incidents"
+                  />
+                </div>
+              </AdminSection>
+
+              <AdminSection flush title="Core services">
+                <div className="ax-service-list">
+                  {[operations.application, operations.database, operations.keyService].map((item) => (
+                    <div className="ax-service" key={item.component}>
+                      <div className="ax-service-head"><strong>{humanize(item.component)}</strong><StatusPill value={item.status} /></div>
+                      <small>{item.message}</small>
+                    </div>
+                  ))}
+                  <div className="ax-service">
+                    <div className="ax-service-head"><strong>Retention sweep</strong>{retentionSweepStatus ? <StatusPill value={retentionSweepStatus.outcome} /> : <span className="ax-muted">Loading</span>}</div>
+                    <small>{retentionSweepStatus?.completedAt ? `${retentionSweepStatus.deleted} deleted · ${retentionSweepStatus.failed} failed · ${formatDate(retentionSweepStatus.completedAt)}` : 'No sweep evidence yet'}</small>
+                  </div>
+                </div>
+              </AdminSection>
+            </>
+          ))}
+
+          {platformTab === 'storage' && (
+            <AdminSection flush title="Processing storage" meta={operations?.storageVolumes.length ?? 0} description={attentionVolumes.length > 0 ? `${attentionVolumes.length} volume(s) need attention.` : 'All active storage volumes are healthy.'}>
+              {!operations ? <EmptyState title="Loading storage…" /> : (
+                <div className="ax-table-wrap">
+                  <table className="ax-table">
+                    <thead><tr><th>Volume</th><th>State</th><th>Health</th><th>Capacity</th><th>Thresholds</th><th>Change state</th></tr></thead>
+                    <tbody>
+                      {operations.storageVolumes.map((volume) => (
+                        <tr key={volume.volumeId}>
+                          <td><span className="ax-cell-primary"><strong>{volume.displayName}</strong><small className="mono">{volume.rootPath}</small>{volumeNeedsAttention(volume) && <small className="ax-flag-text">Needs attention{volume.observationError ? ` · ${volume.observationError}` : ''}</small>}</span></td>
+                          <td><StatusPill value={volume.state} /></td>
+                          <td><StatusPill value={volume.health} /></td>
+                          <td><CapacityMeter usedPercent={volume.usedPercent} warningPercent={volume.warningPercent} stopWritePercent={volume.stopWritePercent} /></td>
+                          <td><span className="ax-sub">Warn {volume.warningPercent}% · Stop {volume.stopWritePercent}%</span></td>
+                          <td>{canConfigureStorage ? <select aria-label={`Change state for ${volume.displayName}`} value={volume.state} onChange={(event) => updateVolumeState(volume, event.target.value as StorageVolumeStatus['state'])}><option value="ACTIVE">Active</option><option value="READ_ONLY">Read only</option><option value="OFFLINE">Offline</option></select> : <span className="ax-muted">No permission</span>}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </AdminSection>
+          )}
+
+          {platformTab === 'health' && (
+            <AdminSection flush title="Core services" description={operations ? `Observed ${formatDate(operations.observedAt)}` : undefined}>
+              {!operations ? <EmptyState title="Loading health…" /> : (
+                <div className="ax-table-wrap">
+                  <table className="ax-table">
+                    <thead><tr><th>Component</th><th>Status</th><th>Detail</th></tr></thead>
+                    <tbody>
+                      {[operations.application, operations.database, operations.keyService].map((item) => (
+                        <tr key={item.component}><td><span className="ax-cell-primary"><strong>{humanize(item.component)}</strong></span></td><td><StatusPill value={item.status} /></td><td>{item.message}</td></tr>
+                      ))}
+                      <tr><td><span className="ax-cell-primary"><strong>Overall</strong></span></td><td><StatusPill value={operations.overallStatus} /></td><td className="ax-muted">Combined deployment status</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </AdminSection>
+          )}
+
+          {platformTab === 'incidents' && (
+            <>
+              <AdminSection flush title="Processing failures" meta={operations ? (operations.processingFailureCount ?? 'Unavailable') : '—'}>
+                {operations?.processingFailures.length ? (
+                  <div className="ax-table-wrap">
+                    <table className="ax-table">
+                      <thead><tr><th>Failure</th><th>Document</th><th className="ax-col-num">Attempts</th><th>Ingested</th></tr></thead>
+                      <tbody>
+                        {operations.processingFailures.map((item) => (
+                          <tr key={item.documentId}>
+                            <td><span className="ax-cell-primary"><strong>{humanize(item.errorCode || 'PROCESSING_FAILED')}</strong><span><span className="ax-code">{item.errorCode || 'PROCESSING_FAILED'}</span></span></span></td>
+                            <td><span className="mono">{item.documentId}</span></td>
+                            <td className="ax-col-num">{item.processingAttemptCount}</td>
+                            <td>{formatDate(item.ingestedAt)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : <EmptyState title="No processing failures" />}
+              </AdminSection>
+              <AdminSection flush title="Stuck transitions" meta={operations ? (operations.stuckDocumentCount ?? 'Unavailable') : '—'}>
+                {operations?.stuckDocuments.length ? (
+                  <div className="ax-table-wrap">
+                    <table className="ax-table">
+                      <thead><tr><th>Stuck in</th><th>Document</th><th>In this state since</th></tr></thead>
+                      <tbody>
+                        {operations.stuckDocuments.map((item) => (
+                          <tr key={item.documentId}><td><StatusPill value={item.status} /></td><td><span className="mono">{item.documentId}</span></td><td>{formatDate(item.stateSince)}</td></tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : <EmptyState title="No stuck transitions" />}
+              </AdminSection>
+              <AdminSection flush title="Incomplete submissions" meta={operations ? (operations.attentionSubmissionCount ?? 'Unavailable') : '—'}>
+                {operations?.attentionSubmissions.length ? (
+                  <div className="ax-table-wrap">
+                    <table className="ax-table">
+                      <thead><tr><th>Submission</th><th>Documents received</th><th>Status</th><th>Last activity</th></tr></thead>
+                      <tbody>
+                        {operations.attentionSubmissions.map((item) => (
+                          <tr key={item.submissionId}><td><span className="mono">{item.sourceSubmissionId}</span></td><td><strong>{item.receivedDocumentCount} of {item.expectedDocumentCount}</strong></td><td><StatusPill value={item.status} /></td><td>{formatDate(item.lastActivityAt)}</td></tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : <EmptyState title="No incomplete submissions need attention" />}
+              </AdminSection>
+            </>
+          )}
+
+          {platformTab === 'audit' && renderAuditPanel('Audit', 'Technical audit evidence for this tenant. Safe details never include document content or removed sensitive text.')}
+
+          {platformTab === 'configuration' && (
+            <AdminSection title="Deployment configuration" description="Settings here apply only to this customer's SDV environment. Licensing and branding are not editable yet.">
+              <StateSheet columns={3} items={[
+                { label: 'Product', value: system?.productName ?? 'Secure Document Vault' },
+                { label: 'Version', value: system?.version ?? 'Unknown', mono: true },
+                { label: 'Active profiles', value: system?.activeProfiles?.join(', ') || 'Not exposed', mono: true },
+              ]} />
+            </AdminSection>
+          )}
         </div>
       )}
 
       {view === 'audit' && canViewTechnicalFailures && (
-        <section className="panel top-gap audit-panel">
-          <div className="panel-heading"><div><span className="kicker">Audit</span><h2>Tenant audit history</h2></div><span className="count">{auditEvents.length}</span></div>
-          <p className="muted">Append-oriented tenant audit. Safe details contain technical evidence only; document content and removed sensitive text are never part of this view.</p>
-          <form className="audit-filters audit-filters-grid" onSubmit={(event) => { event.preventDefault(); loadAudit(true).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : 'Audit query failed.')) }}>
-            <label>Action<input value={auditAction} onChange={(event) => setAuditAction(event.target.value)} placeholder="e.g. DOCUMENT_DOWNLOADED" /></label>
-            <label>Outcome<select value={auditOutcome} onChange={(event) => setAuditOutcome(event.target.value)}><option value="">All outcomes</option><option>SUCCESS</option><option>DENIED</option><option>FAILED</option></select></label>
-            <label>Resource type<input value={auditTargetType} onChange={(event) => setAuditTargetType(event.target.value)} placeholder="e.g. DOCUMENT" /></label>
-            <label>Resource ID<input value={auditTargetId} onChange={(event) => setAuditTargetId(event.target.value)} placeholder="Exact resource ID" /></label>
-            <label>Actor type<input value={auditActorType} onChange={(event) => setAuditActorType(event.target.value)} placeholder="e.g. USER" /></label>
-            <label>Actor ID<input value={auditActorId} onChange={(event) => setAuditActorId(event.target.value)} placeholder="Exact actor ID" /></label>
-            <label>Correlation ID<input value={auditCorrelationId} onChange={(event) => setAuditCorrelationId(event.target.value)} placeholder="Exact correlation ID" /></label>
-            <label>From<input type="datetime-local" value={auditFrom} onChange={(event) => setAuditFrom(event.target.value)} /></label>
-            <label>To<input type="datetime-local" value={auditTo} onChange={(event) => setAuditTo(event.target.value)} /></label>
-            <label className="audit-toggle"><input type="checkbox" checked={includeAuditViews} onChange={(event) => setIncludeAuditViews(event.target.checked)} /> Include view events</label>
-            <button type="submit" disabled={loadingAudit}>{loadingAudit ? 'Loading…' : 'Apply filters'}</button>
-          </form>
-          <div className="ops-table-wrap"><table className="ops-table audit-table"><thead><tr><th>Time</th><th>Action</th><th>Outcome</th><th>Actor</th><th>Resource</th><th>Correlation ID</th><th>Safe details</th></tr></thead><tbody>
-            {auditEvents.filter((event) => includeAuditViews || event.action !== 'AUDIT_VIEWED').map((event) => <tr key={event.auditEventId}><td>{formatDate(event.occurredAt)}</td><td><strong>{event.action}</strong></td><td>{event.outcome}</td><td>{event.actorType}<small>{event.actorId}</small></td><td>{event.targetType}<small className="mono">{event.targetId}</small></td><td><small className="mono">{event.correlationId || '—'}</small></td><td><code>{event.safeDetailsJson}</code></td></tr>)}
-          </tbody></table></div>
-          {auditHasMore && <button className="secondary" onClick={() => loadAudit(false)} disabled={loadingAudit}>{loadingAudit ? 'Loading…' : 'Load older events'}</button>}
-        </section>
+        <div className="ax-workspace">
+          {renderAuditPanel('Tenant audit history', 'Append-oriented tenant audit. Safe details contain technical evidence only; document content and removed sensitive text are never part of this view.')}
+        </div>
       )}
 
       {adminDrawerMode && (

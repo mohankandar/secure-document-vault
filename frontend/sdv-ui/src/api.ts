@@ -82,6 +82,7 @@ export type AuthenticationStatus = {
 
 export type SessionInfo = {
   tenantId: string
+  tenantDisplayName: string
   subject: string
   roles: string[]
   capabilities: string[]

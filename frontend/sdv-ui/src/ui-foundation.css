@@ -5202,3 +5202,262 @@ textarea:disabled {
   .admin-workspace nav[aria-label$="sections"] > button { flex: none; }
   .admin-workspace .ops-table-wrap { overflow-x: auto; }
 }
+
+
+/* ===== Shared workspace layout primitives =====
+   Generic page-level patterns for fluid workspaces. Keep domain-specific colors/content
+   in feature stylesheets; width, header flow, surfaces, sections and action bars live here. */
+
+.ui-workspace-fluid {
+  width: 100%;
+  max-width: none;
+  min-width: 0;
+}
+
+.ui-workspace-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 20px 32px;
+  width: 100%;
+  min-width: 0;
+}
+
+.ui-workspace-intro {
+  flex: 1 1 640px;
+  min-width: 0;
+}
+
+.ui-workspace-lede {
+  max-width: none;
+  min-width: 0;
+}
+
+.ui-workspace-aside {
+  flex: 0 1 var(--ui-workspace-aside-width, 300px);
+  width: min(100%, var(--ui-workspace-aside-width, 300px));
+  min-width: min(220px, 100%);
+}
+
+.ui-workspace-surface {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-surface-lg);
+  background: var(--ui-surface);
+}
+
+.ui-workspace-section {
+  min-width: 0;
+  margin: 0;
+}
+
+.ui-workspace-section + .ui-workspace-section {
+  border-top: 1px solid var(--ui-border-soft);
+}
+
+.ui-workspace-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 20px;
+  width: 100%;
+  min-width: 0;
+}
+
+.ui-workspace-action-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 16px;
+  width: 100%;
+}
+
+.ui-action-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+@media (max-width: 760px) {
+  .ui-workspace-header {
+    align-items: stretch;
+    gap: 16px;
+  }
+
+  .ui-workspace-intro,
+  .ui-workspace-aside {
+    flex-basis: 100%;
+    width: 100%;
+  }
+
+  .ui-workspace-action-bar {
+    align-items: stretch;
+  }
+
+  .ui-workspace-action-bar > :first-child {
+    flex: 1 1 100%;
+  }
+
+  .ui-action-row {
+    width: 100%;
+    justify-content: flex-end;
+  }
+}
+
+
+/* ===== Shared enterprise administration framework =====
+   Framework-level layout for Business Admin, Tenant IT and Platform Operations.
+   Domain-specific tables/forms keep their own semantics and behavior. */
+
+.ui-admin-workspace {
+  display: grid;
+  gap: var(--space-4);
+  width: 100%;
+  max-width: none;
+  min-width: 0;
+  align-content: start;
+}
+
+.ui-admin-tabs {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  flex-wrap: nowrap;
+  scrollbar-width: thin;
+  overscroll-behavior-inline: contain;
+}
+
+.ui-admin-tabs > button {
+  flex: 0 0 auto;
+}
+
+.ui-admin-workspace > .panel,
+.ui-admin-workspace > .operations-layout,
+.ui-admin-workspace > .drawer-section-stack,
+.ui-admin-workspace > .health-grid {
+  width: 100%;
+  min-width: 0;
+}
+
+.ui-admin-workspace .panel {
+  min-width: 0;
+}
+
+.ui-admin-workspace .panel-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px 20px;
+  width: 100%;
+  min-width: 0;
+}
+
+.ui-admin-workspace .panel-heading > div:first-child {
+  flex: 1 1 560px;
+  min-width: 0;
+}
+
+.ui-admin-workspace .panel-heading .muted {
+  max-width: none;
+}
+
+.ui-admin-workspace .panel-heading-actions,
+.ui-admin-workspace .admin-heading-action {
+  flex: 0 0 auto;
+}
+
+.ui-admin-workspace .admin-row-table,
+.ui-admin-workspace .ops-table-wrap,
+.ui-admin-workspace .permission-matrix,
+.ui-admin-workspace .audit-filters-grid,
+.ui-admin-workspace .auth-config-grid {
+  width: 100%;
+  min-width: 0;
+}
+
+.ui-admin-workspace .admin-row-table,
+.ui-admin-workspace .ops-table-wrap {
+  max-width: 100%;
+}
+
+.ui-admin-workspace .form-actions,
+.ui-admin-workspace .identity-action-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.ui-admin-workspace .operations-layout {
+  width: 100%;
+  min-width: 0;
+}
+
+.ui-admin-workspace .operations-layout > .panel {
+  min-width: 0;
+}
+
+@media (max-width: 900px) {
+  .ui-admin-workspace {
+    gap: var(--space-3);
+  }
+
+  .ui-admin-workspace .panel-heading {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .ui-admin-workspace .panel-heading > div:first-child {
+    flex-basis: auto;
+  }
+
+  .ui-admin-workspace .panel-heading-actions,
+  .ui-admin-workspace .admin-heading-action {
+    width: 100%;
+  }
+
+  .ui-admin-workspace .panel-heading-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+}
+
+@media (max-width: 640px) {
+  .ui-admin-workspace .form-actions,
+  .ui-admin-workspace .identity-action-row {
+    align-items: stretch;
+  }
+
+  .ui-admin-workspace .form-actions > button,
+  .ui-admin-workspace .identity-action-row > button {
+    width: 100%;
+  }
+}
+
+/* Vero shell exploration: existing SDV tokens and role-gated navigation retained. */
+.vero-brand-row { min-height: 60px; padding-bottom: 6px; }
+.vero-wordmark { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.vero-wordmark strong { color: var(--ui-sidebar-text); font-size: 23px; font-weight: 750; letter-spacing: -.06em; line-height: 1; }
+.vero-brand-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ui-success); flex: none; }
+.vero-tenant-card { display: flex; align-items: center; gap: 10px; margin: 0 10px 16px; padding: 10px; min-width: 0; border-radius: var(--radius-control); background: rgba(255,255,255,.09); color: var(--ui-sidebar-text); }
+.vero-tenant-monogram { display: grid; place-items: center; flex: 0 0 34px; height: 34px; border-radius: 7px; background: rgba(0,0,0,.35); color: var(--ui-sidebar-text); font-size: 14px; font-weight: 700; }
+.vero-tenant-name { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: var(--type-body-sm); font-weight: var(--weight-semibold); }
+.vero-context-bar { display: flex; align-items: center; min-height: 46px; margin: calc(-1 * var(--space-5)) 0 var(--space-5); padding: 0 var(--space-2); border-bottom: 1px solid var(--ui-border); background: var(--ui-surface); }
+.vero-breadcrumb { display: flex; align-items: center; gap: 10px; min-width: 0; flex-wrap: wrap; font-size: var(--type-body-sm); color: var(--ui-text-secondary); }
+.vero-breadcrumb > span:last-child { color: var(--ui-text-strong); font-weight: var(--weight-semibold); }
+.sidebar-collapsed .vero-wordmark strong, .sidebar-collapsed .vero-brand-dot, .sidebar-collapsed .vero-tenant-name { display: none; }
+.sidebar-collapsed .vero-brand-row { justify-content: center; }
+.sidebar-collapsed .vero-tenant-card { justify-content: center; margin-left: 5px; margin-right: 5px; padding: 6px; }
+@media (max-width: 760px) {
+  .vero-context-bar { margin-top: 0; padding: 8px var(--space-3); }
+  .vero-breadcrumb { gap: 6px; font-size: var(--type-sm); }
+}
