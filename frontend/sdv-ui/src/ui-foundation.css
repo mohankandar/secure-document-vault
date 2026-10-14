@@ -5307,3 +5307,138 @@ textarea:disabled {
     justify-content: flex-end;
   }
 }
+
+
+/* ===== Shared enterprise administration framework =====
+   Framework-level layout for Business Admin, Tenant IT and Platform Operations.
+   Domain-specific tables/forms keep their own semantics and behavior. */
+
+.ui-admin-workspace {
+  display: grid;
+  gap: var(--space-4);
+  width: 100%;
+  max-width: none;
+  min-width: 0;
+  align-content: start;
+}
+
+.ui-admin-tabs {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  flex-wrap: nowrap;
+  scrollbar-width: thin;
+  overscroll-behavior-inline: contain;
+}
+
+.ui-admin-tabs > button {
+  flex: 0 0 auto;
+}
+
+.ui-admin-workspace > .panel,
+.ui-admin-workspace > .operations-layout,
+.ui-admin-workspace > .drawer-section-stack,
+.ui-admin-workspace > .health-grid {
+  width: 100%;
+  min-width: 0;
+}
+
+.ui-admin-workspace .panel {
+  min-width: 0;
+}
+
+.ui-admin-workspace .panel-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px 20px;
+  width: 100%;
+  min-width: 0;
+}
+
+.ui-admin-workspace .panel-heading > div:first-child {
+  flex: 1 1 560px;
+  min-width: 0;
+}
+
+.ui-admin-workspace .panel-heading .muted {
+  max-width: none;
+}
+
+.ui-admin-workspace .panel-heading-actions,
+.ui-admin-workspace .admin-heading-action {
+  flex: 0 0 auto;
+}
+
+.ui-admin-workspace .admin-row-table,
+.ui-admin-workspace .ops-table-wrap,
+.ui-admin-workspace .permission-matrix,
+.ui-admin-workspace .audit-filters-grid,
+.ui-admin-workspace .auth-config-grid {
+  width: 100%;
+  min-width: 0;
+}
+
+.ui-admin-workspace .admin-row-table,
+.ui-admin-workspace .ops-table-wrap {
+  max-width: 100%;
+}
+
+.ui-admin-workspace .form-actions,
+.ui-admin-workspace .identity-action-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.ui-admin-workspace .operations-layout {
+  width: 100%;
+  min-width: 0;
+}
+
+.ui-admin-workspace .operations-layout > .panel {
+  min-width: 0;
+}
+
+@media (max-width: 900px) {
+  .ui-admin-workspace {
+    gap: var(--space-3);
+  }
+
+  .ui-admin-workspace .panel-heading {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .ui-admin-workspace .panel-heading > div:first-child {
+    flex-basis: auto;
+  }
+
+  .ui-admin-workspace .panel-heading-actions,
+  .ui-admin-workspace .admin-heading-action {
+    width: 100%;
+  }
+
+  .ui-admin-workspace .panel-heading-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+}
+
+@media (max-width: 640px) {
+  .ui-admin-workspace .form-actions,
+  .ui-admin-workspace .identity-action-row {
+    align-items: stretch;
+  }
+
+  .ui-admin-workspace .form-actions > button,
+  .ui-admin-workspace .identity-action-row > button {
+    width: 100%;
+  }
+}
