@@ -3,10 +3,18 @@ import { expect, test, type Page, type TestInfo } from '@playwright/test'
 const demoRecord = process.env.SDV_DEMO_CONTRACT ?? '300000000001'
 
 async function selectRole(page: Page, role: string) {
-  const roleSelect = page.getByLabel('Demo role')
+  let roleSelect = page.getByLabel('Demo role')
+  if (!(await roleSelect.isVisible().catch(() => false))) {
+    const openNavigation = page.getByRole('button', { name: 'Open navigation' })
+    if (await openNavigation.isVisible().catch(() => false)) {
+      await openNavigation.click()
+      roleSelect = page.getByLabel('Demo role')
+    }
+  }
   await expect(roleSelect).toBeVisible()
   await roleSelect.selectOption({ label: role })
-  await page.waitForLoadState('networkidle').catch(() => undefined)
+  await expect(page.locator('.sidebar-identity strong')).not.toHaveText('Local user')
+  await page.waitForTimeout(150)
 }
 
 async function capture(page: Page, testInfo: TestInfo, name: string) {
