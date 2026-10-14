@@ -328,7 +328,7 @@
 
 /* ---------- Search ---------- */
 
-.bw .bw-search { display: grid; gap: 24px; width: 100%; max-width: 1120px; }
+.bw .bw-search { display: grid; gap: 24px; width: 100%; max-width: none; }
 .bw .bw-search-head {
   display: flex;
   flex-wrap: wrap;
