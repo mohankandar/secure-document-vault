@@ -17,31 +17,42 @@ async function capture(page: Page, testInfo: TestInfo, name: string) {
   })
 }
 
-async function clickTab(page: Page, name: string) {
-  const tab = page.getByRole('button', { name, exact: true })
+async function clickTab(page: Page, name: string, navigationLabel?: string) {
+  const scope = navigationLabel ? page.getByLabel(navigationLabel) : page
+  const tab = scope.getByRole('button', { name, exact: true })
   await expect(tab).toBeVisible()
   await tab.click()
   await page.waitForTimeout(250)
 }
 
-async function captureAdminTabs(page: Page, testInfo: TestInfo, tabs: string[]) {
+async function captureAdminTabs(page: Page, testInfo: TestInfo, tabs: string[], navigationLabel?: string) {
   for (const tab of tabs) {
-    await clickTab(page, tab)
+    await clickTab(page, tab, navigationLabel)
     await capture(page, testInfo, tab.toLowerCase().replace(/[^a-z0-9]+/g, '-'))
   }
 }
 
 async function tryBusinessRecordJourney(page: Page, testInfo: TestInfo) {
+  const sourceSelect = page.getByLabel('Search source')
+  if (await sourceSelect.isVisible().catch(() => false)) {
+    const options = await sourceSelect.locator('option').allTextContents()
+    const preferred = options.find((option) => option.toLowerCase().includes('laxavault'))
+      ?? options.find((option) => option.toLowerCase().includes('lexavault'))
+    if (preferred) {
+      await sourceSelect.selectOption({ label: preferred })
+      await page.waitForTimeout(200)
+    }
+  }
+
   const contract = page.getByLabel(/Contract Number/i).first()
   if (!(await contract.isVisible().catch(() => false))) return
 
   await contract.fill(demoRecord)
-  const searchButtons = page.getByRole('button', { name: /search/i })
-  await searchButtons.last().click()
+  await page.getByRole('button', { name: 'Search records', exact: true }).click()
   await page.waitForTimeout(500)
   await capture(page, testInfo, 'results')
 
-  const recordRow = page.getByText(demoRecord, { exact: true }).first()
+  const recordRow = page.locator('.business-result-table tbody tr').filter({ hasText: demoRecord }).first()
   if (!(await recordRow.isVisible().catch(() => false))) return
 
   await recordRow.click()
@@ -113,6 +124,6 @@ test.describe('SDV role-based screen capture', () => {
       'Incidents',
       'Audit',
       'Configuration',
-    ])
+    ], 'Platform operations sections')
   })
 })
