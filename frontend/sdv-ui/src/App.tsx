@@ -191,6 +191,7 @@ function App() {
   const [loadingAudit, setLoadingAudit] = useState(false)
   const [includeAuditViews, setIncludeAuditViews] = useState(false)
   const [auditMoreFilters, setAuditMoreFilters] = useState(false)
+  const [selectedAuditEvent, setSelectedAuditEvent] = useState<AuditEventView | null>(null)
 
   const businessSource = useMemo(
     () => schema.sources.find((source) => source.sourceId === businessSourceId),
@@ -908,18 +909,16 @@ function App() {
       </form>
       {visibleAuditEvents.length === 0 ? <EmptyState title={loadingAudit ? 'Loading audit events…' : 'No audit events match these filters'} /> : (
         <div className="ax-table-wrap">
-          <table className="ax-table audit-table">
-            <thead><tr><th>Time</th><th>Action</th><th>Outcome</th><th>Actor</th><th>Resource</th><th>Correlation ID</th><th>Safe details</th></tr></thead>
+          <table className="ax-table audit-table audit-ledger">
+            <thead><tr><th>Time</th><th>Event</th><th>Actor</th><th>Outcome</th><th>Details</th></tr></thead>
             <tbody>
               {visibleAuditEvents.map((event) => (
                 <tr key={event.auditEventId}>
-                  <td style={{ whiteSpace: 'nowrap' }}>{formatDate(event.occurredAt)}</td>
-                  <td><span className="ax-cell-primary"><strong>{humanize(event.action)}</strong><small className="mono">{event.action}</small></span></td>
+                  <td className="audit-ledger-time">{formatDate(event.occurredAt)}</td>
+                  <td><strong className="audit-ledger-event">{humanize(event.action)}</strong></td>
+                  <td><span className="audit-ledger-actor" title={event.actorId || ''}>{event.actorId || humanize(event.actorType)}</span></td>
                   <td><StatusPill value={event.outcome} /></td>
-                  <td><span className="ax-cell-primary"><strong>{humanize(event.actorType)}</strong><small className="mono">{event.actorId}</small></span></td>
-                  <td><span className="ax-cell-primary"><strong>{humanize(event.targetType)}</strong><small className="mono">{event.targetId}</small></span></td>
-                  <td><span className="mono ax-sub">{event.correlationId || '—'}</span></td>
-                  <td><code className="ax-code ax-details-json">{event.safeDetailsJson}</code></td>
+                  <td><button type="button" className="audit-detail-link" onClick={() => setSelectedAuditEvent(event)} aria-label={`View details for ${humanize(event.action)} at ${formatDate(event.occurredAt)}`}>View details <span aria-hidden="true">›</span></button></td>
                 </tr>
               ))}
             </tbody>
@@ -927,6 +926,31 @@ function App() {
         </div>
       )}
       {auditHasMore && <div className="ax-load-more"><button className="secondary" onClick={() => loadAudit(false)} disabled={loadingAudit}>{loadingAudit ? 'Loading…' : 'Load older events'}</button></div>}
+      {selectedAuditEvent && (
+        <>
+          <button type="button" className="admin-drawer-backdrop" aria-label="Close audit event details" onClick={() => setSelectedAuditEvent(null)} />
+          <aside className="admin-drawer audit-event-drawer" role="dialog" aria-modal="true" aria-label="Audit event details">
+            <div className="admin-drawer-header">
+              <div><span className="kicker">Audit evidence</span><h2>{humanize(selectedAuditEvent.action)}</h2></div>
+              <button type="button" className="drawer-close-button" aria-label="Close audit details" onClick={() => setSelectedAuditEvent(null)}><Icon name="close" /></button>
+            </div>
+            <div className="admin-drawer-body">
+              <dl className="audit-evidence-fields">
+                <div><dt>Time</dt><dd>{formatDate(selectedAuditEvent.occurredAt)}</dd></div>
+                <div><dt>Outcome</dt><dd><StatusPill value={selectedAuditEvent.outcome} /></dd></div>
+                <div><dt>Action code</dt><dd className="mono">{selectedAuditEvent.action}</dd></div>
+                <div><dt>Actor type</dt><dd>{humanize(selectedAuditEvent.actorType)}</dd></div>
+                <div><dt>Actor ID</dt><dd className="mono">{selectedAuditEvent.actorId || '—'}</dd></div>
+                <div><dt>Resource type</dt><dd>{humanize(selectedAuditEvent.targetType)}</dd></div>
+                <div><dt>Resource ID</dt><dd className="mono">{selectedAuditEvent.targetId || '—'}</dd></div>
+                <div><dt>Correlation ID</dt><dd className="mono">{selectedAuditEvent.correlationId || '—'}{selectedAuditEvent.correlationId && <button type="button" className="audit-copy" onClick={() => { void navigator.clipboard?.writeText(selectedAuditEvent.correlationId || '') }}>Copy</button>}</dd></div>
+              </dl>
+              <h3 className="audit-evidence-title">Safe details</h3>
+              <pre className="audit-evidence-json">{(() => { try { return JSON.stringify(JSON.parse(selectedAuditEvent.safeDetailsJson || '{}'), null, 2) } catch { return selectedAuditEvent.safeDetailsJson || '—' } })()}</pre>
+            </div>
+          </aside>
+        </>
+      )}
     </AdminSection>
   )
 
