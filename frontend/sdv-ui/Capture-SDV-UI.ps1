@@ -13,8 +13,8 @@ Write-Host "Base URL: $BaseUrl"
 Write-Host "Demo contract: $ContractNumber"
 
 if (-not (Test-Path "node_modules/@playwright/test")) {
-  Write-Host "Installing frontend dependencies..." -ForegroundColor Yellow
-  npm install
+  Write-Host "Installing Playwright test tooling (temporary, no-save)..." -ForegroundColor Yellow
+  npm install --no-save --package-lock=false @playwright/test@1.55.1
 }
 
 Write-Host "Ensuring Chromium and WebKit are installed..." -ForegroundColor Yellow
