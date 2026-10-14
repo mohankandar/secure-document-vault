@@ -1,0 +1,313 @@
+/*
+ * Vero premium refinement, round 3 — "Sealed ledger".
+ * Presentation-only layer loaded last. No markup, state or permission changes.
+ * Palette stays inside the SDV token set: ink navy, Vero blue, cool neutrals, semantic states.
+ * Signature: the hairline-sealed surface (1px ring + whisper shadow + ink top rule on primary panels),
+ * used identically for every role so the product reads as one instrument.
+ */
+
+:root {
+  --r3-ink: #0b1220;
+  --r3-ink-2: #121b2e;
+  --r3-ink-line: rgba(255, 255, 255, .07);
+  --r3-ring: color-mix(in srgb, var(--ui-text-strong) 9%, transparent);
+  --r3-ring-strong: color-mix(in srgb, var(--ui-text-strong) 16%, transparent);
+  --r3-surface: var(--ui-surface);
+  --r3-surface-2: color-mix(in srgb, var(--ui-bg) 55%, var(--ui-surface));
+  --r3-shadow: 0 0 0 1px var(--r3-ring), 0 1px 2px rgba(11, 18, 32, .04), 0 2px 8px -3px rgba(11, 18, 32, .06);
+  --r3-shadow-hover: 0 0 0 1px var(--r3-ring-strong), 0 2px 4px rgba(11, 18, 32, .05), 0 8px 20px -8px rgba(11, 18, 32, .12);
+  --r3-radius: 10px;
+  --r3-radius-sm: 7px;
+  --r3-head: .6875rem;
+  --r3-ease: cubic-bezier(.2, .7, .2, 1);
+  --ui-bg: #f2f4f7;
+}
+
+/* ---------- Typography ---------- */
+
+body, .bw {
+  font-feature-settings: 'cv11', 'ss01', 'ss03';
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+h1, h2, h3, .ax-section-title, .bw .bw-results-title h2, .bw .bw-search-head h2 { letter-spacing: -.018em; }
+td, .ax-count, .ax-meter-value, .vx-signal-count, .bw .bw-rail-count, .bwv-count { font-variant-numeric: tabular-nums; }
+
+/* ---------- Sidebar: ink panel ---------- */
+
+.modern-sidebar {
+  background: linear-gradient(180deg, var(--r3-ink-2) 0%, var(--r3-ink) 240px);
+  border-right: 1px solid var(--r3-ink-line);
+}
+.vero-brand-row { padding: 22px 16px 10px 20px; }
+.vero-wordmark strong { font-size: 24px; font-weight: 750; letter-spacing: -.06em; }
+.vero-brand-dot { background: var(--brand-accent); box-shadow: 0 0 0 3px rgb(var(--brand-accent-rgb) / .22); }
+
+.vero-tenant-card {
+  margin: 4px 14px 14px;
+  padding: 10px 10px;
+  border: 1px solid var(--r3-ink-line);
+  border-radius: var(--r3-radius-sm);
+  background: rgba(255, 255, 255, .03);
+}
+.vero-tenant-monogram {
+  flex-basis: 26px;
+  height: 26px;
+  border-radius: 7px;
+  background: linear-gradient(160deg, rgb(var(--brand-accent-rgb) / .9), rgb(var(--brand-accent-rgb) / .55));
+  font-weight: 700;
+  letter-spacing: .02em;
+}
+.vero-tenant-name { color: var(--ui-surface); font-weight: 600; letter-spacing: -.005em; }
+.sidebar-collapsed .vero-tenant-card { margin-inline: 10px; padding: 6px; border-color: transparent; background: transparent; }
+.vero-tenant-monogram svg { width: 14px; height: 14px; }
+/* The role switcher has no compact form; in the collapsed rail it rendered as an empty box. Expanding the rail restores it. */
+@media (min-width: 901px) {
+  .sidebar-collapsed .demo-role-control { display: none; }
+  .sidebar-collapsed .sidebar-footer { padding-inline: 8px; }
+}
+
+.app-nav-group + .app-nav-group { margin-top: 14px; }
+.app-nav-group-title {
+  margin-bottom: 4px;
+  color: rgba(197, 206, 217, .5);
+  font-size: 10px;
+  letter-spacing: .12em;
+}
+.app-nav-link {
+  min-height: 36px;
+  gap: 11px;
+  border-radius: var(--r3-radius-sm);
+  color: rgba(214, 222, 232, .78);
+  font-size: var(--type-body-sm);
+  letter-spacing: -.003em;
+}
+.app-nav-link svg { color: rgba(197, 206, 217, .55); transition: color .15s var(--r3-ease); }
+.app-nav-link:hover { background: rgba(255, 255, 255, .045); color: var(--ui-surface); }
+.app-nav-link:hover svg { color: var(--ui-sidebar-text); }
+.app-nav-link.active {
+  background: linear-gradient(90deg, rgb(var(--brand-accent-rgb) / .24), rgb(var(--brand-accent-rgb) / .1));
+  color: var(--ui-surface);
+  box-shadow: inset 0 0 0 1px rgb(var(--brand-accent-rgb) / .28);
+}
+.app-nav-link.active::before { left: -14px; top: 9px; bottom: 9px; background: var(--brand-accent); }
+.app-nav-link.active svg { color: color-mix(in srgb, var(--brand-accent) 45%, var(--ui-surface)); }
+
+.sidebar-footer { border-top: 1px solid var(--r3-ink-line); background: rgba(0, 0, 0, .12); }
+.demo-role-control { border-color: rgba(255, 255, 255, .12); background: rgba(255, 255, 255, .02); }
+.demo-role-control select { border-color: rgba(255, 255, 255, .1); background-color: rgba(255, 255, 255, .05); }
+
+/* ---------- Context bar ---------- */
+
+.vero-topbar {
+  padding: 20px var(--vx-gutter) 16px;
+  border-bottom-color: var(--r3-ring);
+  background: color-mix(in srgb, var(--ui-bg) 86%, transparent);
+  backdrop-filter: saturate(1.4) blur(12px);
+}
+.vero-topbar h1 { font-size: 1.5rem; font-weight: 700; letter-spacing: -.026em; line-height: 1.15; }
+.vero-topbar-lede { max-width: 76ch; margin-top: 2px; color: var(--ui-text-secondary); font-size: var(--type-body-sm); }
+.vero-breadcrumb { font-size: var(--type-xs); font-weight: 550; letter-spacing: 0; text-transform: none; color: var(--ui-text-muted); }
+/* Section ids such as "overview" are passed through raw. */
+.vero-breadcrumb > :last-child { text-transform: capitalize; }
+.vero-breadcrumb > span:last-child { color: var(--brand-accent); }
+.vero-topbar-compact .vero-breadcrumb { text-transform: none; letter-spacing: 0; font-size: var(--type-body-sm); }
+.vero-topbar-compact .vero-breadcrumb > span:last-child { color: var(--ui-text-strong); }
+.vero-system-chip { min-height: 32px; border: 0; box-shadow: var(--r3-shadow); }
+
+/* ---------- Controls ---------- */
+
+input, select, textarea {
+  border-color: color-mix(in srgb, var(--ui-text-strong) 14%, transparent);
+  border-radius: var(--r3-radius-sm);
+  background-color: var(--r3-surface);
+  box-shadow: 0 1px 1px rgba(11, 18, 32, .03);
+  transition: border-color .15s var(--r3-ease), box-shadow .15s var(--r3-ease);
+}
+input:focus, select:focus, textarea:focus,
+input:focus-visible, select:focus-visible, textarea:focus-visible {
+  outline: none;
+  border-color: var(--brand-accent);
+  box-shadow: 0 0 0 3px rgb(var(--brand-accent-rgb) / .16);
+}
+input::placeholder, textarea::placeholder { color: var(--ui-text-disabled); }
+
+button[type="submit"], .primary-action, .bw .bw-btn-primary {
+  border-radius: var(--r3-radius-sm);
+  background: var(--brand-accent);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .12), 0 1px 2px rgba(11, 18, 32, .14);
+  font-weight: 600;
+  letter-spacing: -.003em;
+  transition: background-color .15s var(--r3-ease), box-shadow .15s var(--r3-ease);
+}
+button[type="submit"]:hover:not(:disabled), .primary-action:hover:not(:disabled), .bw .bw-btn-primary:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--brand-accent) 86%, var(--r3-ink));
+}
+.secondary, .bw .bw-btn-secondary {
+  border-color: transparent;
+  border-radius: var(--r3-radius-sm);
+  background: var(--r3-surface);
+  color: var(--ui-text-strong);
+  box-shadow: var(--r3-shadow);
+  font-weight: 600;
+}
+.secondary:hover:not(:disabled), .bw .bw-btn-secondary:hover:not(:disabled) { background: var(--ui-hover); border-color: transparent; box-shadow: var(--r3-shadow-hover); }
+
+/* ---------- Sealed surfaces ---------- */
+
+.ax-section, .bw .bw-sheet, .bw .bw-inspector, .bw .bw-activity,
+.vx-ops-status, .vx-signal, .ax-policy-hero, .ax-service {
+  border-color: transparent;
+  border-radius: var(--r3-radius);
+  background: var(--r3-surface);
+  box-shadow: var(--r3-shadow);
+}
+.ax-section-head {
+  padding-block: 14px;
+  border-bottom: 1px solid var(--ui-border-soft);
+  background: linear-gradient(180deg, var(--r3-surface) 0%, var(--r3-surface-2) 100%);
+  border-radius: var(--r3-radius) var(--r3-radius) 0 0;
+}
+.ax-section-title { color: var(--ui-text-strong); font-size: .9375rem; font-weight: 650; }
+.ax-help { color: var(--ui-text-muted); }
+
+/* The ink-to-blue top rule read as a stray border in review; primary panels now rely on the ring alone. */
+.vx-ops-status, .bw .bw-sheet, .ax-policy-hero { position: relative; }
+.vx-ops-status::before, .bw .bw-sheet::before, .ax-policy-hero::before { content: none; }
+
+/* ---------- Tabs ---------- */
+
+.ax-tabs { gap: 2px; border-bottom-color: var(--r3-ring); }
+.ax-tabs > button {
+  padding-inline: 12px;
+  color: var(--ui-text-muted);
+  font-size: var(--type-body-sm);
+  font-weight: 550;
+  border-bottom-width: 2px;
+  transition: color .15s var(--r3-ease), border-color .15s var(--r3-ease);
+}
+.ax-tabs > button:hover { color: var(--ui-text-strong); }
+.ax-tabs > button.active { color: var(--ui-text-strong); border-bottom-color: var(--brand-accent); font-weight: 650; }
+
+/* ---------- Tables ---------- */
+
+.ax-table th, .bw .bw-table th {
+  background: var(--r3-surface-2);
+  color: var(--ui-text-muted);
+  font-size: var(--r3-head);
+  font-weight: 650;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+  border-bottom: 1px solid var(--r3-ring);
+}
+.ax-table td, .bw .bw-table td { border-bottom-color: var(--ui-border-soft); color: var(--ui-text); }
+.ax-table tbody tr, .bw .bw-table tbody tr { transition: background-color .12s var(--r3-ease); }
+.ax-table tbody tr:hover td { background: color-mix(in srgb, var(--brand-accent) 3.5%, var(--r3-surface)); }
+.ax-cell-primary, .bw .bw-cell-primary { color: var(--ui-text-strong); font-weight: 600; }
+.ax-table-wrap { border-radius: 0 0 var(--r3-radius) var(--r3-radius); }
+
+/* ---------- Status indicators ---------- */
+
+.status-pill, .ax-live-badge, .ax-staged-badge, .ax-count, .ax-tab-flag {
+  border: 0;
+  border-radius: var(--radius-pill);
+  font-size: var(--type-xs);
+  font-weight: 650;
+  letter-spacing: .01em;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, currentColor 18%, transparent);
+}
+.status-pill-dot, .vx-signal-dot { box-shadow: 0 0 0 2px color-mix(in srgb, currentColor 20%, transparent); }
+.vx-signal:hover { box-shadow: var(--r3-shadow-hover); }
+.vx-signal { transition: box-shadow .15s var(--r3-ease); }
+.vx-signal-danger { box-shadow: 0 0 0 1px color-mix(in srgb, var(--ui-danger) 32%, transparent), 0 1px 2px rgba(11, 18, 32, .04); }
+.vx-signal-count { font-weight: 700; letter-spacing: -.035em; }
+.vx-ops-status-value { font-weight: 700; letter-spacing: -.025em; }
+.ax-meter-track { border-radius: var(--radius-pill); background: var(--ui-border-soft); }
+.ax-meter-fill { border-radius: var(--radius-pill); }
+
+/* ---------- Business Workspace ---------- */
+
+.bw .bw-search-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px 32px;
+  padding-top: 18px;
+}
+.bw .bw-search-head h2 { font-size: 1.375rem; font-weight: 700; letter-spacing: -.024em; }
+.bw .bw-search-head p { max-width: 62ch; color: var(--ui-text-secondary); }
+.bw .bw-field-label { color: var(--ui-text-strong); font-weight: 600; }
+.bw .bw-field-label small { color: var(--ui-text-muted); font-weight: 500; }
+/* Source picker becomes a compact context control aligned with the heading, as in the hero. */
+.bw .bw-source {
+  flex: 0 1 300px;
+  min-width: 240px;
+  padding: 10px 12px 12px;
+  border: 0;
+  border-radius: var(--r3-radius);
+  background: var(--r3-surface);
+  box-shadow: var(--r3-shadow);
+}
+.bw .bw-source-label { font-size: 10px; letter-spacing: .1em; }
+.bw .bw-source select { min-height: 38px; border-color: transparent; box-shadow: none; background-color: var(--r3-surface-2); }
+/* auto-fit (not auto-fill) so a two-field group fills the sheet instead of leaving empty tracks. */
+.bw .bw-field-grid { grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px 20px; }
+.bw .bw-group { padding: 20px 24px; }
+.bw .bw-sheet-actions {
+  padding: 14px 24px;
+  border-top: 1px solid var(--ui-border-soft);
+  border-radius: 0 0 var(--r3-radius) var(--r3-radius);
+  background: color-mix(in srgb, var(--r3-surface) 92%, transparent);
+  backdrop-filter: blur(8px);
+}
+
+.bw .bw-results-head { align-items: center; gap: 12px 16px; padding-inline: 2px; }
+.bw .bw-results-title h2 { font-size: 1.25rem; font-weight: 700; letter-spacing: -.022em; }
+.bw .bw-results-body > :first-child { min-width: 0; }
+.bw .bw-search-head.ui-workspace-header { display: flex; flex-wrap: nowrap; }
+.bw .bw-search-head .bw-search-intro { flex: 1 1 auto; min-width: 0; }
+@media (max-width: 760px) {
+  .bw .bw-search-head.ui-workspace-header { flex-wrap: wrap; }
+  .bw .bw-search-head .bw-source { flex-basis: 100%; }
+}
+.bw .bw-table th, .bw .bw-table td { padding-inline: 10px; }
+.bw .bw-table th:first-child, .bw .bw-table td:first-child { padding-inline: 16px 2px; }
+.bw .bw-table th:last-child, .bw .bw-table td:last-child { min-width: 104px; white-space: normal; }
+.bw .bw-rail { border-right-color: var(--r3-ring); }
+.bw .bw-table tbody tr[aria-selected="true"] td {
+  background: color-mix(in srgb, var(--brand-accent) 7%, var(--r3-surface));
+  box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--brand-accent) 18%, transparent);
+}
+.bw .bw-inspector-head { border-bottom: 1px solid var(--ui-border-soft); }
+.bw .bw-doc-icon { border-radius: 6px; }
+
+/* ---------- Document Viewer ---------- */
+
+.bwv-header { background: linear-gradient(180deg, var(--r3-ink-2), var(--r3-ink)); border-bottom: 1px solid var(--r3-ink-line); }
+.bwv-header h2 { font-weight: 700; letter-spacing: -.02em; }
+.bwv-toolbar { border-bottom: 1px solid var(--r3-ring); background: var(--r3-surface); box-shadow: 0 1px 2px rgba(11, 18, 32, .04); }
+.bwv-segment { border-radius: var(--r3-radius-sm); box-shadow: var(--r3-shadow); }
+.bwv-btn { border-radius: 6px; font-weight: 600; transition: background-color .12s var(--r3-ease); }
+.bwv-side { border-color: var(--r3-ring); background: var(--r3-surface); }
+.bwv-side-head { border-bottom: 1px solid var(--ui-border-soft); background: var(--r3-surface-2); }
+.viewer-page-stage { box-shadow: 0 0 0 1px var(--r3-ring), 0 12px 32px -12px rgba(11, 18, 32, .28); }
+.bwv-seal { border-radius: var(--r3-radius-sm); }
+
+/* ---------- Responsive ---------- */
+
+@media (max-width: 1024px) {
+  .vero-topbar h1 { font-size: 1.3125rem; }
+}
+@media (max-width: 640px) {
+  .vero-topbar h1 { font-size: 1.1875rem; }
+  .ax-tabs > button { padding-inline: 10px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .app-nav-link svg, .ax-tabs > button, .ax-table tbody tr, .vx-signal, input, select, textarea, .bwv-btn { transition: none; }
+}
+@media print {
+  .modern-sidebar { background: none; }
+  .vx-ops-status::before, .bw .bw-sheet::before, .ax-policy-hero::before { display: none; }
+}
