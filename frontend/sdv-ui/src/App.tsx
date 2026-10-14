@@ -984,10 +984,10 @@ function App() {
       )}
 
       {view === 'admin' && canViewAdministration && (
-        <div className={`admin-workspace ${selectedPersona === 'tenantIt' ? 'tenant-it-workspace' : 'business-admin-workspace'}`}>
+        <div className={`admin-workspace ui-admin-workspace ui-workspace-fluid ${selectedPersona === 'tenantIt' ? 'tenant-it-workspace' : 'business-admin-workspace'}`}>
           {selectedPersona === 'businessAdmin' ? (
             <>
-              <nav className="workspace-tabs" aria-label="Business administration sections">
+              <nav className="workspace-tabs ui-admin-tabs" aria-label="Business administration sections">
                 <button className={businessAdminTab === 'access' ? 'active' : ''} onClick={() => setBusinessAdminTab('access')}>Users & Access</button>
                 <button className={businessAdminTab === 'roles' ? 'active' : ''} onClick={() => setBusinessAdminTab('roles')}>Roles & Permissions</button>
                 <button className={businessAdminTab === 'retention' ? 'active' : ''} onClick={() => setBusinessAdminTab('retention')}>Retention Policies</button>
@@ -1019,7 +1019,7 @@ function App() {
             </>
           ) : (
             <>
-              <nav className="workspace-tabs tenant-it-tabs" aria-label="Tenant IT administration sections">
+              <nav className="workspace-tabs ui-admin-tabs tenant-it-tabs" aria-label="Tenant IT administration sections">
                 <button className={tenantItTab === 'storage' ? 'active' : ''} onClick={() => setTenantItTab('storage')}>Storage</button>
                 <button className={tenantItTab === 'authentication' ? 'active' : ''} onClick={() => setTenantItTab('authentication')}>Authentication</button>
                 <button className={tenantItTab === 'integrations' ? 'active' : ''} onClick={() => setTenantItTab('integrations')}>Integrations</button>
@@ -1066,8 +1066,8 @@ function App() {
       )}
 
       {view === 'operations' && canViewTechnicalFailures && (
-        <div className="admin-workspace">
-          <nav className="workspace-tabs" aria-label="Platform operations sections">
+        <div className="admin-workspace ui-admin-workspace ui-workspace-fluid operations-workspace">
+          <nav className="workspace-tabs ui-admin-tabs" aria-label="Platform operations sections">
             <button className={platformTab === 'overview' ? 'active' : ''} onClick={() => setPlatformTab('overview')}>Overview</button>
             <button className={platformTab === 'storage' ? 'active' : ''} onClick={() => setPlatformTab('storage')}>Storage</button>
             <button className={platformTab === 'health' ? 'active' : ''} onClick={() => setPlatformTab('health')}>Platform Health</button>
