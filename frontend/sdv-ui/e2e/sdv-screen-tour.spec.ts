@@ -93,9 +93,33 @@ async function clickTab(page: Page, name: string, navigationLabel?: string) {
   await page.waitForTimeout(250)
 }
 
+async function waitForAdminTabReady(page: Page, tab: string) {
+  if (tab === 'Roles & Permissions') {
+    await expect(page.getByText('Loading role permissions…')).toHaveCount(0, { timeout: 15000 })
+    await expect(page.getByRole('button', { name: /Save permissions|Saving…/ })).toBeVisible({ timeout: 15000 })
+    return
+  }
+
+  if (tab === 'Overview') {
+    await expect(page.getByText('Loading operational health…')).toHaveCount(0, { timeout: 15000 })
+    await expect(page.getByText('Overall', { exact: true })).toBeVisible({ timeout: 15000 })
+    await expect(page.getByText('Loading', { exact: true })).toHaveCount(0, { timeout: 15000 })
+    return
+  }
+
+  if (tab === 'Audit') {
+    await expect(page.getByRole('button', { name: 'Apply filters', exact: true })).toBeVisible({ timeout: 15000 })
+    await expect(page.getByRole('button', { name: 'Apply filters', exact: true })).toBeEnabled({ timeout: 15000 })
+    return
+  }
+
+  await page.waitForTimeout(150)
+}
+
 async function captureAdminTabs(page: Page, testInfo: TestInfo, tabs: string[], navigationLabel?: string) {
   for (const tab of tabs) {
     await clickTab(page, tab, navigationLabel)
+    await waitForAdminTabReady(page, tab)
     await capture(page, testInfo, tab.toLowerCase().replace(/[^a-z0-9]+/g, '-'))
   }
 }
