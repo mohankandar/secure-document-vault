@@ -5202,3 +5202,108 @@ textarea:disabled {
   .admin-workspace nav[aria-label$="sections"] > button { flex: none; }
   .admin-workspace .ops-table-wrap { overflow-x: auto; }
 }
+
+
+/* ===== Shared workspace layout primitives =====
+   Generic page-level patterns for fluid workspaces. Keep domain-specific colors/content
+   in feature stylesheets; width, header flow, surfaces, sections and action bars live here. */
+
+.ui-workspace-fluid {
+  width: 100%;
+  max-width: none;
+  min-width: 0;
+}
+
+.ui-workspace-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 20px 32px;
+  width: 100%;
+  min-width: 0;
+}
+
+.ui-workspace-intro {
+  flex: 1 1 640px;
+  min-width: 0;
+}
+
+.ui-workspace-lede {
+  max-width: none;
+  min-width: 0;
+}
+
+.ui-workspace-aside {
+  flex: 0 1 var(--ui-workspace-aside-width, 300px);
+  width: min(100%, var(--ui-workspace-aside-width, 300px));
+  min-width: min(220px, 100%);
+}
+
+.ui-workspace-surface {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-surface-lg);
+  background: var(--ui-surface);
+}
+
+.ui-workspace-section {
+  min-width: 0;
+  margin: 0;
+}
+
+.ui-workspace-section + .ui-workspace-section {
+  border-top: 1px solid var(--ui-border-soft);
+}
+
+.ui-workspace-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 20px;
+  width: 100%;
+  min-width: 0;
+}
+
+.ui-workspace-action-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 16px;
+  width: 100%;
+}
+
+.ui-action-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+@media (max-width: 760px) {
+  .ui-workspace-header {
+    align-items: stretch;
+    gap: 16px;
+  }
+
+  .ui-workspace-intro,
+  .ui-workspace-aside {
+    flex-basis: 100%;
+    width: 100%;
+  }
+
+  .ui-workspace-action-bar {
+    align-items: stretch;
+  }
+
+  .ui-workspace-action-bar > :first-child {
+    flex: 1 1 100%;
+  }
+
+  .ui-action-row {
+    width: 100%;
+    justify-content: flex-end;
+  }
+}
