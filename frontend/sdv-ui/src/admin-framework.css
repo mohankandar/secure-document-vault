@@ -1661,3 +1661,24 @@ button[type="submit"]:hover:not(:disabled), .primary-action:hover:not(:disabled)
   .ax-policy-value { align-items: flex-start; max-width: none; }
   .ax-policy-value span { text-align: left; max-width: none; }
 }
+
+
+/* Admin-only shared header: give the explanatory line room before wrapping. */
+.modern-main-content:has(.ax-workspace) .vero-topbar-copy {
+  flex: 1 1 auto;
+  min-width: 0;
+  width: 100%;
+}
+.modern-main-content:has(.ax-workspace) .vero-topbar-lede {
+  max-width: 110ch;
+  line-height: 1.4;
+  text-wrap: pretty;
+}
+.modern-main-content:has(.ax-workspace) .vero-topbar {
+  gap: 16px 24px;
+}
+@media (max-width: 900px) {
+  .modern-main-content:has(.ax-workspace) .vero-topbar-lede {
+    max-width: 100%;
+  }
+}
