@@ -999,3 +999,58 @@
   .bw .bw-progress::after { animation: none; width: 100%; }
   .bw .bw-btn, .bw input, .bw select, .bw textarea { transition: none; }
 }
+
+
+/* R6 incremental live workspace: reuse authorized R5 PdfViewer without modifying document operations. */
+.bw .bw-r6-live-workspace {
+  display: grid;
+  grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--bw-line);
+  border-radius: 10px;
+  background: var(--bw-surface, #fff);
+}
+.bw .bw-r6-results-pane {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  border-right: 1px solid var(--bw-line);
+}
+.bw .bw-r6-results-pane-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--bw-line);
+}
+.bw .bw-r6-results-list { overflow-y: auto; min-height: 0; }
+.bw .bw-r6-result-item {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  width: 100%;
+  padding: 12px;
+  text-align: left;
+  color: var(--bw-ink);
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--bw-line);
+  cursor: pointer;
+}
+.bw .bw-r6-result-item span { color: var(--bw-text-2); font-size: 12px; }
+.bw .bw-r6-result-item.is-active {
+  background: color-mix(in srgb, var(--brand-accent) 9%, white);
+  box-shadow: inset 3px 0 var(--brand-accent);
+}
+.bw .bw-r6-result-item:hover:not(:disabled) { background: var(--bw-subtle); }
+.bw .bw-r6-result-item:focus-visible { outline: 2px solid var(--brand-accent); outline-offset: -3px; }
+.bw .bw-r6-live-viewer { min-width: 0; min-height: 0; height: 100%; }
+@media (max-width: 1100px) {
+  .bw .bw-r6-live-workspace { grid-template-columns: minmax(0, 1fr); }
+  .bw .bw-r6-results-pane { display: none; }
+}
