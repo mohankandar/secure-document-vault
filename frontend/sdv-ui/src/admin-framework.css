@@ -1682,3 +1682,45 @@ button[type="submit"]:hover:not(:disabled), .primary-action:hover:not(:disabled)
     max-width: 100%;
   }
 }
+
+
+/* Unified contextual help placement for all administration workspaces. */
+.ax-access-layout { grid-template-columns: minmax(0, 1fr); }
+.ax-info-trigger,
+.ax-info-popover > summary {
+  display: inline-grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  flex: none;
+  border: 1px solid var(--ui-border);
+  border-radius: 50%;
+  background: var(--ui-surface);
+  color: var(--brand-accent);
+  font: 700 13px/1 system-ui, sans-serif;
+  cursor: pointer;
+  list-style: none;
+}
+.ax-info-popover > summary::-webkit-details-marker { display: none; }
+.ax-info-trigger:hover,
+.ax-info-popover > summary:hover { background: var(--ui-hover); border-color: var(--brand-accent); }
+.ax-info-trigger:focus-visible,
+.ax-info-popover > summary:focus-visible { outline: 2px solid var(--brand-accent); outline-offset: 2px; }
+.ax-info-popover { position: relative; }
+.ax-info-popover-content {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 8px);
+  right: 0;
+  width: min(340px, calc(100vw - 44px));
+  padding: 14px 16px;
+  border: 1px solid var(--ui-border);
+  border-radius: 10px;
+  background: var(--ui-surface);
+  box-shadow: var(--shadow-surface);
+  color: var(--ui-text-secondary);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.ax-info-popover-content strong { color: var(--ui-text-strong); }
+.ax-info-popover-content p { margin: 6px 0 0; }
