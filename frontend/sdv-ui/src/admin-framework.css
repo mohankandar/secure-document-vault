@@ -1869,3 +1869,27 @@ button[type="submit"]:hover:not(:disabled), .primary-action:hover:not(:disabled)
   .bw.bw-stage-search .bw-source select { width: min(100%, 240px); }
   .bw.bw-stage-activity .bw-filters { grid-template-columns: minmax(0, 1fr); }
 }
+
+
+/* Final R5 visual acceptance refinements — no workflow changes. */
+.business-admin-workspace .ax-policy-hero {
+  padding-inline: 16px;
+  column-gap: 32px;
+}
+.business-admin-workspace .ax-policy-value {
+  min-width: 180px;
+  padding-right: 8px;
+}
+.tenant-it-workspace > .ax-split {
+  grid-template-columns: minmax(0, 1.8fr) minmax(340px, 1fr);
+  gap: 16px;
+}
+@media (max-width: 1240px) {
+  .tenant-it-workspace > .ax-split {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@media (max-width: 900px) {
+  .business-admin-workspace .ax-policy-hero { padding-inline: 8px; }
+  .business-admin-workspace .ax-policy-value { min-width: 0; padding-right: 0; }
+}
