@@ -1209,7 +1209,7 @@ function App() {
                         </div>
                         <div className="ax-policy-value">
                           <strong>{retentionPolicy.indefinite ? 'Indefinite' : `${retentionPolicy.defaultRetentionDays} days`}</strong>
-                          <span>Snapshotted onto each document at ingestion</span>
+                          <span>Applied at ingestion</span>
                         </div>
                       </div>
                     ) : <p className="ax-note">Loading retention policy…</p>}
