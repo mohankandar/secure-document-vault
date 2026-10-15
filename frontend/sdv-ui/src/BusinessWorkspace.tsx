@@ -355,19 +355,19 @@ export default function BusinessWorkspace({ persona, capabilities, onViewerState
           {results.length > 0 && <div className="bw-table-scroll">
             <table className="bw-table business-result-table">
               <thead><tr>
-                <th className="bw-col-select"><span className="sr-only">Selected</span></th>
                 {resultFields.map((field) => <th key={field.fieldKey}>{field.displayLabel}</th>)}
                 <th className="bw-col-num">Documents</th>
                 <th>Last Updated</th>
+                <th className="bw-col-open"><span className="sr-only">Open record</span></th>
               </tr></thead>
               <tbody>{results.map((item) => {
                 const values = new Map([...item.identifiers, ...item.metadataPreview].map((value) => [value.fieldKey, value.value]))
                 const isSelected = selectedRecord?.recordRef === item.recordRef
                 return <tr key={item.recordRef} className={isSelected ? 'selected' : ''} onClick={() => openRecord(item.recordRef)}>
-                  <td className="bw-col-select" data-label="Select"><input type="radio" name="selected-record" aria-label={`Select record ${item.recordRef}`} readOnly checked={isSelected} /></td>
                   {resultFields.map((field, index) => <td key={field.fieldKey} data-label={field.displayLabel} className={`${index === 0 ? 'bw-cell-primary' : ''} ${field.businessIdentifier ? 'bw-mono' : ''}`}>{values.get(field.fieldKey) ?? '—'}</td>)}
                   <td className="bw-col-num" data-label="Documents"><span className={`bw-doc-count ${item.availableDocumentCount ? '' : 'is-empty'}`}><Icon name="document" />{item.availableDocumentCount || 'None'}</span></td>
                   <td className="bw-cell-date" data-label="Last Updated">{formatDate(item.latestSubmissionAt)}</td>
+                  <td className="bw-col-open"><button type="button" className="bw-open-record" aria-label={`Open record ${values.get(resultFields[0]?.fieldKey) ?? item.recordRef}`} onClick={(event) => { event.stopPropagation(); openRecord(item.recordRef) }}><Icon name="arrowUpRight" /></button></td>
                 </tr>
               })}</tbody>
             </table>
@@ -392,7 +392,7 @@ export default function BusinessWorkspace({ persona, capabilities, onViewerState
               <div className="bw-inspector-identity">
                 <p className="bw-eyebrow">Selected record</p>
                 <p className="bw-inspector-label">{primaryIdentifier?.displayLabel}</p>
-                <h3 className="bw-mono">{primaryIdentifier?.value}</h3>
+                <h3 className="bw-tabular">{primaryIdentifier?.value}</h3>
               </div>
               <button type="button" className="bw-icon-btn" onClick={closeRecord} aria-label="Close selected record details"><span aria-hidden="true">×</span></button>
             </header>
@@ -419,7 +419,7 @@ export default function BusinessWorkspace({ persona, capabilities, onViewerState
             </section>
 
             <footer className="bw-inspector-actions">
-              <button type="button" className="bw-btn bw-btn-primary bw-btn-block" disabled={!selectedDocumentId || !canView} onClick={() => openViewer()}>Open document <span aria-hidden="true">→</span></button>
+              <button type="button" className="bw-btn bw-btn-primary bw-btn-block" disabled={!selectedDocumentId || !canView} onClick={() => openViewer()}>Open document <Icon name="arrowUpRight" /></button>
               <button type="button" className="bw-btn bw-btn-quiet bw-btn-block" onClick={() => setTab('activity')}><Icon name="operations" />Record activity</button>
             </footer>
           </aside>
