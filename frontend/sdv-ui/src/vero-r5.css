@@ -264,3 +264,12 @@
 @media (max-width: 760px) {
   .bw.bw-stage-results .bw-open-record { width: 40px; height: 40px; }
 }
+
+
+/* Local demo persona selector: Chromium's native popup uses a light option
+ * surface even when the closed sidebar control has white text. Give options
+ * explicit contrasting colors to avoid white-on-white entries. */
+.demo-role-control select option {
+  background-color: #ffffff;
+  color: #172033;
+}
