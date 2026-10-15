@@ -1302,7 +1302,7 @@ function App() {
                   meta={storageVolumes.length}
                   description={adminStorageAttention > 0 ? `${adminStorageAttention} of ${storageVolumes.length} volume(s) need attention.` : 'Encrypted document storage in your environment. Priority controls preferred placement.'}
                   actions={<>
-                    <button type="button" className="ax-info-trigger" aria-label="How storage works" title="How storage works" aria-expanded={storageHelpOpen} onClick={() => setStorageHelpOpen((current) => !current)}>i</button>
+                    <button type="button" className="secondary" aria-label="How storage works" aria-expanded={storageHelpOpen} onClick={() => setStorageHelpOpen((current) => !current)}>How storage works</button>
                     <button type="button" className="primary-action" onClick={() => setAdminDrawerMode('storage-create')}><Icon name="plus" /> Add storage volume</button>
                   </>}
                 >
