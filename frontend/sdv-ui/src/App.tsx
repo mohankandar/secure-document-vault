@@ -932,7 +932,7 @@ function App() {
     <AdminSection flush className="audit-panel" title={title} meta={visibleAuditEvents.length} description={description}>
       <form className="ax-filters" onSubmit={(event) => { event.preventDefault(); loadAudit(true).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : 'Audit query failed.')) }}>
         <div className="ax-filters-primary">
-          <label>Action<input value={auditAction} onChange={(event) => setAuditAction(event.target.value)} placeholder="e.g. DOCUMENT_DOWNLOADED" /></label>
+          <label>Action<select value={['', 'DOCUMENT_DOWNLOADED', 'DOCUMENT_PRINTED', 'DOCUMENT_VIEW_OPENED', 'DOCUMENT_PAGE_VIEWED', 'BUSINESS_RECORD_OPENED', 'DOCUMENT_COMMENT_ADDED', 'DOCUMENT_TAG_ADDED', 'DOCUMENT_PERMANENTLY_REDACTED'].includes(auditAction) ? auditAction : '__custom'} onChange={(event) => setAuditAction(event.target.value === '__custom' ? '' : event.target.value)}><option value="">All actions</option><option value="DOCUMENT_DOWNLOADED">Document downloaded</option><option value="DOCUMENT_PRINTED">Document printed</option><option value="DOCUMENT_VIEW_OPENED">Document opened</option><option value="DOCUMENT_PAGE_VIEWED">Page viewed</option><option value="BUSINESS_RECORD_OPENED">Business record opened</option><option value="DOCUMENT_COMMENT_ADDED">Comment added</option><option value="DOCUMENT_TAG_ADDED">Tag added</option><option value="DOCUMENT_PERMANENTLY_REDACTED">Permanent redaction</option>{auditAction && !['DOCUMENT_DOWNLOADED', 'DOCUMENT_PRINTED', 'DOCUMENT_VIEW_OPENED', 'DOCUMENT_PAGE_VIEWED', 'BUSINESS_RECORD_OPENED', 'DOCUMENT_COMMENT_ADDED', 'DOCUMENT_TAG_ADDED', 'DOCUMENT_PERMANENTLY_REDACTED'].includes(auditAction) && <option value="__custom">Custom action</option>}</select></label>
           <label>Outcome<select value={auditOutcome} onChange={(event) => setAuditOutcome(event.target.value)}><option value="">All outcomes</option><option value="SUCCESS">Success</option><option value="DENIED">Denied</option><option value="FAILED">Failed</option></select></label>
           <label>From<input type="datetime-local" value={auditFrom} onChange={(event) => setAuditFrom(event.target.value)} /></label>
           <label>To<input type="datetime-local" value={auditTo} onChange={(event) => setAuditTo(event.target.value)} /></label>
@@ -1131,7 +1131,7 @@ function App() {
 
               {businessAdminTab === 'access' && (
                 <div className="ax-split ax-access-layout">
-                  <AdminSection flush title="Business roles" meta={BUSINESS_ROLE_DIRECTORY.length} description="The roles SDV recognises for business content, and what each one is responsible for." actions={<details className="ax-info-popover"><summary aria-label="Where role assignments are managed" title="Where role assignments are managed">i<span className="sr-only"> Role assignment information</span></summary><div className="ax-info-popover-content"><strong>Where assignments live</strong><p>Sign-in and role assignments are managed in your identity provider. SDV reads roles from the sign-in token. Document actions are configured in Roles &amp; Permissions.</p></div></details>}>
+                  <AdminSection flush title="Business roles" meta={BUSINESS_ROLE_DIRECTORY.length} description="The roles SDV recognises for business content, and what each one is responsible for." actions={<details className="ax-info-popover"><summary aria-label="How role assignments work">How role assignments work</summary><div className="ax-info-popover-content"><strong>Where assignments live</strong><p>Sign-in and role assignments are managed in your identity provider. SDV reads roles from the sign-in token. Document actions are configured in Roles &amp; Permissions.</p></div></details>}>
                     <div className="ax-table-wrap">
                       <table className="ax-table">
                         <thead><tr><th>Role</th><th>Responsibility</th><th>Token role</th><th className="ax-col-action">Document actions</th></tr></thead>
@@ -1224,7 +1224,7 @@ function App() {
                               return (
                                 <tr key={policy.policyVersionId} className={current ? 'ax-row-current' : ''}>
                                   <td className="ax-col-num">v{policy.version}</td>
-                                  <td><span className="ax-cell-primary"><strong>{policy.policyName}</strong>{policy.description && <small>{policy.description}</small>}</span></td>
+                                  <td><span className="ax-cell-primary"><strong>{policy.policyName}</strong>{policy.description && <small className="ax-retention-history-description" title={policy.description}>{policy.description}</small>}</span></td>
                                   <td>{policy.indefinite ? 'Indefinite' : `${policy.defaultRetentionDays} days`}</td>
                                   <td>{formatDate(policy.effectiveFrom)}</td>
                                   <td>{policy.effectiveUntil ? formatDate(policy.effectiveUntil) : <StatusPill value="ACTIVE" label="Current" />}</td>
