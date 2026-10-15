@@ -1553,3 +1553,111 @@ button[type="submit"]:hover:not(:disabled), .primary-action:hover:not(:disabled)
   }
 }
 
+
+
+/* ==== Unified Administration R5 — shared Tenant IT visual standard ==== */
+/* Shared rules apply equally to Business, Tenant IT and Platform Operations. */
+.ax-workspace { gap: 16px; }
+.ax-tabs { gap: 4px; }
+.ax-tabs > button {
+  min-height: 40px;
+  padding-inline: 14px;
+  font-size: 13px;
+  font-weight: 550;
+}
+.ax-section { border-radius: 10px; }
+.ax-section-head {
+  align-items: center;
+  gap: 12px 20px;
+  padding: 14px 20px;
+}
+.ax-section-title { flex: 1 1 280px; min-width: 0; }
+.ax-section-title h2 {
+  font-size: 15px;
+  line-height: 1.35;
+  font-weight: 650;
+}
+.ax-section-title p {
+  max-width: 92ch;
+  margin-top: 3px;
+  line-height: 1.45;
+  font-size: 13px;
+}
+.ax-section-body { padding: 16px 20px; }
+.ax-table { font-size: 13px; }
+.ax-table th { font-size: 11px; letter-spacing: .055em; }
+.ax-table td { padding-block: 9px; line-height: 1.4; }
+.ax-section .primary-action,
+.ax-section .secondary { min-height: 36px; }
+.ax-policy-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) max-content;
+  align-items: center;
+  gap: 16px 28px;
+}
+.ax-policy-hero-main { min-width: 0; gap: 6px; }
+.ax-policy-hero-main h3 {
+  overflow-wrap: anywhere;
+  font-size: 16px;
+  line-height: 1.35;
+  font-weight: 650;
+}
+.ax-policy-hero-main p { max-width: 85ch; line-height: 1.4; }
+.ax-policy-hero-main .ax-sub { font-size: 12px; }
+.ax-policy-value { align-items: flex-end; max-width: 230px; }
+.ax-policy-value strong {
+  font-size: 20px;
+  line-height: 1.25;
+  white-space: normal;
+}
+.ax-policy-value span {
+  max-width: 220px;
+  font-size: 12px;
+  text-align: right;
+  line-height: 1.35;
+}
+.ax-contextual-help {
+  grid-column: 1 / -1;
+  border: 1px solid var(--ui-border);
+  border-radius: 10px;
+  background: var(--ui-surface);
+  padding: 0 14px;
+}
+.ax-contextual-help summary {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 12px 0;
+  color: var(--ui-text-secondary);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.ax-contextual-help summary:focus-visible { outline: 2px solid var(--brand-accent); outline-offset: 3px; }
+.ax-info-mark {
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border: 1px solid var(--ui-border);
+  border-radius: 50%;
+  color: var(--brand-accent);
+  font-size: 12px;
+  font-weight: 700;
+}
+.ax-contextual-help-content {
+  padding: 2px 0 14px 27px;
+  color: var(--ui-text-secondary);
+  font-size: 13px;
+  line-height: 1.45;
+}
+.ax-contextual-help-content p { margin: 0 0 7px; }
+@media (max-width: 900px) {
+  .ax-workspace { gap: 12px; }
+  .ax-section-head { padding: 12px 16px; }
+  .ax-section-body { padding: 14px 16px; }
+  .ax-split { grid-template-columns: minmax(0, 1fr); }
+  .ax-policy-hero { grid-template-columns: minmax(0, 1fr); }
+  .ax-policy-value { align-items: flex-start; max-width: none; }
+  .ax-policy-value span { text-align: left; max-width: none; }
+}
