@@ -378,7 +378,7 @@ export default function BusinessWorkspace({ persona, capabilities, onViewerState
                   {resultFields.map((field, index) => <td key={field.fieldKey} data-label={field.displayLabel} className={`${index === 0 ? 'bw-cell-primary' : ''} ${field.businessIdentifier ? 'bw-mono' : ''}`}>{values.get(field.fieldKey) ?? '—'}</td>)}
                   <td className="bw-col-num" data-label="Documents"><span className={`bw-doc-count ${item.availableDocumentCount ? '' : 'is-empty'}`}><Icon name="document" />{item.availableDocumentCount || 'None'}</span></td>
                   <td className="bw-cell-date" data-label="Last Updated">{formatDate(item.latestSubmissionAt)}</td>
-                  <td className="bw-col-open"><button type="button" className="bw-open-record" aria-label={`Open document for record ${values.get(resultFields[0]?.fieldKey) ?? item.recordRef}`} onClick={(event) => { event.stopPropagation(); void openRecord(item.recordRef, true) }}><Icon name="arrowUpRight" /></button></td>
+                  <td className="bw-col-open"><button type="button" className="bw-open-record" aria-label={`View PDF for record ${values.get(resultFields[0]?.fieldKey) ?? item.recordRef}`} onClick={(event) => { event.stopPropagation(); void openRecord(item.recordRef, true) }}><Icon name="arrowUpRight" /></button></td>
                 </tr>
               })}</tbody>
             </table>
