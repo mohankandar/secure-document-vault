@@ -1,0 +1,164 @@
+/*
+ * Vero R5-A: premium, compact Business Search.
+ * Source-driven metadata and every search action remain unchanged.
+ * Scoped to the Business Search stage; no administration or viewer overrides.
+ */
+.bw.bw-stage-search .bw-search {
+  gap: 12px;
+}
+.bw.bw-stage-search .bw-search-head.ui-workspace-header {
+  padding-top: 0;
+  gap: 10px 20px;
+  align-items: end;
+}
+.bw.bw-stage-search .bw-search-intro .bw-eyebrow { display: none; }
+.bw.bw-stage-search .bw-search-intro h2 {
+  margin: 0;
+  font-size: 1.375rem;
+  line-height: 1.2;
+  letter-spacing: -.022em;
+}
+.bw.bw-stage-search .bw-search-intro .bw-lede { display: none; }
+.bw.bw-stage-search .bw-source {
+  flex: 0 0 228px;
+  min-width: 180px;
+  max-width: 228px;
+  padding: 0;
+  gap: 4px;
+  box-shadow: none;
+  border: 0;
+  background: transparent;
+}
+.bw.bw-stage-search .bw-source-label {
+  font-size: 12px;
+  letter-spacing: 0;
+  text-transform: none;
+}
+.bw.bw-stage-search .bw-source select {
+  height: 36px;
+  min-height: 36px;
+  background: var(--ui-surface);
+  border: 1px solid var(--ui-border-soft);
+  padding-block: 0;
+}
+.bw.bw-stage-search .bw-sheet {
+  overflow: visible;
+}
+.bw.bw-stage-search .bw-group {
+  padding: 10px 18px 12px;
+}
+.bw.bw-stage-search .bw-group + .bw-group {
+  border-top: 1px solid var(--ui-border-soft);
+}
+.bw.bw-stage-search .bw-group legend {
+  margin: 0 0 8px;
+  color: var(--ui-text-secondary);
+  font-size: 12px;
+  letter-spacing: .04em;
+}
+.bw.bw-stage-search .bw-field-grid {
+  gap: 10px 16px;
+}
+.bw.bw-stage-search .bw-field-grid > .bw-field {
+  flex: 0 1 220px;
+  width: 220px;
+  max-width: 240px;
+}
+.bw.bw-stage-search .bw-field-grid > .bw-field:has(input[inputmode="numeric"]) {
+  flex-basis: 224px;
+  width: 224px;
+  max-width: 240px;
+}
+.bw.bw-stage-search .bw-field-grid > .bw-field:has(input[data-vero-field-kind="short-code"]) {
+  flex-basis: 156px;
+  width: 156px;
+  max-width: 176px;
+}
+.bw.bw-stage-search .bw-field,
+.bw.bw-stage-search .bw-range {
+  gap: 4px;
+}
+.bw.bw-stage-search .bw-field-label {
+  justify-content: flex-start;
+  gap: 4px 8px;
+  font-size: 13px;
+  line-height: 1.25;
+}
+.bw.bw-stage-search .bw-field-label small {
+  color: var(--ui-text-muted);
+  font-size: 11px;
+  font-weight: 400;
+}
+.bw.bw-stage-search .bw-field-label small:not(:empty) {
+  margin-left: 2px;
+}
+.bw.bw-stage-search .bw-field-grid input {
+  height: 36px;
+  min-height: 36px;
+  font-size: 14px;
+}
+.bw.bw-stage-search .bw-date-grid {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-start;
+  gap: 12px 24px;
+}
+.bw.bw-stage-search .bw-range {
+  flex: 0 1 340px;
+  width: min(100%, 340px);
+  max-width: 100%;
+}
+.bw.bw-stage-search .bw-range-inputs {
+  gap: 6px;
+}
+.bw.bw-stage-search .bw-range-inputs input {
+  width: 0;
+  min-width: 0;
+  height: 36px;
+  min-height: 36px;
+  padding-inline: 8px;
+  font-size: 13px;
+}
+.bw.bw-stage-search .bw-sheet-actions {
+  position: static;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  padding: 10px 18px;
+  gap: 8px 16px;
+}
+.bw.bw-stage-search .bw-sheet-actions p {
+  font-size: 12px;
+}
+.bw.bw-stage-search .bw-sheet-actions .bw-btn {
+  min-height: 36px;
+  height: 36px;
+}
+@media (max-width: 760px) {
+  .bw.bw-stage-search .bw-search-head.ui-workspace-header {
+    flex-wrap: wrap;
+    align-items: start;
+  }
+  .bw.bw-stage-search .bw-source {
+    flex: 1 1 220px;
+    max-width: 300px;
+    min-width: 0;
+  }
+  .bw.bw-stage-search .bw-group {
+    padding: 12px 16px;
+  }
+  .bw.bw-stage-search .bw-field-grid > .bw-field,
+  .bw.bw-stage-search .bw-field-grid > .bw-field:has(input[inputmode="numeric"]),
+  .bw.bw-stage-search .bw-field-grid > .bw-field:has(input[data-vero-field-kind="short-code"]) {
+    flex: 1 1 min(100%, 220px);
+    width: auto;
+    max-width: 100%;
+  }
+  .bw.bw-stage-search .bw-field-grid input,
+  .bw.bw-stage-search .bw-range-inputs input,
+  .bw.bw-stage-search .bw-sheet-actions .bw-btn {
+    min-height: 40px;
+    height: 40px;
+  }
+}
