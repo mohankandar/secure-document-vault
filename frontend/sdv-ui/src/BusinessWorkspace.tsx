@@ -158,13 +158,19 @@ export default function BusinessWorkspace({ persona, capabilities, onViewerState
     await loadSearchPage(1)
   }
 
-  async function openRecord(recordRef: string) {
+  async function openRecord(recordRef: string, openFirstDocument = false) {
+    if (opening) return
     setOpening(true)
     setError('')
     try {
       const value = await contentApi<BusinessRecord>(`/api/v1/business/records/${encodeURIComponent(recordRef)}`, contentPersona)
+      const firstDocumentId = value.documents[0]?.documentId ?? ''
       setSelectedRecord(value)
-      setSelectedDocumentId(value.documents[0]?.documentId ?? '')
+      setSelectedDocumentId(firstDocumentId)
+      if (openFirstDocument && canView && firstDocumentId) {
+        setTab('viewer')
+      }
+      // No documents or no view permission: remain in Results with the record inspector.
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Could not open business record.')
     } finally {
@@ -367,7 +373,7 @@ export default function BusinessWorkspace({ persona, capabilities, onViewerState
                   {resultFields.map((field, index) => <td key={field.fieldKey} data-label={field.displayLabel} className={`${index === 0 ? 'bw-cell-primary' : ''} ${field.businessIdentifier ? 'bw-mono' : ''}`}>{values.get(field.fieldKey) ?? '—'}</td>)}
                   <td className="bw-col-num" data-label="Documents"><span className={`bw-doc-count ${item.availableDocumentCount ? '' : 'is-empty'}`}><Icon name="document" />{item.availableDocumentCount || 'None'}</span></td>
                   <td className="bw-cell-date" data-label="Last Updated">{formatDate(item.latestSubmissionAt)}</td>
-                  <td className="bw-col-open"><button type="button" className="bw-open-record" aria-label={`Open record ${values.get(resultFields[0]?.fieldKey) ?? item.recordRef}`} onClick={(event) => { event.stopPropagation(); openRecord(item.recordRef) }}><Icon name="arrowUpRight" /></button></td>
+                  <td className="bw-col-open"><button type="button" className="bw-open-record" aria-label={`Open document for record ${values.get(resultFields[0]?.fieldKey) ?? item.recordRef}`} onClick={(event) => { event.stopPropagation(); void openRecord(item.recordRef, true) }}><Icon name="arrowUpRight" /></button></td>
                 </tr>
               })}</tbody>
             </table>
