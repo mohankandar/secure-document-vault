@@ -273,3 +273,37 @@
   background-color: #ffffff;
   color: #172033;
 }
+
+
+/* Keep irreversible redaction confirmation reachable in a short viewer. */
+.bw .bwv-redaction {
+  overflow: hidden;
+}
+.bw .bwv-redaction > form {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+.bw .bwv-redaction > form > .bwv-side-head {
+  position: relative;
+  flex: none;
+}
+.bw .bwv-redaction > form > .bwv-side-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.bw .bwv-redaction > form > .bwv-side-foot {
+  position: relative;
+  flex: none;
+  margin-top: 0;
+  padding: 10px 12px;
+  background: var(--bw-surface);
+}
+.bw .bwv-redaction .bwv-side-foot .bw-btn {
+  white-space: normal;
+  min-height: 40px;
+}
