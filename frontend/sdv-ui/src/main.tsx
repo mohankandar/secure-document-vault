@@ -9,6 +9,7 @@ import './admin-framework.css'
 import './vero-r2.css'
 import './vero-r3.css'
 import './vero-r4.css'
+import './vero-r5.css'
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
