@@ -1825,7 +1825,7 @@ button[type="submit"]:hover:not(:disabled), .primary-action:hover:not(:disabled)
   width: auto;
   max-width: none;
   min-width: 0;
-  margin-left: 0;
+  margin-left: auto;
 }
 .bw.bw-stage-search .bw-source-label {
   white-space: nowrap;
