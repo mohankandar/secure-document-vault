@@ -1772,3 +1772,36 @@ button[type="submit"]:hover:not(:disabled), .primary-action:hover:not(:disabled)
   .ax-section .ax-sheet-3,
   .ax-section .ax-sheet-4 { grid-template-columns: minmax(0, 1fr); }
 }
+
+
+/* R5 final admin review: use available header width rather than wrapping early. */
+.ax-section-head { flex-wrap: nowrap; align-items: center; }
+.ax-section-title { flex: 1 1 auto; min-width: 0; }
+.ax-section-title p { max-width: none; }
+.ax-section-actions { flex: 0 0 auto; }
+@media (min-width: 1150px) {
+  .ax-section-title p { line-height: 1.4; }
+}
+@media (max-width: 760px) {
+  .ax-section-head { flex-wrap: wrap; }
+  .ax-section-actions { flex: 0 1 auto; }
+}
+/* The disclosed help stays compact and descriptive, matching Storage help. */
+.ax-info-popover > summary {
+  display: inline-flex;
+  width: auto;
+  height: 36px;
+  padding: 0 12px;
+  border-radius: 7px;
+  white-space: nowrap;
+  color: var(--ui-text-strong);
+  font-size: 13px;
+  font-weight: 600;
+}
+/* Keep immutable audit history; suppress only redundant repeated descriptions. */
+.ax-retention-history-description { display: none; }
+.ax-table-wrap .ax-table:has(.ax-retention-history-description) td {
+  padding-block: 9px;
+}
+/* Technical action codes remain available in More filters. */
+.ax-filters-primary select { min-width: 0; }
