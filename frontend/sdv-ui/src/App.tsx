@@ -1148,12 +1148,15 @@ function App() {
                       </table>
                     </div>
                   </AdminSection>
-                  <AdminSection title="Where assignments live">
-                    <div className="ax-stack">
-                      <p className="ax-note">Sign-in and user-to-role assignment are managed in your identity provider. SDV reads each user&apos;s role from their sign-in token, so assignments are changed there, not here.</p>
-                      <p className="ax-note">What each business role can do with a document is set in <strong>Roles &amp; Permissions</strong>.</p>
-                    </div>
-                  </AdminSection>
+                  <div className="ax-contextual-help">
+                    <details>
+                      <summary><span className="ax-info-mark" aria-hidden="true">i</span> Where are role assignments managed?</summary>
+                      <div className="ax-contextual-help-content">
+                        <p>Sign-in and user-to-role assignments are managed in your identity provider. SDV reads each user's role from their sign-in token.</p>
+                        <p>Configure document actions under <strong>Roles &amp; Permissions</strong>.</p>
+                      </div>
+                    </details>
+                  </div>
                 </div>
               )}
 
