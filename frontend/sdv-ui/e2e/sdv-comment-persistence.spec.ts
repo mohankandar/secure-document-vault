@@ -17,6 +17,7 @@ test('a document comment persists after leaving and reopening Viewer', async ({ 
     responses.push({ status: response.status(), url: response.url(), body: body.slice(0, 4000) })
   })
 
+  try {
   await page.goto('/')
   const role = page.getByLabel('Demo role')
   await expect(role).toBeVisible()
@@ -32,7 +33,6 @@ test('a document comment persists after leaving and reopening Viewer', async ({ 
   await row.getByRole('button', { name: /View PDF for record/i }).click()
   await expect(page.locator('.viewer-page-stage img').first()).toBeVisible({ timeout: 15000 })
 
-  const filename = await page.locator('.bwv').locator('select').first().inputValue().catch(() => '')
   await page.getByRole('button', { name: /^Comments/ }).click()
   await expect(page.getByLabel('Document information')).toBeVisible()
   await page.getByLabel('New comment').fill(marker)
@@ -45,9 +45,10 @@ test('a document comment persists after leaving and reopening Viewer', async ({ 
   await expect(page.locator('.viewer-page-stage img').first()).toBeVisible({ timeout: 15000 })
   await page.getByRole('button', { name: /^Comments/ }).click()
   await expect(page.getByText(marker)).toBeVisible({ timeout: 15000 })
-
-  await test.info().attach('comments-network.json', {
-    body: JSON.stringify({ contract, marker, filename, responses }, null, 2),
-    contentType: 'application/json',
-  })
+  } finally {
+    await test.info().attach('comments-network.json', {
+      body: JSON.stringify({ contract, marker, responses }, null, 2),
+      contentType: 'application/json',
+    })
+  }
 })
