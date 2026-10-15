@@ -90,6 +90,8 @@ export function PdfViewer({ documentId, filename, documents = [], selectedDocume
   const [tagging, setTagging] = useState(false)
   const [tagPanelOpen, setTagPanelOpen] = useState(false)
   const [comments, setComments] = useState<DocumentComment[]>([])
+  const [commentsLoading, setCommentsLoading] = useState(false)
+  const [commentsError, setCommentsError] = useState('')
   const [commentInput, setCommentInput] = useState('')
   const [commenting, setCommenting] = useState(false)
   const [commentPanelOpen, setCommentPanelOpen] = useState(false)
@@ -178,11 +180,12 @@ export function PdfViewer({ documentId, filename, documents = [], selectedDocume
     contentApi<DocumentTag[]>(`/api/v1/business/documents/${documentId}/tags`, persona)
       .then((value) => { if (active) setTags(value) })
       .catch(() => { if (active) setTags([]) })
+    setComments([])
+    setCommentsError('')
     contentApi<DocumentComment[]>(`/api/v1/business/documents/${documentId}/comments`, persona)
       .then((value) => { if (active) setComments(value) })
-      .catch(() => { if (active) setComments([]) })
       .catch((reasonValue: unknown) => {
-        if (active) setError(reasonValue instanceof Error ? reasonValue.message : 'Could not open secure viewer.')
+        if (active) setCommentsError(reasonValue instanceof Error ? reasonValue.message : 'Could not load document comments.')
       })
     return () => { active = false }
   }, [documentId, persona, reloadToken])
@@ -444,6 +447,22 @@ export function PdfViewer({ documentId, filename, documents = [], selectedDocume
     ? [...currentMarks, draftMark]
     : currentMarks
 
+  // Reload from the server when Comments is opened, including after a
+  // permanent redaction or a return from another document.
+  useEffect(() => {
+    if (!commentPanelOpen || redactionMode) return
+    let active = true
+    setCommentsLoading(true)
+    setCommentsError('')
+    contentApi<DocumentComment[]>(`/api/v1/business/documents/${documentId}/comments`, persona)
+      .then((value) => { if (active) setComments(value) })
+      .catch((reasonValue: unknown) => {
+        if (active) setCommentsError(reasonValue instanceof Error ? reasonValue.message : 'Could not load document comments.')
+      })
+      .finally(() => { if (active) setCommentsLoading(false) })
+    return () => { active = false }
+  }, [commentPanelOpen, documentId, persona, redactionMode])
+
   const sidePanelOpen = (detailsPanelOpen || tagPanelOpen || commentPanelOpen) && !redactionMode
   const displayName = metadata?.originalFilename ?? filename
   const activeDocumentId = selectedDocumentId ?? documentId
@@ -667,7 +686,9 @@ export function PdfViewer({ documentId, filename, documents = [], selectedDocume
                       <button type="submit" className="bw-btn bw-btn-primary" disabled={commenting || !commentInput.trim()}>{commenting ? 'Adding…' : 'Add comment'}</button>
                     </div>
                   ) : <p className="bwv-readonly">You can read comments but do not have permission to add them.</p>}
-                  {comments.length === 0 && <p className="bwv-empty">No comments have been added to this document.</p>}
+                  {commentsLoading && <p role="status">Loading comments…</p>}
+                  {commentsError && <p role="alert">Comments could not be loaded: {commentsError}</p>}
+                  {!commentsLoading && !commentsError && comments.length === 0 && <p className="bwv-empty">No comments have been added to this document.</p>}
                   {comments.length > 0 && <ol className="bwv-comments">{visibleComments.map((comment) => <li key={comment.commentId}>
                     <div className="bwv-comment-meta"><strong className="bw-mono">{comment.createdBy}</strong><time dateTime={comment.createdAt}>{new Date(comment.createdAt).toLocaleString()}</time></div>
                     <p>{comment.comment}</p>

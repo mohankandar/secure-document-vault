@@ -1,0 +1,18 @@
+# Local-only override: durable Vault state for document-viewer regression testing.
+# Use with: docker compose -f compose.local.yml -f compose.vault-persistent.yml up -d --force-recreate sdv-vault
+# Do NOT use as a production Vault deployment definition.
+services:
+  sdv-vault:
+    environment:
+      VAULT_DEV_ROOT_TOKEN_ID: null
+    # Local-only root user ensures the named Docker volume is writable on Windows Docker Desktop.
+    # Production deployments must use dedicated non-root ownership.
+    user: "0:0"
+    command: ["server"]
+    volumes:
+      - sdv-vault-data:/vault/data
+      - ./config/vault-local-persistent.hcl:/vault/config/vault.hcl:ro
+    restart: unless-stopped
+volumes:
+  sdv-vault-data:
+    name: sdv-vault-persistent-data

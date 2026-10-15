@@ -167,19 +167,41 @@ async function tryBusinessRecordJourney(page: Page, testInfo: TestInfo) {
   const recordRow = page.locator('.business-result-table tbody tr').filter({ hasText: demoRecord }).first()
   if (!(await recordRow.isVisible().catch(() => false))) return
 
+  // R5-B: clicking a row selects it for inspection, whereas the trailing
+  // "View PDF for record" icon navigates straight to the Viewer.
   await recordRow.click()
   await expect(page.getByLabel('Selected record inspector')).toBeVisible({ timeout: 15000 })
-  await expect(page.getByRole('button', { name: /open document/i })).toBeVisible({ timeout: 15000 })
-  await page.waitForTimeout(150)
+  const inspectorOpenDocument = page
+    .getByLabel('Selected record inspector')
+    .getByRole('button', { name: 'Open document', exact: true })
+  await expect(inspectorOpenDocument).toBeVisible({ timeout: 15000 })
   await capture(page, testInfo, 'record-inspector')
 
-  const openDocument = page.getByRole('button', { name: /open document/i })
-  if (!(await openDocument.isVisible().catch(() => false))) return
+  // Close the inspector, then verify the direct action rather than relying
+  // solely on the older two-step inspector-to-viewer journey.
+  await page.getByRole('button', { name: 'Close selected record details' }).click()
+  await expect(page.getByLabel('Selected record inspector')).toHaveCount(0)
 
-  await openDocument.click()
+  const directView = recordRow.getByRole('button', { name: /View PDF for record/i })
+  await expect(directView).toBeVisible()
+  await directView.click()
   await expect(page.locator('.viewer-page-stage img').first()).toBeVisible({ timeout: 15000 })
-  await page.waitForTimeout(300)
   await capture(page, testInfo, 'document-viewer')
+
+  // Returning from Viewer must show the full-width Results table without
+  // reopening the previous record's inspector.
+  await clickTab(page, 'Results', 'Business document workflow')
+  await expect(page.getByLabel('Selected record inspector')).toHaveCount(0)
+  await expect(page.locator('.bw-results-body')).not.toHaveClass(/has-inspector/)
+  await expect(recordRow).toBeVisible()
+  await capture(page, testInfo, 'results-return-from-viewer')
+
+  // Existing row-selection + inspector Open document remains supported.
+  await recordRow.click()
+  await expect(page.getByLabel('Selected record inspector')).toBeVisible({ timeout: 15000 })
+  await page.getByLabel('Selected record inspector')
+    .getByRole('button', { name: 'Open document', exact: true }).click()
+  await expect(page.locator('.viewer-page-stage img').first()).toBeVisible({ timeout: 15000 })
 
   const activity = page.getByRole('button', { name: 'Activity', exact: true })
   if (await activity.isVisible().catch(() => false)) {

@@ -93,6 +93,29 @@ export function CapacityMeter({ usedPercent, warningPercent, stopWritePercent }:
   )
 }
 
+const SIGNAL_STATE: Record<StatusTone, string> = { danger: 'Action needed', warn: 'Review', ok: 'Clear', neutral: 'Unavailable' }
+
+export function AttentionTile({ tone, title, detail, count, onOpen, openLabel }: {
+  tone: StatusTone
+  title: string
+  detail: ReactNode
+  count: ReactNode
+  onOpen?: () => void
+  openLabel?: string
+}) {
+  return (
+    <article className={`vx-signal vx-signal-${tone}`}>
+      <header className="vx-signal-head">
+        <h3>{title}</h3>
+        <span className="vx-signal-state"><span className="vx-signal-dot" aria-hidden="true" />{SIGNAL_STATE[tone]}</span>
+      </header>
+      <strong className="vx-signal-count">{count}</strong>
+      <p className="vx-signal-detail">{detail}</p>
+      {onOpen && <button type="button" className="vx-signal-action" onClick={onOpen}>{openLabel ?? 'Open'}<span aria-hidden="true">→</span></button>}
+    </article>
+  )
+}
+
 export function AttentionRow({ tone, title, detail, count, onOpen, openLabel }: {
   tone: StatusTone
   title: string

@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useMemo, useState } from 'react'
+import { FormEvent, useEffect, useMemo, useRef, useState } from 'react'
 import { PdfViewer } from './PdfViewer'
 import Icon from './Icon'
 import {
@@ -50,6 +50,7 @@ export default function BusinessWorkspace({ persona, capabilities, onViewerState
   const sourcePreferenceKey = `sdv.businessWorkspace.sourceId.${persona}`
   const contentPersona: ContentPersona = persona === 'steward' ? 'steward' : 'business'
   const [tab, setTab] = useState<BusinessTab>('search')
+  const viewerContainerRef = useRef<HTMLDivElement | null>(null)
   const [schema, setSchema] = useState<SearchSchema>({ sources: [] })
   const [sourceId, setSourceId] = useState('')
   const [criteria, setCriteria] = useState<Record<string, string>>({})
@@ -59,6 +60,7 @@ export default function BusinessWorkspace({ persona, capabilities, onViewerState
   const [updatedTo, setUpdatedTo] = useState('')
   const [results, setResults] = useState<RecordSummary[]>([])
   const [selectedRecord, setSelectedRecord] = useState<BusinessRecord | null>(null)
+  const [inspectorOpen, setInspectorOpen] = useState(false)
   const [selectedDocumentId, setSelectedDocumentId] = useState('')
   const [searching, setSearching] = useState(false)
   const [opening, setOpening] = useState(false)
@@ -87,6 +89,30 @@ export default function BusinessWorkspace({ persona, capabilities, onViewerState
     return () => onViewerStateChange?.(false)
   }, [tab, onViewerStateChange])
 
+  // Size the Viewer from its actual position in the viewport, not a
+  // hard-coded header offset. Keep the sidebar footer inside this space.
+  useEffect(() => {
+    if (tab !== 'viewer') return
+    const element = viewerContainerRef.current
+    if (!element) return
+    const updateHeight = () => {
+      const top = element.getBoundingClientRect().top
+      const remaining = Math.max(160, Math.floor(window.innerHeight - top - 12))
+      element.style.height = `${remaining}px`
+    }
+    updateHeight()
+    window.addEventListener('resize', updateHeight)
+    const bar = element.closest('.bw')?.querySelector('.bw-bar')
+    const observer = typeof ResizeObserver !== 'undefined' && bar
+      ? new ResizeObserver(updateHeight)
+      : null
+    if (bar && observer) observer.observe(bar)
+    return () => {
+      window.removeEventListener('resize', updateHeight)
+      observer?.disconnect()
+    }
+  }, [tab])
+
   useEffect(() => {
     setError('')
     contentApi<SearchSchema>('/api/v1/business/search-schema', contentPersona)
@@ -109,6 +135,7 @@ export default function BusinessWorkspace({ persona, capabilities, onViewerState
     setSearchPage(1)
     setSearchHasMore(false)
     setSelectedRecord(null)
+    setInspectorOpen(false)
     setSelectedDocumentId('')
     setTab('search')
   }, [sourceId, sourcePreferenceKey])
@@ -144,6 +171,7 @@ export default function BusinessWorkspace({ persona, capabilities, onViewerState
       setSearchPage(response.page)
       setSearchHasMore(response.hasMore)
       setSelectedRecord(null)
+      setInspectorOpen(false)
       setSelectedDocumentId('')
       setTab('results')
     } catch (reason) {
@@ -158,13 +186,20 @@ export default function BusinessWorkspace({ persona, capabilities, onViewerState
     await loadSearchPage(1)
   }
 
-  async function openRecord(recordRef: string) {
+  async function openRecord(recordRef: string, openFirstDocument = false) {
+    if (opening) return
     setOpening(true)
     setError('')
     try {
       const value = await contentApi<BusinessRecord>(`/api/v1/business/records/${encodeURIComponent(recordRef)}`, contentPersona)
+      const firstDocumentId = value.documents[0]?.documentId ?? ''
       setSelectedRecord(value)
-      setSelectedDocumentId(value.documents[0]?.documentId ?? '')
+      setSelectedDocumentId(firstDocumentId)
+      setInspectorOpen(!(openFirstDocument && canView && firstDocumentId))
+      if (openFirstDocument && canView && firstDocumentId) {
+        setTab('viewer')
+      }
+      // No documents or no view permission: remain in Results with the record inspector.
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Could not open business record.')
     } finally {
@@ -180,6 +215,7 @@ export default function BusinessWorkspace({ persona, capabilities, onViewerState
   }
 
   function closeRecord() {
+    setInspectorOpen(false)
     setSelectedRecord(null)
     setSelectedDocumentId('')
   }
@@ -248,6 +284,7 @@ export default function BusinessWorkspace({ persona, capabilities, onViewerState
     </span>
     <input
       className={field.businessIdentifier ? 'bw-mono' : undefined}
+      data-vero-field-kind={field.fieldKey === 'serviceEntity' ? 'short-code' : undefined}
       value={criteria[field.fieldKey] ?? ''}
       inputMode={field.normalization === 'DIGITS_ONLY' ? 'numeric' : undefined}
       autoComplete="off"
@@ -271,7 +308,7 @@ export default function BusinessWorkspace({ persona, capabilities, onViewerState
           className={tab === stage.id ? 'active' : ''}
           aria-current={tab === stage.id ? 'step' : undefined}
           disabled={stage.disabled}
-          onClick={() => setTab(stage.id)}
+          onClick={() => { if (stage.id === 'results') setInspectorOpen(false); setTab(stage.id) }}
         >
           <Icon name={stage.icon} />
           <span>{stage.label}</span>
@@ -296,7 +333,7 @@ export default function BusinessWorkspace({ persona, capabilities, onViewerState
           <p className="bw-lede ui-workspace-lede">Search by any identifier or detail, then open the record&apos;s documents in the secure viewer.</p>
         </div>
         <label className="bw-source ui-workspace-aside">
-          <span className="bw-source-label"><Icon name="storage" />Searching in</span>
+          <span className="bw-source-label"><Icon name="storage" />Source</span>
           <select value={sourceId} onChange={(event) => setSourceId(event.target.value)} aria-label="Search source">{schema.sources.map((item) => <option key={item.sourceId} value={item.sourceId}>{item.displayName}</option>)}</select>
         </label>
       </header>
@@ -348,25 +385,25 @@ export default function BusinessWorkspace({ persona, capabilities, onViewerState
         <button type="button" className="bw-btn bw-btn-secondary" onClick={() => setTab('search')}><Icon name="edit" />Modify search</button>
       </header>
 
-      <div className={`bw-results-body ${selectedRecord ? 'has-inspector' : ''}`}>
+      <div className={`bw-results-body ${selectedRecord && inspectorOpen ? 'has-inspector' : ''}`}>
         <section className="bw-ledger ui-workspace-surface" aria-busy={opening || searching}>
           {(opening || searching) && <div className="bw-progress" aria-hidden="true" />}
           {results.length > 0 && <div className="bw-table-scroll">
             <table className="bw-table business-result-table">
               <thead><tr>
-                <th className="bw-col-select"><span className="sr-only">Selected</span></th>
                 {resultFields.map((field) => <th key={field.fieldKey}>{field.displayLabel}</th>)}
                 <th className="bw-col-num">Documents</th>
                 <th>Last Updated</th>
+                <th className="bw-col-open"><span className="sr-only">Open record</span></th>
               </tr></thead>
               <tbody>{results.map((item) => {
                 const values = new Map([...item.identifiers, ...item.metadataPreview].map((value) => [value.fieldKey, value.value]))
                 const isSelected = selectedRecord?.recordRef === item.recordRef
                 return <tr key={item.recordRef} className={isSelected ? 'selected' : ''} onClick={() => openRecord(item.recordRef)}>
-                  <td className="bw-col-select" data-label="Select"><input type="radio" name="selected-record" aria-label={`Select record ${item.recordRef}`} readOnly checked={isSelected} /></td>
                   {resultFields.map((field, index) => <td key={field.fieldKey} data-label={field.displayLabel} className={`${index === 0 ? 'bw-cell-primary' : ''} ${field.businessIdentifier ? 'bw-mono' : ''}`}>{values.get(field.fieldKey) ?? '—'}</td>)}
                   <td className="bw-col-num" data-label="Documents"><span className={`bw-doc-count ${item.availableDocumentCount ? '' : 'is-empty'}`}><Icon name="document" />{item.availableDocumentCount || 'None'}</span></td>
                   <td className="bw-cell-date" data-label="Last Updated">{formatDate(item.latestSubmissionAt)}</td>
+                  <td className="bw-col-open"><button type="button" className="bw-open-record" aria-label={`View PDF for record ${values.get(resultFields[0]?.fieldKey) ?? item.recordRef}`} onClick={(event) => { event.stopPropagation(); void openRecord(item.recordRef, true) }}><Icon name="arrowUpRight" /></button></td>
                 </tr>
               })}</tbody>
             </table>
@@ -384,14 +421,14 @@ export default function BusinessWorkspace({ persona, capabilities, onViewerState
           </nav>}
         </section>
 
-        {selectedRecord && <>
+        {selectedRecord && inspectorOpen && <>
           <div className="bw-scrim" role="presentation" onClick={closeRecord} />
           <aside className="bw-inspector" aria-label="Selected record inspector">
             <header className="bw-inspector-head">
               <div className="bw-inspector-identity">
                 <p className="bw-eyebrow">Selected record</p>
                 <p className="bw-inspector-label">{primaryIdentifier?.displayLabel}</p>
-                <h3 className="bw-mono">{primaryIdentifier?.value}</h3>
+                <h3 className="bw-tabular">{primaryIdentifier?.value}</h3>
               </div>
               <button type="button" className="bw-icon-btn" onClick={closeRecord} aria-label="Close selected record details"><span aria-hidden="true">×</span></button>
             </header>
@@ -418,7 +455,7 @@ export default function BusinessWorkspace({ persona, capabilities, onViewerState
             </section>
 
             <footer className="bw-inspector-actions">
-              <button type="button" className="bw-btn bw-btn-primary bw-btn-block" disabled={!selectedDocumentId || !canView} onClick={() => openViewer()}>Open document <span aria-hidden="true">→</span></button>
+              <button type="button" className="bw-btn bw-btn-primary bw-btn-block" disabled={!selectedDocumentId || !canView} onClick={() => openViewer()}>Open document <Icon name="arrowUpRight" /></button>
               <button type="button" className="bw-btn bw-btn-quiet bw-btn-block" onClick={() => setTab('activity')}><Icon name="operations" />Record activity</button>
             </footer>
           </aside>
@@ -426,7 +463,7 @@ export default function BusinessWorkspace({ persona, capabilities, onViewerState
       </div>
     </section>}
 
-    {tab === 'viewer' && selectedRecord && selectedDocument && <div className="bw-viewer">
+    {tab === 'viewer' && selectedRecord && selectedDocument && <div className="bw-viewer" ref={viewerContainerRef}>
       <PdfViewer
         key={selectedDocument.documentId}
         documentId={selectedDocument.documentId}
@@ -441,7 +478,7 @@ export default function BusinessWorkspace({ persona, capabilities, onViewerState
         canTag={canTag}
         canComment={canComment}
         embedded
-        onClose={() => setTab('results')}
+        onClose={() => { setInspectorOpen(false); setTab('results') }}
       />
     </div>}
 

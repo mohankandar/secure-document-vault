@@ -2,7 +2,7 @@ import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
 import { PdfViewer } from './PdfViewer'
 import BusinessWorkspace from './BusinessWorkspace'
 import Icon, { type IconName } from './Icon'
-import { AdminSection, AdminTabs, AttentionRow, CapacityMeter, EmptyState, StateSheet, StatusPill, humanize, statusTone } from './AdminKit'
+import { AdminSection, AdminTabs, AttentionRow, AttentionTile, CapacityMeter, EmptyState, StateSheet, StatusPill, humanize, statusTone, type StatusTone } from './AdminKit'
 import { beginOidcLogin, clearOidcSession, endOidcSession, getAccessToken, handleOidcCallback, isLocalSecurityMode, OIDC_SESSION_EXPIRED_EVENT } from './auth'
 import {
   roleApi,
@@ -881,6 +881,47 @@ function App() {
 
   const attentionVolumes = operations?.storageVolumes.filter(volumeNeedsAttention) ?? []
   const incidentTotal = (operations?.processingFailureCount ?? 0) + (operations?.stuckDocumentCount ?? 0) + (operations?.attentionSubmissionCount ?? 0)
+  const countTone = (value: number | null | undefined, positive: StatusTone): StatusTone => value == null ? 'neutral' : value > 0 ? positive : 'ok'
+  const overviewSignals: { key: string; tone: StatusTone; count: number | string; title: string; detail: string; onOpen: () => void; openLabel: string }[] = operations ? [
+    {
+      key: 'failures',
+      tone: countTone(operations.processingFailureCount, 'danger'),
+      count: operations.processingFailureCount ?? '—',
+      title: 'Processing failures',
+      detail: operations.processingFailureCount == null ? 'Count unavailable' : operations.processingFailureCount > 0 ? 'Documents that failed processing' : 'No processing failures',
+      onOpen: () => setPlatformTab('incidents'),
+      openLabel: 'View incidents',
+    },
+    {
+      key: 'storage',
+      tone: attentionVolumes.length > 0 ? 'warn' : 'ok',
+      count: attentionVolumes.length,
+      title: 'Storage volumes',
+      detail: attentionVolumes.length > 0 ? attentionVolumes.map((volume) => volume.displayName).join(', ') : 'All active storage volumes are healthy',
+      onOpen: () => setPlatformTab('storage'),
+      openLabel: 'View storage',
+    },
+    {
+      key: 'stuck',
+      tone: countTone(operations.stuckDocumentCount, 'warn'),
+      count: operations.stuckDocumentCount ?? '—',
+      title: 'Stuck transitions',
+      detail: operations.stuckDocumentCount == null ? 'Count unavailable' : operations.stuckDocumentCount > 0 ? 'Documents not progressing through workflow' : 'No stuck transitions',
+      onOpen: () => setPlatformTab('incidents'),
+      openLabel: 'View incidents',
+    },
+    {
+      key: 'submissions',
+      tone: countTone(operations.attentionSubmissionCount, 'warn'),
+      count: operations.attentionSubmissionCount ?? '—',
+      title: 'Incomplete submissions',
+      detail: operations.attentionSubmissionCount == null ? 'Count unavailable' : operations.attentionSubmissionCount > 0 ? 'Submissions missing expected documents' : 'No incomplete submissions',
+      onOpen: () => setPlatformTab('incidents'),
+      openLabel: 'View incidents',
+    },
+  ] : []
+  const openSignalCount = overviewSignals.filter((signal) => signal.tone === 'danger' || signal.tone === 'warn').length
+  const activeRoleLabel = DEMO_ROLES.find((role) => role.value === selectedPersona)?.label
   const adminStorageAttention = storageVolumes.filter((item) => item.observationError != null || item.warningThresholdReached || item.stopWriteThresholdReached).length
   const stagedIdentity = identityOverview?.staged ?? null
   const identityReadyToActivate = stagedIdentity?.status === 'VALIDATED' && stagedIdentity?.lastTestStatus === 'PASSED'
@@ -891,7 +932,7 @@ function App() {
     <AdminSection flush className="audit-panel" title={title} meta={visibleAuditEvents.length} description={description}>
       <form className="ax-filters" onSubmit={(event) => { event.preventDefault(); loadAudit(true).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : 'Audit query failed.')) }}>
         <div className="ax-filters-primary">
-          <label>Action<input value={auditAction} onChange={(event) => setAuditAction(event.target.value)} placeholder="e.g. DOCUMENT_DOWNLOADED" /></label>
+          <label>Action<select value={['', 'DOCUMENT_DOWNLOADED', 'DOCUMENT_PRINTED', 'DOCUMENT_VIEW_OPENED', 'DOCUMENT_PAGE_VIEWED', 'BUSINESS_RECORD_OPENED', 'DOCUMENT_COMMENT_ADDED', 'DOCUMENT_TAG_ADDED', 'DOCUMENT_PERMANENTLY_REDACTED'].includes(auditAction) ? auditAction : '__custom'} onChange={(event) => { if (event.target.value === '__custom') setAuditMoreFilters(true); else setAuditAction(event.target.value) }}><option value="">All actions</option><option value="DOCUMENT_DOWNLOADED">Document downloaded</option><option value="DOCUMENT_PRINTED">Document printed</option><option value="DOCUMENT_VIEW_OPENED">Document opened</option><option value="DOCUMENT_PAGE_VIEWED">Page viewed</option><option value="BUSINESS_RECORD_OPENED">Business record opened</option><option value="DOCUMENT_COMMENT_ADDED">Comment added</option><option value="DOCUMENT_TAG_ADDED">Tag added</option><option value="DOCUMENT_PERMANENTLY_REDACTED">Permanent redaction</option>{auditAction && !['DOCUMENT_DOWNLOADED', 'DOCUMENT_PRINTED', 'DOCUMENT_VIEW_OPENED', 'DOCUMENT_PAGE_VIEWED', 'BUSINESS_RECORD_OPENED', 'DOCUMENT_COMMENT_ADDED', 'DOCUMENT_TAG_ADDED', 'DOCUMENT_PERMANENTLY_REDACTED'].includes(auditAction) && <option value="__custom">Custom action</option>}</select></label>
           <label>Outcome<select value={auditOutcome} onChange={(event) => setAuditOutcome(event.target.value)}><option value="">All outcomes</option><option value="SUCCESS">Success</option><option value="DENIED">Denied</option><option value="FAILED">Failed</option></select></label>
           <label>From<input type="datetime-local" value={auditFrom} onChange={(event) => setAuditFrom(event.target.value)} /></label>
           <label>To<input type="datetime-local" value={auditTo} onChange={(event) => setAuditTo(event.target.value)} /></label>
@@ -899,6 +940,7 @@ function App() {
         </div>
         {auditMoreFilters && (
           <div className="ax-filters-more" id="audit-more-filters">
+            <label>Exact action code<input value={auditAction} onChange={(event) => setAuditAction(event.target.value)} placeholder="Optional, e.g. DOCUMENT_DOWNLOADED" /></label>
             <label>Resource type<input value={auditTargetType} onChange={(event) => setAuditTargetType(event.target.value)} placeholder="e.g. DOCUMENT" /></label>
             <label>Resource ID<input value={auditTargetId} onChange={(event) => setAuditTargetId(event.target.value)} placeholder="Exact resource ID" /></label>
             <label>Actor type<input value={auditActorType} onChange={(event) => setAuditActorType(event.target.value)} placeholder="e.g. USER" /></label>
@@ -978,7 +1020,7 @@ function App() {
           </button>
         </div>
         <div className="vero-tenant-card" title={session?.tenantDisplayName || 'Company name unavailable'}>
-          <span className="vero-tenant-monogram" aria-hidden="true">{(session?.tenantDisplayName || '—').trim().charAt(0).toUpperCase()}</span>
+          <span className="vero-tenant-monogram" aria-hidden="true">{session?.tenantDisplayName?.trim() ? session.tenantDisplayName.trim().charAt(0).toUpperCase() : <Icon name="storage" />}</span>
           <span className="vero-tenant-name">{session?.tenantDisplayName || 'Company name unavailable'}</span>
         </div>
 
@@ -1011,42 +1053,42 @@ function App() {
             <div className="sidebar-avatar">{initials}</div>
             <div className="sidebar-identity-copy">
               <strong>{session?.subject || 'Local user'}</strong>
-              <span>{session?.tenantDisplayName || 'Company name unavailable'}</span>
+              <span>{localMode ? (activeRoleLabel ?? 'Local user') : (session?.tenantDisplayName || 'Company name unavailable')}</span>
             </div>
           </div>
           {!localMode && <button type="button" className="sidebar-signout" onClick={signOut}>Sign out</button>}
-          {localMode && (
-            <div className="sidebar-environment" title={system?.activeProfiles?.join(', ') || 'local'}>
-              <span className={`environment-dot ${(system?.status || '').toUpperCase() === 'UP' ? 'up' : ''}`} />
-              <span>{system?.status ?? 'Checking'} · {system?.version ?? 'development'}</span>
-            </div>
-          )}
         </div>
       </aside>
 
       <main className="modern-main-content">
         <div className="sdv-page">
-          <div className="vero-context-bar" aria-label="Current location">
-            <div className="vero-breadcrumb">
-              <span className="vero-breadcrumb-company">{session?.tenantDisplayName || 'Company name unavailable'}</span>
-              <span aria-hidden="true">›</span>
-              <span>{pageMeta.title}</span>
-              {view === 'admin' && <><span aria-hidden="true">›</span><span>{selectedPersona === 'tenantIt' ? humanize(tenantItTab) : humanize(businessAdminTab)}</span></>}
-              {view === 'operations' && <><span aria-hidden="true">›</span><span>{humanize(platformTab)}</span></>}
+          <header className={`vero-topbar ${view === 'search' ? 'vero-topbar-compact' : ''}`}>
+            <div className="vero-topbar-copy">
+              <nav className="vero-breadcrumb" aria-label="Current location">
+                <span className="vero-breadcrumb-company">{session?.tenantDisplayName || 'Company name unavailable'}</span>
+                <span className="vero-crumb-sep" aria-hidden="true">/</span>
+                <span>{pageMeta.title}</span>
+                {view === 'admin' && <><span className="vero-crumb-sep" aria-hidden="true">/</span><span>{selectedPersona === 'tenantIt' ? humanize(tenantItTab) : humanize(businessAdminTab)}</span></>}
+                {view === 'operations' && <><span className="vero-crumb-sep" aria-hidden="true">/</span><span>{humanize(platformTab)}</span></>}
+              </nav>
+              {view !== 'search' && <>
+                <h1>{pageMeta.title}</h1>
+                <p className="vero-topbar-lede">{pageMeta.description}</p>
+              </>}
             </div>
-          </div>
-          {view !== 'search' && <header className="ui-page-header">
-            <div className="ui-page-header-copy">
-              {view === 'audit' && <p className="ui-eyebrow">{pageMeta.eyebrow}</p>}
-              <h1>{pageMeta.title}</h1>
-              <p>{pageMeta.description}</p>
+            <div className="vero-topbar-actions">
+              {localMode && (
+                <span className={`vero-system-chip ${(system?.status || '').toUpperCase() === 'UP' ? 'is-up' : ''}`} title={system?.activeProfiles?.join(', ') || 'local'}>
+                  <span className="vero-system-dot" aria-hidden="true" />
+                  <span>{system?.status ?? 'Checking'}</span>
+                  <span className="vero-system-version">{system?.version ?? 'development'}</span>
+                </span>
+              )}
+              {view === 'operations' && canViewTechnicalFailures && (
+                <button className="secondary vero-topbar-button" onClick={() => loadOperations()} disabled={loadingOperations}>{loadingOperations ? 'Refreshing…' : 'Refresh'}</button>
+              )}
             </div>
-            {view === 'operations' && canViewTechnicalFailures && (
-              <div className="ui-page-header-actions">
-                <button className="secondary" onClick={() => loadOperations()} disabled={loadingOperations}>{loadingOperations ? 'Refreshing…' : 'Refresh'}</button>
-              </div>
-            )}
-          </header>}
+          </header>
 
       {capacityBanner?.visible && (
         <div className={`banner capacity-banner ${capacityBanner.severity.toLowerCase()}`}>
@@ -1089,8 +1131,8 @@ function App() {
               />
 
               {businessAdminTab === 'access' && (
-                <div className="ax-split">
-                  <AdminSection flush title="Business roles" meta={BUSINESS_ROLE_DIRECTORY.length} description="The roles SDV recognises for business content, and what each one is responsible for.">
+                <div className="ax-split ax-access-layout">
+                  <AdminSection flush title="Business roles" meta={BUSINESS_ROLE_DIRECTORY.length} description="The roles SDV recognises for business content, and what each one is responsible for." actions={<details className="ax-info-popover"><summary aria-label="How role assignments work">How role assignments work</summary><div className="ax-info-popover-content"><strong>Where assignments live</strong><p>Sign-in and role assignments are managed in your identity provider. SDV reads roles from the sign-in token. Document actions are configured in Roles &amp; Permissions.</p></div></details>}>
                     <div className="ax-table-wrap">
                       <table className="ax-table">
                         <thead><tr><th>Role</th><th>Responsibility</th><th>Token role</th><th className="ax-col-action">Document actions</th></tr></thead>
@@ -1107,12 +1149,7 @@ function App() {
                       </table>
                     </div>
                   </AdminSection>
-                  <AdminSection title="Where assignments live">
-                    <div className="ax-stack">
-                      <p className="ax-note">Sign-in and user-to-role assignment are managed in your identity provider. SDV reads each user&apos;s role from their sign-in token, so assignments are changed there, not here.</p>
-                      <p className="ax-note">What each business role can do with a document is set in <strong>Roles &amp; Permissions</strong>.</p>
-                    </div>
-                  </AdminSection>
+
                 </div>
               )}
 
@@ -1172,7 +1209,7 @@ function App() {
                         </div>
                         <div className="ax-policy-value">
                           <strong>{retentionPolicy.indefinite ? 'Indefinite' : `${retentionPolicy.defaultRetentionDays} days`}</strong>
-                          <span>Snapshotted onto each document at ingestion</span>
+                          <span>Applied at ingestion</span>
                         </div>
                       </div>
                     ) : <p className="ax-note">Loading retention policy…</p>}
@@ -1188,7 +1225,7 @@ function App() {
                               return (
                                 <tr key={policy.policyVersionId} className={current ? 'ax-row-current' : ''}>
                                   <td className="ax-col-num">v{policy.version}</td>
-                                  <td><span className="ax-cell-primary"><strong>{policy.policyName}</strong>{policy.description && <small>{policy.description}</small>}</span></td>
+                                  <td><span className="ax-cell-primary"><strong>{policy.policyName}</strong>{policy.description && <small className="ax-retention-history-description" title={policy.description}>{policy.description}</small>}</span></td>
                                   <td>{policy.indefinite ? 'Indefinite' : `${policy.defaultRetentionDays} days`}</td>
                                   <td>{formatDate(policy.effectiveFrom)}</td>
                                   <td>{policy.effectiveUntil ? formatDate(policy.effectiveUntil) : <StatusPill value="ACTIVE" label="Current" />}</td>
@@ -1266,7 +1303,7 @@ function App() {
                   meta={storageVolumes.length}
                   description={adminStorageAttention > 0 ? `${adminStorageAttention} of ${storageVolumes.length} volume(s) need attention.` : 'Encrypted document storage in your environment. Priority controls preferred placement.'}
                   actions={<>
-                    <button type="button" className="secondary" aria-label="About storage volumes" aria-expanded={storageHelpOpen} onClick={() => setStorageHelpOpen((current) => !current)}>How storage works</button>
+                    <button type="button" className="secondary" aria-label="How storage works" aria-expanded={storageHelpOpen} onClick={() => setStorageHelpOpen((current) => !current)}>How storage works</button>
                     <button type="button" className="primary-action" onClick={() => setAdminDrawerMode('storage-create')}><Icon name="plus" /> Add storage volume</button>
                   </>}
                 >
@@ -1433,52 +1470,30 @@ function App() {
 
           {platformTab === 'overview' && (!operations ? <AdminSection title="Operational overview"><p className="ax-note">Loading operational health…</p></AdminSection> : (
             <>
-              <div className={`ax-status-strip ax-status-strip-${statusTone(operations.overallStatus)}`}>
-                <div className="ax-status-strip-main">
-                  <span>Overall</span>
-                  <strong>{humanize(operations.overallStatus)}</strong>
+              <section className={`vx-ops-status vx-tone-${statusTone(operations.overallStatus)}`} aria-label="Overall platform status">
+                <div className="vx-ops-status-main">
+                  <span className="vx-ops-status-label">Overall</span>
+                  <strong className="vx-ops-status-value"><span className="vx-ops-status-dot" aria-hidden="true" />{humanize(operations.overallStatus)}</strong>
                 </div>
-                <span className="ax-status-strip-meta">Observed {formatDate(operations.observedAt)} · refreshes every 30 seconds</span>
-              </div>
+                <p className="vx-ops-status-summary">
+                  {openSignalCount === 0 ? 'No conditions need an operator right now.' : `${openSignalCount} of ${overviewSignals.length} conditions need an operator.`}
+                </p>
+                <span className="vx-ops-status-meta">Observed {formatDate(operations.observedAt)} · refreshes every 30 seconds</span>
+              </section>
 
-              <AdminSection flush title="Needs attention" description="Conditions that may need an operator, in priority order.">
-                <div className="ax-attention-list">
-                  <AttentionRow
-                    tone={(operations.processingFailureCount ?? 0) > 0 ? 'danger' : operations.processingFailureCount == null ? 'neutral' : 'ok'}
-                    count={operations.processingFailureCount ?? '—'}
-                    title="Processing failures"
-                    detail={operations.processingFailureCount == null ? 'Count unavailable' : operations.processingFailureCount > 0 ? 'Documents that failed processing' : 'No processing failures'}
-                    onOpen={() => setPlatformTab('incidents')}
-                    openLabel="View incidents"
-                  />
-                  <AttentionRow
-                    tone={attentionVolumes.length > 0 ? 'warn' : 'ok'}
-                    count={attentionVolumes.length}
-                    title="Storage volumes"
-                    detail={attentionVolumes.length > 0 ? attentionVolumes.map((volume) => volume.displayName).join(', ') : 'All active storage volumes are healthy'}
-                    onOpen={() => setPlatformTab('storage')}
-                    openLabel="View storage"
-                  />
-                  <AttentionRow
-                    tone={(operations.stuckDocumentCount ?? 0) > 0 ? 'warn' : operations.stuckDocumentCount == null ? 'neutral' : 'ok'}
-                    count={operations.stuckDocumentCount ?? '—'}
-                    title="Stuck transitions"
-                    detail={operations.stuckDocumentCount == null ? 'Count unavailable' : operations.stuckDocumentCount > 0 ? 'Documents not progressing through workflow' : 'No stuck transitions'}
-                    onOpen={() => setPlatformTab('incidents')}
-                    openLabel="View incidents"
-                  />
-                  <AttentionRow
-                    tone={(operations.attentionSubmissionCount ?? 0) > 0 ? 'warn' : operations.attentionSubmissionCount == null ? 'neutral' : 'ok'}
-                    count={operations.attentionSubmissionCount ?? '—'}
-                    title="Incomplete submissions"
-                    detail={operations.attentionSubmissionCount == null ? 'Count unavailable' : operations.attentionSubmissionCount > 0 ? 'Submissions missing expected documents' : 'No incomplete submissions'}
-                    onOpen={() => setPlatformTab('incidents')}
-                    openLabel="View incidents"
-                  />
+              <section className="vx-signals" aria-labelledby="vx-signals-title">
+                <header className="vx-signals-head">
+                  <h2 id="vx-signals-title">Needs attention</h2>
+                  <p>Conditions that may need an operator, in priority order.</p>
+                </header>
+                <div className="vx-signal-grid">
+                  {overviewSignals.map((signal) => (
+                    <AttentionTile key={signal.key} tone={signal.tone} count={signal.count} title={signal.title} detail={signal.detail} onOpen={signal.onOpen} openLabel={signal.openLabel} />
+                  ))}
                 </div>
-              </AdminSection>
+              </section>
 
-              <AdminSection flush title="Core services">
+              <AdminSection flush title="Core services" className="vx-services">
                 <div className="ax-service-list">
                   {[operations.application, operations.database, operations.keyService].map((item) => (
                     <div className="ax-service" key={item.component}>
