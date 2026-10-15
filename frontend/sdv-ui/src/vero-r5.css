@@ -307,3 +307,28 @@
   white-space: normal;
   min-height: 40px;
 }
+
+
+/*
+ * R5-C viewport fit: the legacy viewer reserved only 124px above its
+ * 100dvh canvas, although breadcrumb, workflow tabs and margins occupy
+ * approximately 250px. That pushed the redaction footer below the browser.
+ * Constrain the viewer itself, so its canvas and form scroll internally.
+ */
+.bw.bw-stage-viewer .bw-viewer {
+  height: max(320px, calc(100dvh - 272px));
+  min-height: 0;
+  max-height: none;
+}
+.bw.bw-stage-viewer .bwv,
+.bw.bw-stage-viewer .bwv-shell,
+.bw.bw-stage-viewer .bwv-body,
+.bw.bw-stage-viewer .bwv-side {
+  min-height: 0;
+}
+@media (max-width: 900px) {
+  .bw.bw-stage-viewer .bw-viewer {
+    height: max(320px, calc(100dvh - 288px));
+    min-height: 0;
+  }
+}
