@@ -1810,12 +1810,13 @@ button[type="submit"]:hover:not(:disabled), .primary-action:hover:not(:disabled)
 /* R5 Business Workspace finishing pass — preserve form and activity semantics. */
 .bw.bw-stage-search .bw-search-head.ui-workspace-header {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
+  flex-direction: column;
+  flex-wrap: nowrap;
+  align-items: flex-start;
   justify-content: flex-start;
-  gap: 12px 24px;
+  gap: 8px;
 }
-.bw.bw-stage-search .bw-search-intro { flex: 0 1 auto; }
+.bw.bw-stage-search .bw-search-intro { flex: 0 0 auto; }
 .bw.bw-stage-search .bw-source {
   display: flex;
   flex: 0 1 auto;
