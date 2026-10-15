@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useMemo, useState } from 'react'
+import { FormEvent, useEffect, useMemo, useRef, useState } from 'react'
 import { PdfViewer } from './PdfViewer'
 import Icon from './Icon'
 import {
@@ -50,6 +50,7 @@ export default function BusinessWorkspace({ persona, capabilities, onViewerState
   const sourcePreferenceKey = `sdv.businessWorkspace.sourceId.${persona}`
   const contentPersona: ContentPersona = persona === 'steward' ? 'steward' : 'business'
   const [tab, setTab] = useState<BusinessTab>('search')
+  const viewerContainerRef = useRef<HTMLDivElement | null>(null)
   const [schema, setSchema] = useState<SearchSchema>({ sources: [] })
   const [sourceId, setSourceId] = useState('')
   const [criteria, setCriteria] = useState<Record<string, string>>({})
@@ -87,6 +88,30 @@ export default function BusinessWorkspace({ persona, capabilities, onViewerState
     onViewerStateChange?.(tab === 'viewer')
     return () => onViewerStateChange?.(false)
   }, [tab, onViewerStateChange])
+
+  // Size the Viewer from its actual position in the viewport, not a
+  // hard-coded header offset. Keep the sidebar footer inside this space.
+  useEffect(() => {
+    if (tab !== 'viewer') return
+    const element = viewerContainerRef.current
+    if (!element) return
+    const updateHeight = () => {
+      const top = element.getBoundingClientRect().top
+      const remaining = Math.max(160, Math.floor(window.innerHeight - top - 12))
+      element.style.height = `${remaining}px`
+    }
+    updateHeight()
+    window.addEventListener('resize', updateHeight)
+    const bar = element.closest('.bw')?.querySelector('.bw-bar')
+    const observer = typeof ResizeObserver !== 'undefined' && bar
+      ? new ResizeObserver(updateHeight)
+      : null
+    if (bar && observer) observer.observe(bar)
+    return () => {
+      window.removeEventListener('resize', updateHeight)
+      observer?.disconnect()
+    }
+  }, [tab])
 
   useEffect(() => {
     setError('')
@@ -438,7 +463,7 @@ export default function BusinessWorkspace({ persona, capabilities, onViewerState
       </div>
     </section>}
 
-    {tab === 'viewer' && selectedRecord && selectedDocument && <div className="bw-viewer">
+    {tab === 'viewer' && selectedRecord && selectedDocument && <div className="bw-viewer" ref={viewerContainerRef}>
       <PdfViewer
         key={selectedDocument.documentId}
         documentId={selectedDocument.documentId}
