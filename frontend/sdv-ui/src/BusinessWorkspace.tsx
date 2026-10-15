@@ -198,8 +198,13 @@ export default function BusinessWorkspace({ persona, capabilities, onViewerState
       setInspectorOpen(!(openFirstDocument && canView && firstDocumentId))
       if (openFirstDocument && canView && firstDocumentId) {
         setTab('viewer')
+      } else if (openFirstDocument) {
+        // Switching from an open PDF to a record with no viewable document
+        // must never leave a blank Viewer or imply permission was granted.
+        setInspectorOpen(true)
+        setTab('results')
       }
-      // No documents or no view permission: remain in Results with the record inspector.
+      // Without a viewable document, expose record details in Results instead.
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Could not open business record.')
     } finally {
