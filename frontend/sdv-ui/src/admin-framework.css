@@ -1805,3 +1805,66 @@ button[type="submit"]:hover:not(:disabled), .primary-action:hover:not(:disabled)
 }
 /* Technical action codes remain available in More filters. */
 .ax-filters-primary select { min-width: 0; }
+
+
+/* R5 Business Workspace finishing pass — preserve form and activity semantics. */
+.bw.bw-stage-search .bw-search-head.ui-workspace-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 12px 24px;
+}
+.bw.bw-stage-search .bw-search-intro { flex: 0 1 auto; }
+.bw.bw-stage-search .bw-source {
+  display: flex;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: 8px;
+  width: auto;
+  max-width: none;
+  min-width: 0;
+  margin-left: 0;
+}
+.bw.bw-stage-search .bw-source-label {
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+}
+.bw.bw-stage-search .bw-source select {
+  width: 190px;
+  max-width: 100%;
+  min-height: 36px;
+}
+.bw.bw-stage-activity .bw-activity { gap: 0; }
+.bw.bw-stage-activity .bw-activity-head {
+  align-items: center;
+  padding: 10px 18px;
+  gap: 8px 16px;
+}
+.bw.bw-stage-activity .bw-activity-head h2 {
+  font-size: 17px;
+  line-height: 1.25;
+}
+.bw.bw-stage-activity .bw-activity-head p { font-size: 12px; line-height: 1.35; }
+.bw.bw-stage-activity .bw-activity-head .bw-btn { min-height: 36px; }
+.bw.bw-stage-activity .bw-filters {
+  display: grid;
+  grid-template-columns: minmax(210px, 1.2fr) minmax(170px, 1fr) minmax(180px, 1fr) minmax(170px, .8fr);
+  gap: 10px 14px;
+  padding: 12px 18px;
+}
+.bw.bw-stage-activity .bw-filters .bw-field { min-width: 0; gap: 4px; }
+.bw.bw-stage-activity .bw-filters .bw-field-label { font-size: 12px; }
+.bw.bw-stage-activity .bw-filters input,
+.bw.bw-stage-activity .bw-filters select { min-height: 36px; height: 36px; }
+@media (max-width: 1100px) {
+  .bw.bw-stage-activity .bw-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 600px) {
+  .bw.bw-stage-search .bw-source { flex-wrap: wrap; }
+  .bw.bw-stage-search .bw-source select { width: min(100%, 240px); }
+  .bw.bw-stage-activity .bw-filters { grid-template-columns: minmax(0, 1fr); }
+}
