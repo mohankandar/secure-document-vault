@@ -1130,8 +1130,8 @@ function App() {
               />
 
               {businessAdminTab === 'access' && (
-                <div className="ax-split">
-                  <AdminSection flush title="Business roles" meta={BUSINESS_ROLE_DIRECTORY.length} description="The roles SDV recognises for business content, and what each one is responsible for.">
+                <div className="ax-split ax-access-layout">
+                  <AdminSection flush title="Business roles" meta={BUSINESS_ROLE_DIRECTORY.length} description="The roles SDV recognises for business content, and what each one is responsible for." actions={<details className="ax-info-popover"><summary aria-label="Where role assignments are managed" title="Where role assignments are managed">i<span className="sr-only"> Role assignment information</span></summary><div className="ax-info-popover-content"><strong>Where assignments live</strong><p>Sign-in and role assignments are managed in your identity provider. SDV reads roles from the sign-in token. Document actions are configured in Roles &amp; Permissions.</p></div></details>}>
                     <div className="ax-table-wrap">
                       <table className="ax-table">
                         <thead><tr><th>Role</th><th>Responsibility</th><th>Token role</th><th className="ax-col-action">Document actions</th></tr></thead>
@@ -1148,15 +1148,7 @@ function App() {
                       </table>
                     </div>
                   </AdminSection>
-                  <div className="ax-contextual-help">
-                    <details>
-                      <summary><span className="ax-info-mark" aria-hidden="true">i</span> Where are role assignments managed?</summary>
-                      <div className="ax-contextual-help-content">
-                        <p>Sign-in and user-to-role assignments are managed in your identity provider. SDV reads each user's role from their sign-in token.</p>
-                        <p>Configure document actions under <strong>Roles &amp; Permissions</strong>.</p>
-                      </div>
-                    </details>
-                  </div>
+
                 </div>
               )}
 
@@ -1310,7 +1302,7 @@ function App() {
                   meta={storageVolumes.length}
                   description={adminStorageAttention > 0 ? `${adminStorageAttention} of ${storageVolumes.length} volume(s) need attention.` : 'Encrypted document storage in your environment. Priority controls preferred placement.'}
                   actions={<>
-                    <button type="button" className="secondary" aria-label="About storage volumes" aria-expanded={storageHelpOpen} onClick={() => setStorageHelpOpen((current) => !current)}>How storage works</button>
+                    <button type="button" className="ax-info-trigger" aria-label="How storage works" title="How storage works" aria-expanded={storageHelpOpen} onClick={() => setStorageHelpOpen((current) => !current)}>i</button>
                     <button type="button" className="primary-action" onClick={() => setAdminDrawerMode('storage-create')}><Icon name="plus" /> Add storage volume</button>
                   </>}
                 >
