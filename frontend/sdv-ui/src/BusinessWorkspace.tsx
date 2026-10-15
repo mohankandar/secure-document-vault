@@ -59,6 +59,7 @@ export default function BusinessWorkspace({ persona, capabilities, onViewerState
   const [updatedTo, setUpdatedTo] = useState('')
   const [results, setResults] = useState<RecordSummary[]>([])
   const [selectedRecord, setSelectedRecord] = useState<BusinessRecord | null>(null)
+  const [inspectorOpen, setInspectorOpen] = useState(false)
   const [selectedDocumentId, setSelectedDocumentId] = useState('')
   const [searching, setSearching] = useState(false)
   const [opening, setOpening] = useState(false)
@@ -109,6 +110,7 @@ export default function BusinessWorkspace({ persona, capabilities, onViewerState
     setSearchPage(1)
     setSearchHasMore(false)
     setSelectedRecord(null)
+    setInspectorOpen(false)
     setSelectedDocumentId('')
     setTab('search')
   }, [sourceId, sourcePreferenceKey])
@@ -144,6 +146,7 @@ export default function BusinessWorkspace({ persona, capabilities, onViewerState
       setSearchPage(response.page)
       setSearchHasMore(response.hasMore)
       setSelectedRecord(null)
+      setInspectorOpen(false)
       setSelectedDocumentId('')
       setTab('results')
     } catch (reason) {
@@ -167,6 +170,7 @@ export default function BusinessWorkspace({ persona, capabilities, onViewerState
       const firstDocumentId = value.documents[0]?.documentId ?? ''
       setSelectedRecord(value)
       setSelectedDocumentId(firstDocumentId)
+      setInspectorOpen(!(openFirstDocument && canView && firstDocumentId))
       if (openFirstDocument && canView && firstDocumentId) {
         setTab('viewer')
       }
@@ -186,6 +190,7 @@ export default function BusinessWorkspace({ persona, capabilities, onViewerState
   }
 
   function closeRecord() {
+    setInspectorOpen(false)
     setSelectedRecord(null)
     setSelectedDocumentId('')
   }
@@ -278,7 +283,7 @@ export default function BusinessWorkspace({ persona, capabilities, onViewerState
           className={tab === stage.id ? 'active' : ''}
           aria-current={tab === stage.id ? 'step' : undefined}
           disabled={stage.disabled}
-          onClick={() => setTab(stage.id)}
+          onClick={() => { if (stage.id === 'results') setInspectorOpen(false); setTab(stage.id) }}
         >
           <Icon name={stage.icon} />
           <span>{stage.label}</span>
@@ -355,7 +360,7 @@ export default function BusinessWorkspace({ persona, capabilities, onViewerState
         <button type="button" className="bw-btn bw-btn-secondary" onClick={() => setTab('search')}><Icon name="edit" />Modify search</button>
       </header>
 
-      <div className={`bw-results-body ${selectedRecord ? 'has-inspector' : ''}`}>
+      <div className={`bw-results-body ${selectedRecord && inspectorOpen ? 'has-inspector' : ''}`}>
         <section className="bw-ledger ui-workspace-surface" aria-busy={opening || searching}>
           {(opening || searching) && <div className="bw-progress" aria-hidden="true" />}
           {results.length > 0 && <div className="bw-table-scroll">
@@ -391,7 +396,7 @@ export default function BusinessWorkspace({ persona, capabilities, onViewerState
           </nav>}
         </section>
 
-        {selectedRecord && <>
+        {selectedRecord && inspectorOpen && <>
           <div className="bw-scrim" role="presentation" onClick={closeRecord} />
           <aside className="bw-inspector" aria-label="Selected record inspector">
             <header className="bw-inspector-head">
@@ -448,7 +453,7 @@ export default function BusinessWorkspace({ persona, capabilities, onViewerState
         canTag={canTag}
         canComment={canComment}
         embedded
-        onClose={() => setTab('results')}
+        onClose={() => { setInspectorOpen(false); setTab('results') }}
       />
     </div>}
 
