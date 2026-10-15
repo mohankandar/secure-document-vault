@@ -1724,3 +1724,51 @@ button[type="submit"]:hover:not(:disabled), .primary-action:hover:not(:disabled)
 }
 .ax-info-popover-content strong { color: var(--ui-text-strong); }
 .ax-info-popover-content p { margin: 6px 0 0; }
+
+
+/* Final R5 admin polish: shared data readability and compact responsive groups. */
+.ax-section .ax-sheet > div { padding-block: 10px; }
+.ax-section .ax-sheet dt {
+  font-size: 11px;
+  letter-spacing: .045em;
+  line-height: 1.35;
+}
+.ax-section .ax-sheet dd {
+  font-size: 13px;
+  line-height: 1.5;
+}
+.ax-section .ax-sheet dd.mono {
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.ax-section .ax-policy-hero {
+  grid-template-columns: minmax(0, 1fr) minmax(130px, auto);
+  padding: 2px 0;
+}
+.ax-section .ax-policy-hero-main h3 { font-size: 16px; }
+.ax-section .ax-policy-value strong { font-size: 18px; }
+.ax-section .ax-policy-value span { max-width: 200px; }
+.ax-table-wrap:has(.audit-ledger) { overflow-x: auto; }
+.ax-table-wrap .audit-ledger {
+  min-width: 850px;
+  font-size: 12px;
+}
+.ax-table-wrap .audit-ledger th { font-size: 11px; white-space: nowrap; }
+.ax-table-wrap .audit-ledger td {
+  padding-block: 9px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.ax-info-trigger, .ax-info-popover > summary { min-width: 32px; min-height: 32px; }
+.ax-info-popover[open] > summary { background: var(--ui-hover); }
+@media (max-width: 900px) {
+  .ax-section .ax-sheet-3,
+  .ax-section .ax-sheet-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .ax-section .ax-policy-hero { grid-template-columns: minmax(0, 1fr); }
+  .ax-section .ax-policy-value { align-items: flex-start; }
+}
+@media (max-width: 560px) {
+  .ax-section .ax-sheet-2,
+  .ax-section .ax-sheet-3,
+  .ax-section .ax-sheet-4 { grid-template-columns: minmax(0, 1fr); }
+}
