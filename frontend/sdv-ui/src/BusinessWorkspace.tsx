@@ -463,7 +463,31 @@ export default function BusinessWorkspace({ persona, capabilities, onViewerState
       </div>
     </section>}
 
-    {tab === 'viewer' && selectedRecord && selectedDocument && <div className="bw-viewer" ref={viewerContainerRef}>
+    {tab === 'viewer' && selectedRecord && selectedDocument && <div className="bw-r6-live-workspace" ref={viewerContainerRef}>
+      <aside className="bw-r6-results-pane" aria-label="Search results alongside document">
+        <div className="bw-r6-results-pane-head">
+          <strong>Results <span className="bw-tabular">{results.length}</span></strong>
+          <button type="button" className="bw-btn bw-btn-quiet" onClick={() => setTab('results')}>Full results</button>
+        </div>
+        <div className="bw-r6-results-list">
+          {results.map((item) => {
+            const identifier = item.identifiers.find((value) => value.businessIdentifier) ?? item.identifiers[0]
+            const active = selectedRecord.recordRef === item.recordRef
+            return <button
+              type="button"
+              key={item.recordRef}
+              className={`bw-r6-result-item${active ? ' is-active' : ''}`}
+              aria-current={active ? 'true' : undefined}
+              disabled={opening}
+              onClick={() => { if (!active) void openRecord(item.recordRef, true) }}
+            >
+              <strong>{identifier?.value ?? item.recordRef}</strong>
+              <span>{item.availableDocumentCount} {item.availableDocumentCount === 1 ? 'document' : 'documents'} · {formatDate(item.latestSubmissionAt)}</span>
+            </button>
+          })}
+        </div>
+      </aside>
+      <div className="bw-viewer bw-r6-live-viewer">
       <PdfViewer
         key={selectedDocument.documentId}
         documentId={selectedDocument.documentId}
@@ -480,6 +504,7 @@ export default function BusinessWorkspace({ persona, capabilities, onViewerState
         embedded
         onClose={() => { setInspectorOpen(false); setTab('results') }}
       />
+      </div>
     </div>}
 
     {tab === 'activity' && selectedRecord && <section className="bw-activity" aria-labelledby="bw-activity-title">
