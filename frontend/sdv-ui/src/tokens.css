@@ -61,24 +61,30 @@
   --ui-focus-ring: rgba(49, 87, 200, .22);
   --motion-fast: 120ms ease;
 
-  --type-xs: .6875rem;
+  /* R6 type scale: exactly six sizes (12 / 13 / 14 / 16 / 20 / 24) and three weights. */
+  --font-sans: "Inter Variable", Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, "Cascadia Mono", SFMono-Regular, Menlo, Consolas, monospace;
+
+  --type-xs: .75rem;
   --type-sm: .75rem;
   --type-body-sm: .8125rem;
   --type-body: .875rem;
   --type-body-lg: 1rem;
-  --type-card-title: 1.125rem;
+  --type-card-title: 1rem;
   --type-section-title: 1.25rem;
-  --type-page-title: 1.625rem;
+  --type-page-title: 1.5rem;
 
   --weight-regular: 400;
-  --weight-medium: 550;
-  --weight-semibold: 650;
-  --weight-bold: 750;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --weight-bold: 600;
   --leading-tight: 1.18;
   --leading-body: 1.45;
   --leading-relaxed: 1.55;
 
-  --ui-sidebar-width: 252px;
-  --ui-sidebar-collapsed-width: 72px;
+  --ui-sidebar-width: 232px;
+  --ui-sidebar-collapsed-width: 64px;
+  --ui-page-header-height: 56px;
+  --ui-table-row: 40px;
   --ui-touch: 44px;
 }

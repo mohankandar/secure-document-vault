@@ -1,6 +1,6 @@
 import type { ReactNode, SVGProps } from 'react'
 
-export type IconName = 'search' | 'admin' | 'operations' | 'audit' | 'menu' | 'chevronLeft' | 'chevronRight' | 'user' | 'storage' | 'list' | 'document' | 'download' | 'redaction' | 'eye' | 'print' | 'edit' | 'close' | 'plus' | 'alert' | 'arrowUpRight'
+export type IconName = 'search' | 'admin' | 'operations' | 'audit' | 'menu' | 'chevronLeft' | 'chevronRight' | 'user' | 'storage' | 'list' | 'document' | 'download' | 'redaction' | 'eye' | 'print' | 'edit' | 'close' | 'plus' | 'alert' | 'arrowUpRight' | 'expand' | 'collapse' | 'pages' | 'comment' | 'tag' | 'panel'
 
 const paths: Record<IconName, ReactNode> = {
   arrowUpRight: <><path d="M7 17 17 7M8 7h9v9"/></>,
@@ -23,6 +23,12 @@ const paths: Record<IconName, ReactNode> = {
   edit: <><path d="M4 20h4l11-11-4-4L4 16v4z"/><path d="m13.5 6.5 4 4"/></>,
   close: <><path d="M6 6l12 12"/><path d="M18 6 6 18"/></>,
   plus: <><path d="M12 5v14"/><path d="M5 12h14"/></>,
+  expand: <><path d="M15 3h6v6"/><path d="M9 21H3v-6"/><path d="m21 3-7 7"/><path d="m3 21 7-7"/></>,
+  collapse: <><path d="M4 14h6v6"/><path d="M20 10h-6V4"/><path d="m14 10 7-7"/><path d="m3 21 7-7"/></>,
+  pages: <><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="3" y="15" width="7" height="6" rx="1"/><path d="M14 4h7M14 9h7M14 15h7M14 20h7"/></>,
+  comment: <path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/>,
+  tag: <><path d="M3 12V4a1 1 0 0 1 1-1h8l9 9-9 9z"/><circle cx="7.5" cy="7.5" r="1.5"/></>,
+  panel: <><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/></>,
 }
 
 export default function Icon({ name, ...props }: SVGProps<SVGSVGElement> & { name: IconName }) {

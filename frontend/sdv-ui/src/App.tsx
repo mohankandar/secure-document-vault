@@ -69,7 +69,39 @@ const VIEW_META: Record<View, { eyebrow: string; title: string; description: str
   audit: { eyebrow: 'Support', title: 'Audit history', description: 'Review append-oriented technical audit evidence without exposing document content.' },
 }
 
-type NavItem = { view: View; label: string; icon: IconName; show: boolean }
+type NavArea = { key: View; title: string; icon: IconName; show: boolean; active: boolean; attention?: boolean }
+
+const BUSINESS_ADMIN_SECTIONS: Record<BusinessAdminTab, { label: string; guidance: string }> = {
+  access: { label: 'Users & Access', guidance: 'Review the business roles SDV recognises and who is responsible for each.' },
+  roles: { label: 'Roles & Permissions', guidance: 'Choose which document actions each business role can perform.' },
+  retention: { label: 'Retention Policies', guidance: 'Set how long each document type is kept before it becomes eligible for disposal.' },
+  metadata: { label: 'Metadata Configuration', guidance: 'Choose which metadata fields business users can search and see.' },
+}
+const TENANT_IT_SECTIONS: Record<TenantItTab, { label: string; guidance: string }> = {
+  storage: { label: 'Storage', guidance: 'Monitor capacity and thresholds for this environment’s storage volumes.' },
+  authentication: { label: 'Authentication', guidance: 'Review, stage, and activate identity provider configuration.' },
+  integrations: { label: 'Integrations', guidance: 'Review the ingestion sources connected to this environment.' },
+  environment: { label: 'Environment', guidance: 'Review the deployment version and runtime configuration.' },
+}
+const PLATFORM_SECTIONS: Record<PlatformTab, { label: string; guidance: string }> = {
+  overview: { label: 'Overview', guidance: 'Current health of this deployment and anything that needs attention.' },
+  storage: { label: 'Storage', guidance: 'Capacity, thresholds, and observation health for every storage volume.' },
+  health: { label: 'Platform Health', guidance: 'Status of the core services this deployment depends on.' },
+  incidents: { label: 'Incidents', guidance: 'Processing failures, stuck documents, and incomplete submissions.' },
+  audit: { label: 'Audit', guidance: 'Technical audit evidence for this tenant. Document content is never shown.' },
+  configuration: { label: 'Configuration', guidance: 'Deployment version and active profiles for this environment.' },
+}
+const VIEW_GUIDANCE: Record<'search' | 'audit', string> = {
+  search: 'Find a business record, then open its documents in the secure viewer.',
+  audit: 'Append-oriented technical evidence. Document content is never shown.',
+}
+
+// An explicit user choice wins; otherwise iPad-width screens start on the compact rail.
+const preferredSidebarCollapsed = () => {
+  const stored = localStorage.getItem('sdv.ui.sidebarCollapsed')
+  if (stored != null) return stored === 'true'
+  return typeof window !== 'undefined' && window.innerWidth <= 1200
+}
 
 const searchHint = (field: SearchField) => {
   if (field.searchMode === 'PREFIX') return 'Starts with'
@@ -126,7 +158,8 @@ function App() {
   const [view, setView] = useState<View>('search')
   const [session, setSession] = useState<SessionInfo | null>(null)
   const [selectedPersona, setSelectedPersona] = useState<LocalPersona>('business')
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => localStorage.getItem('sdv.ui.sidebarCollapsed') === 'true')
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(preferredSidebarCollapsed)
+  const [headerInfoOpen, setHeaderInfoOpen] = useState(false)
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
@@ -843,7 +876,7 @@ function App() {
       setSidebarCollapsed(true)
       return
     }
-    setSidebarCollapsed(localStorage.getItem('sdv.ui.sidebarCollapsed') === 'true')
+    setSidebarCollapsed(preferredSidebarCollapsed())
   }, [])
 
   const signOut = () => {
@@ -863,12 +896,23 @@ function App() {
     return <div className="auth-shell"><div className="auth-card"><span className="brand-lettermark auth-brand">S</span><h1>Secure Document Vault</h1><p>{authDenied ? 'Access denied' : 'Sign in with your organization identity to continue.'}</p>{authError && <div className="banner error">{authError}</div>}<button className="primary-action auth-signin" onClick={() => void beginOidcLogin(authDenied)}>{authDenied ? 'Sign in with a different account' : 'Sign in'}</button></div></div>
   }
 
-  const navGroups: { title: string; items: NavItem[] }[] = [
-    { title: 'Work', items: [{ view: 'search', label: 'Search', icon: 'search', show: canSearchRecords }] },
-    { title: 'Administration', items: [{ view: 'admin', label: 'Administration', icon: 'admin', show: canViewAdministration }] },
-    { title: 'Operations', items: [{ view: 'operations', label: 'Operations', icon: 'operations', show: canViewTechnicalFailures }] },
-    { title: 'Support', items: [{ view: 'audit', label: 'Audit', icon: 'audit', show: canViewTechnicalFailures }] },
+  const isBusinessAdminSurface = selectedPersona === 'businessAdmin'
+  const navAttentionVolumes = operations?.storageVolumes.filter(volumeNeedsAttention).length ?? 0
+  const navIncidentTotal = (operations?.processingFailureCount ?? 0) + (operations?.stuckDocumentCount ?? 0) + (operations?.attentionSubmissionCount ?? 0)
+  const adminNeedsAttention = !isBusinessAdminSurface && storageVolumes.some((item) => item.observationError != null || item.warningThresholdReached || item.stopWriteThresholdReached)
+  const adminAreaTitle = isBusinessAdminSurface ? 'Business Administration' : selectedPersona === 'tenantIt' ? 'Tenant IT Administration' : 'Administration'
+  // The sidebar lists primary areas only; sections inside an area are always the in-page tabs.
+  const navAreas: NavArea[] = [
+    { key: 'search', title: 'Search', icon: 'search', show: canSearchRecords, active: view === 'search' },
+    { key: 'admin', title: adminAreaTitle, icon: 'admin', show: canViewAdministration, active: view === 'admin', attention: adminNeedsAttention },
+    { key: 'operations', title: 'Platform Operations', icon: 'operations', show: canViewTechnicalFailures, active: view === 'operations', attention: navAttentionVolumes > 0 || navIncidentTotal > 0 },
+    { key: 'audit', title: 'Audit history', icon: 'audit', show: canViewTechnicalFailures, active: view === 'audit' },
   ]
+  const visibleNavAreas = navAreas.filter((area) => area.show)
+  const activeSection = view === 'admin'
+    ? (isBusinessAdminSurface ? BUSINESS_ADMIN_SECTIONS[businessAdminTab] : TENANT_IT_SECTIONS[tenantItTab])
+    : view === 'operations' ? PLATFORM_SECTIONS[platformTab] : null
+  const headerGuidance = activeSection?.guidance ?? (view === 'search' || view === 'audit' ? VIEW_GUIDANCE[view] : '')
 
   const pageMeta = view === 'admin' && selectedPersona === 'businessAdmin'
     ? { eyebrow: 'Administration', title: 'Business Administration', description: 'Manage business policy, metadata, access design, and document governance for this SDV environment.' }
@@ -1024,20 +1068,14 @@ function App() {
           <span className="vero-tenant-name">{session?.tenantDisplayName || 'Company name unavailable'}</span>
         </div>
 
-        <nav className="modern-sidebar-nav" aria-label="Primary navigation">
-          {navGroups.map((group) => {
-            const visibleItems = group.items.filter((item) => item.show)
-            if (visibleItems.length === 0) return null
-            return <div className="app-nav-group" key={group.title}>
-              <div className="app-nav-group-title">{group.title}</div>
-              {visibleItems.map((item) => (
-                <button key={item.view} type="button" className={`app-nav-link ${view === item.view ? 'active' : ''}`} onClick={() => navigate(item.view)}>
-                  <Icon name={item.icon} />
-                  <span className="app-nav-label">{item.label}</span>
-                </button>
-              ))}
-            </div>
-          })}
+        <nav className="ds-nav" aria-label="Primary navigation">
+          {visibleNavAreas.map((area) => (
+            <button key={area.key} type="button" className={`ds-nav-link ${area.active ? 'active' : ''}`} aria-current={area.active ? 'page' : undefined} title={sidebarCollapsed ? area.title : undefined} onClick={() => navigate(area.key)}>
+              <Icon name={area.icon} />
+              <span className="ds-nav-label">{area.title}</span>
+              {area.attention && <span className="ds-nav-flag" role="img" aria-label="Needs attention" />}
+            </button>
+          ))}
         </nav>
 
         <div className="sidebar-footer">
@@ -1062,19 +1100,20 @@ function App() {
 
       <main className="modern-main-content">
         <div className="sdv-page">
-          <header className={`vero-topbar ${view === 'search' ? 'vero-topbar-compact' : ''}`}>
+          <header className="vero-topbar">
             <div className="vero-topbar-copy">
               <nav className="vero-breadcrumb" aria-label="Current location">
                 <span className="vero-breadcrumb-company">{session?.tenantDisplayName || 'Company name unavailable'}</span>
                 <span className="vero-crumb-sep" aria-hidden="true">/</span>
                 <span>{pageMeta.title}</span>
-                {view === 'admin' && <><span className="vero-crumb-sep" aria-hidden="true">/</span><span>{selectedPersona === 'tenantIt' ? humanize(tenantItTab) : humanize(businessAdminTab)}</span></>}
-                {view === 'operations' && <><span className="vero-crumb-sep" aria-hidden="true">/</span><span>{humanize(platformTab)}</span></>}
+                {activeSection && <><span className="vero-crumb-sep" aria-hidden="true">/</span><span>{activeSection.label}</span></>}
               </nav>
-              {view !== 'search' && <>
+              <div className="ds-header-title-row">
                 <h1>{pageMeta.title}</h1>
-                <p className="vero-topbar-lede">{pageMeta.description}</p>
-              </>}
+                <button type="button" className="ds-header-info" aria-expanded={headerInfoOpen} aria-controls="page-header-help" aria-label={`About ${pageMeta.title}`} onClick={() => setHeaderInfoOpen((open) => !open)}><Icon name="alert" /></button>
+              </div>
+              {headerGuidance && <p className="vero-topbar-lede">{headerGuidance}</p>}
+              {headerInfoOpen && <p className="ds-header-help" id="page-header-help">{pageMeta.description}</p>}
             </div>
             <div className="vero-topbar-actions">
               {localMode && (

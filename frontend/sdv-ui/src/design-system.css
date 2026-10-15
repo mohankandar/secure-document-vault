@@ -1,0 +1,197 @@
+/* =============================================================
+   Vero R6-A — Precision Workspace design system layer.
+   Loaded last. Presentation only: no workflow, permission,
+   audit or security behaviour depends on anything in this file.
+   ============================================================= */
+
+@font-face {
+  font-family: "Inter Variable";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url("./assets/fonts/inter-latin-wght-normal.woff2") format("woff2-variations");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Inter Variable";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url("./assets/fonts/inter-latin-ext-wght-normal.woff2") format("woff2-variations");
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+/* ---------- 1. One font, one scale ---------- */
+:root {
+  --ui-sidebar-width: 232px;
+  --ui-sidebar-collapsed-width: 64px;
+  --ds-radius: 10px;
+  --ds-card-pad: 16px;
+  --ds-gutter: 24px;
+  --ds-cell-y: 10px;
+  --ds-cell-x: 12px;
+  font-family: var(--font-sans);
+  font-feature-settings: "cv11", "ss01";
+}
+body, button, input, select, textarea { font-family: var(--font-sans); }
+.bw {
+  --bw-sans: var(--font-sans);
+  --bw-display: var(--font-sans);
+  --bw-mono-font: var(--font-sans);
+}
+.mono, code, pre, .ax-role-code, .audit-evidence-json, .ax-sheet dd.mono, .ax-table .mono { font-family: var(--font-mono); }
+table, .bw-tabular, .bw-mono, .ax-count, .bw-rail-count, [class*="-count"], .vero-system-version { font-variant-numeric: tabular-nums; }
+h1, h2, h3, h4 { letter-spacing: -0.011em; }
+
+/* Micro-labels: sentence case, weight 500. All-caps is kept only for the secure-view seal. */
+.app-nav-group-title, .kicker, .bw .bw-eyebrow, .ax-sheet dt, .bw .bw-group > legend, .bw .bw-group-title,
+.ax-table th, .bw .bw-table th, .demo-role-control > span, .bw .bw-inspector-label {
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: var(--weight-medium);
+}
+
+/* ---------- 2. Shell & role-aware navigation ---------- */
+.modern-sidebar { width: var(--ui-sidebar-width); }
+.modern-main-content { margin-left: var(--ui-sidebar-width); padding: 0 var(--ds-gutter) 40px; }
+.sidebar-collapsed .modern-sidebar { width: var(--ui-sidebar-collapsed-width); }
+.sidebar-collapsed .modern-main-content { margin-left: var(--ui-sidebar-collapsed-width); }
+@media (min-width: 1201px) {
+  .modern-sidebar { width: var(--ui-sidebar-width); }
+  .modern-main-content { margin-left: var(--ui-sidebar-width); padding: 0 var(--ds-gutter) 40px; }
+  .sidebar-collapsed .modern-sidebar { width: var(--ui-sidebar-collapsed-width); }
+  .sidebar-collapsed .modern-main-content { margin-left: var(--ui-sidebar-collapsed-width); }
+}
+
+.sidebar-brand-row { min-height: 56px; padding: 0 12px 0 18px; }
+.vero-tenant-card { margin: 4px 12px 8px; min-height: 40px; padding: 8px 10px; }
+.vero-tenant-name { font-size: var(--type-body-sm); font-weight: var(--weight-medium); }
+
+/* The same list of primary areas renders expanded and collapsed; collapsing only hides the labels. */
+.ds-nav { display: flex; flex-direction: column; gap: 2px; padding: 8px 10px 16px; overflow-y: auto; flex: 1; }
+.ds-nav-link {
+  position: relative;
+  display: flex; align-items: center; gap: 10px;
+  width: 100%; min-height: 36px; padding: 0 10px;
+  border: 0; border-radius: 6px; background: transparent;
+  color: var(--ui-sidebar-text);
+  font-size: var(--type-body-sm); font-weight: var(--weight-regular);
+  text-align: left; cursor: pointer;
+}
+.ds-nav-link svg { width: 18px; height: 18px; flex: none; }
+.ds-nav-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ds-nav-link:hover { background: rgba(255, 255, 255, .05); color: #fff; }
+.ds-nav-link.active { background: rgba(255, 255, 255, .1); color: #fff; font-weight: var(--weight-medium); }
+.ds-nav-link:focus-visible { outline: 2px solid rgba(var(--brand-accent-rgb), .6); outline-offset: -2px; }
+.ds-nav-flag { width: 6px; height: 6px; margin-left: auto; border-radius: 50%; background: #f79009; flex: none; }
+
+.sidebar-collapsed .ds-nav { align-items: center; padding-inline: 0; }
+.sidebar-collapsed .ds-nav-link { justify-content: center; width: 40px; min-height: 40px; padding: 0; }
+.sidebar-collapsed .ds-nav-label {
+  position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;
+}
+.sidebar-collapsed .ds-nav-flag { position: absolute; top: 8px; right: 8px; margin: 0; }
+
+/* ---------- 3. One page header ---------- */
+.vero-topbar, .vero-topbar.vero-topbar-compact {
+  position: sticky; top: 0; z-index: 30;
+  display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  min-height: var(--ui-page-header-height);
+  margin: 0 calc(var(--ds-gutter) * -1) 16px;
+  padding: 8px var(--ds-gutter);
+  background: color-mix(in srgb, var(--ui-bg) 92%, transparent);
+  backdrop-filter: saturate(1.2) blur(10px);
+  border-bottom: 1px solid var(--ui-border);
+}
+.vero-topbar-copy { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.vero-breadcrumb, .vero-topbar-compact .vero-breadcrumb {
+  display: flex; align-items: center; gap: 6px; min-width: 0;
+  color: var(--ui-text-muted); font-size: var(--type-sm); font-weight: var(--weight-regular);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.vero-breadcrumb > span:last-child, .vero-topbar-compact .vero-breadcrumb > span:last-child { color: var(--ui-text-secondary); }
+.modern-app-shell summary { font-family: var(--font-sans); }
+.ds-header-title-row { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.vero-topbar h1, .ds-page-title {
+  margin: 0; color: var(--ui-text-strong);
+  font-size: var(--type-section-title); font-weight: var(--weight-semibold); line-height: 1.2;
+}
+.ds-header-info {
+  display: inline-grid; place-items: center; width: 24px; height: 24px; padding: 0;
+  border: 0; border-radius: 6px; background: transparent; color: var(--ui-text-muted); cursor: pointer;
+}
+.ds-header-info:hover, .ds-header-info[aria-expanded="true"] { background: var(--ui-surface); color: var(--ui-text-strong); }
+.ds-header-info svg { width: 16px; height: 16px; }
+.vero-topbar-lede, .vero-topbar .vero-topbar-lede {
+  display: block; max-width: 80ch; margin: 0;
+  color: var(--ui-text-secondary); font-size: var(--type-body-sm); line-height: 1.45;
+}
+.ds-header-help {
+  max-width: 80ch; margin: 6px 0 2px; padding: 8px 12px;
+  border: 1px solid var(--ui-border); border-radius: 8px; background: var(--ui-surface);
+  color: var(--ui-text); font-size: var(--type-body-sm); line-height: 1.5;
+}
+.vero-topbar-actions { gap: 8px; }
+.vero-system-chip { min-height: 28px; font-size: var(--type-sm); }
+
+/* Workspace intro heading becomes a card-level title under the page header. */
+.bw .bw-search-head { padding-top: 0; }
+.bw .bw-search-head h2, .bw .bw-results-title h2, .bw .bw-activity-head h2 { font-size: var(--type-body-lg); font-weight: var(--weight-semibold); letter-spacing: -0.006em; }
+
+/* ---------- 4. One card ---------- */
+.ax-section, .bw .bw-search form, .bw .bw-results-body, .bw .bw-ledger {
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ds-radius);
+  background: var(--ui-surface);
+  box-shadow: var(--shadow-surface);
+}
+.ax-section-head { min-height: 52px; padding: 12px var(--ds-card-pad); background: transparent; border-bottom: 1px solid var(--ui-border-soft); }
+.ax-section-title h2 { font-size: var(--type-body-lg); font-weight: var(--weight-semibold); }
+.ax-section-title p { margin-top: 2px; font-size: var(--type-body-sm); color: var(--ui-text-secondary); }
+.ax-section-body { padding: var(--ds-card-pad); }
+.ax-section-flush > .ax-section-body { padding: 0; }
+/* No cards inside cards: nested sections render as plain groups. */
+.ax-section .ax-section { border: 0; border-radius: 0; box-shadow: none; background: transparent; }
+.ax-section .ax-section > .ax-section-head { padding-inline: 0; min-height: 0; padding-top: 0; }
+.ax-section .ax-section > .ax-section-body { padding-inline: 0; }
+
+/* ---------- 5. One table ---------- */
+.ax-table, .bw .bw-table { border-collapse: separate; border-spacing: 0; width: 100%; font-size: var(--type-body-sm); }
+.ax-table thead th, .bw .bw-table thead th {
+  position: sticky; top: 0; z-index: 1;
+  height: 36px; padding: 0 var(--ds-cell-x);
+  background: var(--ui-surface-subtle);
+  border-bottom: 1px solid var(--ui-border);
+  color: var(--ui-text-muted); font-size: var(--type-sm);
+  white-space: nowrap; text-align: left; vertical-align: middle;
+}
+.ax-table tbody td, .bw .bw-table tbody td {
+  height: var(--ui-table-row);
+  padding: var(--ds-cell-y) var(--ds-cell-x);
+  border-bottom: 1px solid var(--ui-border-soft);
+  color: var(--ui-text); vertical-align: middle;
+}
+.ax-table tbody tr:last-child td, .bw .bw-table tbody tr:last-child td { border-bottom: 0; }
+.ax-table tbody tr:hover td, .bw .bw-table tbody tr:hover td { background: var(--ui-hover); }
+.bw .bw-table tbody tr[aria-selected="true"] td, .bw .bw-table tbody tr.selected td { background: var(--ui-selected); }
+.bw .bw-cell-date, .audit-ledger-time, .ax-table td.ax-nowrap { white-space: nowrap; }
+.audit-detail-link { white-space: nowrap; }
+.ax-table-wrap, .bw .bw-table-scroll { overflow: auto; }
+
+/* ---------- 6. Controls ---------- */
+.bw .bw-field input, .bw .bw-field select, .ax-filters input, .ax-filters select { min-height: 36px; font-size: var(--type-body-sm); }
+.bw .bw-field-label { font-size: var(--type-body-sm); font-weight: var(--weight-medium); }
+.status-pill { font-size: var(--type-sm); font-weight: var(--weight-medium); }
+
+/* ---------- 7. iPad & narrow ---------- */
+@media (max-width: 1024px) {
+  :root { --ds-gutter: 20px; }
+}
+@media (max-width: 767px) {
+  .modern-main-content, .sidebar-collapsed .modern-main-content { margin-left: 0; padding: 0 16px 32px; }
+  .vero-topbar, .vero-topbar.vero-topbar-compact { position: static; margin: 0 -16px 12px; padding: 8px 16px; }
+  .sidebar-collapsed .ds-nav { align-items: stretch; padding-inline: 10px; }
+  .sidebar-collapsed .ds-nav-link { justify-content: flex-start; width: 100%; min-height: 36px; padding: 0 10px; }
+  .sidebar-collapsed .ds-nav-label { position: static; width: auto; height: auto; clip: auto; }
+  .sidebar-collapsed .ds-nav-flag { position: static; margin-left: auto; }
+}
