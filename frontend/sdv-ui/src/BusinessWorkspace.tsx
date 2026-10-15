@@ -333,7 +333,7 @@ export default function BusinessWorkspace({ persona, capabilities, onViewerState
           <p className="bw-lede ui-workspace-lede">Search by any identifier or detail, then open the record&apos;s documents in the secure viewer.</p>
         </div>
         <label className="bw-source ui-workspace-aside">
-          <span className="bw-source-label"><Icon name="storage" />Searching in</span>
+          <span className="bw-source-label"><Icon name="storage" />Source</span>
           <select value={sourceId} onChange={(event) => setSourceId(event.target.value)} aria-label="Search source">{schema.sources.map((item) => <option key={item.sourceId} value={item.sourceId}>{item.displayName}</option>)}</select>
         </label>
       </header>
