@@ -865,9 +865,9 @@ function App() {
   }
 
   const navGroups: { title: string; items: NavItem[] }[] = [
-    { title: 'Work', items: [{ view: 'search', label: 'Search', icon: 'search', show: canSearchRecords }] },
-    { title: 'Administration', items: [{ view: 'admin', label: 'Administration', icon: 'admin', show: canViewAdministration }] },
-    { title: 'Operations', items: [{ view: 'operations', label: 'Operations', icon: 'operations', show: canViewTechnicalFailures }] },
+    { title: 'Work', items: [{ view: 'search', label: 'Records workspace', icon: 'search', show: canSearchRecords }] },
+    { title: 'Administration', items: [{ view: 'admin', label: selectedPersona === 'tenantIt' ? 'Tenant IT' : 'Business administration', icon: 'admin', show: canViewAdministration }] },
+    { title: 'Operations', items: [{ view: 'operations', label: 'Platform operations', icon: 'operations', show: canViewTechnicalFailures }] },
     { title: 'Support', items: [{ view: 'audit', label: 'Audit', icon: 'audit', show: canViewTechnicalFailures }] },
   ]
 
