@@ -1107,7 +1107,7 @@ function App() {
         ) : !canSearchRecords ? (
           <section className="panel top-gap"><span className="kicker">Permission Boundary</span><h2>Business record search is not assigned</h2><p className="muted">Your current roles do not grant business-record search.</p></section>
         ) : (
-          (new URLSearchParams(window.location.search).get('experience') === 'r7-live' ? (
+          new URLSearchParams(window.location.search).get('experience') === 'r7-live' ? (
             <LiveWorkspace
               persona={contentPersona}
               capabilities={session.capabilities}
