@@ -13,6 +13,8 @@ export function LiveWorkspace({ persona, capabilities }: {
   const [criteria, setCriteria] = useState<Record<string, string>>({})
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
+  const [updatedFrom, setUpdatedFrom] = useState('')
+  const [updatedTo, setUpdatedTo] = useState('')
   const [page, setPage] = useState(1)
   const [hasMore, setHasMore] = useState(false)
   const [results, setResults] = useState<RecordSummary[]>([])
@@ -39,7 +41,7 @@ export function LiveWorkspace({ persona, capabilities }: {
   const search = async (nextPage: number) => {
     if (!sourceId || searching) return
     const submitted = Object.fromEntries(Object.entries(criteria).filter(([, v]) => v.trim()).map(([k, v]) => [k, v.trim()]))
-    if (!Object.keys(submitted).length && !dateFrom && !dateTo) {
+    if (!Object.keys(submitted).length && !dateFrom && !dateTo && !updatedFrom && !updatedTo) {
       setError('Enter at least one search value or a date range.'); return
     }
     setSearching(true); setError('')
@@ -47,7 +49,7 @@ export function LiveWorkspace({ persona, capabilities }: {
       const response = await contentApi<SearchResponse>('/api/v1/business/search', persona, {
         method: 'POST',
         body: JSON.stringify({ sourceId, criteria: submitted, dateFrom: toDate(dateFrom), dateTo: toDate(dateTo, true),
-          lastUpdatedFrom: null, lastUpdatedTo: null, page: nextPage, pageSize: 25 }),
+          lastUpdatedFrom: toDate(updatedFrom), lastUpdatedTo: toDate(updatedTo, true), page: nextPage, pageSize: 25 }),
       })
       setResults(response.records); setPage(response.page); setHasMore(response.hasMore)
       setSearched(true); setRecord(null); setDocumentId('')
@@ -62,7 +64,7 @@ export function LiveWorkspace({ persona, capabilities }: {
     } catch (e) { setError(e instanceof Error ? e.message : 'Could not load record') }
     finally { setLoading(false) }
   }
-  const clear = () => { setCriteria({}); setDateFrom(''); setDateTo(''); setResults([]); setRecord(null); setDocumentId(''); setSearched(false); setError('') }
+  const clear = () => { setCriteria({}); setDateFrom(''); setDateTo(''); setUpdatedFrom(''); setUpdatedTo(''); setResults([]); setRecord(null); setDocumentId(''); setSearched(false); setError('') }
 
   if (selectedDocument && can('VIEW_PDF')) {
     return <section className="v-live-viewer" aria-label="Secure document viewer">
@@ -86,13 +88,15 @@ export function LiveWorkspace({ persona, capabilities }: {
     <div className="v-live-layout">
       <form className="v-live-panel v-live-filters" onSubmit={(e: FormEvent) => { e.preventDefault(); void search(1) }}>
         <h2>Search records</h2>
-        <label>Source<select value={sourceId} onChange={e => { setSourceId(e.target.value); setCriteria({}); clear(); setSourceId(e.target.value) }}>
+        <label>Source<select value={sourceId} onChange={e => { clear(); setSourceId(e.target.value) }}>
           {schema.sources.map(s => <option key={s.sourceId} value={s.sourceId}>{s.displayName}</option>)}</select></label>
         {source?.fields.map(f => <label key={f.fieldKey}>{f.displayLabel}<input value={criteria[f.fieldKey] ?? ''}
           onChange={e => setCriteria(prev => ({ ...prev, [f.fieldKey]: e.target.value }))}
           placeholder={f.searchMode === 'PARTIAL' ? 'Contains' : f.searchMode === 'PREFIX' ? 'Starts with' : 'Exact match'} /></label>)}
         <div className="v-live-dates"><label>Date from<input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}/></label>
         <label>Date to<input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}/></label></div>
+        <div className="v-live-dates"><label>Updated from<input type="date" value={updatedFrom} onChange={e => setUpdatedFrom(e.target.value)}/></label>
+        <label>Updated to<input type="date" value={updatedTo} onChange={e => setUpdatedTo(e.target.value)}/></label></div>
         <button className="v-btn primary" type="submit" disabled={searching || !sourceId}><Search size={16}/>{searching ? 'Searching…' : 'Search'}</button>
       </form>
       <section className="v-live-panel v-live-results" aria-label="Search results">
