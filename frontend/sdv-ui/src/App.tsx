@@ -1,6 +1,7 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
 import { PdfViewer } from './PdfViewer'
 import BusinessWorkspace from './BusinessWorkspace'
+import { LiveWorkspace } from './r7/LiveWorkspace'
 import Icon, { type IconName } from './Icon'
 import { AdminSection, AdminTabs, AttentionRow, AttentionTile, CapacityMeter, EmptyState, StateSheet, StatusPill, humanize, statusTone, type StatusTone } from './AdminKit'
 import { beginOidcLogin, clearOidcSession, endOidcSession, getAccessToken, handleOidcCallback, isLocalSecurityMode, OIDC_SESSION_EXPIRED_EVENT } from './auth'
@@ -1106,11 +1107,18 @@ function App() {
         ) : !canSearchRecords ? (
           <section className="panel top-gap"><span className="kicker">Permission Boundary</span><h2>Business record search is not assigned</h2><p className="muted">Your current roles do not grant business-record search.</p></section>
         ) : (
+          (new URLSearchParams(window.location.search).get('experience') === 'r7-live' ? (
+            <LiveWorkspace
+              persona={contentPersona}
+              capabilities={session.capabilities}
+            />
+          ) : (
           <BusinessWorkspace
             persona={selectedPersona}
             capabilities={session.capabilities}
             onViewerStateChange={handleBusinessViewerState}
           />
+          ))
         )
       )}
 
