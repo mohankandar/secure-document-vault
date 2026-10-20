@@ -1143,7 +1143,7 @@ function App() {
             capabilities={session.capabilities}
             onViewerStateChange={handleBusinessViewerState}
           />
-          ))
+          )
         )
       )}
 

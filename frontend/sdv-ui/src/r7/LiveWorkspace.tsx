@@ -242,7 +242,7 @@ export function LiveWorkspace({ persona, capabilities }: {
                 <strong>{event.action.replaceAll('_', ' ')}</strong><small>{event.documentName}</small>
                 <span>{new Date(event.occurredAt).toLocaleString()} · {event.actorId || event.actorType} · {event.outcome}</span>
               </li>)}</ol>}
-          </section>
+          </section>}
         </>}
       </section>}
     </div>
