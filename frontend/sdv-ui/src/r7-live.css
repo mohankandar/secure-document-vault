@@ -146,3 +146,15 @@
 .sdv-r7-live .v7-live-adminintro-identity small{font-size:11px;color:#737d82}
 .sdv-r7-live .ax-workspace.business-admin-workspace .ax-section,.sdv-r7-live .ax-workspace.tenant-it-workspace .ax-section{border-radius:9px}
 @media(max-width:750px){.sdv-r7-live .v7-live-adminintro{flex-direction:column;align-items:stretch;padding:18px}.sdv-r7-live .v7-live-adminintro-identity{border-left:0;border-top:1px solid #dce1e2;padding:12px 0 0;max-width:none}}
+
+/* R7 secure viewer wrapper. All PDF actions remain inside the authenticated backend viewer. */
+.sdv-r7-live .v-live-viewer{height:calc(100dvh - 96px);min-height:520px;display:flex;flex-direction:column;background:#f6f8f7;border:1px solid #dce1e2;border-radius:10px;overflow:hidden}
+.sdv-r7-live .v-live-viewer-context{display:flex;gap:16px;align-items:center;padding:10px 16px;background:#fff;border-bottom:1px solid #dce1e2;min-height:64px;flex-shrink:0}
+.sdv-r7-live .v-live-viewer-back{display:flex;align-items:center;gap:7px;border:1px solid #dce1e2;border-radius:7px;background:#fff;color:#166a4f;padding:9px 11px;white-space:nowrap;cursor:pointer;font-size:12px}
+.sdv-r7-live .v-live-viewer-current{display:flex;flex-direction:column;gap:3px;min-width:0}
+.sdv-r7-live .v-live-viewer-current span{font-size:10px;color:#166a4f;letter-spacing:.06em;text-transform:uppercase}
+.sdv-r7-live .v-live-viewer-current strong{font-size:13px;font-weight:600;color:#14191c;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sdv-r7-live .v-live-viewer-current small{font-size:11px;color:#737d82}
+.sdv-r7-live .v-live-viewer-secure{margin-left:auto;color:#4a5459;font-size:11px;white-space:nowrap}
+.sdv-r7-live .v-live-viewer-content{flex:1;min-height:0;overflow:auto}
+@media(max-width:700px){.sdv-r7-live .v-live-viewer{height:calc(100dvh - 85px);min-height:480px}.sdv-r7-live .v-live-viewer-context{gap:8px;padding:8px}.sdv-r7-live .v-live-viewer-secure{display:none}.sdv-r7-live .v-live-viewer-back{font-size:0;gap:0}.sdv-r7-live .v-live-viewer-back svg{width:19px;height:19px}}
