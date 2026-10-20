@@ -2,6 +2,7 @@ import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
 import { PdfViewer } from './PdfViewer'
 import BusinessWorkspace from './BusinessWorkspace'
 import { LiveWorkspace } from './r7/LiveWorkspace'
+import { LiveRail } from './r7/LiveRail'
 import Icon, { type IconName } from './Icon'
 import { AdminSection, AdminTabs, AttentionRow, AttentionTile, CapacityMeter, EmptyState, StateSheet, StatusPill, humanize, statusTone, type StatusTone } from './AdminKit'
 import { beginOidcLogin, clearOidcSession, endOidcSession, getAccessToken, handleOidcCallback, isLocalSecurityMode, OIDC_SESSION_EXPIRED_EVENT } from './auth'
@@ -1013,6 +1014,13 @@ function App() {
       </header>
 
       {drawerOpen && <button className="nav-drawer-backdrop" aria-label="Close navigation" onClick={() => setDrawerOpen(false)} />}
+      {new URLSearchParams(window.location.search).get('experience') === 'r7-live' ? (
+        <LiveRail active={view} session={session} localMode={localMode} persona={selectedPersona}
+          collapsed={sidebarCollapsed} drawerOpen={drawerOpen} canSearch={canSearchRecords}
+          canAdmin={canViewAdministration} canOperations={canViewTechnicalFailures}
+          onNavigate={navigate} onChangePersona={changeDemoRole} onToggleCollapsed={toggleSidebar}
+          onSignOut={signOut}/>
+      ) : (
       <aside className={`modern-sidebar ${drawerOpen ? 'drawer-open' : ''}`}>
         <div className="sidebar-brand-row vero-brand-row">
           <div className="sidebar-brand vero-wordmark" title="vero"><strong>vero</strong><span className="vero-brand-dot" aria-hidden="true" /></div>
@@ -1060,6 +1068,7 @@ function App() {
           {!localMode && <button type="button" className="sidebar-signout" onClick={signOut}>Sign out</button>}
         </div>
       </aside>
+      )}
 
       <main className="modern-main-content">
         <div className="sdv-page">

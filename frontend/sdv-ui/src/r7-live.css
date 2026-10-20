@@ -86,3 +86,23 @@
 .sdv-r7-live .v-live-viewer{height:calc(100dvh - 132px);min-height:500px}
 @media(max-width:1100px){.sdv-r7-live .v-live-layout{grid-template-columns:minmax(230px,1fr) minmax(270px,1.2fr)}.sdv-r7-live .v-live-detail{grid-column:1/-1}}
 @media(max-width:700px){.sdv-r7-live .v-live-workspace{padding:12px}.sdv-r7-live .v-live-layout{display:flex;flex-direction:column}.sdv-r7-live .v-live-panel{width:100%}.sdv-r7-live .v-live-head{flex-direction:column}.sdv-r7-live .v-live-viewer{height:calc(100dvh - 78px)}}
+
+/* R7 live navigation: genuine session and capability state from SDV App. */
+.sdv-r7-live .v7-live-rail{background:#13171a;color:#e6ebec;display:flex;flex-direction:column;border-right:1px solid #252c30}
+.sdv-r7-live .v7-live-brand{height:60px;display:flex;align-items:center;justify-content:space-between;padding:0 15px;border-bottom:1px solid #252c30}
+.sdv-r7-live .v7-live-brand strong{font-size:20px;letter-spacing:-.055em}.sdv-r7-live .v7-live-brand strong span{color:#3fb587}
+.sdv-r7-live .v7-live-brand button{background:transparent;border:0;color:#a2acb0;padding:7px}
+.sdv-r7-live .v7-live-tenant{display:flex;gap:10px;align-items:center;margin:15px 10px;padding:11px;border:1px solid #344045;border-radius:8px;min-width:0}
+.sdv-r7-live .v7-live-tenant-icon{display:grid;place-items:center;background:#253d34;color:#8edcbb;border-radius:7px;height:32px;width:32px;flex-shrink:0}
+.sdv-r7-live .v7-live-tenant div,.sdv-r7-live .v7-live-user div{min-width:0;display:grid;gap:2px}.sdv-r7-live .v7-live-tenant strong,.sdv-r7-live .v7-live-user strong{font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sdv-r7-live .v7-live-tenant small,.sdv-r7-live .v7-live-user small{font-size:11px;color:#a2acb0}
+.sdv-r7-live .v7-live-links{flex:1;overflow-y:auto;padding:0 10px}.sdv-r7-live .v7-live-navgroup{margin:16px 10px 7px;font-size:10px;text-transform:uppercase;letter-spacing:.09em;color:#839095}
+.sdv-r7-live .v7-live-navitem{display:flex;align-items:center;gap:11px;width:100%;min-height:42px;padding:9px 11px;border:0;border-radius:7px;background:transparent;color:#bcc7ca;text-align:left;font-size:13px;cursor:pointer}
+.sdv-r7-live .v7-live-navitem:hover{background:#1d2928;color:#fff}.sdv-r7-live .v7-live-navitem.is-active{background:#11281e;color:#a8efd2;box-shadow:inset 2px 0 #3fb587}
+.sdv-r7-live .v7-live-footer{border-top:1px solid #252c30;padding:12px;display:grid;gap:12px}.sdv-r7-live .v7-live-user{display:flex;align-items:center;gap:9px;min-width:0}
+.sdv-r7-live .v7-live-avatar{background:#253d34;color:#b2ebd3;border-radius:50%;width:32px;height:32px;flex-shrink:0;display:grid;place-items:center;font-size:11px}
+.sdv-r7-live .v7-live-persona{display:grid;gap:6px;font-size:11px;color:#a2acb0}.sdv-r7-live .v7-live-persona select{width:100%;min-width:0;background:#1a1f23;color:#e6ebec;border:1px solid #344045;border-radius:6px;padding:7px}
+.sdv-r7-live .v7-live-signout{display:flex;gap:8px;align-items:center;padding:7px;border:0;background:transparent;color:#bbc5c8;cursor:pointer}
+.sdv-r7-live.sidebar-collapsed .v7-live-navitem span,.sdv-r7-live.sidebar-collapsed .v7-live-tenant div,.sdv-r7-live.sidebar-collapsed .v7-live-tenant-icon+div,.sdv-r7-live.sidebar-collapsed .v7-live-footer,.sdv-r7-live.sidebar-collapsed .v7-live-navgroup{display:none}
+.sdv-r7-live.sidebar-collapsed .v7-live-tenant{padding:7px;justify-content:center}.sdv-r7-live.sidebar-collapsed .v7-live-brand strong{font-size:15px}
+.sdv-r7-live.sidebar-collapsed .v7-live-brand{padding:0 6px}.sdv-r7-live.sidebar-collapsed .v7-live-navitem{justify-content:center;padding:10px 5px}
