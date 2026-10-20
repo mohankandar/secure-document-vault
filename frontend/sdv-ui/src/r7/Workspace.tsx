@@ -1,136 +1,278 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react'
-import { ArrowRight, FileText, Search, X } from 'lucide-react'
-import { contentApi, type SearchSchema, type SearchSource, type RecordSummary, type SearchResponse, type BusinessRecord, type DocumentActivity } from '../api'
-import { PdfViewer } from '../PdfViewer'
-import { Badge, Empty, Skeleton } from './ui'
+import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import { AlertTriangle, ArrowRight, ChevronDown, ChevronUp, FileText, Search, SlidersHorizontal, X } from 'lucide-react'
+import { useStore } from './store'
+import { SOURCES, BUSINESS_LIMITS, type Field, type RecordItem } from './data'
+import { Badge, Callout, Drawer, Empty, ErrorState, Skeleton, fmtDate, fmtRel, humanize } from './ui'
+import { Viewer } from './Viewer'
 
-type Tab = 'search' | 'results' | 'viewer' | 'activity'
-export function Workspace({ persona, capabilities }: { persona: 'business' | 'steward'; capabilities: string[] }) {
-  const [schema, setSchema] = useState<SearchSchema>({sources:[]})
-  const [sourceId, setSourceId] = useState('')
-  const [criteria, setCriteria] = useState<Record<string,string>>({})
+const MODE_HINT = { EXACT: 'Exact', PREFIX: 'Starts with', PARTIAL: 'Contains' } as const
+type Criteria = Record<string, string>
+
+const valueOf = (r: RecordItem, label: string) => [...r.identifiers, ...r.metadata].find((x) => x.label === label)?.value ?? ''
+const normalize = (f: Field, v: string) => (f.normalization === 'DIGITS_ONLY' ? v.replace(/\D/g, '') : v.trim().toLowerCase())
+
+function matches(r: RecordItem, sourceId: string, fields: Field[], c: Criteria, from: string, to: string) {
+  if (r.sourceId !== sourceId) return false
+  for (const f of fields) {
+    const q = c[f.key]?.trim()
+    if (!q) continue
+    const have = normalize(f, valueOf(r, f.label))
+    const want = normalize(f, q)
+    if (f.mode === 'EXACT' && have !== want) return false
+    if (f.mode === 'PREFIX' && !have.startsWith(want)) return false
+    if (f.mode === 'PARTIAL' && !have.includes(want)) return false
+  }
+  if (from && r.updatedAt.slice(0, 10) < from) return false
+  if (to && r.updatedAt.slice(0, 10) > to) return false
+  return true
+}
+
+function useMediaQuery(q: string) {
+  const [m, setM] = useState(() => window.matchMedia(q).matches)
+  useEffect(() => {
+    const mq = window.matchMedia(q)
+    const on = () => setM(mq.matches)
+    mq.addEventListener('change', on)
+    return () => mq.removeEventListener('change', on)
+  }, [q])
+  return m
+}
+
+export function Workspace() {
+  const { records, scenario, selectedRef, setSelectedRef, openDocId, setOpenDocId, can, addDocActivity } = useStore()
+  const wide = useMediaQuery('(min-width: 1024px)')
+  const [sourceId, setSourceId] = useState(SOURCES[0].id)
+  const source = SOURCES.find((s) => s.id === sourceId)!
+  const fields = source.fields.filter((f) => f.searchable)
+  const [draft, setDraft] = useState<Criteria>({ serviceEntity: 'north' })
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
-  const [updatedFrom, setUpdatedFrom] = useState('')
-  const [updatedTo, setUpdatedTo] = useState('')
-  const [tab, setTab] = useState<Tab>('search')
-  const [results, setResults] = useState<RecordSummary[]>([])
-  const [searched, setSearched] = useState(false)
-  const [page, setPage] = useState(1)
-  const [more, setMore] = useState(false)
-  const [record, setRecord] = useState<BusinessRecord|null>(null)
-  const [docId, setDocId] = useState('')
-  const [lastDocId, setLastDocId] = useState('')
-  const [activity, setActivity] = useState<(DocumentActivity & { documentName: string })[]>([])
-  const [includeViews, setIncludeViews] = useState(false)
-  const [range, setRange] = useState('90')
-  const [loading, setLoading] = useState(false)
-  const [loadingRecord, setLoadingRecord] = useState(false)
-  const [loadingActivity, setLoadingActivity] = useState(false)
-  const [error, setError] = useState('')
-  const [activityError, setActivityError] = useState('')
-  const searchSeq = useRef(0), recordSeq = useRef(0), activitySeq = useRef(0)
-  const source: SearchSource | undefined = schema.sources.find(s=>s.sourceId===sourceId)
-  const canView = capabilities.includes('VIEW_PDF')
-  const selectedDoc = record?.documents.find(d=>d.documentId===docId)
-  const iso = (v:string,end=false)=>v ? v+'T'+(end?'23:59:59.999':'00:00:00.000')+'Z' : null
+  const [applied, setApplied] = useState<{ sourceId: string; c: Criteria; from: string; to: string } | null>({ sourceId: SOURCES[0].id, c: { serviceEntity: 'north' }, from: '', to: '' })
+  const [formOpen, setFormOpen] = useState(false)
+  const [touched, setTouched] = useState(false)
 
-  useEffect(()=>{
-    let active=true
-    ++searchSeq.current; ++recordSeq.current; ++activitySeq.current
-    setResults([]);setRecord(null);setDocId('');setLastDocId('');setActivity([]);setSearched(false);setTab('search');setError('')
-    void contentApi<SearchSchema>('/api/v1/business/search-schema',persona)
-      .then(x=>{if(active){setSchema(x);setSourceId(x.sources[0]?.sourceId??'')}})
-      .catch(e=>{if(active)setError(e instanceof Error?e.message:'Search configuration unavailable')})
-    return ()=>{active=false;++searchSeq.current;++recordSeq.current;++activitySeq.current}
-  },[persona])
+  const results = useMemo(() => {
+    if (!applied) return []
+    const src = SOURCES.find((s) => s.id === applied.sourceId)!
+    return records.filter((r) => matches(r, applied.sourceId, src.fields, applied.c, applied.from, applied.to))
+  }, [applied, records])
 
-  const clear=()=>{++searchSeq.current;++recordSeq.current;++activitySeq.current;setCriteria({});setFrom('');setTo('');setUpdatedFrom('');setUpdatedTo('');setResults([]);setRecord(null);setDocId('');setLastDocId('');setActivity([]);setSearched(false);setLoading(false);setLoadingRecord(false);setLoadingActivity(false);setError('');setTab('search')}
-  const search=async(next=1)=>{
-    if(loading||!sourceId)return
-    const filters=Object.fromEntries(Object.entries(criteria).filter(([,v])=>v.trim()).map(([k,v])=>[k,v.trim()]))
-    if(!Object.keys(filters).length&&!from&&!to&&!updatedFrom&&!updatedTo){setError('Enter at least one search value or date filter.');return}
-    if((from&&to&&from>to)||(updatedFrom&&updatedTo&&updatedFrom>updatedTo)){setError('Start date cannot be after end date.');return}
-    const token=++searchSeq.current;++recordSeq.current;++activitySeq.current
-    setLoading(true);setError('');setResults([]);setRecord(null);setDocId('');setLastDocId('');setSearched(false);setPage(next);setActivity([])
-    try {
-      const x=await contentApi<SearchResponse>('/api/v1/business/search',persona,{method:'POST',body:JSON.stringify({sourceId,criteria:filters,dateFrom:iso(from),dateTo:iso(to,true),lastUpdatedFrom:iso(updatedFrom),lastUpdatedTo:iso(updatedTo,true),page:next,pageSize:25})})
-      if(token!==searchSeq.current)return
-      setResults(x.records);setPage(x.page);setMore(x.hasMore);setSearched(true);setTab('results')
-    }catch(e){if(token===searchSeq.current)setError(e instanceof Error?e.message:'Search failed')}
-    finally{if(token===searchSeq.current)setLoading(false)}
+  const selected = records.find((r) => r.ref === selectedRef) ?? null
+  const hasCriteria = Object.values(draft).some((v) => v.trim()) || from || to
+
+  const submit = (e: FormEvent) => {
+    e.preventDefault()
+    setTouched(true)
+    if (!hasCriteria) return
+    setApplied({ sourceId, c: { ...draft }, from, to })
+    setFormOpen(false)
+    setSelectedRef(null)
   }
-  const selectRecord=async(ref:string)=>{
-    const token=++recordSeq.current;++activitySeq.current
-    setRecord(null);setDocId('');setLastDocId('');setActivity([]);setLoadingRecord(true);setError('')
-    try{const x=await contentApi<BusinessRecord>('/api/v1/business/records/'+encodeURIComponent(ref),persona);if(token===recordSeq.current)setRecord(x)}
-    catch(e){if(token===recordSeq.current)setError(e instanceof Error?e.message:'Record unavailable')}
-    finally{if(token===recordSeq.current)setLoadingRecord(false)}
+  const clear = () => { setDraft({}); setFrom(''); setTo(''); setApplied(null); setSelectedRef(null); setTouched(false) }
+  const removeChip = (key: string) => {
+    if (!applied) return
+    const c = { ...applied.c }; delete c[key]
+    const next = key === 'from' ? { ...applied, c, from: '' } : key === 'to' ? { ...applied, c, to: '' } : { ...applied, c }
+    setDraft(next.c); setFrom(next.from); setTo(next.to)
+    setApplied(Object.values(next.c).some(Boolean) || next.from || next.to ? next : null)
   }
-  const openDoc=(id:string)=>{if(canView&&record?.documents.some(d=>d.documentId===id)){setDocId(id);setLastDocId(id);setTab('viewer')}}
-  useEffect(()=>{
-    if(tab!=='activity'||!record)return
-    const token=++activitySeq.current;setLoadingActivity(true);setActivityError('');setActivity([])
-    void Promise.all(record.documents.map(async d=>{
-      const q=new URLSearchParams({includeViewEvents:String(includeViews),limit:'200'})
-      if(range!=='all')q.set('from',new Date(Date.now()-Number(range)*86400000).toISOString())
-      const rows=await contentApi<DocumentActivity[]>('/api/v1/business/documents/'+encodeURIComponent(d.documentId)+'/activity?'+q,persona)
-      return rows.map(x=>({...x,documentName:d.originalFilename}))
-    })).then(parts=>{if(token===activitySeq.current)setActivity(parts.flat().sort((a,b)=>b.occurredAt.localeCompare(a.occurredAt)))})
-      .catch(e=>{if(token===activitySeq.current)setActivityError(e instanceof Error?e.message:'Activity unavailable')})
-      .finally(()=>{if(token===activitySeq.current)setLoadingActivity(false)})
-    return()=>{++activitySeq.current}
-  },[tab,record,range,includeViews,persona])
 
-  const fields=source?.fields??[]
-  return <div className="v-body" style={{maxWidth:'none'}}>
-    <nav className="v-tabs" aria-label="Business workspace">
-      {(['search','results','viewer','activity'] as const).map(t=><button key={t} type="button" aria-current={tab===t?'page':undefined}
-        disabled={t==='results'&&!searched||t==='viewer'&&(!record||!record.documents.length||!canView)||t==='activity'&&!record}
-        onClick={()=>{if(t==='viewer'){const x=record?.documents.find(d=>d.documentId===lastDocId)??record?.documents[0];if(x)openDoc(x.documentId)}else {setDocId('');setTab(t)}}}>
-        {t==='viewer'?'Document Viewer':t[0].toUpperCase()+t.slice(1)}</button>)}
-    </nav>
-    {error&&<div className="v-panel" role="alert" style={{padding:14,color:'#b42318'}}>{error}</div>}
-    {tab==='search'&&<section className="ws-search" aria-label="Search records">
-      <div className="ws-search-head"><div className="titles"><div className="eyebrow">Records workspace</div><h1>Find a business record</h1></div>
-        <label className="v-field" style={{maxWidth:300}}>Source<select className="v-select" value={sourceId} onChange={e=>{clear();setSourceId(e.target.value)}}>{schema.sources.map(x=><option value={x.sourceId} key={x.sourceId}>{x.displayName}</option>)}</select></label>
+  const openDoc = (r: RecordItem, docId: string) => {
+    setSelectedRef(r.ref)
+    setOpenDocId(docId)
+    addDocActivity(docId, 'DOCUMENT_VIEWED')
+  }
+
+  const appliedSource = applied ? SOURCES.find((s) => s.id === applied.sourceId)! : source
+  const chips = applied ? [
+    ...Object.entries(applied.c).filter(([, v]) => v.trim()).map(([k, v]) => { const f = appliedSource.fields.find((x) => x.key === k)!; return { key: k, label: f.label, mode: MODE_HINT[f.mode], value: v } }),
+    ...(applied.from ? [{ key: 'from', label: 'Updated from', mode: '', value: applied.from }] : []),
+    ...(applied.to ? [{ key: 'to', label: 'Updated to', mode: '', value: applied.to }] : []),
+  ] : []
+
+  const collapsed = !wide && applied && !formOpen
+
+  return (
+    <div className={`ws${selected && wide ? ' has-insp' : ''}`}>
+      <section className="ws-search" aria-label="Search records">
+        <div className="ws-search-head">
+          <div className="titles">
+            <div className="eyebrow">Records workspace</div>
+            <h1>Find a record</h1>
+          </div>
+          {collapsed ? (
+            <button type="button" className="v-btn sm ws-search-toggle" onClick={() => setFormOpen(true)} aria-expanded="false"><SlidersHorizontal size={15} aria-hidden />Modify</button>
+          ) : !wide && applied ? (
+            <button type="button" className="v-btn quiet sm ws-search-toggle" onClick={() => setFormOpen(false)} aria-expanded="true"><ChevronUp size={15} aria-hidden />Hide</button>
+          ) : null}
+        </div>
+        {!collapsed && (
+          <form className="ws-search-form" onSubmit={submit} noValidate>
+            <label className="v-field">
+              <span>Source</span>
+              <select className="v-select" value={sourceId} onChange={(e) => { setSourceId(e.target.value); setDraft({}); setTouched(false) }}>
+                {SOURCES.filter((s) => s.status === 'ACTIVE').map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
+            </label>
+            <div className="ws-fields">
+              {fields.map((f) => (
+                <label key={f.key} className="v-field">
+                  <span>{f.label}<span className="v-hint">{MODE_HINT[f.mode]}</span></span>
+                  <input className="v-input" value={draft[f.key] ?? ''} inputMode={f.normalization === 'DIGITS_ONLY' ? 'numeric' : undefined} autoComplete="off" spellCheck={false}
+                    onChange={(e) => setDraft((d) => ({ ...d, [f.key]: e.target.value }))} placeholder={f.identifier ? 'Identifier' : ''} />
+                </label>
+              ))}
+            </div>
+            <fieldset className="v-field" style={{ border: 0, padding: 0, margin: 0 }}>
+              <legend className="v-label" style={{ marginBottom: 6 }}>Last updated</legend>
+              <div className="row" style={{ minWidth: 0 }}>
+                <input className="v-input" style={{ flex: '1 1 0', minWidth: 0 }} type="date" aria-label="Last updated from" value={from} onChange={(e) => setFrom(e.target.value)} />
+                <span className="faint" aria-hidden>–</span>
+                <input className="v-input" style={{ flex: '1 1 0', minWidth: 0 }} type="date" aria-label="Last updated to" value={to} onChange={(e) => setTo(e.target.value)} />
+              </div>
+            </fieldset>
+            {touched && !hasCriteria && <Callout tone="warn" title="Enter at least one criterion">Open-ended browsing isn&apos;t supported. Search by an identifier or field.</Callout>}
+            <div className="row">
+              <button type="submit" className="v-btn primary grow"><Search size={16} aria-hidden />Search</button>
+              <button type="button" className="v-btn" onClick={clear}>Clear</button>
+            </div>
+            <small className="faint">Up to {BUSINESS_LIMITS.maxResults} matches. Results include only records your role is authorized to see.</small>
+          </form>
+        )}
+        {collapsed && chips.length > 0 && (
+          <div style={{ padding: '0 16px 14px' }} className="ws-chips">
+            {chips.map((c) => <span key={c.key} className="ws-chip"><b>{c.label}</b>{c.value}</span>)}
+          </div>
+        )}
+      </section>
+
+      <section className="ws-results" aria-label="Search results">
+        <ResultsHeader count={results.length} applied={!!applied} sourceName={appliedSource.name} chips={wide ? chips : []} onRemove={removeChip} />
+        {scenario === 'loading' ? <Skeleton rows={7} /> : scenario === 'error' ? <ErrorState what="search results" /> : !applied ? (
+          <Empty title="Search to begin" icon={<Search size={20} />}>Choose a source and enter an identifier, name or entity. Each field shows how it matches.</Empty>
+        ) : scenario === 'empty' || results.length === 0 ? (
+          <Empty title="No matching records" action={<button type="button" className="v-btn sm" onClick={() => { setFormOpen(true) }}>Modify search</button>}>
+            Exact fields must match in full. Try fewer criteria, or a starts-with field such as last name.
+          </Empty>
+        ) : (
+          <>
+            <ul className="ws-list">
+              {results.map((r) => (
+                <li key={r.ref}>
+                  <button type="button" className="ws-rec" aria-current={r.ref === selectedRef} onClick={() => setSelectedRef(r.ref === selectedRef && wide ? null : r.ref)}>
+                    <span className="ws-stack" aria-hidden><i /><i /><i /><span>{r.docs.length}</span></span>
+                    <span className="stack grow" style={{ gap: 4 }}>
+                      <span className="ids">{r.identifiers.map((id) => <span key={id.label}><b>{id.label}</b>{id.value}</span>)}</span>
+                      <span className="title">{r.title}</span>
+                      <span className="meta">
+                        <span>{r.docs.length} document{r.docs.length === 1 ? '' : 's'}</span>
+                        <span>Updated {fmtRel(r.updatedAt)}</span>
+                        {r.incomplete && <Badge tone="warn">Incomplete submission</Badge>}
+                      </span>
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+            <div className="ws-pager"><span>Showing 1–{results.length} of {results.length}</span><span>Page 1 of 1</span></div>
+          </>
+        )}
+      </section>
+
+      {selected && wide && <aside className="ws-inspector" aria-label="Record inspector"><Inspector record={selected} onClose={() => setSelectedRef(null)} onOpen={(id) => openDoc(selected, id)} /></aside>}
+      {selected && !wide && !openDocId && (
+        <Drawer eyebrow="Record" title={selected.identifiers[0].value} onClose={() => setSelectedRef(null)}
+          footer={can('VIEW_PDF') && selected.docs[0] ? <button type="button" className="v-btn primary" onClick={() => openDoc(selected, selected.docs[0].id)}>Open documents<ArrowRight size={16} aria-hidden /></button> : undefined}>
+          <InspectorBody record={selected} onOpen={(id) => openDoc(selected, id)} />
+        </Drawer>
+      )}
+      {selected && openDocId && <Viewer record={selected} results={results} docId={openDocId} onClose={() => setOpenDocId(null)} />}
+    </div>
+  )
+}
+
+function ResultsHeader({ count, applied, sourceName, chips, onRemove }: { count: number; applied: boolean; sourceName: string; chips: { key: string; label: string; mode: string; value: string }[]; onRemove: (k: string) => void }) {
+  const { scenario } = useStore()
+  return (
+    <div className="ws-results-head">
+      <div className="stack" style={{ gap: 2 }}>
+        <h2>{applied && scenario === 'live' ? `${count} record${count === 1 ? '' : 's'}` : 'Results'}</h2>
+        <span className="faint" style={{ fontSize: 13 }}>{sourceName}</span>
       </div>
-      <form className="ws-search-form" onSubmit={(e:FormEvent)=>{e.preventDefault();void search(1)}}>
-        <div className="eyebrow">Identifiers</div>
-        <div className="ws-fields">{fields.filter(f=>f.businessIdentifier).map(f=><label key={f.fieldKey} className="v-field"><span>{f.displayLabel}<span className="v-hint">{f.searchMode==='EXACT'?'Exact match':f.searchMode==='PREFIX'?'Starts with':'Contains'}</span></span>
-          <input className="v-input" value={criteria[f.fieldKey]??''} onChange={e=>setCriteria(v=>({...v,[f.fieldKey]:e.target.value}))}/></label>)}</div>
-        {fields.some(f=>!f.businessIdentifier)&&<><div className="eyebrow" style={{marginTop:20}}>Record details</div><div className="ws-fields">{fields.filter(f=>!f.businessIdentifier).map(f=><label key={f.fieldKey} className="v-field"><span>{f.displayLabel}<span className="v-hint">{f.searchMode==='EXACT'?'Exact match':f.searchMode==='PREFIX'?'Starts with':'Contains'}</span></span>
-          <input className="v-input" value={criteria[f.fieldKey]??''} onChange={e=>setCriteria(v=>({...v,[f.fieldKey]:e.target.value}))}/></label>)}</div></>}
-        <div className="eyebrow" style={{marginTop:20}}>Dates</div>
-        <div className="ws-fields"><fieldset className="v-field" style={{border:0,padding:0,margin:0}}><legend className="v-label">Date range</legend><div className="row"><input className="v-input" type="date" aria-label="Date from" value={from} onChange={e=>setFrom(e.target.value)}/><span>to</span><input className="v-input" type="date" aria-label="Date to" value={to} onChange={e=>setTo(e.target.value)}/></div></fieldset>
-          <fieldset className="v-field" style={{border:0,padding:0,margin:0}}><legend className="v-label">Last updated</legend><div className="row"><input className="v-input" type="date" aria-label="Updated from" value={updatedFrom} onChange={e=>setUpdatedFrom(e.target.value)}/><span>to</span><input className="v-input" type="date" aria-label="Updated to" value={updatedTo} onChange={e=>setUpdatedTo(e.target.value)}/></div></fieldset></div>
-        <div className="row" style={{justifyContent:'flex-end',marginTop:22}}><small className="faint grow">Any one field or date filter is enough to search.</small><button type="button" className="v-btn quiet" onClick={clear}>Clear</button><button type="submit" className="v-btn primary" disabled={!sourceId||loading}><Search size={16}/>{loading?'Searching…':'Search records'}</button></div>
-      </form>
-    </section>}
-    {tab==='results'&&<section className="ws-results" aria-label="Search results">
-      <div className="ws-results-head"><h2>{searched?results.length+' records · page '+page:'Results'}</h2></div>
-      {loading&&<Skeleton rows={4}/>}
-      {searched&&!results.length&&<Empty title="No matching records">Try different criteria.</Empty>}
-      <ul className="ws-list">{results.map(r=><li key={r.recordRef}><button className="ws-rec" type="button" aria-current={record?.recordRef===r.recordRef} onClick={()=>void selectRecord(r.recordRef)}>
-        <span className="ws-stack" aria-hidden><i/><i/><i/><span>{r.availableDocumentCount}</span></span>
-        <span className="stack grow"><span className="ids">{r.identifiers.map(v=><span key={v.fieldKey}><b>{v.displayLabel}</b>{v.value}</span>)}</span>
-          <span className="title">{r.metadataPreview.map(v=>v.value).join(' · ')||'Business record'}</span>
-          <span className="meta">{r.availableDocumentCount} documents · {r.submissionCount} submissions {r.incomplete&&<Badge tone="warn">Incomplete submission</Badge>}</span></span><ArrowRight size={16}/></button></li>)}</ul>
-      {searched&&<div className="ws-pager"><button className="v-btn sm" disabled={page<=1||loading} onClick={()=>void search(page-1)}>Previous</button><span>Page {page}</span><button className="v-btn sm" disabled={!more||loading} onClick={()=>void search(page+1)}>Next</button></div>}
-      {loadingRecord&&<p role="status">Loading record…</p>}
-      {record&&<aside className="ws-inspector" aria-label="Record inspector"><header className="ws-insp-head"><div className="stack grow"><span className="eyebrow">Record</span><h2>{record.identifiers.map(i=>i.value).join(' · ')}</h2></div><button className="v-btn quiet icon" aria-label="Close record" onClick={()=>setRecord(null)}><X size={18}/></button></header>
-        <div className="ws-insp-body"><div className="ws-ids">{record.identifiers.map(i=><div key={i.fieldKey}><span>{i.displayLabel}</span><strong>{i.value}</strong></div>)}</div>
-          {record.incompleteAttention&&<Badge tone="warn">Incomplete submissions</Badge>}
-          <h3>Documents ({record.documents.length})</h3><ul className="ws-docs">{record.documents.map(d=><li key={d.documentId}><button type="button" className="ws-doc" disabled={!canView} onClick={()=>openDoc(d.documentId)}><span className="sheet" aria-hidden/><span className="grow"><strong>{d.originalFilename}</strong><span>Ingested {new Date(d.ingestedAt).toLocaleDateString()}</span></span><FileText size={16}/></button></li>)}</ul>
-          <h3>Details</h3><dl className="v-kv">{record.metadata.map(v=><div key={v.fieldKey}><dt>{v.displayLabel}</dt><dd>{v.value}</dd></div>)}</dl>
-          <button type="button" className="v-btn" onClick={()=>setTab('activity')}>Record activity</button></div></aside>}
-    </section>}
-    {tab==='viewer'&&selectedDoc&&canView&&<section aria-label="Secure document viewer"><PdfViewer key={selectedDoc.documentId} documentId={selectedDoc.documentId} filename={selectedDoc.originalFilename} documents={record?.documents??[]}
-      selectedDocumentId={docId} onSelectDocument={openDoc} persona={persona} canRedact={capabilities.includes('PERMANENT_REDACTION')} canDownload={capabilities.includes('DOWNLOAD_CURRENT_PDF')} canPrint={capabilities.includes('PRINT_DOCUMENT')} canTag={capabilities.includes('ADD_DOCUMENT_TAG')} canComment={capabilities.includes('ADD_DOCUMENT_COMMENT')} embedded onClose={()=>{setDocId('');setTab('results')}}/></section>}
-    {tab==='activity'&&record&&<section className="v-panel"><div className="v-panel-body"><div className="row between"><h2>Record activity</h2><label className="v-field">Period<select className="v-select" value={range} onChange={e=>setRange(e.target.value)}><option value="30">30 days</option><option value="90">90 days</option><option value="365">365 days</option><option value="all">All</option></select></label></div>
-      <label className="v-field"><input type="checkbox" checked={includeViews} onChange={e=>setIncludeViews(e.target.checked)}/> Include document view activity</label>
-      {activityError&&<p role="alert">{activityError}</p>}{loadingActivity&&<p role="status">Loading activity…</p>}{!loadingActivity&&!activity.length&&<p>No activity for this record.</p>}
-      <ol className="v-timeline">{activity.map(e=><li key={e.auditEventId}><div className="stack"><strong>{e.action.replaceAll('_',' ')} · {e.documentName}</strong><span>{e.actorId||e.actorType} · {new Date(e.occurredAt).toLocaleString()} · {e.outcome}</span></div></li>)}</ol>
-    </div></section>}
-  </div>
+      {chips.length > 0 && (
+        <div className="ws-chips" aria-label="Applied criteria">
+          {chips.map((c) => (
+            <span key={c.key} className="ws-chip"><b>{c.label}{c.mode && ` · ${c.mode.toLowerCase()}`}</b>{c.value}
+              <button type="button" onClick={() => onRemove(c.key)} aria-label={`Remove ${c.label}`}><X size={13} /></button>
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function Inspector({ record, onClose, onOpen }: { record: RecordItem; onClose: () => void; onOpen: (id: string) => void }) {
+  const { can } = useStore()
+  return (
+    <>
+      <header className="ws-insp-head">
+        <div className="grow stack" style={{ gap: 2 }}>
+          <span className="eyebrow">Record</span>
+          <h2>{record.title}</h2>
+        </div>
+        <button type="button" className="v-btn quiet icon sm" onClick={onClose} aria-label="Close record"><X size={18} /></button>
+      </header>
+      <div className="ws-insp-body">
+        <InspectorBody record={record} onOpen={onOpen} />
+        {can('VIEW_PDF') && record.docs[0] && <button type="button" className="v-btn primary block" onClick={() => onOpen(record.docs[0].id)}>Open documents<ArrowRight size={16} aria-hidden /></button>}
+      </div>
+    </>
+  )
+}
+
+function InspectorBody({ record, onOpen }: { record: RecordItem; onOpen: (id: string) => void }) {
+  const { can } = useStore()
+  const [more, setMore] = useState(false)
+  const recent = record.docs.flatMap((d) => d.activity.map((a) => ({ ...a, doc: d.kind }))).sort((a, b) => b.at.localeCompare(a.at)).slice(0, more ? 8 : 3)
+  return (
+    <>
+      <div className="ws-ids">{record.identifiers.map((i) => <div key={i.label}><span>{i.label}</span><strong>{i.value}</strong></div>)}</div>
+      {record.incomplete && (
+        <Callout tone="warn" title={`Submission incomplete · ${record.incomplete.received} of ${record.incomplete.expected} documents`}>
+          The producer hasn&apos;t delivered every expected document yet. Received documents are already available below.
+        </Callout>
+      )}
+      <div className="stack" style={{ gap: 10 }}>
+        <div className="row between"><h3>Documents</h3><span className="faint" style={{ fontSize: 13 }}>{record.docs.length}</span></div>
+        <ul className="ws-docs">
+          {record.docs.map((d) => (
+            <li key={d.id}>
+              <button type="button" className="ws-doc" onClick={() => onOpen(d.id)} disabled={!can('VIEW_PDF')}>
+                <span className="sheet" aria-hidden />
+                <span className="grow" style={{ minWidth: 0 }}>
+                  <strong className="truncate">{d.kind}</strong>
+                  <span>{d.pages} page{d.pages === 1 ? '' : 's'} · ingested {fmtDate(d.ingestedAt)}{d.redactions.length > 0 && ' · redacted'}</span>
+                </span>
+                {d.tags.length > 0 && <Badge>{d.tags.length} tag{d.tags.length === 1 ? '' : 's'}</Badge>}
+                <FileText size={16} aria-hidden className="faint" />
+              </button>
+            </li>
+          ))}
+        </ul>
+      </div>
+      <div className="stack" style={{ gap: 4 }}>
+        <h3>Details</h3>
+        <dl className="v-kv">{record.metadata.map((m) => <div key={m.label}><dt>{m.label}</dt><dd>{m.value}</dd></div>)}</dl>
+      </div>
+      <div className="stack" style={{ gap: 10 }}>
+        <h3>Recent activity</h3>
+        <ol className="v-timeline">
+          {recent.map((a) => <li key={a.id}><span className={`pt ${a.simulated ? 'sim' : a.outcome === 'SUCCESS' ? 'ok' : 'bad'}`} aria-hidden /><div className="stack" style={{ gap: 0 }}><strong>{humanize(a.action.replace('DOCUMENT_', ''))} · {a.doc}</strong><span>{a.actor} · {fmtRel(a.at)}{a.simulated && ' · simulated'}</span></div></li>)}
+        </ol>
+        <button type="button" className="v-btn quiet sm" style={{ alignSelf: 'flex-start' }} onClick={() => setMore((m) => !m)}>{more ? <ChevronUp size={14} aria-hidden /> : <ChevronDown size={14} aria-hidden />}{more ? 'Show less' : 'Show more'}</button>
+      </div>
+      {!can('VIEW_PDF') && <Callout tone="warn" title="Viewing isn't assigned"><AlertTriangle size={0} aria-hidden />Your role can find this record but not open its documents.</Callout>}
+    </>
+  )
 }

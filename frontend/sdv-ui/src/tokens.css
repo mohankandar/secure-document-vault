@@ -1,0 +1,84 @@
+/* SDV UI Modernization R1 — Enterprise Precision token source.
+   Mirrors the mature LexaVault visual contract while preserving SDV workflows. */
+:root {
+  --brand-accent: #3157c8;
+  --brand-accent-rgb: 49 87 200;
+  --brand-secondary: #5e5bb3;
+
+  --ui-bg: #f4f6f8;
+  --ui-surface: #ffffff;
+  --ui-surface-subtle: #f7f9fb;
+  --ui-hover: #f8fafc;
+  --ui-selected: color-mix(in srgb, var(--brand-accent) 8%, #fff);
+  --ui-selected-strong: color-mix(in srgb, var(--brand-accent) 14%, #fff);
+
+  --ui-text: #182230;
+  --ui-text-strong: #0f1728;
+  --ui-text-secondary: #475467;
+  --ui-text-muted: #667085;
+  --ui-text-disabled: #98a2b3;
+
+  --ui-border: #dfe4ea;
+  --ui-border-strong: #cbd3dc;
+  --ui-border-soft: #edf0f3;
+
+  --ui-sidebar: #101828;
+  --ui-sidebar-surface: #182230;
+  --ui-sidebar-border: #344054;
+  --ui-sidebar-text: #c5ced9;
+  --ui-sidebar-muted: #98a2b3;
+
+  --ui-success: #067647;
+  --ui-success-bg: #ecfdf3;
+  --ui-warning: #b54708;
+  --ui-warning-bg: #fffaeb;
+  --ui-danger: #b42318;
+  --ui-danger-bg: #fef3f2;
+  --ui-info: #175cd3;
+  --ui-info-bg: #eff8ff;
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 40px;
+  --space-8: 48px;
+
+  --control-height-sm: 36px;
+  --control-height: 40px;
+  --control-height-lg: 44px;
+
+  --radius-control: 7px;
+  --radius-surface: 9px;
+  --radius-surface-lg: 12px;
+  --radius-pill: 999px;
+
+  --shadow-surface: 0 1px 2px rgba(16, 24, 40, .04);
+  --shadow-raised: 0 6px 18px rgba(16, 24, 40, .08);
+  --shadow-overlay: 0 18px 42px rgba(16, 24, 40, .16);
+  --ui-focus-ring: rgba(49, 87, 200, .22);
+  --motion-fast: 120ms ease;
+
+  --type-xs: .6875rem;
+  --type-sm: .75rem;
+  --type-body-sm: .8125rem;
+  --type-body: .875rem;
+  --type-body-lg: 1rem;
+  --type-card-title: 1.125rem;
+  --type-section-title: 1.25rem;
+  --type-page-title: 1.625rem;
+
+  --weight-regular: 400;
+  --weight-medium: 550;
+  --weight-semibold: 650;
+  --weight-bold: 750;
+  --leading-tight: 1.18;
+  --leading-body: 1.45;
+  --leading-relaxed: 1.55;
+
+  --ui-sidebar-width: 252px;
+  --ui-sidebar-collapsed-width: 72px;
+  --ui-touch: 44px;
+}
