@@ -27,6 +27,7 @@ export function Workspace() {
   const [page, setPage] = useState(1)
   const [hasMore, setHasMore] = useState(false)
   const [appliedCount, setAppliedCount] = useState(0)
+  const [documentCounts, setDocumentCounts] = useState<Record<string, number>>({})
   useEffect(() => { let active=true; schema().then(s => { if(active) {setSources(s.sources.map(toSource));setStatus('live')} })
     .catch(e=>{if(active){setFailure(String(e));setStatus('error')}});return ()=>{active=false} }, [])
   useEffect(() => { if (!selectedRef) return; let active=true
@@ -48,16 +49,17 @@ export function Workspace() {
   useEffect(() => { if(!sources.length || sourceId) return; setSourceId(sources[0].id) }, [sources,sourceId])
   const results = records
   useEffect(() => {
-    if (!applied) {setRecords([]);setHasMore(false);setStatus(sources.length?'live':'loading');return}
+    if (!applied) {setRecords([]);setDocumentCounts({});setAppliedCount(0);setHasMore(false);setStatus(sources.length?'live':'loading');return}
     let active=true
     setStatus('loading')
     search(applied.sourceId,applied.c,applied.from,applied.to,page).then(r=>{
       if(!active)return
       setRecords(r.records.map(x=>toSummary(x,applied.sourceId)))
+      setDocumentCounts(Object.fromEntries(r.records.map(x => [x.recordRef, x.availableDocumentCount])))
       setHasMore(r.hasMore)
       setAppliedCount(r.records.length)
       setStatus('live')
-    }).catch(e=>{if(active){setFailure(String(e));setRecords([]);setStatus('error')}})
+    }).catch(e=>{if(active){setFailure(String(e));setRecords([]);setDocumentCounts({});setStatus('error')}})
     return ()=>{active=false}
   },[applied,page,setRecords,sources.length])
   const selected = records.find((r) => r.ref === selectedRef) ?? null
@@ -152,7 +154,7 @@ export function Workspace() {
       </section>
 
       <section className="ws-results" aria-label="Search results">
-        <ResultsHeader count={results.length} applied={!!applied} sourceName={appliedSource?.name ?? 'SDV'} chips={wide ? chips : []} onRemove={removeChip} />
+        <ResultsHeader count={results.length} hasMore={hasMore} applied={!!applied} sourceName={appliedSource?.name ?? 'SDV'} chips={wide ? chips : []} onRemove={removeChip} />
         {status === 'loading' ? <Skeleton rows={7} /> : status === 'error' ? <ErrorState what="search results" /> : !applied ? (
           <Empty title="Search to begin" icon={<Search size={20} />}>Choose a source and enter an identifier, name or entity. Each field shows how it matches.</Empty>
         ) : results.length === 0 ? (
@@ -165,12 +167,12 @@ export function Workspace() {
               {results.map((r) => (
                 <li key={r.ref}>
                   <button type="button" className="ws-rec" aria-current={r.ref === selectedRef} onClick={() => setSelectedRef(r.ref === selectedRef && wide ? null : r.ref)}>
-                    <span className="ws-stack" aria-hidden><i /><i /><i /><span>{r.docs.length}</span></span>
+                    <span className="ws-stack" aria-hidden><i /><i /><i /><span>{documentCounts[r.ref] ?? r.docs.length}</span></span>
                     <span className="stack grow" style={{ gap: 4 }}>
                       <span className="ids">{r.identifiers.map((id) => <span key={id.label}><b>{id.label}</b>{id.value}</span>)}</span>
                       <span className="title">{r.title}</span>
                       <span className="meta">
-                        <span>{r.docs.length} document{r.docs.length === 1 ? '' : 's'}</span>
+                        <span>{documentCounts[r.ref] ?? r.docs.length} document{(documentCounts[r.ref] ?? r.docs.length) === 1 ? '' : 's'}</span>
                         <span>Updated {fmtRel(r.updatedAt)}</span>
                         {r.incomplete && <Badge tone="warn">Incomplete submission</Badge>}
                       </span>
@@ -179,7 +181,7 @@ export function Workspace() {
                 </li>
               ))}
             </ul>
-            <div className="ws-pager"><span>Page {page} · {appliedCount} records</span><span><button className="v-btn sm" type="button" disabled={page===1} onClick={()=>{setPage(p=>p-1);setSelectedRef(null)}}>Previous</button> <button className="v-btn sm" type="button" disabled={!hasMore} onClick={()=>{setPage(p=>p+1);setSelectedRef(null)}}>Next</button></span></div>
+            <div className="ws-pager"><span>Page {page} · {appliedCount} record{appliedCount === 1 ? '' : 's'} on this page{hasMore ? ' · more available' : ''}</span><span><button className="v-btn sm" type="button" disabled={page===1} onClick={()=>{setPage(p=>p-1);setSelectedRef(null)}}>Previous</button> <button className="v-btn sm" type="button" disabled={!hasMore} onClick={()=>{setPage(p=>p+1);setSelectedRef(null)}}>Next</button></span></div>
           </>
         )}
       </section>
@@ -196,11 +198,11 @@ export function Workspace() {
   )
 }
 
-function ResultsHeader({ count, applied, sourceName, chips, onRemove }: { count: number; applied: boolean; sourceName: string; chips: { key: string; label: string; mode: string; value: string }[]; onRemove: (k: string) => void }) {
+function ResultsHeader({ count, hasMore, applied, sourceName, chips, onRemove }: { count: number; hasMore: boolean; applied: boolean; sourceName: string; chips: { key: string; label: string; mode: string; value: string }[]; onRemove: (k: string) => void }) {
   return (
     <div className="ws-results-head">
       <div className="stack" style={{ gap: 2 }}>
-        <h2>{applied ? `${count} record${count === 1 ? '' : 's'}` : 'Results'}</h2>
+        <h2>{applied ? `${count} record${count === 1 ? '' : 's'} on this page${hasMore ? ' · more available' : ''}` : 'Results'}</h2>
         <span className="faint" style={{ fontSize: 13 }}>{sourceName}</span>
       </div>
       {chips.length > 0 && (
@@ -256,7 +258,7 @@ function InspectorBody({ record, onOpen }: { record: RecordItem; onOpen: (id: st
                 <span className="sheet" aria-hidden />
                 <span className="grow" style={{ minWidth: 0 }}>
                   <strong className="truncate">{d.kind}</strong>
-                  <span>{d.pages} page{d.pages === 1 ? '' : 's'} · ingested {fmtDate(d.ingestedAt)}{d.redactions.length > 0 && ' · redacted'}</span>
+                  <span>{d.pages > 0 ? `${d.pages} page${d.pages === 1 ? '' : 's'} · ` : ''}ingested {fmtDate(d.ingestedAt)}{d.redactions.length > 0 && ' · redacted'}</span>
                 </span>
                 {d.tags.length > 0 && <Badge>{d.tags.length} tag{d.tags.length === 1 ? '' : 's'}</Badge>}
                 <FileText size={16} aria-hidden className="faint" />
