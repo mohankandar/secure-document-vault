@@ -119,7 +119,14 @@ export function LiveWorkspace({ persona, capabilities }: {
   }, [record, detailTab, includeViews, activityRange, persona])
 
   if (selectedDocument && can('VIEW_PDF')) {
-    return <section className="v-live-viewer" aria-label="Secure document viewer">
+    return <div className="v-live-workspace v-live-workspace-viewer">
+      <nav className="v-live-workflow-tabs" aria-label="Business workspace">
+        <button type="button" onClick={() => { setDocumentId(''); setWorkspaceTab('search') }}>Search</button>
+        <button type="button" onClick={() => { setDocumentId(''); setWorkspaceTab('results') }}>Results</button>
+        <button type="button" aria-current="page">Document Viewer</button>
+        <button type="button" onClick={() => { setDocumentId(''); setDetailTab('activity'); setWorkspaceTab('activity') }}>Activity</button>
+      </nav>
+      <section className="v-live-viewer" aria-label="Secure document viewer">
       <header className="v-live-viewer-context">
         <button type="button" className="v-live-viewer-back" onClick={() => { setDocumentId(''); setWorkspaceTab('results') }}>
           <ArrowLeft size={16} aria-hidden /> Back to record
@@ -139,14 +146,14 @@ export function LiveWorkspace({ persona, capabilities }: {
         canPrint={can('PRINT_DOCUMENT')} canTag={can('ADD_DOCUMENT_TAG')}
         canComment={can('ADD_DOCUMENT_COMMENT')} embedded
         onClose={() => { setDocumentId(''); setWorkspaceTab('results') }} /></div>
-    </section>
+    </section></div>
   }
 
   return <div className="v-live-workspace">
     <nav className="v-live-workflow-tabs" aria-label="Business workspace">
       <button type="button" aria-current={workspaceTab === 'search' ? 'page' : undefined} onClick={() => { setDetailTab('documents'); setWorkspaceTab('search') }}>Search</button>
       <button type="button" aria-current={workspaceTab === 'results' ? 'page' : undefined} disabled={!searched} onClick={() => { setDetailTab('documents'); setWorkspaceTab('results') }}>Results</button>
-      <button type="button" aria-current={workspaceTab === 'viewer' ? 'page' : undefined} disabled={!record || !record.documents.length || !can('VIEW_PDF')} onClick={() => { if (record?.documents[0] && can('VIEW_PDF')) { setWorkspaceTab('viewer'); setDocumentId(record.documents[0].documentId) } }>Document Viewer</button>
+      <button type="button" aria-current={workspaceTab === 'viewer' ? 'page' : undefined} disabled={!record || !record.documents.length || !can('VIEW_PDF')} onClick={() => { const next = record?.documents.find(d => d.documentId === documentId) ?? record?.documents[0]; if (next && can('VIEW_PDF')) { setWorkspaceTab('viewer'); setDocumentId(next.documentId) } }>Document Viewer</button>
       <button type="button" aria-current={workspaceTab === 'activity' ? 'page' : undefined} disabled={!record} onClick={() => { setDetailTab('activity'); setWorkspaceTab('activity') }}>Activity</button>
     </nav>
     <header className="v-live-head"><div><span className="eyebrow">Records workspace</span><h1>Find and review documents</h1>
