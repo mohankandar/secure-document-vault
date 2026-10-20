@@ -315,7 +315,7 @@ function SecurePage({documentId,page,scale,scrollRoot,matches,highlights}:{
     {url ? <div style={{position:'relative',width:'100%',lineHeight:0}}>
       <img src={url} alt={`Document page ${page}`} style={{width:'100%',height:'auto',display:'block'}}/>
       {highlights.map((h,i)=><div key={i} aria-hidden style={{position:'absolute',pointerEvents:'none',left:`${h.x*100}%`,top:`${h.y*100}%`,
-        width:`${h.width*100}%`,height:`${h.height*100}%`,background:'rgba(255,213,47,.45)',outline:'1px solid rgba(120,80,0,.7)'}}/>)}
+        width:`${h.width*100}%`,height:`${h.height*100}%`,background:'rgba(255,213,47,.45)'}}/>)}
     </div> : <div className="v-callout" role="status">{error || `Loading page ${page}…`}</div>}
     {matches>0 && <span className="sr-only">{matches} text matches on page {page}</span>}
   </div>
