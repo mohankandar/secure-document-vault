@@ -170,3 +170,11 @@
 .sdv-r7-live .v-live-activity li strong,.sdv-r7-live .v-live-activity li small,.sdv-r7-live .v-live-activity li span{display:block}
 .sdv-r7-live .v-live-activity li strong{font-size:12px;text-transform:capitalize}
 .sdv-r7-live .v-live-activity li small,.sdv-r7-live .v-live-activity li span{font-size:11px;color:#737d82;margin-top:3px}
+
+/* API-backed R7 Operations context using observed health rather than mock status */
+.sdv-r7-live .v7-live-opsintro{background:linear-gradient(110deg,#fff 62%,#eaf1f0)}
+.sdv-r7-live .v7-live-opsfacts{border-left:1px solid #dce1e2;padding:12px 18px;display:flex;flex-direction:column;gap:6px;min-width:190px}
+.sdv-r7-live .v7-live-opsfacts span{font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:#737d82}
+.sdv-r7-live .v7-live-opsfacts strong{font-size:15px;color:#166a4f}
+.sdv-r7-live .v7-live-opsfacts small{font-size:11px;color:#737d82}
+@media(max-width:750px){.sdv-r7-live .v7-live-opsfacts{border-left:0;border-top:1px solid #dce1e2;padding:12px 0 0;min-width:0}}
