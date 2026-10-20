@@ -4,6 +4,7 @@ import { useStore } from './store'
 import { BUSINESS_LIMITS, type RecordItem, type Source } from './data'
 import { schema, search, record, toSource, toSummary, toRecord } from './liveApi'
 import { Badge, Callout, Drawer, Empty, ErrorState, Skeleton, fmtDate, fmtRel, humanize } from './ui'
+import { LiveViewer } from './LiveViewer'
 
 const MODE_HINT = { EXACT: 'Exact', PREFIX: 'Starts with', PARTIAL: 'Contains' } as const
 type Criteria = Record<string, string>
@@ -20,7 +21,7 @@ function useMediaQuery(q: string) {
 }
 
 export function Workspace() {
-  const { records, setRecords, selectedRef, setSelectedRef, openDocId, can } = useStore()
+  const { records, setRecords, selectedRef, setSelectedRef, openDocId, setOpenDocId, can } = useStore()
   const [sources, setSources] = useState<Source[]>([])
   const [status, setStatus] = useState<'loading'|'live'|'error'>('loading')
   const [failure, setFailure] = useState('')
@@ -84,10 +85,11 @@ export function Workspace() {
     setPage(1); setApplied(Object.values(next.c).some(Boolean) || next.from || next.to ? next : null)
   }
 
-  const openDoc = (r: RecordItem, _docId: string) => {
+  const openDoc = (r: RecordItem, docId: string) => {
+    if (!can('VIEW_PDF')) return
+    setFailure('')
     setSelectedRef(r.ref)
-    // Secure PDF viewing is integrated in checkpoint D; never open simulated viewer.
-    setFailure('Secure document viewing will be enabled at checkpoint D.')
+    setOpenDocId(docId)
   }
 
   const appliedSource = (applied ? sources.find((s) => s.id === applied.sourceId) : source) ?? source
@@ -193,6 +195,7 @@ export function Workspace() {
           <InspectorBody record={selected} onOpen={(id) => openDoc(selected, id)} />
         </Drawer>
       )}
+      {selected && openDocId && can('VIEW_PDF') && <LiveViewer record={selected} docId={openDocId} onSelectDoc={setOpenDocId} onClose={() => setOpenDocId(null)} />}
       {failure && <div role="alert" className="v-callout">{failure}</div>}
     </div>
   )

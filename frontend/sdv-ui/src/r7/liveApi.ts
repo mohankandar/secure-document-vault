@@ -1,4 +1,4 @@
-import { roleApi, type SessionInfo, type SearchSchema, type SearchResponse, type BusinessRecord, type RecordSummary, type SearchSource } from '../api'
+import { roleApi, contentBinary, type SessionInfo, type SearchSchema, type SearchResponse, type BusinessRecord, type RecordSummary, type SearchSource } from '../api'
 import type { Field, Source, RecordItem, Doc } from './data'
 
 export const session = () => roleApi<SessionInfo>('/api/v1/session', 'business')
@@ -33,3 +33,12 @@ export function toRecord(r: BusinessRecord):RecordItem {
     title:ids.map(x=>x.value).join(' · ') || r.recordRef,updatedAt:r.latestSubmissionAt,submissions:r.submissionCount,
     incomplete:incomplete?{submissionId:incomplete.submissionId,expected:incomplete.expectedCount,received:incomplete.receivedCount,since:r.latestSubmissionAt}:null,docs}
 }
+
+export type ViewerMetadata = { documentId: string; originalFilename: string; pageCount: number }
+export type ViewerSearch = { pageCount: number; totalMatches: number; pages: {pageNumber:number; matchCount:number}[] }
+const viewerPath = (id: string) => '/api/v1/business/documents/' + encodeURIComponent(id) + '/viewer'
+export const viewerMetadata = (id:string) => roleApi<ViewerMetadata>(viewerPath(id), 'business')
+export const viewerPage = (id:string, page:number, scale=1) =>
+  contentBinary(viewerPath(id) + '/pages/' + page + '?scale=' + scale, 'business')
+export const viewerSearch = (id:string, q:string) =>
+  roleApi<ViewerSearch>(viewerPath(id) + '/search?q=' + encodeURIComponent(q), 'business')
