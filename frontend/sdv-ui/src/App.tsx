@@ -1485,10 +1485,10 @@ function App() {
                   <span className="vx-ops-status-meta">Observed {formatDate(operations.observedAt)} · Live SDV data</span>
                 </section>
                 <div className="vx-signal-grid">
-                  <AttentionTile tone={operations.processingFailureCount ? 'warning' : 'neutral'} count={operations.processingFailureCount ?? '—'} title="Processing failures" detail="Open incident details" onOpen={() => setPlatformTab('incidents')} openLabel="View failures" />
-                  <AttentionTile tone={operations.stuckDocumentCount ? 'warning' : 'neutral'} count={operations.stuckDocumentCount ?? '—'} title="Stuck transitions" detail="Open incident details" onOpen={() => setPlatformTab('incidents')} openLabel="View stuck transitions" />
-                  <AttentionTile tone={operations.attentionSubmissionCount ? 'warning' : 'neutral'} count={operations.attentionSubmissionCount ?? '—'} title="Incomplete submissions" detail="Open incident details" onOpen={() => setPlatformTab('incidents')} openLabel="View submissions" />
-                  <AttentionTile tone={attentionVolumes.length ? 'warning' : 'neutral'} count={attentionVolumes.length} title="Storage attention" detail="Inspect storage volumes" onOpen={() => setPlatformTab('storage')} openLabel="View storage" />
+                  <AttentionTile tone={operations.processingFailureCount ? 'warn' : 'neutral'} count={operations.processingFailureCount ?? '—'} title="Processing failures" detail="Open incident details" onOpen={() => setPlatformTab('incidents')} openLabel="View failures" />
+                  <AttentionTile tone={operations.stuckDocumentCount ? 'warn' : 'neutral'} count={operations.stuckDocumentCount ?? '—'} title="Stuck transitions" detail="Open incident details" onOpen={() => setPlatformTab('incidents')} openLabel="View stuck transitions" />
+                  <AttentionTile tone={operations.attentionSubmissionCount ? 'warn' : 'neutral'} count={operations.attentionSubmissionCount ?? '—'} title="Incomplete submissions" detail="Open incident details" onOpen={() => setPlatformTab('incidents')} openLabel="View submissions" />
+                  <AttentionTile tone={attentionVolumes.length ? 'warn' : 'neutral'} count={attentionVolumes.length} title="Storage attention" detail="Inspect storage volumes" onOpen={() => setPlatformTab('storage')} openLabel="View storage" />
                 </div>
                 <AdminSection title="Core services" actions={<button type="button" className="secondary" onClick={() => setPlatformTab('health')}>View platform health</button>}>
                   <div className="ax-service-list">
