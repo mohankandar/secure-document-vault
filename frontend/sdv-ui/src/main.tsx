@@ -9,5 +9,6 @@ if (liveR7) {
   void import('./r7-live.css')
   document.documentElement.classList.add('sdv-r7-live')
 }
-const entry = preview ? import('./r7/entry') : import('./legacy-entry')
+const nativeR7 = !preview && params.get('experience') === 'r7-native'
+const entry = preview ? import('./r7/entry') : nativeR7 ? import('./r7/native-entry') : import('./legacy-entry')
 void entry.then((module) => module.mount(root))
