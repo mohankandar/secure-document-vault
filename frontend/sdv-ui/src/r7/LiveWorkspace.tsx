@@ -163,7 +163,7 @@ export function LiveWorkspace({ persona, capabilities }: {
     </section></div>
   }
 
-  return <div className="v-live-workspace">
+  return <div className="v-live-workspace v-live-native-workspace">
     <nav className="v-live-workflow-tabs" aria-label="Business workspace">
       <button type="button" aria-current={workspaceTab === 'search' ? 'page' : undefined} onClick={() => { setDetailTab('documents'); setWorkspaceTab('search') }}>Search</button>
       <button type="button" aria-current={workspaceTab === 'results' ? 'page' : undefined} disabled={!searched} onClick={() => { setDetailTab('documents'); setWorkspaceTab('results') }}>Results</button>
@@ -177,17 +177,19 @@ export function LiveWorkspace({ persona, capabilities }: {
     {error && <div className="v-live-error" role="alert">{error}</div>}
     <div className={`v-live-layout v-live-layout-${workspaceTab}`}>
       {workspaceTab === 'search' && <form className="v-live-panel v-live-filters" onSubmit={(e: FormEvent) => { e.preventDefault(); void search(1) }}>
-        <h2>Search records</h2>
-        <label>Source<select value={sourceId} onChange={e => { clear(); setSourceId(e.target.value) }}>
-          {schema.sources.map(s => <option key={s.sourceId} value={s.sourceId}>{s.displayName}</option>)}</select></label>
-        {source?.fields.map(f => <label key={f.fieldKey}>{f.displayLabel}<input value={criteria[f.fieldKey] ?? ''}
-          onChange={e => setCriteria(prev => ({ ...prev, [f.fieldKey]: e.target.value }))}
-          placeholder={f.searchMode === 'PARTIAL' ? 'Contains' : f.searchMode === 'PREFIX' ? 'Starts with' : 'Exact match'} /></label>)}
-        <div className="v-live-dates"><label>Date from<input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}/></label>
-        <label>Date to<input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}/></label></div>
-        <div className="v-live-dates"><label>Updated from<input type="date" value={updatedFrom} onChange={e => setUpdatedFrom(e.target.value)}/></label>
-        <label>Updated to<input type="date" value={updatedTo} onChange={e => setUpdatedTo(e.target.value)}/></label></div>
-        <button className="v-btn primary" type="submit" disabled={searching || !sourceId}><Search size={16}/>{searching ? 'Searching…' : 'Search'}</button>
+        <div className="v-live-native-source"><h2>Find a business record</h2><label>Source <select value={sourceId} onChange={e => { clear(); setSourceId(e.target.value) }}>
+          {schema.sources.map(s => <option key={s.sourceId} value={s.sourceId}>{s.displayName}</option>)}</select></label></div>
+        <div className="v-live-field-group"><h3>Identifiers</h3><div className="v-live-field-grid">
+          {source?.fields.filter(f => /contract|member|entity/i.test(f.fieldKey)).map(f => <label key={f.fieldKey}>{f.displayLabel}<small>{f.searchMode === 'EXACT' ? 'Exact match' : f.searchMode === 'PREFIX' ? 'Starts with' : 'Contains'}</small><input value={criteria[f.fieldKey] ?? ''} onChange={e => setCriteria(prev => ({ ...prev, [f.fieldKey]: e.target.value }))}/></label>)}
+        </div></div>
+        {source?.fields.some(f => !/contract|member|entity/i.test(f.fieldKey)) && <div className="v-live-field-group"><h3>Record details</h3><div className="v-live-field-grid">
+          {source.fields.filter(f => !/contract|member|entity/i.test(f.fieldKey)).map(f => <label key={f.fieldKey}>{f.displayLabel}<small>{f.searchMode === 'EXACT' ? 'Exact match' : f.searchMode === 'PREFIX' ? 'Starts with' : 'Contains'}</small><input value={criteria[f.fieldKey] ?? ''} onChange={e => setCriteria(prev => ({ ...prev, [f.fieldKey]: e.target.value }))}/></label>)}
+        </div></div>}
+        <div className="v-live-field-group"><h3>Dates</h3><div className="v-live-date-grid">
+          <fieldset><legend>Date Range</legend><input aria-label="Date from" type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}/><span>to</span><input aria-label="Date to" type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}/></fieldset>
+          <fieldset><legend>Last Updated</legend><input aria-label="Updated from" type="date" value={updatedFrom} onChange={e => setUpdatedFrom(e.target.value)}/><span>to</span><input aria-label="Updated to" type="date" value={updatedTo} onChange={e => setUpdatedTo(e.target.value)}/></fieldset>
+        </div></div>
+        <div className="v-live-search-actions"><span>Any one field or date filter is enough to search.</span><button type="button" className="v-btn quiet" onClick={clear}>Clear</button><button className="v-btn primary" type="submit" disabled={searching || !sourceId}><Search size={16}/>{searching ? 'Searching…' : 'Search records'}</button></div>
       </form>}
       {workspaceTab === 'results' && <section className="v-live-panel v-live-results" aria-label="Search results">
         <div className="v-live-section-head"><h2>Results</h2><span>{searched ? `${results.length} records · page ${page}` : 'Run a search to begin'}</span></div>
