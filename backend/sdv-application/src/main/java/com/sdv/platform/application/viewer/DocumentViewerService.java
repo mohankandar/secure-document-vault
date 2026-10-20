@@ -204,12 +204,24 @@ public class DocumentViewerService {
                             if (positions.size() == text.length() && index + needle.length() <= positions.size()) {
                                 TextPosition first = positions.get(index);
                                 TextPosition last = positions.get(index + needle.length() - 1);
-                                double width = cropBox.getWidth();
-                                double height = cropBox.getHeight();
-                                double x = first.getXDirAdj();
-                                double y = first.getYDirAdj();
-                                double right = last.getXDirAdj() + last.getWidthDirAdj();
-                                double bottom = y + Math.max(first.getHeightDir(), last.getHeightDir());
+                                // PDFTextStripper's YDirAdj tracks the text baseline, not the top
+                                // of the glyph. Use the glyph ascent/height to cover the text itself.
+                                // For rotated pages PDFRenderer swaps the visible dimensions.
+                                boolean quarterTurn = Math.floorMod(pdf.getPage(currentPage - 1).getRotation(), 180) == 90;
+                                double width = quarterTurn ? cropBox.getHeight() : cropBox.getWidth();
+                                double height = quarterTurn ? cropBox.getWidth() : cropBox.getHeight();
+                                double x = Double.POSITIVE_INFINITY, y = Double.POSITIVE_INFINITY;
+                                double right = Double.NEGATIVE_INFINITY, bottom = Double.NEGATIVE_INFINITY;
+                                for (int n = index; n < index + needle.length(); n++) {
+                                    TextPosition glyph = positions.get(n);
+                                    double gx = glyph.getXDirAdj();
+                                    double gy = glyph.getYDirAdj();
+                                    double gh = glyph.getHeightDir();
+                                    x = Math.min(x, gx);
+                                    y = Math.min(y, gy - gh);
+                                    right = Math.max(right, gx + glyph.getWidthDirAdj());
+                                    bottom = Math.max(bottom, gy);
+                                }
                                 if (width > 0 && height > 0 && x >= 0 && y >= 0 && right <= width && bottom <= height
                                         && right > x && bottom > y) {
                                     highlights.add(new SearchHighlight(currentPage,
