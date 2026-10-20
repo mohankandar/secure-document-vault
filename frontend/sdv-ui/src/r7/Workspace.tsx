@@ -24,7 +24,7 @@ export function Workspace() {
   const [sources, setSources] = useState<Source[]>([])
   const [status, setStatus] = useState<'loading'|'live'|'error'>('loading')
   const [failure, setFailure] = useState('')
-  const [page, setPage] = useState(0)
+  const [page, setPage] = useState(1)
   const [hasMore, setHasMore] = useState(false)
   const [appliedCount, setAppliedCount] = useState(0)
   useEffect(() => { let active=true; schema().then(s => { if(active) {setSources(s.sources.map(toSource));setStatus('live')} })
@@ -68,18 +68,18 @@ export function Workspace() {
     setTouched(true)
     if (!hasCriteria) return
     if (!sourceId) return
-    setPage(0)
+    setPage(1)
     setApplied({ sourceId, c: { ...draft }, from, to })
     setFormOpen(false)
     setSelectedRef(null)
   }
-  const clear = () => { setDraft({}); setFrom(''); setTo(''); setApplied(null); setPage(0); setSelectedRef(null); setTouched(false) }
+  const clear = () => { setDraft({}); setFrom(''); setTo(''); setApplied(null); setPage(1); setSelectedRef(null); setTouched(false) }
   const removeChip = (key: string) => {
     if (!applied) return
     const c = { ...applied.c }; delete c[key]
     const next = key === 'from' ? { ...applied, c, from: '' } : key === 'to' ? { ...applied, c, to: '' } : { ...applied, c }
     setDraft(next.c); setFrom(next.from); setTo(next.to)
-    setPage(0); setApplied(Object.values(next.c).some(Boolean) || next.from || next.to ? next : null)
+    setPage(1); setApplied(Object.values(next.c).some(Boolean) || next.from || next.to ? next : null)
   }
 
   const openDoc = (r: RecordItem, _docId: string) => {
@@ -179,7 +179,7 @@ export function Workspace() {
                 </li>
               ))}
             </ul>
-            <div className="ws-pager"><span>Page {page+1} · {appliedCount} records</span><span><button className="v-btn sm" type="button" disabled={page===0} onClick={()=>{setPage(p=>p-1);setSelectedRef(null)}}>Previous</button> <button className="v-btn sm" type="button" disabled={!hasMore} onClick={()=>{setPage(p=>p+1);setSelectedRef(null)}}>Next</button></span></div>
+            <div className="ws-pager"><span>Page {page} · {appliedCount} records</span><span><button className="v-btn sm" type="button" disabled={page===1} onClick={()=>{setPage(p=>p-1);setSelectedRef(null)}}>Previous</button> <button className="v-btn sm" type="button" disabled={!hasMore} onClick={()=>{setPage(p=>p+1);setSelectedRef(null)}}>Next</button></span></div>
           </>
         )}
       </section>
