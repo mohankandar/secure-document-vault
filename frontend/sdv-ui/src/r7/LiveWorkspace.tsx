@@ -50,7 +50,7 @@ export function LiveWorkspace({ persona, capabilities }: {
     activityRequest.current += 1
     setActivity([]); setActivityLoading(false); setActivityError(''); setDetailTab('documents'); setWorkspaceTab('search'); setIncludeViews(false)
     setError(''); setSearching(false); setLoading(false)
-    setSchema({ sources: [] }); setSourceId(''); setResults([]); setRecord(null); setDocumentId(''); setSearched(false)
+    setSchema({ sources: [] }); setSourceId(''); setResults([]); setRecord(null); setDocumentId(''); setLastViewedDocumentId(''); setSearched(false)
     contentApi<SearchSchema>('/api/v1/business/search-schema', persona)
       .then(data => { if (active) { setSchema(data); setSourceId(data.sources[0]?.sourceId ?? '') } })
       .catch(e => { if (active) setError(e instanceof Error ? e.message : 'Search configuration unavailable') })
@@ -96,7 +96,7 @@ export function LiveWorkspace({ persona, capabilities }: {
     } catch (e) { if (request === recordRequest.current) setError(e instanceof Error ? e.message : 'Could not load record') }
     finally { if (request === recordRequest.current) setLoading(false) }
   }
-  const clear = () => { searchRequest.current += 1; recordRequest.current += 1; activityRequest.current += 1; setActivity([]); setActivityError(''); setActivityLoading(false); setDetailTab('documents'); setWorkspaceTab('search'); setIncludeViews(false); setSearching(false); setLoading(false); setCriteria({}); setDateFrom(''); setDateTo(''); setUpdatedFrom(''); setUpdatedTo(''); setResults([]); setRecord(null); setDocumentId(''); setSearched(false); setError('') }
+  const clear = () => { searchRequest.current += 1; recordRequest.current += 1; activityRequest.current += 1; setActivity([]); setActivityError(''); setActivityLoading(false); setDetailTab('documents'); setWorkspaceTab('search'); setIncludeViews(false); setSearching(false); setLoading(false); setCriteria({}); setDateFrom(''); setDateTo(''); setUpdatedFrom(''); setUpdatedTo(''); setResults([]); setRecord(null); setDocumentId(''); setLastViewedDocumentId(''); setSearched(false); setError('') }
 
   useEffect(() => {
     if (!record || detailTab !== 'activity') return
