@@ -23,6 +23,7 @@ export function LiveWorkspace({ persona, capabilities }: {
   const [results, setResults] = useState<RecordSummary[]>([])
   const [record, setRecord] = useState<BusinessRecord | null>(null)
   const [documentId, setDocumentId] = useState('')
+  const [lastViewedDocumentId, setLastViewedDocumentId] = useState('')
   const [loading, setLoading] = useState(false)
   const [searching, setSearching] = useState(false)
   const [error, setError] = useState('')
@@ -69,7 +70,7 @@ export function LiveWorkspace({ persona, capabilities }: {
     recordRequest.current += 1
     activityRequest.current += 1
     setActivity([]); setActivityError(''); setDetailTab('documents'); setActivityLoading(false)
-    setRecord(null); setDocumentId(''); setLoading(false)
+    setRecord(null); setDocumentId(''); setLastViewedDocumentId(''); setLoading(false)
     // Do not show results from an earlier query while a replacement search runs or fails.
     setResults([]); setHasMore(false); setPage(nextPage); setSearched(false)
     setSearching(true); setError('')
@@ -88,7 +89,7 @@ export function LiveWorkspace({ persona, capabilities }: {
   const openRecord = async (ref: string) => {
     const request = ++recordRequest.current
     activityRequest.current += 1; setActivity([]); setActivityError(''); setActivityLoading(false); setDetailTab('documents')
-    setLoading(true); setError(''); setDocumentId(''); setRecord(null)
+    setLoading(true); setError(''); setDocumentId(''); setLastViewedDocumentId(''); setRecord(null)
     try {
       const value = await contentApi<BusinessRecord>(`/api/v1/business/records/${encodeURIComponent(ref)}`, persona)
       if (request === recordRequest.current) { setRecord(value); setWorkspaceTab('results') }
@@ -124,6 +125,13 @@ export function LiveWorkspace({ persona, capabilities }: {
     return () => { activityRequest.current += 1 }
   }, [record, detailTab, includeViews, activityRange, activityAction, activityActor, persona])
 
+  const openDocument = (id: string) => {
+    if (!can('VIEW_PDF') || !record?.documents.some(d => d.documentId === id)) return
+    setLastViewedDocumentId(id)
+    setDocumentId(id)
+    setWorkspaceTab('viewer')
+  }
+
   if (selectedDocument && can('VIEW_PDF')) {
     return <div className="v-live-workspace v-live-workspace-viewer">
       <nav className="v-live-workflow-tabs" aria-label="Business workspace">
@@ -147,7 +155,7 @@ export function LiveWorkspace({ persona, capabilities }: {
       <div className="v-live-viewer-content"><PdfViewer
         key={selectedDocument.documentId} documentId={selectedDocument.documentId}
         filename={selectedDocument.originalFilename} documents={record?.documents ?? []}
-        selectedDocumentId={documentId} onSelectDocument={setDocumentId} persona={persona}
+        selectedDocumentId={documentId} onSelectDocument={openDocument} persona={persona}
         canRedact={can('PERMANENT_REDACTION')} canDownload={can('DOWNLOAD_CURRENT_PDF')}
         canPrint={can('PRINT_DOCUMENT')} canTag={can('ADD_DOCUMENT_TAG')}
         canComment={can('ADD_DOCUMENT_COMMENT')} embedded
@@ -159,7 +167,7 @@ export function LiveWorkspace({ persona, capabilities }: {
     <nav className="v-live-workflow-tabs" aria-label="Business workspace">
       <button type="button" aria-current={workspaceTab === 'search' ? 'page' : undefined} onClick={() => { setDetailTab('documents'); setWorkspaceTab('search') }}>Search</button>
       <button type="button" aria-current={workspaceTab === 'results' ? 'page' : undefined} disabled={!searched} onClick={() => { setDetailTab('documents'); setWorkspaceTab('results') }}>Results</button>
-      <button type="button" aria-current={workspaceTab === 'viewer' ? 'page' : undefined} disabled={!record || !record.documents.length || !can('VIEW_PDF')} onClick={() => { const next = record?.documents.find(d => d.documentId === documentId) ?? record?.documents[0]; if (next && can('VIEW_PDF')) { setWorkspaceTab('viewer'); setDocumentId(next.documentId) } }>Document Viewer</button>
+      <button type="button" aria-current={workspaceTab === 'viewer' ? 'page' : undefined} disabled={!record || !record.documents.length || !can('VIEW_PDF')} onClick={() => { const next = record?.documents.find(d => d.documentId === lastViewedDocumentId) ?? record?.documents[0]; if (next) openDocument(next.documentId) } }>Document Viewer</button>
       <button type="button" aria-current={workspaceTab === 'activity' ? 'page' : undefined} disabled={!record} onClick={() => { setDetailTab('activity'); setWorkspaceTab('activity') }}>Activity</button>
     </nav>
     <header className="v-live-head"><div><span className="eyebrow">Records workspace</span><h1>Find and review documents</h1>
@@ -209,7 +217,7 @@ export function LiveWorkspace({ persona, capabilities }: {
           <h3>Documents ({record.documents.length})</h3>
           {!record.documents.length && <p className="muted">No available documents.</p>}
           {record.documents.map(d => <button type="button" key={d.documentId} className="v-live-doc"
-            disabled={!can('VIEW_PDF')} onClick={() => { setWorkspaceTab('viewer'); setDocumentId(d.documentId) }}>
+            disabled={!can('VIEW_PDF')} onClick={() => openDocument(d.documentId)}>
             <FileText size={17}/><span>{d.originalFilename}</span><ArrowRight size={15}/></button>)}
           {record.incompleteAttention && <p className="muted">Some submissions are incomplete. Only available documents can be opened.</p>}
           </>}
