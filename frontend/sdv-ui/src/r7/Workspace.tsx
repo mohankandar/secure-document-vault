@@ -1,31 +1,12 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 import { AlertTriangle, ArrowRight, ChevronDown, ChevronUp, FileText, Search, SlidersHorizontal, X } from 'lucide-react'
 import { useStore } from './store'
-import { SOURCES, BUSINESS_LIMITS, type Field, type RecordItem } from './data'
+import { BUSINESS_LIMITS, type RecordItem, type Source } from './data'
+import { schema, search, record, toSource, toSummary, toRecord } from './liveApi'
 import { Badge, Callout, Drawer, Empty, ErrorState, Skeleton, fmtDate, fmtRel, humanize } from './ui'
-import { Viewer } from './Viewer'
 
 const MODE_HINT = { EXACT: 'Exact', PREFIX: 'Starts with', PARTIAL: 'Contains' } as const
 type Criteria = Record<string, string>
-
-const valueOf = (r: RecordItem, label: string) => [...r.identifiers, ...r.metadata].find((x) => x.label === label)?.value ?? ''
-const normalize = (f: Field, v: string) => (f.normalization === 'DIGITS_ONLY' ? v.replace(/\D/g, '') : v.trim().toLowerCase())
-
-function matches(r: RecordItem, sourceId: string, fields: Field[], c: Criteria, from: string, to: string) {
-  if (r.sourceId !== sourceId) return false
-  for (const f of fields) {
-    const q = c[f.key]?.trim()
-    if (!q) continue
-    const have = normalize(f, valueOf(r, f.label))
-    const want = normalize(f, q)
-    if (f.mode === 'EXACT' && have !== want) return false
-    if (f.mode === 'PREFIX' && !have.startsWith(want)) return false
-    if (f.mode === 'PARTIAL' && !have.includes(want)) return false
-  }
-  if (from && r.updatedAt.slice(0, 10) < from) return false
-  if (to && r.updatedAt.slice(0, 10) > to) return false
-  return true
-}
 
 function useMediaQuery(q: string) {
   const [m, setM] = useState(() => window.matchMedia(q).matches)
@@ -39,24 +20,46 @@ function useMediaQuery(q: string) {
 }
 
 export function Workspace() {
-  const { records, scenario, selectedRef, setSelectedRef, openDocId, setOpenDocId, can, addDocActivity } = useStore()
+  const { records, setRecords, selectedRef, setSelectedRef, openDocId, can } = useStore()
+  const [sources, setSources] = useState<Source[]>([])
+  const [status, setStatus] = useState<'loading'|'live'|'error'>('loading')
+  const [failure, setFailure] = useState('')
+  const [page, setPage] = useState(0)
+  const [hasMore, setHasMore] = useState(false)
+  const [appliedCount, setAppliedCount] = useState(0)
+  useEffect(() => { let active=true; schema().then(s => { if(active) {setSources(s.sources.map(toSource));setStatus('live')} })
+    .catch(e=>{if(active){setFailure(String(e));setStatus('error')}});return ()=>{active=false} }, [])
+  useEffect(() => { if (!selectedRef) return; let active=true
+    record(selectedRef).then(r => {if(active)setRecords(prev=>prev.map(x=>x.ref===selectedRef?toRecord(r):x))})
+    .catch(e=>{if(active){setFailure(String(e));setStatus('error')}})
+    return ()=>{active=false}
+  }, [selectedRef,setRecords])
   const wide = useMediaQuery('(min-width: 1024px)')
-  const [sourceId, setSourceId] = useState(SOURCES[0].id)
-  const source = SOURCES.find((s) => s.id === sourceId)!
-  const fields = source.fields.filter((f) => f.searchable)
-  const [draft, setDraft] = useState<Criteria>({ serviceEntity: 'north' })
+  const [sourceId, setSourceId] = useState('')
+  const source = sources.find((s) => s.id === sourceId) ?? sources[0]
+  const fields = source?.fields.filter((f) => f.searchable) ?? []
+  const [draft, setDraft] = useState<Criteria>({})
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
-  const [applied, setApplied] = useState<{ sourceId: string; c: Criteria; from: string; to: string } | null>({ sourceId: SOURCES[0].id, c: { serviceEntity: 'north' }, from: '', to: '' })
+  const [applied, setApplied] = useState<{ sourceId: string; c: Criteria; from: string; to: string } | null>(null)
   const [formOpen, setFormOpen] = useState(false)
   const [touched, setTouched] = useState(false)
 
-  const results = useMemo(() => {
-    if (!applied) return []
-    const src = SOURCES.find((s) => s.id === applied.sourceId)!
-    return records.filter((r) => matches(r, applied.sourceId, src.fields, applied.c, applied.from, applied.to))
-  }, [applied, records])
-
+  useEffect(() => { if(!sources.length || sourceId) return; setSourceId(sources[0].id) }, [sources,sourceId])
+  const results = records
+  useEffect(() => {
+    if (!applied) {setRecords([]);setHasMore(false);setStatus(sources.length?'live':'loading');return}
+    let active=true
+    setStatus('loading')
+    search(applied.sourceId,applied.c,applied.from,applied.to,page).then(r=>{
+      if(!active)return
+      setRecords(r.records.map(x=>toSummary(x,applied.sourceId)))
+      setHasMore(r.hasMore)
+      setAppliedCount(r.records.length)
+      setStatus('live')
+    }).catch(e=>{if(active){setFailure(String(e));setRecords([]);setStatus('error')}})
+    return ()=>{active=false}
+  },[applied,page,setRecords,sources.length])
   const selected = records.find((r) => r.ref === selectedRef) ?? null
   const hasCriteria = Object.values(draft).some((v) => v.trim()) || from || to
 
@@ -64,28 +67,30 @@ export function Workspace() {
     e.preventDefault()
     setTouched(true)
     if (!hasCriteria) return
+    if (!sourceId) return
+    setPage(0)
     setApplied({ sourceId, c: { ...draft }, from, to })
     setFormOpen(false)
     setSelectedRef(null)
   }
-  const clear = () => { setDraft({}); setFrom(''); setTo(''); setApplied(null); setSelectedRef(null); setTouched(false) }
+  const clear = () => { setDraft({}); setFrom(''); setTo(''); setApplied(null); setPage(0); setSelectedRef(null); setTouched(false) }
   const removeChip = (key: string) => {
     if (!applied) return
     const c = { ...applied.c }; delete c[key]
     const next = key === 'from' ? { ...applied, c, from: '' } : key === 'to' ? { ...applied, c, to: '' } : { ...applied, c }
     setDraft(next.c); setFrom(next.from); setTo(next.to)
-    setApplied(Object.values(next.c).some(Boolean) || next.from || next.to ? next : null)
+    setPage(0); setApplied(Object.values(next.c).some(Boolean) || next.from || next.to ? next : null)
   }
 
-  const openDoc = (r: RecordItem, docId: string) => {
+  const openDoc = (r: RecordItem, _docId: string) => {
     setSelectedRef(r.ref)
-    setOpenDocId(docId)
-    addDocActivity(docId, 'DOCUMENT_VIEWED')
+    // Secure PDF viewing is integrated in checkpoint D; never open simulated viewer.
+    setFailure('Secure document viewing will be enabled at checkpoint D.')
   }
 
-  const appliedSource = applied ? SOURCES.find((s) => s.id === applied.sourceId)! : source
+  const appliedSource = (applied ? sources.find((s) => s.id === applied.sourceId) : source) ?? source
   const chips = applied ? [
-    ...Object.entries(applied.c).filter(([, v]) => v.trim()).map(([k, v]) => { const f = appliedSource.fields.find((x) => x.key === k)!; return { key: k, label: f.label, mode: MODE_HINT[f.mode], value: v } }),
+    ...Object.entries(applied.c).filter(([, v]) => v.trim()).map(([k, v]) => { const f = appliedSource?.fields.find((x) => x.key === k) ?? { label:k, mode:'EXACT' as const }; return { key: k, label: f.label, mode: MODE_HINT[f.mode], value: v } }),
     ...(applied.from ? [{ key: 'from', label: 'Updated from', mode: '', value: applied.from }] : []),
     ...(applied.to ? [{ key: 'to', label: 'Updated to', mode: '', value: applied.to }] : []),
   ] : []
@@ -111,7 +116,7 @@ export function Workspace() {
             <label className="v-field">
               <span>Source</span>
               <select className="v-select" value={sourceId} onChange={(e) => { setSourceId(e.target.value); setDraft({}); setTouched(false) }}>
-                {SOURCES.filter((s) => s.status === 'ACTIVE').map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                {sources.filter((s) => s.status === 'ACTIVE').map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
               </select>
             </label>
             <div className="ws-fields">
@@ -147,10 +152,10 @@ export function Workspace() {
       </section>
 
       <section className="ws-results" aria-label="Search results">
-        <ResultsHeader count={results.length} applied={!!applied} sourceName={appliedSource.name} chips={wide ? chips : []} onRemove={removeChip} />
-        {scenario === 'loading' ? <Skeleton rows={7} /> : scenario === 'error' ? <ErrorState what="search results" /> : !applied ? (
+        <ResultsHeader count={results.length} applied={!!applied} sourceName={appliedSource?.name ?? 'SDV'} chips={wide ? chips : []} onRemove={removeChip} />
+        {status === 'loading' ? <Skeleton rows={7} /> : status === 'error' ? <ErrorState what="search results" /> : !applied ? (
           <Empty title="Search to begin" icon={<Search size={20} />}>Choose a source and enter an identifier, name or entity. Each field shows how it matches.</Empty>
-        ) : scenario === 'empty' || results.length === 0 ? (
+        ) : results.length === 0 ? (
           <Empty title="No matching records" action={<button type="button" className="v-btn sm" onClick={() => { setFormOpen(true) }}>Modify search</button>}>
             Exact fields must match in full. Try fewer criteria, or a starts-with field such as last name.
           </Empty>
@@ -174,7 +179,7 @@ export function Workspace() {
                 </li>
               ))}
             </ul>
-            <div className="ws-pager"><span>Showing 1–{results.length} of {results.length}</span><span>Page 1 of 1</span></div>
+            <div className="ws-pager"><span>Page {page+1} · {appliedCount} records</span><span><button className="v-btn sm" type="button" disabled={page===0} onClick={()=>{setPage(p=>p-1);setSelectedRef(null)}}>Previous</button> <button className="v-btn sm" type="button" disabled={!hasMore} onClick={()=>{setPage(p=>p+1);setSelectedRef(null)}}>Next</button></span></div>
           </>
         )}
       </section>
@@ -186,17 +191,16 @@ export function Workspace() {
           <InspectorBody record={selected} onOpen={(id) => openDoc(selected, id)} />
         </Drawer>
       )}
-      {selected && openDocId && <Viewer record={selected} results={results} docId={openDocId} onClose={() => setOpenDocId(null)} />}
+      {failure && <div role="alert" className="v-callout">{failure}</div>}
     </div>
   )
 }
 
 function ResultsHeader({ count, applied, sourceName, chips, onRemove }: { count: number; applied: boolean; sourceName: string; chips: { key: string; label: string; mode: string; value: string }[]; onRemove: (k: string) => void }) {
-  const { scenario } = useStore()
   return (
     <div className="ws-results-head">
       <div className="stack" style={{ gap: 2 }}>
-        <h2>{applied && scenario === 'live' ? `${count} record${count === 1 ? '' : 's'}` : 'Results'}</h2>
+        <h2>{applied ? `${count} record${count === 1 ? '' : 's'}` : 'Results'}</h2>
         <span className="faint" style={{ fontSize: 13 }}>{sourceName}</span>
       </div>
       {chips.length > 0 && (

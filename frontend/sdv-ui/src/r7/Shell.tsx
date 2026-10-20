@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Activity, Building2, FileSearch, FlaskConical, Layers, Moon, Search, ServerCog, ShieldCheck, Sun, ExternalLink, CornerDownLeft } from 'lucide-react'
-import { AREA_TABS, StoreProvider, useStore, type Scenario } from './store'
-import { ROLES, SYSTEM, FAILURES, STUCK, SUBMISSIONS, type AreaId } from './data'
-import { Drawer, Seg, Toasts } from './ui'
+import { Activity, Building2, FileSearch, FlaskConical, Layers, Moon, Search, ServerCog, ShieldCheck, Sun, CornerDownLeft } from 'lucide-react'
+import { AREA_TABS, StoreProvider, useStore } from './store'
+import { FAILURES, STUCK, SUBMISSIONS, type AreaId } from './data'
+import { Drawer, Toasts } from './ui'
 import { Workspace } from './Workspace'
 import { Governance } from './Governance'
 import { TenantAdmin } from './TenantAdmin'
@@ -57,37 +57,6 @@ function BottomNav({ onOpenSession, onOpenPalette }: { onOpenSession: () => void
   )
 }
 
-function SessionDrawer({ onClose }: { onClose: () => void }) {
-  const { roleId, switchRole, scenario, setScenario, theme, setTheme } = useStore()
-  return (
-    <Drawer eyebrow="Prototype session" title="Explore as a role" onClose={onClose} footer={<button type="button" className="v-btn primary" onClick={onClose}>Done</button>}>
-      <div className="stack" role="radiogroup" aria-label="Role">
-        <span className="v-label">Signed in as</span>
-        {ROLES.map((r) => (
-          <button key={r.id} type="button" role="radio" aria-checked={r.id === roleId} className="v-menu-item" style={{ border: '1px solid var(--line)' }} onClick={() => { switchRole(r.id); onClose() }}>
-            <span className="v-avatar" aria-hidden>{r.initials}</span>
-            <span className="grow"><strong style={{ fontWeight: 500 }}>{r.name}</strong><small>{r.person} · <span className="mono">{r.code}</span></small></span>
-          </button>
-        ))}
-      </div>
-      <div className="stack">
-        <span className="v-label">Data scenario</span>
-        <Seg<Scenario> label="Data scenario" value={scenario} onChange={setScenario} options={[{ value: 'live', label: 'Populated' }, { value: 'loading', label: 'Loading' }, { value: 'empty', label: 'Empty' }, { value: 'error', label: 'Error' }]} />
-        <small className="faint">Applies to every data panel so you can review each state on every screen.</small>
-      </div>
-      <div className="stack">
-        <span className="v-label">Theme</span>
-        <Seg label="Theme" value={theme} onChange={setTheme} options={[{ value: 'light', label: 'Light' }, { value: 'dark', label: 'Dark' }]} />
-      </div>
-      <div className="v-callout sim">
-        <FlaskConical size={18} aria-hidden />
-        <div><strong>Everything here is simulated</strong><p>Sample data only. No request reaches an SDV backend, and no document, policy or configuration is changed. Actions marked “Simulated” are recorded only in this browser tab and reset on reload.</p></div>
-      </div>
-      <a className="v-btn" href="?app=r5">Open approved R5 application<ExternalLink size={14} aria-hidden /></a>
-    </Drawer>
-  )
-}
-
 function Palette({ onClose }: { onClose: () => void }) {
   const { role, navigate, records, can, setSelectedRef } = useStore()
   const [q, setQ] = useState('')
@@ -125,7 +94,7 @@ function Palette({ onClose }: { onClose: () => void }) {
 }
 
 function ShellInner() {
-  const { role, route, theme, setTheme } = useStore()
+  const { role, route, theme, setTheme, liveSession, sessionLoading, sessionError } = useStore()
   const [session, setSession] = useState(false)
   const [palette, setPalette] = useState(false)
 
@@ -135,25 +104,25 @@ function ShellInner() {
     return () => window.removeEventListener('keydown', k)
   }, [])
 
-  const allowed = route.area === 'system' || role.areas.includes(route.area)
+  const allowed = route.area === 'workspace' && !!liveSession?.capabilities.includes('SEARCH_RECORDS')
   return (
     <div className="r7">
       <div className="v-app">
         <header className="v-top">
           <a className="v-brand" href="#/" aria-label="vero home" onClick={(e) => { e.preventDefault() }}>vero<i aria-hidden /></a>
-          <div className="v-tenant"><strong>{SYSTEM.tenant}</strong><span>{SYSTEM.environment} · {SYSTEM.region}</span></div>
+          <div className="v-tenant"><strong>{liveSession?.tenantDisplayName ?? 'Vero'}</strong><span>{liveSession ? 'Connected session' : 'Connecting'}</span></div>
           <div className="grow" />
           <button type="button" className="v-command" onClick={() => setPalette(true)} aria-label="Go to page or record"><Search size={16} aria-hidden /><span>Go to…</span><kbd>⌘K</kbd></button>
-          <span className="v-sim-chip" title="Simulated data — no backend calls"><FlaskConical size={13} aria-hidden /><span className="long">Prototype · simulated data</span><span className="short">Simulated</span></span>
+          <span className="v-sim-chip" title="Business search uses SDV backend; other workflows pending"><FlaskConical size={13} aria-hidden /><span className="long">R7 · business integration</span><span className="short">Simulated</span></span>
           <button type="button" className="v-btn quiet icon vw-hide-sm" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`}>{theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}</button>
-          <button type="button" className="v-me" onClick={() => setSession(true)} aria-label={`Signed in as ${role.person}, ${role.name}. Change role`}>
+          <button type="button" className="v-me" onClick={() => setSession(true)} aria-label={`Signed in as ${liveSession?.subject ?? 'Connecting'}, ${role.name}`}>
             <span className="v-avatar" aria-hidden>{role.initials}</span>
-            <span className="who"><strong>{role.person}</strong><span>{role.name}</span></span>
+            <span className="who"><strong>{liveSession?.subject ?? 'Connecting'}</strong><span>{role.name}</span></span>
           </button>
         </header>
         <Rail onOpenSession={() => setSession(true)} />
         <main className="v-main" id="main">
-          {!allowed ? <AccessBoundary /> :
+          {sessionLoading ? <div className="v-body">Connecting to SDV…</div> : sessionError ? <div className="v-body" role="alert">Session unavailable: {sessionError}</div> : !allowed ? <AccessBoundary /> :
             route.area === 'workspace' ? <Workspace /> :
             route.area === 'governance' ? <Governance /> :
             route.area === 'tenant' ? <TenantAdmin /> :
@@ -161,7 +130,7 @@ function ShellInner() {
         </main>
         <BottomNav onOpenSession={() => setSession(true)} onOpenPalette={() => setPalette(true)} />
       </div>
-      {session && <SessionDrawer onClose={() => setSession(false)} />}
+      {session && <Drawer eyebrow="Session" title="Authenticated session" onClose={() => setSession(false)}><p>Identity and permissions are provided by the SDV backend. Role switching and simulated scenarios are unavailable in connected mode.</p><p>{liveSession?.subject ?? 'Not authenticated'}</p></Drawer>}
       {palette && <Palette onClose={() => setPalette(false)} />}
       <Toasts />
     </div>

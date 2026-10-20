@@ -1,8 +1,10 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 import {
-  AUDIT, DEFAULT_ROLE_CAPS, IDENTITY, RECORDS, RETENTION, ROLES, SOURCES, VOLUMES,
+  AUDIT, DEFAULT_ROLE_CAPS, IDENTITY, RETENTION, ROLES, SOURCES, VOLUMES,
   type AreaId, type AuditEvent, type Capability, type Doc, type IdentityConfig, type RecordItem, type RoleId, type Source, type Volume, NOW,
 } from './data'
+import { session as loadSession } from './liveApi'
+import type { SessionInfo } from '../api'
 
 export type Scenario = 'live' | 'loading' | 'empty' | 'error'
 export type Theme = 'light' | 'dark'
@@ -36,13 +38,16 @@ let toastSeq = 0
 let eventSeq = 0
 
 function useStoreValue() {
-  const [roleId, setRoleId] = useState<RoleId>('steward')
+  const [roleId, setRoleId] = useState<RoleId>('business')
+  const [liveSession, setLiveSession] = useState<SessionInfo | null>(null)
+  const [sessionError, setSessionError] = useState<string | null>(null)
+  const [sessionLoading, setSessionLoading] = useState(true)
   const [scenario, setScenario] = useState<Scenario>('live')
   const [theme, setThemeState] = useState<Theme>(() => (window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'))
   const [route, setRouteState] = useState<Route>(() => parseHash() ?? { area: 'workspace', tab: 'search' })
   const [toasts, setToasts] = useState<Toast[]>([])
   const [roleCaps, setRoleCaps] = useState(DEFAULT_ROLE_CAPS)
-  const [records, setRecords] = useState<RecordItem[]>(RECORDS)
+  const [records, setRecords] = useState<RecordItem[]>([])
   const [retention, setRetention] = useState(RETENTION)
   const [volumes, setVolumes] = useState<Volume[]>(VOLUMES)
   const [sources, setSources] = useState<Source[]>(SOURCES)
@@ -51,6 +56,16 @@ function useStoreValue() {
   const [selectedRef, setSelectedRef] = useState<string | null>(null)
   const [openDocId, setOpenDocId] = useState<string | null>(null)
 
+  useEffect(() => {
+    let active = true
+    loadSession().then(s => {
+      if (!active) return
+      setLiveSession(s)
+      setRoleId(s.roles.includes('DOCUMENT_STEWARD') ? 'steward' : 'business')
+    }).catch(e => { if (active) setSessionError(e instanceof Error ? e.message : 'Session unavailable') })
+      .finally(() => { if(active) setSessionLoading(false) })
+    return () => { active = false }
+  }, [])
   const role = ROLES.find((r) => r.id === roleId)!
 
   useEffect(() => {
@@ -71,6 +86,7 @@ function useStoreValue() {
   }, [])
 
   const switchRole = useCallback((id: RoleId) => {
+    if (liveSession) return
     setRoleId(id)
     setOpenDocId(null)
     const target = ROLES.find((r) => r.id === id)!
@@ -84,10 +100,9 @@ function useStoreValue() {
     window.setTimeout(() => setToasts((list) => list.filter((x) => x.id !== id)), 4800)
   }, [])
 
-  const caps = useMemo<Capability[]>(() => {
-    if (role.code === 'BUSINESS_USER' || role.code === 'DOCUMENT_STEWARD') return roleCaps[role.code]
-    return []
-  }, [role.code, roleCaps])
+  const caps = useMemo<Capability[]>(() => liveSession ? liveSession.capabilities.filter((c):c is Capability =>
+    c in ({ SEARCH_RECORDS:1, VIEW_PDF:1, PERMANENT_REDACTION:1, DOWNLOAD_CURRENT_PDF:1, PRINT_DOCUMENT:1, ADD_DOCUMENT_TAG:1, ADD_DOCUMENT_COMMENT:1 })
+  ) : [], [liveSession])
   const can = useCallback((c: Capability) => caps.includes(c), [caps])
 
   const recordAudit = useCallback((e: Omit<AuditEvent, 'id' | 'at' | 'actorType' | 'actor' | 'correlationId'>) => {
@@ -107,10 +122,10 @@ function useStoreValue() {
   }, [recordAudit, role.person, updateDoc])
 
   return {
-    role, roleId, switchRole, scenario, setScenario, theme, setTheme: setThemeState, route, navigate,
+    role, roleId, switchRole, liveSession, sessionLoading, sessionError, scenario, setScenario, theme, setTheme: setThemeState, route, navigate,
     toasts, toast, dismissToast: (id: number) => setToasts((l) => l.filter((t) => t.id !== id)),
     roleCaps, setRoleCaps, caps, can,
-    records, updateDoc, addDocActivity, selectedRef, setSelectedRef, openDocId, setOpenDocId,
+    records, setRecords, updateDoc, addDocActivity, selectedRef, setSelectedRef, openDocId, setOpenDocId,
     retention, setRetention, volumes, setVolumes, sources, setSources,
     identity, setIdentity: setIdentity as (fn: (prev: typeof IDENTITY) => typeof IDENTITY) => void, audit, recordAudit,
   }
