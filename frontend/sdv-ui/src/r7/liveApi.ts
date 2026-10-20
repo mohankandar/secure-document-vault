@@ -54,3 +54,9 @@ export const documentTags = (id:string) => roleApi<LiveTag[]>(documentPath(id)+'
 export const documentComments = (id:string) => roleApi<LiveComment[]>(documentPath(id)+'/comments','business')
 export const createDocumentTag = (id:string,tag:string) => roleApi<LiveTag>(documentPath(id)+'/tags','business',{method:'POST',body:JSON.stringify({tag})})
 export const createDocumentComment = (id:string,comment:string) => roleApi<LiveComment>(documentPath(id)+'/comments','business',{method:'POST',body:JSON.stringify({comment})})
+
+export const secureDownload = (id:string) => contentBinary('/api/v1/business/documents/'+encodeURIComponent(id)+'/download','business')
+export const recordPrintEvent = (id:string) => roleApi<void>('/api/v1/business/documents/'+encodeURIComponent(id)+'/print-event','business',{method:'POST'})
+export type CorrectionRegion = {pageNumber:number;x:number;y:number;width:number;height:number}
+export const permanentRedaction = (id:string,reason:string,regions:CorrectionRegion[]) =>
+  roleApi<unknown>('/api/v1/business/documents/'+encodeURIComponent(id)+'/redactions','steward',{method:'POST',body:JSON.stringify({reason,confirmed:true,regions})})

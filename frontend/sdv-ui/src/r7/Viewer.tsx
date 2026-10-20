@@ -3,7 +3,7 @@ import { ArrowLeft, ChevronLeft, ChevronRight, Download, Eraser, Info, Lock, Max
 import { useStore } from './store'
 import { BUSINESS_LIMITS, CAPABILITY_LABELS, PAGE_TEXT, RETENTION, type Capability, type Doc, type RecordItem, type Redaction } from './data'
 import { Badge, Callout, Dialog, Drawer, Tabs, fmtDate, fmtDateTime, fmtRel, humanize } from './ui'
-import { viewerMetadata, viewerPage, viewerSearch, record as fetchRecord, toRecord, documentActivity, type LiveDocumentActivity, type ViewerSearch, documentTags, documentComments, createDocumentTag, createDocumentComment, type LiveTag, type LiveComment } from './liveApi'
+import { viewerMetadata, viewerPage, viewerSearch, record as fetchRecord, toRecord, documentActivity, type LiveDocumentActivity, type ViewerSearch, documentTags, documentComments, createDocumentTag, createDocumentComment, type LiveTag, type LiveComment, secureDownload, recordPrintEvent, permanentRedaction } from './liveApi'
 
 type Zoom = 'width' | 'page' | number
 type InfoTab = 'details' | 'comments' | 'tags' | 'activity'
@@ -115,16 +115,59 @@ export function Viewer({ record, results, docId, onClose }: { record: RecordItem
   const deny = (c: Capability) => toast({ tone: 'bad', title: 'Not permitted for your role', detail: `${role.name} doesn't include "${CAPABILITY_LABELS[c]}". In production the server enforces this and records a DENIED audit event.` })
   const gated = (c: Capability, run: () => void) => () => (can(c) ? run() : deny(c))
 
-  const download = gated('DOWNLOAD_CURRENT_PDF', () => { addDocActivity(doc.id, 'DOCUMENT_DOWNLOADED'); toast({ title: 'Simulated download', detail: `${doc.filename} — no file was produced. Production streams the current decrypted PDF and audits the download.` }) })
-  const print = gated('PRINT_DOCUMENT', () => { addDocActivity(doc.id, 'DOCUMENT_PRINTED'); toast({ title: 'Simulated print', detail: 'A print event was recorded locally. Production records the print audit event before opening the print dialog.' }) })
-  const startRedact = gated('PERMANENT_REDACTION', () => { setRedacting(true); setInfoOpen(false); toast({ title: 'Redaction mode', detail: 'Drag across the page to mark regions. Nothing changes until you review and confirm.' }) })
+  const [actionBusy,setActionBusy] = useState(false)
+  const [redactionFailure,setRedactionFailure] = useState('')
+  const [renderRevision,setRenderRevision] = useState(0)
+  const download = gated('DOWNLOAD_CURRENT_PDF', async () => {
+    if(actionBusy)return
+    setActionBusy(true)
+    try {
+      const blob=await secureDownload(doc.id)
+      const url=URL.createObjectURL(blob)
+      const a=document.createElement('a')
+      a.href=url;a.download=doc.filename;a.click()
+      window.setTimeout(()=>URL.revokeObjectURL(url),30000)
+      toast({title:'Document downloaded'})
+    } catch(e){toast({tone:'bad',title:'Download failed',detail:String(e)})}
+    finally{setActionBusy(false)}
+  })
+  const print = gated('PRINT_DOCUMENT', async () => {
+    if(actionBusy)return
+    setActionBusy(true)
+    try {
+      // Print the authorized rendered pages, without requesting the raw PDF download.
+      const images=await Promise.all(Array.from({length:pageTotal},(_,i)=>viewerPage(doc.id,i+1,1)))
+      const urls=images.map(b=>URL.createObjectURL(b))
+      const frame=document.createElement('iframe')
+      frame.setAttribute('title','Print document')
+      frame.style.position='fixed';frame.style.width='0';frame.style.height='0';frame.style.border='0'
+      document.body.appendChild(frame)
+      const win=frame.contentWindow
+      if(!win)throw new Error('Print view unavailable')
+      win.document.open()
+      win.document.write('<!doctype html><html><head><title>Print document</title><style>body{margin:0}img{display:block;width:100%;page-break-after:always;break-after:page}@page{margin:0}</style></head><body>'+urls.map(u=>'<img src="'+u+'"/>').join('')+'</body></html>')
+      win.document.close()
+      await Promise.all(Array.from(win.document.images).map(image=>image.decode()))
+      await recordPrintEvent(doc.id)
+      win.focus();win.print()
+      window.setTimeout(()=>{frame.remove();urls.forEach(u=>URL.revokeObjectURL(u))},60000)
+    }catch(e){toast({tone:'bad',title:'Print failed',detail:String(e)})}
+    finally{setActionBusy(false)}
+  })
+  const startRedact = gated('PERMANENT_REDACTION', () => {
+    if(actionBusy)return
+    setMarks([]);setRedactionFailure('');setRedacting(true);setInfoOpen(false)
+  })
 
   const toPct = (e: RPointerEvent, el: HTMLDivElement) => { const r = el.getBoundingClientRect(); return { x: ((e.clientX - r.left) / r.width) * 100, y: ((e.clientY - r.top) / r.height) * 100 } }
   const onDown = (p: number) => (e: RPointerEvent<HTMLDivElement>) => {
     if (!redacting || (e.target as HTMLElement).closest('button')) return
+    const image=e.currentTarget.querySelector('img')
+    if (!image || !image.complete || !image.naturalWidth) return
     e.currentTarget.setPointerCapture(e.pointerId)
-    const { x, y } = toPct(e, e.currentTarget)
-    drawRef.current = { page: p, x0: x, y0: y, el: e.currentTarget }
+    const { x, y } = toPct(e, image as unknown as HTMLDivElement)
+    if(x < 0 || y < 0 || x > 100 || y > 100)return
+    drawRef.current = { page: p, x0: x, y0: y, el: image as unknown as HTMLDivElement }
     setDrawing({ page: p, x, y, w: 0, h: 0 })
   }
   const onMove = (e: RPointerEvent<HTMLDivElement>) => {
@@ -139,11 +182,21 @@ export function Viewer({ record, results, docId, onClose }: { record: RecordItem
     setDrawing(null)
   }
 
-  const applyRedaction = (reason: string) => {
-    updateDoc(doc.id, (d) => ({ ...d, redactions: [...d.redactions, ...marks] }))
-    addDocActivity(doc.id, 'DOCUMENT_REDACTED')
-    toast({ title: 'Simulated permanent redaction', detail: `${marks.length} region${marks.length === 1 ? '' : 's'} blacked out in this preview only. Reason recorded: "${reason.slice(0, 60)}". No PDF was rewritten.` })
-    setMarks([]); setRedacting(false); setReview(false)
+  const applyRedaction = async (reason: string) => {
+    if(actionBusy || !can('PERMANENT_REDACTION'))return
+    setActionBusy(true);setRedactionFailure('')
+    try {
+      await permanentRedaction(doc.id,reason,marks.map(m=>({pageNumber:m.page,x:m.x/100,y:m.y/100,width:m.w/100,height:m.h/100})))
+      setMarks([]);setRedacting(false);setReview(false);setQuery('');setSearchResults(null)
+      setRenderRevision(n=>n+1)
+      setPageCount(0)
+      viewerMetadata(doc.id).then(m=>setPageCount(m.pageCount)).catch(e=>setViewerFailure(String(e)))
+      toast({title:'Permanent corrective redaction completed'})
+    }catch(e){setRedactionFailure(String(e))}
+    finally{setActionBusy(false)}
+    return
+
+
   }
 
   const [recordLoading, setRecordLoading] = useState(false)
@@ -207,9 +260,9 @@ export function Viewer({ record, results, docId, onClose }: { record: RecordItem
         <div className="vw-group">
           <button type="button" className="v-btn quiet icon" aria-pressed={findOpen} onClick={() => setFindOpen((f) => !f)} aria-label="Find in document"><Search size={18} /></button>
           <span className="vw-sep vw-hide-sm" aria-hidden />
-          <ActionButton label="Download" icon={<Download size={18} />} allowed={false} onClick={() => toast({title:'Download is not integrated yet'})} className="vw-hide-sm" />
-          <ActionButton label="Print" icon={<Printer size={18} />} allowed={false} onClick={() => toast({title:'Printing is not integrated yet'})} className="vw-hide-sm" />
-          <ActionButton label="Redact" icon={<Eraser size={18} />} allowed={false} onClick={() => toast({title:'Redaction is not integrated yet'})} pressed={redacting} />
+          <ActionButton label="Download" icon={<Download size={18} />} allowed={can('DOWNLOAD_CURRENT_PDF') && !actionBusy} onClick={download} className="vw-hide-sm" />
+          <ActionButton label="Print" icon={<Printer size={18} />} allowed={can('PRINT_DOCUMENT') && !actionBusy} onClick={print} className="vw-hide-sm" />
+          <ActionButton label="Redact" icon={<Eraser size={18} />} allowed={can('PERMANENT_REDACTION') && !actionBusy} onClick={startRedact} pressed={redacting} />
           <button type="button" className="v-btn quiet icon vw-panel-toggle" aria-pressed={infoOpen} onClick={() => setInfoOpen(true)} aria-label="Document information"><PanelRight size={18} /></button>
         </div>
       </div>
@@ -238,14 +291,17 @@ export function Viewer({ record, results, docId, onClose }: { record: RecordItem
             const p=i+1
             return <div key={p} data-page={p} ref={el => {sheetRefs.current[i]=el}} className="vw-sheet"
               style={{width:sheetWidth,maxWidth:'none',position:'relative',minHeight:Math.round(sheetWidth*1.25)}}
-              aria-label={`Page ${p} of ${pageTotal}`}>
-              <SecurePage documentId={doc.id} page={p} scale={Math.min(2.5,Math.max(.5,sheetWidth/816))}
+              onPointerDown={onDown(p)} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp} aria-label={`Page ${p} of ${pageTotal}`}>
+              <SecurePage key={doc.id+':'+renderRevision+':'+p} documentId={doc.id} page={p} scale={Math.min(2.5,Math.max(.5,sheetWidth/816))}
                 scrollRoot={canvasRef} matches={searchResults?.pages.find(x=>x.pageNumber===p)?.matchCount ?? 0}
                 highlights={searchResults?.highlights?.filter(h=>h.pageNumber===p) ?? []}/>
+              {marks.filter(m=>m.page===p).map((m,i)=><div key={i} className="vw-mark" style={{left:m.x+'%',top:m.y+'%',width:m.w+'%',height:m.h+'%',pointerEvents:'none'}}/>)}
+              {drawing?.page===p && <div className="vw-mark" style={{left:drawing.x+'%',top:drawing.y+'%',width:drawing.w+'%',height:drawing.h+'%',pointerEvents:'none'}}/>}
+
             </div>
           })}
         </div>
-          {redacting && !liveSession ? (
+          {redacting ? (
             <div className="vw-redact-bar" style={{ width: 'min(620px, 100%)' }}>
               <span className="grow" style={{ fontSize: 14 }}><strong>{marks.length}</strong> region{marks.length === 1 ? '' : 's'} marked</span>
               <button type="button" className="v-btn sm" onClick={() => { setRedacting(false); setMarks([]) }}>Cancel</button>
@@ -270,14 +326,14 @@ export function Viewer({ record, results, docId, onClose }: { record: RecordItem
       {infoOpen && (
         <Drawer eyebrow={doc.kind} title="Document information" onClose={() => setInfoOpen(false)}>
           <div className="row wrap vw-actions-sm" style={{ gap: 8 }}>
-            <ActionButton label="Download" icon={<Download size={16} />} allowed={false} onClick={() => toast({title:'Download integration pending'})} text />
-            <ActionButton label="Print" icon={<Printer size={16} />} allowed={false} onClick={() => toast({title:'Print integration pending'})} text />
+            <ActionButton label="Download" icon={<Download size={16} />} allowed={can('DOWNLOAD_CURRENT_PDF') && !actionBusy} onClick={download} text />
+            <ActionButton label="Print" icon={<Printer size={16} />} allowed={can('PRINT_DOCUMENT') && !actionBusy} onClick={print} text />
           </div>
           <DocInfo doc={{...doc,pages:pageTotal}} tab={infoTab} setTab={setInfoTab} embedded />
         </Drawer>
       )}
       {docsOpen && <Drawer eyebrow="Record documents" title={record.identifiers[0].value} onClose={() => setDocsOpen(false)}>{docsNav}</Drawer>}
-      {!liveSession && review && <RedactionReview doc={doc} marks={marks} onCancel={() => setReview(false)} onApply={applyRedaction} />}
+      {review && <RedactionReview doc={doc} marks={marks} onCancel={() => setReview(false)} onApply={applyRedaction} busy={actionBusy} failure={redactionFailure} />}
     </div>
   )
 }
@@ -331,14 +387,14 @@ function ActionButton({ label, icon, allowed, onClick, pressed, className = '', 
   )
 }
 
-function RedactionReview({ doc, marks, onCancel, onApply }: { doc: Doc; marks: Redaction[]; onCancel: () => void; onApply: (reason: string) => void }) {
+function RedactionReview({ doc, marks, onCancel, onApply, busy, failure }: { doc: Doc; marks: Redaction[]; onCancel: () => void; onApply: (reason: string) => void; busy:boolean; failure:string }) {
   const [reason, setReason] = useState('')
   const [confirmed, setConfirmed] = useState(false)
   const pages = [...new Set(marks.map((m) => m.page))].sort((a, b) => a - b)
   const ready = reason.trim().length >= 10 && confirmed
   return (
     <Dialog title="Apply permanent redaction" onClose={onCancel}
-      footer={<><button type="button" className="v-btn" onClick={onCancel}>Back to marking</button><button type="button" className="v-btn danger" disabled={!ready} onClick={() => onApply(reason.trim())}>Apply redaction (simulated)</button></>}>
+      footer={<><button type="button" className="v-btn" onClick={onCancel}>Back to marking</button><button type="button" className="v-btn danger" disabled={!ready || busy} onClick={() => onApply(reason.trim())}>{busy?'Applying…':'Apply permanent redaction'}</button></>}>
       <Callout tone="bad" title="This permanently replaces the current PDF">
         In production, marked regions are irreversibly removed for every user and the original is not retained. Use only for corrective removal of content that should never have been stored.
       </Callout>
@@ -355,7 +411,7 @@ function RedactionReview({ doc, marks, onCancel, onApply }: { doc: Doc; marks: R
         <input type="checkbox" checked={confirmed} onChange={(e) => setConfirmed(e.target.checked)} />
         <span>I understand this cannot be undone and will be attributed to me in the audit trail.</span>
       </label>
-      <Callout tone="sim" title="Prototype safeguard">No document is modified. The preview overlays black boxes in this tab only.</Callout>
+      {failure && <Callout tone="warn" title="Redaction failed">{failure}</Callout>}
     </Dialog>
   )
 }
