@@ -42,12 +42,14 @@ export function LiveWorkspace({ persona, capabilities }: {
     let active = true
     searchRequest.current += 1
     recordRequest.current += 1
+    activityRequest.current += 1
+    setActivity([]); setActivityLoading(false); setActivityError(''); setDetailTab('documents'); setIncludeViews(false)
     setError(''); setSearching(false); setLoading(false)
     setSchema({ sources: [] }); setSourceId(''); setResults([]); setRecord(null); setDocumentId(''); setSearched(false)
     contentApi<SearchSchema>('/api/v1/business/search-schema', persona)
       .then(data => { if (active) { setSchema(data); setSourceId(data.sources[0]?.sourceId ?? '') } })
       .catch(e => { if (active) setError(e instanceof Error ? e.message : 'Search configuration unavailable') })
-    return () => { active = false; searchRequest.current += 1; recordRequest.current += 1 }
+    return () => { active = false; searchRequest.current += 1; recordRequest.current += 1; activityRequest.current += 1 }
   }, [persona])
 
   const search = async (nextPage: number) => {
@@ -61,6 +63,8 @@ export function LiveWorkspace({ persona, capabilities }: {
     }
     const request = ++searchRequest.current
     recordRequest.current += 1
+    activityRequest.current += 1
+    setActivity([]); setActivityError(''); setDetailTab('documents'); setActivityLoading(false)
     setRecord(null); setDocumentId(''); setLoading(false)
     setSearching(true); setError('')
     try {
@@ -77,7 +81,7 @@ export function LiveWorkspace({ persona, capabilities }: {
   }
   const openRecord = async (ref: string) => {
     const request = ++recordRequest.current
-    activityRequest.current += 1; setActivity([]); setDetailTab('documents')
+    activityRequest.current += 1; setActivity([]); setActivityError(''); setActivityLoading(false); setDetailTab('documents')
     setLoading(true); setError(''); setDocumentId(''); setRecord(null)
     try {
       const value = await contentApi<BusinessRecord>(`/api/v1/business/records/${encodeURIComponent(ref)}`, persona)
@@ -85,7 +89,7 @@ export function LiveWorkspace({ persona, capabilities }: {
     } catch (e) { if (request === recordRequest.current) setError(e instanceof Error ? e.message : 'Could not load record') }
     finally { if (request === recordRequest.current) setLoading(false) }
   }
-  const clear = () => { searchRequest.current += 1; recordRequest.current += 1; activityRequest.current += 1; setActivity([]); setDetailTab('documents'); setSearching(false); setLoading(false); setCriteria({}); setDateFrom(''); setDateTo(''); setUpdatedFrom(''); setUpdatedTo(''); setResults([]); setRecord(null); setDocumentId(''); setSearched(false); setError('') }
+  const clear = () => { searchRequest.current += 1; recordRequest.current += 1; activityRequest.current += 1; setActivity([]); setActivityError(''); setActivityLoading(false); setDetailTab('documents'); setIncludeViews(false); setSearching(false); setLoading(false); setCriteria({}); setDateFrom(''); setDateTo(''); setUpdatedFrom(''); setUpdatedTo(''); setResults([]); setRecord(null); setDocumentId(''); setSearched(false); setError('') }
 
   useEffect(() => {
     if (!record || detailTab !== 'activity') return
@@ -102,7 +106,7 @@ export function LiveWorkspace({ persona, capabilities }: {
         if (request === activityRequest.current)
           setActivity(batches.flat().sort((a, b) => Date.parse(b.occurredAt) - Date.parse(a.occurredAt)))
       } catch (e) {
-        if (request === activityRequest.current) setActivityError(e instanceof Error ? e.message : 'Activity could not be loaded')
+        if (request === activityRequest.current) { setActivity([]); setActivityError(e instanceof Error ? e.message : 'Activity could not be loaded') }
       } finally {
         if (request === activityRequest.current) setActivityLoading(false)
       }
