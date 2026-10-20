@@ -36,7 +36,7 @@ export function LiveWorkspace({ persona, capabilities }: {
     let active = true
     searchRequest.current += 1
     recordRequest.current += 1
-    setError('')
+    setError(''); setSearching(false); setLoading(false)
     setSchema({ sources: [] }); setSourceId(''); setResults([]); setRecord(null); setDocumentId(''); setSearched(false)
     contentApi<SearchSchema>('/api/v1/business/search-schema', persona)
       .then(data => { if (active) { setSchema(data); setSourceId(data.sources[0]?.sourceId ?? '') } })
@@ -50,8 +50,12 @@ export function LiveWorkspace({ persona, capabilities }: {
     if (!Object.keys(submitted).length && !dateFrom && !dateTo && !updatedFrom && !updatedTo) {
       setError('Enter at least one search value or a date range.'); return
     }
+    if ((dateFrom && dateTo && dateFrom > dateTo) || (updatedFrom && updatedTo && updatedFrom > updatedTo)) {
+      setError('The start date cannot be later than the end date.'); return
+    }
     const request = ++searchRequest.current
     recordRequest.current += 1
+    setRecord(null); setDocumentId(''); setLoading(false)
     setSearching(true); setError('')
     try {
       const response = await contentApi<SearchResponse>('/api/v1/business/search', persona, {
