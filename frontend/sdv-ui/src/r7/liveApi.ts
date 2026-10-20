@@ -5,7 +5,7 @@ export const session = () => roleApi<SessionInfo>('/api/v1/session', 'business')
 export const schema = () => roleApi<SearchSchema>('/api/v1/business/search-schema', 'business')
 export const search = (sourceId: string, criteria: Record<string,string>, from: string, to: string, page: number) =>
   roleApi<SearchResponse>('/api/v1/business/search', 'business', { method: 'POST', body: JSON.stringify({
-    sourceId, criteria, lastUpdatedFrom: from ? new Date(from + 'T00:00:00Z').toISOString() : null,
+    sourceId, criteria: Object.fromEntries(Object.entries(criteria).map(([key,value]) => [key,value.trim()]).filter(([,value]) => value.length > 0)), lastUpdatedFrom: from ? new Date(from + 'T00:00:00Z').toISOString() : null,
     lastUpdatedTo: to ? new Date(to + 'T23:59:59.999Z').toISOString() : null, page, pageSize: 25
   }) })
 export const record = (ref: string) => roleApi<BusinessRecord>('/api/v1/business/records/' + encodeURIComponent(ref), 'business')
