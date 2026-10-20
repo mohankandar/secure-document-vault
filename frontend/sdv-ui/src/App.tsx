@@ -1476,7 +1476,35 @@ function App() {
             ]}
           />
 
-          {platformTab === 'overview' && (!operations ? <AdminSection title="Operational overview"><p className="ax-note">Loading operational health…</p></AdminSection> : (
+          {platformTab === 'overview' && new URLSearchParams(window.location.search).get('experience') === 'r7-live' && (
+            !operations ? <AdminSection title="Operational overview"><p className="ax-note">Loading live SDV operational health…</p></AdminSection> : (
+              <div className="v-r7-operations">
+                <section className={`vx-ops-status vx-tone-${statusTone(operations.overallStatus)}`} aria-label="Live platform status">
+                  <div className="vx-ops-status-main"><span className="vx-ops-status-label">Overall platform status</span>
+                    <strong className="vx-ops-status-value">{humanize(operations.overallStatus)}</strong></div>
+                  <span className="vx-ops-status-meta">Observed {formatDate(operations.observedAt)} · Live SDV data</span>
+                </section>
+                <div className="vx-signal-grid">
+                  <AttentionTile tone={operations.processingFailureCount ? 'warning' : 'neutral'} count={operations.processingFailureCount ?? '—'} title="Processing failures" detail="Open incident details" onOpen={() => setPlatformTab('incidents')} openLabel="View failures" />
+                  <AttentionTile tone={operations.stuckDocumentCount ? 'warning' : 'neutral'} count={operations.stuckDocumentCount ?? '—'} title="Stuck transitions" detail="Open incident details" onOpen={() => setPlatformTab('incidents')} openLabel="View stuck transitions" />
+                  <AttentionTile tone={operations.attentionSubmissionCount ? 'warning' : 'neutral'} count={operations.attentionSubmissionCount ?? '—'} title="Incomplete submissions" detail="Open incident details" onOpen={() => setPlatformTab('incidents')} openLabel="View submissions" />
+                  <AttentionTile tone={attentionVolumes.length ? 'warning' : 'neutral'} count={attentionVolumes.length} title="Storage attention" detail="Inspect storage volumes" onOpen={() => setPlatformTab('storage')} openLabel="View storage" />
+                </div>
+                <AdminSection title="Core services" actions={<button type="button" className="secondary" onClick={() => setPlatformTab('health')}>View platform health</button>}>
+                  <div className="ax-service-list">
+                    {[operations.application, operations.database, operations.keyService].map((item) => <div className="ax-service" key={item.component}>
+                      <div className="ax-service-head"><strong>{humanize(item.component)}</strong><StatusPill value={item.status} /></div>
+                      <small>{item.message}</small>
+                    </div>)}
+                    <div className="ax-service"><div className="ax-service-head"><strong>Retention sweep</strong>
+                      {retentionSweepStatus && <StatusPill value={retentionSweepStatus.outcome} />}</div>
+                      <small>{retentionSweepStatus?.completedAt ? `${retentionSweepStatus.deleted} deleted · ${retentionSweepStatus.failed} failed · ${formatDate(retentionSweepStatus.completedAt)}` : 'No completed sweep evidence yet'}</small></div>
+                  </div>
+                </AdminSection>
+              </div>
+            )
+          )}
+          {platformTab === 'overview' && new URLSearchParams(window.location.search).get('experience') !== 'r7-live' && (!operations ? <AdminSection title="Operational overview"><p className="ax-note">Loading operational health…</p></AdminSection> : (
             <>
               <section className={`vx-ops-status vx-tone-${statusTone(operations.overallStatus)}`} aria-label="Overall platform status">
                 <div className="vx-ops-status-main">
