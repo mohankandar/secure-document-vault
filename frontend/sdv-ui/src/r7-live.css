@@ -192,3 +192,10 @@
 .sdv-r7-live .v-live-layout-activity{grid-template-columns:minmax(300px,850px)}
 .sdv-r7-live .v-live-layout-activity .v-live-detail{grid-column:auto}
 @media(max-width:700px){.sdv-r7-live .v-live-layout-search,.sdv-r7-live .v-live-layout-results,.sdv-r7-live .v-live-layout-activity{display:flex;flex-direction:column}}
+
+/* Live audit evidence filters use the same backend contract as the existing workspace. */
+.sdv-r7-live .v-live-activity-options{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));column-gap:12px;row-gap:6px;align-items:end;margin-bottom:16px}
+.sdv-r7-live .v-live-activity-options>label{display:grid;gap:6px;min-width:0}
+.sdv-r7-live .v-live-activity-options .v-live-read-toggle{grid-column:1/-1}
+.sdv-r7-live .v-live-activity-options input[type=search]{min-height:38px;width:100%;padding:7px 10px;border:1px solid #c3cacc;border-radius:7px;background:#fff;color:#14191c}
+@media(max-width:600px){.sdv-r7-live .v-live-activity-options{grid-template-columns:1fr}}
