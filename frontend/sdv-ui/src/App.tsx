@@ -3,6 +3,7 @@ import { PdfViewer } from './PdfViewer'
 import BusinessWorkspace from './BusinessWorkspace'
 import { LiveWorkspace } from './r7/LiveWorkspace'
 import { LiveRail } from './r7/LiveRail'
+import { LiveSectionTabs } from './r7/LiveSectionTabs'
 import Icon, { type IconName } from './Icon'
 import { AdminSection, AdminTabs, AttentionRow, AttentionTile, CapacityMeter, EmptyState, StateSheet, StatusPill, humanize, statusTone, type StatusTone } from './AdminKit'
 import { beginOidcLogin, clearOidcSession, endOidcSession, getAccessToken, handleOidcCallback, isLocalSecurityMode, OIDC_SESSION_EXPIRED_EVENT } from './auth'
@@ -32,6 +33,8 @@ import {
   SourceOperationalSummary,
   RetentionSweepStatus,
 } from './api'
+
+const LiveAdminTabs = new URLSearchParams(window.location.search).get('experience') === 'r7-live' ? LiveSectionTabs : AdminTabs
 
 type SystemInfo = {
   productCode: string
@@ -1147,7 +1150,7 @@ function App() {
         <div className={`ax-workspace ${selectedPersona === 'tenantIt' ? 'tenant-it-workspace' : 'business-admin-workspace'}`}>
           {selectedPersona === 'businessAdmin' ? (
             <>
-              <AdminTabs
+              <LiveAdminTabs
                 label="Business administration sections"
                 value={businessAdminTab}
                 onChange={setBusinessAdminTab}
@@ -1313,7 +1316,7 @@ function App() {
             </>
           ) : (
             <>
-              <AdminTabs
+              <LiveAdminTabs
                 label="Tenant IT administration sections"
                 value={tenantItTab}
                 onChange={setTenantItTab}
@@ -1483,7 +1486,7 @@ function App() {
 
       {view === 'operations' && canViewTechnicalFailures && (
         <div className="ax-workspace operations-workspace">
-          <AdminTabs
+          <LiveAdminTabs
             label="Platform operations sections"
             value={platformTab}
             onChange={setPlatformTab}
