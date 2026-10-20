@@ -106,3 +106,18 @@
 .sdv-r7-live.sidebar-collapsed .v7-live-navitem span,.sdv-r7-live.sidebar-collapsed .v7-live-tenant div,.sdv-r7-live.sidebar-collapsed .v7-live-tenant-icon+div,.sdv-r7-live.sidebar-collapsed .v7-live-footer,.sdv-r7-live.sidebar-collapsed .v7-live-navgroup{display:none}
 .sdv-r7-live.sidebar-collapsed .v7-live-tenant{padding:7px;justify-content:center}.sdv-r7-live.sidebar-collapsed .v7-live-brand strong{font-size:15px}
 .sdv-r7-live.sidebar-collapsed .v7-live-brand{padding:0 6px}.sdv-r7-live.sidebar-collapsed .v7-live-navitem{justify-content:center;padding:10px 5px}
+
+/* R7 live topbar: authenticated SDV tenant and backend status */
+.sdv-r7-live .modern-main-content{padding-top:0}
+.sdv-r7-live .sdv-page{max-width:none}
+.sdv-r7-live .v7-live-topbar{height:60px;position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:14px;padding:0 22px;margin:0 -24px 20px;background:#fff;border-bottom:1px solid #dce1e2;color:#14191c}
+.sdv-r7-live .v7-live-location{display:flex;gap:5px;flex-direction:column;min-width:0}
+.sdv-r7-live .v7-live-location strong{font-size:12px;font-weight:600;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.sdv-r7-live .v7-live-location span{font-size:11px;color:#737d82;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sdv-r7-live .v7-live-top-actions{margin-left:auto;display:flex;align-items:center;gap:14px}
+.sdv-r7-live .v7-live-runtime{font-size:12px;display:flex;align-items:center;gap:6px;color:#4a5459}
+.sdv-r7-live .v7-live-runtime>span{width:7px;height:7px;border-radius:50%;background:#c7cdd0}
+.sdv-r7-live .v7-live-runtime>span.is-up{background:#166a4f}
+.sdv-r7-live .v7-live-userbubble{display:grid;place-items:center;width:32px;height:32px;border-radius:50%;background:#e2efe9;color:#166a4f;font-size:11px;font-weight:700}
+.sdv-r7-live .v7-live-refresh{border:1px solid #dce1e2;background:#fff;border-radius:7px;padding:7px 12px;color:#166a4f;font-size:12px}
+@media(max-width:820px){.sdv-r7-live .v7-live-topbar{padding:0 12px;margin:0 -12px 12px}.sdv-r7-live .v7-live-runtime{display:none}}

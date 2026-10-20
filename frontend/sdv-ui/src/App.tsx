@@ -1072,6 +1072,17 @@ function App() {
 
       <main className="modern-main-content">
         <div className="sdv-page">
+          {new URLSearchParams(window.location.search).get('experience') === 'r7-live' ? (
+            <header className="v7-live-topbar">
+              <div className="v7-live-location"><strong>{session?.tenantDisplayName || 'Organization'}</strong>
+                <span>{pageMeta.title}{view === 'admin' ? ` / ${humanize(selectedPersona === 'tenantIt' ? tenantItTab : businessAdminTab)}` : view === 'operations' ? ` / ${humanize(platformTab)}` : ''}</span></div>
+              <div className="v7-live-top-actions">
+                <span className="v7-live-runtime" title="Status reported by SDV backend"><span className={(system?.status || '').toUpperCase() === 'UP' ? 'is-up' : 'is-unknown'} />{system?.status || 'Checking'}</span>
+                {view === 'operations' && canViewTechnicalFailures && <button type="button" className="v7-live-refresh" onClick={() => loadOperations()} disabled={loadingOperations}>{loadingOperations ? 'Refreshing…' : 'Refresh'}</button>}
+                <span className="v7-live-userbubble" title={session?.subject || 'Authentication required'}>{initials}</span>
+              </div>
+            </header>
+          ) : (
           <header className={`vero-topbar ${view === 'search' ? 'vero-topbar-compact' : ''}`}>
             <div className="vero-topbar-copy">
               <nav className="vero-breadcrumb" aria-label="Current location">
@@ -1099,6 +1110,7 @@ function App() {
               )}
             </div>
           </header>
+          )}
 
       {capacityBanner?.visible && (
         <div className={`banner capacity-banner ${capacityBanner.severity.toLowerCase()}`}>
