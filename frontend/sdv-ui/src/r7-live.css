@@ -135,3 +135,14 @@
 .sdv-r7-live .v7-live-flag{width:7px;height:7px;border-radius:50%;background:#b45309}
 .sdv-r7-live .v7-live-sectionnav button:focus-visible{outline:2px solid #166a4f;outline-offset:2px}
 @media(max-width:700px){.sdv-r7-live .v7-live-sectionnav{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:thin}.sdv-r7-live .v7-live-sectionnav button{white-space:nowrap}}
+
+/* Native R7 live administration composition: real SDV forms and mutations are retained. */
+.sdv-r7-live .v7-live-adminintro{display:flex;align-items:center;justify-content:space-between;gap:16px;margin:8px 0 22px;padding:22px 24px;border:1px solid #dce1e2;border-radius:10px;background:linear-gradient(115deg,#fff 60%,#eef6f1)}
+.sdv-r7-live .v7-live-adminintro-kicker{text-transform:uppercase;letter-spacing:.09em;color:#166a4f;font-size:10px;font-weight:700}
+.sdv-r7-live .v7-live-adminintro h1{margin:6px 0 5px;font-size:23px;letter-spacing:-.03em;line-height:1.25;color:#14191c}
+.sdv-r7-live .v7-live-adminintro p{font-size:12px;line-height:1.6;color:#4a5459;margin:0;max-width:650px}
+.sdv-r7-live .v7-live-adminintro-identity{display:flex;flex-direction:column;gap:4px;padding:12px 16px;border-left:1px solid #dce1e2;min-width:160px;max-width:240px}
+.sdv-r7-live .v7-live-adminintro-identity strong{font-size:12px;overflow-wrap:anywhere;color:#14191c}
+.sdv-r7-live .v7-live-adminintro-identity small{font-size:11px;color:#737d82}
+.sdv-r7-live .ax-workspace.business-admin-workspace .ax-section,.sdv-r7-live .ax-workspace.tenant-it-workspace .ax-section{border-radius:9px}
+@media(max-width:750px){.sdv-r7-live .v7-live-adminintro{flex-direction:column;align-items:stretch;padding:18px}.sdv-r7-live .v7-live-adminintro-identity{border-left:0;border-top:1px solid #dce1e2;padding:12px 0 0;max-width:none}}

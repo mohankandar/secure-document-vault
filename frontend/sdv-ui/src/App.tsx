@@ -1148,6 +1148,21 @@ function App() {
 
       {view === 'admin' && canViewAdministration && (
         <div className={`ax-workspace ${selectedPersona === 'tenantIt' ? 'tenant-it-workspace' : 'business-admin-workspace'}`}>
+          {new URLSearchParams(window.location.search).get('experience') === 'r7-live' && (
+            <section className="v7-live-adminintro" aria-label="Administration context">
+              <div>
+                <span className="v7-live-adminintro-kicker">{selectedPersona === 'tenantIt' ? 'Tenant administration' : 'Business governance'}</span>
+                <h1>{selectedPersona === 'tenantIt' ? 'Tenant IT Administration' : 'Business Administration'}</h1>
+                <p>{selectedPersona === 'tenantIt'
+                  ? 'Configure enterprise identity, document storage, integrations, and environment settings.'
+                  : 'Manage policies, business roles, document retention, and searchable metadata.'}</p>
+              </div>
+              <div className="v7-live-adminintro-identity" title="Current authenticated tenant">
+                <strong>{session?.tenantDisplayName || 'Organization'}</strong>
+                <small>Changes are subject to server-side permissions</small>
+              </div>
+            </section>
+          )}
           {selectedPersona === 'businessAdmin' ? (
             <>
               <LiveAdminTabs
