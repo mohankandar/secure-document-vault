@@ -134,10 +134,10 @@ export function Workspace() {
             </div>
             <fieldset className="v-field" style={{ border: 0, padding: 0, margin: 0 }}>
               <legend className="v-label" style={{ marginBottom: 6 }}>Last updated</legend>
-              <div className="row" style={{ minWidth: 0 }}>
-                <input className="v-input" style={{ flex: '1 1 0', minWidth: 0 }} type="date" aria-label="Last updated from" value={from} onChange={(e) => setFrom(e.target.value)} />
+              <div className="ws-date-fields">
+                <input className="v-input" type="date" aria-label="Last updated from" value={from} onChange={(e) => setFrom(e.target.value)} />
                 <span className="faint" aria-hidden>–</span>
-                <input className="v-input" style={{ flex: '1 1 0', minWidth: 0 }} type="date" aria-label="Last updated to" value={to} onChange={(e) => setTo(e.target.value)} />
+                <input className="v-input" type="date" aria-label="Last updated to" value={to} onChange={(e) => setTo(e.target.value)} />
               </div>
             </fieldset>
             {touched && !hasCriteria && <Callout tone="warn" title="Enter at least one criterion">Open-ended browsing isn&apos;t supported. Search by an identifier or field.</Callout>}

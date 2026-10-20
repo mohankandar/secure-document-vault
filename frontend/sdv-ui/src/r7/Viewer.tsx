@@ -230,6 +230,7 @@ export function Viewer({ record, results, docId, onClose }: { record: RecordItem
 
       <div className="vw-body">
         <nav className="vw-docs" aria-label="Record documents">{docsNav}</nav>
+        <div className="vw-stage">
         <div className="vw-canvas" ref={canvasRef} style={{ position: 'relative' }}>
           {viewerFailure && <div className="v-callout" role="alert">{viewerFailure}</div>}
           {viewerLoading && <div className="v-callout" role="status">Opening secure document…</div>}
@@ -243,14 +244,15 @@ export function Viewer({ record, results, docId, onClose }: { record: RecordItem
                 highlights={searchResults?.highlights?.filter(h=>h.pageNumber===p) ?? []}/>
             </div>
           })}
+        </div>
           {redacting && !liveSession ? (
-            <div className="vw-redact-bar" style={{ position: 'sticky', bottom: 12, transform: 'none', left: 'auto', right: 'auto', width: 'min(620px, 100%)' }}>
+            <div className="vw-redact-bar" style={{ width: 'min(620px, 100%)' }}>
               <span className="grow" style={{ fontSize: 14 }}><strong>{marks.length}</strong> region{marks.length === 1 ? '' : 's'} marked</span>
               <button type="button" className="v-btn sm" onClick={() => { setRedacting(false); setMarks([]) }}>Cancel</button>
               <button type="button" className="v-btn danger sm" disabled={marks.length === 0} onClick={() => setReview(true)}>Review</button>
             </div>
           ) : (
-            <div className="vw-redact-bar" style={{ position: 'sticky', bottom: 12, transform: 'none', left: 'auto', right: 'auto', width: 'auto', padding: 6, gap: 2, background: 'var(--surface)', color: 'var(--ink)', border: '1px solid var(--line)' }} role="toolbar" aria-label="Page and zoom">
+            <div className="vw-redact-bar" style={{ padding: 6, gap: 2, background: 'var(--surface)', color: 'var(--ink)', border: '1px solid var(--line)' }} role="toolbar" aria-label="Page and zoom">
               <button type="button" className="v-btn quiet icon sm" onClick={() => goPage(page - 1)} disabled={page <= 1} aria-label="Previous page"><ChevronLeft size={16} /></button>
               <span className="vw-page"><input value={page} inputMode="numeric" aria-label="Page number" onChange={(e) => { const n = Number(e.target.value); if (n) goPage(n) }} />/ {pageTotal}</span>
               <button type="button" className="v-btn quiet icon sm" onClick={() => goPage(page + 1)} disabled={page >= pageTotal} aria-label="Next page"><ChevronRight size={16} /></button>
@@ -309,11 +311,12 @@ function SecurePage({documentId,page,scale,scrollRoot,matches,highlights}:{
     return ()=>{active=false}
   },[visible,documentId,page,scale])
   useEffect(()=>()=>{if(url)URL.revokeObjectURL(url)},[url])
-  return <div ref={container} style={{position:'relative',width:'100%',minHeight:'inherit'}}>
-    {url ? <img src={url} alt={`Document page ${page}`} style={{width:'100%',height:'auto',display:'block'}}/> :
-      <div className="v-callout" role="status">{error || `Loading page ${page}…`}</div>}
-    {url && highlights.map((h,i)=><div key={i} aria-hidden style={{position:'absolute',pointerEvents:'none',left:`${h.x*100}%`,top:`${h.y*100}%`,
-      width:`${h.width*100}%`,height:`${h.height*100}%`,background:'rgba(255,213,47,.45)',outline:'1px solid rgba(120,80,0,.7)'}}/>)}
+  return <div ref={container} style={{width:'100%',minHeight:'inherit'}}>
+    {url ? <div style={{position:'relative',width:'100%',lineHeight:0}}>
+      <img src={url} alt={`Document page ${page}`} style={{width:'100%',height:'auto',display:'block'}}/>
+      {highlights.map((h,i)=><div key={i} aria-hidden style={{position:'absolute',pointerEvents:'none',left:`${h.x*100}%`,top:`${h.y*100}%`,
+        width:`${h.width*100}%`,height:`${h.height*100}%`,background:'rgba(255,213,47,.45)',outline:'1px solid rgba(120,80,0,.7)'}}/>)}
+    </div> : <div className="v-callout" role="status">{error || `Loading page ${page}…`}</div>}
     {matches>0 && <span className="sr-only">{matches} text matches on page {page}</span>}
   </div>
 }

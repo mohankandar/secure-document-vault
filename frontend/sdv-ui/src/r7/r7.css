@@ -472,3 +472,11 @@ html.r7-html, html.r7-html body { margin: 0; background: var(--bg); color: var(-
 .vw-redact-bar[role="toolbar"] .v-btn:not(.primary):not(.danger) { color: var(--ink); border-color: var(--line-strong); }
 .vw-redact-bar[role="toolbar"] .vw-page { color: var(--ink); }
 .vw-redact-bar[role="toolbar"] .vw-sep { background: var(--line-strong); }
+
+/* R7 integration adjustments: stable bottom toolbar and fully readable native dates. */
+.vw-stage { position:relative; flex:1; min-width:0; min-height:0; display:flex; }
+.vw-stage > .vw-canvas { flex:1; min-width:0; min-height:0; }
+.vw-stage > .vw-redact-bar { position:absolute; left:50%; right:auto; bottom:calc(12px + env(safe-area-inset-bottom)); transform:translateX(-50%); width:max-content; max-width:calc(100% - 24px); margin:0; }
+.ws-date-fields { display:flex; flex-direction:column; gap:8px; min-width:0; }
+.ws-date-fields > .v-input { width:100%; min-width:0; box-sizing:border-box; }
+.ws-date-fields > .faint { display:none; }
