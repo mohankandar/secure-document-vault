@@ -30,6 +30,7 @@ export function LiveWorkspace({ persona, capabilities }: {
   const activityRequest = useRef(0)
   const [detailTab, setDetailTab] = useState<'documents' | 'activity'>('documents')
   const [includeViews, setIncludeViews] = useState(false)
+  const [activityRange, setActivityRange] = useState('90')
   const [activity, setActivity] = useState<(DocumentActivity & { documentName: string })[]>([])
   const [activityLoading, setActivityLoading] = useState(false)
   const [activityError, setActivityError] = useState('')
@@ -99,6 +100,7 @@ export function LiveWorkspace({ persona, capabilities }: {
       try {
         const batches = await Promise.all(record.documents.map(async document => {
           const query = new URLSearchParams({ includeViewEvents: String(includeViews), limit: '200' })
+          if (activityRange !== 'all') query.set('from', new Date(Date.now() - Number(activityRange) * 86400000).toISOString())
           const events = await contentApi<DocumentActivity[]>(
             `/api/v1/business/documents/${document.documentId}/activity?${query}`, persona)
           return events.map(event => ({ ...event, documentName: document.originalFilename }))
@@ -113,7 +115,7 @@ export function LiveWorkspace({ persona, capabilities }: {
     }
     void load()
     return () => { activityRequest.current += 1 }
-  }, [record, detailTab, includeViews, persona])
+  }, [record, detailTab, includeViews, activityRange, persona])
 
   if (selectedDocument && can('VIEW_PDF')) {
     return <section className="v-live-viewer" aria-label="Secure document viewer">
@@ -191,7 +193,17 @@ export function LiveWorkspace({ persona, capabilities }: {
           {record.incompleteAttention && <p className="muted">Some submissions are incomplete. Only available documents can be opened.</p>}
           </>}
           {detailTab === 'activity' && <section className="v-live-activity" aria-label="Record activity">
-            <label className="v-live-read-toggle"><input type="checkbox" checked={includeViews} onChange={e => setIncludeViews(e.target.checked)} /> Include document view activity</label>
+            <div className="v-live-activity-options">
+              <label>Activity period
+                <select value={activityRange} onChange={e => setActivityRange(e.target.value)}>
+                  <option value="30">Last 30 days</option>
+                  <option value="90">Last 90 days</option>
+                  <option value="365">Last 365 days</option>
+                  <option value="all">All available</option>
+                </select>
+              </label>
+              <label className="v-live-read-toggle"><input type="checkbox" checked={includeViews} onChange={e => setIncludeViews(e.target.checked)} /> Include document view activity</label>
+            </div>
             {activityError && <p role="alert" className="v-live-error">{activityError}</p>}
             {activityLoading ? <p role="status">Loading activity…</p> :
               activity.length === 0 ? <p className="muted">No activity found for the selected record.</p> :
