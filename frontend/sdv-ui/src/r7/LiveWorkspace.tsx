@@ -121,7 +121,7 @@ export function LiveWorkspace({ persona, capabilities }: {
   if (selectedDocument && can('VIEW_PDF')) {
     return <section className="v-live-viewer" aria-label="Secure document viewer">
       <header className="v-live-viewer-context">
-        <button type="button" className="v-live-viewer-back" onClick={() => setDocumentId('')}>
+        <button type="button" className="v-live-viewer-back" onClick={() => { setDocumentId(''); setWorkspaceTab('results') }}>
           <ArrowLeft size={16} aria-hidden /> Back to record
         </button>
         <div className="v-live-viewer-current">
@@ -138,15 +138,15 @@ export function LiveWorkspace({ persona, capabilities }: {
         canRedact={can('PERMANENT_REDACTION')} canDownload={can('DOWNLOAD_CURRENT_PDF')}
         canPrint={can('PRINT_DOCUMENT')} canTag={can('ADD_DOCUMENT_TAG')}
         canComment={can('ADD_DOCUMENT_COMMENT')} embedded
-        onClose={() => setDocumentId('')} /></div>
+        onClose={() => { setDocumentId(''); setWorkspaceTab('results') }} /></div>
     </section>
   }
 
   return <div className="v-live-workspace">
     <nav className="v-live-workflow-tabs" aria-label="Business workspace">
-      <button type="button" aria-current={workspaceTab === 'search' ? 'page' : undefined} onClick={() => setWorkspaceTab('search')}>Search</button>
-      <button type="button" aria-current={workspaceTab === 'results' ? 'page' : undefined} disabled={!searched} onClick={() => setWorkspaceTab('results')}>Results</button>
-      <button type="button" aria-current={workspaceTab === 'viewer' ? 'page' : undefined} disabled={!record || !record.documents.length || !can('VIEW_PDF')} onClick={() => { if (record?.documents[0] && can('VIEW_PDF')) setDocumentId(record.documents[0].documentId) }}>Document Viewer</button>
+      <button type="button" aria-current={workspaceTab === 'search' ? 'page' : undefined} onClick={() => { setDetailTab('documents'); setWorkspaceTab('search') }}>Search</button>
+      <button type="button" aria-current={workspaceTab === 'results' ? 'page' : undefined} disabled={!searched} onClick={() => { setDetailTab('documents'); setWorkspaceTab('results') }}>Results</button>
+      <button type="button" aria-current={workspaceTab === 'viewer' ? 'page' : undefined} disabled={!record || !record.documents.length || !can('VIEW_PDF')} onClick={() => { if (record?.documents[0] && can('VIEW_PDF')) { setWorkspaceTab('viewer'); setDocumentId(record.documents[0].documentId) } }>Document Viewer</button>
       <button type="button" aria-current={workspaceTab === 'activity' ? 'page' : undefined} disabled={!record} onClick={() => { setDetailTab('activity'); setWorkspaceTab('activity') }}>Activity</button>
     </nav>
     <header className="v-live-head"><div><span className="eyebrow">Records workspace</span><h1>Find and review documents</h1>
@@ -154,8 +154,8 @@ export function LiveWorkspace({ persona, capabilities }: {
       {searched && <button className="v-btn quiet" type="button" onClick={clear}><X size={15}/> Clear search</button>}
     </header>
     {error && <div className="v-live-error" role="alert">{error}</div>}
-    <div className="v-live-layout">
-      <form className="v-live-panel v-live-filters" onSubmit={(e: FormEvent) => { e.preventDefault(); void search(1) }}>
+    <div className={`v-live-layout v-live-layout-${workspaceTab}`}>
+      {workspaceTab === 'search' && <form className="v-live-panel v-live-filters" onSubmit={(e: FormEvent) => { e.preventDefault(); void search(1) }}>
         <h2>Search records</h2>
         <label>Source<select value={sourceId} onChange={e => { clear(); setSourceId(e.target.value) }}>
           {schema.sources.map(s => <option key={s.sourceId} value={s.sourceId}>{s.displayName}</option>)}</select></label>
@@ -167,8 +167,8 @@ export function LiveWorkspace({ persona, capabilities }: {
         <div className="v-live-dates"><label>Updated from<input type="date" value={updatedFrom} onChange={e => setUpdatedFrom(e.target.value)}/></label>
         <label>Updated to<input type="date" value={updatedTo} onChange={e => setUpdatedTo(e.target.value)}/></label></div>
         <button className="v-btn primary" type="submit" disabled={searching || !sourceId}><Search size={16}/>{searching ? 'Searching…' : 'Search'}</button>
-      </form>
-      <section className="v-live-panel v-live-results" aria-label="Search results">
+      </form>}
+      {workspaceTab === 'results' && <section className="v-live-panel v-live-results" aria-label="Search results">
         <div className="v-live-section-head"><h2>Results</h2><span>{searched ? `${results.length} records · page ${page}` : 'Run a search to begin'}</span></div>
         {searched && !results.length && <p className="muted">No matching records.</p>}
         {results.map(r => <button type="button" key={r.recordRef}
@@ -181,17 +181,17 @@ export function LiveWorkspace({ persona, capabilities }: {
         </button>)}
         {searched && <div className="v-live-pagination"><button type="button" className="v-btn quiet" disabled={page <= 1 || searching} onClick={() => void search(page - 1)}>Previous</button>
           <button type="button" className="v-btn quiet" disabled={!hasMore || searching} onClick={() => void search(page + 1)}>Next</button></div>}
-      </section>
-      <section className="v-live-panel v-live-detail" aria-label="Record details">
+      </section>}
+      {(workspaceTab === 'results' || workspaceTab === 'activity') && <section className="v-live-panel v-live-detail" aria-label="Record details">
         <div className="v-live-section-head"><h2>Record</h2>{loading && <span>Loading…</span>}</div>
         {!record && <p className="muted">Select a result to see its documents.</p>}
         {record && <><div className="v-live-identifiers">{record.identifiers.map(x => <div key={x.fieldKey}>
           <small>{x.displayLabel}</small><strong>{x.value}</strong></div>)}</div>
-          <div className="v-live-detailtabs" role="tablist" aria-label="Record details">
+          {workspaceTab === 'results' && <div className="v-live-detailtabs" role="tablist" aria-label="Record details">
             <button type="button" role="tab" aria-selected={detailTab === 'documents'} onClick={() => { setDetailTab('documents'); setWorkspaceTab('results') }}>Documents ({record.documents.length})</button>
             <button type="button" role="tab" aria-selected={detailTab === 'activity'} onClick={() => { setDetailTab('activity'); setWorkspaceTab('activity') }}>Activity</button>
-          </div>
-          {detailTab === 'documents' && <>
+          </div>}
+          {workspaceTab === 'results' && detailTab === 'documents' && <>
           <h3>Documents ({record.documents.length})</h3>
           {!record.documents.length && <p className="muted">No available documents.</p>}
           {record.documents.map(d => <button type="button" key={d.documentId} className="v-live-doc"
@@ -199,7 +199,7 @@ export function LiveWorkspace({ persona, capabilities }: {
             <FileText size={17}/><span>{d.originalFilename}</span><ArrowRight size={15}/></button>)}
           {record.incompleteAttention && <p className="muted">Some submissions are incomplete. Only available documents can be opened.</p>}
           </>}
-          {detailTab === 'activity' && <section className="v-live-activity" aria-label="Record activity">
+          {workspaceTab === 'activity' && <section className="v-live-activity" aria-label="Record activity">
             <div className="v-live-activity-options">
               <label>Activity period
                 <select value={activityRange} onChange={e => setActivityRange(e.target.value)}>
@@ -220,7 +220,7 @@ export function LiveWorkspace({ persona, capabilities }: {
               </li>)}</ol>}
           </section>
         </>}
-      </section>
+      </section>}
     </div>
   </div>
 }
