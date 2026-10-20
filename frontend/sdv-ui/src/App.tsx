@@ -1133,6 +1133,7 @@ function App() {
         ) : (
           new URLSearchParams(window.location.search).get('experience') === 'r7-live' ? (
             <LiveWorkspace
+              key={`${session.tenantId}:${session.subject}:${selectedPersona}`}
               persona={contentPersona}
               capabilities={session.capabilities}
             />
