@@ -467,3 +467,8 @@ html.r7-html, html.r7-html body { margin: 0; background: var(--bg); color: var(-
 .ds-type > div { display: flex; flex-direction: column; gap: 2px; padding-bottom: 14px; border-bottom: 1px solid var(--line); }
 
 @media (prefers-reduced-motion: reduce) { .r7 *, .r7 *::before, .r7 *::after { animation: none !important; transition: none !important; } }
+
+/* Connected R7 viewer: preserve the prototype toolbar while making controls readable. */
+.vw-redact-bar[role="toolbar"] .v-btn:not(.primary):not(.danger) { color: var(--ink); border-color: var(--line-strong); }
+.vw-redact-bar[role="toolbar"] .vw-page { color: var(--ink); }
+.vw-redact-bar[role="toolbar"] .vw-sep { background: var(--line-strong); }

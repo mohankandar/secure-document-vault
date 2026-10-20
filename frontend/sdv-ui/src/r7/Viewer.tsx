@@ -3,7 +3,7 @@ import { ArrowLeft, ChevronLeft, ChevronRight, Download, Eraser, Info, Lock, Max
 import { useStore } from './store'
 import { BUSINESS_LIMITS, CAPABILITY_LABELS, PAGE_TEXT, RETENTION, type Capability, type Doc, type RecordItem, type Redaction } from './data'
 import { Badge, Callout, Dialog, Drawer, Tabs, fmtDate, fmtDateTime, fmtRel, humanize } from './ui'
-import { viewerMetadata, viewerPage, viewerSearch, type ViewerSearch } from './liveApi'
+import { viewerMetadata, viewerPage, viewerSearch, record as fetchRecord, toRecord, type ViewerSearch } from './liveApi'
 
 type Zoom = 'width' | 'page' | number
 type InfoTab = 'details' | 'comments' | 'tags' | 'activity'
@@ -11,7 +11,7 @@ type InfoTab = 'details' | 'comments' | 'tags' | 'activity'
 const SSN = /\d{3}-\d{2}-\d{4}/
 
 export function Viewer({ record, results, docId, onClose }: { record: RecordItem; results: RecordItem[]; docId: string; onClose: () => void }) {
-  const { can, role, setOpenDocId, setSelectedRef, updateDoc, addDocActivity, toast, liveSession } = useStore()
+  const { can, role, setOpenDocId, setSelectedRef, setRecords, updateDoc, addDocActivity, toast, liveSession } = useStore()
   const doc = record.docs.find((d) => d.id === docId) ?? record.docs[0]
   const [pageCount, setPageCount] = useState(0)
   const [viewerFailure, setViewerFailure] = useState('')
@@ -68,13 +68,26 @@ export function Viewer({ record, results, docId, onClose }: { record: RecordItem
   useEffect(() => {
     const root = canvasRef.current
     if (!root) return
-    const io = new IntersectionObserver((entries) => {
-      const best = entries.filter((e) => e.isIntersecting).sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0]
-      if (best) setPage(Number((best.target as HTMLElement).dataset.page))
-    }, { root, threshold: [0.25, 0.5, 0.75] })
-    sheetRefs.current.forEach((s) => s && io.observe(s))
-    return () => io.disconnect()
-  }, [doc.id, zoom, pageTotal])
+    let frame = 0
+    const sync = () => {
+      cancelAnimationFrame(frame)
+      frame = requestAnimationFrame(() => {
+        const top = root.getBoundingClientRect().top + root.clientHeight * .28
+        let nearest = 1
+        let distance = Number.POSITIVE_INFINITY
+        sheetRefs.current.forEach((el, index) => {
+          if (!el) return
+          const r = el.getBoundingClientRect()
+          const d = top < r.top ? r.top - top : top > r.bottom ? top - r.bottom : 0
+          if (d < distance) { distance = d; nearest = index + 1 }
+        })
+        setPage(nearest)
+      })
+    }
+    root.addEventListener('scroll', sync, { passive: true })
+    sync()
+    return () => { root.removeEventListener('scroll', sync); cancelAnimationFrame(frame) }
+  }, [doc.id, pageTotal, zoom])
 
   useEffect(() => {
     const k = (e: KeyboardEvent) => {
@@ -91,7 +104,13 @@ export function Viewer({ record, results, docId, onClose }: { record: RecordItem
 
   const matchCount = searchResults?.totalMatches ?? 0
   useEffect(() => { const first=searchResults?.pages[0]?.pageNumber; if(first) goPage(first) }, [searchResults])
-  useEffect(() => { const nav=document.querySelector('.vw-docs [aria-current="true"]'); nav?.scrollIntoView({block:'nearest'}) }, [page])
+  useEffect(() => {
+    const nav = document.querySelector('.vw-docs') as HTMLElement | null
+    const active = nav?.querySelector('.vw-thumbs [aria-current="true"]') as HTMLElement | null
+    if (!nav || !active) return
+    const navBox = nav.getBoundingClientRect(), item = active.getBoundingClientRect()
+    if (item.top < navBox.top || item.bottom > navBox.bottom) nav.scrollTop += item.top - navBox.top - nav.clientHeight / 2
+  }, [page])
 
   const deny = (c: Capability) => toast({ tone: 'bad', title: 'Not permitted for your role', detail: `${role.name} doesn't include "${CAPABILITY_LABELS[c]}". In production the server enforces this and records a DENIED audit event.` })
   const gated = (c: Capability, run: () => void) => () => (can(c) ? run() : deny(c))
@@ -127,13 +146,19 @@ export function Viewer({ record, results, docId, onClose }: { record: RecordItem
     setMarks([]); setRedacting(false); setReview(false)
   }
 
-  const switchRecord = (dir: 1 | -1) => {
+  const [recordLoading, setRecordLoading] = useState(false)
+  const switchRecord = async (dir: 1 | -1) => {
     const next = results[recIndex + dir]
-    if (!next || !next.docs.length) return
-    setSelectedRef(next.ref)
-    if(!next.docs[0])return
-    setOpenDocId(next.docs[0].id)
-    if(!liveSession)addDocActivity(next.docs[0].id, 'DOCUMENT_VIEWED')
+    if (!next || recordLoading) return
+    setRecordLoading(true)
+    try {
+      const loaded = next.docs.length ? next : toRecord(await fetchRecord(next.ref))
+      if (!loaded.docs.length) { toast({ tone: 'bad', title: 'This record has no viewable documents' }); return }
+      setRecords(prev => prev.map(r => r.ref === loaded.ref ? loaded : r))
+      setSelectedRef(loaded.ref)
+      setOpenDocId(loaded.docs[0].id)
+    } catch (e) { toast({ tone: 'bad', title: 'Unable to open next record', detail: String(e) }) }
+    finally { setRecordLoading(false) }
   }
   const switchDoc = (id: string) => { setOpenDocId(id); if(!liveSession)addDocActivity(id, 'DOCUMENT_VIEWED'); setDocsOpen(false) }
 
@@ -143,8 +168,8 @@ export function Viewer({ record, results, docId, onClose }: { record: RecordItem
         <div className="row between">
           <span className="eyebrow">Record {recIndex >= 0 ? `${recIndex + 1} of ${results.length}` : ''}</span>
           <span className="row" style={{ gap: 2 }}>
-            <button type="button" className="v-btn quiet icon sm" disabled={recIndex <= 0 || !results[recIndex - 1]?.docs.length} onClick={() => switchRecord(-1)} aria-label="Previous record"><ChevronLeft size={16} /></button>
-            <button type="button" className="v-btn quiet icon sm" disabled={recIndex < 0 || recIndex >= results.length - 1 || !results[recIndex + 1]?.docs.length} onClick={() => switchRecord(1)} aria-label="Next record"><ChevronRight size={16} /></button>
+            <button type="button" className="v-btn quiet icon sm" disabled={recordLoading || recIndex <= 0} onClick={() => switchRecord(-1)} aria-label="Previous record"><ChevronLeft size={16} /></button>
+            <button type="button" className="v-btn quiet icon sm" disabled={recordLoading || recIndex < 0 || recIndex >= results.length - 1} onClick={() => switchRecord(1)} aria-label="Next record"><ChevronRight size={16} /></button>
           </span>
         </div>
         <strong style={{ fontSize: 14 }}>{record.title}</strong>

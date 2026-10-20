@@ -104,7 +104,7 @@ function ShellInner() {
     return () => window.removeEventListener('keydown', k)
   }, [])
 
-  const allowed = route.area === 'workspace' && !!liveSession?.capabilities.includes('SEARCH_RECORDS')
+  const allowed = route.area === 'system' || (route.area === 'workspace' && !!liveSession?.capabilities.includes('SEARCH_RECORDS'))
   return (
     <div className="r7">
       <div className="v-app">
@@ -122,11 +122,12 @@ function ShellInner() {
         </header>
         <Rail onOpenSession={() => setSession(true)} />
         <main className="v-main" id="main">
-          {sessionLoading ? <div className="v-body">Connecting to SDV…</div> : sessionError ? <div className="v-body" role="alert">Session unavailable: {sessionError}</div> : !allowed ? <AccessBoundary /> :
-            route.area === 'workspace' ? <Workspace /> :
+          <div style={{ display: route.area === 'workspace' && !sessionLoading && !sessionError && allowed ? 'contents' : 'none' }}><Workspace /></div>
+          {sessionLoading ? <div className="v-body">Connecting to SDV…</div> : sessionError ? <div className="v-body" role="alert">Session unavailable: {sessionError}</div> : route.area === 'workspace' && allowed ? null : !allowed ? <AccessBoundary /> :
+            route.area === 'system' ? <DesignSystem /> :
             route.area === 'governance' ? <Governance /> :
             route.area === 'tenant' ? <TenantAdmin /> :
-            route.area === 'operations' ? <Operations /> : <DesignSystem />}
+            route.area === 'operations' ? <Operations /> : null}
         </main>
         <BottomNav onOpenSession={() => setSession(true)} onOpenPalette={() => setPalette(true)} />
       </div>
