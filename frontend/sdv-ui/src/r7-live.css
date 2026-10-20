@@ -185,3 +185,10 @@
 .sdv-r7-live .v-live-workflow-tabs button[aria-current=page]{border-bottom-color:#166a4f;color:#166a4f;font-weight:600}
 .sdv-r7-live .v-live-workflow-tabs button:disabled{opacity:.45;cursor:not-allowed}
 .sdv-r7-live .v-live-workflow-tabs button:focus-visible{outline:2px solid #166a4f;outline-offset:2px}
+
+/* R7 workspace tabs own the visible panels, rather than only marking navigation. */
+.sdv-r7-live .v-live-layout-search{grid-template-columns:minmax(280px,600px)}
+.sdv-r7-live .v-live-layout-results{grid-template-columns:minmax(260px,1fr) minmax(300px,1.15fr)}
+.sdv-r7-live .v-live-layout-activity{grid-template-columns:minmax(300px,850px)}
+.sdv-r7-live .v-live-layout-activity .v-live-detail{grid-column:auto}
+@media(max-width:700px){.sdv-r7-live .v-live-layout-search,.sdv-r7-live .v-live-layout-results,.sdv-r7-live .v-live-layout-activity{display:flex;flex-direction:column}}
