@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
-import { ArrowRight, FileText, Search, X } from 'lucide-react'
+import { ArrowLeft, ArrowRight, FileText, Search, X } from 'lucide-react'
 import { PdfViewer } from '../PdfViewer'
 import { contentApi, type BusinessRecord, type RecordSummary, type SearchResponse, type SearchSchema } from '../api'
 
@@ -82,14 +82,25 @@ export function LiveWorkspace({ persona, capabilities }: {
 
   if (selectedDocument && can('VIEW_PDF')) {
     return <section className="v-live-viewer" aria-label="Secure document viewer">
-      <PdfViewer
+      <header className="v-live-viewer-context">
+        <button type="button" className="v-live-viewer-back" onClick={() => setDocumentId('')}>
+          <ArrowLeft size={16} aria-hidden /> Back to record
+        </button>
+        <div className="v-live-viewer-current">
+          <span>Document viewer</span>
+          <strong title={selectedDocument.originalFilename}>{selectedDocument.originalFilename}</strong>
+          <small>{source?.displayName || record?.sourceDisplayName || 'Document source'}</small>
+        </div>
+        <span className="v-live-viewer-secure">Secure document session</span>
+      </header>
+      <div className="v-live-viewer-content"><PdfViewer
         key={selectedDocument.documentId} documentId={selectedDocument.documentId}
         filename={selectedDocument.originalFilename} documents={record?.documents ?? []}
         selectedDocumentId={documentId} onSelectDocument={setDocumentId} persona={persona}
         canRedact={can('PERMANENT_REDACTION')} canDownload={can('DOWNLOAD_CURRENT_PDF')}
         canPrint={can('PRINT_DOCUMENT')} canTag={can('ADD_DOCUMENT_TAG')}
         canComment={can('ADD_DOCUMENT_COMMENT')} embedded
-        onClose={() => setDocumentId('')} />
+        onClose={() => setDocumentId('')} /></div>
     </section>
   }
 
