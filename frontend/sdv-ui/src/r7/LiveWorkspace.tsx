@@ -32,6 +32,8 @@ export function LiveWorkspace({ persona, capabilities }: {
   const [workspaceTab, setWorkspaceTab] = useState<'search' | 'results' | 'viewer' | 'activity'>('search')
   const [includeViews, setIncludeViews] = useState(false)
   const [activityRange, setActivityRange] = useState('90')
+  const [activityAction, setActivityAction] = useState('')
+  const [activityActor, setActivityActor] = useState('')
   const [activity, setActivity] = useState<(DocumentActivity & { documentName: string })[]>([])
   const [activityLoading, setActivityLoading] = useState(false)
   const [activityError, setActivityError] = useState('')
@@ -102,6 +104,8 @@ export function LiveWorkspace({ persona, capabilities }: {
         const batches = await Promise.all(record.documents.map(async document => {
           const query = new URLSearchParams({ includeViewEvents: String(includeViews), limit: '200' })
           if (activityRange !== 'all') query.set('from', new Date(Date.now() - Number(activityRange) * 86400000).toISOString())
+          if (activityAction.trim()) query.set('action', activityAction.trim())
+          if (activityActor.trim()) query.set('actorId', activityActor.trim())
           const events = await contentApi<DocumentActivity[]>(
             `/api/v1/business/documents/${document.documentId}/activity?${query}`, persona)
           return events.map(event => ({ ...event, documentName: document.originalFilename }))
@@ -116,7 +120,7 @@ export function LiveWorkspace({ persona, capabilities }: {
     }
     void load()
     return () => { activityRequest.current += 1 }
-  }, [record, detailTab, includeViews, activityRange, persona])
+  }, [record, detailTab, includeViews, activityRange, activityAction, activityActor, persona])
 
   if (selectedDocument && can('VIEW_PDF')) {
     return <div className="v-live-workspace v-live-workspace-viewer">
@@ -216,6 +220,8 @@ export function LiveWorkspace({ persona, capabilities }: {
                   <option value="all">All available</option>
                 </select>
               </label>
+              <label>Action code<input type="search" value={activityAction} onChange={e => setActivityAction(e.target.value)} placeholder="Filter by action"/></label>
+              <label>Actor ID<input type="search" value={activityActor} onChange={e => setActivityActor(e.target.value)} placeholder="Filter by actor"/></label>
               <label className="v-live-read-toggle"><input type="checkbox" checked={includeViews} onChange={e => setIncludeViews(e.target.checked)} /> Include document view activity</label>
             </div>
             {activityError && <p role="alert" className="v-live-error">{activityError}</p>}
