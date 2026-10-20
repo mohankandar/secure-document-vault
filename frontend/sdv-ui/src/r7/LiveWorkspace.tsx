@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { ArrowRight, FileText, Search, X } from 'lucide-react'
 import { PdfViewer } from '../PdfViewer'
 import { contentApi, type BusinessRecord, type RecordSummary, type SearchResponse, type SearchSchema } from '../api'
@@ -8,6 +8,9 @@ export function LiveWorkspace({ persona, capabilities }: {
   persona: 'business' | 'steward'
   capabilities: string[]
 }) {
+  // Ignore superseded responses when the role, source, search or selected record changes.
+  const searchRequest = useRef(0)
+  const recordRequest = useRef(0)
   const [schema, setSchema] = useState<SearchSchema>({ sources: [] })
   const [sourceId, setSourceId] = useState('')
   const [criteria, setCriteria] = useState<Record<string, string>>({})
@@ -31,11 +34,14 @@ export function LiveWorkspace({ persona, capabilities }: {
 
   useEffect(() => {
     let active = true
+    searchRequest.current += 1
+    recordRequest.current += 1
+    setError('')
     setSchema({ sources: [] }); setSourceId(''); setResults([]); setRecord(null); setDocumentId(''); setSearched(false)
     contentApi<SearchSchema>('/api/v1/business/search-schema', persona)
       .then(data => { if (active) { setSchema(data); setSourceId(data.sources[0]?.sourceId ?? '') } })
       .catch(e => { if (active) setError(e instanceof Error ? e.message : 'Search configuration unavailable') })
-    return () => { active = false }
+    return () => { active = false; searchRequest.current += 1; recordRequest.current += 1 }
   }, [persona])
 
   const search = async (nextPage: number) => {
@@ -44,6 +50,8 @@ export function LiveWorkspace({ persona, capabilities }: {
     if (!Object.keys(submitted).length && !dateFrom && !dateTo && !updatedFrom && !updatedTo) {
       setError('Enter at least one search value or a date range.'); return
     }
+    const request = ++searchRequest.current
+    recordRequest.current += 1
     setSearching(true); setError('')
     try {
       const response = await contentApi<SearchResponse>('/api/v1/business/search', persona, {
@@ -51,20 +59,22 @@ export function LiveWorkspace({ persona, capabilities }: {
         body: JSON.stringify({ sourceId, criteria: submitted, dateFrom: toDate(dateFrom), dateTo: toDate(dateTo, true),
           lastUpdatedFrom: toDate(updatedFrom), lastUpdatedTo: toDate(updatedTo, true), page: nextPage, pageSize: 25 }),
       })
+      if (request !== searchRequest.current) return
       setResults(response.records); setPage(response.page); setHasMore(response.hasMore)
       setSearched(true); setRecord(null); setDocumentId('')
-    } catch (e) { setError(e instanceof Error ? e.message : 'Search failed') }
-    finally { setSearching(false) }
+    } catch (e) { if (request === searchRequest.current) setError(e instanceof Error ? e.message : 'Search failed') }
+    finally { if (request === searchRequest.current) setSearching(false) }
   }
   const openRecord = async (ref: string) => {
-    setLoading(true); setError(''); setDocumentId('')
+    const request = ++recordRequest.current
+    setLoading(true); setError(''); setDocumentId(''); setRecord(null)
     try {
       const value = await contentApi<BusinessRecord>(`/api/v1/business/records/${encodeURIComponent(ref)}`, persona)
-      setRecord(value)
-    } catch (e) { setError(e instanceof Error ? e.message : 'Could not load record') }
-    finally { setLoading(false) }
+      if (request === recordRequest.current) setRecord(value)
+    } catch (e) { if (request === recordRequest.current) setError(e instanceof Error ? e.message : 'Could not load record') }
+    finally { if (request === recordRequest.current) setLoading(false) }
   }
-  const clear = () => { setCriteria({}); setDateFrom(''); setDateTo(''); setUpdatedFrom(''); setUpdatedTo(''); setResults([]); setRecord(null); setDocumentId(''); setSearched(false); setError('') }
+  const clear = () => { searchRequest.current += 1; recordRequest.current += 1; setSearching(false); setLoading(false); setCriteria({}); setDateFrom(''); setDateTo(''); setUpdatedFrom(''); setUpdatedTo(''); setResults([]); setRecord(null); setDocumentId(''); setSearched(false); setError('') }
 
   if (selectedDocument && can('VIEW_PDF')) {
     return <section className="v-live-viewer" aria-label="Secure document viewer">
