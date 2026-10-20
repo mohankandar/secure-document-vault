@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { ArrowLeft, ArrowRight, FileText, Search, X } from 'lucide-react'
 import { PdfViewer } from '../PdfViewer'
-import { contentApi, type BusinessRecord, type RecordSummary, type SearchResponse, type SearchSchema } from '../api'
+import { contentApi, type BusinessRecord, type RecordSummary, type SearchResponse, type SearchSchema, type DocumentActivity } from '../api'
 
 /** API-backed R7 workspace. No mock records, document pages, or synthetic security events. */
 export function LiveWorkspace({ persona, capabilities }: {
@@ -27,6 +27,12 @@ export function LiveWorkspace({ persona, capabilities }: {
   const [searching, setSearching] = useState(false)
   const [error, setError] = useState('')
   const [searched, setSearched] = useState(false)
+  const activityRequest = useRef(0)
+  const [detailTab, setDetailTab] = useState<'documents' | 'activity'>('documents')
+  const [includeViews, setIncludeViews] = useState(false)
+  const [activity, setActivity] = useState<(DocumentActivity & { documentName: string })[]>([])
+  const [activityLoading, setActivityLoading] = useState(false)
+  const [activityError, setActivityError] = useState('')
   const source = useMemo(() => schema.sources.find(s => s.sourceId === sourceId), [schema, sourceId])
   const selectedDocument = record?.documents.find(d => d.documentId === documentId)
   const can = (permission: string) => capabilities.includes(permission)
@@ -71,6 +77,7 @@ export function LiveWorkspace({ persona, capabilities }: {
   }
   const openRecord = async (ref: string) => {
     const request = ++recordRequest.current
+    activityRequest.current += 1; setActivity([]); setDetailTab('documents')
     setLoading(true); setError(''); setDocumentId(''); setRecord(null)
     try {
       const value = await contentApi<BusinessRecord>(`/api/v1/business/records/${encodeURIComponent(ref)}`, persona)
@@ -78,7 +85,31 @@ export function LiveWorkspace({ persona, capabilities }: {
     } catch (e) { if (request === recordRequest.current) setError(e instanceof Error ? e.message : 'Could not load record') }
     finally { if (request === recordRequest.current) setLoading(false) }
   }
-  const clear = () => { searchRequest.current += 1; recordRequest.current += 1; setSearching(false); setLoading(false); setCriteria({}); setDateFrom(''); setDateTo(''); setUpdatedFrom(''); setUpdatedTo(''); setResults([]); setRecord(null); setDocumentId(''); setSearched(false); setError('') }
+  const clear = () => { searchRequest.current += 1; recordRequest.current += 1; activityRequest.current += 1; setActivity([]); setDetailTab('documents'); setSearching(false); setLoading(false); setCriteria({}); setDateFrom(''); setDateTo(''); setUpdatedFrom(''); setUpdatedTo(''); setResults([]); setRecord(null); setDocumentId(''); setSearched(false); setError('') }
+
+  useEffect(() => {
+    if (!record || detailTab !== 'activity') return
+    const request = ++activityRequest.current
+    setActivityLoading(true); setActivityError('')
+    const load = async () => {
+      try {
+        const batches = await Promise.all(record.documents.map(async document => {
+          const query = new URLSearchParams({ includeViewEvents: String(includeViews), limit: '200' })
+          const events = await contentApi<DocumentActivity[]>(
+            `/api/v1/business/documents/${document.documentId}/activity?${query}`, persona)
+          return events.map(event => ({ ...event, documentName: document.originalFilename }))
+        }))
+        if (request === activityRequest.current)
+          setActivity(batches.flat().sort((a, b) => Date.parse(b.occurredAt) - Date.parse(a.occurredAt)))
+      } catch (e) {
+        if (request === activityRequest.current) setActivityError(e instanceof Error ? e.message : 'Activity could not be loaded')
+      } finally {
+        if (request === activityRequest.current) setActivityLoading(false)
+      }
+    }
+    void load()
+    return () => { activityRequest.current += 1 }
+  }, [record, detailTab, includeViews, persona])
 
   if (selectedDocument && can('VIEW_PDF')) {
     return <section className="v-live-viewer" aria-label="Secure document viewer">
@@ -143,12 +174,28 @@ export function LiveWorkspace({ persona, capabilities }: {
         {!record && <p className="muted">Select a result to see its documents.</p>}
         {record && <><div className="v-live-identifiers">{record.identifiers.map(x => <div key={x.fieldKey}>
           <small>{x.displayLabel}</small><strong>{x.value}</strong></div>)}</div>
+          <div className="v-live-detailtabs" role="tablist" aria-label="Record details">
+            <button type="button" role="tab" aria-selected={detailTab === 'documents'} onClick={() => setDetailTab('documents')}>Documents ({record.documents.length})</button>
+            <button type="button" role="tab" aria-selected={detailTab === 'activity'} onClick={() => setDetailTab('activity')}>Activity</button>
+          </div>
+          {detailTab === 'documents' && <>
           <h3>Documents ({record.documents.length})</h3>
           {!record.documents.length && <p className="muted">No available documents.</p>}
           {record.documents.map(d => <button type="button" key={d.documentId} className="v-live-doc"
             disabled={!can('VIEW_PDF')} onClick={() => setDocumentId(d.documentId)}>
             <FileText size={17}/><span>{d.originalFilename}</span><ArrowRight size={15}/></button>)}
           {record.incompleteAttention && <p className="muted">Some submissions are incomplete. Only available documents can be opened.</p>}
+          </>}
+          {detailTab === 'activity' && <section className="v-live-activity" aria-label="Record activity">
+            <label className="v-live-read-toggle"><input type="checkbox" checked={includeViews} onChange={e => setIncludeViews(e.target.checked)} /> Include document view activity</label>
+            {activityError && <p role="alert" className="v-live-error">{activityError}</p>}
+            {activityLoading ? <p role="status">Loading activity…</p> :
+              activity.length === 0 ? <p className="muted">No activity found for the selected record.</p> :
+              <ol>{activity.map(event => <li key={event.auditEventId}>
+                <strong>{event.action.replaceAll('_', ' ')}</strong><small>{event.documentName}</small>
+                <span>{new Date(event.occurredAt).toLocaleString()} · {event.actorId || event.actorType} · {event.outcome}</span>
+              </li>)}</ol>}
+          </section>
         </>}
       </section>
     </div>
