@@ -3,7 +3,7 @@ import { ArrowLeft, ChevronLeft, ChevronRight, Download, Eraser, Info, Lock, Max
 import { useStore } from './store'
 import { BUSINESS_LIMITS, CAPABILITY_LABELS, PAGE_TEXT, RETENTION, type Capability, type Doc, type RecordItem, type Redaction } from './data'
 import { Badge, Callout, Dialog, Drawer, Tabs, fmtDate, fmtDateTime, fmtRel, humanize } from './ui'
-import { viewerMetadata, viewerPage, viewerSearch, record as fetchRecord, toRecord, documentActivity, type LiveDocumentActivity, type ViewerSearch } from './liveApi'
+import { viewerMetadata, viewerPage, viewerSearch, record as fetchRecord, toRecord, documentActivity, type LiveDocumentActivity, type ViewerSearch, documentTags, documentComments, createDocumentTag, createDocumentComment, type LiveTag, type LiveComment } from './liveApi'
 
 type Zoom = 'width' | 'page' | number
 type InfoTab = 'details' | 'comments' | 'tags' | 'activity'
@@ -368,6 +368,44 @@ function DocInfo({ doc, tab, setTab, embedded }: { doc: Doc; tab: InfoTab; setTa
   const [includeViews,setIncludeViews] = useState(false)
   const [activityError,setActivityError] = useState('')
   useEffect(()=>{if(!liveSession || tab!=='activity')return;let active=true;setActivityError('');documentActivity(doc.id,includeViews).then(rows=>{if(active)setLiveEvents(rows)}).catch(e=>{if(active){setLiveEvents([]);setActivityError(String(e))}});return()=>{active=false}},[liveSession,tab,doc.id,includeViews])
+  const [liveTags,setLiveTags] = useState<LiveTag[]>([])
+  const [liveComments,setLiveComments] = useState<LiveComment[]>([])
+  const [metadataLoading,setMetadataLoading] = useState(false)
+  const [metadataError,setMetadataError] = useState('')
+  const [saving,setSaving] = useState(false)
+  useEffect(()=>{
+    if(!liveSession || (tab!=='comments' && tab!=='tags')) return
+    let active=true
+    setMetadataLoading(true);setMetadataError('')
+    const task=tab==='comments'?documentComments(doc.id):documentTags(doc.id)
+    task.then(items=>{if(!active)return;if(tab==='comments')setLiveComments(items as LiveComment[]);else setLiveTags(items as LiveTag[])})
+      .catch(e=>{if(active)setMetadataError(e instanceof Error?e.message:'Unable to load document data')})
+      .finally(()=>{if(active)setMetadataLoading(false)})
+    return()=>{active=false}
+  },[liveSession,tab,doc.id])
+  const submitLiveComment=async()=>{
+    const value=comment.trim()
+    if(!value || saving)return
+    setSaving(true);setMetadataError('')
+    try{
+      const saved=await createDocumentComment(doc.id,value)
+      setLiveComments(items=>[...items,saved]);setComment('')
+      toast({title:'Comment added'})
+    }catch(e){setMetadataError(e instanceof Error?e.message:'Unable to add comment')}
+    finally{setSaving(false)}
+  }
+  const submitLiveTag=async()=>{
+    const value=tag.trim()
+    if(!value || saving)return
+    if(liveTags.some(item=>item.tag.toLowerCase()===value.toLowerCase())){setMetadataError('Tag already applied');return}
+    setSaving(true);setMetadataError('')
+    try{
+      const saved=await createDocumentTag(doc.id,value)
+      setLiveTags(items=>[...items,saved]);setTag('')
+      toast({title:'Tag added'})
+    }catch(e){setMetadataError(e instanceof Error?e.message:'Unable to add tag')}
+    finally{setSaving(false)}
+  }
   const suggestsSsn = !liveSession && (PAGE_TEXT[doc.kind] ?? []).some((t) => SSN.test(t)) && doc.redactions.length === 0
   const body = (
     <>
@@ -388,7 +426,14 @@ function DocInfo({ doc, tab, setTab, embedded }: { doc: Doc; tab: InfoTab; setTa
       )}
       {tab === 'comments' && (
         <>
-          {liveSession ? <p className="faint">Comments integration pending.</p> : doc.comments.length === 0 && <p className="faint">No comments yet.</p>}
+          {liveSession && metadataLoading && <p className="faint">Loading comments…</p>}
+          {liveSession && metadataError && <Callout tone="warn" title="Comments unavailable">{metadataError}</Callout>}
+          {liveSession && !metadataLoading && !metadataError && liveComments.length === 0 && <p className="faint">No comments yet.</p>}
+          {liveSession && liveComments.map(c=><article key={c.commentId} className="v-comment"><header><strong>{c.createdBy}</strong><span>{fmtRel(c.createdAt)}</span></header><p>{c.comment}</p></article>)}
+          {liveSession && can('ADD_DOCUMENT_COMMENT') && <form className="stack" style={{gap:8}} onSubmit={e=>{e.preventDefault();void submitLiveComment()}}>
+            <textarea className="v-textarea" aria-label="New comment" value={comment} maxLength={BUSINESS_LIMITS.maxCommentLength} onChange={e=>setComment(e.target.value)} placeholder="Add a comment for other authorized users"/>
+            <button type="submit" className="v-btn sm" style={{alignSelf:'flex-end'}} disabled={!comment.trim() || saving}>Add comment</button>
+          </form>}
           {!liveSession && doc.comments.map((c) => <article key={c.id} className="v-comment"><header><strong>{c.by}</strong><span>{fmtRel(c.at)}</span></header><p>{c.text}</p></article>)}
           {!liveSession && can('ADD_DOCUMENT_COMMENT') ? (
             <form className="stack" style={{ gap: 8 }} onSubmit={(e) => {
@@ -399,12 +444,19 @@ function DocInfo({ doc, tab, setTab, embedded }: { doc: Doc; tab: InfoTab; setTa
               <textarea className="v-textarea" aria-label="New comment" value={comment} maxLength={BUSINESS_LIMITS.maxCommentLength} onChange={(e) => setComment(e.target.value)} placeholder="Add a comment for other authorized users" />
               <button type="submit" className="v-btn sm" style={{ alignSelf: 'flex-end' }} disabled={!comment.trim()}>Add comment</button>
             </form>
-          ) : <Callout title="Commenting isn't assigned to your role" />}
+          ) : !liveSession && <Callout title="Commenting isn't assigned to your role" />}
+          {liveSession && !can('ADD_DOCUMENT_COMMENT') && <Callout title="Commenting isn't assigned to your role" />}
         </>
       )}
       {tab === 'tags' && (
         <>
-          <div className="v-tagrow">{liveSession ? <span className="faint">Tags integration pending.</span> : doc.tags.length === 0 ? <span className="faint">No tags yet.</span> : doc.tags.map((t) => <Badge key={t.id} tone="outline">{t.tag}</Badge>)}</div>
+          {liveSession && metadataLoading && <p className="faint">Loading tags…</p>}
+          {liveSession && metadataError && <Callout tone="warn" title="Tags unavailable">{metadataError}</Callout>}
+          <div className="v-tagrow">{liveSession ? (liveTags.length===0 ? <span className="faint">No tags yet.</span> : liveTags.map(t=><Badge key={t.tagId} tone="outline">{t.tag}</Badge>)) : doc.tags.length === 0 ? <span className="faint">No tags yet.</span> : doc.tags.map((t) => <Badge key={t.id} tone="outline">{t.tag}</Badge>)}</div>
+          {liveSession && can('ADD_DOCUMENT_TAG') && <form className="row" onSubmit={e=>{e.preventDefault();void submitLiveTag()}}>
+            <input className="v-input grow" aria-label="New tag" value={tag} maxLength={BUSINESS_LIMITS.maxTagLength} onChange={e=>setTag(e.target.value)} placeholder="Add tag"/>
+            <button type="submit" className="v-btn" disabled={!tag.trim() || saving}>Add</button>
+          </form>}
           {!liveSession && can('ADD_DOCUMENT_TAG') ? (
             <form className="row" onSubmit={(e) => {
               e.preventDefault(); const v = tag.trim(); if (!v) return
@@ -415,7 +467,8 @@ function DocInfo({ doc, tab, setTab, embedded }: { doc: Doc; tab: InfoTab; setTa
               <input className="v-input grow" aria-label="New tag" value={tag} maxLength={BUSINESS_LIMITS.maxTagLength} onChange={(e) => setTag(e.target.value)} placeholder="Add tag" />
               <button type="submit" className="v-btn" disabled={!tag.trim()}>Add</button>
             </form>
-          ) : <Callout title="Tagging isn't assigned to your role" />}
+          ) : !liveSession && <Callout title="Tagging isn't assigned to your role" />}
+          {liveSession && !can('ADD_DOCUMENT_TAG') && <Callout title="Tagging isn't assigned to your role" />}
         </>
       )}
       {tab === 'activity' && (<>
@@ -435,7 +488,7 @@ function DocInfo({ doc, tab, setTab, embedded }: { doc: Doc; tab: InfoTab; setTa
   )
   return (
     <>
-      <Tabs label="Document information" value={tab} onChange={(t) => setTab(t as InfoTab)} tabs={[{ id: 'details', label: 'Details' }, { id: 'comments', label: `Comments${doc.comments.length ? ` ${doc.comments.length}` : ''}` }, { id: 'tags', label: 'Tags' }, { id: 'activity', label: 'Activity' }]} />
+      <Tabs label="Document information" value={tab} onChange={(t) => setTab(t as InfoTab)} tabs={[{ id: 'details', label: 'Details' }, { id: 'comments', label: `Comments${(liveSession?liveComments.length:doc.comments.length) ? ` ${liveSession?liveComments.length:doc.comments.length}` : ''}` }, { id: 'tags', label: 'Tags' }, { id: 'activity', label: 'Activity' }]} />
       {embedded ? <div className="stack-lg">{body}</div> : <div className="vw-panel-body">{body}</div>}
       {!embedded && <div style={{ padding: 12, borderTop: '1px solid var(--line)' }} className="faint"><Info size={13} aria-hidden style={{ verticalAlign: '-2px', marginRight: 6 }} /><small>Every view, download, print and correction is audited.</small></div>}
     </>

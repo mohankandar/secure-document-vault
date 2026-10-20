@@ -46,3 +46,11 @@ export const viewerSearch = (id:string, q:string) =>
 export type LiveDocumentActivity = { auditEventId:string; actorType:string; actorId:string; action:string; occurredAt:string; outcome:'SUCCESS'|'DENIED'|'FAILURE'; safeDetailsJson:string }
 export const documentActivity = (id:string,includeViewEvents=false,limit=100) =>
   roleApi<LiveDocumentActivity[]>('/api/v1/business/documents/'+encodeURIComponent(id)+'/activity?includeViewEvents='+includeViewEvents+'&limit='+limit,'business')
+
+export type LiveTag = { tagId:string; documentId:string; tag:string; createdBy:string; createdAt:string }
+export type LiveComment = { commentId:string; documentId:string; comment:string; createdBy:string; createdAt:string }
+const documentPath = (id:string) => '/api/v1/business/documents/'+encodeURIComponent(id)
+export const documentTags = (id:string) => roleApi<LiveTag[]>(documentPath(id)+'/tags','business')
+export const documentComments = (id:string) => roleApi<LiveComment[]>(documentPath(id)+'/comments','business')
+export const createDocumentTag = (id:string,tag:string) => roleApi<LiveTag>(documentPath(id)+'/tags','business',{method:'POST',body:JSON.stringify({tag})})
+export const createDocumentComment = (id:string,comment:string) => roleApi<LiveComment>(documentPath(id)+'/comments','business',{method:'POST',body:JSON.stringify({comment})})
