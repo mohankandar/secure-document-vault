@@ -70,6 +70,8 @@ export function LiveWorkspace({ persona, capabilities }: {
     activityRequest.current += 1
     setActivity([]); setActivityError(''); setDetailTab('documents'); setActivityLoading(false)
     setRecord(null); setDocumentId(''); setLoading(false)
+    // Do not show results from an earlier query while a replacement search runs or fails.
+    setResults([]); setHasMore(false); setPage(nextPage); setSearched(false)
     setSearching(true); setError('')
     try {
       const response = await contentApi<SearchResponse>('/api/v1/business/search', persona, {
@@ -181,6 +183,7 @@ export function LiveWorkspace({ persona, capabilities }: {
       </form>}
       {workspaceTab === 'results' && <section className="v-live-panel v-live-results" aria-label="Search results">
         <div className="v-live-section-head"><h2>Results</h2><span>{searched ? `${results.length} records · page ${page}` : 'Run a search to begin'}</span></div>
+        {searching && <p className="muted" role="status">Searching records…</p>}
         {searched && !results.length && <p className="muted">No matching records.</p>}
         {results.map(r => <button type="button" key={r.recordRef}
             className={`v-live-record ${record?.recordRef === r.recordRef ? 'selected' : ''}`}
