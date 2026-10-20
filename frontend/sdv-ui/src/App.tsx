@@ -1502,6 +1502,20 @@ function App() {
 
       {view === 'operations' && canViewTechnicalFailures && (
         <div className="ax-workspace operations-workspace">
+          {new URLSearchParams(window.location.search).get('experience') === 'r7-live' && (
+            <section className="v7-live-adminintro v7-live-opsintro" aria-label="Platform operations context">
+              <div>
+                <span className="v7-live-adminintro-kicker">Platform operations</span>
+                <h1>Operations command center</h1>
+                <p>Observe actual processing, capacity, service health, incidents and audit evidence across this tenant.</p>
+              </div>
+              <div className="v7-live-opsfacts">
+                <span>Operational status</span>
+                <strong>{operations ? humanize(operations.overallStatus) : 'Loading'}</strong>
+                <small>{operations?.observedAt ? `Observed ${formatDate(operations.observedAt)}` : 'Awaiting backend observation'}</small>
+              </div>
+            </section>
+          )}
           <LiveAdminTabs
             label="Platform operations sections"
             value={platformTab}
