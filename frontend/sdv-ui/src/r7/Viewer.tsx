@@ -3,7 +3,7 @@ import { ArrowLeft, ChevronLeft, ChevronRight, Download, Eraser, Info, Lock, Max
 import { useStore } from './store'
 import { BUSINESS_LIMITS, CAPABILITY_LABELS, PAGE_TEXT, RETENTION, type Capability, type Doc, type RecordItem, type Redaction } from './data'
 import { Badge, Callout, Dialog, Drawer, Tabs, fmtDate, fmtDateTime, fmtRel, humanize } from './ui'
-import { viewerMetadata, viewerPage, viewerSearch, record as fetchRecord, toRecord, type ViewerSearch } from './liveApi'
+import { viewerMetadata, viewerPage, viewerSearch, record as fetchRecord, toRecord, documentActivity, type LiveDocumentActivity, type ViewerSearch } from './liveApi'
 
 type Zoom = 'width' | 'page' | number
 type InfoTab = 'details' | 'comments' | 'tags' | 'activity'
@@ -364,6 +364,10 @@ function DocInfo({ doc, tab, setTab, embedded }: { doc: Doc; tab: InfoTab; setTa
   const { can, role, updateDoc, addDocActivity, toast, liveSession } = useStore()
   const [comment, setComment] = useState('')
   const [tag, setTag] = useState('')
+  const [liveEvents,setLiveEvents] = useState<LiveDocumentActivity[]>([])
+  const [includeViews,setIncludeViews] = useState(false)
+  const [activityError,setActivityError] = useState('')
+  useEffect(()=>{if(!liveSession || tab!=='activity')return;let active=true;setActivityError('');documentActivity(doc.id,includeViews).then(rows=>{if(active)setLiveEvents(rows)}).catch(e=>{if(active){setLiveEvents([]);setActivityError(String(e))}});return()=>{active=false}},[liveSession,tab,doc.id,includeViews])
   const suggestsSsn = !liveSession && (PAGE_TEXT[doc.kind] ?? []).some((t) => SSN.test(t)) && doc.redactions.length === 0
   const body = (
     <>
@@ -414,16 +418,19 @@ function DocInfo({ doc, tab, setTab, embedded }: { doc: Doc; tab: InfoTab; setTa
           ) : <Callout title="Tagging isn't assigned to your role" />}
         </>
       )}
-      {tab === 'activity' && (
+      {tab === 'activity' && (<>
+        {liveSession && <label className="v-check"><input type="checkbox" checked={includeViews} onChange={e=>setIncludeViews(e.target.checked)}/>Include document view activity</label>}
+        {activityError && <Callout tone="warn" title="Activity unavailable">{activityError}</Callout>}
+        {liveSession && !activityError && liveEvents.length===0 && <p className="faint">No matching activity.</p>}
         <ol className="v-timeline">
-          {liveSession && <li>Activity integration pending.</li>}
+          {liveSession && liveEvents.map(a=><li key={a.auditEventId}><span className={`pt ${a.outcome==='SUCCESS'?'ok':'bad'}`} aria-hidden/><div className="stack" style={{gap:0}}><strong>{humanize(a.action.replace('DOCUMENT_',''))}</strong><span>{a.actorId} · {fmtDateTime(a.occurredAt)}</span></div></li>)}
           {!liveSession && doc.activity.map((a) => (
             <li key={a.id}><span className={`pt ${a.simulated ? 'sim' : a.outcome === 'SUCCESS' ? 'ok' : 'bad'}`} aria-hidden />
               <div className="stack" style={{ gap: 0 }}><strong>{humanize(a.action.replace('DOCUMENT_', ''))}</strong><span>{a.actor} · {fmtDateTime(a.at)}{a.simulated ? ' · simulated' : ''}</span></div>
             </li>
           ))}
         </ol>
-      )}
+      </>)}
     </>
   )
   return (

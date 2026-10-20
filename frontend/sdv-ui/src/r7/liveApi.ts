@@ -42,3 +42,7 @@ export const viewerPage = (id:string, page:number, scale=1) =>
   contentBinary(viewerPath(id) + '/pages/' + page + '?scale=' + scale, 'business')
 export const viewerSearch = (id:string, q:string) =>
   roleApi<ViewerSearch>(viewerPath(id) + '/search?q=' + encodeURIComponent(q), 'business')
+
+export type LiveDocumentActivity = { auditEventId:string; actorType:string; actorId:string; action:string; occurredAt:string; outcome:'SUCCESS'|'DENIED'|'FAILURE'; safeDetailsJson:string }
+export const documentActivity = (id:string,includeViewEvents=false,limit=100) =>
+  roleApi<LiveDocumentActivity[]>('/api/v1/business/documents/'+encodeURIComponent(id)+'/activity?includeViewEvents='+includeViewEvents+'&limit='+limit,'business')

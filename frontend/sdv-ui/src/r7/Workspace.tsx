@@ -2,7 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { AlertTriangle, ArrowRight, ChevronDown, ChevronUp, FileText, Search, SlidersHorizontal, X } from 'lucide-react'
 import { useStore } from './store'
 import { BUSINESS_LIMITS, type RecordItem, type Source } from './data'
-import { schema, search, record, toSource, toSummary, toRecord } from './liveApi'
+import { schema, search, record, toSource, toSummary, toRecord, documentActivity, type LiveDocumentActivity } from './liveApi'
 import { Badge, Callout, Drawer, Empty, ErrorState, Skeleton, fmtDate, fmtRel, humanize } from './ui'
 import { Viewer } from './Viewer'
 
@@ -241,8 +241,20 @@ function Inspector({ record, onClose, onOpen }: { record: RecordItem; onClose: (
 }
 
 function InspectorBody({ record, onOpen }: { record: RecordItem; onOpen: (id: string) => void }) {
-  const { can } = useStore()
+  const { can, liveSession } = useStore()
   const [more, setMore] = useState(false)
+  const [includeViews, setIncludeViews] = useState(false)
+  const [liveEvents, setLiveEvents] = useState<LiveDocumentActivity[]>([])
+  const [activityFailure, setActivityFailure] = useState('')
+  useEffect(() => {
+    if (!liveSession || !record.docs.length) {setLiveEvents([]);return}
+    let active=true
+    setActivityFailure('')
+    Promise.all(record.docs.map(d=>documentActivity(d.id,includeViews,100)))
+      .then(groups=>{if(active)setLiveEvents(groups.flat().sort((a,b)=>b.occurredAt.localeCompare(a.occurredAt)))})
+      .catch(e=>{if(active){setLiveEvents([]);setActivityFailure(String(e))}})
+    return ()=>{active=false}
+  },[liveSession,record.ref,record.docs.map(d=>d.id).join(','),includeViews])
   const recent = record.docs.flatMap((d) => d.activity.map((a) => ({ ...a, doc: d.kind }))).sort((a, b) => b.at.localeCompare(a.at)).slice(0, more ? 8 : 3)
   return (
     <>
@@ -276,10 +288,14 @@ function InspectorBody({ record, onOpen }: { record: RecordItem; onOpen: (id: st
       </div>
       <div className="stack" style={{ gap: 10 }}>
         <h3>Recent activity</h3>
+        {liveSession && <label className="v-check"><input type="checkbox" checked={includeViews} onChange={e=>setIncludeViews(e.target.checked)}/>Include document view activity</label>}
+        {activityFailure && <Callout tone="warn" title="Activity unavailable">{activityFailure}</Callout>}
         <ol className="v-timeline">
-          {recent.map((a) => <li key={a.id}><span className={`pt ${a.simulated ? 'sim' : a.outcome === 'SUCCESS' ? 'ok' : 'bad'}`} aria-hidden /><div className="stack" style={{ gap: 0 }}><strong>{humanize(a.action.replace('DOCUMENT_', ''))} · {a.doc}</strong><span>{a.actor} · {fmtRel(a.at)}{a.simulated && ' · simulated'}</span></div></li>)}
+          {liveSession ? liveEvents.slice(0,more?100:3).map(a=><li key={a.auditEventId}><span className={`pt ${a.outcome==='SUCCESS'?'ok':'bad'}`} aria-hidden/><div className="stack" style={{gap:0}}><strong>{humanize(a.action.replace('DOCUMENT_',''))}</strong><span>{a.actorId} · {fmtRel(a.occurredAt)}</span></div></li>) :
+            recent.map((a) => <li key={a.id}><span className={`pt ${a.simulated ? 'sim' : a.outcome === 'SUCCESS' ? 'ok' : 'bad'}`} aria-hidden /><div className="stack" style={{ gap: 0 }}><strong>{humanize(a.action.replace('DOCUMENT_', ''))} · {a.doc}</strong><span>{a.actor} · {fmtRel(a.at)}{a.simulated && ' · simulated'}</span></div></li>)}
         </ol>
-        <button type="button" className="v-btn quiet sm" style={{ alignSelf: 'flex-start' }} onClick={() => setMore((m) => !m)}>{more ? <ChevronUp size={14} aria-hidden /> : <ChevronDown size={14} aria-hidden />}{more ? 'Show less' : 'Show more'}</button>
+        {liveSession && !activityFailure && liveEvents.length===0 && <p className="faint">No matching activity.</p>}
+        {(!liveSession || liveEvents.length>3) && <button type="button" className="v-btn quiet sm" style={{ alignSelf: 'flex-start' }} onClick={() => setMore((m) => !m)}>{more ? <ChevronUp size={14} aria-hidden /> : <ChevronDown size={14} aria-hidden />}{more ? 'Show less' : 'Show more'}</button>}
       </div>
       {!can('VIEW_PDF') && <Callout tone="warn" title="Viewing isn't assigned"><AlertTriangle size={0} aria-hidden />Your role can find this record but not open its documents.</Callout>}
     </>
