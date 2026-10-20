@@ -19,6 +19,7 @@ import org.apache.pdfbox.pdmodel.common.PDRectangle;
 import org.apache.pdfbox.rendering.ImageType;
 import org.apache.pdfbox.rendering.PDFRenderer;
 import org.apache.pdfbox.text.PDFTextStripper;
+import org.apache.pdfbox.text.TextPosition;
 import org.springframework.stereotype.Service;
 
 import javax.imageio.ImageIO;
@@ -180,11 +181,49 @@ public class DocumentViewerService {
             stripper.setSortByPosition(true);
 
             List<PageMatch> matches = new ArrayList<>();
+            List<SearchHighlight> highlights = new ArrayList<>();
             int totalMatches = 0;
             for (int page = 1; page <= pdf.getNumberOfPages(); page++) {
                 stripper.setStartPage(page);
                 stripper.setEndPage(page);
                 String haystack = stripper.getText(pdf).toLowerCase(Locale.ROOT);
+                final int currentPage = page;
+                final PDRectangle cropBox = pdf.getPage(page - 1).getCropBox();
+                // TextPosition uses top-left oriented display coordinates; page PNGs use the same crop box.
+                PDFTextStripper locator = new PDFTextStripper() {
+                    @Override
+                    protected void writeString(String text, List<TextPosition> positions) throws IOException {
+                        if (positions == null || positions.isEmpty()) return;
+                        String line = text.toLowerCase(Locale.ROOT);
+                        int start = 0;
+                        while (start <= line.length() - needle.length()) {
+                            int index = line.indexOf(needle, start);
+                            if (index < 0) break;
+                            // PDFBox can insert spaces/ligatures without a 1:1 position map.
+                            // Only create exact geometric highlights when alignment is unambiguous.
+                            if (positions.size() == text.length() && index + needle.length() <= positions.size()) {
+                                TextPosition first = positions.get(index);
+                                TextPosition last = positions.get(index + needle.length() - 1);
+                                double width = cropBox.getWidth();
+                                double height = cropBox.getHeight();
+                                double x = first.getXDirAdj();
+                                double y = first.getYDirAdj();
+                                double right = last.getXDirAdj() + last.getWidthDirAdj();
+                                double bottom = y + Math.max(first.getHeightDir(), last.getHeightDir());
+                                if (width > 0 && height > 0 && x >= 0 && y >= 0 && right <= width && bottom <= height
+                                        && right > x && bottom > y) {
+                                    highlights.add(new SearchHighlight(currentPage,
+                                            x / width, y / height, (right - x) / width, (bottom - y) / height));
+                                }
+                            }
+                            start = index + Math.max(1, needle.length());
+                        }
+                    }
+                };
+                locator.setSortByPosition(true);
+                locator.setStartPage(page);
+                locator.setEndPage(page);
+                locator.getText(pdf);
                 int count = countOccurrences(haystack, needle);
                 if (count > 0) {
                     matches.add(new PageMatch(page, count));
@@ -203,7 +242,8 @@ public class DocumentViewerService {
             return new SearchResults(
                     pdf.getNumberOfPages(),
                     totalMatches,
-                    matches);
+                    matches,
+                    highlights);
         } catch (IOException ex) {
             throw unavailable(ex);
         } finally {
@@ -352,12 +392,19 @@ public class DocumentViewerService {
 
     public record PageMatch(int pageNumber, int matchCount) { }
 
+    public record SearchHighlight(int pageNumber, double x, double y, double width, double height) { }
+
     public record SearchResults(
             int pageCount,
             int totalMatches,
-            List<PageMatch> pages) {
+            List<PageMatch> pages,
+            List<SearchHighlight> highlights) {
         public SearchResults {
             pages = List.copyOf(pages);
+            highlights = List.copyOf(highlights);
+        }
+        public SearchResults(int pageCount, int totalMatches, List<PageMatch> pages) {
+            this(pageCount, totalMatches, pages, List.of());
         }
     }
 

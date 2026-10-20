@@ -4,7 +4,7 @@ import { useStore } from './store'
 import { BUSINESS_LIMITS, type RecordItem, type Source } from './data'
 import { schema, search, record, toSource, toSummary, toRecord } from './liveApi'
 import { Badge, Callout, Drawer, Empty, ErrorState, Skeleton, fmtDate, fmtRel, humanize } from './ui'
-import { LiveViewer } from './LiveViewer'
+import { Viewer } from './Viewer'
 
 const MODE_HINT = { EXACT: 'Exact', PREFIX: 'Starts with', PARTIAL: 'Contains' } as const
 type Criteria = Record<string, string>
@@ -195,7 +195,7 @@ export function Workspace() {
           <InspectorBody record={selected} onOpen={(id) => openDoc(selected, id)} />
         </Drawer>
       )}
-      {selected && openDocId && can('VIEW_PDF') && <LiveViewer record={selected} docId={openDocId} onSelectDoc={setOpenDocId} onClose={() => setOpenDocId(null)} />}
+      {selected && openDocId && can('VIEW_PDF') && <Viewer record={selected} results={results} docId={openDocId} onClose={() => setOpenDocId(null)} />}
       {failure && <div role="alert" className="v-callout">{failure}</div>}
     </div>
   )

@@ -35,7 +35,7 @@ export function toRecord(r: BusinessRecord):RecordItem {
 }
 
 export type ViewerMetadata = { documentId: string; originalFilename: string; pageCount: number }
-export type ViewerSearch = { pageCount: number; totalMatches: number; pages: {pageNumber:number; matchCount:number}[] }
+export type ViewerSearch = { pageCount: number; totalMatches: number; pages: {pageNumber:number; matchCount:number}[]; highlights?: {pageNumber:number;x:number;y:number;width:number;height:number}[] }
 const viewerPath = (id: string) => '/api/v1/business/documents/' + encodeURIComponent(id) + '/viewer'
 export const viewerMetadata = (id:string) => roleApi<ViewerMetadata>(viewerPath(id), 'business')
 export const viewerPage = (id:string, page:number, scale=1) =>
