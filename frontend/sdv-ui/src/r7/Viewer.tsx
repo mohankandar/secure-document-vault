@@ -162,12 +162,12 @@ export function Viewer({ record, results, docId, onClose }: { record: RecordItem
   const toPct = (e: RPointerEvent, el: HTMLDivElement) => { const r = el.getBoundingClientRect(); return { x: ((e.clientX - r.left) / r.width) * 100, y: ((e.clientY - r.top) / r.height) * 100 } }
   const onDown = (p: number) => (e: RPointerEvent<HTMLDivElement>) => {
     if (!redacting || (e.target as HTMLElement).closest('button')) return
-    const image=e.currentTarget.querySelector('img')
-    if (!image || !image.complete || !image.naturalWidth) return
-    e.currentTarget.setPointerCapture(e.pointerId)
-    const { x, y } = toPct(e, image as unknown as HTMLDivElement)
+    if (e.button !== 0) return
+    const { x, y } = toPct(e, e.currentTarget)
     if(x < 0 || y < 0 || x > 100 || y > 100)return
-    drawRef.current = { page: p, x0: x, y0: y, el: image as unknown as HTMLDivElement }
+    e.preventDefault()
+    e.currentTarget.setPointerCapture(e.pointerId)
+    drawRef.current = { page: p, x0: x, y0: y, el: e.currentTarget }
     setDrawing({ page: p, x, y, w: 0, h: 0 })
   }
   const onMove = (e: RPointerEvent<HTMLDivElement>) => {
@@ -291,12 +291,12 @@ export function Viewer({ record, results, docId, onClose }: { record: RecordItem
             const p=i+1
             return <div key={p} data-page={p} ref={el => {sheetRefs.current[i]=el}} className="vw-sheet"
               style={{width:sheetWidth,maxWidth:'none',position:'relative',minHeight:Math.round(sheetWidth*1.25)}}
-              onPointerDown={onDown(p)} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp} aria-label={`Page ${p} of ${pageTotal}`}>
+              aria-label={`Page ${p} of ${pageTotal}`}>
               <SecurePage key={doc.id+':'+renderRevision+':'+p} documentId={doc.id} page={p} scale={Math.min(2.5,Math.max(.5,sheetWidth/816))}
                 scrollRoot={canvasRef} matches={searchResults?.pages.find(x=>x.pageNumber===p)?.matchCount ?? 0}
-                highlights={searchResults?.highlights?.filter(h=>h.pageNumber===p) ?? []}/>
-              {marks.filter(m=>m.page===p).map((m,i)=><div key={i} className="vw-mark" style={{left:m.x+'%',top:m.y+'%',width:m.w+'%',height:m.h+'%',pointerEvents:'none'}}/>)}
-              {drawing?.page===p && <div className="vw-mark" style={{left:drawing.x+'%',top:drawing.y+'%',width:drawing.w+'%',height:drawing.h+'%',pointerEvents:'none'}}/>}
+                highlights={searchResults?.highlights?.filter(h=>h.pageNumber===p) ?? []}
+                redacting={redacting} marks={marks.filter(m=>m.page===p)} drawing={drawing?.page===p?drawing:null}
+                onPointerDown={onDown(p)} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp}/>
 
             </div>
           })}
@@ -338,9 +338,12 @@ export function Viewer({ record, results, docId, onClose }: { record: RecordItem
   )
 }
 
-function SecurePage({documentId,page,scale,scrollRoot,matches,highlights}:{
+function SecurePage({documentId,page,scale,scrollRoot,matches,highlights,redacting,marks,drawing,onPointerDown,onPointerMove,onPointerUp,onPointerCancel}:{
   documentId:string;page:number;scale:number;scrollRoot:React.RefObject<HTMLDivElement>;
-  matches:number;highlights:{pageNumber:number;x:number;y:number;width:number;height:number}[]
+  matches:number;highlights:{pageNumber:number;x:number;y:number;width:number;height:number}[];
+  redacting:boolean;marks:Redaction[];drawing:Redaction|null;
+  onPointerDown:(e:RPointerEvent<HTMLDivElement>)=>void;onPointerMove:(e:RPointerEvent<HTMLDivElement>)=>void;
+  onPointerUp:()=>void;onPointerCancel:()=>void
 }) {
   const container=useRef<HTMLDivElement>(null)
   const [visible,setVisible]=useState(false)
@@ -368,8 +371,11 @@ function SecurePage({documentId,page,scale,scrollRoot,matches,highlights}:{
   },[visible,documentId,page,scale])
   useEffect(()=>()=>{if(url)URL.revokeObjectURL(url)},[url])
   return <div ref={container} style={{width:'100%',minHeight:'inherit'}}>
-    {url ? <div style={{position:'relative',width:'100%',lineHeight:0}}>
+    {url ? <div style={{position:'relative',width:'100%',lineHeight:0,touchAction:redacting?'none':'auto',cursor:redacting?'crosshair':'auto'}}
+      onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerCancel}>
       <img src={url} alt={`Document page ${page}`} style={{width:'100%',height:'auto',display:'block'}}/>
+      {marks.map((m,i)=><div key={'mark-'+i} className="vw-mark" style={{position:'absolute',left:m.x+'%',top:m.y+'%',width:m.w+'%',height:m.h+'%',pointerEvents:'none'}}/>)}
+      {drawing && <div className="vw-mark" style={{position:'absolute',left:drawing.x+'%',top:drawing.y+'%',width:drawing.w+'%',height:drawing.h+'%',pointerEvents:'none'}}/>}
       {highlights.map((h,i)=><div key={i} aria-hidden style={{position:'absolute',pointerEvents:'none',left:`${h.x*100}%`,top:`${h.y*100}%`,
         width:`${h.width*100}%`,height:`${h.height*100}%`,background:'rgba(255,213,47,.45)'}}/>)}
     </div> : <div className="v-callout" role="status">{error || `Loading page ${page}…`}</div>}
