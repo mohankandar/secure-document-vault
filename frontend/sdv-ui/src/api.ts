@@ -6,9 +6,14 @@ export type LocalPersona = 'admin' | 'business' | 'steward' | 'businessAdmin' | 
 
 const localHeaders = (persona: LocalPersona): Record<string, string> => {
   if (!isLocalSecurityMode()) return {}
-  const identity = persona === 'steward'
+  // Explicit local-development test identity; never overrides OIDC or production builds.
+  // Restart Vite with VITE_LOCAL_TEST_ROLE=DOCUMENT_STEWARD to test authorized Steward workflows.
+  const localTestSteward = import.meta.env.DEV && window.location.hostname === 'localhost' &&
+    import.meta.env.VITE_LOCAL_TEST_ROLE === 'DOCUMENT_STEWARD'
+  const effectivePersona = localTestSteward && (persona === 'business' || persona === 'steward') ? 'steward' : persona
+  const identity = effectivePersona === 'steward'
     ? { subject: 'local-document-steward', roles: 'DOCUMENT_STEWARD' }
-    : persona === 'business'
+    : effectivePersona === 'business'
       ? { subject: 'local-business-user', roles: 'BUSINESS_USER' }
       : persona === 'businessAdmin'
       ? { subject: 'local-business-admin', roles: 'BUSINESS_ADMIN' }
