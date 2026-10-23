@@ -3,7 +3,7 @@ import { Lock, Pencil, Plus } from 'lucide-react'
 import { AREA_TABS, useStore } from './store'
 import { BASELINE, BUSINESS_LIMITS, CAPABILITY_LABELS, CONFIGURABLE, ROLES, SOURCES, type Capability, type Field, type SearchMode } from './data'
 import { Badge, Callout, Drawer, PageHead, Panel, Scenario, Status, Switch, Tabs, fmtDate, fmtRel } from './ui'
-import { getRolePolicy, saveRolePolicy, getRetentionPolicy, activateRetentionPolicy, type RolePolicy, type RetentionPolicyOverview } from './liveApi'
+import { getRolePolicy, saveRolePolicy, getRetentionPolicy, activateRetentionPolicy, type RolePolicy, type RetentionPolicyOverview, adminMetadataSources, adminMetadataFields, updateBusinessMetadata, type AdminMetadataSource, type AdminMetadataField } from './liveApi'
 
 export function AreaFrame({ crumbs, title, lede, actions, children, attention = [] }: { crumbs: string[]; title: string; lede: ReactNode; actions?: ReactNode; children: ReactNode; attention?: string[] }) {
   const { route, navigate } = useStore()
@@ -31,7 +31,7 @@ export function Governance() {
       {route.tab === 'access' && <AccessTab />}
       {route.tab === 'roles' && <RolesTab />}
       {route.tab === 'retention' && <RetentionTab />}
-      {route.tab === 'metadata' && <Callout tone="warn" title="Metadata integration not yet available">This connected screen cannot edit metadata until its backend integration is complete. No simulated changes will be applied.</Callout>}
+      {route.tab === 'metadata' && <LiveMetadataTab />}
     </AreaFrame>
   )
 }
@@ -159,6 +159,59 @@ function RetentionTab() {
         <label className="v-check"><input type="checkbox" checked={ack} onChange={e=>setAck(e.target.checked)}/><span>I confirm this retention change has been approved.</span></label>
       </Drawer>}
     </>}
+  </>
+}
+
+function LiveMetadataTab(){
+  const {can,toast}=useStore()
+  const [sources,setSources]=useState<AdminMetadataSource[]>([])
+  const [sourceId,setSourceId]=useState('')
+  const [fields,setFields]=useState<AdminMetadataField[]>([])
+  const [editing,setEditing]=useState<AdminMetadataField|null>(null)
+  const [draft,setDraft]=useState<AdminMetadataField|null>(null)
+  const [error,setError]=useState('')
+  const [loading,setLoading]=useState(true)
+  const [saving,setSaving]=useState(false)
+  useEffect(()=>{let active=true;adminMetadataSources().then(rows=>{if(active){setSources(rows);setSourceId(rows[0]?.sourceId??'')}}).catch(e=>{if(active)setError(String(e))}).finally(()=>{if(active)setLoading(false)});return()=>{active=false}},[])
+  useEffect(()=>{if(!sourceId)return;let active=true;setLoading(true);setError('');setFields([]);adminMetadataFields(sourceId).then(rows=>{if(active)setFields(rows)}).catch(e=>{if(active)setError(String(e))}).finally(()=>{if(active)setLoading(false)});return()=>{active=false}},[sourceId])
+  const save=async()=>{
+    if(!draft||!can('CONFIGURE_METADATA_SEARCH')||saving||!draft.displayLabel.trim())return
+    setSaving(true);setError('')
+    try{
+      const result=await updateBusinessMetadata(sourceId,{...draft,displayLabel:draft.displayLabel.trim()})
+      setFields(rows=>rows.map(f=>f.fieldKey===result.fieldKey?result:f))
+      setEditing(null);setDraft(null);toast({title:'Field updated'})
+    }catch(e){setError(String(e))}
+    finally{setSaving(false)}
+  }
+  return <>
+    {error&&<Callout tone="warn" title="Metadata operation unavailable">{error}</Callout>}
+    <Panel flush title="Searchable fields" meta={fields.length} description="Field keys come from Tenant IT's integration contract. Here you control labels and matching."
+      actions={<select className="v-select" aria-label="Source" value={sourceId} onChange={e=>setSourceId(e.target.value)} style={{minWidth:180}}>
+        {sources.map(s=><option key={s.sourceId} value={s.sourceId}>{s.displayName}</option>)}
+      </select>}>
+      {loading?<p className="muted">Loading metadata…</p>:fields.length===0?<Callout title="No source fields defined">Tenant IT must define the integration metadata contract first.</Callout>:
+      <table className="v-table"><thead><tr><th>Label</th><th>Field key</th><th>Role</th><th>Search</th><th>Matching</th><th className="act"><span className="sr-only">Edit</span></th></tr></thead>
+        <tbody>{fields.map(f=><tr key={f.fieldKey}>
+          <td className="lead" data-label="Label"><strong>{f.displayLabel}</strong></td><td data-label="Field key"><span className="mono">{f.fieldKey}</span></td>
+          <td data-label="Role">{f.businessIdentifier?<Badge tone="ok">Identifier</Badge>:<span className="muted">Attribute</span>}</td>
+          <td data-label="Search">{f.searchable?'Searchable':<span className="faint">Hidden</span>}</td>
+          <td data-label="Matching">{f.searchable?MODE_LABEL[f.searchMode]:'—'}</td>
+          <td className="act"><button type="button" className="v-btn sm" disabled={!can('CONFIGURE_METADATA_SEARCH')} onClick={()=>{setEditing(f);setDraft({...f})}}><Pencil size={14} aria-hidden/>Edit</button></td>
+        </tr>)}</tbody></table>}
+    </Panel>
+    <Panel title="Business limits" description="Configured business operation limits."><dl className="v-kv cols">
+      <div><dt>Maximum search results</dt><dd>{BUSINESS_LIMITS.maxResults}</dd></div><div><dt>Results per page</dt><dd>{BUSINESS_LIMITS.pageSize}</dd></div>
+      <div><dt>Comment length</dt><dd>{BUSINESS_LIMITS.maxCommentLength.toLocaleString()} characters</dd></div><div><dt>Tag length</dt><dd>{BUSINESS_LIMITS.maxTagLength} characters</dd></div>
+    </dl></Panel>
+    {editing&&draft&&<Drawer eyebrow={sources.find(s=>s.sourceId===sourceId)?.displayName??''} title="Edit search behavior" onClose={()=>{if(!saving){setEditing(null);setDraft(null)}}}
+      footer={<><button type="button" className="v-btn" disabled={saving} onClick={()=>{setEditing(null);setDraft(null)}}>Cancel</button><button type="button" className="v-btn primary" disabled={!draft.displayLabel.trim()||saving} onClick={()=>void save()}>{saving?'Saving…':'Save field'}</button></>}>
+      <dl className="v-kv"><div><dt>Field key</dt><dd className="mono">{draft.fieldKey}</dd></div><div><dt>Type · normalization</dt><dd>{draft.fieldType} · {draft.normalization}</dd></div><div><dt>Identifier</dt><dd>{draft.businessIdentifier?'Yes — defined by the integration contract':'No'}</dd></div></dl>
+      <label className="v-field"><span>Display label</span><input className="v-input" value={draft.displayLabel} onChange={e=>setDraft({...draft,displayLabel:e.target.value})}/></label>
+      <div className="row between"><span className="v-label">Show in business search</span><Switch label="Searchable" checked={draft.searchable} disabled={draft.businessIdentifier} onChange={v=>setDraft({...draft,searchable:v})}/></div>
+      {draft.businessIdentifier&&<small className="faint">Identifiers are always searchable.</small>}
+      <label className="v-field"><span>Match behavior</span><select className="v-select" value={draft.searchMode} onChange={e=>setDraft({...draft,searchMode:e.target.value as AdminMetadataField['searchMode']})}>{Object.entries(MODE_LABEL).map(([mode,label])=><option key={mode} value={mode}>{label}</option>)}</select></label>
+    </Drawer>}
   </>
 }
 
