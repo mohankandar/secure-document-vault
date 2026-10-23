@@ -60,3 +60,7 @@ export const recordPrintEvent = (id:string) => roleApi<void>('/api/v1/business/d
 export type CorrectionRegion = {pageNumber:number;x:number;y:number;width:number;height:number}
 export const permanentRedaction = (id:string,reason:string,regions:CorrectionRegion[]) =>
   roleApi<unknown>('/api/v1/business/documents/'+encodeURIComponent(id)+'/redactions','steward',{method:'POST',body:JSON.stringify({reason,confirmed:true,regions})})
+
+export type RolePolicy = {roles:Record<string,Record<string,boolean>>;configurableCapabilities:string[]}
+export const getRolePolicy = () => roleApi<RolePolicy>('/api/v1/admin/role-capabilities','businessAdmin')
+export const saveRolePolicy = (roles:RolePolicy['roles']) => roleApi<RolePolicy>('/api/v1/admin/role-capabilities','businessAdmin',{method:'PUT',body:JSON.stringify({roles})})

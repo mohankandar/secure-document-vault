@@ -1,8 +1,9 @@
-import { useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { Lock, Pencil, Plus } from 'lucide-react'
 import { AREA_TABS, useStore } from './store'
 import { BASELINE, BUSINESS_LIMITS, CAPABILITY_LABELS, CONFIGURABLE, ROLES, SOURCES, type Capability, type Field, type SearchMode } from './data'
 import { Badge, Callout, Drawer, PageHead, Panel, Scenario, Status, Switch, Tabs, fmtDate, fmtRel } from './ui'
+import { getRolePolicy, saveRolePolicy, type RolePolicy } from './liveApi'
 
 export function AreaFrame({ crumbs, title, lede, actions, children, attention = [] }: { crumbs: string[]; title: string; lede: ReactNode; actions?: ReactNode; children: ReactNode; attention?: string[] }) {
   const { route, navigate } = useStore()
@@ -29,8 +30,8 @@ export function Governance() {
     <AreaFrame crumbs={['Business administration', tab.label]} title={tab.label} lede={LEDE[route.tab]}>
       {route.tab === 'access' && <AccessTab />}
       {route.tab === 'roles' && <RolesTab />}
-      {route.tab === 'retention' && <RetentionTab />}
-      {route.tab === 'metadata' && <MetadataTab />}
+      {route.tab === 'retention' && <Callout tone="warn" title="Retention integration not yet available">This connected screen cannot activate a retention policy until its backend integration is complete. No simulated changes will be applied.</Callout>}
+      {route.tab === 'metadata' && <Callout tone="warn" title="Metadata integration not yet available">This connected screen cannot edit metadata until its backend integration is complete. No simulated changes will be applied.</Callout>}
     </AreaFrame>
   )
 }
@@ -69,57 +70,34 @@ function AccessTab() {
 }
 
 function RolesTab() {
-  const { roleCaps, setRoleCaps, toast, recordAudit } = useStore()
-  const [draft, setDraft] = useState(roleCaps)
-  const dirty = JSON.stringify(draft) !== JSON.stringify(roleCaps)
-  const cols = [{ code: 'BUSINESS_USER' as const, name: 'Business User' }, { code: 'DOCUMENT_STEWARD' as const, name: 'Document Steward' }]
-  const toggle = (code: 'BUSINESS_USER' | 'DOCUMENT_STEWARD', c: Capability, on: boolean) => setDraft((d) => ({ ...d, [code]: on ? [...d[code], c] : d[code].filter((x) => x !== c) }))
-  const caps: Capability[] = [...BASELINE, ...CONFIGURABLE]
-  return (
-    <>
-      <Panel flush title="Document actions by role" description="Changes apply on each user's next request. Every change is audited.">
-        <Scenario what="role permissions">
-          <table className="v-table">
-            <thead><tr><th>Action</th>{cols.map((c) => <th key={c.code}>{c.name}</th>)}</tr></thead>
-            <tbody>
-              {caps.map((c) => {
-                const base = BASELINE.includes(c)
-                return (
-                  <tr key={c}>
-                    <td className="lead" data-label="Action">
-                      <div className="stack" style={{ gap: 0 }}><span style={{ fontWeight: 500 }}>{CAPABILITY_LABELS[c]}</span><span className="mono faint" style={{ fontSize: 12 }}>{c}</span></div>
-                      {c === 'PERMANENT_REDACTION' && <Badge tone="bad">Irreversible</Badge>}
-                    </td>
-                    {cols.map((col) => (
-                      <td key={col.code} data-label={col.name}>
-                        {base ? <span className="row faint" style={{ fontSize: 13 }}><Lock size={13} aria-hidden />Baseline</span>
-                          : <Switch label={`${CAPABILITY_LABELS[c]} for ${col.name}`} checked={draft[col.code].includes(c)} onChange={(on) => toggle(col.code, c, on)} />}
-                      </td>
-                    ))}
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        </Scenario>
-      </Panel>
-      {dirty && (
-        <div className="v-panel" style={{ position: 'sticky', bottom: 'calc(var(--bottom) + 12px)', zIndex: 5 }}>
-          <div className="v-panel-body row between wrap">
-            <span><strong>Unsaved changes.</strong> <span className="muted">Saving updates this prototype session only.</span></span>
-            <span className="row">
-              <button type="button" className="v-btn" onClick={() => setDraft(roleCaps)}>Discard</button>
-              <button type="button" className="v-btn primary" onClick={() => {
-                setRoleCaps(draft)
-                recordAudit({ action: 'ROLE_CAPABILITY_UPDATED', targetType: 'ROLE', target: 'BUSINESS_ROLES', outcome: 'SUCCESS', details: { simulated: 'true' } })
-                toast({ title: 'Permissions saved (simulated)', detail: 'Switch to a business role to see the effect in the viewer.' })
-              }}>Save changes</button>
-            </span>
-          </div>
-        </div>
-      )}
-    </>
-  )
+  const { can, toast } = useStore()
+  const [policy,setPolicy] = useState<RolePolicy|null>(null)
+  const [draft,setDraft] = useState<RolePolicy['roles']>({})
+  const [loading,setLoading] = useState(true)
+  const [saving,setSaving] = useState(false)
+  const [error,setError] = useState('')
+  useEffect(()=>{let active=true;getRolePolicy().then(p=>{if(active){setPolicy(p);setDraft(p.roles)}}).catch(e=>{if(active)setError(String(e))}).finally(()=>{if(active)setLoading(false)});return()=>{active=false}},[])
+  const cols = [{code:'BUSINESS_USER',name:'Business User'},{code:'DOCUMENT_STEWARD',name:'Document Steward'}]
+  const caps:Capability[]=[...BASELINE,...CONFIGURABLE]
+  const dirty=policy!==null && JSON.stringify(draft)!==JSON.stringify(policy.roles)
+  const toggle=(code:string,c:Capability,on:boolean)=>setDraft(d=>({...d,[code]:{...d[code],[c]:on}}))
+  const save=async()=>{
+    if(saving||!can('CONFIGURE_ROLE_PERMISSIONS'))return
+    setSaving(true);setError('')
+    try{const result=await saveRolePolicy(draft);setPolicy(result);setDraft(result.roles);toast({title:'Permissions saved'})}
+    catch(e){setError(String(e))}
+    finally{setSaving(false)}
+  }
+  return <>
+    {loading && <Callout title="Loading role permissions">Reading current tenant permissions…</Callout>}
+    {error && <Callout tone="warn" title="Role permissions unavailable">{error}</Callout>}
+    {policy && <Panel flush title="Document actions by role" description="Changes apply on each user's next request. Every change is audited.">
+      <table className="v-table"><thead><tr><th>Action</th>{cols.map(c=><th key={c.code}>{c.name}</th>)}</tr></thead>
+      <tbody>{caps.map(c=><tr key={c}><td className="lead" data-label="Action"><div className="stack" style={{gap:0}}><span style={{fontWeight:500}}>{CAPABILITY_LABELS[c]}</span><span className="mono faint" style={{fontSize:12}}>{c}</span></div>{c==='PERMANENT_REDACTION'&&<Badge tone="bad">Irreversible</Badge>}</td>
+      {cols.map(col=><td key={col.code} data-label={col.name}>{BASELINE.includes(c)?<span className="row faint" style={{fontSize:13}}><Lock size={13}/>Baseline</span>:<Switch label={CAPABILITY_LABELS[c]+' for '+col.name} checked={!!draft[col.code]?.[c]} onChange={on=>toggle(col.code,c,on)} disabled={!can('CONFIGURE_ROLE_PERMISSIONS') || saving || !policy.configurableCapabilities.includes(c)}/>}</td>)}</tr>)}</tbody></table>
+    </Panel>}
+    {dirty&&<div className="v-panel" style={{position:'sticky',bottom:'calc(var(--bottom) + 12px)',zIndex:5}}><div className="v-panel-body row between wrap"><span><strong>Unsaved changes.</strong> <span className="muted">Changes take effect on the next request.</span></span><span className="row"><button type="button" className="v-btn" onClick={()=>setDraft(policy!.roles)} disabled={saving}>Discard</button><button type="button" className="v-btn primary" disabled={saving||!can('CONFIGURE_ROLE_PERMISSIONS')} onClick={()=>void save()}>Save changes</button></span></div></div>}
+  </>
 }
 
 function RetentionTab() {

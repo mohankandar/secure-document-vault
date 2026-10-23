@@ -8,9 +8,8 @@ const localHeaders = (persona: LocalPersona): Record<string, string> => {
   if (!isLocalSecurityMode()) return {}
   // Explicit local-development test identity; never overrides OIDC or production builds.
   // Restart Vite with VITE_LOCAL_TEST_ROLE=DOCUMENT_STEWARD to test authorized Steward workflows.
-  const localTestSteward = import.meta.env.DEV && window.location.hostname === 'localhost' &&
-    import.meta.env.VITE_LOCAL_TEST_ROLE === 'DOCUMENT_STEWARD'
-  const effectivePersona = localTestSteward && (persona === 'business' || persona === 'steward') ? 'steward' : persona
+  const localTestRole = import.meta.env.DEV && window.location.hostname === 'localhost' ? import.meta.env.VITE_LOCAL_TEST_ROLE : ''
+  const effectivePersona = localTestRole === 'BUSINESS_ADMIN' ? 'businessAdmin' : localTestRole === 'DOCUMENT_STEWARD' && (persona === 'business' || persona === 'steward') ? 'steward' : persona
   const identity = effectivePersona === 'steward'
     ? { subject: 'local-document-steward', roles: 'DOCUMENT_STEWARD' }
     : effectivePersona === 'business'

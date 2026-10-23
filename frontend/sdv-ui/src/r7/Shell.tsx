@@ -104,7 +104,7 @@ function ShellInner() {
     return () => window.removeEventListener('keydown', k)
   }, [])
 
-  const allowed = route.area === 'system' || (route.area === 'workspace' && !!liveSession?.capabilities.includes('SEARCH_RECORDS'))
+  const allowed = route.area === 'system' || (route.area === 'workspace' && !!liveSession?.capabilities.includes('SEARCH_RECORDS')) || (route.area === 'governance' && !!liveSession && ['CONFIGURE_ROLE_PERMISSIONS','CONFIGURE_RETENTION','CONFIGURE_METADATA_SEARCH','CONFIGURE_BUSINESS_LIMITS'].some(c=>liveSession.capabilities.includes(c)))
   return (
     <div className="r7">
       <div className="v-app">

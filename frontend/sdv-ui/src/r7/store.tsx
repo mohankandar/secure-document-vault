@@ -61,7 +61,7 @@ function useStoreValue() {
     loadSession().then(s => {
       if (!active) return
       setLiveSession(s)
-      setRoleId(s.roles.includes('DOCUMENT_STEWARD') ? 'steward' : 'business')
+      setRoleId(s.roles.includes('BUSINESS_ADMIN') ? 'businessAdmin' : s.roles.includes('DOCUMENT_STEWARD') ? 'steward' : 'business')
     }).catch(e => { if (active) setSessionError(e instanceof Error ? e.message : 'Session unavailable') })
       .finally(() => { if(active) setSessionLoading(false) })
     return () => { active = false }
@@ -101,7 +101,7 @@ function useStoreValue() {
   }, [])
 
   const caps = useMemo<Capability[]>(() => liveSession ? liveSession.capabilities.filter((c):c is Capability =>
-    c in ({ SEARCH_RECORDS:1, VIEW_PDF:1, PERMANENT_REDACTION:1, DOWNLOAD_CURRENT_PDF:1, PRINT_DOCUMENT:1, ADD_DOCUMENT_TAG:1, ADD_DOCUMENT_COMMENT:1 })
+    c in ({ SEARCH_RECORDS:1, VIEW_PDF:1, PERMANENT_REDACTION:1, DOWNLOAD_CURRENT_PDF:1, PRINT_DOCUMENT:1, ADD_DOCUMENT_TAG:1, ADD_DOCUMENT_COMMENT:1, CONFIGURE_ROLE_PERMISSIONS:1, CONFIGURE_RETENTION:1, CONFIGURE_METADATA_SEARCH:1, CONFIGURE_BUSINESS_LIMITS:1 })
   ) : [], [liveSession])
   const can = useCallback((c: Capability) => caps.includes(c), [caps])
 
