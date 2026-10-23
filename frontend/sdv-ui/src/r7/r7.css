@@ -480,3 +480,8 @@ html.r7-html, html.r7-html body { margin: 0; background: var(--bg); color: var(-
 .ws-date-fields { display:flex; flex-direction:column; gap:8px; min-width:0; }
 .ws-date-fields > .v-input { width:100%; min-width:0; box-sizing:border-box; }
 .ws-date-fields > .faint { display:none; }
+
+/* Business administration uses the available desktop width for section guidance. */
+@media (min-width: 900px) {
+  .v-pagehead .lede { max-width: none; text-wrap: wrap; }
+}

@@ -96,18 +96,19 @@ function RetentionTab() {
   const [saving,setSaving]=useState(false)
   const [open,setOpen]=useState(false)
   const [days,setDays]=useState('')
+  const [indefinite,setIndefinite]=useState(false)
   const [note,setNote]=useState('')
   const [ack,setAck]=useState(false)
   useEffect(()=>{let active=true;getRetentionPolicy().then(p=>{if(active)setPolicy(p)}).catch(e=>{if(active)setError(String(e))}).finally(()=>{if(active)setLoading(false)});return()=>{active=false}},[])
   const n=Number(days)
-  const valid=days.trim().length>0&&Number.isInteger(n)&&n>=1&&n<=36500
+  const valid=indefinite||(days.trim().length>0&&Number.isInteger(n)&&n>=1&&n<=36500)
   const activate=async()=>{
     if(!policy||saving||!valid||!ack||!can('CONFIGURE_RETENTION'))return
     setSaving(true);setError('')
     try{
       const current=await getRetentionPolicy()
       if(current.policyVersionId!==policy.policyVersionId)throw new Error('Retention policy changed since this screen was loaded. Reload before activating a new version.')
-      const updated=await activateRetentionPolicy('Retention policy version '+(policy.version+1),note,n)
+      const updated=await activateRetentionPolicy('Retention policy version '+(policy.version+1),note,indefinite?null:n)
       setPolicy(updated);setOpen(false);toast({title:'Retention policy activated',detail:'Newly ingested documents use the new retention period.'})
     }catch(e){setError(String(e))}
     finally{setSaving(false)}
@@ -123,7 +124,7 @@ function RetentionTab() {
             <span style={{fontSize:32,fontWeight:600,letterSpacing:'-0.02em',lineHeight:1.1}}>{policy.indefinite?'Indefinite':policy.defaultRetentionDays?.toLocaleString()+' days'}</span>
             <span className="muted">Effective {fmtDate(policy.effectiveFrom)} · by {policy.createdBy}</span>
           </div>
-          <button type="button" className="v-btn primary" disabled={!can('CONFIGURE_RETENTION')} onClick={()=>{setOpen(true);setAck(false);setNote('');setDays(String(policy.defaultRetentionDays??365))}}><Plus size={16} aria-hidden/>New version</button>
+          <button type="button" className="v-btn primary" disabled={!can('CONFIGURE_RETENTION')} onClick={()=>{setOpen(true);setAck(false);setNote('');setIndefinite(policy.indefinite);setDays(String(policy.defaultRetentionDays??365))}}><Plus size={16} aria-hidden/>New version</button>
         </div>
         <p className="muted" style={{fontSize:14}}>{policy.description||policy.policyName}</p>
       </div></section>
@@ -141,7 +142,8 @@ function RetentionTab() {
         <button type="button" className="v-btn" disabled={saving} onClick={()=>setOpen(false)}>Cancel</button>
         <button type="button" className="v-btn primary" disabled={!valid||!ack||saving} onClick={()=>void activate()}>{saving?'Activating…':'Activate version'}</button>
       </>}>
-        <label className="v-field"><span>Retention period (days)</span><input className={'v-input'+(valid?'':' invalid')} inputMode="numeric" value={days} onChange={e=>setDays(e.target.value.replace(/\D/g,''))}/><small>{valid?'≈ '+(n/365).toFixed(1)+' years':'Enter a whole number between 1 and 36,500.'}</small></label>
+        <label className="v-check"><input type="checkbox" checked={indefinite} onChange={e=>setIndefinite(e.target.checked)}/><span>Indefinite retention (no retention expiration)</span></label>
+        {!indefinite&&<label className="v-field"><span>Retention period (days)</span><input className={'v-input'+(valid?'':' invalid')} inputMode="numeric" value={days} onChange={e=>setDays(e.target.value.replace(/\D/g,''))}/><small>{valid?'≈ '+(n/365).toFixed(1)+' years':'Enter a whole number between 1 and 36,500.'}</small></label>}
         <label className="v-field"><span>Change note</span><textarea className="v-textarea" value={note} maxLength={1000} onChange={e=>setNote(e.target.value)} placeholder="Reference the records schedule or approval."/></label>
         <Callout tone="warn" title="Applies only to newly ingested documents">Existing documents retain their current retention snapshots. This version becomes immutable once active.</Callout>
         <label className="v-check"><input type="checkbox" checked={ack} onChange={e=>setAck(e.target.checked)}/><span>I confirm this retention change has been approved.</span></label>
