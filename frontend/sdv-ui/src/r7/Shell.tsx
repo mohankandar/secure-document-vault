@@ -104,7 +104,7 @@ function ShellInner() {
     return () => window.removeEventListener('keydown', k)
   }, [])
 
-  const allowed = route.area === 'system' || (route.area === 'workspace' && !!liveSession?.capabilities.includes('SEARCH_RECORDS')) || (route.area === 'governance' && !!liveSession && ['CONFIGURE_ROLE_PERMISSIONS','CONFIGURE_RETENTION','CONFIGURE_METADATA_SEARCH','CONFIGURE_BUSINESS_LIMITS'].some(c=>liveSession.capabilities.includes(c)))
+  const allowed = route.area === 'system' || (route.area === 'workspace' && !!liveSession?.capabilities.includes('SEARCH_RECORDS')) || (route.area === 'governance' && !!liveSession && ['CONFIGURE_ROLE_PERMISSIONS','CONFIGURE_RETENTION','CONFIGURE_METADATA_SEARCH','CONFIGURE_BUSINESS_LIMITS'].some(c=>liveSession.capabilities.includes(c))) || (route.area === 'tenant' && !!liveSession?.capabilities.includes('CONFIGURE_INGESTION_SOURCES')) || (route.area === 'operations' && !!liveSession?.capabilities.includes('VIEW_TECHNICAL_FAILURES'))
   return (
     <div className="r7">
       <div className="v-app">

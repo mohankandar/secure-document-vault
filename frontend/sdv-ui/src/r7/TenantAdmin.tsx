@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { itSources, itFields, itUpsertField, type ItSource, type ItField } from './liveApi'
 import { CheckCircle2, Circle, History, Pencil, Plus, RotateCcw } from 'lucide-react'
 import { AREA_TABS, useStore } from './store'
 import { SYSTEM, type IdentityConfig, type Source, type Volume } from './data'
@@ -20,10 +21,10 @@ export function TenantAdmin() {
   const tab = AREA_TABS.tenant.find((t) => t.id === route.tab)!
   return (
     <AreaFrame crumbs={['Tenant IT', tab.label]} title={tab.label} lede={LEDE[route.tab]} attention={volumes.some(volumeAttention) ? ['storage'] : []}>
-      {route.tab === 'storage' && <StorageTab editable />}
-      {route.tab === 'authentication' && <AuthTab />}
-      {route.tab === 'integrations' && <IntegrationsTab />}
-      {route.tab === 'environment' && <EnvironmentPanel />}
+      {route.tab === 'storage' && <Callout title="Storage integration pending">Storage changes are disabled in connected R7 until the backend-backed editor is ready.</Callout>}
+      {route.tab === 'authentication' && <Callout title="Identity administration integration pending">Identity activation and rollback are disabled here. No simulated security changes can be submitted.</Callout>}
+      {route.tab === 'integrations' && <ConnectedIntegrations />}
+      {route.tab === 'environment' && <Callout title="Environment integration pending">Live environment details are not yet wired into this view.</Callout>}
     </AreaFrame>
   )
 }
@@ -257,4 +258,42 @@ export function EnvironmentPanel() {
       </Scenario>
     </Panel>
   )
+}
+
+
+function ConnectedIntegrations(){
+ const [sources,setSources]=useState<ItSource[]>([])
+ const [sourceId,setSourceId]=useState('')
+ const [fields,setFields]=useState<ItField[]>([])
+ const [error,setError]=useState('')
+ const [form,setForm]=useState(false)
+ const [key,setKey]=useState('')
+ const [label,setLabel]=useState('')
+ const [type,setType]=useState('STRING')
+ const [normalization,setNormalization]=useState('NONE')
+ const [required,setRequired]=useState(false)
+ const [busy,setBusy]=useState(false)
+ useEffect(()=>{let live=true;itSources().then(rows=>{if(live){setSources(rows);setSourceId(rows[0]?.sourceId??'')}}).catch(e=>{if(live)setError(String(e))});return()=>{live=false}},[])
+ useEffect(()=>{if(!sourceId)return;let live=true;setFields([]);itFields(sourceId).then(rows=>{if(live)setFields(rows)}).catch(e=>{if(live)setError(String(e))});return()=>{live=false}},[sourceId])
+ const valid=/^[A-Za-z][A-Za-z0-9_.-]{0,99}$/.test(key)&&label.trim().length>0&&!fields.some(f=>f.fieldKey===key)
+ const save=async()=>{if(!valid||busy)return;setBusy(true);setError('');try{
+  await itUpsertField(sourceId,key,{displayLabel:label.trim(),fieldType:type,required,normalization,validationRules:{}})
+  setFields(await itFields(sourceId));setForm(false);setKey('');setLabel('');setRequired(false)
+ }catch(e){setError(String(e))}finally{setBusy(false)}}
+ return <>
+ {error&&<Callout tone="warn" title="Source configuration unavailable">{error}</Callout>}
+ <Panel flush title="Source metadata contract" description="Define ingestion metadata keys here. Business Administration controls search labels, matching and display order."
+ actions={<span className="row" style={{gap:8}}><select className="v-select" aria-label="Source" value={sourceId} onChange={e=>{setSourceId(e.target.value);setForm(false)}}>{sources.map(s=><option key={s.sourceId} value={s.sourceId}>{s.displayName}</option>)}</select><button type="button" className="v-btn sm primary" disabled={!sourceId} onClick={()=>setForm(true)}><Plus size={14}/>Add field</button></span>}>
+ <table className="v-table"><thead><tr><th>Field key</th><th>Label</th><th>Type</th><th>Required</th><th>Version</th></tr></thead><tbody>{fields.map(f=><tr key={f.fieldKey}><td className="lead" data-label="Field key">{f.fieldKey}</td><td data-label="Label">{f.displayLabel}</td><td data-label="Type">{f.fieldType}</td><td data-label="Required">{f.required?'Yes':'No'}</td><td data-label="Version">{f.version}</td></tr>)}</tbody></table>
+ </Panel>
+ <Callout title="Field lifecycle">Adding a definition does not populate historical documents. Retirement is not enabled until dependency-aware backend support is available.</Callout>
+ {form&&<Drawer eyebrow="Tenant IT · metadata contract" title="Add field" onClose={()=>{if(!busy)setForm(false)}} footer={<><button type="button" className="v-btn" disabled={busy} onClick={()=>setForm(false)}>Cancel</button><button type="button" className="v-btn primary" disabled={!valid||busy} onClick={()=>void save()}>{busy?'Saving…':'Add field'}</button></>}>
+ <label className="v-field"><span>Field key</span><input className="v-input" value={key} onChange={e=>setKey(e.target.value)}/><small>Letters, numbers, dots, underscores and hyphens; starts with a letter.</small></label>
+ <label className="v-field"><span>Display label</span><input className="v-input" value={label} onChange={e=>setLabel(e.target.value)}/></label>
+ <label className="v-field"><span>Data type</span><select className="v-select" value={type} onChange={e=>setType(e.target.value)}><option value="STRING">Text</option><option value="DATE">Date</option><option value="NUMBER">Number</option><option value="BOOLEAN">Boolean</option></select></label>
+ <label className="v-field"><span>Normalization</span><select className="v-select" value={normalization} onChange={e=>setNormalization(e.target.value)}><option value="NONE">None</option><option value="UPPERCASE">Uppercase</option><option value="DIGITS_ONLY">Digits only</option></select></label>
+ <label className="v-check"><input type="checkbox" checked={required} onChange={e=>setRequired(e.target.checked)}/><span>Required in the ingestion contract</span></label>
+ <Callout tone="warn" title="Integration impact">Confirm the producer supplies the new field before making it required.</Callout>
+ </Drawer>}
+ </>
 }

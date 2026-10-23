@@ -9,16 +9,16 @@ const localHeaders = (persona: LocalPersona): Record<string, string> => {
   // Explicit local-development test identity; never overrides OIDC or production builds.
   // Restart Vite with VITE_LOCAL_TEST_ROLE=DOCUMENT_STEWARD to test authorized Steward workflows.
   const localTestRole = import.meta.env.DEV && window.location.hostname === 'localhost' ? import.meta.env.VITE_LOCAL_TEST_ROLE : ''
-  const effectivePersona = localTestRole === 'BUSINESS_ADMIN' ? 'businessAdmin' : localTestRole === 'DOCUMENT_STEWARD' && (persona === 'business' || persona === 'steward') ? 'steward' : persona
+  const effectivePersona = localTestRole === 'BUSINESS_ADMIN' ? 'businessAdmin' : localTestRole === 'TENANT_IT_ADMIN' ? 'tenantIt' : localTestRole === 'PLATFORM_OPERATIONS_ADMIN' ? 'platform' : localTestRole === 'DOCUMENT_STEWARD' && (persona === 'business' || persona === 'steward') ? 'steward' : persona
   const identity = effectivePersona === 'steward'
     ? { subject: 'local-document-steward', roles: 'DOCUMENT_STEWARD' }
     : effectivePersona === 'business'
       ? { subject: 'local-business-user', roles: 'BUSINESS_USER' }
-      : persona === 'businessAdmin'
+      : effectivePersona === 'businessAdmin'
       ? { subject: 'local-business-admin', roles: 'BUSINESS_ADMIN' }
-      : persona === 'tenantIt'
+      : effectivePersona === 'tenantIt'
         ? { subject: 'local-tenant-it-admin', roles: 'TENANT_IT_ADMIN' }
-        : persona === 'platform'
+        : effectivePersona === 'platform'
           ? { subject: 'local-platform-operations-admin', roles: 'PLATFORM_OPERATIONS_ADMIN' }
           : { subject: 'local-administrator', roles: 'TENANT_IT_ADMIN,BUSINESS_ADMIN' }
   return {

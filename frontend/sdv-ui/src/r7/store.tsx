@@ -61,7 +61,7 @@ function useStoreValue() {
     loadSession().then(s => {
       if (!active) return
       setLiveSession(s)
-      setRoleId(s.roles.includes('BUSINESS_ADMIN') ? 'businessAdmin' : s.roles.includes('DOCUMENT_STEWARD') ? 'steward' : 'business')
+      setRoleId(s.roles.includes('PLATFORM_OPERATIONS_ADMIN') ? 'platform' : s.roles.includes('TENANT_IT_ADMIN') ? 'tenantIt' : s.roles.includes('BUSINESS_ADMIN') ? 'businessAdmin' : s.roles.includes('DOCUMENT_STEWARD') ? 'steward' : 'business')
     }).catch(e => { if (active) setSessionError(e instanceof Error ? e.message : 'Session unavailable') })
       .finally(() => { if(active) setSessionLoading(false) })
     return () => { active = false }

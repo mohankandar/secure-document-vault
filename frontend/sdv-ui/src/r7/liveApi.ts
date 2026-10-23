@@ -77,3 +77,11 @@ export const updateBusinessMetadata=(sourceId:string,field:AdminMetadataField)=>
 
 export const getMetadataDisplayOrder=(sourceId:string)=>roleApi<string[]>('/api/v1/admin/metadata-sources/'+encodeURIComponent(sourceId)+'/display-order','businessAdmin')
 export const saveMetadataDisplayOrder=(sourceId:string,fieldKeys:string[])=>roleApi<string[]>('/api/v1/admin/metadata-sources/'+encodeURIComponent(sourceId)+'/display-order','businessAdmin',{method:'PUT',body:JSON.stringify({fieldKeys})})
+
+export type ItSource={sourceId:string;sourceKey:string;displayName:string;status:string}
+export type ItField={fieldKey:string;displayLabel:string;fieldType:string;required:boolean;normalization:string;version:number}
+export const itSources=()=>roleApi<ItSource[]>('/api/v1/admin/ingestion-sources','tenantIt')
+export const itFields=(sourceId:string)=>roleApi<ItField[]>('/api/v1/admin/ingestion-sources/'+encodeURIComponent(sourceId)+'/source-fields','tenantIt')
+export const itUpsertField=(sourceId:string,key:string,body:{displayLabel:string;fieldType:string;required:boolean;normalization:string;validationRules:Record<string,never>})=>roleApi<ItField>('/api/v1/admin/ingestion-sources/'+encodeURIComponent(sourceId)+'/source-fields/'+encodeURIComponent(key),'tenantIt',{method:'PUT',body:JSON.stringify(body)})
+export type OpSummary={overallStatus:string;observedAt:string;application:{component:string;status:string;message:string};database:{component:string;status:string;message:string};keyService:{component:string;status:string;message:string};processingFailureCount:number|null;stuckDocumentCount:number|null;attentionSubmissionCount:number|null;dataObservations:{section:string;status:string;message:string}[]}
+export const opSummary=()=>roleApi<OpSummary>('/api/v1/operations/summary','platform')

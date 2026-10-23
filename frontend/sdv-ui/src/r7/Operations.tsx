@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { opSummary, type OpSummary } from './liveApi'
 import { ArrowRight, CheckCircle2, ChevronRight, FileWarning, HardDrive, PackageOpen, Timer } from 'lucide-react'
 import { AREA_TABS, useStore } from './store'
 import { FAILURES, RETENTION_SWEEP, SERVICES, STUCK, SUBMISSIONS, type AuditEvent, type Submission } from './data'
@@ -24,13 +25,13 @@ export function Operations() {
   const attention = [...(FAILURES.length + STUCK.length + incomplete.length > 0 ? ['incidents'] : []), ...(volumes.some(volumeAttention) ? ['storage'] : []), ...(SUBMISSIONS.some((s) => s.status !== 'COMPLETE') ? ['intake'] : [])]
   return (
     <AreaFrame crumbs={['Platform operations', tab.label]} title={tab.label} lede={LEDE[route.tab]} attention={attention}>
-      {route.tab === 'overview' && <Overview />}
-      {route.tab === 'intake' && <Intake />}
-      {route.tab === 'storage' && <StorageTab />}
-      {route.tab === 'health' && <Health />}
-      {route.tab === 'incidents' && <Incidents />}
-      {route.tab === 'audit' && <Audit />}
-      {route.tab === 'configuration' && <EnvironmentPanel />}
+      {route.tab === 'overview' && <ConnectedOverview />}
+      {route.tab === 'intake' && <Callout title="Backend integration pending">This operational view is not yet connected. Prototype data and simulated actions are disabled.</Callout>}
+      {route.tab === 'storage' && <Callout title="Backend integration pending">This operational view is not yet connected. Prototype data and simulated actions are disabled.</Callout>}
+      {route.tab === 'health' && <Callout title="Backend integration pending">This operational view is not yet connected. Prototype data and simulated actions are disabled.</Callout>}
+      {route.tab === 'incidents' && <Callout title="Backend integration pending">This operational view is not yet connected. Prototype data and simulated actions are disabled.</Callout>}
+      {route.tab === 'audit' && <Callout title="Backend integration pending">This operational view is not yet connected. Prototype data and simulated actions are disabled.</Callout>}
+      {route.tab === 'configuration' && <Callout title="Backend integration pending">This operational view is not yet connected. Prototype data and simulated actions are disabled.</Callout>}
     </AreaFrame>
   )
 }
@@ -247,4 +248,19 @@ function Audit() {
       )}
     </>
   )
+}
+
+
+function ConnectedOverview(){
+ const [data,setData]=useState<OpSummary|null>(null)
+ const [error,setError]=useState('')
+ useEffect(()=>{let live=true;opSummary().then(d=>{if(live)setData(d)}).catch(e=>{if(live)setError(String(e))});return()=>{live=false}},[])
+ return <>{error&&<Callout tone="warn" title="Operations unavailable">{error}</Callout>}
+ {!data&&!error&&<Callout title="Loading operations">Reading operational summary…</Callout>}
+ {data&&<>
+ <Panel title="Platform status"><dl className="v-kv cols"><div><dt>Overall</dt><dd>{data.overallStatus}</dd></div><div><dt>Processing failures</dt><dd>{data.processingFailureCount??'Unavailable'}</dd></div><div><dt>Stuck documents</dt><dd>{data.stuckDocumentCount??'Unavailable'}</dd></div><div><dt>Attention submissions</dt><dd>{data.attentionSubmissionCount??'Unavailable'}</dd></div></dl></Panel>
+ <Panel flush title="Core service health"><table className="v-table"><thead><tr><th>Service</th><th>Status</th><th>Details</th></tr></thead><tbody>{[data.application,data.database,data.keyService].map(x=><tr key={x.component}><td className="lead">{x.component}</td><td><Status value={x.status}/></td><td>{x.message}</td></tr>)}</tbody></table></Panel>
+ {data.dataObservations.some(x=>x.status==='DEGRADED')&&<Callout tone="warn" title="Incomplete operational data">Some sections are degraded; do not interpret missing counts as zero.</Callout>}
+ </>}
+ </>
 }
