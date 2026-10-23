@@ -104,6 +104,29 @@ public class JdbcFoundationRepository implements TenantRepository, IngestionSour
         if (updated != 1) throw new IllegalStateException("Tenant-scoped ingestion source update affected " + updated + " rows.");
     }
 
+
+    @Override
+    public List<String> findDisplayOrder(UUID tenantId, UUID sourceId) {
+        return jdbc.queryForList("""
+                select field_key from metadata_field_display_order
+                where tenant_id=:tenantId and source_id=:sourceId
+                order by display_position, field_key
+                """, params("tenantId", tenantId).addValue("sourceId", sourceId), String.class);
+    }
+
+    @Override
+    public void replaceDisplayOrder(UUID tenantId, UUID sourceId, List<String> fieldKeys) {
+        var scope = params("tenantId", tenantId).addValue("sourceId", sourceId);
+        jdbc.update("delete from metadata_field_display_order where tenant_id=:tenantId and source_id=:sourceId", scope);
+        for (int i=0; i<fieldKeys.size(); i++) {
+            jdbc.update("""
+                    insert into metadata_field_display_order (tenant_id, source_id, field_key, display_position)
+                    values (:tenantId, :sourceId, :fieldKey, :position)
+                    """, params("tenantId", tenantId).addValue("sourceId", sourceId)
+                         .addValue("fieldKey", fieldKeys.get(i)).addValue("position", i));
+        }
+    }
+
     @Override
     public List<MetadataFieldDefinition> findCurrent(UUID tenantId, UUID sourceId) {
         var p = params("tenantId", tenantId).addValue("sourceId", sourceId);

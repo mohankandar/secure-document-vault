@@ -1,0 +1,8 @@
+databaseChangeLog:
+  - changeSet:
+      id: 017-business-metadata-display-order
+      author: openai
+      changes:
+        - sqlFile:
+            path: db/changelog/017-business-metadata-display-order.sql
+            relativeToChangelogFile: false

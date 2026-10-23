@@ -62,6 +62,31 @@ public class MetadataFieldAdminService {
         return definitions.findHistory(tenantId, sourceId, fieldKey);
     }
 
+
+    @Transactional
+    public List<String> updateDisplayOrder(UUID tenantId, UUID sourceId, List<String> keys,
+                                           String actorId, String correlationId) {
+        requireSource(tenantId, sourceId);
+        if (keys == null) throw new IllegalArgumentException("fieldKeys is required.");
+        List<String> existing = definitions.findCurrent(tenantId, sourceId).stream()
+                .map(MetadataFieldDefinition::fieldKey).toList();
+        if (keys.size() != existing.size() || keys.stream().distinct().count() != keys.size()
+                || !new java.util.HashSet<>(keys).equals(new java.util.HashSet<>(existing))) {
+            throw new IllegalArgumentException("fieldKeys must contain each current source field exactly once.");
+        }
+        definitions.replaceDisplayOrder(tenantId, sourceId, keys);
+        Instant now=clock.instant();
+        audit.append(new AuditEvent(UUID.randomUUID(), tenantId, "USER", actorId,
+                "METADATA_DISPLAY_ORDER_UPDATED", "INGESTION_SOURCE", sourceId.toString(), now,
+                correlationId, AuditOutcome.SUCCESS, "{\"fieldCount\":" + keys.size() + "}"));
+        return definitions.findDisplayOrder(tenantId, sourceId);
+    }
+
+    public List<String> displayOrder(UUID tenantId, UUID sourceId) {
+        requireSource(tenantId, sourceId);
+        return definitions.findDisplayOrder(tenantId, sourceId);
+    }
+
     @Transactional
     public MetadataFieldDefinition createOrRevise(UUID tenantId,
                                                    UUID sourceId,

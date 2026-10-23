@@ -3,7 +3,7 @@ import { Lock, Pencil, Plus } from 'lucide-react'
 import { AREA_TABS, useStore } from './store'
 import { BASELINE, BUSINESS_LIMITS, CAPABILITY_LABELS, CONFIGURABLE, ROLES, type Capability, type SearchMode } from './data'
 import { Badge, Callout, Drawer, PageHead, Panel, Scenario, Status, Switch, Tabs, fmtDate } from './ui'
-import { getRolePolicy, saveRolePolicy, getRetentionPolicy, activateRetentionPolicy, type RolePolicy, type RetentionPolicyOverview, adminMetadataSources, adminMetadataFields, updateBusinessMetadata, type AdminMetadataSource, type AdminMetadataField } from './liveApi'
+import { getRolePolicy, saveRolePolicy, getRetentionPolicy, activateRetentionPolicy, type RolePolicy, type RetentionPolicyOverview, adminMetadataSources, adminMetadataFields, updateBusinessMetadata, getMetadataDisplayOrder, saveMetadataDisplayOrder, type AdminMetadataSource, type AdminMetadataField } from './liveApi'
 
 export function AreaFrame({ crumbs, title, lede, actions, children, attention = [] }: { crumbs: string[]; title: string; lede: ReactNode; actions?: ReactNode; children: ReactNode; attention?: string[] }) {
   const { route, navigate } = useStore()
@@ -162,8 +162,18 @@ function LiveMetadataTab(){
   const [error,setError]=useState('')
   const [loading,setLoading]=useState(true)
   const [saving,setSaving]=useState(false)
+  const [ordering,setOrdering]=useState(false)
+  const [orderDraft,setOrderDraft]=useState<string[]>([])
+  const [orderSaved,setOrderSaved]=useState<string[]>([])
+  const [orderSaving,setOrderSaving]=useState(false)
   useEffect(()=>{let active=true;adminMetadataSources().then(rows=>{if(active){setSources(rows);setSourceId(rows[0]?.sourceId??'')}}).catch(e=>{if(active)setError(String(e))}).finally(()=>{if(active)setLoading(false)});return()=>{active=false}},[])
-  useEffect(()=>{if(!sourceId)return;let active=true;setLoading(true);setError('');setFields([]);adminMetadataFields(sourceId).then(rows=>{if(active)setFields(rows)}).catch(e=>{if(active)setError(String(e))}).finally(()=>{if(active)setLoading(false)});return()=>{active=false}},[sourceId])
+  useEffect(()=>{if(!sourceId)return;let active=true;setLoading(true);setError('');setFields([]);setOrdering(false);Promise.all([adminMetadataFields(sourceId),getMetadataDisplayOrder(sourceId)]).then(([rows,order])=>{
+    if(active){
+      const keys=[...order.filter(k=>rows.some(f=>f.fieldKey===k)),...rows.map(f=>f.fieldKey).filter(k=>!order.includes(k))]
+      setFields([...rows].sort((a,b)=>keys.indexOf(a.fieldKey)-keys.indexOf(b.fieldKey)))
+      setOrderDraft(keys);setOrderSaved(keys)
+    }
+  }).catch(e=>{if(active)setError(String(e))}).finally(()=>{if(active)setLoading(false)});return()=>{active=false}},[sourceId])
   const save=async()=>{
     if(!draft||!can('CONFIGURE_METADATA_SEARCH')||saving||!draft.displayLabel.trim())return
     setSaving(true);setError('')
@@ -176,10 +186,37 @@ function LiveMetadataTab(){
   }
   return <>
     {error&&<Callout tone="warn" title="Metadata operation unavailable">{error}</Callout>}
+    {ordering&&<Panel title="Business Search display order" description="Changes apply to this source only. Hidden fields retain their position when shown again.">
+      <div className="stack" style={{gap:8}}>
+        {orderDraft.map((key,i)=>{const f=fields.find(x=>x.fieldKey===key);return f&&<div key={key} className="row between" style={{gap:12,padding:8,border:'1px solid var(--line)',borderRadius:8}}>
+          <span className="row" style={{gap:8}}><strong>{i+1}.</strong> {f.displayLabel}</span>
+          <span className="row">
+            <button type="button" className="v-btn sm" aria-label={'Move '+f.displayLabel+' up'} disabled={i===0||orderSaving} onClick={()=>setOrderDraft(old=>{const a=[...old];[a[i-1],a[i]]=[a[i],a[i-1]];return a})}>↑</button>
+            <button type="button" className="v-btn sm" aria-label={'Move '+f.displayLabel+' down'} disabled={i===orderDraft.length-1||orderSaving} onClick={()=>setOrderDraft(old=>{const a=[...old];[a[i+1],a[i]]=[a[i],a[i+1]];return a})}>↓</button>
+          </span>
+        </div>})}
+      </div>
+      <div className="row" style={{justifyContent:'flex-end',marginTop:12}}>
+        <button className="v-btn" type="button" disabled={orderSaving} onClick={()=>{setOrderDraft(orderSaved);setOrdering(false)}}>Cancel</button>
+        <button className="v-btn primary" type="button" disabled={orderSaving||orderDraft.every((k,i)=>k===orderSaved[i])} onClick={async()=>{
+          setOrderSaving(true);setError('')
+          try{
+            const keys=await saveMetadataDisplayOrder(sourceId,orderDraft)
+            const all=[...keys,...fields.map(f=>f.fieldKey).filter(k=>!keys.includes(k))]
+            setOrderDraft(all);setOrderSaved(all)
+            setFields(old=>[...old].sort((a,b)=>all.indexOf(a.fieldKey)-all.indexOf(b.fieldKey)))
+            setOrdering(false);toast({title:'Display order saved'})
+          }catch(e){setError(String(e))}finally{setOrderSaving(false)}
+        }}>Save order</button>
+      </div>
+    </Panel>}
     <Panel flush title="Searchable fields" meta={fields.length} description="Field keys come from Tenant IT's integration contract. Here you control labels and matching."
-      actions={<select className="v-select" aria-label="Source" value={sourceId} onChange={e=>setSourceId(e.target.value)} style={{minWidth:180}}>
-        {sources.map(s=><option key={s.sourceId} value={s.sourceId}>{s.displayName}</option>)}
-      </select>}>
+      actions={<span className="row" style={{gap:8}}>
+        <select className="v-select" aria-label="Source" value={sourceId} onChange={e=>setSourceId(e.target.value)} style={{minWidth:180}}>
+          {sources.map(s=><option key={s.sourceId} value={s.sourceId}>{s.displayName}</option>)}
+        </select>
+        <button type="button" className="v-btn sm" disabled={loading||fields.length<2||!can('CONFIGURE_METADATA_SEARCH')} onClick={()=>setOrdering(x=>!x)}>Reorder fields</button>
+      </span>}>
       {loading?<p className="muted">Loading metadata…</p>:fields.length===0?<Callout title="No source fields defined">Tenant IT must define the integration metadata contract first.</Callout>:
       <table className="v-table"><thead><tr><th>Label</th><th>Field key</th><th>Role</th><th>Search</th><th>Matching</th><th className="act"><span className="sr-only">Edit</span></th></tr></thead>
         <tbody>{fields.map(f=><tr key={f.fieldKey}>

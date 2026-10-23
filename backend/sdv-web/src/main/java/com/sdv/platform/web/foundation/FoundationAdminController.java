@@ -97,6 +97,23 @@ public class FoundationAdminController {
         return sourceOperations.summarize(principal.tenantId(), sourceId);
     }
 
+
+    @GetMapping("/metadata-sources/{sourceId}/display-order")
+    public Object getMetadataDisplayOrder(@PathVariable UUID sourceId) {
+        SdvPrincipal principal = require(Capability.CONFIGURE_METADATA_SEARCH);
+        return metadata.displayOrder(principal.tenantId(), sourceId);
+    }
+
+    @PutMapping("/metadata-sources/{sourceId}/display-order")
+    public Object updateMetadataDisplayOrder(@PathVariable UUID sourceId,
+                                             @RequestBody MetadataDisplayOrderRequest request) {
+        SdvPrincipal principal = require(Capability.CONFIGURE_METADATA_SEARCH);
+        return metadata.updateDisplayOrder(principal.tenantId(), sourceId,
+                request == null ? null : request.fieldKeys(), principal.subject(), correlationId());
+    }
+
+    public record MetadataDisplayOrderRequest(java.util.List<String> fieldKeys) { }
+
     @GetMapping("/ingestion-sources/{sourceId}/metadata-fields")
     public Object listMetadataFields(@PathVariable UUID sourceId) {
         SdvPrincipal principal = require(Capability.CONFIGURE_METADATA_SEARCH);

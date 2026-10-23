@@ -13,4 +13,6 @@ public interface MetadataFieldDefinitionRepository {
     Optional<MetadataFieldDefinition> findCurrent(UUID tenantId, UUID sourceId, String fieldKey);
     void retire(UUID tenantId, UUID sourceId, String fieldKey, Instant retiredAt);
     void insert(MetadataFieldDefinition definition);
+    default List<String> findDisplayOrder(UUID tenantId, UUID sourceId) { return List.of(); }
+    default void replaceDisplayOrder(UUID tenantId, UUID sourceId, List<String> fieldKeys) { throw new UnsupportedOperationException("Field order persistence unavailable"); }
 }

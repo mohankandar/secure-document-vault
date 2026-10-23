@@ -71,6 +71,19 @@ public class BusinessExperienceService {
         this.clock = clock;
     }
 
+
+    private List<MetadataFieldDefinition> orderedSearchFields(UUID tenantId, UUID sourceId) {
+        List<String> saved = definitions.findDisplayOrder(tenantId, sourceId);
+        Map<String, Integer> positions = new HashMap<>();
+        for (int i=0; i<saved.size(); i++) positions.put(saved.get(i), i);
+        return definitions.findCurrent(tenantId, sourceId).stream()
+                .sorted(Comparator.comparingInt((MetadataFieldDefinition f) ->
+                         positions.getOrDefault(f.fieldKey(), Integer.MAX_VALUE))
+                        .thenComparing(MetadataFieldDefinition::displayLabel, String.CASE_INSENSITIVE_ORDER)
+                        .thenComparing(MetadataFieldDefinition::fieldKey))
+                .toList();
+    }
+
     public BusinessExperienceView.SearchSchema searchSchema(UUID tenantId) {
         requireActiveTenant(tenantId);
         List<BusinessExperienceView.SourceSchema> sourceSchemas = sources.findAll(tenantId).stream()
@@ -80,10 +93,8 @@ public class BusinessExperienceService {
                         source.sourceId(),
                         source.sourceKey(),
                         source.displayName(),
-                        definitions.findCurrent(tenantId, source.sourceId()).stream()
+                        orderedSearchFields(tenantId, source.sourceId()).stream()
                                 .filter(MetadataFieldDefinition::searchable)
-                                .sorted(Comparator.comparing(MetadataFieldDefinition::displayLabel, String.CASE_INSENSITIVE_ORDER)
-                                        .thenComparing(MetadataFieldDefinition::fieldKey))
                                 .map(field -> new BusinessExperienceView.SearchField(
                                         field.fieldKey(),
                                         field.displayLabel(),
