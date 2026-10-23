@@ -3,7 +3,7 @@ import { Lock, Pencil, Plus } from 'lucide-react'
 import { AREA_TABS, useStore } from './store'
 import { BASELINE, BUSINESS_LIMITS, CAPABILITY_LABELS, CONFIGURABLE, ROLES, SOURCES, type Capability, type Field, type SearchMode } from './data'
 import { Badge, Callout, Drawer, PageHead, Panel, Scenario, Status, Switch, Tabs, fmtDate, fmtRel } from './ui'
-import { getRolePolicy, saveRolePolicy, type RolePolicy } from './liveApi'
+import { getRolePolicy, saveRolePolicy, getRetentionPolicy, activateRetentionPolicy, type RolePolicy, type RetentionPolicyOverview } from './liveApi'
 
 export function AreaFrame({ crumbs, title, lede, actions, children, attention = [] }: { crumbs: string[]; title: string; lede: ReactNode; actions?: ReactNode; children: ReactNode; attention?: string[] }) {
   const { route, navigate } = useStore()
@@ -30,7 +30,7 @@ export function Governance() {
     <AreaFrame crumbs={['Business administration', tab.label]} title={tab.label} lede={LEDE[route.tab]}>
       {route.tab === 'access' && <AccessTab />}
       {route.tab === 'roles' && <RolesTab />}
-      {route.tab === 'retention' && <Callout tone="warn" title="Retention integration not yet available">This connected screen cannot activate a retention policy until its backend integration is complete. No simulated changes will be applied.</Callout>}
+      {route.tab === 'retention' && <RetentionTab />}
       {route.tab === 'metadata' && <Callout tone="warn" title="Metadata integration not yet available">This connected screen cannot edit metadata until its backend integration is complete. No simulated changes will be applied.</Callout>}
     </AreaFrame>
   )
@@ -101,57 +101,65 @@ function RolesTab() {
 }
 
 function RetentionTab() {
-  const { retention, setRetention, toast, recordAudit, role } = useStore()
-  const [open, setOpen] = useState(false)
-  const [days, setDays] = useState(String(retention.active.days))
-  const [note, setNote] = useState('')
-  const [ack, setAck] = useState(false)
-  const n = Number(days)
-  const valid = Number.isInteger(n) && n >= 1 && n <= 36500
-  const a = retention.active
-  return (
-    <>
-      <Scenario what="retention policy" empty={<Panel title="No retention policy"><Callout tone="warn" title="Documents can't be ingested until a policy is active">Activate the first policy version to begin.</Callout></Panel>}>
-        <section className="v-panel">
-          <div className="v-panel-body" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-            <div className="row between wrap" style={{ gap: 12 }}>
-              <div className="stack" style={{ gap: 4 }}>
-                <span className="row"><Status value="ACTIVE" label={`Version ${a.version} · active`} /></span>
-                <span style={{ fontSize: 32, fontWeight: 600, letterSpacing: '-0.02em', lineHeight: 1.1 }}>{a.days.toLocaleString()} days</span>
-                <span className="muted">≈ {(a.days / 365).toFixed(1)} years after ingestion · effective {fmtDate(a.effectiveAt)} · by {a.activatedBy}</span>
-              </div>
-              <button type="button" className="v-btn primary" onClick={() => { setOpen(true); setAck(false); setNote(''); setDays(String(a.days)) }}><Plus size={16} aria-hidden />New version</button>
-            </div>
-            <p className="muted" style={{ fontSize: 14 }}>{a.note}</p>
+  const {can,toast}=useStore()
+  const [policy,setPolicy]=useState<RetentionPolicyOverview|null>(null)
+  const [error,setError]=useState('')
+  const [loading,setLoading]=useState(true)
+  const [saving,setSaving]=useState(false)
+  const [open,setOpen]=useState(false)
+  const [days,setDays]=useState('')
+  const [note,setNote]=useState('')
+  const [ack,setAck]=useState(false)
+  useEffect(()=>{let active=true;getRetentionPolicy().then(p=>{if(active)setPolicy(p)}).catch(e=>{if(active)setError(String(e))}).finally(()=>{if(active)setLoading(false)});return()=>{active=false}},[])
+  const n=Number(days)
+  const valid=days.trim().length>0&&Number.isInteger(n)&&n>=1&&n<=36500
+  const activate=async()=>{
+    if(!policy||saving||!valid||!ack||!can('CONFIGURE_RETENTION'))return
+    setSaving(true);setError('')
+    try{
+      const current=await getRetentionPolicy()
+      if(current.policyVersionId!==policy.policyVersionId)throw new Error('Retention policy changed since this screen was loaded. Reload before activating a new version.')
+      const updated=await activateRetentionPolicy('Retention policy version '+(policy.version+1),note,n)
+      setPolicy(updated);setOpen(false);toast({title:'Retention policy activated',detail:'Newly ingested documents use the new retention period.'})
+    }catch(e){setError(String(e))}
+    finally{setSaving(false)}
+  }
+  return <>
+    {loading&&<Callout title="Loading retention policy">Reading tenant retention configuration…</Callout>}
+    {error&&<Callout tone="warn" title="Retention operation unavailable">{error}</Callout>}
+    {policy&&<>
+      <section className="v-panel"><div className="v-panel-body" style={{display:'flex',flexDirection:'column',gap:16}}>
+        <div className="row between wrap" style={{gap:12}}>
+          <div className="stack" style={{gap:4}}>
+            <span className="row"><Status value="ACTIVE" label={'Version '+policy.version+' · active'}/></span>
+            <span style={{fontSize:32,fontWeight:600,letterSpacing:'-0.02em',lineHeight:1.1}}>{policy.indefinite?'Indefinite':policy.defaultRetentionDays?.toLocaleString()+' days'}</span>
+            <span className="muted">Effective {fmtDate(policy.effectiveFrom)} · by {policy.createdBy}</span>
           </div>
-        </section>
-      </Scenario>
-      <Panel flush title="Version history" meta={retention.history.length} description="Documents keep the retention they were ingested with. Older documents are never rewritten.">
-        <Scenario what="policy history">
-          <table className="v-table">
-            <thead><tr><th>Version</th><th className="num">Retention</th><th>Effective</th><th>Activated by</th><th>Status</th></tr></thead>
-            <tbody>{retention.history.map((h) => (
-              <tr key={h.version}><td className="lead" data-label="Version"><strong style={{ fontWeight: 500 }}>v{h.version}</strong></td><td className="num" data-label="Retention">{h.days.toLocaleString()} days</td><td data-label="Effective">{fmtDate(h.effectiveAt)}</td><td data-label="Activated by">{h.activatedBy}</td><td data-label="Status"><Status value={h.status === 'ACTIVE' ? 'ACTIVE' : 'RETIRED'} label={h.status === 'ACTIVE' ? 'Active' : 'Superseded'} /></td></tr>
-            ))}</tbody>
-          </table>
-        </Scenario>
+          <button type="button" className="v-btn primary" disabled={!can('CONFIGURE_RETENTION')} onClick={()=>{setOpen(true);setAck(false);setNote('');setDays(String(policy.defaultRetentionDays??365))}}><Plus size={16} aria-hidden/>New version</button>
+        </div>
+        <p className="muted" style={{fontSize:14}}>{policy.description||policy.policyName}</p>
+      </div></section>
+      <Panel flush title="Version history" meta={policy.history.length} description="Documents keep the retention they were ingested with. Older documents are never rewritten.">
+        <table className="v-table"><thead><tr><th>Version</th><th className="num">Retention</th><th>Effective</th><th>Activated by</th><th>Status</th></tr></thead>
+          <tbody>{policy.history.map(h=><tr key={h.policyVersionId}>
+            <td className="lead" data-label="Version"><strong>v{h.version}</strong></td>
+            <td className="num" data-label="Retention">{h.indefinite?'Indefinite':h.defaultRetentionDays?.toLocaleString()+' days'}</td>
+            <td data-label="Effective">{fmtDate(h.effectiveFrom)}</td><td data-label="Activated by">{h.createdBy}</td>
+            <td data-label="Status"><Status value={h.effectiveUntil?'RETIRED':'ACTIVE'} label={h.effectiveUntil?'Superseded':'Active'}/></td>
+          </tr>)}</tbody>
+        </table>
       </Panel>
-      {open && (
-        <Drawer eyebrow="Retention policy" title={`Activate version ${a.version + 1}`} onClose={() => setOpen(false)}
-          footer={<><button type="button" className="v-btn" onClick={() => setOpen(false)}>Cancel</button><button type="button" className="v-btn primary" disabled={!valid || !ack} onClick={() => {
-            const v = a.version + 1
-            setRetention({ active: { version: v, days: n, effectiveAt: new Date().toISOString(), activatedBy: role.person, note: note || 'No note provided.' }, history: [{ version: v, days: n, effectiveAt: new Date().toISOString(), activatedBy: role.person, status: 'ACTIVE' }, ...retention.history.map((h) => ({ ...h, status: 'SUPERSEDED' }))] })
-            recordAudit({ action: 'RETENTION_POLICY_ACTIVATED', targetType: 'RETENTION_POLICY', target: `v${v}`, outcome: 'SUCCESS', details: { days: n, simulated: 'true' } })
-            toast({ title: `Version ${v} activated (simulated)`, detail: 'Applies to documents ingested from now on.' }); setOpen(false)
-          }}>Activate version</button></>}>
-          <label className="v-field"><span>Retention period (days)</span><input className={`v-input${valid ? '' : ' invalid'}`} inputMode="numeric" value={days} onChange={(e) => setDays(e.target.value.replace(/\D/g, ''))} /><small>{valid ? `≈ ${(n / 365).toFixed(1)} years` : 'Enter a whole number between 1 and 36,500.'}</small></label>
-          <label className="v-field"><span>Change note</span><textarea className="v-textarea" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Reference the records schedule or approval." /></label>
-          <Callout tone="warn" title="Applies only to newly ingested documents">Existing documents keep their current retain-until date. This version becomes immutable once active.</Callout>
-          <label className="v-check"><input type="checkbox" checked={ack} onChange={(e) => setAck(e.target.checked)} /><span>I confirm this retention change has been approved.</span></label>
-        </Drawer>
-      )}
-    </>
-  )
+      {open&&<Drawer eyebrow="Retention policy" title={'Activate version '+(policy.version+1)} onClose={()=>{if(!saving)setOpen(false)}} footer={<>
+        <button type="button" className="v-btn" disabled={saving} onClick={()=>setOpen(false)}>Cancel</button>
+        <button type="button" className="v-btn primary" disabled={!valid||!ack||saving} onClick={()=>void activate()}>{saving?'Activating…':'Activate version'}</button>
+      </>}>
+        <label className="v-field"><span>Retention period (days)</span><input className={'v-input'+(valid?'':' invalid')} inputMode="numeric" value={days} onChange={e=>setDays(e.target.value.replace(/\D/g,''))}/><small>{valid?'≈ '+(n/365).toFixed(1)+' years':'Enter a whole number between 1 and 36,500.'}</small></label>
+        <label className="v-field"><span>Change note</span><textarea className="v-textarea" value={note} maxLength={1000} onChange={e=>setNote(e.target.value)} placeholder="Reference the records schedule or approval."/></label>
+        <Callout tone="warn" title="Applies only to newly ingested documents">Existing documents retain their current retention snapshots. This version becomes immutable once active.</Callout>
+        <label className="v-check"><input type="checkbox" checked={ack} onChange={e=>setAck(e.target.checked)}/><span>I confirm this retention change has been approved.</span></label>
+      </Drawer>}
+    </>}
+  </>
 }
 
 const MODE_LABEL: Record<SearchMode, string> = { EXACT: 'Exact match', PREFIX: 'Starts with', PARTIAL: 'Contains' }
