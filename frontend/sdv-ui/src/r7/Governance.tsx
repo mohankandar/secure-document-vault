@@ -1,8 +1,8 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { Lock, Pencil, Plus } from 'lucide-react'
 import { AREA_TABS, useStore } from './store'
-import { BASELINE, BUSINESS_LIMITS, CAPABILITY_LABELS, CONFIGURABLE, ROLES, SOURCES, type Capability, type Field, type SearchMode } from './data'
-import { Badge, Callout, Drawer, PageHead, Panel, Scenario, Status, Switch, Tabs, fmtDate, fmtRel } from './ui'
+import { BASELINE, BUSINESS_LIMITS, CAPABILITY_LABELS, CONFIGURABLE, ROLES, type Capability, type SearchMode } from './data'
+import { Badge, Callout, Drawer, PageHead, Panel, Scenario, Status, Switch, Tabs, fmtDate } from './ui'
 import { getRolePolicy, saveRolePolicy, getRetentionPolicy, activateRetentionPolicy, type RolePolicy, type RetentionPolicyOverview, adminMetadataSources, adminMetadataFields, updateBusinessMetadata, type AdminMetadataSource, type AdminMetadataField } from './liveApi'
 
 export function AreaFrame({ crumbs, title, lede, actions, children, attention = [] }: { crumbs: string[]; title: string; lede: ReactNode; actions?: ReactNode; children: ReactNode; attention?: string[] }) {
@@ -216,64 +216,3 @@ function LiveMetadataTab(){
 }
 
 const MODE_LABEL: Record<SearchMode, string> = { EXACT: 'Exact match', PREFIX: 'Starts with', PARTIAL: 'Contains' }
-
-function MetadataTab() {
-  const { sources, setSources, toast, recordAudit } = useStore()
-  const [sourceId, setSourceId] = useState(SOURCES[0].id)
-  const [editing, setEditing] = useState<Field | null>(null)
-  const src = sources.find((s) => s.id === sourceId)!
-  return (
-    <>
-      <Panel flush title="Searchable fields" meta={src.fields.length} description="Field keys come from Tenant IT's integration contract. Here you control labels and matching."
-        actions={<select className="v-select" aria-label="Source" value={sourceId} onChange={(e) => setSourceId(e.target.value)} style={{ minWidth: 180 }}>{sources.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select>}>
-        <Scenario what="source fields" empty={<Callout title="No source fields defined">Tenant IT must define the integration metadata contract first.</Callout>}>
-          <table className="v-table">
-            <thead><tr><th>Label</th><th>Field key</th><th>Role</th><th>Search</th><th>Matching</th><th className="act"><span className="sr-only">Edit</span></th></tr></thead>
-            <tbody>{src.fields.map((f) => (
-              <tr key={f.key}>
-                <td className="lead" data-label="Label"><strong style={{ fontWeight: 500 }}>{f.label}</strong></td>
-                <td data-label="Field key"><span className="mono">{f.key}</span></td>
-                <td data-label="Role">{f.identifier ? <Badge tone="ok">Identifier</Badge> : <span className="muted">Attribute</span>}</td>
-                <td data-label="Search">{f.searchable ? 'Searchable' : <span className="faint">Hidden</span>}</td>
-                <td data-label="Matching">{f.searchable ? MODE_LABEL[f.mode] : '—'}</td>
-                <td className="act"><button type="button" className="v-btn sm" onClick={() => setEditing(f)}><Pencil size={14} aria-hidden />Edit</button></td>
-              </tr>
-            ))}</tbody>
-          </table>
-        </Scenario>
-      </Panel>
-      <Panel title="Business limits" description="Applied across business search and document collaboration.">
-        <dl className="v-kv cols">
-          <div><dt>Maximum search results</dt><dd>{BUSINESS_LIMITS.maxResults}</dd></div>
-          <div><dt>Results per page</dt><dd>{BUSINESS_LIMITS.pageSize}</dd></div>
-          <div><dt>Comment length</dt><dd>{BUSINESS_LIMITS.maxCommentLength.toLocaleString()} characters</dd></div>
-          <div><dt>Tag length</dt><dd>{BUSINESS_LIMITS.maxTagLength} characters</dd></div>
-        </dl>
-      </Panel>
-      {editing && <FieldDrawer field={editing} sourceName={src.name} onClose={() => setEditing(null)} onSave={(f) => {
-        setSources((list) => list.map((s) => (s.id === sourceId ? { ...s, fields: s.fields.map((x) => (x.key === f.key ? f : x)) } : s)))
-        recordAudit({ action: 'METADATA_FIELD_UPDATED', targetType: 'METADATA_FIELD', target: f.key, outcome: 'SUCCESS', details: { simulated: 'true' } })
-        toast({ title: 'Field updated (simulated)', detail: `${f.label} · ${f.searchable ? MODE_LABEL[f.mode] : 'not searchable'}` }); setEditing(null)
-      }} />}
-    </>
-  )
-}
-
-function FieldDrawer({ field, sourceName, onClose, onSave }: { field: Field; sourceName: string; onClose: () => void; onSave: (f: Field) => void }) {
-  const [f, setF] = useState(field)
-  return (
-    <Drawer eyebrow={sourceName} title="Edit search behavior" onClose={onClose} footer={<><button type="button" className="v-btn" onClick={onClose}>Cancel</button><button type="button" className="v-btn primary" disabled={!f.label.trim()} onClick={() => onSave({ ...f, label: f.label.trim() })}>Save field</button></>}>
-      <dl className="v-kv"><div><dt>Field key</dt><dd className="mono">{f.key}</dd></div><div><dt>Type · normalization</dt><dd>{f.type} · {f.normalization}</dd></div><div><dt>Identifier</dt><dd>{f.identifier ? 'Yes — defined by the integration contract' : 'No'}</dd></div></dl>
-      <label className="v-field"><span>Display label</span><input className="v-input" value={f.label} onChange={(e) => setF({ ...f, label: e.target.value })} /></label>
-      <div className="row between"><span className="v-label">Show in business search</span><Switch label="Searchable" checked={f.searchable} onChange={(v) => setF({ ...f, searchable: v })} disabled={f.identifier} /></div>
-      {f.identifier && <small className="faint">Identifiers are always searchable.</small>}
-      <label className="v-field"><span>Matching</span>
-        <select className="v-select" value={f.mode} disabled={!f.searchable} onChange={(e) => setF({ ...f, mode: e.target.value as SearchMode })}>
-          <option value="EXACT">Exact match</option><option value="PREFIX">Starts with</option><option value="PARTIAL">Contains</option>
-        </select>
-        <small>Contains matching is slower on large sources. Prefer exact for identifiers.</small>
-      </label>
-      <p className="faint" style={{ fontSize: 13 }}>Last contract change {fmtRel(new Date(Date.now() - 4 * 86400000).toISOString())}.</p>
-    </Drawer>
-  )
-}
