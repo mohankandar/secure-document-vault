@@ -36,37 +36,25 @@ export function Governance() {
   )
 }
 
-function AccessTab() {
-  const { roleCaps } = useStore()
-  const business = ROLES.filter((r) => ['BUSINESS_USER', 'DOCUMENT_STEWARD', 'BUSINESS_ADMIN'].includes(r.code))
-  return (
-    <>
-      <Panel flush title="Business roles" meta={business.length} description="Roles SDV recognises for business content, read from the sign-in token's roles claim.">
-        <Scenario what="roles">
-          <table className="v-table">
-            <thead><tr><th>Role</th><th>Claim value</th><th>Responsibility</th><th className="num">Document actions</th><th>Configurable</th></tr></thead>
-            <tbody>
-              {business.map((r) => {
-                const caps = r.code === 'BUSINESS_ADMIN' ? null : roleCaps[r.code as 'BUSINESS_USER']
-                return (
-                  <tr key={r.code}>
-                    <td className="lead" data-label="Role"><strong style={{ fontWeight: 500 }}>{r.name}</strong></td>
-                    <td data-label="Claim value"><span className="mono">{r.code}</span></td>
-                    <td data-label="Responsibility" className="muted">{r.responsibility}</td>
-                    <td data-label="Document actions" className="num">{caps ? `${caps.length} of 7` : '—'}</td>
-                    <td data-label="Configurable">{caps ? <Badge tone="ok">Yes</Badge> : <Badge><Lock size={11} aria-hidden />Fixed</Badge>}</td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        </Scenario>
-      </Panel>
-      <Callout title="Assignments are managed in your identity provider">
-        Add or remove people from these roles in the IdP group or app-role assignment. SDV never stores passwords or grants roles itself, so there is no user editor here by design.
-      </Callout>
-    </>
-  )
+function AccessTab(){
+  const [policy,setPolicy]=useState<RolePolicy|null>(null)
+  const [error,setError]=useState('')
+  useEffect(()=>{let active=true;getRolePolicy().then(p=>{if(active)setPolicy(p)}).catch(e=>{if(active)setError(String(e))});return()=>{active=false}},[])
+  const business=ROLES.filter(r=>['BUSINESS_USER','DOCUMENT_STEWARD','BUSINESS_ADMIN'].includes(r.code))
+  return <>
+    {error&&<Callout tone="warn" title="Roles unavailable">{error}</Callout>}
+    <Panel flush title="Business roles" meta={business.length} description="Roles SDV recognises for business content, read from the sign-in token's roles claim.">
+      <table className="v-table"><thead><tr><th>Role</th><th>Claim value</th><th>Responsibility</th><th className="num">Document actions</th><th>Configurable</th></tr></thead>
+        <tbody>{business.map(r=>{const states=policy?.roles[r.code];const actionCount=states?BASELINE.length+Object.values(states).filter(Boolean).length:null;return <tr key={r.code}>
+          <td className="lead" data-label="Role"><strong style={{fontWeight:500}}>{r.name}</strong></td><td data-label="Claim value"><span className="mono">{r.code}</span></td>
+          <td data-label="Responsibility" className="muted">{r.responsibility}</td>
+          <td data-label="Document actions" className="num">{r.code==='BUSINESS_ADMIN'?'—':actionCount===null?'Loading…':actionCount+' of 7'}</td>
+          <td data-label="Configurable">{r.code==='BUSINESS_ADMIN'?<Badge><Lock size={11} aria-hidden/>Fixed</Badge>:<Badge tone="ok">Yes</Badge>}</td>
+        </tr>})}</tbody>
+      </table>
+    </Panel>
+    <Callout title="Assignments are managed in your identity provider">Add or remove people from these roles in the IdP group or app-role assignment. SDV never stores passwords or grants roles itself, so there is no user editor here by design.</Callout>
+  </>
 }
 
 function RolesTab() {

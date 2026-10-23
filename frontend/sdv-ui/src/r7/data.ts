@@ -11,6 +11,7 @@ export type AreaId = 'workspace' | 'governance' | 'tenant' | 'operations' | 'sys
 export type Capability =
   | 'SEARCH_RECORDS' | 'VIEW_PDF' | 'PERMANENT_REDACTION' | 'DOWNLOAD_CURRENT_PDF' | 'PRINT_DOCUMENT'
   | 'ADD_DOCUMENT_TAG' | 'ADD_DOCUMENT_COMMENT'
+  | 'CONFIGURE_ROLE_PERMISSIONS' | 'CONFIGURE_RETENTION' | 'CONFIGURE_METADATA_SEARCH' | 'CONFIGURE_BUSINESS_LIMITS'
 
 export const CAPABILITY_LABELS: Record<Capability, string> = {
   SEARCH_RECORDS: 'Search business records',
@@ -20,6 +21,10 @@ export const CAPABILITY_LABELS: Record<Capability, string> = {
   ADD_DOCUMENT_TAG: 'Add document tag',
   ADD_DOCUMENT_COMMENT: 'Add document comment',
   PERMANENT_REDACTION: 'Permanent corrective redaction',
+  CONFIGURE_ROLE_PERMISSIONS: 'Configure role permissions',
+  CONFIGURE_RETENTION: 'Configure retention',
+  CONFIGURE_METADATA_SEARCH: 'Configure metadata search',
+  CONFIGURE_BUSINESS_LIMITS: 'Configure business limits',
 }
 export const BASELINE: Capability[] = ['SEARCH_RECORDS', 'VIEW_PDF']
 export const CONFIGURABLE: Capability[] = ['DOWNLOAD_CURRENT_PDF', 'PRINT_DOCUMENT', 'ADD_DOCUMENT_TAG', 'ADD_DOCUMENT_COMMENT', 'PERMANENT_REDACTION']
