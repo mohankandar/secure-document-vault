@@ -200,4 +200,4 @@ export const AUDIT: AuditEvent[] = [
   { id: 'e09', actorType: 'USER', actor: 'jonas.weber', action: 'STORAGE_VOLUME_UPDATED', targetType: 'STORAGE_VOLUME', target: 'vol-00', at: ago(61), correlationId: 'corr-7a1100', outcome: 'SUCCESS', details: { state: 'READ_ONLY' } },
 ]
 
-export const BUSINESS_LIMITS = { maxResults: 200, pageSize: 25, maxCommentLength: 2000, maxTagLength: 40 }
+export const BUSINESS_LIMITS = { maxResults: 50, pageSize: 25, maxCommentLength: 2000, maxTagLength: 80 }

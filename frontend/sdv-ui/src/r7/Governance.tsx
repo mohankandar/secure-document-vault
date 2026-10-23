@@ -190,8 +190,8 @@ function LiveMetadataTab(){
           <td className="act"><button type="button" className="v-btn sm" disabled={!can('CONFIGURE_METADATA_SEARCH')} onClick={()=>{setEditing(f);setDraft({...f})}}><Pencil size={14} aria-hidden/>Edit</button></td>
         </tr>)}</tbody></table>}
     </Panel>
-    <Panel title="Business limits" description="Configured business operation limits."><dl className="v-kv cols">
-      <div><dt>Maximum search results</dt><dd>{BUSINESS_LIMITS.maxResults}</dd></div><div><dt>Results per page</dt><dd>{BUSINESS_LIMITS.pageSize}</dd></div>
+    <Panel title="Business limits" description="Backend-enforced operation limits. These are application limits, not editable tenant settings."><dl className="v-kv cols">
+      <div><dt>Maximum results per page</dt><dd>50</dd></div><div><dt>Results per page (current UI)</dt><dd>{BUSINESS_LIMITS.pageSize}</dd></div>
       <div><dt>Comment length</dt><dd>{BUSINESS_LIMITS.maxCommentLength.toLocaleString()} characters</dd></div><div><dt>Tag length</dt><dd>{BUSINESS_LIMITS.maxTagLength} characters</dd></div>
     </dl></Panel>
     {editing&&draft&&<Drawer eyebrow={sources.find(s=>s.sourceId===sourceId)?.displayName??''} title="Edit search behavior" onClose={()=>{if(!saving){setEditing(null);setDraft(null)}}}
