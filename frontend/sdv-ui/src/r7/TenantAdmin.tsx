@@ -269,13 +269,13 @@ function ConnectedIntegrations(){
  const [form,setForm]=useState(false)
  const [key,setKey]=useState('')
  const [label,setLabel]=useState('')
- const [type,setType]=useState('STRING')
+ const [type,setType]=useState('TEXT')
  const [normalization,setNormalization]=useState('NONE')
  const [required,setRequired]=useState(false)
  const [busy,setBusy]=useState(false)
  useEffect(()=>{let live=true;itSources().then(rows=>{if(live){setSources(rows);setSourceId(rows[0]?.sourceId??'')}}).catch(e=>{if(live)setError(String(e))});return()=>{live=false}},[])
  useEffect(()=>{if(!sourceId)return;let live=true;setFields([]);itFields(sourceId).then(rows=>{if(live)setFields(rows)}).catch(e=>{if(live)setError(String(e))});return()=>{live=false}},[sourceId])
- const valid=/^[A-Za-z][A-Za-z0-9_.-]{0,99}$/.test(key)&&label.trim().length>0&&!fields.some(f=>f.fieldKey===key)
+ const valid=/^[A-Za-z][A-Za-z0-9_.-]{0,99}$/.test(key)&&label.trim().length>0&&!fields.some(f=>f.fieldKey===key)&&!(type==='BOOLEAN'&&normalization==='DIGITS_ONLY')
  const save=async()=>{if(!valid||busy)return;setBusy(true);setError('');try{
   await itUpsertField(sourceId,key,{displayLabel:label.trim(),fieldType:type,required,normalization,validationRules:{}})
   setFields(await itFields(sourceId));setForm(false);setKey('');setLabel('');setRequired(false)
@@ -290,7 +290,7 @@ function ConnectedIntegrations(){
  {form&&<Drawer eyebrow="Tenant IT · metadata contract" title="Add field" onClose={()=>{if(!busy)setForm(false)}} footer={<><button type="button" className="v-btn" disabled={busy} onClick={()=>setForm(false)}>Cancel</button><button type="button" className="v-btn primary" disabled={!valid||busy} onClick={()=>void save()}>{busy?'Saving…':'Add field'}</button></>}>
  <label className="v-field"><span>Field key</span><input className="v-input" value={key} onChange={e=>setKey(e.target.value)}/><small>Letters, numbers, dots, underscores and hyphens; starts with a letter.</small></label>
  <label className="v-field"><span>Display label</span><input className="v-input" value={label} onChange={e=>setLabel(e.target.value)}/></label>
- <label className="v-field"><span>Data type</span><select className="v-select" value={type} onChange={e=>setType(e.target.value)}><option value="STRING">Text</option><option value="DATE">Date</option><option value="NUMBER">Number</option><option value="BOOLEAN">Boolean</option></select></label>
+ <label className="v-field"><span>Data type</span><select className="v-select" value={type} onChange={e=>setType(e.target.value)}><option value="TEXT">Text</option><option value="INTEGER">Integer</option><option value="DECIMAL">Decimal</option><option value="DATE">Date</option><option value="DATETIME">Date and time</option><option value="BOOLEAN">Boolean</option><option value="EMAIL">Email</option><option value="UUID">UUID</option></select></label>
  <label className="v-field"><span>Normalization</span><select className="v-select" value={normalization} onChange={e=>setNormalization(e.target.value)}><option value="NONE">None</option><option value="UPPERCASE">Uppercase</option><option value="DIGITS_ONLY">Digits only</option></select></label>
  <label className="v-check"><input type="checkbox" checked={required} onChange={e=>setRequired(e.target.checked)}/><span>Required in the ingestion contract</span></label>
  <Callout tone="warn" title="Integration impact">Confirm the producer supplies the new field before making it required.</Callout>
