@@ -4,12 +4,24 @@ export const LOCAL_TENANT_ID = '11111111-1111-1111-1111-111111111111'
 
 export type LocalPersona = 'admin' | 'business' | 'steward' | 'businessAdmin' | 'tenantIt' | 'platform'
 
+const LOCAL_ROLE_KEY = 'sdv.r7.local-test-persona'
+export const localRoleSwitchEnabled = () => import.meta.env.DEV && window.location.hostname === 'localhost' && isLocalSecurityMode()
+export const getLocalTestPersona = (): LocalPersona | null => {
+  if (!localRoleSwitchEnabled()) return null
+  const value = window.sessionStorage.getItem(LOCAL_ROLE_KEY)
+  return value === 'business' || value === 'steward' || value === 'businessAdmin' || value === 'tenantIt' || value === 'platform' ? value : null
+}
+export const setLocalTestPersona = (persona: LocalPersona) => {
+  if (!localRoleSwitchEnabled()) return
+  window.sessionStorage.setItem(LOCAL_ROLE_KEY, persona)
+}
+
 const localHeaders = (persona: LocalPersona): Record<string, string> => {
   if (!isLocalSecurityMode()) return {}
-  // Explicit local-development test identity; never overrides OIDC or production builds.
-  // Restart Vite with VITE_LOCAL_TEST_ROLE=DOCUMENT_STEWARD to test authorized Steward workflows.
+  // Explicitly local-only testing; production and OIDC never accept a selected test identity.
+  const selected = getLocalTestPersona()
   const localTestRole = import.meta.env.DEV && window.location.hostname === 'localhost' ? import.meta.env.VITE_LOCAL_TEST_ROLE : ''
-  const effectivePersona = localTestRole === 'BUSINESS_ADMIN' ? 'businessAdmin' : localTestRole === 'TENANT_IT_ADMIN' ? 'tenantIt' : localTestRole === 'PLATFORM_OPERATIONS_ADMIN' ? 'platform' : localTestRole === 'DOCUMENT_STEWARD' && (persona === 'business' || persona === 'steward') ? 'steward' : persona
+  const effectivePersona: LocalPersona = selected ?? (localTestRole === 'BUSINESS_USER' ? 'business' : localTestRole === 'BUSINESS_ADMIN' ? 'businessAdmin' : localTestRole === 'TENANT_IT_ADMIN' ? 'tenantIt' : localTestRole === 'PLATFORM_OPERATIONS_ADMIN' ? 'platform' : localTestRole === 'DOCUMENT_STEWARD' ? 'steward' : persona)
   const identity = effectivePersona === 'steward'
     ? { subject: 'local-document-steward', roles: 'DOCUMENT_STEWARD' }
     : effectivePersona === 'business'

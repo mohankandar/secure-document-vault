@@ -4,6 +4,7 @@ import { AREA_TABS, StoreProvider, useStore } from './store'
 import { type AreaId } from './data'
 import { opSummary } from './liveApi'
 import { Drawer, Toasts } from './ui'
+import { localRoleSwitchEnabled, setLocalTestPersona, type LocalPersona } from '../api'
 import { Workspace } from './Workspace'
 import { Governance } from './Governance'
 import { TenantAdmin } from './TenantAdmin'
@@ -137,7 +138,25 @@ function ShellInner() {
         </main>
         <BottomNav onOpenSession={() => setSession(true)} onOpenPalette={() => setPalette(true)} />
       </div>
-      {session && <Drawer eyebrow="Session" title="Authenticated session" onClose={() => setSession(false)}><p>Identity and permissions are provided by the SDV backend. Role switching and simulated scenarios are unavailable in connected mode.</p><p>{liveSession?.subject ?? 'Not authenticated'}</p></Drawer>}
+      {session && <Drawer eyebrow="Session" title="Authenticated session" onClose={() => setSession(false)}>
+        {localRoleSwitchEnabled() ? <>
+          <label className="v-field"><span>Local test role</span><select className="v-select" value={role.id} onChange={e=>{
+            const selected=e.target.value as LocalPersona
+            const area=selected==='business'||selected==='steward'?'workspace':selected==='businessAdmin'?'governance':selected==='tenantIt'?'tenant':'operations'
+            setLocalTestPersona(selected)
+            // Reload discards previous persona's documents, cached queries, and pending component state.
+            window.history.replaceState(null,'','#/'+area+'/'+(area==='workspace'?'search':area==='governance'?'access':area==='tenant'?'storage':'overview'))
+            window.location.reload()
+          }}>
+            <option value="business">Business User</option>
+            <option value="steward">Document Steward</option>
+            <option value="businessAdmin">Business Administrator</option>
+            <option value="tenantIt">Tenant IT Administrator</option>
+            <option value="platform">Platform Operations Administrator</option>
+          </select><small>Local development only. Switching refreshes the authenticated test identity and clears the previous workspace.</small></label>
+          <p>{liveSession?.subject ?? 'Not authenticated'}</p>
+        </> : <><p>Identity and permissions are provided by the SDV backend. Role switching and simulated scenarios are unavailable in connected mode.</p><p>{liveSession?.subject ?? 'Not authenticated'}</p></>}
+      </Drawer>}
       {palette && <Palette onClose={() => setPalette(false)} />}
       <Toasts />
     </div>
