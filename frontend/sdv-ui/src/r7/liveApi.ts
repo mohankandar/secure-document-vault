@@ -78,10 +78,15 @@ export const updateBusinessMetadata=(sourceId:string,field:AdminMetadataField)=>
 export const getMetadataDisplayOrder=(sourceId:string)=>roleApi<string[]>('/api/v1/admin/metadata-sources/'+encodeURIComponent(sourceId)+'/display-order','businessAdmin')
 export const saveMetadataDisplayOrder=(sourceId:string,fieldKeys:string[])=>roleApi<string[]>('/api/v1/admin/metadata-sources/'+encodeURIComponent(sourceId)+'/display-order','businessAdmin',{method:'PUT',body:JSON.stringify({fieldKeys})})
 
-export type ItSource={sourceId:string;sourceKey:string;displayName:string;status:string}
+export type ItSource={sourceId:string;sourceKey:string;displayName:string;status:'ACTIVE'|'DISABLED';authType:'OAUTH2_CLIENT_CREDENTIALS'|'JWT_BEARER'|'MTLS';credentialReference:string;createdAt:string;updatedAt:string;limits?:{maxPdfBytes?:number|null;maxPagesPerPdf?:number|null;maxDocumentsPerSubmission?:number|null;maxAggregateSubmissionBytes?:number|null;incompleteAttentionHours?:number|null}}
 export type ItField={fieldKey:string;displayLabel:string;fieldType:string;required:boolean;normalization:string;version:number}
 export const itSources=()=>roleApi<ItSource[]>('/api/v1/admin/ingestion-sources','tenantIt')
 export const itFields=(sourceId:string)=>roleApi<ItField[]>('/api/v1/admin/ingestion-sources/'+encodeURIComponent(sourceId)+'/source-fields','tenantIt')
 export const itUpsertField=(sourceId:string,key:string,body:{displayLabel:string;fieldType:string;required:boolean;normalization:string;validationRules:Record<string,never>})=>roleApi<ItField>('/api/v1/admin/ingestion-sources/'+encodeURIComponent(sourceId)+'/source-fields/'+encodeURIComponent(key),'tenantIt',{method:'PUT',body:JSON.stringify(body)})
 export type OpSummary={overallStatus:string;observedAt:string;application:{component:string;status:string;message:string};database:{component:string;status:string;message:string};keyService:{component:string;status:string;message:string};processingFailureCount:number|null;stuckDocumentCount:number|null;attentionSubmissionCount:number|null;dataObservations:{section:string;status:string;message:string}[]}
 export const opSummary=()=>roleApi<OpSummary>('/api/v1/operations/summary','platform')
+
+export const itCreateSource=(body:{sourceKey:string;displayName:string;authType:ItSource['authType'];credentialReference:string})=>roleApi<ItSource>('/api/v1/admin/ingestion-sources','tenantIt',{method:'POST',body:JSON.stringify(body)})
+export const itUpdateSource=(id:string,body:{displayName:string;status:ItSource['status'];authType:ItSource['authType'];credentialReference:string;limits?:ItSource['limits']})=>roleApi<ItSource>('/api/v1/admin/ingestion-sources/'+encodeURIComponent(id),'tenantIt',{method:'PUT',body:JSON.stringify(body)})
+export type ItSourceSummary={submissionCount:number;documentCount:number;lastActivityAt:string|null;lastDocumentAvailableAt:string|null;lastProcessingFailureAt:string|null}
+export const itSourceSummary=(id:string)=>roleApi<ItSourceSummary>('/api/v1/admin/ingestion-sources/'+encodeURIComponent(id)+'/operations','tenantIt')

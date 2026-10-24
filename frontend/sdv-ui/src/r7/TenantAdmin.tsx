@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { itSources, itFields, itUpsertField, type ItSource, type ItField } from './liveApi'
+import { itSources, itFields, itUpsertField, itCreateSource, itUpdateSource, itSourceSummary, type ItSourceSummary, type ItSource, type ItField } from './liveApi'
 import { CheckCircle2, Circle, History, Pencil, Plus, RotateCcw } from 'lucide-react'
 import { AREA_TABS, useStore } from './store'
 import { SYSTEM, type IdentityConfig, type Source, type Volume } from './data'
@@ -275,21 +275,55 @@ function ConnectedIntegrations(){
  const [normalization,setNormalization]=useState('NONE')
  const [required,setRequired]=useState(false)
  const [busy,setBusy]=useState(false)
+ const [sourceForm,setSourceForm]=useState<'new'|'edit'|null>(null)
+ const [sourceKey,setSourceKey]=useState('')
+ const [sourceName,setSourceName]=useState('')
+ const [authType,setAuthType]=useState<ItSource['authType']>('OAUTH2_CLIENT_CREDENTIALS')
+ const [credential,setCredential]=useState('')
+ const [sourceStatus,setSourceStatus]=useState<ItSource['status']>('ACTIVE')
+ const [sourceBusy,setSourceBusy]=useState(false)
+ const [summary,setSummary]=useState<ItSourceSummary|null>(null)
  useEffect(()=>{let live=true;itSources().then(rows=>{if(live){setSources(rows);setSourceId(rows[0]?.sourceId??'')}}).catch(e=>{if(live)setError(String(e))});return()=>{live=false}},[])
- useEffect(()=>{if(!sourceId)return;let live=true;setFields([]);itFields(sourceId).then(rows=>{if(live)setFields(rows)}).catch(e=>{if(live)setError(String(e))});return()=>{live=false}},[sourceId])
+ useEffect(()=>{if(!sourceId)return;let live=true;setFields([]);setSummary(null);itSourceSummary(sourceId).then(v=>{if(live)setSummary(v)}).catch(e=>{if(live)setError(String(e))});itFields(sourceId).then(rows=>{if(live)setFields(rows)}).catch(e=>{if(live)setError(String(e))});return()=>{live=false}},[sourceId])
  const valid=/^[A-Za-z][A-Za-z0-9_.-]{0,99}$/.test(key)&&label.trim().length>0&&(revising?.fieldKey===key||!fields.some(f=>f.fieldKey===key))&&!(type==='BOOLEAN'&&normalization==='DIGITS_ONLY')&&(!revising||ack)
  const save=async()=>{if(!valid||busy)return;setBusy(true);setError('');try{
   await itUpsertField(sourceId,key,{displayLabel:label.trim(),fieldType:type,required,normalization,validationRules:{}})
   setFields(await itFields(sourceId));setForm(false);setRevising(null);setAck(false);setKey('');setLabel('');setRequired(false)
  }catch(e){setError(String(e))}finally{setBusy(false)}}
+ const source=sources.find(x=>x.sourceId===sourceId)
+ const editSource=()=>{if(!source)return;setSourceKey(source.sourceKey);setSourceName(source.displayName);setAuthType(source.authType);setCredential(source.credentialReference);setSourceStatus(source.status);setSourceForm('edit')}
+ const createSource=()=>{setSourceKey('');setSourceName('');setAuthType('OAUTH2_CLIENT_CREDENTIALS');setCredential('');setSourceStatus('ACTIVE');setSourceForm('new')}
+ const sourceValid=sourceName.trim().length>0&&(sourceForm==='edit'||/^[a-z][a-z0-9-]*$/.test(sourceKey.trim()))
+ const persistSource=async()=>{if(!sourceForm||!sourceValid||sourceBusy)return;setSourceBusy(true);setError('')
+   try{
+     const result=sourceForm==='new'
+       ?await itCreateSource({sourceKey:sourceKey.trim(),displayName:sourceName.trim(),authType,credentialReference:credential.trim()})
+       :await itUpdateSource(sourceId,{displayName:sourceName.trim(),status:sourceStatus,authType,credentialReference:credential.trim(),limits:source?.limits})
+     const rows=await itSources();setSources(rows);setSourceId(result.sourceId);setSourceForm(null)
+   }catch(e){setError(String(e))}finally{setSourceBusy(false)}
+ }
  return <>
  {error&&<Callout tone="warn" title="Source configuration unavailable">{error}</Callout>}
- <Panel flush title="Source metadata contract" description="Define ingestion metadata keys here. Business Administration controls search labels, matching and display order."
+ <Panel flush title="Integrations" description="Tenant IT owns the incoming producer contract: source identity, authentication and metadata field definitions."
+ actions={<span className="row" style={{gap:8}}><select className="v-select" aria-label="Integration" value={sourceId} onChange={e=>{setSourceId(e.target.value);setForm(false)}}>{sources.map(s=><option key={s.sourceId} value={s.sourceId}>{s.displayName}</option>)}</select><button type="button" className="v-btn sm" disabled={!source} onClick={editSource}><Pencil size={14}/>Edit integration</button><button type="button" className="v-btn sm primary" onClick={createSource}><Plus size={14}/>Add integration</button></span>}>
+ {source?<dl className="v-kv cols"><div><dt>Immutable source key</dt><dd className="mono">{source.sourceKey}</dd></div><div><dt>Status</dt><dd>{source.status}</dd></div><div><dt>Authentication</dt><dd>{source.authType.replace(/_/g,' ')}</dd></div><div><dt>Credential reference</dt><dd className="mono">{source.credentialReference||'Not configured'}</dd></div></dl>:<Callout title="No integration selected">Create an integration to define its incoming metadata contract.</Callout>}
+ </Panel>
+ {summary&&<Panel title="Operational summary"><dl className="v-kv cols"><div><dt>Submissions</dt><dd>{summary.submissionCount}</dd></div><div><dt>Documents</dt><dd>{summary.documentCount}</dd></div><div><dt>Last activity</dt><dd>{summary.lastActivityAt?fmtDate(summary.lastActivityAt):'None'}</dd></div><div><dt>Last available document</dt><dd>{summary.lastDocumentAvailableAt?fmtDate(summary.lastDocumentAvailableAt):'None'}</dd></div></dl></Panel>}
+ <Panel flush title="Source metadata contract" description="Tenant IT defines the exact metadata keys and types that the external producer must send. Business Administration separately controls Search visibility, matching, labels and display order."
  actions={<span className="row" style={{gap:8}}><select className="v-select" aria-label="Source" value={sourceId} onChange={e=>{setSourceId(e.target.value);setForm(false)}}>{sources.map(s=><option key={s.sourceId} value={s.sourceId}>{s.displayName}</option>)}</select><button type="button" className="v-btn sm primary" disabled={!sourceId} onClick={()=>{setRevising(null);setKey('');setLabel('');setType('TEXT');setNormalization('NONE');setRequired(false);setAck(false);setForm(true)}}><Plus size={14}/>Add field</button></span>}>
  <table className="v-table"><thead><tr><th>Field key</th><th>Label</th><th>Type</th><th>Required</th><th>Version</th><th className="act">Action</th></tr></thead><tbody>{fields.map(f=><tr key={f.fieldKey}><td className="lead" data-label="Field key">{f.fieldKey}</td><td data-label="Label">{f.displayLabel}</td><td data-label="Type">{f.fieldType}</td><td data-label="Required">{f.required?'Yes':'No'}</td><td data-label="Version">{f.version}</td><td className="act"><button type="button" className="v-btn sm" onClick={()=>{setRevising(f);setKey(f.fieldKey);setLabel(f.displayLabel);setType(f.fieldType);setNormalization(f.normalization);setRequired(f.required);setAck(false);setForm(true)}}><Pencil size={14}/>Revise</button></td></tr>)}</tbody></table>
  </Panel>
+ <Callout title="Division of responsibility">Tenant IT defines what metadata the external system sends and validates those incoming fields. Business Administration decides which of those existing fields are searchable, how they match and in which order they appear. Defining a field does not automatically enable it in Business Search.</Callout>
  <Callout title="Incoming metadata contract">The producer must submit each value using the exact field key shown above. These are source metadata keys, not database columns. To show a new field in Business Search, enable its search behavior in Business Administration → Metadata Configuration.</Callout>
  <Callout title="Field lifecycle">Adding a definition does not populate historical documents. Retirement is not enabled until dependency-aware backend support is available.</Callout>
+ {sourceForm&&<Drawer eyebrow="Tenant IT · integration" title={sourceForm==='new'?'Add integration':'Edit integration'} onClose={()=>{if(!sourceBusy)setSourceForm(null)}} footer={<><button type="button" className="v-btn" disabled={sourceBusy} onClick={()=>setSourceForm(null)}>Cancel</button><button type="button" className="v-btn primary" disabled={!sourceValid||sourceBusy} onClick={()=>void persistSource()}>{sourceBusy?'Saving…':sourceForm==='new'?'Add integration':'Save integration'}</button></>}>
+ <label className="v-field"><span>Source key</span><input className="v-input" readOnly={sourceForm==='edit'} value={sourceKey} onChange={e=>setSourceKey(e.target.value)}/><small>Immutable identity of the external producer after creation.</small></label>
+ <label className="v-field"><span>Display name</span><input className="v-input" value={sourceName} onChange={e=>setSourceName(e.target.value)}/></label>
+ <label className="v-field"><span>Authentication</span><select className="v-select" value={authType} onChange={e=>setAuthType(e.target.value as ItSource['authType'])}><option value="OAUTH2_CLIENT_CREDENTIALS">OAuth 2.0 client credentials</option><option value="JWT_BEARER">JWT bearer</option><option value="MTLS">Mutual TLS</option></select></label>
+ <label className="v-field"><span>Credential reference</span><input className="v-input" value={credential} onChange={e=>setCredential(e.target.value)}/><small>Reference only; do not enter credentials or secret values.</small></label>
+ {sourceForm==='edit'&&<label className="v-field"><span>Status</span><select className="v-select" value={sourceStatus} onChange={e=>setSourceStatus(e.target.value as ItSource['status'])}><option value="ACTIVE">Active</option><option value="DISABLED">Disabled</option></select></label>}
+ <Callout tone="warn" title="Producer impact">Changes to authentication, status or source contract can affect incoming submissions. Verify the producer configuration before saving.</Callout>
+ </Drawer>}
  {form&&<Drawer eyebrow="Tenant IT · metadata contract" title={revising?'Revise field':'Add field'} onClose={()=>{if(!busy)setForm(false)}} footer={<><button type="button" className="v-btn" disabled={busy} onClick={()=>setForm(false)}>Cancel</button><button type="button" className="v-btn primary" disabled={!valid||busy} onClick={()=>void save()}>{busy?'Saving…':revising?'Save revision':'Add field'}</button></>}>
  <label className="v-field"><span>Field key</span><input className="v-input" value={key} readOnly={!!revising} onChange={e=>setKey(e.target.value)}/><small>Letters, numbers, dots, underscores and hyphens; starts with a letter.</small></label>
  <Callout title="Incoming metadata key">The producer must send this exact key: <strong>{key||'(enter a key)'}</strong>. No external field-name transformation is configured here.</Callout>

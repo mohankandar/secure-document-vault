@@ -186,7 +186,7 @@ function LiveMetadataTab(){
   }
   return <>
     {error&&<Callout tone="warn" title="Metadata operation unavailable">{error}</Callout>}
-    {ordering&&<Panel title="Business Search display order" description="Changes apply to this source only. Hidden fields retain their position when shown again.">
+    {ordering&&<Panel title="Business Search display order" description="Business Search uses this order for the selected source. Hidden fields retain their position when enabled again; incoming source contracts are unchanged.">
       <div className="stack" style={{gap:8}}>
         {orderDraft.map((key,i)=>{const f=fields.find(x=>x.fieldKey===key);return f&&<div key={key} className="row between" style={{gap:12,padding:8,border:'1px solid var(--line)',borderRadius:8}}>
           <span className="row" style={{gap:8}}><strong>{i+1}.</strong> {f.displayLabel}</span>
@@ -210,7 +210,7 @@ function LiveMetadataTab(){
         }}>Save order</button>
       </div>
     </Panel>}
-    <Panel flush title="Searchable fields" meta={fields.length} description="Field keys come from Tenant IT's integration contract. Here you control labels and matching."
+    <Panel flush title="Searchable fields" meta={fields.length} description="Tenant IT defines the metadata keys external systems send. Here Business Administrators choose which fields appear in Business Search, their labels, matching and display order."
       actions={<span className="row" style={{gap:8}}>
         <select className="v-select" aria-label="Source" value={sourceId} onChange={e=>setSourceId(e.target.value)} style={{minWidth:180}}>
           {sources.map(s=><option key={s.sourceId} value={s.sourceId}>{s.displayName}</option>)}
@@ -231,7 +231,7 @@ function LiveMetadataTab(){
       <div><dt>Maximum results per page</dt><dd>50</dd></div><div><dt>Results per page (current UI)</dt><dd>{BUSINESS_LIMITS.pageSize}</dd></div>
       <div><dt>Comment length</dt><dd>{BUSINESS_LIMITS.maxCommentLength.toLocaleString()} characters</dd></div><div><dt>Tag length</dt><dd>{BUSINESS_LIMITS.maxTagLength} characters</dd></div>
     </dl></Panel>
-    {editing&&draft&&<Drawer eyebrow={sources.find(s=>s.sourceId===sourceId)?.displayName??''} title="Edit search behavior" onClose={()=>{if(!saving){setEditing(null);setDraft(null)}}}
+    {editing&&draft&&<Drawer eyebrow={sources.find(s=>s.sourceId===sourceId)?.displayName??''} title="Configure Business Search field" onClose={()=>{if(!saving){setEditing(null);setDraft(null)}}}
       footer={<><button type="button" className="v-btn" disabled={saving} onClick={()=>{setEditing(null);setDraft(null)}}>Cancel</button><button type="button" className="v-btn primary" disabled={!draft.displayLabel.trim()||saving} onClick={()=>void save()}>{saving?'Saving…':'Save field'}</button></>}>
       <dl className="v-kv"><div><dt>Field key</dt><dd className="mono">{draft.fieldKey}</dd></div><div><dt>Type · normalization</dt><dd>{draft.fieldType} · {draft.normalization}</dd></div><div><dt>Identifier</dt><dd>{draft.businessIdentifier?'Yes — defined by the integration contract':'No'}</dd></div></dl>
       <label className="v-field"><span>Display label</span><input className="v-input" value={draft.displayLabel} onChange={e=>setDraft({...draft,displayLabel:e.target.value})}/></label>
