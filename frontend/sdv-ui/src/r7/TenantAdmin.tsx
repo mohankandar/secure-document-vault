@@ -283,6 +283,8 @@ function ConnectedIntegrations(){
  const [sourceStatus,setSourceStatus]=useState<ItSource['status']>('ACTIVE')
  const [sourceBusy,setSourceBusy]=useState(false)
  const [summary,setSummary]=useState<ItSourceSummary|null>(null)
+ const [section,setSection]=useState<'configuration'|'monitoring'|'contract'>('configuration')
+ const [sourceConfirm,setSourceConfirm]=useState(false)
  useEffect(()=>{let live=true;itSources().then(rows=>{if(live){setSources(rows);setSourceId(rows[0]?.sourceId??'')}}).catch(e=>{if(live)setError(String(e))});return()=>{live=false}},[])
  useEffect(()=>{if(!sourceId)return;let live=true;setFields([]);setSummary(null);itSourceSummary(sourceId).then(v=>{if(live)setSummary(v)}).catch(e=>{if(live)setError(String(e))});itFields(sourceId).then(rows=>{if(live)setFields(rows)}).catch(e=>{if(live)setError(String(e))});return()=>{live=false}},[sourceId])
  const valid=/^[A-Za-z][A-Za-z0-9_.-]{0,99}$/.test(key)&&label.trim().length>0&&(revising?.fieldKey===key||!fields.some(f=>f.fieldKey===key))&&!(type==='BOOLEAN'&&normalization==='DIGITS_ONLY')&&(!revising||ack)
@@ -291,28 +293,55 @@ function ConnectedIntegrations(){
   setFields(await itFields(sourceId));setForm(false);setRevising(null);setAck(false);setKey('');setLabel('');setRequired(false)
  }catch(e){setError(String(e))}finally{setBusy(false)}}
  const source=sources.find(x=>x.sourceId===sourceId)
- const editSource=()=>{if(!source)return;setSourceKey(source.sourceKey);setSourceName(source.displayName);setAuthType(source.authType);setCredential(source.credentialReference);setSourceStatus(source.status);setSourceForm('edit')}
- const createSource=()=>{setSourceKey('');setSourceName('');setAuthType('OAUTH2_CLIENT_CREDENTIALS');setCredential('');setSourceStatus('ACTIVE');setSourceForm('new')}
- const sourceValid=sourceName.trim().length>0&&(sourceForm==='edit'||/^[a-z][a-z0-9-]*$/.test(sourceKey.trim()))
- const persistSource=async()=>{if(!sourceForm||!sourceValid||sourceBusy)return;setSourceBusy(true);setError('')
+ const editSource=()=>{if(!source)return;setSourceConfirm(false);setSourceKey(source.sourceKey);setSourceName(source.displayName);setAuthType(source.authType);setCredential(source.credentialReference);setSourceStatus(source.status);setSourceForm('edit')}
+ const createSource=()=>{setSourceConfirm(false);setSourceKey('');setSourceName('');setAuthType('OAUTH2_CLIENT_CREDENTIALS');setCredential('');setSourceStatus('ACTIVE');setSourceForm('new')}
+ const sourceValid=sourceName.trim().length>0&&(sourceForm==='edit'||/^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/.test(sourceKey.trim()))
+ const persistSource=async()=>{if(!sourceForm||!sourceValid||sourceBusy)return;
+   if(sourceForm==='edit'&&source&&(source.authType!==authType||source.status!==sourceStatus)&&!sourceConfirm){setSourceConfirm(true);return}setSourceBusy(true);setError('')
    try{
      const result=sourceForm==='new'
        ?await itCreateSource({sourceKey:sourceKey.trim(),displayName:sourceName.trim(),authType,credentialReference:credential.trim()})
        :await itUpdateSource(sourceId,{displayName:sourceName.trim(),status:sourceStatus,authType,credentialReference:credential.trim(),limits:source?.limits})
-     const rows=await itSources();setSources(rows);setSourceId(result.sourceId);setSourceForm(null)
+     const rows=await itSources();setSources(rows);setSourceId(result.sourceId);setSection(sourceForm==='new'?'contract':'configuration');setSourceForm(null);setSourceConfirm(false)
    }catch(e){setError(String(e))}finally{setSourceBusy(false)}
  }
  return <>
  {error&&<Callout tone="warn" title="Source configuration unavailable">{error}</Callout>}
- <Panel flush title="Integrations" description="Tenant IT owns the incoming producer contract: source identity, authentication and metadata field definitions."
- actions={<span className="row" style={{gap:8}}><select className="v-select" aria-label="Integration" value={sourceId} onChange={e=>{setSourceId(e.target.value);setForm(false)}}>{sources.map(s=><option key={s.sourceId} value={s.sourceId}>{s.displayName}</option>)}</select><button type="button" className="v-btn sm" disabled={!source} onClick={editSource}><Pencil size={14}/>Edit integration</button><button type="button" className="v-btn sm primary" onClick={createSource}><Plus size={14}/>Add integration</button></span>}>
- {source?<dl className="v-kv cols"><div><dt>Immutable source key</dt><dd className="mono">{source.sourceKey}</dd></div><div><dt>Status</dt><dd>{source.status}</dd></div><div><dt>Authentication</dt><dd>{source.authType.replace(/_/g,' ')}</dd></div><div><dt>Credential reference</dt><dd className="mono">{source.credentialReference||'Not configured'}</dd></div></dl>:<Callout title="No integration selected">Create an integration to define its incoming metadata contract.</Callout>}
- </Panel>
- {summary&&<Panel title="Operational summary"><dl className="v-kv cols"><div><dt>Submissions</dt><dd>{summary.submissionCount}</dd></div><div><dt>Documents</dt><dd>{summary.documentCount}</dd></div><div><dt>Last activity</dt><dd>{summary.lastActivityAt?fmtDate(summary.lastActivityAt):'None'}</dd></div><div><dt>Last available document</dt><dd>{summary.lastDocumentAvailableAt?fmtDate(summary.lastDocumentAvailableAt):'None'}</dd></div><div><dt>Last processing failure</dt><dd>{summary.lastProcessingFailureAt?fmtDate(summary.lastProcessingFailureAt):'None'}</dd></div><div><dt>Source created</dt><dd>{source?.createdAt?fmtDate(source.createdAt):'Unavailable'}</dd></div><div><dt>Source updated</dt><dd>{source?.updatedAt?fmtDate(source.updatedAt):'Unavailable'}</dd></div></dl></Panel>}
- <Panel flush title="Source metadata contract" description="Tenant IT defines the exact metadata keys and types that the external producer must send. Business Administration separately controls Search visibility, matching, labels and display order."
- actions={<span className="row" style={{gap:8}}><select className="v-select" aria-label="Source" value={sourceId} onChange={e=>{setSourceId(e.target.value);setForm(false)}}>{sources.map(s=><option key={s.sourceId} value={s.sourceId}>{s.displayName}</option>)}</select><button type="button" className="v-btn sm primary" disabled={!sourceId} onClick={()=>{setRevising(null);setKey('');setLabel('');setType('TEXT');setNormalization('NONE');setRequired(false);setAck(false);setForm(true)}}><Plus size={14}/>Add field</button></span>}>
- <table className="v-table"><thead><tr><th>Field key</th><th>Label</th><th>Type</th><th>Required</th><th>Version</th><th className="act">Action</th></tr></thead><tbody>{fields.map(f=><tr key={f.fieldKey}><td className="lead" data-label="Field key">{f.fieldKey}</td><td data-label="Label">{f.displayLabel}</td><td data-label="Type">{f.fieldType}</td><td data-label="Required">{f.required?'Yes':'No'}</td><td data-label="Version">{f.version}</td><td className="act"><button type="button" className="v-btn sm" onClick={()=>{setRevising(f);setKey(f.fieldKey);setLabel(f.displayLabel);setType(f.fieldType);setNormalization(f.normalization);setRequired(f.required);setAck(false);setForm(true)}}><Pencil size={14}/>Revise</button></td></tr>)}</tbody></table>
- </Panel>
+ <div className="v-it-integrations">
+  <Panel title="Integrations" description="Select a producer system to inspect its configuration, traffic, and source metadata contract."
+   actions={<button type="button" className="v-btn sm primary" onClick={createSource}><Plus size={14}/>Add integration</button>}>
+   <div className="v-it-source-list" role="group" aria-label="Registered integrations">
+    {sources.length===0&&<p className="muted">No integrations configured yet.</p>}
+    {sources.map(item=><button key={item.sourceId} type="button" className="v-it-source-item" aria-pressed={sourceId===item.sourceId} onClick={()=>{setSourceId(item.sourceId);setSection('configuration');setForm(false);setError('')}}>
+      <strong>{item.displayName}</strong><span className="mono muted">{item.sourceKey}</span>
+      <span className="muted">{item.status} · {AUTH_LABEL[item.authType]}</span>
+     </button>)}
+   </div>
+  </Panel>
+  <div className="v-it-integration-detail">
+  {!source?<Callout title="Select an integration">Choose a source or add a new integration to configure its metadata contract.</Callout>:<>
+  <div className="v-it-detail-head">
+   <div><h3>{source.displayName}</h3><div className="mono muted">{source.sourceKey} · {source.status}</div></div>
+   <button type="button" className="v-btn sm" onClick={editSource}><Pencil size={14}/>Edit configuration</button>
+  </div>
+  <div className="v-it-section-tabs" role="tablist" aria-label="Integration details">
+   {([['configuration','Configuration'],['monitoring','Monitoring'],['contract','Metadata contract']] as const).map(([id,label])=><button key={id} type="button" role="tab" aria-selected={section===id} onClick={()=>setSection(id)}>{label}</button>)}
+  </div>
+  {section==='configuration'&&<Panel title="Technical configuration" description="Read-only until you choose Edit configuration. Source keys are immutable.">
+   <dl className="v-kv cols"><div><dt>Source key</dt><dd className="mono">{source.sourceKey}</dd></div><div><dt>Status</dt><dd>{source.status}</dd></div><div><dt>Authentication</dt><dd>{AUTH_LABEL[source.authType]}</dd></div><div><dt>Credential reference</dt><dd className="mono">{source.credentialReference||'Not configured'}</dd></div>
+   {source.limits&&Object.entries(source.limits).map(([k,v])=><div key={k}><dt>{k.replace(/([A-Z])/g,' $1')}</dt><dd>{v??'Platform default (value not exposed)'}</dd></div>)}
+   </dl></Panel>}
+  {section==='monitoring'&&<Panel title="Operational monitoring" description="Backend-reported traffic and activity; these values are not saved with integration settings.">
+    {summary?<dl className="v-kv cols"><div><dt>Submissions</dt><dd>{summary.submissionCount}</dd></div><div><dt>Documents</dt><dd>{summary.documentCount}</dd></div><div><dt>Last activity</dt><dd>{summary.lastActivityAt?fmtDate(summary.lastActivityAt):'No traffic yet'}</dd></div><div><dt>Last available document</dt><dd>{summary.lastDocumentAvailableAt?fmtDate(summary.lastDocumentAvailableAt):'None'}</dd></div><div><dt>Last processing failure</dt><dd>{summary.lastProcessingFailureAt?fmtDate(summary.lastProcessingFailureAt):'None'}</dd></div><div><dt>Source updated</dt><dd>{source.updatedAt?fmtDate(source.updatedAt):'Unavailable'}</dd></div></dl>:<p className="muted">Operational information is loading or unavailable.</p>}
+   </Panel>}
+  {section==='contract'&&<Panel flush title="Source metadata contract" description="Tenant IT controls source field keys, technical types, required status and normalization. Business Search behavior is configured separately."
+   actions={<button type="button" className="v-btn sm primary" onClick={()=>{setRevising(null);setKey('');setLabel('');setType('TEXT');setNormalization('NONE');setRequired(false);setAck(false);setForm(true)}}><Plus size={14}/>Add field</button>}>
+   <table className="v-table"><thead><tr><th>Field key</th><th>Label</th><th>Type</th><th>Required</th><th>Version</th><th className="act">Action</th></tr></thead><tbody>{fields.map(f=><tr key={f.fieldKey}><td className="lead" data-label="Field key">{f.fieldKey}</td><td data-label="Label">{f.displayLabel}</td><td data-label="Type">{f.fieldType}</td><td data-label="Required">{f.required?'Yes':'No'}</td><td data-label="Version">{f.version}</td><td className="act"><button type="button" className="v-btn sm" onClick={()=>{setRevising(f);setKey(f.fieldKey);setLabel(f.displayLabel);setType(f.fieldType);setNormalization(f.normalization);setRequired(f.required);setAck(false);setForm(true)}}><Pencil size={14}/>Revise</button></td></tr>)}</tbody></table>
+   {fields.length===0&&<p className="muted" style={{padding:16}}>No fields defined. Add a field to specify metadata accepted from this producer.</p>}
+  </Panel>}
+  </>}
+  </div>
+ </div>
  <Callout title="Division of responsibility">Tenant IT defines what metadata the external system sends and validates those incoming fields. Business Administration decides which of those existing fields are searchable, how they match and in which order they appear. Defining a field does not automatically enable it in Business Search.</Callout>
  <Callout title="Incoming metadata contract">The producer must submit each value using the exact field key shown above. These are source metadata keys, not database columns. To show a new field in Business Search, enable its search behavior in Business Administration → Metadata Configuration.</Callout>
  <Callout title="Field lifecycle">Adding a definition does not populate historical documents. Retirement is not enabled until dependency-aware backend support is available.</Callout>
@@ -322,6 +351,7 @@ function ConnectedIntegrations(){
  <label className="v-field"><span>Authentication</span><select className="v-select" value={authType} onChange={e=>setAuthType(e.target.value as ItSource['authType'])}><option value="OAUTH2_CLIENT_CREDENTIALS">OAuth 2.0 client credentials</option><option value="JWT_BEARER">JWT bearer</option><option value="MTLS">Mutual TLS</option></select></label>
  <label className="v-field"><span>Credential reference</span><input className="v-input" value={credential} onChange={e=>setCredential(e.target.value)}/><small>Reference only; do not enter credentials or secret values.</small></label>
  {sourceForm==='edit'&&<label className="v-field"><span>Status</span><select className="v-select" value={sourceStatus} onChange={e=>setSourceStatus(e.target.value as ItSource['status'])}><option value="ACTIVE">Active</option><option value="DISABLED">Disabled</option></select></label>}
+ {sourceConfirm&&<Callout tone="warn" title="Confirm production impact">This changes the authentication method or status of a configured producer. Verify the external producer is ready, then click Save again to confirm.</Callout>}
  <Callout tone="warn" title="Producer impact">Changes to authentication, status or source contract can affect incoming submissions. Verify the producer configuration before saving.</Callout>
  </Drawer>}
  {form&&<Drawer eyebrow="Tenant IT · metadata contract" title={revising?'Revise field':'Add field'} onClose={()=>{if(!busy)setForm(false)}} footer={<><button type="button" className="v-btn" disabled={busy} onClick={()=>setForm(false)}>Cancel</button><button type="button" className="v-btn primary" disabled={!valid||busy} onClick={()=>void save()}>{busy?'Saving…':revising?'Save revision':'Add field'}</button></>}>
@@ -390,7 +420,13 @@ function LiveIdentity(){
  const draft=()=>{const c=data?.staged??data?.active;setProvider(c?.providerId??'customer-oidc');setName(c?.displayName??'');setIssuer(c?.issuerUri??'');setClient(c?.browserClientId??'');setAudience(c?.apiAudience??'');setEdit(true)}
  const perform=async(fn:()=>Promise<IdentityOverview>)=>{setBusy(true);setError('');try{setData(await fn());setAction(null);setEdit(false);setConfirm('')}catch(e){setError(String(e))}finally{setBusy(false)}}
  const stageValid=name.trim()&&issuer.trim()&&client.trim()&&audience.trim()
+ const lastTestAt=data?.staged?.lastTestedAt?Date.parse(data.staged.lastTestedAt):NaN
+ const passingFresh=!!data?.staged&&data.staged.lastTestStatus==='PASSED'&&Number.isFinite(lastTestAt)&&Date.now()-lastTestAt>=0&&Date.now()-lastTestAt<=(data.activationMaxTestAgeSeconds*1000)
+ const identityDifferences=data?.active&&data.staged?(['displayName','providerId','issuerUri','browserClientId','apiAudience'] as const).filter(k=>data.active![k]!==data.staged![k]):[]
  return <>{error&&<Callout tone="warn" title="Enterprise identity operation unavailable">{error}</Callout>}
+ {data&&<Panel title="Identity lifecycle" description="Backend-reported status; draft and rollback configurations do not affect sign-in until explicitly activated.">
+ <div className="v-it-lifecycle"><div><strong>LIVE · v{data.active?.configurationVersion??'—'}</strong><span>{data.active?.displayName??'No active binding'}</span></div><div><strong>STAGED · {data.staged?'v'+data.staged.configurationVersion:'None'}</strong><span>{data.staged?.lastTestStatus??'Not tested'}</span></div><div><strong>KNOWN-GOOD</strong><span>{data.rollbackCandidates.length} rollback target(s)</span></div></div>
+ </Panel>}
  <Panel title="Active binding" description="LIVE · Trusted OIDC connection used by SDV for sign-in now. Saving or testing a draft does not modify this binding.">
  {!data?<p className="muted">Loading identity configuration…</p>:data.active?<dl className="v-kv cols">
  <div><dt>Provider</dt><dd>{data.active.displayName}</dd></div><div><dt>Type</dt><dd>{data.active.providerType??'OIDC'}</dd></div>
@@ -407,11 +443,15 @@ function LiveIdentity(){
  <div><dt>Browser client</dt><dd>{data.staged.browserClientId}</dd></div><div><dt>API audience</dt><dd>{data.staged.apiAudience}</dd></div>
  <div><dt>Connection test</dt><dd>{data.staged.lastTestStatus??'Not tested'}</dd></div>
  <div><dt>Tested at</dt><dd>{data.staged.lastTestedAt?fmtDate(data.staged.lastTestedAt):'Not tested'}</dd></div>
- </dl>{data.staged.lastTestMessage&&<p className="muted">{data.staged.lastTestMessage}</p>}</>:<p className="muted">No staged draft exists.</p>}
+ </dl>
+ {data.active&&<div className="v-it-comparison"><strong>Changes compared with live v{data.active.configurationVersion}</strong>
+ {identityDifferences.length?identityDifferences.map(k=><div key={k}><span>{k.replace(/([A-Z])/g,' $1')}</span><span className="mono">{data.active![k]}</span><span className="mono">{data.staged![k]}</span></div>):<p className="muted">No configuration differences detected.</p>}</div>}
+ {data.staged.lastTestMessage&&<p className="muted">{data.staged.lastTestMessage}</p>}
+ {data.staged.lastTestStatus==='PASSED'&&!passingFresh&&<Callout tone="warn" title="Retest required">The passing test is older than the allowed freshness window or lacks a valid timestamp. Test this draft again before activation.</Callout>}</>:<p className="muted">No staged draft exists.</p>}
  <div className="row wrap" style={{gap:8,marginTop:12}}>
  <button type="button" className="v-btn" disabled={busy} onClick={draft}>{data.staged?'Edit draft':'Create draft'}</button>
  <button type="button" className="v-btn" disabled={!data.staged||busy} onClick={()=>void perform(testIdentityDraft)}>Test connection</button>
- <button type="button" className="v-btn primary" disabled={!data.staged||!data.activationSupported||data.staged.lastTestStatus!=='PASSED'||busy} onClick={()=>{setTarget(data.staged);setConfirm('');setAction('activate')}}>Activate validated version</button>
+ <button type="button" className="v-btn primary" disabled={!data.staged||!data.activationSupported||!passingFresh||busy} onClick={()=>{setTarget(data.staged);setConfirm('');setAction('activate')}}>Activate validated version</button>
  </div></Panel>
  <Panel title="Known-good rollback" description="Previously active configurations for this tenant. Rollback replaces the active binding and requires explicit confirmation.">
  {data.rollbackCandidates.length?data.rollbackCandidates.map(c=><div key={c.connectionId} className="stack" style={{gap:8,marginBottom:16}}>
