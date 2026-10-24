@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Activity, Building2, FileSearch, FlaskConical, Layers, Moon, Search, ServerCog, ShieldCheck, Sun, CornerDownLeft } from 'lucide-react'
 import { AREA_TABS, StoreProvider, useStore } from './store'
-import { FAILURES, STUCK, SUBMISSIONS, type AreaId } from './data'
+import { type AreaId } from './data'
+import { opSummary } from './liveApi'
 import { Drawer, Toasts } from './ui'
 import { Workspace } from './Workspace'
 import { Governance } from './Governance'
@@ -17,20 +18,25 @@ const AREA_META: Record<AreaId, { label: string; short: string; Icon: typeof Sea
   system: { label: 'Design system', short: 'System', Icon: Layers, group: 'Prototype' },
 }
 
-const incidentCount = FAILURES.length + STUCK.length + SUBMISSIONS.filter((s) => s.status === 'INCOMPLETE').length
-
 function Rail({ onOpenSession }: { onOpenSession: () => void }) {
   const { role, route, navigate } = useStore()
+  const [incidentCount,setIncidentCount]=useState<number|null>(null)
+  useEffect(()=>{
+    if(!role.areas.includes('operations'))return
+    let live=true
+    opSummary().then(s=>{if(live){const counts=[s.processingFailureCount,s.stuckDocumentCount,s.attentionSubmissionCount];setIncidentCount(counts.every(x=>typeof x==='number')?counts.reduce<number>((sum,x)=>sum+(x??0),0):null)}}).catch(()=>{if(live)setIncidentCount(null)})
+    return()=>{live=false}
+  },[role.id])
   return (
     <nav className="v-rail" aria-label="Primary">
       <div className="v-rail-group">{AREA_META[role.areas[0]].group}</div>
       {role.areas.map((a) => {
         const { label, Icon } = AREA_META[a]
-        const attention = a === 'operations' ? incidentCount : 0
+        const attention = a === 'operations' ? incidentCount : null
         return (
           <button key={a} type="button" className="v-rail-item" aria-current={route.area === a ? 'page' : undefined} onClick={() => navigate(a)} title={label}>
             <Icon size={20} aria-hidden /><span className="lbl">{label}</span>
-            {attention > 0 && <><span className="count" aria-label={`${attention} need attention`}>{attention}</span><span className="v-rail-dot" aria-hidden /></>}
+            {attention != null && attention > 0 && <><span className="count" aria-label={`${attention} need attention`}>{attention}</span><span className="v-rail-dot" aria-hidden /></>}
           </button>
         )
       })}

@@ -277,16 +277,19 @@ function LiveOperationsSection({section}:{section:string}){
  const [loading,setLoading]=useState(false)
  const [retention,setRetention]=useState<Record<string,unknown>|null>(null)
  const [configuration,setConfiguration]=useState('')
+ const [refreshedAt,setRefreshedAt]=useState<string|null>(null)
+ const [incident,setIncident]=useState<{title:string;details:[string,string][]}|null>(null)
  const load=async(f=applied)=>{setLoading(true);setError('');try{
  if(section==='audit'){const r=await opsAudit(undefined,f);setEvents(r.events);setCursor(r.nextCursor)}
  else if(section==='configuration'){const x=await systemInfo('platform');setConfiguration([x.productName,x.version,x.status,x.activeProfiles.join(', ')].join(' · '))}
  else if(section==='health'){const results=await Promise.allSettled([opsDetail(),opsRetention()]);if(results[0].status==='fulfilled')setData(results[0].value);else throw results[0].reason;if(results[1].status==='fulfilled')setRetention(results[1].value);else setError('Retention status unavailable: '+String(results[1].reason))}
  else setData(await opsDetail())
+ setRefreshedAt(new Date().toISOString())
  }catch(e){setError(String(e))}finally{setLoading(false)}}
  useEffect(()=>{void load()},[section])
- const renderRecords=(heading:string,columns:string[],rows:(string|number|null|undefined)[][])=> <Panel flush title={heading} meta={rows.length}><table className="v-table"><thead><tr>{columns.map(c=><th key={c}>{c}</th>)}</tr></thead><tbody>{rows.map((r,i)=><tr key={i}>{r.map((v,j)=><td key={j} className={j===0?'lead':undefined}>{v??'Unavailable'}</td>)}</tr>)}</tbody></table>{rows.length===0&&<Callout title="No records returned">No entries were returned in the current operational sample.</Callout>}</Panel>
+ const renderRecords=(heading:string,columns:string[],rows:(string|number|null|undefined)[][])=> <Panel flush title={heading} meta={rows.length}><table className="v-table"><thead><tr>{columns.map(c=><th key={c}>{c}</th>)}</tr></thead><tbody>{rows.map((r,i)=><tr key={i}>{r.map((v,j)=><td key={j} className={j===0?'lead':undefined}>{v??'Unavailable'}</td>)}</tr>)}</tbody></table>{rows.length===0&&<Callout title="No records returned">No records returned by the backend for this view.</Callout>}</Panel>
  return <div className="stack-lg">
- <div className="row" style={{justifyContent:'flex-end'}}><button type="button" className="v-btn sm" disabled={loading} onClick={()=>void load()}>{loading?'Refreshing…':'Refresh'}</button></div>
+ <div className="row" style={{justifyContent:'flex-end',gap:12,alignItems:'center'}}>{refreshedAt&&<span className="muted">Refreshed {fmtDateTime(refreshedAt)}</span>}<button type="button" className="v-btn sm" disabled={loading} onClick={()=>void load()}>{loading?'Refreshing…':'Refresh'}</button></div>
  {error&&<Callout tone="warn" title="Operational data unavailable">{error}</Callout>}
  {section==='audit'?<>
  <Panel title="Audit filters"><div className="row wrap" style={{gap:8}}>
@@ -302,6 +305,8 @@ function LiveOperationsSection({section}:{section:string}){
  {data&&section==='storage'&&renderRecords('Processing storage',['Volume','State','Health','Used','Write protection'],data.storageVolumes.map(v=>[v.displayName,v.state,v.observationError?'Probe unavailable':v.health,v.usedPercent==null?'Unavailable':v.usedPercent+'%',v.observationError|| (v.stopWriteThresholdReached?'Stop-write':v.warningThresholdReached?'Warning':v.writable?'Writable':'Not writable')]))}
  {data&&section==='incidents'&&<>{renderRecords('Processing failures',['Document','Error','Attempts','Ingested'],data.processingFailures.map(v=>[v.documentId,v.errorCode,v.processingAttemptCount,fmtDateTime(v.ingestedAt)]))}{renderRecords('Stuck transitions',['Document','Status','Since','Error'],data.stuckDocuments.map(v=>[v.documentId,v.status,fmtDateTime(v.stateSince),v.processingErrorCode]))}</>}
  {data&&section==='intake'&&renderRecords('Incomplete submissions',['Submission','Status','Documents','Last activity'],data.attentionSubmissions.map(v=>[v.sourceSubmissionId||v.submissionId,v.status,v.receivedDocumentCount+' / '+v.expectedDocumentCount,fmtDateTime(v.lastActivityAt)]))}
+ {data&&section==='incidents'&&<Panel title="Inspect incident details" description="Select an incident to view its backend identifiers and diagnostic fields."><div className="row wrap" style={{gap:8}}>{data.processingFailures.map(v=><button type="button" className="v-btn sm" key={v.documentId} onClick={()=>setIncident({title:'Processing failure',details:[['Document',v.documentId],['Submission',v.submissionId],['Source',v.sourceId],['Error',v.errorCode],['Attempts',String(v.processingAttemptCount)],['Ingested',fmtDateTime(v.ingestedAt)]]})}>Failure · {v.documentId.slice(0,8)}</button>)}{data.stuckDocuments.map(v=><button type="button" className="v-btn sm" key={v.documentId} onClick={()=>setIncident({title:'Stuck transition',details:[['Document',v.documentId],['Submission',v.submissionId],['Status',v.status],['Since',fmtDateTime(v.stateSince)],['Error',v.processingErrorCode??'None']]})}>Stuck · {v.documentId.slice(0,8)}</button>)}</div></Panel>}
+ {incident&&<Drawer eyebrow="Platform operations · incident" title={incident.title} onClose={()=>setIncident(null)}><dl className="v-kv">{incident.details.map(([k,v])=><div key={k}><dt>{k}</dt><dd className="mono">{v}</dd></div>)}</dl></Drawer>}
  {data&&data.dataObservations?.some(x=>x.status==='DEGRADED')&&<Callout tone="warn" title="Partial backend observations">Some operational queries are degraded. Missing records do not indicate zero incidents.</Callout>}
  </>}
  </div>
