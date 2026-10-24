@@ -1,3 +1,4 @@
+import { ConnectedAuthenticationView } from './ConnectedAuthenticationView'
 import { useEffect, useRef, useState } from 'react'
 import { itSources, itFields, itUpsertField, itCreateSource, itUpdateSource, itSourceSummary, liveStorage, identityOverview, systemInfo, createStorageVolume, updateStorageVolume, saveIdentityDraft, testIdentityDraft, activateIdentityDraft, rollbackIdentity, type LiveStorageVolume, type IdentityOverview, type ItSourceSummary, type ItSource, type ItField } from './liveApi'
 import { CheckCircle2, Circle, History, Pencil, Plus, RotateCcw } from 'lucide-react'
@@ -427,39 +428,7 @@ function LiveIdentity(){
  const passingFresh=!!data?.staged&&data.staged.lastTestStatus==='PASSED'&&Number.isFinite(lastTestAt)&&Date.now()-lastTestAt>=0&&Date.now()-lastTestAt<=(data.activationMaxTestAgeSeconds*1000)
  const identityDifferences=data?.active&&data.staged?(['displayName','providerId','issuerUri','browserClientId','apiAudience'] as const).filter(k=>data.active![k]!==data.staged![k]):[]
  return <>{error&&<Callout tone="warn" title="Enterprise identity operation unavailable">{error}</Callout>}
- {data&&<Panel title="Identity lifecycle" description="Backend-reported status; draft and rollback configurations do not affect sign-in until explicitly activated.">
- <div className="v-it-lifecycle"><div className="v-it-live"><span className="v-it-pill live"><span className="v-it-live-dot" aria-hidden/>Live</span><strong>v{data.active?.configurationVersion??'—'} {data.active?.displayName??'No active binding'}</strong><span>Serving sign-in</span></div><div className="v-it-draft"><span className="v-it-pill draft"><Circle size={13} aria-hidden/> Draft · not live</span><strong>{data.staged?'v'+data.staged.configurationVersion+' '+data.staged.displayName:'No staged draft'}</strong><span>{data.staged?.lastTestStatus??'Not tested'}</span></div><div className="v-it-recovery"><span className="v-it-pill recovery"><History size={13} aria-hidden/> Recovery</span><strong>{data.rollbackCandidates.length} known-good target(s)</strong><span>Explicit rollback confirmation required</span></div></div>
- </Panel>}
- <section className="v-it-live-panel" aria-label="Live identity binding"><div className="v-it-live-heading"><div><h3>Live binding <span className="v-it-pill live"><span className="v-it-live-dot" aria-hidden/> Live · serving sign-in</span></h3><p className="muted">The trusted connection currently used for sign-in. Saving or testing a draft never changes it.</p></div></div>
- {!data?<p className="muted">Loading identity configuration…</p>:data.active?<><div className="v-it-live-provider"><strong className="v-it-version">v{data.active.configurationVersion}</strong><div><strong>{data.active.displayName}</strong><p className="muted">{data.active.providerType??'OIDC'} · {data.active.providerId}</p></div></div><dl className="v-kv cols">
- <div><dt>Provider</dt><dd>{data.active.displayName}</dd></div><div><dt>Type</dt><dd>{data.active.providerType??'OIDC'}</dd></div>
- <div><dt>Version</dt><dd>v{data.active.configurationVersion}</dd></div><div><dt>Issuer</dt><dd className="mono">{data.active.issuerUri}</dd></div>
- <div><dt>Browser client</dt><dd>{data.active.browserClientId}</dd></div><div><dt>API audience</dt><dd>{data.active.apiAudience}</dd></div>
- <div><dt>Last changed</dt><dd>{data.active.updatedAt?fmtDate(data.active.updatedAt):'Unavailable'}</dd></div>
- <div><dt>Connection ID</dt><dd className="mono">{data.active.connectionId}</dd></div>
- </dl></>:<Callout title="No active identity connection">No active binding was returned by the backend.</Callout>}</section>
- {data&&<div className="v-grid-2">
- <Panel title="Staged configuration" description="DRAFT · NOT LIVE. Save, test, then activate the validated version. Backend validation and test-freshness rules still apply.">
- {data.staged?<><div className="v-it-draft-review"><div className="v-it-draft-differences">{data.active&&<><strong>Changes from live v{data.active.configurationVersion}</strong>{identityDifferences.length?identityDifferences.map(k=><div className="v-it-diff-row" key={k}><span>{k.replace(/([A-Z])/g,' $1')}</span><span className="mono">{data.active![k]}</span><span className="mono">{data.staged![k]}</span></div>):<p className="muted">No configuration differences.</p>}</>}</div><details className="v-it-draft-details"><summary>View staged configuration details</summary><dl className="v-kv">
- <div><dt>Provider</dt><dd>{data.staged.displayName}</dd></div><div><dt>Draft version</dt><dd>v{data.staged.configurationVersion}</dd></div>
- <div><dt>Issuer</dt><dd className="mono">{data.staged.issuerUri}</dd></div>
- <div><dt>Browser client</dt><dd>{data.staged.browserClientId}</dd></div><div><dt>API audience</dt><dd>{data.staged.apiAudience}</dd></div>
- <div><dt>Connection test</dt><dd>{data.staged.lastTestStatus??'Not tested'}</dd></div>
- <div><dt>Tested at</dt><dd>{data.staged.lastTestedAt?fmtDate(data.staged.lastTestedAt):'Not tested'}</dd></div>
- </dl></details></div>
- {data.staged.lastTestMessage&&<p className="muted">{data.staged.lastTestMessage}</p>}
- {data.staged.lastTestStatus==='PASSED'&&!passingFresh&&<Callout tone="warn" title="Retest required">The passing test is older than the allowed freshness window or lacks a valid timestamp. Test this draft again before activation.</Callout>}</>:<p className="muted">No staged draft exists.</p>}
- <div className="v-it-activation-flow" aria-label="Draft activation workflow">
- <div className="v-it-activation-step"><span className="v-it-step-count">1</span><div><strong>Save a draft</strong><p className="muted">Changes remain inactive until approved activation.</p><button type="button" className="v-btn sm" disabled={busy} onClick={draft}>{data.staged?'Edit draft':'Create draft'}</button></div></div>
- <div className="v-it-activation-step"><span className="v-it-step-count">2</span><div><strong>Test the exact draft version</strong><p className="muted">{data.staged ? (passingFresh?'Passing test is within the allowed freshness window.':data.staged.lastTestStatus==='PASSED'?'Previous test must be refreshed.':data.staged.lastTestStatus??'Not tested'):'Save a draft first.'}</p><button type="button" className="v-btn sm" disabled={!data.staged||busy} onClick={()=>void perform(testIdentityDraft)}>Run connection test</button></div></div>
- <div className="v-it-activation-step"><span className="v-it-step-count">3</span><div><strong>Review and activate</strong><p className="muted">Requires a passing, fresh test and explicit typed confirmation. The server revalidates everything.</p><button type="button" className="v-btn sm primary" disabled={!data.staged||!data.activationSupported||!passingFresh||busy} onClick={()=>{setTarget(data.staged);setConfirm('');setAction('activate')}}>Review activation</button></div></div>
- </div></Panel>
- <Panel title="Known-good rollback" description="Previously active configurations for this tenant. Rollback replaces the active binding and requires explicit confirmation.">
- {data.rollbackCandidates.length?data.rollbackCandidates.map(c=><div key={c.connectionId} className="v-it-rollback-choice">
- <div><strong>v{c.configurationVersion} · {c.displayName}</strong><span className="mono muted">{c.issuerUri}</span><small className="muted">Recorded status: {c.status} · Connection: {c.connectionId}</small></div>
- <button type="button" className="v-btn sm" disabled={busy} onClick={()=>{setTarget(c);setConfirm('');setAction('rollback')}}>Review rollback</button>
- </div>):<p className="muted">No known-good rollback target is available.</p>}
- </Panel></div>}
+ {!data?<p className="muted">Loading identity configuration…</p>:<ConnectedAuthenticationView auth={data} busy={busy} onEdit={draft} onTest={()=>void perform(testIdentityDraft)} onActivate={()=>{if(!data.staged)return;setTarget(data.staged);setConfirm('');setAction('activate')}} onRollback={c=>{setTarget(c);setConfirm('');setAction('rollback')}}/>}
  {edit&&<Drawer eyebrow="Tenant IT · authentication" title="Identity draft" onClose={()=>{if(!busy)setEdit(false)}} footer={<><button className="v-btn" type="button" disabled={busy} onClick={()=>setEdit(false)}>Cancel</button><button className="v-btn primary" type="button" disabled={!stageValid||busy} onClick={()=>void perform(()=>saveIdentityDraft({providerId:provider,displayName:name,issuerUri:issuer,browserClientId:client,apiAudience:audience}))}>Save draft</button></>}>
  {([['Provider ID',provider,setProvider],['Display name',name,setName],['Issuer URI',issuer,setIssuer],['Browser client ID',client,setClient],['API audience',audience,setAudience]] as const).map(([label,value,set])=><label key={label} className="v-field"><span>{label}</span><input className="v-input" value={value} onChange={e=>set(e.target.value)}/></label>)}
  <Callout tone="warn" title="Identity safety">Saving creates a staged configuration. It does not activate it. Test the draft before activation.</Callout></Drawer>}
