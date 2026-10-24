@@ -267,6 +267,8 @@ function ConnectedIntegrations(){
  const [fields,setFields]=useState<ItField[]>([])
  const [error,setError]=useState('')
  const [form,setForm]=useState(false)
+ const [revising,setRevising]=useState<ItField|null>(null)
+ const [ack,setAck]=useState(false)
  const [key,setKey]=useState('')
  const [label,setLabel]=useState('')
  const [type,setType]=useState('TEXT')
@@ -275,25 +277,28 @@ function ConnectedIntegrations(){
  const [busy,setBusy]=useState(false)
  useEffect(()=>{let live=true;itSources().then(rows=>{if(live){setSources(rows);setSourceId(rows[0]?.sourceId??'')}}).catch(e=>{if(live)setError(String(e))});return()=>{live=false}},[])
  useEffect(()=>{if(!sourceId)return;let live=true;setFields([]);itFields(sourceId).then(rows=>{if(live)setFields(rows)}).catch(e=>{if(live)setError(String(e))});return()=>{live=false}},[sourceId])
- const valid=/^[A-Za-z][A-Za-z0-9_.-]{0,99}$/.test(key)&&label.trim().length>0&&!fields.some(f=>f.fieldKey===key)&&!(type==='BOOLEAN'&&normalization==='DIGITS_ONLY')
+ const valid=/^[A-Za-z][A-Za-z0-9_.-]{0,99}$/.test(key)&&label.trim().length>0&&(revising?.fieldKey===key||!fields.some(f=>f.fieldKey===key))&&!(type==='BOOLEAN'&&normalization==='DIGITS_ONLY')&&(!revising||ack)
  const save=async()=>{if(!valid||busy)return;setBusy(true);setError('');try{
   await itUpsertField(sourceId,key,{displayLabel:label.trim(),fieldType:type,required,normalization,validationRules:{}})
-  setFields(await itFields(sourceId));setForm(false);setKey('');setLabel('');setRequired(false)
+  setFields(await itFields(sourceId));setForm(false);setRevising(null);setAck(false);setKey('');setLabel('');setRequired(false)
  }catch(e){setError(String(e))}finally{setBusy(false)}}
  return <>
  {error&&<Callout tone="warn" title="Source configuration unavailable">{error}</Callout>}
  <Panel flush title="Source metadata contract" description="Define ingestion metadata keys here. Business Administration controls search labels, matching and display order."
- actions={<span className="row" style={{gap:8}}><select className="v-select" aria-label="Source" value={sourceId} onChange={e=>{setSourceId(e.target.value);setForm(false)}}>{sources.map(s=><option key={s.sourceId} value={s.sourceId}>{s.displayName}</option>)}</select><button type="button" className="v-btn sm primary" disabled={!sourceId} onClick={()=>setForm(true)}><Plus size={14}/>Add field</button></span>}>
- <table className="v-table"><thead><tr><th>Field key</th><th>Label</th><th>Type</th><th>Required</th><th>Version</th></tr></thead><tbody>{fields.map(f=><tr key={f.fieldKey}><td className="lead" data-label="Field key">{f.fieldKey}</td><td data-label="Label">{f.displayLabel}</td><td data-label="Type">{f.fieldType}</td><td data-label="Required">{f.required?'Yes':'No'}</td><td data-label="Version">{f.version}</td></tr>)}</tbody></table>
+ actions={<span className="row" style={{gap:8}}><select className="v-select" aria-label="Source" value={sourceId} onChange={e=>{setSourceId(e.target.value);setForm(false)}}>{sources.map(s=><option key={s.sourceId} value={s.sourceId}>{s.displayName}</option>)}</select><button type="button" className="v-btn sm primary" disabled={!sourceId} onClick={()=>{setRevising(null);setKey('');setLabel('');setType('TEXT');setNormalization('NONE');setRequired(false);setAck(false);setForm(true)}}><Plus size={14}/>Add field</button></span>}>
+ <table className="v-table"><thead><tr><th>Field key</th><th>Label</th><th>Type</th><th>Required</th><th>Version</th><th className="act">Action</th></tr></thead><tbody>{fields.map(f=><tr key={f.fieldKey}><td className="lead" data-label="Field key">{f.fieldKey}</td><td data-label="Label">{f.displayLabel}</td><td data-label="Type">{f.fieldType}</td><td data-label="Required">{f.required?'Yes':'No'}</td><td data-label="Version">{f.version}</td><td className="act"><button type="button" className="v-btn sm" onClick={()=>{setRevising(f);setKey(f.fieldKey);setLabel(f.displayLabel);setType(f.fieldType);setNormalization(f.normalization);setRequired(f.required);setAck(false);setForm(true)}}><Pencil size={14}/>Revise</button></td></tr>)}</tbody></table>
  </Panel>
+ <Callout title="Incoming metadata contract">The producer must submit each value using the exact field key shown above. These are source metadata keys, not database columns. To show a new field in Business Search, enable its search behavior in Business Administration → Metadata Configuration.</Callout>
  <Callout title="Field lifecycle">Adding a definition does not populate historical documents. Retirement is not enabled until dependency-aware backend support is available.</Callout>
- {form&&<Drawer eyebrow="Tenant IT · metadata contract" title="Add field" onClose={()=>{if(!busy)setForm(false)}} footer={<><button type="button" className="v-btn" disabled={busy} onClick={()=>setForm(false)}>Cancel</button><button type="button" className="v-btn primary" disabled={!valid||busy} onClick={()=>void save()}>{busy?'Saving…':'Add field'}</button></>}>
- <label className="v-field"><span>Field key</span><input className="v-input" value={key} onChange={e=>setKey(e.target.value)}/><small>Letters, numbers, dots, underscores and hyphens; starts with a letter.</small></label>
+ {form&&<Drawer eyebrow="Tenant IT · metadata contract" title={revising?'Revise field':'Add field'} onClose={()=>{if(!busy)setForm(false)}} footer={<><button type="button" className="v-btn" disabled={busy} onClick={()=>setForm(false)}>Cancel</button><button type="button" className="v-btn primary" disabled={!valid||busy} onClick={()=>void save()}>{busy?'Saving…':revising?'Save revision':'Add field'}</button></>}>
+ <label className="v-field"><span>Field key</span><input className="v-input" value={key} readOnly={!!revising} onChange={e=>setKey(e.target.value)}/><small>Letters, numbers, dots, underscores and hyphens; starts with a letter.</small></label>
+ <Callout title="Incoming metadata key">The producer must send this exact key: <strong>{key||'(enter a key)'}</strong>. No external field-name transformation is configured here.</Callout>
  <label className="v-field"><span>Display label</span><input className="v-input" value={label} onChange={e=>setLabel(e.target.value)}/></label>
  <label className="v-field"><span>Data type</span><select className="v-select" value={type} onChange={e=>setType(e.target.value)}><option value="TEXT">Text</option><option value="INTEGER">Integer</option><option value="DECIMAL">Decimal</option><option value="DATE">Date</option><option value="DATETIME">Date and time</option><option value="BOOLEAN">Boolean</option><option value="EMAIL">Email</option><option value="UUID">UUID</option></select></label>
  <label className="v-field"><span>Normalization</span><select className="v-select" value={normalization} onChange={e=>setNormalization(e.target.value)}><option value="NONE">None</option><option value="UPPERCASE">Uppercase</option><option value="DIGITS_ONLY">Digits only</option></select></label>
  <label className="v-check"><input type="checkbox" checked={required} onChange={e=>setRequired(e.target.checked)}/><span>Required in the ingestion contract</span></label>
- <Callout tone="warn" title="Integration impact">Confirm the producer supplies the new field before making it required.</Callout>
+ <Callout tone="warn" title="Integration impact">Required, type, or normalization changes can reject future submissions. Confirm the producer contract is compatible before saving.</Callout>
+ {revising&&<label className="v-check"><input type="checkbox" checked={ack} onChange={e=>setAck(e.target.checked)}/><span>I have verified the producer contract supports this revision.</span></label>}
  </Drawer>}
  </>
 }
