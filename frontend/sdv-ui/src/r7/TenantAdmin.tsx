@@ -1,3 +1,4 @@
+import { ConnectedIntegrationsView } from './ConnectedIntegrationsView'
 import { ConnectedAuthenticationView } from './ConnectedAuthenticationView'
 import { useEffect, useRef, useState } from 'react'
 import { itSources, itFields, itUpsertField, itCreateSource, itUpdateSource, itSourceSummary, liveStorage, identityOverview, systemInfo, createStorageVolume, updateStorageVolume, saveIdentityDraft, testIdentityDraft, activateIdentityDraft, rollbackIdentity, type LiveStorageVolume, type IdentityOverview, type ItSourceSummary, type ItSource, type ItField } from './liveApi'
@@ -310,44 +311,7 @@ function ConnectedIntegrations(){
  }
  return <>
  {error&&<Callout tone="warn" title="Source configuration unavailable">{error}</Callout>}
- <div className="v-it-integrations">
-  <Panel title="Integrations" meta={sources.length}
-   actions={<button type="button" className="v-btn sm primary" onClick={createSource}><Plus size={14}/>Add integration</button>}>
-   <div className="v-it-source-list" role="group" aria-label="Registered integrations">
-    {sources.length===0&&<p className="muted">No integrations configured yet.</p>}
-    {sources.map(item=><button key={item.sourceId} type="button" className="v-it-source-item" aria-pressed={sourceId===item.sourceId} onClick={()=>{setSourceId(item.sourceId);setSection('configuration');setForm(false);setError('')}}>
-      <span className="v-it-source-name"><strong>{item.displayName}</strong><span className="v-it-source-badge" data-state={item.status}>{item.status}</span></span><span className="mono muted">{item.sourceKey}</span>
-      <span className="muted">{AUTH_LABEL[item.authType]} · {fields.length&&sourceId===item.sourceId?`${fields.length} fields`:'View contract'}</span>
-     </button>)}
-   </div>
-  </Panel>
-  <div className="v-it-integration-detail">
-  {!source?<Callout title="Select an integration">Choose a source or add a new integration to configure its metadata contract.</Callout>:<>
-  <div className="v-it-detail-head">
-   <div><h3>{source.displayName}</h3><div className="mono muted"><span className="v-it-source-badge" data-state={source.status}>{source.status}</span> {source.sourceKey}</div></div>
-   <button type="button" className="v-btn sm" onClick={editSource}><Pencil size={14}/>Edit configuration</button>
-  </div>
-  <div className="v-it-section-tabs" role="tablist" aria-label="Integration details">
-   {([['configuration','Configuration'],['monitoring','Monitoring'],['contract','Metadata contract']] as const).map(([id,label])=><button key={id} type="button" role="tab" aria-selected={section===id} onClick={()=>setSection(id)}>{label}</button>)}
-  </div>
-  {section==='configuration'&&<Panel title="Technical configuration" description="Read-only until you choose Edit configuration. Source keys are immutable."><h4 className="v-it-subheading">Identity and producer authentication</h4>
-   <dl className="v-kv cols"><div><dt>Source key</dt><dd className="mono">{source.sourceKey}</dd></div><div><dt>Status</dt><dd>{source.status}</dd></div><div><dt>Authentication</dt><dd>{AUTH_LABEL[source.authType]}</dd></div><div><dt>Credential reference</dt><dd className="mono">{source.credentialReference||'Not configured'}</dd></div>
-   </dl><h4 className="v-it-subheading">Intake limits</h4><p className="muted">Configured limits are backend-reported. Unset limits inherit platform settings; effective defaults are not exposed by this API.</p><dl className="v-kv cols">{source.limits&&Object.entries(source.limits).map(([k,v])=><div key={k}><dt>{k.replace(/([A-Z])/g,' $1')}</dt><dd>{v??'Platform default (value not exposed)'}</dd></div>)}</dl></Panel>}
-  {section==='monitoring'&&<Panel title="Operational monitoring" description="Backend-reported traffic and activity; these values are not saved with integration settings.">
-    {summary?<><div className="v-it-kpis"><div><small>Submissions</small><strong>{summary.submissionCount.toLocaleString()}</strong></div><div><small>Documents</small><strong>{summary.documentCount.toLocaleString()}</strong></div></div><dl className="v-kv cols"><div><dt>Last activity</dt><dd>{summary.lastActivityAt?fmtDate(summary.lastActivityAt):'No traffic yet'}</dd></div><div><dt>Last available document</dt><dd>{summary.lastDocumentAvailableAt?fmtDate(summary.lastDocumentAvailableAt):'None'}</dd></div><div><dt>Last processing failure</dt><dd>{summary.lastProcessingFailureAt?fmtDate(summary.lastProcessingFailureAt):'None'}</dd></div><div><dt>Source updated</dt><dd>{source.updatedAt?fmtDate(source.updatedAt):'Unavailable'}</dd></div></dl></>:<p className="muted">Operational information is loading or unavailable.</p>}
-   </Panel>}
-  {section==='contract'&&<Panel flush title="Source metadata contract" description="Tenant IT controls source field keys, technical types, required status and normalization. Business Search behavior is configured separately."
-   actions={<button type="button" className="v-btn sm primary" onClick={()=>{setRevising(null);setKey('');setLabel('');setType('TEXT');setNormalization('NONE');setRequired(false);setAck(false);setForm(true)}}><Plus size={14}/>Add field</button>}>
-   <table className="v-table"><thead><tr><th>Field</th><th>Type</th><th>Normalization</th><th>Required</th><th>Validation</th><th>Version</th><th className="act">Action</th></tr></thead><tbody>{fields.map(f=><tr key={f.fieldKey}><td className="lead" data-label="Field"><strong>{f.displayLabel}</strong><div className="mono muted">{f.fieldKey}</div></td><td data-label="Type">{f.fieldType}</td><td data-label="Normalization">{f.normalization}</td><td data-label="Required">{f.required?'Yes':'No'}</td><td data-label="Validation">{'Not exposed by API'}</td><td data-label="Version">{f.version}</td><td className="act"><button type="button" className="v-btn sm" onClick={()=>{setRevising(f);setKey(f.fieldKey);setLabel(f.displayLabel);setType(f.fieldType);setNormalization(f.normalization);setRequired(f.required);setAck(false);setForm(true)}}><Pencil size={14}/>Revise</button></td></tr>)}</tbody></table>
-   {fields.length===0&&<p className="muted" style={{padding:16}}>No fields defined. Add a field to specify metadata accepted from this producer.</p>}
-  </Panel>}
-  </>}
-  </div>
- </div>
- <details className="v-it-guidance"><summary>Producer metadata responsibilities and field lifecycle</summary>
- <p>Tenant IT owns incoming field keys, types and validation. Business Administration separately configures searchability, labels, matching and display order. A field definition does not automatically enable Business Search or populate historical documents.</p>
- <p>Producers must submit the exact metadata keys from the contract. To make a key searchable, use Business Administration → Metadata Configuration. Field retirement requires dependency-aware backend support and is not available here.</p>
- </details>
+ <ConnectedIntegrationsView sources={sources} selected={source} fields={fields} summary={summary} section={section} onSelect={id=>{setSourceId(id);setSection('configuration');setForm(false);setError('')}} onSection={setSection} onCreate={createSource} onEdit={editSource} onAddField={()=>{setRevising(null);setKey('');setLabel('');setType('TEXT');setNormalization('NONE');setRequired(false);setAck(false);setForm(true)}} onRevise={f=>{setRevising(f);setKey(f.fieldKey);setLabel(f.displayLabel);setType(f.fieldType);setNormalization(f.normalization);setRequired(f.required);setAck(false);setForm(true)}}/>
  {sourceForm&&<Drawer eyebrow="Tenant IT · integration" title={sourceForm==='new'?'Add integration':'Edit integration'} onClose={()=>{if(!sourceBusy)setSourceForm(null)}} footer={<><button type="button" className="v-btn" disabled={sourceBusy} onClick={()=>setSourceForm(null)}>Cancel</button><button type="button" className="v-btn primary" disabled={!sourceValid||sourceBusy} onClick={()=>void persistSource()}>{sourceBusy?'Saving…':sourceForm==='new'?'Add integration':'Save integration'}</button></>}>
  <label className="v-field"><span>Source key</span><input className="v-input" readOnly={sourceForm==='edit'} value={sourceKey} onChange={e=>setSourceKey(e.target.value)}/><small>Immutable identity of the external producer after creation.</small></label>
  <label className="v-field"><span>Display name</span><input className="v-input" value={sourceName} onChange={e=>setSourceName(e.target.value)}/></label>
