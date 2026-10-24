@@ -55,7 +55,7 @@ function useStoreValue() {
   const [audit, setAudit] = useState<AuditEvent[]>(AUDIT)
   const [selectedRef, setSelectedRef] = useState<string | null>(null)
   const [openDocId, setOpenDocId] = useState<string | null>(null)
-  const [navPref,setNavPref]=useState<'auto'|'expanded'|'collapsed'>('auto')
+  const [navPref,setNavPref]=useState<'auto'|'expanded'|'collapsed'>('collapsed')
   const [resultsShown,setResultsShown]=useState(false)
 
   useEffect(() => {

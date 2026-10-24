@@ -11,6 +11,8 @@ import { TenantAdmin } from './TenantAdmin'
 import { Operations } from './Operations'
 import { DesignSystem } from './DesignSystem'
 
+const showDevelopmentUtilities = import.meta.env.DEV
+
 const AREA_META: Record<AreaId, { label: string; short: string; Icon: typeof Search; group: string }> = {
   workspace: { label: 'Records workspace', short: 'Records', Icon: FileSearch, group: 'Work' },
   governance: { label: 'Business administration', short: 'Governance', Icon: ShieldCheck, group: 'Administration' },
@@ -55,9 +57,11 @@ function Rail({ collapsed, onToggle, onNavigated, onOpenSession }: { collapsed: 
         )
       })}
       <div className="v-rail-foot">
-        <div className="v-rail-group">Prototype</div>
-        <button type="button" className="v-rail-item" aria-current={route.area === 'system' ? 'page' : undefined} onClick={() => go('system')} title="Design system" data-tip="Design system"><Layers size={20} aria-hidden /><span className="lbl">Design system</span></button>
-        <button type="button" className="v-rail-item" onClick={onOpenSession} title="Session" data-tip="Session"><FlaskConical size={20} aria-hidden /><span className="lbl">Session & scenarios</span></button>
+        {showDevelopmentUtilities && <>
+          <div className="v-rail-group">Prototype</div>
+          <button type="button" className="v-rail-item" aria-current={route.area === 'system' ? 'page' : undefined} onClick={() => go('system')} title="Design system" aria-label="Design system" data-tip="Design system"><Layers size={20} aria-hidden /><span className="lbl">Design system</span></button>
+          <button type="button" className="v-rail-item" onClick={onOpenSession} title="Local test session" aria-label="Local test session" data-tip="Local test session"><FlaskConical size={20} aria-hidden /><span className="lbl">Session & scenarios</span></button>
+        </>}
         <button type="button" className="v-rail-item v-rail-toggle" onClick={onToggle} aria-expanded={!collapsed} aria-controls="primary-nav" aria-label={collapsed ? "Expand navigation" : "Collapse navigation"} data-tip={collapsed ? "Expand navigation" : "Collapse navigation"}><ToggleIcon size={20} aria-hidden /><span className="lbl" aria-hidden>Collapse</span><kbd className="v-rail-kbd" aria-hidden>[</kbd></button>
       </div>
     </nav>
@@ -72,7 +76,7 @@ function BottomNav({ onOpenSession, onOpenPalette }: { onOpenSession: () => void
     <nav className="v-bottom" aria-label="Primary">
       <button type="button" aria-current={route.area === area ? 'page' : undefined} onClick={() => navigate(area)}><Icon size={22} aria-hidden />{short}</button>
       <button type="button" onClick={onOpenPalette}><Search size={22} aria-hidden />Find</button>
-      <button type="button" aria-current={route.area === 'system' ? 'page' : undefined} onClick={() => navigate('system')}><Layers size={22} aria-hidden />System</button>
+      {showDevelopmentUtilities && <button type="button" aria-current={route.area === 'system' ? 'page' : undefined} onClick={() => navigate('system')}><Layers size={22} aria-hidden />System</button>}
       <button type="button" onClick={onOpenSession}><FlaskConical size={22} aria-hidden />Session</button>
     </nav>
   )
@@ -83,7 +87,7 @@ function Palette({ onClose }: { onClose: () => void }) {
   const [q, setQ] = useState('')
   const [active, setActive] = useState(0)
   const items = useMemo(() => {
-    const dest = [...role.areas, 'system' as AreaId].flatMap((a) => AREA_TABS[a].map((t) => ({ key: `${a}/${t.id}`, label: t.label, hint: AREA_META[a].label, run: () => navigate(a, t.id) })))
+    const dest = [...role.areas, ...(showDevelopmentUtilities ? ['system' as AreaId] : [])].flatMap((a) => AREA_TABS[a].map((t) => ({ key: `${a}/${t.id}`, label: t.label, hint: AREA_META[a].label, run: () => navigate(a, t.id) })))
     const recs = can('SEARCH_RECORDS') ? records.map((r) => ({ key: r.ref, label: `${r.identifiers[0].value} · ${r.title}`, hint: 'Record', run: () => { navigate('workspace'); setSelectedRef(r.ref) } })) : []
     const needle = q.trim().toLowerCase()
     return [...dest, ...recs].filter((i) => !needle || `${i.label} ${i.hint}`.toLowerCase().includes(needle)).slice(0, 12)
@@ -115,14 +119,13 @@ function Palette({ onClose }: { onClose: () => void }) {
 }
 
 function ShellInner() {
-  const { role, route, theme, setTheme, liveSession, sessionLoading, sessionError, navPref, setNavPref, resultsShown } = useStore()
+  const { role, route, theme, setTheme, liveSession, sessionLoading, sessionError, navPref, setNavPref } = useStore()
   const [session, setSession] = useState(false)
   const [palette, setPalette] = useState(false)
 
   const docked = useMediaQuery('(min-width: 1280px)')
   const [peek,setPeek] = useState(false)
-  const autoCollapsed = route.area === 'workspace' && resultsShown
-  const dockedCollapsed = navPref === 'auto' ? autoCollapsed : navPref === 'collapsed'
+  const dockedCollapsed = navPref === 'collapsed'
   const collapsed = docked ? dockedCollapsed : !peek
   const overlay = !docked && peek
   const toggleNav = () => { if(docked)setNavPref(dockedCollapsed?'expanded':'collapsed');else setPeek(p=>!p) }
@@ -138,7 +141,7 @@ function ShellInner() {
     return () => window.removeEventListener('keydown', k)
   }, [])
 
-  const allowed = route.area === 'system' || (route.area === 'workspace' && !!liveSession?.capabilities.includes('SEARCH_RECORDS')) || (route.area === 'governance' && !!liveSession && ['CONFIGURE_ROLE_PERMISSIONS','CONFIGURE_RETENTION','CONFIGURE_METADATA_SEARCH','CONFIGURE_BUSINESS_LIMITS'].some(c=>liveSession.capabilities.includes(c))) || (route.area === 'tenant' && !!liveSession?.capabilities.includes('CONFIGURE_INGESTION_SOURCES')) || (route.area === 'operations' && !!liveSession?.capabilities.includes('VIEW_TECHNICAL_FAILURES'))
+  const allowed = (route.area === 'system' && showDevelopmentUtilities) || (route.area === 'workspace' && !!liveSession?.capabilities.includes('SEARCH_RECORDS')) || (route.area === 'governance' && !!liveSession && ['CONFIGURE_ROLE_PERMISSIONS','CONFIGURE_RETENTION','CONFIGURE_METADATA_SEARCH','CONFIGURE_BUSINESS_LIMITS'].some(c=>liveSession.capabilities.includes(c))) || (route.area === 'tenant' && !!liveSession?.capabilities.includes('CONFIGURE_INGESTION_SOURCES')) || (route.area === 'operations' && !!liveSession?.capabilities.includes('VIEW_TECHNICAL_FAILURES'))
   return (
     <div className="r7">
       <div className="v-app" data-nav={docked?(collapsed?"collapsed":"expanded"):overlay?"overlay":"rail"}>
