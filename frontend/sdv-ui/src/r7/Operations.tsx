@@ -271,8 +271,8 @@ function LiveOperationsSection({section}:{section:string}){
  const [events,setEvents]=useState<OpsAuditEvent[]>([])
  const [selected,setSelected]=useState<OpsAuditEvent|null>(null)
  const [cursor,setCursor]=useState<string|null>(null)
- const [filters,setFilters]=useState({action:'',outcome:'',actorId:''})
- const [applied,setApplied]=useState({action:'',outcome:'',actorId:''})
+ const [filters,setFilters]=useState({action:'',outcome:'',actorId:'',actorType:'',targetType:'',targetId:'',correlationId:'',from:'',to:''})
+ const [applied,setApplied]=useState({action:'',outcome:'',actorId:'',actorType:'',targetType:'',targetId:'',correlationId:'',from:'',to:''})
  const [error,setError]=useState('')
  const [loading,setLoading]=useState(false)
  const [retention,setRetention]=useState<Record<string,unknown>|null>(null)
@@ -296,7 +296,13 @@ function LiveOperationsSection({section}:{section:string}){
  <input className="v-input" aria-label="Action" placeholder="Action" value={filters.action} onChange={e=>setFilters(x=>({...x,action:e.target.value}))}/>
  <select className="v-select" aria-label="Outcome" value={filters.outcome} onChange={e=>setFilters(x=>({...x,outcome:e.target.value}))}><option value="">All outcomes</option><option value="SUCCESS">Success</option><option value="FAILED">Failed</option><option value="DENIED">Denied</option></select>
  <input className="v-input" aria-label="Actor ID" placeholder="Actor ID" value={filters.actorId} onChange={e=>setFilters(x=>({...x,actorId:e.target.value}))}/>
- <button type="button" className="v-btn primary" onClick={()=>{setApplied(filters);void load(filters)}}>Apply filters</button></div></Panel>
+ <input className="v-input" aria-label="Target type" placeholder="Target type" value={filters.targetType} onChange={e=>setFilters(x=>({...x,targetType:e.target.value}))}/>
+ <input className="v-input" aria-label="Target ID" placeholder="Target ID" value={filters.targetId} onChange={e=>setFilters(x=>({...x,targetId:e.target.value}))}/>
+ <input className="v-input" aria-label="Correlation ID" placeholder="Correlation ID" value={filters.correlationId} onChange={e=>setFilters(x=>({...x,correlationId:e.target.value}))}/>
+ <input className="v-input" aria-label="Actor type" placeholder="Actor type" value={filters.actorType} onChange={e=>setFilters(x=>({...x,actorType:e.target.value}))}/>
+ <label className="v-field"><span>From</span><input className="v-input" type="datetime-local" value={filters.from} onChange={e=>setFilters(x=>({...x,from:e.target.value}))}/></label>
+ <label className="v-field"><span>To</span><input className="v-input" type="datetime-local" value={filters.to} onChange={e=>setFilters(x=>({...x,to:e.target.value}))}/></label>
+ <button type="button" className="v-btn primary" disabled={!!filters.from&&!!filters.to&&filters.from>filters.to} onClick={()=>{const f={...filters,from:filters.from?new Date(filters.from).toISOString():'',to:filters.to?new Date(filters.to).toISOString():''};setApplied(f);void load(f)}}>Apply filters</button></div></Panel>
  <Panel flush title="Audit events" meta={events.length}><table className="v-table"><thead><tr><th>Time</th><th>Action</th><th>Actor</th><th>Outcome</th><th>Details</th></tr></thead><tbody>{events.map(e=><tr key={e.auditEventId}><td>{fmtDateTime(e.occurredAt)}</td><td className="lead">{e.action}</td><td>{e.actorId}</td><td>{e.outcome}</td><td><button type="button" className="v-btn sm" onClick={()=>setSelected(e)}>View</button></td></tr>)}</tbody></table>{cursor&&<button type="button" className="v-btn" onClick={()=>opsAudit(cursor,applied).then(r=>{setEvents(x=>[...x,...r.events]);setCursor(r.nextCursor)}).catch(e=>setError(String(e)))}>Load more</button>}</Panel>
  {selected&&<Drawer eyebrow="Audit evidence" title={selected.action} onClose={()=>setSelected(null)}><dl className="v-kv"><div><dt>Time</dt><dd>{fmtDateTime(selected.occurredAt)}</dd></div><div><dt>Event ID</dt><dd className="mono">{selected.auditEventId}</dd></div><div><dt>Target</dt><dd>{selected.targetType} · {selected.targetId}</dd></div><div><dt>Correlation ID</dt><dd>{selected.correlationId??'—'}</dd></div><div><dt>Actor</dt><dd>{selected.actorType} · {selected.actorId}</dd></div><div><dt>Safe audit details</dt><dd className="mono">{selected.safeDetailsJson??'—'}</dd></div></dl></Drawer>}
  </>:section==='configuration'?<Panel title="Deployment configuration"><p>{configuration||'Unavailable'}</p></Panel>:

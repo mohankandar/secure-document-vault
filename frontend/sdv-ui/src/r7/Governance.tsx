@@ -202,6 +202,9 @@ function LiveMetadataTab(){
           setOrderSaving(true);setError('')
           try{
             const keys=await saveMetadataDisplayOrder(sourceId,orderDraft)
+            // Read the persisted order back; never report success based only on the PUT response.
+            const persisted=await getMetadataDisplayOrder(sourceId)
+            if(keys.join('\u0000')!==persisted.join('\u0000')||orderDraft.join('\u0000')!==persisted.join('\u0000')) throw new Error('Saved display order did not match the persisted configuration.')
             const all=[...keys,...fields.map(f=>f.fieldKey).filter(k=>!keys.includes(k))]
             setOrderDraft(all);setOrderSaved(all)
             setFields(old=>[...old].sort((a,b)=>all.indexOf(a.fieldKey)-all.indexOf(b.fieldKey)))
