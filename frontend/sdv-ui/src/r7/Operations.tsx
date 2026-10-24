@@ -252,14 +252,25 @@ function Audit() {
 
 
 function ConnectedOverview(){
+ const {navigate}=useStore()
  const [data,setData]=useState<OpSummary|null>(null)
  const [error,setError]=useState('')
  useEffect(()=>{let live=true;opSummary().then(d=>{if(live)setData(d)}).catch(e=>{if(live)setError(String(e))});return()=>{live=false}},[])
+ const signals=data?[
+  {label:'Processing failures',count:data.processingFailureCount,description:'Documents requiring investigation',tab:'incidents',Icon:FileWarning},
+  {label:'Stuck documents',count:data.stuckDocumentCount,description:'Documents stalled in processing',tab:'incidents',Icon:Timer},
+  {label:'Attention submissions',count:data.attentionSubmissionCount,description:'Incomplete or attention-required intake',tab:'intake',Icon:PackageOpen}
+ ] as const:[]
  return <>{error&&<Callout tone="warn" title="Operations unavailable">{error}</Callout>}
  {!data&&!error&&<Callout title="Loading operations">Reading operational summary…</Callout>}
  {data&&<>
- <Panel title="Platform status"><dl className="v-kv cols"><div><dt>Overall</dt><dd>{data.overallStatus}</dd></div><div><dt>Processing failures</dt><dd>{data.processingFailureCount??'Unavailable'}</dd></div><div><dt>Stuck documents</dt><dd>{data.stuckDocumentCount??'Unavailable'}</dd></div><div><dt>Attention submissions</dt><dd>{data.attentionSubmissionCount??'Unavailable'}</dd></div></dl></Panel>
- <Panel flush title="Core service health"><table className="v-table"><thead><tr><th>Service</th><th>Status</th><th>Details</th></tr></thead><tbody>{[data.application,data.database,data.keyService].map(x=><tr key={x.component}><td className="lead">{x.component}</td><td><Status value={x.status}/></td><td>{x.message}</td></tr>)}</tbody></table></Panel>
+ <Panel title="Platform status" actions={<Status value={data.overallStatus}/>} description="Live operational counts and core service health reported by SDV.">
+  <div className="v-signals" role="list">{signals.map(x=><button key={x.label} type="button" role="listitem" className="v-signal" onClick={()=>navigate('operations',x.tab)}>
+   <span className="k"><x.Icon size={16} aria-hidden style={{color:x.count!=null&&x.count>0?'var(--attention)':'var(--ink-3)'}}/>{x.label}<ChevronRight size={14} aria-hidden style={{marginLeft:'auto'}}/></span>
+   <span className="v">{x.count==null?'—':x.count.toLocaleString()}</span><span className="d">{x.count==null?'Not available from backend':x.description}</span>
+  </button>)}</div>
+ </Panel>
+ <Panel flush title="Core services" actions={<button type="button" className="v-btn quiet sm" onClick={()=>navigate('operations','health')}>Details <ArrowRight size={14} aria-hidden/></button>}><table className="v-table"><thead><tr><th>Service</th><th>Status</th><th>Details</th></tr></thead><tbody>{[data.application,data.database,data.keyService].map(x=><tr key={x.component}><td className="lead">{x.component}</td><td><Status value={x.status}/></td><td>{x.message}</td></tr>)}</tbody></table></Panel>
  {data.dataObservations.some(x=>x.status==='DEGRADED')&&<Callout tone="warn" title="Incomplete operational data">Some sections are degraded; do not interpret missing counts as zero.</Callout>}
  </>}
  </>
