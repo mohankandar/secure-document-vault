@@ -93,7 +93,7 @@ export const itSourceSummary=(id:string)=>roleApi<ItSourceSummary>('/api/v1/admi
 
 export type LiveStorageVolume={volume:{volumeId:string;displayName:string;rootPath:string;state:string;priority:number;warningPercent:number;stopWritePercent:number};capacity?:{totalBytes:number|null;usableBytes:number|null;usedPercent:number|null;writable:boolean};observationError?:string|null;warningThresholdReached:boolean;stopWriteThresholdReached:boolean}
 export const liveStorage=()=>roleApi<LiveStorageVolume[]>('/api/v1/admin/storage-volumes','tenantIt')
-export type IdentityConnection={connectionId:string;displayName:string;providerId:string;issuerUri:string;browserClientId:string;apiAudience:string;status:string;configurationVersion:number;lastTestStatus:string|null;lastTestMessage:string|null}
+export type IdentityConnection={connectionId:string;displayName:string;providerId:string;issuerUri:string;browserClientId:string;apiAudience:string;status:string;configurationVersion:number;providerType?:string;updatedAt?:string|null;lastTestedAt?:string|null;lastTestStatus:string|null;lastTestMessage:string|null}
 export type IdentityOverview={active:IdentityConnection|null;staged:IdentityConnection|null;rollbackCandidates:IdentityConnection[];activationSupported:boolean;activationMaxTestAgeSeconds:number}
 export const identityOverview=()=>roleApi<IdentityOverview>('/api/v1/admin/enterprise-identity','tenantIt')
 export const systemInfo=(role:'tenantIt'|'platform'='tenantIt')=>roleApi<{productName:string;version:string;status:string;activeProfiles:string[];timestamp:string}>('/api/v1/system/info',role)

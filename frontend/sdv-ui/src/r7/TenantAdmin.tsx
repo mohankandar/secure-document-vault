@@ -391,16 +391,36 @@ function LiveIdentity(){
  const perform=async(fn:()=>Promise<IdentityOverview>)=>{setBusy(true);setError('');try{setData(await fn());setAction(null);setEdit(false);setConfirm('')}catch(e){setError(String(e))}finally{setBusy(false)}}
  const stageValid=name.trim()&&issuer.trim()&&client.trim()&&audience.trim()
  return <>{error&&<Callout tone="warn" title="Enterprise identity operation unavailable">{error}</Callout>}
- <Panel title="Enterprise identity" description="Connection state and audited exact-version actions are provided by the backend.">
- {!data?<p className="muted">Loading identity configuration…</p>:<><dl className="v-kv cols">
- <div><dt>Active connection</dt><dd>{data.active?.displayName??'None'}</dd></div><div><dt>Issuer</dt><dd>{data.active?.issuerUri??'Not configured'}</dd></div><div><dt>Active version</dt><dd>{data.active?.configurationVersion??'—'}</dd></div>
- <div><dt>Staged draft</dt><dd>{data.staged?.displayName??'None'}</dd></div><div><dt>Draft test</dt><dd>{data.staged?.lastTestStatus??'Not tested'}</dd></div><div><dt>Known-good rollback candidates</dt><dd>{data.rollbackCandidates.length}</dd></div><div><dt>Active connection ID</dt><dd className="mono">{data.active?.connectionId??"None"}</dd></div><div><dt>Staged version</dt><dd>{data.staged?.configurationVersion??"None"}</dd></div>
- </dl><div className="row wrap" style={{gap:8,marginTop:12}}>
- <button type="button" className="v-btn" onClick={draft}>Edit draft</button>
- <button type="button" className="v-btn" disabled={!data.staged||busy} onClick={()=>void perform(testIdentityDraft)}>Test draft</button>
- <button type="button" className="v-btn primary" disabled={!data.staged||data.staged.lastTestStatus!=='PASSED'||busy} onClick={()=>{setTarget(data.staged);setConfirm('');setAction('activate')}}>Activate draft</button>
- {data.rollbackCandidates.map(c=><button key={c.connectionId} type="button" className="v-btn" onClick={()=>{setTarget(c);setConfirm('');setAction('rollback')}}>Rollback to v{c.configurationVersion}</button>)}
- </div></>}</Panel>
+ <Panel title="Active binding" description="LIVE · Trusted OIDC connection used by SDV for sign-in now. Saving or testing a draft does not modify this binding.">
+ {!data?<p className="muted">Loading identity configuration…</p>:data.active?<dl className="v-kv cols">
+ <div><dt>Provider</dt><dd>{data.active.displayName}</dd></div><div><dt>Type</dt><dd>{data.active.providerType??'OIDC'}</dd></div>
+ <div><dt>Version</dt><dd>v{data.active.configurationVersion}</dd></div><div><dt>Issuer</dt><dd className="mono">{data.active.issuerUri}</dd></div>
+ <div><dt>Browser client</dt><dd>{data.active.browserClientId}</dd></div><div><dt>API audience</dt><dd>{data.active.apiAudience}</dd></div>
+ <div><dt>Last changed</dt><dd>{data.active.updatedAt?fmtDate(data.active.updatedAt):'Unavailable'}</dd></div>
+ <div><dt>Connection ID</dt><dd className="mono">{data.active.connectionId}</dd></div>
+ </dl>:<Callout title="No active identity connection">No active binding was returned by the backend.</Callout>}</Panel>
+ {data&&<div className="v-grid-2">
+ <Panel title="Staged configuration" description="DRAFT · NOT LIVE. Save, test, then activate the validated version. Backend validation and test-freshness rules still apply.">
+ {data.staged?<><dl className="v-kv">
+ <div><dt>Provider</dt><dd>{data.staged.displayName}</dd></div><div><dt>Draft version</dt><dd>v{data.staged.configurationVersion}</dd></div>
+ <div><dt>Issuer</dt><dd className="mono">{data.staged.issuerUri}</dd></div>
+ <div><dt>Browser client</dt><dd>{data.staged.browserClientId}</dd></div><div><dt>API audience</dt><dd>{data.staged.apiAudience}</dd></div>
+ <div><dt>Connection test</dt><dd>{data.staged.lastTestStatus??'Not tested'}</dd></div>
+ <div><dt>Tested at</dt><dd>{data.staged.lastTestedAt?fmtDate(data.staged.lastTestedAt):'Not tested'}</dd></div>
+ </dl>{data.staged.lastTestMessage&&<p className="muted">{data.staged.lastTestMessage}</p>}</>:<p className="muted">No staged draft exists.</p>}
+ <div className="row wrap" style={{gap:8,marginTop:12}}>
+ <button type="button" className="v-btn" disabled={busy} onClick={draft}>{data.staged?'Edit draft':'Create draft'}</button>
+ <button type="button" className="v-btn" disabled={!data.staged||busy} onClick={()=>void perform(testIdentityDraft)}>Test connection</button>
+ <button type="button" className="v-btn primary" disabled={!data.staged||!data.activationSupported||data.staged.lastTestStatus!=='PASSED'||busy} onClick={()=>{setTarget(data.staged);setConfirm('');setAction('activate')}}>Activate validated version</button>
+ </div></Panel>
+ <Panel title="Known-good rollback" description="Previously active configurations for this tenant. Rollback replaces the active binding and requires explicit confirmation.">
+ {data.rollbackCandidates.length?data.rollbackCandidates.map(c=><div key={c.connectionId} className="stack" style={{gap:8,marginBottom:16}}>
+ <strong>{c.displayName} · v{c.configurationVersion}</strong>
+ <span className="muted mono">{c.issuerUri}</span>
+ <span className="muted">Recorded status: {c.status}</span>
+ <button type="button" className="v-btn" style={{alignSelf:'flex-start'}} disabled={busy} onClick={()=>{setTarget(c);setConfirm('');setAction('rollback')}}>Rollback to v{c.configurationVersion}</button>
+ </div>):<p className="muted">No known-good rollback target is available.</p>}
+ </Panel></div>}
  {edit&&<Drawer eyebrow="Tenant IT · authentication" title="Identity draft" onClose={()=>{if(!busy)setEdit(false)}} footer={<><button className="v-btn" type="button" disabled={busy} onClick={()=>setEdit(false)}>Cancel</button><button className="v-btn primary" type="button" disabled={!stageValid||busy} onClick={()=>void perform(()=>saveIdentityDraft({providerId:provider,displayName:name,issuerUri:issuer,browserClientId:client,apiAudience:audience}))}>Save draft</button></>}>
  {([['Provider ID',provider,setProvider],['Display name',name,setName],['Issuer URI',issuer,setIssuer],['Browser client ID',client,setClient],['API audience',audience,setAudience]] as const).map(([label,value,set])=><label key={label} className="v-field"><span>{label}</span><input className="v-input" value={value} onChange={e=>set(e.target.value)}/></label>)}
  <Callout tone="warn" title="Identity safety">Saving creates a staged configuration. It does not activate it. Test the draft before activation.</Callout></Drawer>}
