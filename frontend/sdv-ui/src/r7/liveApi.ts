@@ -90,3 +90,14 @@ export const itCreateSource=(body:{sourceKey:string;displayName:string;authType:
 export const itUpdateSource=(id:string,body:{displayName:string;status:ItSource['status'];authType:ItSource['authType'];credentialReference:string;limits?:ItSource['limits']})=>roleApi<ItSource>('/api/v1/admin/ingestion-sources/'+encodeURIComponent(id),'tenantIt',{method:'PUT',body:JSON.stringify(body)})
 export type ItSourceSummary={submissionCount:number;documentCount:number;lastActivityAt:string|null;lastDocumentAvailableAt:string|null;lastProcessingFailureAt:string|null}
 export const itSourceSummary=(id:string)=>roleApi<ItSourceSummary>('/api/v1/admin/ingestion-sources/'+encodeURIComponent(id)+'/operations','tenantIt')
+
+export type LiveStorageVolume={volume:{volumeId:string;displayName:string;rootPath:string;state:string;priority:number;warningPercent:number;stopWritePercent:number};capacity?:{totalBytes:number|null;usableBytes:number|null;usedPercent:number|null;writable:boolean};observationError?:string|null}
+export const liveStorage=()=>roleApi<LiveStorageVolume[]>('/api/v1/admin/storage-volumes','tenantIt')
+export type IdentityConnection={connectionId:string;displayName:string;providerId:string;issuerUri:string;browserClientId:string;apiAudience:string;status:string;configurationVersion:number;lastTestStatus:string|null;lastTestMessage:string|null}
+export type IdentityOverview={active:IdentityConnection|null;staged:IdentityConnection|null;rollbackCandidates:IdentityConnection[];activationSupported:boolean;activationMaxTestAgeSeconds:number}
+export const identityOverview=()=>roleApi<IdentityOverview>('/api/v1/admin/enterprise-identity','tenantIt')
+export const systemInfo=()=>roleApi<{productName:string;version:string;status:string;activeProfiles:string[];timestamp:string}>('/api/v1/system/info','tenantIt')
+export type OpsDetail=OpSummary & {storageVolumes:{volumeId:string;displayName:string;state:string;health:string;usedPercent:number|null;writable:boolean}[];processingFailures:Record<string,unknown>[];stuckDocuments:Record<string,unknown>[];attentionSubmissions:Record<string,unknown>[]}
+export const opsDetail=()=>roleApi<OpsDetail>('/api/v1/operations/summary','platform')
+export const opsAudit=(cursor?:string)=>roleApi<{events:{auditEventId:string;occurredAt:string;action:string;outcome:string;actorId:string;targetType:string;targetId:string}[];nextCursor:string|null;hasMore:boolean}>('/api/v1/operations/audit-events?limit=50'+(cursor?'&cursor='+encodeURIComponent(cursor):''),'platform')
+export const opsRetention=()=>roleApi<Record<string,unknown>>('/api/v1/operations/retention-status','platform')

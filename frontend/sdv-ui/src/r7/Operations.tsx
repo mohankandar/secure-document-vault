@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { opSummary, type OpSummary } from './liveApi'
+import { opSummary, opsDetail, opsAudit, opsRetention, systemInfo, type OpSummary, type OpsDetail } from './liveApi'
 import { ArrowRight, CheckCircle2, ChevronRight, FileWarning, HardDrive, PackageOpen, Timer } from 'lucide-react'
 import { AREA_TABS, useStore } from './store'
 import { FAILURES, RETENTION_SWEEP, SERVICES, STUCK, SUBMISSIONS, type AuditEvent, type Submission } from './data'
@@ -26,12 +26,12 @@ export function Operations() {
   return (
     <AreaFrame crumbs={['Platform operations', tab.label]} title={tab.label} lede={LEDE[route.tab]} attention={attention}>
       {route.tab === 'overview' && <ConnectedOverview />}
-      {route.tab === 'intake' && <Callout title="Backend integration pending">This operational view is not yet connected. Prototype data and simulated actions are disabled.</Callout>}
-      {route.tab === 'storage' && <Callout title="Backend integration pending">This operational view is not yet connected. Prototype data and simulated actions are disabled.</Callout>}
-      {route.tab === 'health' && <Callout title="Backend integration pending">This operational view is not yet connected. Prototype data and simulated actions are disabled.</Callout>}
-      {route.tab === 'incidents' && <Callout title="Backend integration pending">This operational view is not yet connected. Prototype data and simulated actions are disabled.</Callout>}
-      {route.tab === 'audit' && <Callout title="Backend integration pending">This operational view is not yet connected. Prototype data and simulated actions are disabled.</Callout>}
-      {route.tab === 'configuration' && <Callout title="Backend integration pending">This operational view is not yet connected. Prototype data and simulated actions are disabled.</Callout>}
+      {route.tab === 'intake' && <LiveOperationsSection section="intake" />}
+      {route.tab === 'storage' && <LiveOperationsSection section="storage" />}
+      {route.tab === 'health' && <LiveOperationsSection section="health" />}
+      {route.tab === 'incidents' && <LiveOperationsSection section="incidents" />}
+      {route.tab === 'audit' && <LiveOperationsSection section="audit" />}
+      {route.tab === 'configuration' && <LiveOperationsSection section="configuration" />}
     </AreaFrame>
   )
 }
@@ -263,4 +263,24 @@ function ConnectedOverview(){
  {data.dataObservations.some(x=>x.status==='DEGRADED')&&<Callout tone="warn" title="Incomplete operational data">Some sections are degraded; do not interpret missing counts as zero.</Callout>}
  </>}
  </>
+}
+
+function LiveOperationsSection({section}:{section:string}){
+ const [data,setData]=useState<OpsDetail|null>(null)
+ const [audits,setAudits]=useState<{auditEventId:string;occurredAt:string;action:string;outcome:string;actorId:string;targetType:string;targetId:string}[]>([])
+ const [cursor,setCursor]=useState<string|null>(null)
+ const [error,setError]=useState('')
+ const [extra,setExtra]=useState('')
+ useEffect(()=>{let active=true;setError('');if(section==='audit'){opsAudit().then(r=>{if(active){setAudits(r.events);setCursor(r.nextCursor)}}).catch(e=>{if(active)setError(String(e))})}
+ else if(section==='configuration'){systemInfo().then(x=>{if(active)setExtra(x.productName+' · '+x.version+' · '+x.status+' · '+x.activeProfiles.join(', '))}).catch(e=>{if(active)setError(String(e))})}
+ else if(section==='health'){Promise.all([opsDetail(),opsRetention()]).then(([x,r])=>{if(active){setData(x);setExtra(JSON.stringify(r))}}).catch(e=>{if(active)setError(String(e))})}
+ else opsDetail().then(x=>{if(active)setData(x)}).catch(e=>{if(active)setError(String(e))});return()=>{active=false}},[section])
+ return <>{error&&<Callout tone="warn" title="Operational data unavailable">{error}</Callout>}
+ {section==='audit'?<Panel flush title="Audit events" meta={audits.length} description="Live append-only audit evidence."><table className="v-table"><thead><tr><th>Time</th><th>Action</th><th>Actor</th><th>Outcome</th></tr></thead><tbody>{audits.map(e=><tr key={e.auditEventId}><td className="lead">{fmtDateTime(e.occurredAt)}</td><td>{e.action}</td><td>{e.actorId}</td><td>{e.outcome}</td></tr>)}</tbody></table>{cursor&&<button type="button" className="v-btn" onClick={()=>{opsAudit(cursor).then(r=>{setAudits(a=>[...a,...r.events]);setCursor(r.nextCursor)}).catch(e=>setError(String(e)))}}>Load more</button>}</Panel>:
+ section==='configuration'?<Panel title="Deployment configuration"><p>{extra||'Loading…'}</p></Panel>:
+ <Panel flush title={section==='intake'?'Intake attention':section==='storage'?'Storage status':section==='health'?'Platform health':'Processing incidents'} description="Live backend operational information; missing data is not interpreted as zero.">
+ {!data?<p className="muted">Loading…</p>:section==='health'?<dl className="v-kv cols"><div><dt>Application</dt><dd>{data.application.status}</dd></div><div><dt>Database</dt><dd>{data.database.status}</dd></div><div><dt>Key service</dt><dd>{data.keyService.status}</dd></div><div><dt>Retention sweep</dt><dd>{extra?'Status available from backend':'Unavailable'}</dd></div></dl>:
+ section==='storage'?<table className="v-table"><thead><tr><th>Volume</th><th>State</th><th>Health</th><th>Used</th></tr></thead><tbody>{data.storageVolumes.map(v=><tr key={v.volumeId}><td className="lead">{v.displayName}</td><td>{v.state}</td><td>{v.health}</td><td>{v.usedPercent??'Unavailable'}</td></tr>)}</tbody></table>:
+ <dl className="v-kv cols"><div><dt>Processing failures</dt><dd>{data.processingFailureCount??'Unavailable'}</dd></div><div><dt>Stuck documents</dt><dd>{data.stuckDocumentCount??'Unavailable'}</dd></div><div><dt>Attention submissions</dt><dd>{data.attentionSubmissionCount??'Unavailable'}</dd></div></dl>}
+ </Panel>}</>
 }

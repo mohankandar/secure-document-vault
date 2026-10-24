@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { itSources, itFields, itUpsertField, itCreateSource, itUpdateSource, itSourceSummary, type ItSourceSummary, type ItSource, type ItField } from './liveApi'
+import { itSources, itFields, itUpsertField, itCreateSource, itUpdateSource, itSourceSummary, liveStorage, identityOverview, systemInfo, type LiveStorageVolume, type IdentityOverview, type ItSourceSummary, type ItSource, type ItField } from './liveApi'
 import { CheckCircle2, Circle, History, Pencil, Plus, RotateCcw } from 'lucide-react'
 import { AREA_TABS, useStore } from './store'
 import { SYSTEM, type IdentityConfig, type Source, type Volume } from './data'
@@ -21,10 +21,10 @@ export function TenantAdmin() {
   const tab = AREA_TABS.tenant.find((t) => t.id === route.tab)!
   return (
     <AreaFrame crumbs={['Tenant IT', tab.label]} title={tab.label} lede={LEDE[route.tab]} attention={volumes.some(volumeAttention) ? ['storage'] : []}>
-      {route.tab === 'storage' && <Callout title="Storage integration pending">Storage changes are disabled in connected R7 until the backend-backed editor is ready.</Callout>}
-      {route.tab === 'authentication' && <Callout title="Identity administration integration pending">Identity activation and rollback are disabled here. No simulated security changes can be submitted.</Callout>}
+      {route.tab === 'storage' && <LiveStorage />}
+      {route.tab === 'authentication' && <LiveIdentity />}
       {route.tab === 'integrations' && <ConnectedIntegrations />}
-      {route.tab === 'environment' && <Callout title="Environment integration pending">Live environment details are not yet wired into this view.</Callout>}
+      {route.tab === 'environment' && <LiveEnvironment />}
     </AreaFrame>
   )
 }
@@ -335,4 +335,37 @@ function ConnectedIntegrations(){
  {revising&&<label className="v-check"><input type="checkbox" checked={ack} onChange={e=>setAck(e.target.checked)}/><span>I have verified the producer contract supports this revision.</span></label>}
  </Drawer>}
  </>
+}
+
+function LiveStorage(){
+ const [items,setItems]=useState<LiveStorageVolume[]>([])
+ const [error,setError]=useState('')
+ useEffect(()=>{let mounted=true;liveStorage().then(x=>{if(mounted)setItems(x)}).catch(e=>{if(mounted)setError(String(e))});return()=>{mounted=false}},[])
+ return <>{error&&<Callout tone="warn" title="Storage data unavailable">{error}</Callout>}<Panel flush title="Storage volumes" meta={items.length} description="Live tenant storage. Configuration changes are disabled until the existing backend editor is integrated safely.">
+ <table className="v-table"><thead><tr><th>Volume</th><th>State</th><th>Capacity used</th><th>Writable</th></tr></thead><tbody>{items.map(v=><tr key={v.volume.volumeId}><td className="lead">{v.volume.displayName}</td><td>{v.volume.state}</td><td>{v.capacity?.usedPercent??'Unavailable'}{v.capacity?.usedPercent!=null?'%':''}</td><td>{v.capacity?.writable?'Yes':'No'}</td></tr>)}</tbody></table>
+ </Panel></>
+}
+function LiveIdentity(){
+ const [data,setData]=useState<IdentityOverview|null>(null)
+ const [error,setError]=useState('')
+ useEffect(()=>{let mounted=true;identityOverview().then(x=>{if(mounted)setData(x)}).catch(e=>{if(mounted)setError(String(e))});return()=>{mounted=false}},[])
+ return <>{error&&<Callout tone="warn" title="Enterprise identity unavailable">{error}</Callout>}
+ <Panel title="Enterprise identity" description="Backend-backed connection status. Draft testing, activation and rollback remain disabled in this candidate to protect known-good identity configuration.">
+ {!data?<p className="muted">Loading identity configuration…</p>:<dl className="v-kv cols">
+ <div><dt>Active connection</dt><dd>{data.active?.displayName??'None'}</dd></div>
+ <div><dt>Issuer</dt><dd>{data.active?.issuerUri??'Not configured'}</dd></div>
+ <div><dt>Active version</dt><dd>{data.active?.configurationVersion??'—'}</dd></div>
+ <div><dt>Staged draft</dt><dd>{data.staged?.displayName??'None'}</dd></div>
+ <div><dt>Last draft test</dt><dd>{data.staged?.lastTestStatus??'Not tested'}</dd></div>
+ <div><dt>Known-good rollback candidates</dt><dd>{data.rollbackCandidates.length}</dd></div>
+ </dl>}</Panel></>
+}
+function LiveEnvironment(){
+ const [info,setInfo]=useState<{productName:string;version:string;status:string;activeProfiles:string[];timestamp:string}|null>(null)
+ const [error,setError]=useState('')
+ useEffect(()=>{let mounted=true;systemInfo().then(x=>{if(mounted)setInfo(x)}).catch(e=>{if(mounted)setError(String(e))});return()=>{mounted=false}},[])
+ return <>{error&&<Callout tone="warn" title="Environment unavailable">{error}</Callout>}
+ <Panel title="Environment" description="Read-only facts retrieved from the connected backend.">{info?<dl className="v-kv cols">
+ <div><dt>Product</dt><dd>{info.productName}</dd></div><div><dt>Version</dt><dd>{info.version}</dd></div><div><dt>Status</dt><dd>{info.status}</dd></div><div><dt>Active profiles</dt><dd>{info.activeProfiles.join(', ')||'None'}</dd></div>
+ </dl>:<p className="muted">Loading environment…</p>}</Panel></>
 }
