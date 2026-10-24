@@ -63,6 +63,7 @@ export function Workspace() {
     }).catch(e=>{if(active){setFailure(String(e));setRecords([]);setDocumentCounts({});setStatus('error')}})
     return ()=>{active=false}
   },[applied,page,setRecords,sources.length])
+  useEffect(()=>{setResultsShown(!!applied && status==='live' && results.length>0);return()=>setResultsShown(false)},[applied,status,results.length,setResultsShown])
   const selected = records.find((r) => r.ref === selectedRef) ?? null
   const hasCriteria = Object.values(draft).some((v) => v.trim()) || from || to
 

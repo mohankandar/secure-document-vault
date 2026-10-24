@@ -55,6 +55,8 @@ function useStoreValue() {
   const [audit, setAudit] = useState<AuditEvent[]>(AUDIT)
   const [selectedRef, setSelectedRef] = useState<string | null>(null)
   const [openDocId, setOpenDocId] = useState<string | null>(null)
+  const [navPref,setNavPref]=useState<'auto'|'expanded'|'collapsed'>('auto')
+  const [resultsShown,setResultsShown]=useState(false)
 
   useEffect(() => {
     let active = true
@@ -125,7 +127,7 @@ function useStoreValue() {
     role, roleId, switchRole, liveSession, sessionLoading, sessionError, scenario, setScenario, theme, setTheme: setThemeState, route, navigate,
     toasts, toast, dismissToast: (id: number) => setToasts((l) => l.filter((t) => t.id !== id)),
     roleCaps, setRoleCaps, caps, can,
-    records, setRecords, updateDoc, addDocActivity, selectedRef, setSelectedRef, openDocId, setOpenDocId,
+    records, setRecords, updateDoc, addDocActivity, selectedRef, setSelectedRef, openDocId, setOpenDocId, navPref, setNavPref, resultsShown, setResultsShown,
     retention, setRetention, volumes, setVolumes, sources, setSources,
     identity, setIdentity: setIdentity as (fn: (prev: typeof IDENTITY) => typeof IDENTITY) => void, audit, recordAudit,
   }
