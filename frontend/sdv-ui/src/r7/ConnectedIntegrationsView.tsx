@@ -16,9 +16,9 @@ const limits = [
 ] as const
 const showLimit=(value:number|null|undefined,unit:string)=>value==null?'Platform default':unit==='bytes'?(value/(1024*1024)).toLocaleString(undefined,{maximumFractionDigits:2})+' MB':value.toLocaleString()+' '+unit
 function StatusPill({status}:{status:ItSource['status']}){return status==='ACTIVE'?<span className="ig-pill on"><span className="dot" aria-hidden/>Active</span>:<span className="ig-pill off"><Power size={11} aria-hidden/>Disabled</span>}
-export function ConnectedIntegrationsView({sources,selected,fields,summary,section,onSelect,onSection,onCreate,onEdit,onAddField,onRevise}:{
+export function ConnectedIntegrationsView({sources,selected,fields,summary,section,onSelect,onSection,onCreate,onEdit,onToggleStatus,onAddField,onRevise}:{
  sources:ItSource[]; selected:ItSource|undefined;fields:ItField[];summary:ItSourceSummary|null;section:Section;
- onSelect:(id:string)=>void;onSection:(s:Section)=>void;onCreate:()=>void;onEdit:()=>void;onAddField:()=>void;onRevise:(f:ItField)=>void
+ onSelect:(id:string)=>void;onSection:(s:Section)=>void;onCreate:()=>void;onEdit:()=>void;onToggleStatus:()=>void;onAddField:()=>void;onRevise:(f:ItField)=>void
 }){
  const [query,setQuery]=useState('')
  const filtered=sources.filter(i=>(i.displayName+' '+i.sourceKey).toLowerCase().includes(query.toLowerCase().trim()))
@@ -38,7 +38,7 @@ export function ConnectedIntegrationsView({sources,selected,fields,summary,secti
    <section className="ig-detail" aria-label="Selected integration">
    {selected?<div className="ig-detail-inner">
     <header className="ig-head"><div className="ig-head-id"><h2>{selected.displayName}</h2><div className="ig-head-meta"><StatusPill status={selected.status}/><span className="mono">{selected.sourceKey}</span><span className="faint">Updated {selected.updatedAt?fmtDateTime(selected.updatedAt):'Unknown'}</span></div></div>
-     <div className="ig-head-actions"><button className="v-btn sm" type="button" onClick={onEdit}><Pencil size={14} aria-hidden/>Edit configuration</button></div>
+     <div className="ig-head-actions"><button className="v-btn sm" type="button" onClick={onEdit}><Pencil size={14} aria-hidden/>Edit configuration</button><button className={selected.status==='ACTIVE'?'v-btn sm danger-quiet':'v-btn sm'} type="button" onClick={onToggleStatus}><Power size={14} aria-hidden/>{selected.status==='ACTIVE'?'Disable':'Enable'}</button></div>
     </header>
     {selected.status==='DISABLED'&&<div className="ig-notice warn"><Power size={16} aria-hidden/><div>Disabled — the producer cannot send new submissions until re-enabled. Previously stored documents are unaffected.</div></div>}
     <div className="ig-tabs" role="tablist" aria-label="Integration sections">{tabs.map(([value,label])=><button key={value} type="button" className="ig-tab" role="tab" aria-selected={section===value} onClick={()=>onSection(value)}>{label}{value==='contract'&&<span className="ig-tab-count">{fields.length}</span>}</button>)}</div>
