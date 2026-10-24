@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { itSources, itFields, itUpsertField, itCreateSource, itUpdateSource, itSourceSummary, liveStorage, identityOverview, systemInfo, createStorageVolume, updateStorageVolume, saveIdentityDraft, testIdentityDraft, activateIdentityDraft, rollbackIdentity, type LiveStorageVolume, type IdentityOverview, type ItSourceSummary, type ItSource, type ItField } from './liveApi'
 import { CheckCircle2, Circle, History, Pencil, Plus, RotateCcw } from 'lucide-react'
 import { AREA_TABS, useStore } from './store'
@@ -285,12 +285,14 @@ function ConnectedIntegrations(){
  const [summary,setSummary]=useState<ItSourceSummary|null>(null)
  const [section,setSection]=useState<'configuration'|'monitoring'|'contract'>('configuration')
  const [sourceConfirm,setSourceConfirm]=useState(false)
+ const selectedSourceRef=useRef(sourceId)
+ selectedSourceRef.current=sourceId
  useEffect(()=>{let live=true;itSources().then(rows=>{if(live){setSources(rows);setSourceId(rows[0]?.sourceId??'')}}).catch(e=>{if(live)setError(String(e))});return()=>{live=false}},[])
- useEffect(()=>{if(!sourceId)return;let live=true;setFields([]);setSummary(null);itSourceSummary(sourceId).then(v=>{if(live)setSummary(v)}).catch(e=>{if(live)setError(String(e))});itFields(sourceId).then(rows=>{if(live)setFields(rows)}).catch(e=>{if(live)setError(String(e))});return()=>{live=false}},[sourceId])
+ useEffect(()=>{if(!sourceId){setFields([]);setSummary(null);return}let live=true;setFields([]);setSummary(null);setError('');Promise.allSettled([itSourceSummary(sourceId),itFields(sourceId)]).then(([sr,fr])=>{if(!live)return;if(sr.status==='fulfilled')setSummary(sr.value);else setError(String(sr.reason));if(fr.status==='fulfilled')setFields(fr.value);else setError(String(fr.reason))});return()=>{live=false}},[sourceId])
  const valid=/^[A-Za-z][A-Za-z0-9_.-]{0,99}$/.test(key)&&label.trim().length>0&&(revising?.fieldKey===key||!fields.some(f=>f.fieldKey===key))&&!(type==='BOOLEAN'&&normalization==='DIGITS_ONLY')&&(!revising||ack)
  const save=async()=>{if(!valid||busy)return;setBusy(true);setError('');try{
-  await itUpsertField(sourceId,key,{displayLabel:label.trim(),fieldType:type,required,normalization,validationRules:{}})
-  setFields(await itFields(sourceId));setForm(false);setRevising(null);setAck(false);setKey('');setLabel('');setRequired(false)
+  await itUpsertField(sourceId,key,{displayLabel:label.trim(),fieldType:type,required,normalization,validationRules:revising?.validationRules??{}})
+  const updatedFields=await itFields(sourceId);if(selectedSourceRef.current===sourceId)setFields(updatedFields);setForm(false);setRevising(null);setAck(false);setKey('');setLabel('');setRequired(false)
  }catch(e){setError(String(e))}finally{setBusy(false)}}
  const source=sources.find(x=>x.sourceId===sourceId)
  const editSource=()=>{if(!source)return;setSourceConfirm(false);setSourceKey(source.sourceKey);setSourceName(source.displayName);setAuthType(source.authType);setCredential(source.credentialReference);setSourceStatus(source.status);setSourceForm('edit')}
@@ -331,11 +333,11 @@ function ConnectedIntegrations(){
    <dl className="v-kv cols"><div><dt>Source key</dt><dd className="mono">{source.sourceKey}</dd></div><div><dt>Status</dt><dd>{source.status}</dd></div><div><dt>Authentication</dt><dd>{AUTH_LABEL[source.authType]}</dd></div><div><dt>Credential reference</dt><dd className="mono">{source.credentialReference||'Not configured'}</dd></div>
    </dl><h4 className="v-it-subheading">Intake limits</h4><p className="muted">Configured limits are backend-reported. Unset limits inherit platform settings; effective defaults are not exposed by this API.</p><dl className="v-kv cols">{source.limits&&Object.entries(source.limits).map(([k,v])=><div key={k}><dt>{k.replace(/([A-Z])/g,' $1')}</dt><dd>{v??'Platform default (value not exposed)'}</dd></div>)}</dl></Panel>}
   {section==='monitoring'&&<Panel title="Operational monitoring" description="Backend-reported traffic and activity; these values are not saved with integration settings.">
-    {summary?<dl className="v-kv cols"><div><dt>Submissions</dt><dd>{summary.submissionCount}</dd></div><div><dt>Documents</dt><dd>{summary.documentCount}</dd></div><div><dt>Last activity</dt><dd>{summary.lastActivityAt?fmtDate(summary.lastActivityAt):'No traffic yet'}</dd></div><div><dt>Last available document</dt><dd>{summary.lastDocumentAvailableAt?fmtDate(summary.lastDocumentAvailableAt):'None'}</dd></div><div><dt>Last processing failure</dt><dd>{summary.lastProcessingFailureAt?fmtDate(summary.lastProcessingFailureAt):'None'}</dd></div><div><dt>Source updated</dt><dd>{source.updatedAt?fmtDate(source.updatedAt):'Unavailable'}</dd></div></dl>:<p className="muted">Operational information is loading or unavailable.</p>}
+    {summary?<><div className="v-it-kpis"><div><small>Submissions</small><strong>{summary.submissionCount.toLocaleString()}</strong></div><div><small>Documents</small><strong>{summary.documentCount.toLocaleString()}</strong></div></div><dl className="v-kv cols"><div><dt>Last activity</dt><dd>{summary.lastActivityAt?fmtDate(summary.lastActivityAt):'No traffic yet'}</dd></div><div><dt>Last available document</dt><dd>{summary.lastDocumentAvailableAt?fmtDate(summary.lastDocumentAvailableAt):'None'}</dd></div><div><dt>Last processing failure</dt><dd>{summary.lastProcessingFailureAt?fmtDate(summary.lastProcessingFailureAt):'None'}</dd></div><div><dt>Source updated</dt><dd>{source.updatedAt?fmtDate(source.updatedAt):'Unavailable'}</dd></div></dl></>:<p className="muted">Operational information is loading or unavailable.</p>}
    </Panel>}
   {section==='contract'&&<Panel flush title="Source metadata contract" description="Tenant IT controls source field keys, technical types, required status and normalization. Business Search behavior is configured separately."
    actions={<button type="button" className="v-btn sm primary" onClick={()=>{setRevising(null);setKey('');setLabel('');setType('TEXT');setNormalization('NONE');setRequired(false);setAck(false);setForm(true)}}><Plus size={14}/>Add field</button>}>
-   <table className="v-table"><thead><tr><th>Field key</th><th>Label</th><th>Type</th><th>Required</th><th>Version</th><th className="act">Action</th></tr></thead><tbody>{fields.map(f=><tr key={f.fieldKey}><td className="lead" data-label="Field key">{f.fieldKey}</td><td data-label="Label">{f.displayLabel}</td><td data-label="Type">{f.fieldType}</td><td data-label="Required">{f.required?'Yes':'No'}</td><td data-label="Version">{f.version}</td><td className="act"><button type="button" className="v-btn sm" onClick={()=>{setRevising(f);setKey(f.fieldKey);setLabel(f.displayLabel);setType(f.fieldType);setNormalization(f.normalization);setRequired(f.required);setAck(false);setForm(true)}}><Pencil size={14}/>Revise</button></td></tr>)}</tbody></table>
+   <table className="v-table"><thead><tr><th>Field</th><th>Type</th><th>Normalization</th><th>Required</th><th>Validation</th><th>Version</th><th className="act">Action</th></tr></thead><tbody>{fields.map(f=><tr key={f.fieldKey}><td className="lead" data-label="Field"><strong>{f.displayLabel}</strong><div className="mono muted">{f.fieldKey}</div></td><td data-label="Type">{f.fieldType}</td><td data-label="Normalization">{f.normalization}</td><td data-label="Required">{f.required?'Yes':'No'}</td><td data-label="Validation">{f.validationRules&&Object.keys(f.validationRules).length?Object.keys(f.validationRules).join(', '):'Type check only'}</td><td data-label="Version">{f.version}</td><td className="act"><button type="button" className="v-btn sm" onClick={()=>{setRevising(f);setKey(f.fieldKey);setLabel(f.displayLabel);setType(f.fieldType);setNormalization(f.normalization);setRequired(f.required);setAck(false);setForm(true)}}><Pencil size={14}/>Revise</button></td></tr>)}</tbody></table>
    {fields.length===0&&<p className="muted" style={{padding:16}}>No fields defined. Add a field to specify metadata accepted from this producer.</p>}
   </Panel>}
   </>}
@@ -438,15 +440,13 @@ function LiveIdentity(){
  </dl>:<Callout title="No active identity connection">No active binding was returned by the backend.</Callout>}</Panel>
  {data&&<div className="v-grid-2">
  <Panel title="Staged configuration" description="DRAFT · NOT LIVE. Save, test, then activate the validated version. Backend validation and test-freshness rules still apply.">
- {data.staged?<><dl className="v-kv">
+ {data.staged?<><div className="v-it-draft-review"><div className="v-it-draft-differences">{data.active&&<><strong>Changes from live v{data.active.configurationVersion}</strong>{identityDifferences.length?identityDifferences.map(k=><div className="v-it-diff-row" key={k}><span>{k.replace(/([A-Z])/g,' $1')}</span><span className="mono">{data.active![k]}</span><span className="mono">{data.staged![k]}</span></div>):<p className="muted">No configuration differences.</p>}</>}</div><details className="v-it-draft-details"><summary>View staged configuration details</summary><dl className="v-kv">
  <div><dt>Provider</dt><dd>{data.staged.displayName}</dd></div><div><dt>Draft version</dt><dd>v{data.staged.configurationVersion}</dd></div>
  <div><dt>Issuer</dt><dd className="mono">{data.staged.issuerUri}</dd></div>
  <div><dt>Browser client</dt><dd>{data.staged.browserClientId}</dd></div><div><dt>API audience</dt><dd>{data.staged.apiAudience}</dd></div>
  <div><dt>Connection test</dt><dd>{data.staged.lastTestStatus??'Not tested'}</dd></div>
  <div><dt>Tested at</dt><dd>{data.staged.lastTestedAt?fmtDate(data.staged.lastTestedAt):'Not tested'}</dd></div>
- </dl>
- {data.active&&<div className="v-it-comparison"><strong>Changes compared with live v{data.active.configurationVersion}</strong>
- {identityDifferences.length?identityDifferences.map(k=><div key={k}><span>{k.replace(/([A-Z])/g,' $1')}</span><span className="mono">{data.active![k]}</span><span className="mono">{data.staged![k]}</span></div>):<p className="muted">No configuration differences detected.</p>}</div>}
+ </dl></details></div>
  {data.staged.lastTestMessage&&<p className="muted">{data.staged.lastTestMessage}</p>}
  {data.staged.lastTestStatus==='PASSED'&&!passingFresh&&<Callout tone="warn" title="Retest required">The passing test is older than the allowed freshness window or lacks a valid timestamp. Test this draft again before activation.</Callout>}</>:<p className="muted">No staged draft exists.</p>}
  <div className="v-it-activation-flow" aria-label="Draft activation workflow">
