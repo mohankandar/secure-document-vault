@@ -424,9 +424,6 @@ function LiveIdentity(){
  const draft=()=>{const c=data?.staged??data?.active;setProvider(c?.providerId??'customer-oidc');setName(c?.displayName??'');setIssuer(c?.issuerUri??'');setClient(c?.browserClientId??'');setAudience(c?.apiAudience??'');setEdit(true)}
  const perform=async(fn:()=>Promise<IdentityOverview>)=>{setBusy(true);setError('');try{setData(await fn());setAction(null);setEdit(false);setConfirm('')}catch(e){setError(String(e))}finally{setBusy(false)}}
  const stageValid=name.trim()&&issuer.trim()&&client.trim()&&audience.trim()
- const lastTestAt=data?.staged?.lastTestedAt?Date.parse(data.staged.lastTestedAt):NaN
- const passingFresh=!!data?.staged&&data.staged.lastTestStatus==='PASSED'&&Number.isFinite(lastTestAt)&&Date.now()-lastTestAt>=0&&Date.now()-lastTestAt<=(data.activationMaxTestAgeSeconds*1000)
- const identityDifferences=data?.active&&data.staged?(['displayName','providerId','issuerUri','browserClientId','apiAudience'] as const).filter(k=>data.active![k]!==data.staged![k]):[]
  return <>{error&&<Callout tone="warn" title="Enterprise identity operation unavailable">{error}</Callout>}
  {!data?<p className="muted">Loading identity configuration…</p>:<ConnectedAuthenticationView auth={data} busy={busy} onEdit={draft} onTest={()=>void perform(testIdentityDraft)} onActivate={()=>{if(!data.staged)return;setTarget(data.staged);setConfirm('');setAction('activate')}} onRollback={c=>{setTarget(c);setConfirm('');setAction('rollback')}}/>}
  {edit&&<Drawer eyebrow="Tenant IT · authentication" title="Identity draft" onClose={()=>{if(!busy)setEdit(false)}} footer={<><button className="v-btn" type="button" disabled={busy} onClick={()=>setEdit(false)}>Cancel</button><button className="v-btn primary" type="button" disabled={!stageValid||busy} onClick={()=>void perform(()=>saveIdentityDraft({providerId:provider,displayName:name,issuerUri:issuer,browserClientId:client,apiAudience:audience}))}>Save draft</button></>}>

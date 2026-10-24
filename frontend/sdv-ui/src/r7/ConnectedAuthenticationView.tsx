@@ -1,7 +1,7 @@
 import { useId, useState } from 'react'
 import { AlertTriangle, ArrowRight, Check, CheckCircle2, ChevronDown, Circle, Copy, Loader2, Lock, Pencil, Plus, RotateCcw, XCircle } from 'lucide-react'
 import { useStore } from './store'
-import { fmtDateTime, fmtRel } from './ui'
+import { fmtDateTime } from './ui'
 import type { IdentityConnection, IdentityOverview } from './liveApi'
 import './authentication.css'
 type Phase = 'untested' | 'running' | 'passed' | 'failed' | 'stale'
@@ -10,7 +10,8 @@ const FIELDS: { key: FieldKey; label: string; mono?: boolean }[] = [
 { key:'displayName',label:'Display name'},{key:'providerId',label:'Provider ID',mono:true},{key:'providerType',label:'Provider type'},
 {key:'issuerUri',label:'Issuer URI',mono:true},{key:'browserClientId',label:'Browser client ID',mono:true},{key:'apiAudience',label:'API audience',mono:true}]
 const changedFields=(a:IdentityConnection|null,b:IdentityConnection)=>FIELDS.filter(f=>!a||a[f.key]!==b[f.key])
-const ageSeconds=(iso:string|null|undefined)=>iso?Math.max(0,(Date.now()-Date.parse(iso))/1000):Infinity
+const ageSeconds=(iso:string|null|undefined)=>{if(!iso)return Infinity;const t=Date.parse(iso);return Number.isFinite(t)&&t<=Date.now()?(Date.now()-t)/1000:Infinity}
+const fmtRel=(v:string)=>{const delta=(Date.now()-Date.parse(v))/1000;return !Number.isFinite(delta)?'unknown':delta<90?'just now':delta<3600?`${Math.round(delta/60)} min ago`:delta<86400?`${Math.round(delta/3600)} h ago`:fmtDateTime(v)}
 const windowLabel=(s:number)=>s%60===0?`${s/60} minutes`:`${s} seconds`
 const PHASE_TEXT: Record<Phase,string>={untested:'Not tested',running:'Testing…',passed:'Test passed',failed:'Test failed',stale:'Test outside window'}
 function phaseOf(staged:IdentityConnection,running:boolean,maxAge:number):Phase{if(running)return'running';if(staged.lastTestStatus==='FAILED')return'failed';if(staged.lastTestStatus==='PASSED')return ageSeconds(staged.lastTestedAt)>maxAge?'stale':'passed';return'untested'}
