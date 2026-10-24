@@ -21,7 +21,7 @@ function useMediaQuery(q: string) {
 }
 
 export function Workspace() {
-  const { records, setRecords, selectedRef, setSelectedRef, openDocId, setOpenDocId, can } = useStore()
+  const { records, setRecords, selectedRef, setSelectedRef, openDocId, setOpenDocId, can, setResultsShown } = useStore()
   const [sources, setSources] = useState<Source[]>([])
   const [status, setStatus] = useState<'loading'|'live'|'error'>('loading')
   const [failure, setFailure] = useState('')

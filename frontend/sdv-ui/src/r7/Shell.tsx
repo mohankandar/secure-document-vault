@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Activity, Building2, FileSearch, FlaskConical, Layers, Moon, Search, ServerCog, ShieldCheck, Sun, CornerDownLeft } from 'lucide-react'
+import { Activity, Building2, FileSearch, FlaskConical, Layers, Moon, Search, ServerCog, ShieldCheck, Sun, CornerDownLeft, PanelLeftOpen, PanelLeftClose } from 'lucide-react'
 import { AREA_TABS, StoreProvider, useStore } from './store'
 import { type AreaId } from './data'
 import { opSummary } from './liveApi'
