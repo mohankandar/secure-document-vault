@@ -101,3 +101,10 @@ export type OpsDetail=OpSummary & {storageVolumes:{volumeId:string;displayName:s
 export const opsDetail=()=>roleApi<OpsDetail>('/api/v1/operations/summary','platform')
 export const opsAudit=(cursor?:string)=>roleApi<{events:{auditEventId:string;occurredAt:string;action:string;outcome:string;actorId:string;targetType:string;targetId:string}[];nextCursor:string|null;hasMore:boolean}>('/api/v1/operations/audit-events?limit=50'+(cursor?'&cursor='+encodeURIComponent(cursor):''),'platform')
 export const opsRetention=()=>roleApi<Record<string,unknown>>('/api/v1/operations/retention-status','platform')
+
+export const createStorageVolume=(v:{displayName:string;rootPath:string;state:string;priority:number;warningPercent:number;stopWritePercent:number})=>roleApi<LiveStorageVolume>('/api/v1/admin/storage-volumes','tenantIt',{method:'POST',body:JSON.stringify(v)})
+export const updateStorageVolume=(id:string,v:{displayName:string;state:string;priority:number;warningPercent:number;stopWritePercent:number})=>roleApi<LiveStorageVolume>('/api/v1/admin/storage-volumes/'+encodeURIComponent(id),'tenantIt',{method:'PUT',body:JSON.stringify(v)})
+export const saveIdentityDraft=(v:{providerId:string;displayName:string;issuerUri:string;browserClientId:string;apiAudience:string})=>roleApi<IdentityOverview>('/api/v1/admin/enterprise-identity/draft','tenantIt',{method:'PUT',body:JSON.stringify(v)})
+export const testIdentityDraft=()=>roleApi<IdentityOverview>('/api/v1/admin/enterprise-identity/draft/test','tenantIt',{method:'POST'})
+export const activateIdentityDraft=(connectionId:string,expectedConfigurationVersion:number,confirmation:string)=>roleApi<IdentityOverview>('/api/v1/admin/enterprise-identity/draft/activate','tenantIt',{method:'POST',body:JSON.stringify({connectionId,expectedConfigurationVersion,confirmation})})
+export const rollbackIdentity=(connectionId:string,expectedConfigurationVersion:number,confirmation:string)=>roleApi<IdentityOverview>('/api/v1/admin/enterprise-identity/rollback','tenantIt',{method:'POST',body:JSON.stringify({connectionId,expectedConfigurationVersion,confirmation})})

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { itSources, itFields, itUpsertField, itCreateSource, itUpdateSource, itSourceSummary, liveStorage, identityOverview, systemInfo, type LiveStorageVolume, type IdentityOverview, type ItSourceSummary, type ItSource, type ItField } from './liveApi'
+import { itSources, itFields, itUpsertField, itCreateSource, itUpdateSource, itSourceSummary, liveStorage, identityOverview, systemInfo, createStorageVolume, updateStorageVolume, saveIdentityDraft, testIdentityDraft, activateIdentityDraft, rollbackIdentity, type LiveStorageVolume, type IdentityOverview, type ItSourceSummary, type ItSource, type ItField } from './liveApi'
 import { CheckCircle2, Circle, History, Pencil, Plus, RotateCcw } from 'lucide-react'
 import { AREA_TABS, useStore } from './store'
 import { SYSTEM, type IdentityConfig, type Source, type Volume } from './data'
@@ -340,25 +340,74 @@ function ConnectedIntegrations(){
 function LiveStorage(){
  const [items,setItems]=useState<LiveStorageVolume[]>([])
  const [error,setError]=useState('')
- useEffect(()=>{let mounted=true;liveStorage().then(x=>{if(mounted)setItems(x)}).catch(e=>{if(mounted)setError(String(e))});return()=>{mounted=false}},[])
- return <>{error&&<Callout tone="warn" title="Storage data unavailable">{error}</Callout>}<Panel flush title="Storage volumes" meta={items.length} description="Live tenant storage. Configuration changes are disabled until the existing backend editor is integrated safely.">
- <table className="v-table"><thead><tr><th>Volume</th><th>State</th><th>Capacity used</th><th>Writable</th></tr></thead><tbody>{items.map(v=><tr key={v.volume.volumeId}><td className="lead">{v.volume.displayName}</td><td>{v.volume.state}</td><td>{v.capacity?.usedPercent??'Unavailable'}{v.capacity?.usedPercent!=null?'%':''}</td><td>{v.capacity?.writable?'Yes':'No'}</td></tr>)}</tbody></table>
- </Panel></>
+ const [editing,setEditing]=useState<LiveStorageVolume|'new'|null>(null)
+ const [name,setName]=useState('')
+ const [root,setRoot]=useState('')
+ const [state,setState]=useState('ACTIVE')
+ const [priority,setPriority]=useState('0')
+ const [warning,setWarning]=useState('80')
+ const [stop,setStop]=useState('95')
+ const [busy,setBusy]=useState(false)
+ const [confirmed,setConfirmed]=useState(false)
+ const refresh=()=>liveStorage().then(setItems).catch(e=>setError(String(e)))
+ useEffect(()=>{void refresh()},[])
+ const begin=(v:LiveStorageVolume|'new')=>{setEditing(v);setName(v==='new'?'':v.volume.displayName);setRoot(v==='new'?'':v.volume.rootPath);setState(v==='new'?'ACTIVE':v.volume.state);setPriority(String(v==='new'?0:v.volume.priority));setWarning(String(v==='new'?80:v.volume.warningPercent));setStop(String(v==='new'?95:v.volume.stopWritePercent));setConfirmed(false)}
+ const valid=name.trim().length>0&&Number.isInteger(Number(priority))&&Number(priority)>=0&&Number.isInteger(Number(warning))&&Number.isInteger(Number(stop))&&Number(warning)>0&&Number(stop)<=100&&Number(stop)>Number(warning)&&(editing!=='new'||root.trim().length>0)
+ const save=async()=>{if(!editing||!valid||!confirmed||busy)return;setBusy(true);setError('')
+ try{const v={displayName:name.trim(),state,priority:Number(priority),warningPercent:Number(warning),stopWritePercent:Number(stop)}
+ if(editing==='new')await createStorageVolume({...v,rootPath:root.trim()});else await updateStorageVolume(editing.volume.volumeId,v)
+ await refresh();setEditing(null)}catch(e){setError(String(e))}finally{setBusy(false)}}
+ return <>{error&&<Callout tone="warn" title="Storage operation unavailable">{error}</Callout>}
+ <Panel flush title="Storage volumes" meta={items.length} description="Live tenant volumes. Root paths are immutable after creation."
+ actions={<button type="button" className="v-btn sm primary" onClick={()=>begin('new')}><Plus size={14}/>Add volume</button>}>
+ <table className="v-table"><thead><tr><th>Volume</th><th>State</th><th>Capacity used</th><th>Writable</th><th className="act">Action</th></tr></thead><tbody>{items.map(v=><tr key={v.volume.volumeId}><td className="lead">{v.volume.displayName}</td><td>{v.volume.state}</td><td>{v.capacity?.usedPercent??'Unavailable'}{v.capacity?.usedPercent!=null?'%':''}</td><td>{v.capacity?.writable?'Yes':'No'}</td><td className="act"><button className="v-btn sm" type="button" onClick={()=>begin(v)}><Pencil size={14}/>Edit</button></td></tr>)}</tbody></table></Panel>
+ {editing&&<Drawer eyebrow="Tenant IT · storage" title={editing==='new'?'Add volume':'Edit volume'} onClose={()=>{if(!busy)setEditing(null)}} footer={<><button type="button" className="v-btn" disabled={busy} onClick={()=>setEditing(null)}>Cancel</button><button type="button" className="v-btn primary" disabled={!valid||!confirmed||busy} onClick={()=>void save()}>{busy?'Saving…':'Save volume'}</button></>}>
+ <label className="v-field"><span>Display name</span><input className="v-input" value={name} onChange={e=>setName(e.target.value)}/></label>
+ <label className="v-field"><span>Root path</span><input className="v-input" readOnly={editing!=='new'} value={root} onChange={e=>setRoot(e.target.value)}/></label>
+ <label className="v-field"><span>State</span><select className="v-select" value={state} onChange={e=>setState(e.target.value)}><option value="ACTIVE">Active</option><option value="READ_ONLY">Read-only</option><option value="OFFLINE">Offline</option></select></label>
+ <label className="v-field"><span>Priority</span><input className="v-input" type="number" min="0" value={priority} onChange={e=>setPriority(e.target.value)}/></label>
+ <label className="v-field"><span>Warning threshold (%)</span><input className="v-input" type="number" min="1" max="99" value={warning} onChange={e=>setWarning(e.target.value)}/></label>
+ <label className="v-field"><span>Stop-write threshold (%)</span><input className="v-input" type="number" min="2" max="100" value={stop} onChange={e=>setStop(e.target.value)}/></label>
+ <Callout tone="warn" title="Storage impact">Changes to state or thresholds can stop document ingestion. Existing root paths cannot be changed or migrated here.</Callout>
+ <label className="v-check"><input type="checkbox" checked={confirmed} onChange={e=>setConfirmed(e.target.checked)}/><span>I have verified the storage change and its effect on ingestion.</span></label></Drawer>}
+ </>
 }
 function LiveIdentity(){
  const [data,setData]=useState<IdentityOverview|null>(null)
  const [error,setError]=useState('')
- useEffect(()=>{let mounted=true;identityOverview().then(x=>{if(mounted)setData(x)}).catch(e=>{if(mounted)setError(String(e))});return()=>{mounted=false}},[])
- return <>{error&&<Callout tone="warn" title="Enterprise identity unavailable">{error}</Callout>}
- <Panel title="Enterprise identity" description="Backend-backed connection status. Draft testing, activation and rollback remain disabled in this candidate to protect known-good identity configuration.">
- {!data?<p className="muted">Loading identity configuration…</p>:<dl className="v-kv cols">
- <div><dt>Active connection</dt><dd>{data.active?.displayName??'None'}</dd></div>
- <div><dt>Issuer</dt><dd>{data.active?.issuerUri??'Not configured'}</dd></div>
- <div><dt>Active version</dt><dd>{data.active?.configurationVersion??'—'}</dd></div>
- <div><dt>Staged draft</dt><dd>{data.staged?.displayName??'None'}</dd></div>
- <div><dt>Last draft test</dt><dd>{data.staged?.lastTestStatus??'Not tested'}</dd></div>
- <div><dt>Known-good rollback candidates</dt><dd>{data.rollbackCandidates.length}</dd></div>
- </dl>}</Panel></>
+ const [edit,setEdit]=useState(false)
+ const [provider,setProvider]=useState('')
+ const [name,setName]=useState('')
+ const [issuer,setIssuer]=useState('')
+ const [client,setClient]=useState('')
+ const [audience,setAudience]=useState('')
+ const [busy,setBusy]=useState(false)
+ const [confirm,setConfirm]=useState('')
+ const [action,setAction]=useState<'activate'|'rollback'|null>(null)
+ const [target,setTarget]=useState<{connectionId:string;configurationVersion:number}|null>(null)
+ const refresh=()=>identityOverview().then(setData).catch(e=>setError(String(e)))
+ useEffect(()=>{void refresh()},[])
+ const draft=()=>{const c=data?.staged??data?.active;setProvider(c?.providerId??'customer-oidc');setName(c?.displayName??'');setIssuer(c?.issuerUri??'');setClient(c?.browserClientId??'');setAudience(c?.apiAudience??'');setEdit(true)}
+ const perform=async(fn:()=>Promise<IdentityOverview>)=>{setBusy(true);setError('');try{setData(await fn());setAction(null);setEdit(false);setConfirm('')}catch(e){setError(String(e))}finally{setBusy(false)}}
+ const stageValid=name.trim()&&issuer.trim()&&client.trim()&&audience.trim()
+ return <>{error&&<Callout tone="warn" title="Enterprise identity operation unavailable">{error}</Callout>}
+ <Panel title="Enterprise identity" description="Connection state and audited exact-version actions are provided by the backend.">
+ {!data?<p className="muted">Loading identity configuration…</p>:<><dl className="v-kv cols">
+ <div><dt>Active connection</dt><dd>{data.active?.displayName??'None'}</dd></div><div><dt>Issuer</dt><dd>{data.active?.issuerUri??'Not configured'}</dd></div><div><dt>Active version</dt><dd>{data.active?.configurationVersion??'—'}</dd></div>
+ <div><dt>Staged draft</dt><dd>{data.staged?.displayName??'None'}</dd></div><div><dt>Draft test</dt><dd>{data.staged?.lastTestStatus??'Not tested'}</dd></div><div><dt>Known-good rollback candidates</dt><dd>{data.rollbackCandidates.length}</dd></div>
+ </dl><div className="row wrap" style={{gap:8,marginTop:12}}>
+ <button type="button" className="v-btn" onClick={draft}>Edit draft</button>
+ <button type="button" className="v-btn" disabled={!data.staged||busy} onClick={()=>void perform(testIdentityDraft)}>Test draft</button>
+ <button type="button" className="v-btn primary" disabled={!data.staged||data.staged.lastTestStatus!=='PASSED'||busy} onClick={()=>{setTarget(data.staged);setConfirm('');setAction('activate')}}>Activate draft</button>
+ {data.rollbackCandidates.map(c=><button key={c.connectionId} type="button" className="v-btn" onClick={()=>{setTarget(c);setConfirm('');setAction('rollback')}}>Rollback to v{c.configurationVersion}</button>)}
+ </div></>}</Panel>
+ {edit&&<Drawer eyebrow="Tenant IT · authentication" title="Identity draft" onClose={()=>{if(!busy)setEdit(false)}} footer={<><button className="v-btn" type="button" disabled={busy} onClick={()=>setEdit(false)}>Cancel</button><button className="v-btn primary" type="button" disabled={!stageValid||busy} onClick={()=>void perform(()=>saveIdentityDraft({providerId:provider,displayName:name,issuerUri:issuer,browserClientId:client,apiAudience:audience}))}>Save draft</button></>}>
+ {([['Provider ID',provider,setProvider],['Display name',name,setName],['Issuer URI',issuer,setIssuer],['Browser client ID',client,setClient],['API audience',audience,setAudience]] as const).map(([label,value,set])=><label key={label} className="v-field"><span>{label}</span><input className="v-input" value={value} onChange={e=>set(e.target.value)}/></label>)}
+ <Callout tone="warn" title="Identity safety">Saving creates a staged configuration. It does not activate it. Test the draft before activation.</Callout></Drawer>}
+ {action&&target&&<Drawer eyebrow="Tenant IT · authentication" title={action==='activate'?'Activate identity':'Roll back identity'} onClose={()=>{if(!busy)setAction(null)}} footer={<><button type="button" className="v-btn" disabled={busy} onClick={()=>setAction(null)}>Cancel</button><button type="button" className="v-btn primary" disabled={busy||confirm!==(action==='activate'?'ACTIVATE':'ROLLBACK')} onClick={()=>void perform(()=>action==='activate'?activateIdentityDraft(target.connectionId,target.configurationVersion,confirm):rollbackIdentity(target.connectionId,target.configurationVersion,confirm))}>Confirm {action}</button></>}>
+ <Callout tone="warn" title="Authentication-impacting operation">This may change how users sign in. The backend checks the exact connection and version and enforces known-good rollback and test freshness.</Callout>
+ <label className="v-field"><span>Enter {action==='activate'?'ACTIVATE':'ROLLBACK'} to confirm</span><input className="v-input" value={confirm} onChange={e=>setConfirm(e.target.value)}/></label></Drawer>}
+ </>
 }
 function LiveEnvironment(){
  const [info,setInfo]=useState<{productName:string;version:string;status:string;activeProfiles:string[];timestamp:string}|null>(null)
