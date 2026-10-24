@@ -308,13 +308,13 @@ function ConnectedIntegrations(){
  return <>
  {error&&<Callout tone="warn" title="Source configuration unavailable">{error}</Callout>}
  <div className="v-it-integrations">
-  <Panel title="Integrations" description="Select a producer system to inspect its configuration, traffic, and source metadata contract."
+  <Panel title="Integrations" meta={sources.length}
    actions={<button type="button" className="v-btn sm primary" onClick={createSource}><Plus size={14}/>Add integration</button>}>
    <div className="v-it-source-list" role="group" aria-label="Registered integrations">
     {sources.length===0&&<p className="muted">No integrations configured yet.</p>}
     {sources.map(item=><button key={item.sourceId} type="button" className="v-it-source-item" aria-pressed={sourceId===item.sourceId} onClick={()=>{setSourceId(item.sourceId);setSection('configuration');setForm(false);setError('')}}>
       <span className="v-it-source-name"><strong>{item.displayName}</strong><span className="v-it-source-badge" data-state={item.status}>{item.status}</span></span><span className="mono muted">{item.sourceKey}</span>
-      <span className="muted">{item.status} · {AUTH_LABEL[item.authType]}</span>
+      <span className="muted">{AUTH_LABEL[item.authType]} · {fields.length&&sourceId===item.sourceId?`${fields.length} fields`:'View contract'}</span>
      </button>)}
    </div>
   </Panel>
@@ -341,9 +341,10 @@ function ConnectedIntegrations(){
   </>}
   </div>
  </div>
- <Callout title="Division of responsibility">Tenant IT defines what metadata the external system sends and validates those incoming fields. Business Administration decides which of those existing fields are searchable, how they match and in which order they appear. Defining a field does not automatically enable it in Business Search.</Callout>
- <Callout title="Incoming metadata contract">The producer must submit each value using the exact field key shown above. These are source metadata keys, not database columns. To show a new field in Business Search, enable its search behavior in Business Administration → Metadata Configuration.</Callout>
- <Callout title="Field lifecycle">Adding a definition does not populate historical documents. Retirement is not enabled until dependency-aware backend support is available.</Callout>
+ <details className="v-it-guidance"><summary>Producer metadata responsibilities and field lifecycle</summary>
+ <p>Tenant IT owns incoming field keys, types and validation. Business Administration separately configures searchability, labels, matching and display order. A field definition does not automatically enable Business Search or populate historical documents.</p>
+ <p>Producers must submit the exact metadata keys from the contract. To make a key searchable, use Business Administration → Metadata Configuration. Field retirement requires dependency-aware backend support and is not available here.</p>
+ </details>
  {sourceForm&&<Drawer eyebrow="Tenant IT · integration" title={sourceForm==='new'?'Add integration':'Edit integration'} onClose={()=>{if(!sourceBusy)setSourceForm(null)}} footer={<><button type="button" className="v-btn" disabled={sourceBusy} onClick={()=>setSourceForm(null)}>Cancel</button><button type="button" className="v-btn primary" disabled={!sourceValid||sourceBusy} onClick={()=>void persistSource()}>{sourceBusy?'Saving…':sourceForm==='new'?'Add integration':'Save integration'}</button></>}>
  <label className="v-field"><span>Source key</span><input className="v-input" readOnly={sourceForm==='edit'} value={sourceKey} onChange={e=>setSourceKey(e.target.value)}/><small>Immutable identity of the external producer after creation.</small></label>
  <label className="v-field"><span>Display name</span><input className="v-input" value={sourceName} onChange={e=>setSourceName(e.target.value)}/></label>
@@ -448,17 +449,15 @@ function LiveIdentity(){
  {identityDifferences.length?identityDifferences.map(k=><div key={k}><span>{k.replace(/([A-Z])/g,' $1')}</span><span className="mono">{data.active![k]}</span><span className="mono">{data.staged![k]}</span></div>):<p className="muted">No configuration differences detected.</p>}</div>}
  {data.staged.lastTestMessage&&<p className="muted">{data.staged.lastTestMessage}</p>}
  {data.staged.lastTestStatus==='PASSED'&&!passingFresh&&<Callout tone="warn" title="Retest required">The passing test is older than the allowed freshness window or lacks a valid timestamp. Test this draft again before activation.</Callout>}</>:<p className="muted">No staged draft exists.</p>}
- <div className="row wrap" style={{gap:8,marginTop:12}}>
- <button type="button" className="v-btn" disabled={busy} onClick={draft}>{data.staged?'Edit draft':'Create draft'}</button>
- <button type="button" className="v-btn" disabled={!data.staged||busy} onClick={()=>void perform(testIdentityDraft)}>Test connection</button>
- <button type="button" className="v-btn primary" disabled={!data.staged||!data.activationSupported||!passingFresh||busy} onClick={()=>{setTarget(data.staged);setConfirm('');setAction('activate')}}>Activate validated version</button>
+ <div className="v-it-activation-flow" aria-label="Draft activation workflow">
+ <div className="v-it-activation-step"><span className="v-it-step-count">1</span><div><strong>Save a draft</strong><p className="muted">Changes remain inactive until approved activation.</p><button type="button" className="v-btn sm" disabled={busy} onClick={draft}>{data.staged?'Edit draft':'Create draft'}</button></div></div>
+ <div className="v-it-activation-step"><span className="v-it-step-count">2</span><div><strong>Test the exact draft version</strong><p className="muted">{data.staged ? (passingFresh?'Passing test is within the allowed freshness window.':data.staged.lastTestStatus==='PASSED'?'Previous test must be refreshed.':data.staged.lastTestStatus??'Not tested'):'Save a draft first.'}</p><button type="button" className="v-btn sm" disabled={!data.staged||busy} onClick={()=>void perform(testIdentityDraft)}>Run connection test</button></div></div>
+ <div className="v-it-activation-step"><span className="v-it-step-count">3</span><div><strong>Review and activate</strong><p className="muted">Requires a passing, fresh test and explicit typed confirmation. The server revalidates everything.</p><button type="button" className="v-btn sm primary" disabled={!data.staged||!data.activationSupported||!passingFresh||busy} onClick={()=>{setTarget(data.staged);setConfirm('');setAction('activate')}}>Review activation</button></div></div>
  </div></Panel>
  <Panel title="Known-good rollback" description="Previously active configurations for this tenant. Rollback replaces the active binding and requires explicit confirmation.">
- {data.rollbackCandidates.length?data.rollbackCandidates.map(c=><div key={c.connectionId} className="stack" style={{gap:8,marginBottom:16}}>
- <strong>{c.displayName} · v{c.configurationVersion}</strong>
- <span className="muted mono">{c.issuerUri}</span>
- <span className="muted">Recorded status: {c.status}</span>
- <button type="button" className="v-btn" style={{alignSelf:'flex-start'}} disabled={busy} onClick={()=>{setTarget(c);setConfirm('');setAction('rollback')}}>Rollback to v{c.configurationVersion}</button>
+ {data.rollbackCandidates.length?data.rollbackCandidates.map(c=><div key={c.connectionId} className="v-it-rollback-choice">
+ <div><strong>v{c.configurationVersion} · {c.displayName}</strong><span className="mono muted">{c.issuerUri}</span><small className="muted">Recorded status: {c.status} · Connection: {c.connectionId}</small></div>
+ <button type="button" className="v-btn sm" disabled={busy} onClick={()=>{setTarget(c);setConfirm('');setAction('rollback')}}>Review rollback</button>
  </div>):<p className="muted">No known-good rollback target is available.</p>}
  </Panel></div>}
  {edit&&<Drawer eyebrow="Tenant IT · authentication" title="Identity draft" onClose={()=>{if(!busy)setEdit(false)}} footer={<><button className="v-btn" type="button" disabled={busy} onClick={()=>setEdit(false)}>Cancel</button><button className="v-btn primary" type="button" disabled={!stageValid||busy} onClick={()=>void perform(()=>saveIdentityDraft({providerId:provider,displayName:name,issuerUri:issuer,browserClientId:client,apiAudience:audience}))}>Save draft</button></>}>
