@@ -279,10 +279,14 @@ function ConnectedOverview(){
 }
 
 
+const AUDIT_ACTION_OPTIONS: [string,string][]=[['','All actions'],['DOCUMENT_DOWNLOADED','Document downloaded'],['DOCUMENT_PRINTED','Document printed'],['DOCUMENT_VIEW_OPENED','Document opened'],['DOCUMENT_PAGE_VIEWED','Page viewed'],['BUSINESS_RECORD_OPENED','Business record opened'],['DOCUMENT_COMMENT_ADDED','Comment added'],['DOCUMENT_TAG_ADDED','Tag added'],['DOCUMENT_PERMANENTLY_REDACTED','Permanent redaction']]
 function LiveOperationsSection({section}:{section:string}){
  const [data,setData]=useState<OpsDetail|null>(null)
  const [events,setEvents]=useState<OpsAuditEvent[]>([])
  const [selected,setSelected]=useState<OpsAuditEvent|null>(null)
+ const [moreFilters,setMoreFilters]=useState(false)
+ const [includeViewEvents,setIncludeViewEvents]=useState(false)
+ const [moreLoading,setMoreLoading]=useState(false)
  const [cursor,setCursor]=useState<string|null>(null)
  const [filters,setFilters]=useState({action:'',outcome:'',actorId:'',actorType:'',targetType:'',targetId:'',correlationId:'',from:'',to:''})
  const [applied,setApplied]=useState({action:'',outcome:'',actorId:'',actorType:'',targetType:'',targetId:'',correlationId:'',from:'',to:''})
@@ -305,19 +309,30 @@ function LiveOperationsSection({section}:{section:string}){
  <div className="row" style={{justifyContent:'flex-end',gap:12,alignItems:'center'}}>{refreshedAt&&<span className="muted">Refreshed {fmtDateTime(refreshedAt)}</span>}<button type="button" className="v-btn sm" disabled={loading} onClick={()=>void load()}>{loading?'Refreshing…':'Refresh'}</button></div>
  {error&&<Callout tone="warn" title="Operational data unavailable">{error}</Callout>}
  {section==='audit'?<>
- <Panel title="Audit filters"><div className="row wrap" style={{gap:8}}>
- <input className="v-input" aria-label="Action" placeholder="Action" value={filters.action} onChange={e=>setFilters(x=>({...x,action:e.target.value}))}/>
- <select className="v-select" aria-label="Outcome" value={filters.outcome} onChange={e=>setFilters(x=>({...x,outcome:e.target.value}))}><option value="">All outcomes</option><option value="SUCCESS">Success</option><option value="FAILED">Failed</option><option value="DENIED">Denied</option></select>
- <input className="v-input" aria-label="Actor ID" placeholder="Actor ID" value={filters.actorId} onChange={e=>setFilters(x=>({...x,actorId:e.target.value}))}/>
- <input className="v-input" aria-label="Target type" placeholder="Target type" value={filters.targetType} onChange={e=>setFilters(x=>({...x,targetType:e.target.value}))}/>
- <input className="v-input" aria-label="Target ID" placeholder="Target ID" value={filters.targetId} onChange={e=>setFilters(x=>({...x,targetId:e.target.value}))}/>
- <input className="v-input" aria-label="Correlation ID" placeholder="Correlation ID" value={filters.correlationId} onChange={e=>setFilters(x=>({...x,correlationId:e.target.value}))}/>
- <input className="v-input" aria-label="Actor type" placeholder="Actor type" value={filters.actorType} onChange={e=>setFilters(x=>({...x,actorType:e.target.value}))}/>
- <label className="v-field"><span>From</span><input className="v-input" type="datetime-local" value={filters.from} onChange={e=>setFilters(x=>({...x,from:e.target.value}))}/></label>
- <label className="v-field"><span>To</span><input className="v-input" type="datetime-local" value={filters.to} onChange={e=>setFilters(x=>({...x,to:e.target.value}))}/></label>
- <button type="button" className="v-btn primary" disabled={!!filters.from&&!!filters.to&&filters.from>filters.to} onClick={()=>{const f={...filters,from:filters.from?new Date(filters.from).toISOString():'',to:filters.to?new Date(filters.to).toISOString():''};setApplied(f);void load(f)}}>Apply filters</button></div></Panel>
- <Panel flush title="Audit events" meta={events.length}><table className="v-table"><thead><tr><th>Time</th><th>Action</th><th>Actor</th><th>Outcome</th><th>Details</th></tr></thead><tbody>{events.map(e=><tr key={e.auditEventId}><td>{fmtDateTime(e.occurredAt)}</td><td className="lead">{e.action}</td><td>{e.actorId}</td><td>{e.outcome}</td><td><button type="button" className="v-btn sm" onClick={()=>setSelected(e)}>View</button></td></tr>)}</tbody></table>{cursor&&<button type="button" className="v-btn" onClick={()=>opsAudit(cursor,applied).then(r=>{setEvents(x=>[...x,...r.events]);setCursor(r.nextCursor)}).catch(e=>setError(String(e)))}>Load more</button>}</Panel>
- {selected&&<Drawer eyebrow="Audit evidence" title={selected.action} onClose={()=>setSelected(null)}><dl className="v-kv"><div><dt>Time</dt><dd>{fmtDateTime(selected.occurredAt)}</dd></div><div><dt>Event ID</dt><dd className="mono">{selected.auditEventId}</dd></div><div><dt>Target</dt><dd>{selected.targetType} · {selected.targetId}</dd></div><div><dt>Correlation ID</dt><dd>{selected.correlationId??'—'}</dd></div><div><dt>Actor</dt><dd>{selected.actorType} · {selected.actorId}</dd></div><div><dt>Safe audit details</dt><dd className="mono">{selected.safeDetailsJson??'—'}</dd></div></dl></Drawer>}
+ <Panel title="Audit filters" description="Filter server-recorded audit evidence. Routine audit-view activity is hidden by default.">
+ <div className="op-audit-filters">
+  <label className="v-field"><span>Action</span><select className="v-select" value={AUDIT_ACTION_OPTIONS.some(x=>x[0]===filters.action)?filters.action:'__custom'} onChange={e=>{if(e.target.value==='__custom')setMoreFilters(true);else setFilters(x=>({...x,action:e.target.value}))}}>{AUDIT_ACTION_OPTIONS.map(([value,label])=><option key={value} value={value}>{label}</option>)}{!AUDIT_ACTION_OPTIONS.some(x=>x[0]===filters.action)&&<option value="__custom">Custom action</option>}</select></label>
+  <label className="v-field"><span>Outcome</span><select className="v-select" value={filters.outcome} onChange={e=>setFilters(x=>({...x,outcome:e.target.value}))}><option value="">All outcomes</option><option value="SUCCESS">Success</option><option value="DENIED">Denied</option><option value="FAILED">Failed</option></select></label>
+  <label className="v-field"><span>From</span><input className="v-input" type="datetime-local" value={filters.from} onChange={e=>setFilters(x=>({...x,from:e.target.value}))}/></label>
+  <label className="v-field"><span>To</span><input className="v-input" type="datetime-local" value={filters.to} onChange={e=>setFilters(x=>({...x,to:e.target.value}))}/></label>
+  <button type="button" className="v-btn primary" disabled={loading||(!!filters.from&&!!filters.to&&filters.from>filters.to)} onClick={()=>{const f={...filters,from:filters.from?new Date(filters.from).toISOString():'',to:filters.to?new Date(filters.to).toISOString():''};setApplied(f);void load(f)}}>{loading?'Loading…':'Apply filters'}</button>
+ </div>
+ <div className="op-audit-toolbar"><button type="button" className="v-btn quiet sm" aria-expanded={moreFilters} aria-controls="op-audit-advanced" onClick={()=>setMoreFilters(v=>!v)}>{moreFilters?'Fewer filters':'More filters'}{[filters.actorId,filters.actorType,filters.targetType,filters.targetId,filters.correlationId].filter(Boolean).length>0?' · additional filters set':''}</button><label className="row" style={{gap:8}}><input type="checkbox" checked={includeViewEvents} onChange={e=>setIncludeViewEvents(e.target.checked)}/>Include view events</label></div>
+ {moreFilters&&<div className="op-audit-advanced" id="op-audit-advanced">
+  <label className="v-field"><span>Exact action code</span><input className="v-input" placeholder="e.g. DOCUMENT_DOWNLOADED" value={filters.action} onChange={e=>setFilters(x=>({...x,action:e.target.value}))}/></label>
+  <label className="v-field"><span>Resource type</span><input className="v-input" value={filters.targetType} onChange={e=>setFilters(x=>({...x,targetType:e.target.value}))}/></label>
+  <label className="v-field"><span>Resource ID</span><input className="v-input" value={filters.targetId} onChange={e=>setFilters(x=>({...x,targetId:e.target.value}))}/></label>
+  <label className="v-field"><span>Actor type</span><input className="v-input" value={filters.actorType} onChange={e=>setFilters(x=>({...x,actorType:e.target.value}))}/></label>
+  <label className="v-field"><span>Actor ID</span><input className="v-input" value={filters.actorId} onChange={e=>setFilters(x=>({...x,actorId:e.target.value}))}/></label>
+  <label className="v-field"><span>Correlation ID</span><input className="v-input" value={filters.correlationId} onChange={e=>setFilters(x=>({...x,correlationId:e.target.value}))}/></label>
+ </div>}
+ </Panel>
+ <Panel flush title="Audit events" meta={events.filter(e=>includeViewEvents||e.action!=='AUDIT_VIEWED').length}>
+ <table className="v-table"><thead><tr><th>When</th><th>Event</th><th>Actor</th><th>Target</th><th>Outcome</th><th className="act">Details</th></tr></thead><tbody>{events.filter(e=>includeViewEvents||e.action!=='AUDIT_VIEWED').map(e=><tr key={e.auditEventId}><td data-label="When">{fmtDateTime(e.occurredAt)}</td><td data-label="Event" className="lead"><strong>{humanize(e.action)}</strong><div className="mono faint">{e.action}</div></td><td data-label="Actor">{e.actorId}<div className="faint">{e.actorType}</div></td><td data-label="Target" className="mono">{e.targetId}</td><td data-label="Outcome"><Status value={e.outcome}/></td><td className="act"><button type="button" className="v-btn sm" aria-label={'View details for '+humanize(e.action)} onClick={()=>setSelected(e)}>View details</button></td></tr>)}</tbody></table>
+ {events.filter(e=>includeViewEvents||e.action!=='AUDIT_VIEWED').length===0&&<p className="muted" style={{padding:16}}>No events to display in this page. Try changing the filters or loading older events.</p>}
+ {cursor&&<div style={{padding:12}}><button type="button" disabled={loading||moreLoading} className="v-btn" onClick={async()=>{setMoreLoading(true);try{const r=await opsAudit(cursor,applied);setEvents(x=>[...x,...r.events]);setCursor(r.nextCursor)}catch(e){setError(String(e))}finally{setMoreLoading(false)}}}>{moreLoading?'Loading…':'Load older events'}</button></div>}
+ </Panel>
+ {selected&&<Drawer eyebrow="Audit evidence" title={humanize(selected.action)} onClose={()=>setSelected(null)}><dl className="v-kv"><div><dt>Outcome</dt><dd><Status value={selected.outcome}/></dd></div><div><dt>Time</dt><dd>{fmtDateTime(selected.occurredAt)}</dd></div><div><dt>Action code</dt><dd className="mono">{selected.action}</dd></div><div><dt>Event ID</dt><dd className="mono">{selected.auditEventId}</dd></div><div><dt>Target</dt><dd className="mono">{selected.targetType} · {selected.targetId}</dd></div><div><dt>Correlation ID</dt><dd className="mono">{selected.correlationId??'—'}</dd></div><div><dt>Actor</dt><dd>{selected.actorType} · {selected.actorId}</dd></div></dl><h3>Safe audit details</h3><pre className="mono op-audit-details">{selected.safeDetailsJson??'—'}</pre></Drawer>}
  </>:section==='configuration'?<Panel title="Deployment configuration"><p>{configuration||'Unavailable'}</p></Panel>:
  <>
  {data&&section==='health'&&<><Panel title="Core services"><dl className="v-kv cols">{[data.application,data.database,data.keyService].map(x=><div key={x.component}><dt>{x.component}</dt><dd>{x.status} · {x.message}</dd></div>)}</dl></Panel><Panel title="Retention sweep"><dl className="v-kv">{Object.entries(retention??{}).map(([k,v])=><div key={k}><dt>{k}</dt><dd>{v==null?'Unavailable':String(v)}</dd></div>)}</dl>{!retention&&<p className="muted">Retention status unavailable.</p>}</Panel></>}

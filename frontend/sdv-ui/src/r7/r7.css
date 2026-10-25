@@ -525,3 +525,6 @@ html.r7-html, html.r7-html body { margin: 0; background: var(--bg); color: var(-
 
 /* Platform Operations — backend-connected v0 capacity-bar treatment */
 .op-capacity{height:9px;background:var(--surface-3, #293034);border-radius:99px;position:relative;overflow:visible;min-width:160px}.op-capacity-fill{height:100%;border-radius:inherit}
+
+/* Platform Audit: main filters workflow with R7 presentation */
+.op-audit-filters{display:grid;grid-template-columns:repeat(4,minmax(140px,1fr)) auto;gap:12px;align-items:end}.op-audit-toolbar{display:flex;gap:18px;align-items:center;flex-wrap:wrap;margin-top:14px}.op-audit-advanced{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-top:14px;padding-top:14px;border-top:1px solid var(--line)}.op-audit-details{white-space:pre-wrap;overflow-wrap:anywhere;background:var(--surface-2);border-radius:8px;padding:14px;max-height:340px;overflow:auto}@media(max-width:1150px){.op-audit-filters{grid-template-columns:repeat(2,minmax(0,1fr))}.op-audit-advanced{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:600px){.op-audit-filters,.op-audit-advanced{grid-template-columns:minmax(0,1fr)}}
