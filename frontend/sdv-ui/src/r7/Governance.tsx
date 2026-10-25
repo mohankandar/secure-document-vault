@@ -122,7 +122,7 @@ function RetentionTab() {
           <div className="stack" style={{gap:4}}>
             <span className="row"><Status value="ACTIVE" label={'Version '+policy.version+' · active'}/></span>
             <span style={{fontSize:32,fontWeight:600,letterSpacing:'-0.02em',lineHeight:1.1}}>{policy.indefinite?'Indefinite':policy.defaultRetentionDays?.toLocaleString()+' days'}</span>
-            <span className="muted">Effective {fmtDate(policy.effectiveFrom)} · by {policy.createdBy}</span>
+            <span className="muted">{policy.indefinite?'No expiration':policy.defaultRetentionDays!=null?'≈ '+(policy.defaultRetentionDays/365).toFixed(1)+' years after ingestion · ':''} Effective {fmtDate(policy.effectiveFrom)} · by {policy.createdBy}</span>
           </div>
           <button type="button" className="v-btn primary" disabled={!can('CONFIGURE_RETENTION')} onClick={()=>{setOpen(true);setAck(false);setNote('');setIndefinite(policy.indefinite);setDays(String(policy.defaultRetentionDays??365))}}><Plus size={16} aria-hidden/>New version</button>
         </div>
@@ -167,7 +167,7 @@ function LiveMetadataTab(){
   const [orderSaved,setOrderSaved]=useState<string[]>([])
   const [orderSaving,setOrderSaving]=useState(false)
   useEffect(()=>{let active=true;adminMetadataSources().then(rows=>{if(active){setSources(rows);setSourceId(rows[0]?.sourceId??'')}}).catch(e=>{if(active)setError(String(e))}).finally(()=>{if(active)setLoading(false)});return()=>{active=false}},[])
-  useEffect(()=>{if(!sourceId)return;let active=true;setLoading(true);setError('');setFields([]);setOrdering(false);Promise.all([adminMetadataFields(sourceId),getMetadataDisplayOrder(sourceId)]).then(([rows,order])=>{
+  useEffect(()=>{if(!sourceId){setFields([]);setEditing(null);setDraft(null);return}let active=true;setLoading(true);setError('');setFields([]);setOrdering(false);setEditing(null);setDraft(null);Promise.all([adminMetadataFields(sourceId),getMetadataDisplayOrder(sourceId)]).then(([rows,order])=>{
     if(active){
       const keys=[...order.filter(k=>rows.some(f=>f.fieldKey===k)),...rows.map(f=>f.fieldKey).filter(k=>!order.includes(k))]
       setFields([...rows].sort((a,b)=>keys.indexOf(a.fieldKey)-keys.indexOf(b.fieldKey)))
@@ -213,7 +213,7 @@ function LiveMetadataTab(){
         }}>Save order</button>
       </div>
     </Panel>}
-    <Panel flush title="Searchable fields" meta={fields.length} description="Tenant IT defines the metadata keys external systems send. Here Business Administrators choose which fields appear in Business Search, their labels, matching and display order."
+    <Panel flush title="Searchable fields" meta={fields.length} description="Field keys come from Tenant IT's integration contract. Here you control labels, matching, business search visibility, and display order."
       actions={<span className="row" style={{gap:8}}>
         <select className="v-select" aria-label="Source" value={sourceId} onChange={e=>setSourceId(e.target.value)} style={{minWidth:180}}>
           {sources.map(s=><option key={s.sourceId} value={s.sourceId}>{s.displayName}</option>)}
@@ -230,17 +230,17 @@ function LiveMetadataTab(){
           <td className="act"><button type="button" className="v-btn sm" disabled={!can('CONFIGURE_METADATA_SEARCH')} onClick={()=>{setEditing(f);setDraft({...f})}}><Pencil size={14} aria-hidden/>Edit</button></td>
         </tr>)}</tbody></table>}
     </Panel>
-    <Panel title="Business limits" description="Backend-enforced operation limits. These are application limits, not editable tenant settings."><dl className="v-kv cols">
+    <Panel title="Business limits" description="Applied across business search and document collaboration. These limits are enforced by the backend."><dl className="v-kv cols">
       <div><dt>Maximum results per page</dt><dd>50</dd></div><div><dt>Results per page (current UI)</dt><dd>{BUSINESS_LIMITS.pageSize}</dd></div>
       <div><dt>Comment length</dt><dd>{BUSINESS_LIMITS.maxCommentLength.toLocaleString()} characters</dd></div><div><dt>Tag length</dt><dd>{BUSINESS_LIMITS.maxTagLength} characters</dd></div>
     </dl></Panel>
-    {editing&&draft&&<Drawer eyebrow={sources.find(s=>s.sourceId===sourceId)?.displayName??''} title="Configure Business Search field" onClose={()=>{if(!saving){setEditing(null);setDraft(null)}}}
+    {editing&&draft&&<Drawer eyebrow={sources.find(s=>s.sourceId===sourceId)?.displayName??''} title="Edit search behavior" onClose={()=>{if(!saving){setEditing(null);setDraft(null)}}}
       footer={<><button type="button" className="v-btn" disabled={saving} onClick={()=>{setEditing(null);setDraft(null)}}>Cancel</button><button type="button" className="v-btn primary" disabled={!draft.displayLabel.trim()||saving} onClick={()=>void save()}>{saving?'Saving…':'Save field'}</button></>}>
       <dl className="v-kv"><div><dt>Field key</dt><dd className="mono">{draft.fieldKey}</dd></div><div><dt>Type · normalization</dt><dd>{draft.fieldType} · {draft.normalization}</dd></div><div><dt>Identifier</dt><dd>{draft.businessIdentifier?'Yes — defined by the integration contract':'No'}</dd></div></dl>
       <label className="v-field"><span>Display label</span><input className="v-input" value={draft.displayLabel} onChange={e=>setDraft({...draft,displayLabel:e.target.value})}/></label>
       <div className="row between"><span className="v-label">Show in business search</span><Switch label="Searchable" checked={draft.searchable} disabled={draft.businessIdentifier} onChange={v=>setDraft({...draft,searchable:v})}/></div>
       {draft.businessIdentifier&&<small className="faint">Identifiers are always searchable.</small>}
-      <label className="v-field"><span>Match behavior</span><select className="v-select" value={draft.searchMode} onChange={e=>setDraft({...draft,searchMode:e.target.value as AdminMetadataField['searchMode']})}>{Object.entries(MODE_LABEL).map(([mode,label])=><option key={mode} value={mode}>{label}</option>)}</select></label>
+      <label className="v-field"><span>Matching</span><select className="v-select" disabled={!draft.searchable} value={draft.searchMode} onChange={e=>setDraft({...draft,searchMode:e.target.value as AdminMetadataField['searchMode']})}>{Object.entries(MODE_LABEL).map(([mode,label])=><option key={mode} value={mode}>{label}</option>)}</select></label>
     </Drawer>}
   </>
 }
