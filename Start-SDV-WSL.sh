@@ -95,7 +95,6 @@ if ready_http "http://127.0.0.1:8280/actuator/health" | grep -q '"status":"UP"';
     fail "Port 8280 responds, but is not recognized as SDV. Stop and inspect manually."
   say "Backend already healthy on port 8280"
 else
-  [[ ! -e /proc/net/tcp ]] || true
   if (ss -ltn 2>/dev/null | grep -qE '[:.]8280[[:space:]]'); then
     fail "Port 8280 is in use, but SDV health is unavailable. See existing backend logs/process."
   fi
