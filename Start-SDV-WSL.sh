@@ -3,12 +3,53 @@
 # Does not build code, initialize Vault, recreate containers, or touch DEMO.
 set -Eeuo pipefail
 
-ROOT="$HOME/projects/sdv/secure-document-vault"
+# Paths default to the current checkout, but can be supplied at runtime.
+ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+VAULT_INIT="${SDV_DEV_VAULT_INIT_FILE:-$HOME/backups/sdv-dev-vault/initialization.json}"
+VAULT_TOKEN_FILE="${SDV_DEV_VAULT_TOKEN_FILE:-$HOME/backups/sdv-dev-vault/sdv-app.token}"
+VAULT_URL="${SDV_DEV_VAULT_URL:-http://127.0.0.1:8200}"
+DB_CONTAINER="${SDV_DEV_DB_CONTAINER:-sdv-postgres}"
+VAULT_CONTAINER="${SDV_DEV_VAULT_CONTAINER:-sdv-vault}"
+LOG_DIR=""
+
+usage() {
+  cat <<'HELP'
+Start-SDV-WSL.sh: existing SDV local/DEV environment ONLY, not production.
+Usage: bash Start-SDV-WSL.sh [options]
+  --app-dir PATH           SDV checkout (default: directory containing script)
+  --token-file PATH        Restricted Vault application token file
+  --init-file PATH         Existing Vault initialization JSON (optional if unsealed)
+  --logs-dir PATH          Override sibling log directory
+  --vault-url URL          Loopback Vault endpoint (default: http://127.0.0.1:8200)
+  --db-container NAME      Existing PostgreSQL container
+  --vault-container NAME   Existing Vault container
+  --help                   Show help
+HELP
+}
+while (( $# )); do
+  case "$1" in
+    --app-dir|--token-file|--init-file|--logs-dir|--vault-url|--db-container|--vault-container)
+      (( $# >= 2 )) || { echo "Missing value for $1" >&2; exit 2; }
+      case "$1" in
+        --app-dir) ROOT="$2";;
+        --token-file) VAULT_TOKEN_FILE="$2";;
+        --init-file) VAULT_INIT="$2";;
+        --logs-dir) LOG_DIR="$2";;
+        --vault-url) VAULT_URL="$2";;
+        --db-container) DB_CONTAINER="$2";;
+        --vault-container) VAULT_CONTAINER="$2";;
+      esac
+      shift 2;;
+    --help|-h) usage; exit 0;;
+    *) echo "Unknown argument: $1" >&2; usage >&2; exit 2;;
+  esac
+done
+[[ -d "$ROOT" ]] || { echo "Application directory not found: $ROOT" >&2; exit 1; }
+ROOT="$(cd "$ROOT" && pwd -P)"
+[[ -n "$LOG_DIR" ]] || LOG_DIR="$(dirname "$ROOT")/logs"
 JAR="$ROOT/backend/sdv-web/target/sdv-web-0.1.0-SNAPSHOT.jar"
 FRONTEND="$ROOT/frontend/sdv-ui"
-VAULT_INIT="$HOME/backups/sdv-dev-vault/initialization.json"
-VAULT_TOKEN_FILE="$HOME/backups/sdv-dev-vault/sdv-app.token"
-RUNTIME="$HOME/.local/state/sdv-dev"
+RUNTIME="$LOG_DIR"
 
 say() { printf '\n[SDV DEV] %s\n' "$*"; }
 fail() { printf '\n[SDV DEV] ERROR: %s\n' "$*" >&2; exit 1; }
@@ -18,6 +59,10 @@ ready_http() { curl --silent --show-error --fail --max-time 2 "$1" 2>/dev/null; 
 [[ -s "$JAR" ]] || fail "Backend JAR missing; build SDV first: $JAR"
 [[ -d "$FRONTEND/node_modules" ]] || fail "Frontend dependencies missing; run npm ci in $FRONTEND"
 [[ -s "$VAULT_TOKEN_FILE" ]] || fail "SDV application Vault token missing: $VAULT_TOKEN_FILE"
+[[ "$VAULT_URL" == http://127.0.0.1:* || "$VAULT_URL" == http://localhost:* ]] ||
+  fail "Local DEV launcher requires loopback Vault. Production needs an independent deployment."
+say "Application: $ROOT"
+say "Logs: $LOG_DIR"
 for tool in docker curl python3 java npm; do
   command -v "$tool" >/dev/null 2>&1 || fail "Missing command: $tool"
 done
@@ -31,7 +76,7 @@ chmod 700 "$RUNTIME"
 umask 077
 
 # Reuse existing named containers and their durable volumes. Never use compose down -v.
-for name in sdv-postgres sdv-vault; do
+for name in "$DB_CONTAINER" "$VAULT_CONTAINER"; do
   docker container inspect "$name" >/dev/null 2>&1 ||
     fail "Existing container $name not found. Stop; do not initialize a replacement automatically."
   running="$(docker inspect --format '{{.State.Running}}' "$name")"
@@ -46,22 +91,22 @@ done
 say "Checking PostgreSQL readiness"
 db_ready=false
 for _ in $(seq 1 40); do
-  if docker exec sdv-postgres pg_isready -U sdv -d sdv >/dev/null 2>&1; then
+  if docker exec "$DB_CONTAINER" pg_isready -U sdv -d sdv >/dev/null 2>&1; then
     db_ready=true
     break
   fi
   sleep 1
 done
-[[ "$db_ready" == "true" ]] || fail "PostgreSQL did not become ready. Check: docker logs sdv-postgres --tail 60"
+[[ "$db_ready" == "true" ]] || fail "PostgreSQL did not become ready. Check: docker logs "$DB_CONTAINER" --tail 60"
 
 say "Checking Vault seal status"
-python3 - "$VAULT_INIT" <<'PY'
+python3 - "$VAULT_INIT" "$VAULT_URL" <<'PY'
 import json
 import sys
 from pathlib import Path
 from urllib.request import Request, urlopen
 
-base = "http://127.0.0.1:8200/v1"
+base = sys.argv[2].rstrip("/") + "/v1"
 
 def call(path, payload=None):
     data = json.dumps(payload).encode() if payload is not None else None
@@ -103,7 +148,7 @@ else
     cd "$ROOT"
     nohup env -u SDV_VAULT_TOKEN \
       SDV_KEY_PROVIDER=vault \
-      SDV_VAULT_BASE_URL=http://127.0.0.1:8200 \
+      SDV_VAULT_BASE_URL="$VAULT_URL" \
       SDV_VAULT_TOKEN_FILE="$VAULT_TOKEN_FILE" \
       java -jar "$JAR" --spring.profiles.active=local \
       >"$RUNTIME/backend.log" 2>&1 </dev/null &
