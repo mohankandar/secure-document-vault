@@ -88,3 +88,7 @@ One commit on `feature/page-view-audit`: "feat(audit): one page event per page p
 - (a) keep "Loaded page 3" plus the document ID in Audit;
 - (b) have the Audit API look up the document's file name when it lists events;
 - (c) store the file name in the page event's safe details.
+
+## Owner's answer (2026-11-18)
+
+Option **(a)**: Audit keeps "Loaded page 3" with the document ID in the Target column, as built. Task 0011 Part C.3 will add the record and file name to Audit **by lookup**. File names are **not** stored in audit details. No code change was needed for this answer.
