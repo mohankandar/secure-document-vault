@@ -145,6 +145,13 @@ export async function endOidcSession(): Promise<void> {
   window.location.assign(config.redirectUri)
 }
 
+/** Task 0012: how people sign in, in words, for About this installation. Never a token or a secret. */
+export function signInSummary(): { kind: 'local' | 'oidc'; address: string | null } {
+  if (isLocalSecurityMode()) return { kind: 'local', address: null }
+  const issuer = String(import.meta.env.VITE_OIDC_ISSUER || '').replace(/\/$/, '')
+  return { kind: 'oidc', address: issuer || null }
+}
+
 function oidcConfig() {
   const issuer = String(import.meta.env.VITE_OIDC_ISSUER || '').replace(/\/$/, '')
   const clientId = String(import.meta.env.VITE_OIDC_CLIENT_ID || '')

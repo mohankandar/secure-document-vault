@@ -577,6 +577,149 @@ async function auditChecks(page: Page, testInfo: TestInfo) {
   await capture(page, testInfo, 'audit-exported')
 }
 
+// ---- Overview, Storage, Health, About and Sign-in (task 0012) ----
+
+const opsTab = (page: Page, name: string) => page.getByRole('tablist', { name: 'Platform operations sections' }).getByRole('tab', { name: new RegExp(`^${name}( needs attention)?$`) })
+const ISO_STAMP = /\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/
+/** Raw status words that must not show as text on these pages (Technical details stay folded). */
+const RAW_WORDS = /\b(DEGRADED|ATTENTION|NOT_CONFIGURED|OFFLINE|ACTIVE|NEVER_RUN|lastSweepAt|attention submissions)\b|^UP$|^DOWN$/
+
+async function expectNoRawWords(page: Page) {
+  await expect(visible(page, RAW_WORDS)).toHaveCount(0)
+  const text = await page.locator('main, .v-page').first().innerText()
+  expect(text, 'no ISO time stamps on screen').not.toMatch(ISO_STAMP)
+}
+
+/** Overview: the opening sentence and four tiles with the demo problems, then (simulated) with nothing wrong. */
+async function overviewChecks(page: Page, testInfo: TestInfo) {
+  await opsTab(page, 'Overview').click()
+  const lead = page.getByRole('region', { name: 'How Vero is doing' })
+  await expect(lead).toContainText(/^(\d+ things? needs? attention\. .+\.|Everything is working\.)/, { timeout: 15000 })
+  const tiles = page.getByRole('list', { name: 'Overview tiles' }).getByRole('listitem')
+  await expect(tiles).toHaveCount(4)
+  for (const [i, label] of ['Problems', 'Storage', 'Services', 'Cleanup'].entries()) await expect(tiles.nth(i)).toContainText(label)
+  await expect(tiles.nth(1)).toContainText(/warns at \d+%, stops at \d+%|Can’t reach|No volume/)
+  await expect(tiles.nth(3)).toContainText(/deleted today|Last run failed/, { timeout: 15000 })
+  // The demo data has problems; a volume Tenant IT set offline on purpose is never one of the things needing attention.
+  await expect(lead).toContainText(/did not arrive properly/)
+  await expect(lead).not.toContainText('tour-volume')
+  await expect(tiles.nth(0)).toContainText(/could not be stored|stuck|missing documents/)
+  const activity = page.getByRole('list', { name: 'Latest activity' }).getByRole('listitem')
+  await expect(activity.first()).toBeVisible({ timeout: 15000 })
+  expect(await activity.count()).toBeLessThanOrEqual(5)
+  await expect(activity.first()).toContainText(/^(Today|Yesterday|\d+ \w+) \d{2}:\d{2}/)
+  await expectNoRawWords(page)
+  await capture(page, testInfo, 'overview-with-problems')
+  await tiles.nth(0).click()
+  await expect(opsTab(page, 'Problems')).toHaveAttribute('aria-selected', 'true')
+
+  // Nothing wrong (simulated in the browser only): "Everything is working."
+  await page.route('**/api/v1/operations/summary', async (route) => {
+    const s = await (await route.fetch()).json()
+    await route.fulfill({ json: { ...s, processingFailureCount: 0, stuckDocumentCount: 0, attentionSubmissionCount: 0, processingFailures: [], stuckDocuments: [], attentionSubmissions: [],
+      storageVolumes: s.storageVolumes.map((v: Record<string, unknown>) => (v.state === 'ACTIVE' ? { ...v, warningThresholdReached: false, stopWriteThresholdReached: false, observationError: null, writable: true } : v)) } })
+  })
+  await page.route('**/api/v1/operations/retention-status', (route) => route.fulfill({ json: { outcome: 'SUCCESS', startedAt: new Date().toISOString(), completedAt: new Date().toISOString(), candidates: 0, deleted: 0, failed: 0, reasonCode: null } }))
+  await opsTab(page, 'Overview').click()
+  await expect(lead).toHaveText('Everything is working.', { timeout: 15000 })
+  await expect(tiles.nth(0)).toContainText('None')
+  await expect(tiles.nth(2)).toContainText('All working')
+  await capture(page, testInfo, 'overview-all-working')
+  await page.unroute('**/api/v1/operations/summary')
+  await page.unroute('**/api/v1/operations/retention-status')
+}
+
+/** Storage for Platform operations: read-only, in words, with what to do and folded technical details. */
+async function opsStorageChecks(page: Page, testInfo: TestInfo) {
+  await opsTab(page, 'Storage').click()
+  const table = page.getByRole('table', { name: 'Storage volumes' })
+  await expect(table).toBeVisible({ timeout: 15000 })
+  await expect(table.locator('thead th')).toHaveText(['Volume', 'Role', 'How full', 'Can store new documents'])
+  await expect(table.locator('tbody tr').filter({ hasText: 'Local demo volume' })).toContainText(/In use/)
+  const offline = table.locator('tbody tr').filter({ hasText: 'tour-volume' })
+  if (await offline.count()) {
+    await expect(offline).toContainText('Offline (set by Tenant IT)')
+    await expect(offline).toContainText('No: offline on purpose')
+  }
+  await expect(page.getByRole('button', { name: /Edit|Add volume|Save/ })).toHaveCount(0)
+  await expect(page.getByText('What to do', { exact: true })).toBeVisible()
+  await expect(page.locator('details.st-tech')).not.toHaveAttribute('open', '')
+  await expectNoRawWords(page)
+  await capture(page, testInfo, 'ops-storage')
+}
+
+/** Health: checked time and Check now, services in words, a stopped key service (simulated), and cleanup in a sentence. */
+async function healthChecks(page: Page, testInfo: TestInfo) {
+  await opsTab(page, 'Health').click()
+  await expect(page.getByRole('status').filter({ hasText: /^Checked (just now|\d+ minutes? ago)$/ })).toBeVisible({ timeout: 15000 })
+  await expect(page.getByRole('button', { name: 'Refresh' })).toHaveCount(0)
+  const services = page.getByRole('table', { name: 'Services' })
+  await expect(services.locator('tbody tr')).toHaveCount(3)
+  for (const [name, does] of [['Vero', 'The application itself'], ['Database', 'Keeps records, settings and the audit'], ['Key service', 'Locks and unlocks stored documents (Vault)']]) {
+    await expect(services.locator('tbody tr').filter({ hasText: name }).first()).toContainText(does)
+  }
+  const cleanup = page.getByRole('region', { name: 'Automatic cleanup' })
+  await expect(cleanup).toContainText(/Last ran (today|yesterday|on .+) at \d{2}:\d{2}|hasn’t run since Vero last started/)
+  await expectNoRawWords(page)
+  await capture(page, testInfo, 'health')
+
+  // The key service stops (simulated in the browser only), and a cleanup run fails.
+  await page.route('**/api/v1/operations/summary', async (route) => {
+    const s = await (await route.fetch()).json()
+    await route.fulfill({ json: { ...s, keyService: { ...s.keyService, status: 'DOWN', message: 'Key service health check failed.' } } })
+  })
+  await page.route('**/api/v1/operations/retention-status', (route) => route.fulfill({ json: { outcome: 'FAILED', startedAt: new Date().toISOString(), completedAt: new Date().toISOString(), candidates: 0, deleted: 0, failed: 1, reasonCode: 'RETENTION_SWEEP_FAILED' } }))
+  await page.getByRole('button', { name: 'Check now' }).click()
+  await expect(page.getByText('Key service isn’t answering. Nobody can open documents and new deliveries wait. Check that Vault is running and unsealed.')).toBeVisible({ timeout: 15000 })
+  await expect(services.locator('tbody tr').filter({ hasText: 'Key service' })).toContainText('Not answering')
+  await expect(cleanup).toContainText(/The last cleanup run failed today at \d{2}:\d{2}/)
+  await expect(cleanup).toContainText('What to do:')
+  await capture(page, testInfo, 'health-key-service-stopped')
+  await opsTab(page, 'Overview').click()
+  await expect(page.getByRole('region', { name: 'How Vero is doing' })).toContainText(/the key service isn’t answering/, { timeout: 15000 })
+  await page.unroute('**/api/v1/operations/summary')
+  await page.unroute('**/api/v1/operations/retention-status')
+}
+
+/** About: the facts, Copy details for support without personal data, and the old addresses open it. */
+async function aboutChecks(page: Page, testInfo: TestInfo, area: 'operations' | 'tenant', oldTab: 'configuration' | 'environment', person: string) {
+  await page.evaluate((hash) => { window.location.hash = hash }, `#/${area}/${oldTab}`)
+  const sections = area === 'operations' ? 'Platform operations sections' : 'Tenant IT sections'
+  await expect(page.getByRole('tablist', { name: sections }).getByRole('tab', { name: /^About/ })).toHaveAttribute('aria-selected', 'true', { timeout: 15000 })
+  await expect(page.getByRole('tablist', { name: sections }).getByRole('tab', { name: /^(Configuration|Environment|Platform health)$/ })).toHaveCount(0)
+  const facts = page.getByLabel('Installation facts')
+  await expect(facts).toContainText(/Product\s*Vero /, { timeout: 15000 })
+  for (const fact of ['Status', 'Organization', 'Sign-in', 'Checked']) await expect(facts).toContainText(fact)
+  await expect(facts).toContainText('Working')
+  await expect(facts).toContainText('SDV Local Demo Tenant')
+  await expect(facts).toContainText('Local test sign-in')
+  await expect(facts).toContainText(/Today \d{2}:\d{2}/)
+  await expect(page.locator('details.st-tech')).not.toHaveAttribute('open', '')
+  const note = await page.getByLabel('Details for support').textContent()
+  expect(note).toContain('Organization: SDV Local Demo Tenant')
+  expect(note).toContain('Active profiles: local')
+  expect(note, 'no personal data in the support note').not.toContain(person)
+  expect(note).not.toMatch(/local-[a-z-]+/)
+  if (isDesktop(testInfo)) {
+    await page.context().grantPermissions(['clipboard-read', 'clipboard-write'])
+    await page.getByRole('button', { name: 'Copy details for support' }).click()
+    await expect(page.getByRole('status').filter({ hasText: 'Copied' })).toBeVisible()
+    // Windows turns line breaks on the clipboard into CRLF.
+    expect((await page.evaluate(() => navigator.clipboard.readText())).replace(/\r\n/g, '\n')).toBe(note)
+  }
+  await expectNoRawWords(page)
+  await capture(page, testInfo, `about-${area}`)
+}
+
+/** Sign-in for Tenant IT: read-only, with who to contact to change it. */
+async function signInChecks(page: Page, testInfo: TestInfo) {
+  await tenantTab(page, 'Sign-in').click()
+  await expect(page.getByText('Sign-in is set during installation by your installer. To change it, contact your Vero support team.')).toBeVisible({ timeout: 15000 })
+  await expect(page.getByRole('button', { name: /Edit|draft|Test|Activate|Roll back|Save/i })).toHaveCount(0)
+  await expect(page.getByRole('textbox')).toHaveCount(0)
+  await capture(page, testInfo, 'sign-in-read-only')
+}
+
 /** A small CSV reader for the export check: quoted cells, doubled quotes, CRLF rows. */
 function parseCsv(text: string): string[][] {
   const out: string[][] = []
@@ -1006,7 +1149,7 @@ test.describe('SDV role-based screen capture', () => {
   })
 
   test('Tenant IT Administrator screens', async ({ page }, testInfo) => {
-    test.setTimeout(150_000)
+    test.setTimeout(240_000)
     await selectRole(page, 'Tenant IT Administrator')
     await expectNoRecordsAccess(page, testInfo, 'Tenant IT')
     await captureAccountMenu(page, testInfo)
@@ -1015,12 +1158,14 @@ test.describe('SDV role-based screen capture', () => {
       'Sign-in',
       'Integrations',
       'Problems',
-      'Environment',
+      'About',
     ])
     await expect(page.getByRole('tablist', { name: 'Tenant IT sections' }).getByRole('tab', { name: 'Audit' })).toHaveCount(0)
     await problemsChecks(page, testInfo, 'Tenant IT')
     await integrationsChecks(page, testInfo)
     await storageChecks(page, testInfo)
+    await signInChecks(page, testInfo)
+    await aboutChecks(page, testInfo, 'tenant', 'environment', 'Tom Tenant IT')
   })
 
   test('Local Administrator with several roles sees every area', async ({ page }, testInfo) => {
@@ -1038,7 +1183,7 @@ test.describe('SDV role-based screen capture', () => {
   })
 
   test('Platform Operations Administrator screens', async ({ page }, testInfo) => {
-    test.setTimeout(150_000)
+    test.setTimeout(300_000)
     await selectRole(page, 'Platform Operations Administrator')
     await expectNoRecordsAccess(page, testInfo, 'Platform operations')
     await captureAccountMenu(page, testInfo)
@@ -1046,11 +1191,15 @@ test.describe('SDV role-based screen capture', () => {
       'Overview',
       'Problems',
       'Storage',
-      'Platform health',
+      'Health',
       'Audit',
-      'Configuration',
+      'About',
     ])
     await problemsChecks(page, testInfo, 'Platform operations')
     await auditChecks(page, testInfo)
+    await overviewChecks(page, testInfo)
+    await opsStorageChecks(page, testInfo)
+    await healthChecks(page, testInfo)
+    await aboutChecks(page, testInfo, 'operations', 'configuration', 'Pat Platform Ops')
   })
 })

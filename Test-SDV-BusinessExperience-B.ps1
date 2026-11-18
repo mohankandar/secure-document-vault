@@ -181,7 +181,7 @@ try {
     ) 'TENANT_IT_ADMIN')
 
     [void](RequireExactCapabilities 'PLATFORM_OPERATIONS_ADMIN' @(
-        'PLATFORM_CONFIGURATION','VIEW_TECHNICAL_FAILURES'
+        'VIEW_TECHNICAL_FAILURES'
     ) 'PLATFORM_OPERATIONS_ADMIN')
 
     $multiSession = RequireExactCapabilities 'BUSINESS_ADMIN,BUSINESS_USER' @(
