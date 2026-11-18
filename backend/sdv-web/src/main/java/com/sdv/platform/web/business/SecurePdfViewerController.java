@@ -48,13 +48,15 @@ public class SecurePdfViewerController {
     public ResponseEntity<byte[]> page(
             @PathVariable UUID documentId,
             @PathVariable int pageNumber,
-            @RequestParam(defaultValue = "1.0") double scale) {
+            @RequestParam(defaultValue = "1.0") double scale,
+            @RequestParam(required = false) String viewingId) {
         SdvPrincipal principal = requireView();
         DocumentViewerService.PageImage page = viewer.renderPage(
                 principal.tenantId(),
                 documentId,
                 pageNumber,
                 scale,
+                parseViewingId(viewingId),
                 principal.subject(),
                 correlationId());
 
@@ -94,6 +96,16 @@ public class SecurePdfViewerController {
                         query,
                         principal.subject(),
                         correlationId()));
+    }
+
+    /** A missing or malformed viewing ID is treated as none: the page is then recorded as before. */
+    private static UUID parseViewingId(String value) {
+        if (value == null || value.isBlank()) return null;
+        try {
+            return UUID.fromString(value.trim());
+        } catch (IllegalArgumentException ex) {
+            return null;
+        }
     }
 
     private SdvPrincipal requireView() {

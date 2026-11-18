@@ -1,6 +1,7 @@
 package com.sdv.platform.application.viewer;
 
 import com.sdv.platform.application.port.AuditEventPort;
+import com.sdv.platform.application.port.PageViewAuditPort;
 import com.sdv.platform.application.port.DocumentIntakeRepository;
 import com.sdv.platform.application.port.StorageProvider;
 import com.sdv.platform.application.port.StorageVolumeRepository;
@@ -20,6 +21,7 @@ import org.apache.pdfbox.rendering.ImageType;
 import org.apache.pdfbox.rendering.PDFRenderer;
 import org.apache.pdfbox.text.PDFTextStripper;
 import org.apache.pdfbox.text.TextPosition;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import javax.imageio.ImageIO;
@@ -32,6 +34,8 @@ import java.io.OutputStream;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Clock;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Base64;
@@ -57,19 +61,38 @@ public class DocumentViewerService {
     private final List<StorageProvider> storageProviders;
     private final StreamingCryptoPort crypto;
     private final AuditEventPort audit;
-    private final Clock clock = Clock.systemUTC();
+    private final PageViewAuditPort pageViews;
+    private final Clock clock;
 
+    /** A viewing (one DOCUMENT_VIEW_OPENED) groups page events for this long. */
+    static final Duration VIEWING_LIFETIME = Duration.ofHours(8);
+
+    @Autowired
     public DocumentViewerService(
             DocumentIntakeRepository documents,
             StorageVolumeRepository volumes,
             List<StorageProvider> storageProviders,
             StreamingCryptoPort crypto,
-            AuditEventPort audit) {
+            AuditEventPort audit,
+            PageViewAuditPort pageViews) {
+        this(documents, volumes, storageProviders, crypto, audit, pageViews, Clock.systemUTC());
+    }
+
+    DocumentViewerService(
+            DocumentIntakeRepository documents,
+            StorageVolumeRepository volumes,
+            List<StorageProvider> storageProviders,
+            StreamingCryptoPort crypto,
+            AuditEventPort audit,
+            PageViewAuditPort pageViews,
+            Clock clock) {
         this.documents = documents;
         this.volumes = volumes;
         this.storageProviders = List.copyOf(storageProviders);
         this.crypto = crypto;
         this.audit = audit;
+        this.pageViews = pageViews;
+        this.clock = clock;
     }
 
     public ViewerMetadata metadata(
@@ -80,18 +103,16 @@ public class DocumentViewerService {
         Document document = requireAvailableDocument(tenantId, documentId);
         byte[] plaintext = verifiedPlaintext(document);
         try (PDDocument pdf = load(plaintext)) {
-            ViewerMetadata metadata = new ViewerMetadata(
-                    document.documentId(),
-                    document.originalFilename(),
-                    pdf.getNumberOfPages());
-            appendAudit(
+            int pageCount = pdf.getNumberOfPages();
+            // The open event's ID is the viewing ID: page requests send it back so each page is recorded once.
+            UUID viewingId = appendAudit(
                     tenantId,
                     actorId,
                     "DOCUMENT_VIEW_OPENED",
                     documentId,
                     correlationId,
-                    "{\"pageCount\":" + metadata.pageCount() + "}");
-            return metadata;
+                    "{\"pageCount\":" + pageCount + "}");
+            return new ViewerMetadata(document.documentId(), document.originalFilename(), pageCount, viewingId);
         } catch (IOException ex) {
             throw unavailable(ex);
         } finally {
@@ -104,6 +125,23 @@ public class DocumentViewerService {
             UUID documentId,
             int pageNumber,
             double scale,
+            String actorId,
+            String correlationId) {
+        return renderPage(tenantId, documentId, pageNumber, scale, null, actorId, correlationId);
+    }
+
+    /**
+     * Renders one page. With a {@code viewingId} that the server accepts (this person's own DOCUMENT_VIEW_OPENED for
+     * this document and tenant, less than {@link #VIEWING_LIFETIME} old) the page event is written only the first
+     * time this page is sent in that viewing, whatever the zoom. Without one, or with one it does not accept, the
+     * page is recorded as before: leaving the ID out can never avoid the record.
+     */
+    public PageImage renderPage(
+            UUID tenantId,
+            UUID documentId,
+            int pageNumber,
+            double scale,
+            UUID viewingId,
             String actorId,
             String correlationId) {
         if (pageNumber < 1) throw new IllegalArgumentException("page must be at least 1.");
@@ -141,13 +179,24 @@ public class DocumentViewerService {
                 throw new IOException("PNG renderer is unavailable.");
             }
 
-            appendAudit(
-                    tenantId,
-                    actorId,
-                    "DOCUMENT_PAGE_VIEWED",
-                    documentId,
-                    correlationId,
-                    "{\"page\":" + pageNumber + ",\"scale\":" + String.format(Locale.ROOT, "%.2f", scale) + "}");
+            String scaleText = String.format(Locale.ROOT, "%.2f", scale);
+            Instant now = clock.instant();
+            Instant notBefore = now.minus(VIEWING_LIFETIME);
+            if (viewingId != null && pageViews.isViewing(tenantId, actorId, documentId, viewingId, notBefore)) {
+                pageViews.appendPageEventOnce(new AuditEvent(
+                        UUID.randomUUID(), tenantId, "USER", actorId, "DOCUMENT_PAGE_VIEWED", "DOCUMENT",
+                        documentId.toString(), now, correlationId, AuditOutcome.SUCCESS,
+                        "{\"page\":" + pageNumber + ",\"scale\":" + scaleText + ",\"viewingId\":\"" + viewingId + "\"}"),
+                        viewingId, pageNumber, notBefore);
+            } else {
+                appendAudit(
+                        tenantId,
+                        actorId,
+                        "DOCUMENT_PAGE_VIEWED",
+                        documentId,
+                        correlationId,
+                        "{\"page\":" + pageNumber + ",\"scale\":" + scaleText + "}");
+            }
 
             return new PageImage(
                     png.toByteArray(),
@@ -409,15 +458,17 @@ public class DocumentViewerService {
         }
     }
 
-    private void appendAudit(
+    /** Appends an audit event and returns its ID. */
+    private UUID appendAudit(
             UUID tenantId,
             String actorId,
             String action,
             UUID documentId,
             String correlationId,
             String safeDetails) {
+        UUID eventId = UUID.randomUUID();
         audit.append(new AuditEvent(
-                UUID.randomUUID(),
+                eventId,
                 tenantId,
                 "USER",
                 actorId,
@@ -428,6 +479,7 @@ public class DocumentViewerService {
                 correlationId,
                 AuditOutcome.SUCCESS,
                 safeDetails));
+        return eventId;
     }
 
     private static int countOccurrences(String text, String search) {
@@ -447,10 +499,12 @@ public class DocumentViewerService {
                 "The document cannot be securely rendered right now.", ex);
     }
 
+    /** viewingId: the ID of this opening's DOCUMENT_VIEW_OPENED event; page requests send it back. */
     public record ViewerMetadata(
             UUID documentId,
             String originalFilename,
-            int pageCount) { }
+            int pageCount,
+            UUID viewingId) { }
 
     public record PageImage(
             byte[] pngBytes,

@@ -3,7 +3,7 @@ import { ArrowLeft, ChevronLeft, ChevronRight, Download, Eraser, Info, Maximize2
 import { useStore } from './store'
 import { BUSINESS_LIMITS, PAGE_TEXT, RETENTION, type Doc, type RecordItem, type Redaction } from './data'
 import { ApiRequestError } from '../api'
-import { Badge, Callout, Dialog, Drawer, Tabs, fmtDate, fmtDateTime, fmtRel, humanize } from './ui'
+import { Badge, Callout, Dialog, Drawer, Tabs, auditEventLabel, fmtDate, fmtDateTime, fmtRel, humanize } from './ui'
 import { viewerMetadata, viewerPage, viewerSearch, record as fetchRecord, toRecord, documentActivity, type LiveDocumentActivity, type ViewerSearch, documentTags, documentComments, createDocumentTag, createDocumentComment, type LiveTag, type LiveComment, secureDownload, recordPrintEvent, permanentRedaction, viewerPreviews } from './liveApi'
 
 type Zoom = 'width' | 'page' | number
@@ -32,6 +32,8 @@ export function Viewer({ record, results, docId, onClose, recordTitle, backLabel
   const { can, setOpenDocId, setSelectedRef, setRecords, updateDoc, addDocActivity, toast, liveSession } = useStore()
   const doc = record.docs.find((d) => d.id === docId) ?? record.docs[0]
   const [pageCount, setPageCount] = useState(0)
+  // This opening's ID from the server; page requests send it so each page is recorded once per viewing (task 0007).
+  const [viewingId, setViewingId] = useState('')
   const [viewerFailure, setViewerFailure] = useState('')
   const [viewerLoading, setViewerLoading] = useState(true)
   const [searchResults, setSearchResults] = useState<ViewerSearch | null>(null)
@@ -60,7 +62,8 @@ export function Viewer({ record, results, docId, onClose, recordTitle, backLabel
     let active = true
     setPage(1); setPageCount(0); setSearchResults(null); setQuery(''); setViewerFailure(''); setViewerLoading(true)
     canvasRef.current?.scrollTo({ top: 0 })
-    viewerMetadata(doc.id).then(m => { if(active)setPageCount(m.pageCount) })
+    setViewingId('')
+    viewerMetadata(doc.id).then(m => { if(active){setViewingId(m.viewingId ?? '');setPageCount(m.pageCount)} })
       .catch(e => {if(active)setViewerFailure(e instanceof Error ? e.message : 'Document unavailable')})
       .finally(() => {if(active)setViewerLoading(false)})
     return () => {active=false}
@@ -154,7 +157,7 @@ export function Viewer({ record, results, docId, onClose, recordTitle, backLabel
     setActionBusy(true)
     try {
       // Print the authorized rendered pages, without requesting the raw PDF download.
-      const images=await Promise.all(Array.from({length:pageTotal},(_,i)=>viewerPage(doc.id,i+1,1)))
+      const images=await Promise.all(Array.from({length:pageTotal},(_,i)=>viewerPage(doc.id,i+1,1,viewingId||undefined)))
       const urls=images.map(b=>URL.createObjectURL(b))
       const frame=document.createElement('iframe')
       frame.setAttribute('title','Print document')
@@ -208,7 +211,7 @@ export function Viewer({ record, results, docId, onClose, recordTitle, backLabel
       setMarks([]);setRedacting(false);setReview(false);setQuery('');setSearchResults(null)
       setRenderRevision(n=>n+1)
       setPageCount(0)
-      viewerMetadata(doc.id).then(m=>setPageCount(m.pageCount)).catch(e=>setViewerFailure(String(e)))
+      viewerMetadata(doc.id).then(m=>{setViewingId(m.viewingId ?? '');setPageCount(m.pageCount)}).catch(e=>setViewerFailure(String(e)))
       toast({title:'Permanent corrective redaction completed'})
     }catch(e){setRedactionFailure(errorText(e)); if(isRefused(e))failed('Redaction failed',e)}
     finally{setActionBusy(false)}
@@ -338,7 +341,7 @@ export function Viewer({ record, results, docId, onClose, recordTitle, backLabel
             return <div key={p} data-page={p} ref={el => {sheetRefs.current[i]=el}} className="vw-sheet"
               style={{width:sheetWidth,maxWidth:'none',position:'relative',minHeight:Math.round(sheetWidth*1.25)}}
               aria-label={`Page ${p} of ${pageTotal}`}>
-              <SecurePage key={doc.id+':'+renderRevision+':'+p} documentId={doc.id} page={p} scale={Math.min(2.5,Math.max(.5,sheetWidth/816))}
+              <SecurePage key={doc.id+':'+renderRevision+':'+p} documentId={doc.id} viewingId={viewingId} page={p} scale={Math.min(2.5,Math.max(.5,sheetWidth/816))}
                 scrollRoot={canvasRef} matches={searchResults?.pages.find(x=>x.pageNumber===p)?.matchCount ?? 0}
                 highlights={searchResults?.highlights?.filter(h=>h.pageNumber===p) ?? []}
                 redacting={redacting} marks={marks.filter(m=>m.page===p)} drawing={drawing?.page===p?drawing:null}
@@ -386,8 +389,8 @@ export function Viewer({ record, results, docId, onClose, recordTitle, backLabel
   )
 }
 
-function SecurePage({documentId,page,scale,scrollRoot,matches,highlights,redacting,marks,drawing,onPointerDown,onPointerMove,onPointerUp,onPointerCancel}:{
-  documentId:string;page:number;scale:number;scrollRoot:React.RefObject<HTMLDivElement>;
+function SecurePage({documentId,viewingId,page,scale,scrollRoot,matches,highlights,redacting,marks,drawing,onPointerDown,onPointerMove,onPointerUp,onPointerCancel}:{
+  documentId:string;viewingId:string;page:number;scale:number;scrollRoot:React.RefObject<HTMLDivElement>;
   matches:number;highlights:{pageNumber:number;x:number;y:number;width:number;height:number}[];
   redacting:boolean;marks:Redaction[];drawing:Redaction|null;
   onPointerDown:(e:RPointerEvent<HTMLDivElement>)=>void;onPointerMove:(e:RPointerEvent<HTMLDivElement>)=>void;
@@ -410,13 +413,13 @@ function SecurePage({documentId,page,scale,scrollRoot,matches,highlights,redacti
   useEffect(()=>{
     if(!visible)return
     let active=true
-    viewerPage(documentId,page,Number(scale.toFixed(2))).then(blob=>{
+    viewerPage(documentId,page,Number(scale.toFixed(2)),viewingId||undefined).then(blob=>{
       const objectUrl=URL.createObjectURL(blob)
       if(active)setUrl(objectUrl)
       else URL.revokeObjectURL(objectUrl)
     }).catch(e=>{if(active)setError(e instanceof Error?e.message:'Page failed to load')})
     return ()=>{active=false}
-  },[visible,documentId,page,scale])
+  },[visible,documentId,page,scale,viewingId])
   useEffect(()=>()=>{if(url)URL.revokeObjectURL(url)},[url])
   return <div ref={container} style={{width:'100%',minHeight:'inherit'}}>
     {url ? <div style={{position:'relative',width:'100%',lineHeight:0,touchAction:redacting?'none':'auto',cursor:redacting?'crosshair':'auto'}}
@@ -604,7 +607,7 @@ function DocInfo({ doc, tab, setTab, embedded }: { doc: Doc; tab: InfoTab; setTa
         {activityError && <Callout tone="warn" title="Activity unavailable">{activityError}</Callout>}
         {liveSession && !activityError && liveEvents.length===0 && <p className="faint">No matching activity.</p>}
         <ol className="v-timeline">
-          {liveSession && liveEvents.map(a=><li key={a.auditEventId}><span className={`pt ${a.outcome==='SUCCESS'?'ok':'bad'}`} aria-hidden/><div className="stack" style={{gap:0}}><strong>{humanize(a.action.replace('DOCUMENT_',''))}</strong><span>{a.actorId} · {fmtDateTime(a.occurredAt)}</span></div></li>)}
+          {liveSession && liveEvents.map(a=><li key={a.auditEventId}><span className={`pt ${a.outcome==='SUCCESS'?'ok':'bad'}`} aria-hidden/><div className="stack" style={{gap:0}}><strong>{auditEventLabel(a.action,a.safeDetailsJson,doc.filename,true)}</strong><span>{a.actorId} · {fmtDateTime(a.occurredAt)}</span></div></li>)}
           {!liveSession && doc.activity.map((a) => (
             <li key={a.id}><span className={`pt ${a.simulated ? 'sim' : a.outcome === 'SUCCESS' ? 'ok' : 'bad'}`} aria-hidden />
               <div className="stack" style={{ gap: 0 }}><strong>{humanize(a.action.replace('DOCUMENT_', ''))}</strong><span>{a.actor} · {fmtDateTime(a.at)}{a.simulated ? ' · simulated' : ''}</span></div>

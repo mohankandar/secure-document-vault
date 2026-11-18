@@ -20,6 +20,20 @@ export const fmtRel = (v: string, now: number = Date.now()) => {
   return fmtDate(v)
 }
 export const humanize = (code: string) => code.toLowerCase().replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase())
+
+/**
+ * Plain-words label for an audit event. A page event says "loaded", not "viewed": a page fetched ahead of time may
+ * not have been looked at (the action code stays DOCUMENT_PAGE_VIEWED so earlier records still match).
+ */
+export function auditEventLabel(action: string, safeDetailsJson?: string | null, filename?: string, stripDocumentPrefix = false): string {
+  if (action === 'DOCUMENT_PAGE_VIEWED') {
+    let page: unknown
+    try { page = safeDetailsJson ? (JSON.parse(safeDetailsJson) as { page?: unknown }).page : undefined } catch { page = undefined }
+    if (typeof page === 'number') return filename ? `Loaded page ${page} of ${filename}` : `Loaded page ${page}`
+    return 'Page loaded'
+  }
+  return humanize(stripDocumentPrefix ? action.replace(/^DOCUMENT_/, '') : action)
+}
 export const toneFor = (v: string): 'ok' | 'warn' | 'bad' | '' => {
   if (['UP', 'ACTIVE', 'SUCCESS', 'COMPLETE', 'RECEIVED', 'PASSED'].includes(v)) return 'ok'
   if (['DEGRADED', 'READ_ONLY', 'RECEIVING', 'OPEN', 'DRAFT', 'INCOMPLETE', 'EXPECTED'].includes(v)) return 'warn'

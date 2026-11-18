@@ -3,7 +3,7 @@ import { AlertTriangle, ArrowRight, ChevronDown, ChevronUp, FileText, Search, Sl
 import { useStore } from './store'
 import type { RecordItem, Source } from './data'
 import { schema, search, record, toSource, toSummary, toRecord, documentActivity, SEARCH_PAGE_SIZE, type LiveDocumentActivity } from './liveApi'
-import { Badge, Callout, Drawer, Empty, ErrorState, Skeleton, fmtDate, fmtRel, humanize } from './ui'
+import { Badge, Callout, Drawer, Empty, ErrorState, Skeleton, auditEventLabel, fmtDate, fmtRel, humanize } from './ui'
 import { Viewer } from './Viewer'
 import { MODE_HINT, MODE_WORD, QUICK_RANGES, alternativeFields, boxLabel, quickRange, rangeLabel, routeBoxInput, type Range } from './searchRouting'
 
@@ -402,13 +402,13 @@ function RecordPanelBody({ record, summary, onOpen }: { record: RecordItem; summ
   const { can, liveSession } = useStore()
   const [more, setMore] = useState(false)
   const [includeViews, setIncludeViews] = useState(false)
-  const [liveEvents, setLiveEvents] = useState<LiveDocumentActivity[]>([])
+  const [liveEvents, setLiveEvents] = useState<(LiveDocumentActivity & { filename: string })[]>([])
   const [activityFailure, setActivityFailure] = useState('')
   useEffect(() => {
     if (!liveSession || !record.docs.length) { setLiveEvents([]); return }
     let active = true
     setActivityFailure('')
-    Promise.all(record.docs.map((d) => documentActivity(d.id, includeViews, 100)))
+    Promise.all(record.docs.map((d) => documentActivity(d.id, includeViews, 100).then((rows) => rows.map((e) => ({ ...e, filename: d.filename })))))
       .then((groups) => { if (active) setLiveEvents(groups.flat().sort((a, b) => b.occurredAt.localeCompare(a.occurredAt))) })
       .catch((e) => { if (active) { setLiveEvents([]); setActivityFailure(String(e)) } })
     return () => { active = false }
@@ -455,7 +455,7 @@ function RecordPanelBody({ record, summary, onOpen }: { record: RecordItem; summ
         {liveSession && <label className="v-check"><input type="checkbox" checked={includeViews} onChange={(e) => setIncludeViews(e.target.checked)} />Include document view activity</label>}
         {activityFailure && <Callout tone="warn" title="Activity unavailable">{activityFailure}</Callout>}
         <ol className="v-timeline">
-          {liveSession ? liveEvents.slice(0, more ? 100 : 3).map((a) => <li key={a.auditEventId}><span className={`pt ${a.outcome === 'SUCCESS' ? 'ok' : 'bad'}`} aria-hidden /><div className="stack" style={{ gap: 0 }}><strong>{humanize(a.action.replace('DOCUMENT_', ''))}</strong><span>{a.actorId} · {fmtRel(a.occurredAt)}</span></div></li>) :
+          {liveSession ? liveEvents.slice(0, more ? 100 : 3).map((a) => <li key={a.auditEventId}><span className={`pt ${a.outcome === 'SUCCESS' ? 'ok' : 'bad'}`} aria-hidden /><div className="stack" style={{ gap: 0 }}><strong>{auditEventLabel(a.action, a.safeDetailsJson, a.filename, true)}</strong><span>{a.actorId} · {fmtRel(a.occurredAt)}</span></div></li>) :
             recent.map((a) => <li key={a.id}><span className={`pt ${a.simulated ? 'sim' : a.outcome === 'SUCCESS' ? 'ok' : 'bad'}`} aria-hidden /><div className="stack" style={{ gap: 0 }}><strong>{humanize(a.action.replace('DOCUMENT_', ''))} · {a.doc}</strong><span>{a.actor} · {fmtRel(a.at)}{a.simulated && ' · simulated'}</span></div></li>)}
         </ol>
         {liveSession && !activityFailure && liveEvents.length === 0 && <p className="faint">No matching activity.</p>}

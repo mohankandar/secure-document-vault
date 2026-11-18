@@ -54,15 +54,16 @@ export function toRecord(r: BusinessRecord):RecordItem {
     incomplete:incomplete?{submissionId:incomplete.submissionId,expected:incomplete.expectedCount,received:incomplete.receivedCount,since:r.latestSubmissionAt,missing:incomplete.missing}:null,docs}
 }
 
-export type ViewerMetadata = { documentId: string; originalFilename: string; pageCount: number }
+/** viewingId: this opening's ID; page requests send it back so each page is recorded once per viewing. */
+export type ViewerMetadata = { documentId: string; originalFilename: string; pageCount: number; viewingId?: string }
 export type ViewerSearch = { pageCount: number; totalMatches: number; pages: {pageNumber:number; matchCount:number}[]; highlights?: {pageNumber:number;x:number;y:number;width:number;height:number}[] }
 const viewerPath = (id: string) => '/api/v1/business/documents/' + encodeURIComponent(id) + '/viewer'
 /** Small page previews (PNG data URLs), at most 24 pages per request. The server writes no audit event for them. */
 export type ViewerPreviews = { documentId: string; pageCount: number; first: number; previews: { pageNumber: number; width: number; height: number; dataUrl: string }[] }
 export const viewerPreviews = (id: string, first: number, count: number) => roleApi<ViewerPreviews>(viewerPath(id) + '/previews?first=' + first + '&count=' + count, 'business')
 export const viewerMetadata = (id:string) => roleApi<ViewerMetadata>(viewerPath(id), 'business')
-export const viewerPage = (id:string, page:number, scale=1) =>
-  contentBinary(viewerPath(id) + '/pages/' + page + '?scale=' + scale, 'business')
+export const viewerPage = (id:string, page:number, scale=1, viewingId?:string) =>
+  contentBinary(viewerPath(id) + '/pages/' + page + '?scale=' + scale + (viewingId ? '&viewingId=' + encodeURIComponent(viewingId) : ''), 'business')
 export const viewerSearch = (id:string, q:string) =>
   roleApi<ViewerSearch>(viewerPath(id) + '/search?q=' + encodeURIComponent(q), 'business')
 

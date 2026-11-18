@@ -5,7 +5,7 @@ import { AREA_TABS, useStore } from './store'
 import { FAILURES, RETENTION_SWEEP, SERVICES, STUCK, SUBMISSIONS, type AuditEvent, type Submission } from './data'
 import { AreaFrame } from './Governance'
 import { EnvironmentPanel, StorageTab, volumeAttention } from './TenantAdmin'
-import { Badge, Callout, Drawer, Panel, Scenario, Seg, Status, fmtDateTime, fmtRel, humanize, toneFor } from './ui'
+import { Badge, Callout, Drawer, Panel, Scenario, Seg, Status, auditEventLabel, fmtDateTime, fmtRel, humanize, toneFor } from './ui'
 
 const LEDE: Record<string, string> = {
   overview: 'What needs attention across this deployment right now.',
@@ -281,7 +281,7 @@ function ConnectedOverview(){
 
 /** Routine events: hidden in Audit unless 'Include view events' is ticked or that action is filtered for explicitly. */
 const ROUTINE_AUDIT_ACTIONS=new Set(['AUDIT_VIEWED','BUSINESS_RECENT_RECORDS_LISTED'])
-const AUDIT_ACTION_OPTIONS: [string,string][]=[['','All actions'],['DOCUMENT_DOWNLOADED','Document downloaded'],['DOCUMENT_PRINTED','Document printed'],['DOCUMENT_VIEW_OPENED','Document opened'],['DOCUMENT_PAGE_VIEWED','Page viewed'],['BUSINESS_RECORD_OPENED','Business record opened'],['DOCUMENT_COMMENT_ADDED','Comment added'],['DOCUMENT_TAG_ADDED','Tag added'],['DOCUMENT_PERMANENTLY_REDACTED','Permanent redaction'],['BUSINESS_RECENT_RECORDS_LISTED','Recently viewed list read']]
+const AUDIT_ACTION_OPTIONS: [string,string][]=[['','All actions'],['DOCUMENT_DOWNLOADED','Document downloaded'],['DOCUMENT_PRINTED','Document printed'],['DOCUMENT_VIEW_OPENED','Document opened'],['DOCUMENT_PAGE_VIEWED','Page loaded'],['BUSINESS_RECORD_OPENED','Business record opened'],['DOCUMENT_COMMENT_ADDED','Comment added'],['DOCUMENT_TAG_ADDED','Tag added'],['DOCUMENT_PERMANENTLY_REDACTED','Permanent redaction'],['BUSINESS_RECENT_RECORDS_LISTED','Recently viewed list read']]
 function LiveOperationsSection({section}:{section:string}){
  const [data,setData]=useState<OpsDetail|null>(null)
  const [events,setEvents]=useState<OpsAuditEvent[]>([])
@@ -330,7 +330,7 @@ function LiveOperationsSection({section}:{section:string}){
  </div>}
  </Panel>
  <Panel flush title="Audit events" meta={events.filter(e=>includeViewEvents||!ROUTINE_AUDIT_ACTIONS.has(e.action)||filters.action===e.action).length}>
- <table className="v-table"><thead><tr><th>When</th><th>Event</th><th>Actor</th><th>Target</th><th>Outcome</th><th className="act">Details</th></tr></thead><tbody>{events.filter(e=>includeViewEvents||!ROUTINE_AUDIT_ACTIONS.has(e.action)||filters.action===e.action).map(e=><tr key={e.auditEventId}><td data-label="When">{fmtDateTime(e.occurredAt)}</td><td data-label="Event" className="lead"><strong>{humanize(e.action)}</strong><div className="mono faint">{e.action}</div></td><td data-label="Actor">{e.actorId}<div className="faint">{e.actorType}</div></td><td data-label="Target" className="mono">{e.targetId}</td><td data-label="Outcome"><Status value={e.outcome}/></td><td className="act"><button type="button" className="v-btn sm" aria-label={'View details for '+humanize(e.action)} onClick={()=>setSelected(e)}>View details</button></td></tr>)}</tbody></table>
+ <table className="v-table"><thead><tr><th>When</th><th>Event</th><th>Actor</th><th>Target</th><th>Outcome</th><th className="act">Details</th></tr></thead><tbody>{events.filter(e=>includeViewEvents||!ROUTINE_AUDIT_ACTIONS.has(e.action)||filters.action===e.action).map(e=><tr key={e.auditEventId}><td data-label="When">{fmtDateTime(e.occurredAt)}</td><td data-label="Event" className="lead"><strong>{auditEventLabel(e.action,e.safeDetailsJson)}</strong><div className="mono faint">{e.action}</div></td><td data-label="Actor">{e.actorId}<div className="faint">{e.actorType}</div></td><td data-label="Target" className="mono">{e.targetId}</td><td data-label="Outcome"><Status value={e.outcome}/></td><td className="act"><button type="button" className="v-btn sm" aria-label={'View details for '+humanize(e.action)} onClick={()=>setSelected(e)}>View details</button></td></tr>)}</tbody></table>
  {events.filter(e=>includeViewEvents||!ROUTINE_AUDIT_ACTIONS.has(e.action)||filters.action===e.action).length===0&&<p className="muted" style={{padding:16}}>No events to display in this page. Try changing the filters or loading older events.</p>}
  {cursor&&<div style={{padding:12}}><button type="button" disabled={loading||moreLoading} className="v-btn" onClick={async()=>{setMoreLoading(true);try{const r=await opsAudit(cursor,applied);setEvents(x=>[...x,...r.events]);setCursor(r.nextCursor)}catch(e){setError(String(e))}finally{setMoreLoading(false)}}}>{moreLoading?'Loading…':'Load older events'}</button></div>}
  </Panel>

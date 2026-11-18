@@ -53,7 +53,7 @@ class DocumentViewerServicePreviewsTest {
     private final StreamingCryptoPort crypto = mock(StreamingCryptoPort.class);
     private final AuditEventPort audit = mock(AuditEventPort.class);
     private final DocumentViewerService service =
-            new DocumentViewerService(documents, volumes, List.of(provider), crypto, audit);
+            new DocumentViewerService(documents, volumes, List.of(provider), crypto, audit, mock(com.sdv.platform.application.port.PageViewAuditPort.class));
 
     /** A grey page per page number; page content does not matter except for the redaction test. */
     private static byte[] pdf(int pages) throws Exception {
