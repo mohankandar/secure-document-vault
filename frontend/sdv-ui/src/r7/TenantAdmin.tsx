@@ -1,7 +1,8 @@
-import { ConnectedIntegrationsView } from './ConnectedIntegrationsView'
+import { Integrations } from './Integrations'
+import { Storage } from './Storage'
 import { ConnectedAuthenticationView } from './ConnectedAuthenticationView'
-import { useEffect, useRef, useState } from 'react'
-import { itSources, itFields, itUpsertField, itCreateSource, itUpdateSource, itSourceSummary, liveStorage, identityOverview, systemInfo, createStorageVolume, updateStorageVolume, saveIdentityDraft, testIdentityDraft, activateIdentityDraft, rollbackIdentity, type LiveStorageVolume, type IdentityOverview, type ItSourceSummary, type ItSource, type ItField } from './liveApi'
+import { useEffect, useState } from 'react'
+import { identityOverview, systemInfo, saveIdentityDraft, testIdentityDraft, activateIdentityDraft, rollbackIdentity, type IdentityOverview } from './liveApi'
 import { CheckCircle2, Circle, History, Pencil, Plus, RotateCcw } from 'lucide-react'
 import { AREA_TABS, useStore } from './store'
 import { FailureNotice, actionFailed, loadFailed, type Failure } from './CardError'
@@ -11,9 +12,9 @@ import { Badge, Callout, Dialog, Drawer, Meter, Panel, Scenario, Status, fmtDate
 
 const AUTH_LABEL = { OAUTH2_CLIENT_CREDENTIALS: 'OAuth 2.0 client credentials', JWT_BEARER: 'JWT bearer', MTLS: 'Mutual TLS' } as const
 const LEDE: Record<string, string> = {
-  storage: 'Encrypted document volumes for this tenant, with warning and stop-write thresholds.',
+  storage: 'Where Vero keeps documents, and how full each place is.',
   authentication: 'The enterprise identity provider for sign-in. Test a draft before activating; roll back to a known-good version.',
-  integrations: 'Producer systems that submit documents, how they authenticate, and their metadata contract.',
+  integrations: 'The systems that send documents to Vero, what they send, and how they prove who they are.',
   environment: 'Read-only facts about this customer environment.',
 }
 
@@ -24,9 +25,9 @@ export function TenantAdmin() {
   const tab = AREA_TABS.tenant.find((t) => t.id === route.tab)!
   return (
     <AreaFrame crumbs={['Tenant IT', tab.label]} title={tab.label} lede={LEDE[route.tab]} attention={volumes.some(volumeAttention) ? ['storage'] : []}>
-      {route.tab === 'storage' && <LiveStorage />}
+      {route.tab === 'storage' && <Storage />}
       {route.tab === 'authentication' && <LiveIdentity />}
-      {route.tab === 'integrations' && <ConnectedIntegrations />}
+      {route.tab === 'integrations' && <Integrations />}
       {route.tab === 'environment' && <LiveEnvironment />}
     </AreaFrame>
   )
@@ -264,116 +265,6 @@ export function EnvironmentPanel() {
 }
 
 
-function ConnectedIntegrations(){
- const [sources,setSources]=useState<ItSource[]>([])
- const [sourceId,setSourceId]=useState('')
- const [fields,setFields]=useState<ItField[]>([])
- const [error,setError]=useState<Failure|null>(null)
- const [reload,setReload]=useState(0)
- const [form,setForm]=useState(false)
- const [revising,setRevising]=useState<ItField|null>(null)
- const [ack,setAck]=useState(false)
- const [key,setKey]=useState('')
- const [label,setLabel]=useState('')
- const [type,setType]=useState('TEXT')
- const [normalization,setNormalization]=useState('NONE')
- const [required,setRequired]=useState(false)
- const [busy,setBusy]=useState(false)
- const [sourceForm,setSourceForm]=useState<'new'|'edit'|null>(null)
- const [sourceKey,setSourceKey]=useState('')
- const [sourceName,setSourceName]=useState('')
- const [authType,setAuthType]=useState<ItSource['authType']>('OAUTH2_CLIENT_CREDENTIALS')
- const [credential,setCredential]=useState('')
- const [sourceStatus,setSourceStatus]=useState<ItSource['status']>('ACTIVE')
- const [sourceBusy,setSourceBusy]=useState(false)
- const [summary,setSummary]=useState<ItSourceSummary|null>(null)
- const [section,setSection]=useState<'configuration'|'monitoring'|'contract'>('configuration')
- const [sourceConfirm,setSourceConfirm]=useState(false)
- const selectedSourceRef=useRef(sourceId)
- selectedSourceRef.current=sourceId
- useEffect(()=>{let live=true;itSources().then(rows=>{if(live){setSources(rows);setSourceId(rows[0]?.sourceId??'')}}).catch(e=>{if(live)setError(loadFailed('Integrations did not load',e))});return()=>{live=false}},[reload])
- useEffect(()=>{if(!sourceId){setFields([]);setSummary(null);return}let live=true;setFields([]);setSummary(null);setError(null);Promise.allSettled([itSourceSummary(sourceId),itFields(sourceId)]).then(([sr,fr])=>{if(!live)return;if(sr.status==='fulfilled')setSummary(sr.value);else setError(loadFailed('Integration summary did not load',sr.reason));if(fr.status==='fulfilled')setFields(fr.value);else setError(loadFailed('Integration fields did not load',fr.reason))});return()=>{live=false}},[sourceId,reload])
- const valid=/^[A-Za-z][A-Za-z0-9_.-]{0,99}$/.test(key)&&label.trim().length>0&&(revising?.fieldKey===key||!fields.some(f=>f.fieldKey===key))&&!(type==='BOOLEAN'&&normalization==='DIGITS_ONLY')&&(!revising||ack)
- const save=async()=>{if(!valid||busy)return;setBusy(true);setError(null);try{
-  await itUpsertField(sourceId,key,{displayLabel:label.trim(),fieldType:type,required,normalization,validationRules:{}})
-  const updatedFields=await itFields(sourceId);if(selectedSourceRef.current===sourceId)setFields(updatedFields);setForm(false);setRevising(null);setAck(false);setKey('');setLabel('');setRequired(false)
- }catch(e){setError(actionFailed('Saving an integration field failed',e))}finally{setBusy(false)}}
- const source=sources.find(x=>x.sourceId===sourceId)
- const editSource=()=>{if(!source)return;setSourceConfirm(false);setSourceKey(source.sourceKey);setSourceName(source.displayName);setAuthType(source.authType);setCredential(source.credentialReference);setSourceStatus(source.status);setSourceForm('edit')}
- const toggleSourceStatus=()=>{if(!source)return;setSourceKey(source.sourceKey);setSourceName(source.displayName);setAuthType(source.authType);setCredential(source.credentialReference);setSourceStatus(source.status==='ACTIVE'?'DISABLED':'ACTIVE');setSourceConfirm(true);setSourceForm('edit')}
- const createSource=()=>{setSourceConfirm(false);setSourceKey('');setSourceName('');setAuthType('OAUTH2_CLIENT_CREDENTIALS');setCredential('');setSourceStatus('ACTIVE');setSourceForm('new')}
- const sourceValid=sourceName.trim().length>0&&(sourceForm==='edit'||/^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/.test(sourceKey.trim()))
- const persistSource=async()=>{if(!sourceForm||!sourceValid||sourceBusy)return;
-   if(sourceForm==='edit'&&source&&(source.authType!==authType||source.status!==sourceStatus)&&!sourceConfirm){setSourceConfirm(true);return}setSourceBusy(true);setError(null)
-   try{
-     const result=sourceForm==='new'
-       ?await itCreateSource({sourceKey:sourceKey.trim(),displayName:sourceName.trim(),authType,credentialReference:credential.trim()})
-       :await itUpdateSource(sourceId,{displayName:sourceName.trim(),status:sourceStatus,authType,credentialReference:credential.trim(),limits:source?.limits})
-     const rows=await itSources();setSources(rows);setSourceId(result.sourceId);setSection(sourceForm==='new'?'contract':'configuration');setSourceForm(null);setSourceConfirm(false)
-   }catch(e){setError(actionFailed('Saving the sending system failed',e))}finally{setSourceBusy(false)}
- }
- return <>
- {error&&<FailureNotice failure={error} loadTitle="Integrations didn't load" onRetry={()=>setReload(n=>n+1)} />}
- <ConnectedIntegrationsView sources={sources} selected={source} fields={fields} summary={summary} section={section} onSelect={id=>{setSourceId(id);setSection('configuration');setForm(false);setError(null)}} onSection={setSection} onCreate={createSource} onEdit={editSource} onToggleStatus={toggleSourceStatus} onAddField={()=>{setRevising(null);setKey('');setLabel('');setType('TEXT');setNormalization('NONE');setRequired(false);setAck(false);setForm(true)}} onRevise={f=>{setRevising(f);setKey(f.fieldKey);setLabel(f.displayLabel);setType(f.fieldType);setNormalization(f.normalization);setRequired(f.required);setAck(false);setForm(true)}}/>
- {sourceForm&&<Drawer eyebrow="Tenant IT · integration" title={sourceForm==='new'?'Add integration':'Edit integration'} onClose={()=>{if(!sourceBusy)setSourceForm(null)}} footer={<><button type="button" className="v-btn" disabled={sourceBusy} onClick={()=>setSourceForm(null)}>Cancel</button><button type="button" className="v-btn primary" disabled={!sourceValid||sourceBusy} onClick={()=>void persistSource()}>{sourceBusy?'Saving…':sourceForm==='new'?'Add integration':'Save integration'}</button></>}>
- <label className="v-field"><span>Source key</span><input className="v-input" readOnly={sourceForm==='edit'} value={sourceKey} onChange={e=>setSourceKey(e.target.value)}/><small>Immutable identity of the external producer after creation.</small></label>
- <label className="v-field"><span>Display name</span><input className="v-input" value={sourceName} onChange={e=>setSourceName(e.target.value)}/></label>
- <label className="v-field"><span>Authentication</span><select className="v-select" value={authType} onChange={e=>setAuthType(e.target.value as ItSource['authType'])}><option value="OAUTH2_CLIENT_CREDENTIALS">OAuth 2.0 client credentials</option><option value="JWT_BEARER">JWT bearer</option><option value="MTLS">Mutual TLS</option></select></label>
- <label className="v-field"><span>Credential reference</span><input className="v-input" value={credential} onChange={e=>setCredential(e.target.value)}/><small>Reference only; do not enter credentials or secret values.</small></label>
- {sourceForm==='edit'&&<label className="v-field"><span>Status</span><select className="v-select" value={sourceStatus} onChange={e=>setSourceStatus(e.target.value as ItSource['status'])}><option value="ACTIVE">Active</option><option value="DISABLED">Disabled</option></select></label>}
- {sourceConfirm&&<Callout tone="warn" title="Confirm production impact">This changes the authentication method or status of a configured producer. Verify the external producer is ready, then click Save again to confirm.</Callout>}
- <Callout tone="warn" title="Producer impact">Changes to authentication, status or source contract can affect incoming submissions. Verify the producer configuration before saving.</Callout>
- </Drawer>}
- {form&&<Drawer eyebrow="Tenant IT · metadata contract" title={revising?'Revise field':'Add field'} onClose={()=>{if(!busy)setForm(false)}} footer={<><button type="button" className="v-btn" disabled={busy} onClick={()=>setForm(false)}>Cancel</button><button type="button" className="v-btn primary" disabled={!valid||busy} onClick={()=>void save()}>{busy?'Saving…':revising?'Save revision':'Add field'}</button></>}>
- <label className="v-field"><span>Field key</span><input className="v-input" value={key} readOnly={!!revising} onChange={e=>setKey(e.target.value)}/><small>Letters, numbers, dots, underscores and hyphens; starts with a letter.</small></label>
- <Callout title="Incoming metadata key">The producer must send this exact key: <strong>{key||'(enter a key)'}</strong>. No external field-name transformation is configured here.</Callout>
- <label className="v-field"><span>Display label</span><input className="v-input" value={label} onChange={e=>setLabel(e.target.value)}/></label>
- <label className="v-field"><span>Data type</span><select className="v-select" value={type} onChange={e=>setType(e.target.value)}><option value="TEXT">Text</option><option value="INTEGER">Integer</option><option value="DECIMAL">Decimal</option><option value="DATE">Date</option><option value="DATETIME">Date and time</option><option value="BOOLEAN">Boolean</option><option value="EMAIL">Email</option><option value="UUID">UUID</option></select></label>
- <label className="v-field"><span>Normalization</span><select className="v-select" value={normalization} onChange={e=>setNormalization(e.target.value)}><option value="NONE">None</option><option value="UPPERCASE">Uppercase</option><option value="DIGITS_ONLY">Digits only</option></select></label>
- <label className="v-check"><input type="checkbox" checked={required} onChange={e=>setRequired(e.target.checked)}/><span>Required in the ingestion contract</span></label>
- <Callout tone="warn" title="Integration impact">Required, type, or normalization changes can reject future submissions. Confirm the producer contract is compatible before saving.</Callout>
- {revising&&<label className="v-check"><input type="checkbox" checked={ack} onChange={e=>setAck(e.target.checked)}/><span>I have verified the producer contract supports this revision.</span></label>}
- </Drawer>}
- </>
-}
-
-function LiveStorage(){
- const [items,setItems]=useState<LiveStorageVolume[]>([])
- const [error,setError]=useState<Failure|null>(null)
- const [reload,setReload]=useState(0)
- const [editing,setEditing]=useState<LiveStorageVolume|'new'|null>(null)
- const [name,setName]=useState('')
- const [root,setRoot]=useState('')
- const [state,setState]=useState('ACTIVE')
- const [priority,setPriority]=useState('0')
- const [warning,setWarning]=useState('80')
- const [stop,setStop]=useState('95')
- const [busy,setBusy]=useState(false)
- const [confirmed,setConfirmed]=useState(false)
- const refresh=()=>liveStorage().then((x)=>{setItems(x);setError(null)}).catch(e=>setError(loadFailed('Storage did not load',e)))
- useEffect(()=>{void refresh()},[reload])
- const begin=(v:LiveStorageVolume|'new')=>{setEditing(v);setName(v==='new'?'':v.volume.displayName);setRoot(v==='new'?'':v.volume.rootPath);setState(v==='new'?'ACTIVE':v.volume.state);setPriority(String(v==='new'?0:v.volume.priority));setWarning(String(v==='new'?80:v.volume.warningPercent));setStop(String(v==='new'?95:v.volume.stopWritePercent));setConfirmed(false)}
- const valid=name.trim().length>0&&Number.isInteger(Number(priority))&&Number(priority)>=0&&Number.isInteger(Number(warning))&&Number.isInteger(Number(stop))&&Number(warning)>0&&Number(stop)<=100&&Number(stop)>Number(warning)&&(editing!=='new'||root.trim().length>0)
- const save=async()=>{if(!editing||!valid||!confirmed||busy)return;setBusy(true);setError(null)
- try{const v={displayName:name.trim(),state,priority:Number(priority),warningPercent:Number(warning),stopWritePercent:Number(stop)}
- if(editing==='new')await createStorageVolume({...v,rootPath:root.trim()});else await updateStorageVolume(editing.volume.volumeId,v)
- await refresh();setEditing(null)}catch(e){setError(actionFailed('Saving the storage volume failed',e))}finally{setBusy(false)}}
- return <>{error&&<FailureNotice failure={error} loadTitle="Storage didn't load" onRetry={()=>setReload(n=>n+1)} />}
- <Panel flush title="Storage volumes" meta={items.length} description="Live capacity, warning thresholds and stop-write status. Root paths are immutable after creation."
- actions={<button type="button" className="v-btn sm primary" onClick={()=>begin('new')}><Plus size={14}/>Add volume</button>}>
- {items.some(v=>v.observationError||v.stopWriteThresholdReached||v.warningThresholdReached)&&<div className="v-it-storage-alert"><strong>Storage needs attention</strong><span>One or more live volumes have reported a warning, stop-write threshold, or observation problem. Review the individual volume before changing settings.</span></div>}
- <table className="v-table"><thead><tr><th>Volume</th><th>State</th><th>Health</th><th>Capacity</th><th>Used</th><th className="act">Action</th></tr></thead><tbody>{items.map(v=>{const pct=v.capacity?.usedPercent;const observed=pct!=null&&Number.isFinite(pct);return <tr key={v.volume.volumeId}><td className="lead"><strong>{v.volume.displayName}</strong><div className="mono muted" style={{fontSize:12}}>{v.volume.rootPath}</div></td><td><span className="v-it-state" data-state={v.volume.state}>{v.volume.state.replace('_',' ')}</span></td><td><span className="v-it-health" data-attention={!!(v.observationError||v.stopWriteThresholdReached||v.warningThresholdReached)}>{v.observationError?'Probe unavailable':v.stopWriteThresholdReached?'Stop-write reached':v.warningThresholdReached?'Warning threshold':v.capacity?'No alert reported':'No observation'}</span><div className="muted" style={{fontSize:12}}>Writable: {v.capacity?v.capacity.writable?'Yes':'No':'Unknown'}</div></td><td><div className="v-it-capacity" aria-label={observed?`${pct}% used, warning ${v.volume.warningPercent}%, stop-write ${v.volume.stopWritePercent}%`:'Capacity unavailable'}>{observed?<><div className="v-it-capacity-fill" data-attention={!!(v.stopWriteThresholdReached||v.warningThresholdReached)} style={{width:`${Math.max(0,Math.min(100,Number(pct)))}%`}}/><i style={{left:`${v.volume.warningPercent}%`}}/><b style={{left:`${v.volume.stopWritePercent}%`}}/></>:<span className="muted">Unavailable</span>}</div><small className="muted">Warning {v.volume.warningPercent}% · Stop-write {v.volume.stopWritePercent}%</small></td><td className="num">{observed?`${pct}%`:'—'}</td><td className="act"><button className="v-btn sm" type="button" onClick={()=>begin(v)}><Pencil size={14}/>Edit</button></td></tr>})}</tbody></table></Panel>
- {editing&&<Drawer eyebrow="Tenant IT · storage" title={editing==='new'?'Add volume':'Edit volume'} onClose={()=>{if(!busy)setEditing(null)}} footer={<><button type="button" className="v-btn" disabled={busy} onClick={()=>setEditing(null)}>Cancel</button><button type="button" className="v-btn primary" disabled={!valid||!confirmed||busy} onClick={()=>void save()}>{busy?'Saving…':'Save volume'}</button></>}>
- <label className="v-field"><span>Display name</span><input className="v-input" value={name} onChange={e=>setName(e.target.value)}/></label>
- <label className="v-field"><span>Root path</span><input className="v-input" readOnly={editing!=='new'} value={root} onChange={e=>setRoot(e.target.value)}/></label>
- <label className="v-field"><span>State</span><select className="v-select" value={state} onChange={e=>setState(e.target.value)}><option value="ACTIVE">Active</option><option value="READ_ONLY">Read-only</option><option value="OFFLINE">Offline</option></select></label>
- <label className="v-field"><span>Priority</span><input className="v-input" type="number" min="0" value={priority} onChange={e=>setPriority(e.target.value)}/></label>
- <label className="v-field"><span>Warning threshold (%)</span><input className="v-input" type="number" min="1" max="99" value={warning} onChange={e=>setWarning(e.target.value)}/></label>
- <label className="v-field"><span>Stop-write threshold (%)</span><input className="v-input" type="number" min="2" max="100" value={stop} onChange={e=>setStop(e.target.value)}/></label>
- <Callout tone="warn" title="Storage impact">Changes to state or thresholds can stop document ingestion. Existing root paths cannot be changed or migrated here.</Callout>
- <label className="v-check"><input type="checkbox" checked={confirmed} onChange={e=>setConfirmed(e.target.checked)}/><span>I have verified the storage change and its effect on ingestion.</span></label></Drawer>}
- </>
-}
 function LiveIdentity(){
  const [data,setData]=useState<IdentityOverview|null>(null)
  const [error,setError]=useState<Failure|null>(null)

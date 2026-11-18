@@ -1,4 +1,6 @@
 import { expect, test, type Page, type TestInfo } from '@playwright/test'
+import fs from 'node:fs'
+import path from 'node:path'
 
 // Screen tour of the R7 UI (served at /). Needs the app running locally in LOCAL security mode,
 // where the account menu offers the development-only "Local test role" switch.
@@ -171,8 +173,9 @@ async function keepingDocumentsChecks(page: Page, testInfo: TestInfo) {
 
 /** Search fields: words only, a match change saves, drag reorder saves, and the Record title is set. Returns what to put back. */
 async function searchFieldsChecks(page: Page, testInfo: TestInfo) {
-  const sources = await (await page.request.get('/api/v1/admin/metadata-sources', { headers: ADMIN_HEADERS })).json() as { sourceId: string }[]
-  const sourceId = sources[0].sourceId
+  const sources = await (await page.request.get('/api/v1/admin/metadata-sources', { headers: ADMIN_HEADERS })).json() as { sourceId: string; displayName: string }[]
+  // The demo source by name: a test sending system added by the Tenant IT tour must not be picked instead.
+  const sourceId = (sources.find((s) => s.displayName === 'LexaVault') ?? sources[0]).sourceId
   const path = (what: string) => `/api/v1/admin/metadata-sources/${sourceId}/${what}`
   const storedOrder = await (await page.request.get(path('display-order'), { headers: ADMIN_HEADERS })).json() as string[]
   const fields = await (await page.request.get(`/api/v1/admin/ingestion-sources/${sourceId}/metadata-fields`, { headers: ADMIN_HEADERS })).json() as { fieldKey: string; displayLabel: string }[]
@@ -266,6 +269,167 @@ async function searchFieldsChecks(page: Page, testInfo: TestInfo) {
   // Back to the default title: the first preview field, A to Z (First Name).
   await page.reload()
   await expect(page.getByRole('region', { name: 'Recently viewed' }).getByRole('listitem').first()).toContainText(/Ava/, { timeout: 15000 })
+}
+
+// ---- Tenant IT: Integrations and Storage (task 0010) ----
+
+const IT_HEADERS = { 'X-SDV-Tenant-Id': '11111111-1111-1111-1111-111111111111', 'X-SDV-Subject': 'local-tenant-it', 'X-SDV-Roles': 'TENANT_IT_ADMIN' }
+/** Saving a new sending system or volume adds rows that can't be deleted, so it only runs with SDV_ADMIN_CREATE_REGRESSION=1. */
+const createRegression = process.env.SDV_ADMIN_CREATE_REGRESSION === '1'
+/** Test folders live under the repository's .runtime folder only (the tour runs from frontend/sdv-ui). */
+const tourRuntime = path.resolve(process.cwd(), '..', '..', '.runtime', 'ui-checks', '0010')
+const stamp = () => new Date().toISOString().replace(/\D/g, '').slice(0, 14)
+const tenantTab = (page: Page, name: string) => page.getByRole('tablist', { name: 'Tenant IT sections' }).getByRole('tab', { name: new RegExp(`^${name}( needs attention)?$`) })
+const visible = (page: Page, text: string | RegExp) => page.getByText(text).filter({ visible: true })
+
+/** Integrations: status lines, detail in words, pause asks first, and the three-step add. */
+async function integrationsChecks(page: Page, testInfo: TestInfo) {
+  await tenantTab(page, 'Integrations').click()
+  const list = page.getByRole('region', { name: 'Sending systems' })
+  const item = list.getByRole('button', { name: /LexaVault/ })
+  await expect(item).toContainText(/Working · last delivery|Waiting for the first delivery/, { timeout: 15000 })
+  const detail = page.getByRole('region', { name: 'LexaVault' })
+  await expect(detail).toContainText('Sends documents to Vero through the API.')
+  await expect(detail).toContainText(/\d+ deliver(y|ies), \d+ documents?\./)
+  const sends = page.getByRole('table', { name: 'What it sends' })
+  await expect(sends).toContainText('Text, digits only')
+  await expect(sends).toContainText('Yes · exact match')
+  await expect(visible(page, /Not exposed|OAUTH2_CLIENT_CREDENTIALS|DIGITS_ONLY|Monitoring/)).toHaveCount(0)
+  await expect(page.getByText('Vero stores only where the secret is kept, never the secret.')).toBeVisible()
+  await expect(visible(page, "Vero's standard limit")).toHaveCount(4)
+  await capture(page, testInfo, 'integrations')
+
+  // Pause asks first, then shows "Paused since…"; start again afterwards (and always put the status back).
+  const sources = await (await page.request.get('/api/v1/admin/ingestion-sources', { headers: IT_HEADERS })).json() as { sourceId: string; displayName: string; status: string; authType: string; credentialReference: string; limits: unknown }[]
+  const lexa = sources.find((s) => s.displayName === 'LexaVault')!
+  try {
+    await detail.getByRole('button', { name: 'Pause receiving' }).click()
+    const ask = page.getByRole('alertdialog', { name: 'Pause receiving from LexaVault?' })
+    await expect(ask).toContainText('While paused, Vero refuses deliveries from this system. It will need to send them again.')
+    await capture(page, testInfo, 'integrations-pause-asks')
+    await ask.getByRole('button', { name: 'Pause receiving' }).click()
+    await expect(item).toContainText(/Paused since \d+ \w+ \d{4}/, { timeout: 15000 })
+    await detail.getByRole('button', { name: 'Start receiving' }).click()
+    await expect(item).toContainText(/Working/, { timeout: 15000 })
+  } finally {
+    const now = await (await page.request.get('/api/v1/admin/ingestion-sources', { headers: IT_HEADERS })).json() as { sourceId: string; status: string }[]
+    if (lexa.status === 'ACTIVE' && now.find((s) => s.sourceId === lexa.sourceId)?.status !== 'ACTIVE') {
+      const r = await page.request.put(`/api/v1/admin/ingestion-sources/${lexa.sourceId}`, { headers: { ...IT_HEADERS, 'Content-Type': 'application/json' }, data: { displayName: lexa.displayName, status: 'ACTIVE', authType: lexa.authType, credentialReference: lexa.credentialReference, limits: lexa.limits } })
+      expect(r.ok(), 'starting LexaVault again').toBeTruthy()
+    }
+  }
+
+  // Three-step add with two fields.
+  const id = stamp()
+  await list.getByRole('button', { name: 'Add', exact: true }).click()
+  const editor = page.getByRole('dialog', { name: 'Add a sending system' })
+  await editor.getByLabel('Name', { exact: true }).fill(`Tour test system ${id}`)
+  await editor.getByLabel('Source key').fill(`tour-${id}`)
+  await expect(editor).toContainText('It can’t change later.')
+  await capture(page, testInfo, 'integrations-add-1')
+  await editor.getByRole('button', { name: 'Next' }).click()
+  for (const [label, key, kind] of [['Policy number', 'policyNumber', 'Text, digits only'], ['Holder name', 'holderName', 'Text, spaces trimmed']]) {
+    await editor.getByRole('button', { name: 'Add a field' }).click()
+    const field = editor.locator('fieldset.int-field').last()
+    await field.getByLabel('Label').fill(label)
+    await field.getByLabel('Key it sends').fill(key)
+    await field.getByLabel('Kind of value').selectOption({ label: kind })
+  }
+  await editor.locator('fieldset.int-field').first().getByLabel('Required').check()
+  await expect(editor).toContainText('Changing a field later affects new deliveries only.')
+  await capture(page, testInfo, 'integrations-add-2')
+  await editor.getByRole('button', { name: 'Next' }).click()
+  await editor.getByRole('radio', { name: /^Signed token/ }).check()
+  await editor.getByLabel('Where the secret is kept').fill('vault/tour-test-client')
+  await capture(page, testInfo, 'integrations-add-3')
+  await expect(editor.getByRole('button', { name: 'Save as paused' })).toBeEnabled()
+  if (!createRegression) {
+    await editor.getByRole('button', { name: 'Close' }).click()
+    return
+  }
+  await editor.getByRole('button', { name: 'Save as paused' }).click()
+  await expect(editor).toHaveCount(0, { timeout: 15000 })
+  const added = list.getByRole('button', { name: new RegExp(`Tour test system ${id}`) })
+  await expect(added).toContainText(/Paused since/)
+  await expect(page.getByRole('table', { name: 'What it sends' }).locator('tbody tr')).toHaveCount(2, { timeout: 15000 })
+  await capture(page, testInfo, 'integrations-added-paused')
+}
+
+/** Storage: roles in words, banner wording, and the add steps with an unwritable and a writable folder. */
+async function storageChecks(page: Page, testInfo: TestInfo) {
+  await tenantTab(page, 'Storage').click()
+  const demo = page.getByRole('article', { name: 'Local demo volume' })
+  await expect(demo).toContainText('In use, new documents go here', { timeout: 15000 })
+  await expect(demo).toContainText(/\d+% full · .+ free/)
+  await expect(demo).toContainText(/Warns at \d+% · stops at \d+%/)
+  await expect(visible(page, /^ACTIVE$|^STANDBY$|Priority/)).toHaveCount(0)
+  await capture(page, testInfo, 'storage')
+
+  // Banner wording, with the server's answer changed in the browser only: 82% full, with and without a standby volume.
+  for (const withStandby of [true, false]) {
+    await page.route('**/api/v1/admin/storage-volumes', async (route) => {
+      if (route.request().method() !== 'GET') return route.continue()
+      const real = await (await route.fetch()).json() as { volume: Record<string, unknown>; capacity: Record<string, unknown> | null; warningThresholdReached: boolean }[]
+      const first = { ...real[0], capacity: { ...real[0].capacity, usedPercent: 82 }, warningThresholdReached: true }
+      const standby = { ...real[0], volume: { ...real[0].volume, volumeId: '00000000-0000-0000-0000-0000000000b2', displayName: 'primary-b', priority: Number(real[0].volume.priority) + 1 }, warningThresholdReached: false }
+      await route.fulfill({ json: withStandby ? [first, standby] : [first] })
+    })
+    await tenantTab(page, 'Integrations').click()
+    await tenantTab(page, 'Storage').click()
+    const banner = page.getByRole('alert').filter({ hasText: 'Local demo volume is 82% full.' })
+    await expect(banner).toBeVisible({ timeout: 15000 })
+    await expect(banner).toHaveText(withStandby
+      ? 'Local demo volume is 82% full. At 95% it stops accepting documents and Vero switches to primary-b. Add space or a new volume before then.'
+      : 'Local demo volume is 82% full. At 95% Vero stops accepting new documents. Add space or a new volume before then.')
+    if (withStandby) await expect(page.getByRole('article', { name: 'primary-b' })).toContainText('Standby, used when Local demo volume fills up')
+    await capture(page, testInfo, withStandby ? 'storage-banner-standby' : 'storage-banner-no-standby')
+    await page.unroute('**/api/v1/admin/storage-volumes')
+  }
+  await tenantTab(page, 'Integrations').click()
+  await tenantTab(page, 'Storage').click()
+
+  // Add a volume: an unwritable folder (a path through a file) is refused plainly; a writable one shows free space.
+  fs.mkdirSync(tourRuntime, { recursive: true })
+  const notAFolder = path.join(tourRuntime, 'not-a-folder.txt')
+  fs.writeFileSync(notAFolder, 'Used by the screen tour as a folder Vero cannot write in.\n')
+  const writable = path.join(tourRuntime, `volume-${stamp()}`)
+  await page.getByRole('button', { name: 'Add a volume' }).click()
+  const add = page.getByRole('dialog', { name: 'Add a volume' })
+  await add.getByLabel('Name', { exact: true }).fill('tour-volume')
+  await add.getByRole('textbox', { name: /^Folder/ }).fill(path.join(notAFolder, 'volume'))
+  await expect(add).toContainText('The folder cannot change later.')
+  await capture(page, testInfo, 'storage-add-1')
+  await add.getByRole('button', { name: 'Next' }).click()
+  await expect(add.getByRole('alert')).toContainText('Vero can’t use this folder', { timeout: 15000 })
+  await expect(add.getByRole('alert')).toContainText('Part of this path is a file, not a folder.')
+  await expect(add.getByRole('button', { name: 'Next' })).toBeDisabled()
+  await expect(add.getByText(/I have verified/)).toHaveCount(0)
+  await capture(page, testInfo, 'storage-add-2-refused')
+  await add.getByRole('button', { name: 'Back' }).click()
+  await add.getByRole('textbox', { name: /^Folder/ }).fill(writable)
+  await add.getByRole('button', { name: 'Next' }).click()
+  await expect(add.getByRole('status').filter({ hasText: 'Vero can write here' })).toContainText(/free/, { timeout: 15000 })
+  expect(fs.existsSync(writable), 'the check leaves nothing behind').toBeFalsy()
+  await capture(page, testInfo, 'storage-add-2-writable')
+  await add.getByRole('button', { name: 'Next' }).click()
+  await expect(add.getByRole('radio', { name: /^Standby/ })).toBeVisible()
+  await expect(add.getByRole('radio', { name: /^In use/ })).toBeVisible()
+  await capture(page, testInfo, 'storage-add-3')
+  if (!createRegression) {
+    await add.getByRole('button', { name: 'Close' }).click()
+    return
+  }
+  await add.getByRole('radio', { name: /^Standby/ }).check()
+  await add.getByRole('button', { name: 'Add volume' }).click()
+  await expect(add).toHaveCount(0, { timeout: 15000 })
+  const created = page.getByRole('article', { name: 'tour-volume' }).last()
+  await expect(created).toContainText('Standby, used when Local demo volume fills up')
+  // Leave the test volume offline so it never receives documents.
+  await created.getByRole('button', { name: 'Edit' }).click()
+  const edit = page.getByRole('dialog', { name: 'Edit tour-volume' })
+  await edit.getByLabel('Takes new documents').selectOption('OFFLINE')
+  await edit.getByRole('button', { name: 'Save', exact: true }).click()
+  await expect(page.getByRole('article', { name: 'tour-volume' }).last()).toContainText('Offline', { timeout: 15000 })
 }
 
 async function captureAccountMenu(page: Page, testInfo: TestInfo) {
@@ -680,15 +844,18 @@ test.describe('SDV role-based screen capture', () => {
   })
 
   test('Tenant IT Administrator screens', async ({ page }, testInfo) => {
+    test.setTimeout(150_000)
     await selectRole(page, 'Tenant IT Administrator')
     await expectNoRecordsAccess(page, testInfo, 'Tenant IT')
     await captureAccountMenu(page, testInfo)
     await captureSectionTabs(page, testInfo, 'Tenant IT sections', [
       'Storage',
-      'Authentication',
+      'Sign-in',
       'Integrations',
       'Environment',
     ])
+    await integrationsChecks(page, testInfo)
+    await storageChecks(page, testInfo)
   })
 
   test('Local Administrator with several roles sees every area', async ({ page }, testInfo) => {

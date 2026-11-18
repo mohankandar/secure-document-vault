@@ -574,3 +574,41 @@ small.bad { color: var(--danger); }
   .sf-table td.sf-grip { justify-content: flex-start; padding: 0 0 4px; }
   .sf-table td.sf-grip::before { display: none; }
 }
+
+/* Tenant IT: Integrations and Storage (task 0010) */
+.int-layout { display: grid; grid-template-columns: minmax(240px, 300px) 1fr; gap: 16px; align-items: start; }
+@media (max-width: 900px) { .int-layout { grid-template-columns: 1fr; } }
+.int-items { display: flex; flex-direction: column; gap: 6px; padding: 8px; }
+.int-item { display: flex; flex-direction: column; gap: 3px; text-align: left; padding: 10px 12px; border: 1px solid transparent; border-radius: var(--radius-sm); background: none; color: inherit; font: inherit; cursor: pointer; }
+.int-item:hover { background: var(--surface-2); }
+.int-item[aria-pressed='true'] { background: var(--primary-soft); border-color: color-mix(in oklab, var(--primary) 30%, var(--line)); }
+.int-status { font-size: 13px; color: var(--ink-3); display: inline-flex; align-items: center; gap: 6px; }
+.int-status::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: var(--line-strong); flex: none; }
+.int-status.ok::before { background: var(--primary); }
+.int-status.warn::before { background: var(--attention); }
+.int-name { font-size: 20px; font-weight: 600; margin: 0; }
+.int-facts { margin: 0; }
+.int-facts-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
+.int-facts-grid p { margin: 0; }
+.int-tech, .st-tech { padding: 0; }
+.int-tech > summary { padding: 14px 16px; cursor: pointer; font-weight: 500; }
+.int-tech > dl, .int-tech > ul { padding: 0 16px 14px; margin: 0; }
+.int-keys { list-style: none; display: grid; gap: 4px; font-size: 13px; }
+.int-steps { list-style: none; display: flex; flex-wrap: wrap; gap: 6px 14px; padding: 0; margin: 0 0 4px; font-size: 13px; color: var(--ink-3); counter-reset: step; }
+.int-steps li { counter-increment: step; }
+.int-steps li::before { content: counter(step) '. '; }
+.int-steps li[aria-current='step'] { color: var(--ink); font-weight: 600; }
+.int-steps li.done { color: var(--primary); }
+.int-field { border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 10px 12px; margin: 0; display: grid; gap: 8px; min-width: 0; }
+.int-field-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; }
+.int-auth { border: 0; padding: 0; margin: 0; display: grid; gap: 8px; min-width: 0; }
+.int-auth legend { padding: 0; margin-bottom: 6px; font-size: 14px; font-weight: 500; }
+.int-auth-card { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--radius-sm); cursor: pointer; }
+.int-auth-card span { display: flex; flex-direction: column; gap: 2px; }
+.int-auth-card.disabled { opacity: 0.6; cursor: default; }
+.int-advanced summary, .st-tech summary { cursor: pointer; font-weight: 500; padding: 6px 0; }
+.st-banner p { margin: 0; }
+.st-list { display: grid; gap: 12px; }
+.st-volume { border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 12px 14px; display: grid; gap: 8px; }
+.st-role { font-size: 13px; }
+.st-numbers { font-size: 13px; gap: 4px 12px; }

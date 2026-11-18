@@ -108,7 +108,8 @@ export const getMetadataDisplayOrder=(sourceId:string)=>roleApi<string[]>('/api/
 export const saveMetadataDisplayOrder=(sourceId:string,fieldKeys:string[])=>roleApi<string[]>('/api/v1/admin/metadata-sources/'+encodeURIComponent(sourceId)+'/display-order','businessAdmin',{method:'PUT',body:JSON.stringify({fieldKeys})})
 
 export type ItSource={sourceId:string;sourceKey:string;displayName:string;status:'ACTIVE'|'DISABLED';authType:'OAUTH2_CLIENT_CREDENTIALS'|'JWT_BEARER'|'MTLS';credentialReference:string;createdAt:string;updatedAt:string;limits?:{maxPdfBytes?:number|null;maxPagesPerPdf?:number|null;maxDocumentsPerSubmission?:number|null;maxAggregateSubmissionBytes?:number|null;incompleteAttentionHours?:number|null}}
-export type ItField={fieldKey:string;displayLabel:string;fieldType:string;required:boolean;normalization:string;version:number}
+/** Business search settings come with each field; Tenant IT reads them but cannot change them. */
+export type ItField={fieldKey:string;displayLabel:string;fieldType:string;required:boolean;normalization:string;version:number;businessIdentifier?:boolean;searchable?:boolean;searchMode?:'EXACT'|'PREFIX'|'PARTIAL'}
 export const itSources=()=>roleApi<ItSource[]>('/api/v1/admin/ingestion-sources','tenantIt')
 export const itFields=(sourceId:string)=>roleApi<ItField[]>('/api/v1/admin/ingestion-sources/'+encodeURIComponent(sourceId)+'/source-fields','tenantIt')
 export const itUpsertField=(sourceId:string,key:string,body:{displayLabel:string;fieldType:string;required:boolean;normalization:string;validationRules:Record<string,never>})=>roleApi<ItField>('/api/v1/admin/ingestion-sources/'+encodeURIComponent(sourceId)+'/source-fields/'+encodeURIComponent(key),'tenantIt',{method:'PUT',body:JSON.stringify(body)})
@@ -132,7 +133,11 @@ export type OpsAuditEvent={auditEventId:string;occurredAt:string;action:string;o
 export const opsAudit=(cursor?:string,filters?:{action?:string;outcome?:string;actorId?:string;actorType?:string;targetType?:string;targetId?:string;correlationId?:string;from?:string;to?:string})=>{const p=new URLSearchParams({limit:'50'});if(cursor)p.set('cursor',cursor);for(const [k,v] of Object.entries(filters??{}))if(v)p.set(k,v);return roleApi<{events:OpsAuditEvent[];nextCursor:string|null;hasMore:boolean}>('/api/v1/operations/audit-events?'+p.toString(),'platform')}
 export const opsRetention=()=>roleApi<Record<string,unknown>>('/api/v1/operations/retention-status','platform')
 
-export const createStorageVolume=(v:{displayName:string;rootPath:string;state:string;priority:number;warningPercent:number;stopWritePercent:number})=>roleApi<LiveStorageVolume>('/api/v1/admin/storage-volumes','tenantIt',{method:'POST',body:JSON.stringify(v)})
+/** Thresholds left out use the tenant's standard warning and stop levels. */
+export const createStorageVolume=(v:{displayName:string;rootPath:string;state:string;priority:number;warningPercent?:number;stopWritePercent?:number})=>roleApi<LiveStorageVolume>('/api/v1/admin/storage-volumes','tenantIt',{method:'POST',body:JSON.stringify(v)})
+/** Checks a folder before a volume is added (task 0010): writes and removes a test file, leaves nothing behind. */
+export type FolderCheck={normalizedRootPath:string;writable:boolean;usableBytes:number|null;totalBytes:number|null;problem:string|null}
+export const checkStorageFolder=(rootPath:string)=>roleApi<FolderCheck>('/api/v1/admin/storage-volumes/check','tenantIt',{method:'POST',body:JSON.stringify({rootPath})})
 export const updateStorageVolume=(id:string,v:{displayName:string;state:string;priority:number;warningPercent:number;stopWritePercent:number})=>roleApi<LiveStorageVolume>('/api/v1/admin/storage-volumes/'+encodeURIComponent(id),'tenantIt',{method:'PUT',body:JSON.stringify(v)})
 export const saveIdentityDraft=(v:{providerId:string;displayName:string;issuerUri:string;browserClientId:string;apiAudience:string})=>roleApi<IdentityOverview>('/api/v1/admin/enterprise-identity/draft','tenantIt',{method:'PUT',body:JSON.stringify(v)})
 export const testIdentityDraft=()=>roleApi<IdentityOverview>('/api/v1/admin/enterprise-identity/draft/test','tenantIt',{method:'POST'})

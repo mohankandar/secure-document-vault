@@ -124,6 +124,36 @@ public class StorageVolumeAdminService {
         return view(updated);
     }
 
+    /**
+     * Checks a folder for a new volume (task 0010): the same overlap rule as create, then a write test that leaves
+     * nothing behind. Audited as STORAGE_FOLDER_CHECKED; the folder itself is not written to the audit.
+     */
+    public StorageVolumeProbe.FolderCheck checkFolder(UUID tenantId, String rootPath, String actorId, String correlationId) {
+        requireActiveTenant(tenantId);
+        String normalized = probe.normalize(rootPath);
+        StorageVolumeProbe.FolderCheck result;
+        if (volumes.findConfiguredRoots(LOCAL_FILESYSTEM).stream().anyMatch(existing -> probe.overlaps(normalized, existing.rootPath()))) {
+            result = new StorageVolumeProbe.FolderCheck(normalized, false, null, null,
+                    "This folder is inside another volume's folder, or contains one.");
+        } else {
+            result = probe.check(rootPath);
+        }
+        audit.append(new AuditEvent(UUID.randomUUID(), tenantId, "USER", actorId, "STORAGE_FOLDER_CHECKED",
+                "STORAGE_FOLDER", sha256(result.normalizedRootPath()), clock.instant(), correlationId,
+                result.writable() ? AuditOutcome.SUCCESS : AuditOutcome.FAILED,
+                "{\"writable\":" + result.writable() + "}"));
+        return result;
+    }
+
+    private static String sha256(String value) {
+        try {
+            return java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256")
+                    .digest(value.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+        } catch (java.security.NoSuchAlgorithmException ex) {
+            throw new IllegalStateException("SHA-256 is unavailable.", ex);
+        }
+    }
+
     public StoragePlacementService.PlacementDecision previewPlacement(UUID tenantId, long requiredBytes) {
         requireActiveTenant(tenantId);
         return placement.select(tenantId, requiredBytes);
