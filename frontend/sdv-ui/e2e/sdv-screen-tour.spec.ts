@@ -401,7 +401,9 @@ test.describe('SDV role-based screen capture', () => {
   })
 
   test('Document Steward redaction end to end', async ({ page }, testInfo) => {
-    test.skip(!isDesktop(testInfo), 'Runs once per tour (desktop): every run permanently redacts a small area of a demo document.')
+    // Opt-in, like the comment test: every run permanently redacts a small area of a demo document.
+    test.skip(process.env.SDV_REDACTION_REGRESSION !== '1', 'Opt-in: set SDV_REDACTION_REGRESSION=1 (permanently redacts demo record 100000000003)')
+    test.skip(!isDesktop(testInfo), 'Runs once per tour (desktop only).')
     await selectRole(page, 'Document Steward')
     await areaTab(page, 'Records').click()
     await waitForBusinessSearchReady(page)

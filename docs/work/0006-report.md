@@ -118,3 +118,15 @@ One commit on `feature/ui-viewer`: "feat(viewer): worded actions hidden by role,
    Leave as is, or give the main view a separate task (e.g. log a page once per viewer session, or only when it is actually on screen)?
 2. **Redaction in the e2e tour** permanently changes demo record 100000000003 on every desktop run. Keep it in `ui:capture`, or make it opt-in like the comment test (`SDV_REDACTION_REGRESSION=1`)?
 3. **Demo data added in this task:** contract 300000000092 (one 14-page document) for the preview timing, and a demo tag "e2e-demo" on 100000000001's open document. Keep them?
+
+## Follow-up (2026-11-18, from QUEUE.md)
+
+1. **The redaction test is opt-in**, like the comment test. It runs only with `SDV_REDACTION_REGRESSION=1` (and only on desktop). A normal `npm run ui:capture` gave 14 passed and 2 skipped (the redaction test in both projects), and the database had **no** redaction audit event from that run, so demo record 100000000003 is no longer changed.
+2. **The 14-page demo document (300000000092) and the "e2e-demo" tag stay.** They load only with the local profile, because nothing loads them at all: no seed and no changeset creates them.
+   - Both exist only as rows in this machine's development database.
+   - Both were created through the local test sign-in (`X-SDV-*` headers): the document by my ingestion call, the tag by the e2e tour's `ensureDemoTag`.
+   - That sign-in exists only with the local profile: `LocalHeaderAuthenticationFilter` is `@Profile("local")` and needs `sdv.auth.mode=local-header`, and `SecurityConfiguration` refuses `local-header` without the local profile. So no other installation can receive them, and the tour cannot add the tag elsewhere.
+   - Note: the 14-page PDF is not in the repository, so a fresh development machine does not get this document from `Seed-SDV-Demo-Records.ps1`.
+3. Page-view auditing is left for task 0007.
+
+Commit: "test(e2e): make the end-to-end redaction test opt-in (task 0006 follow-up)" on `feature/ui-viewer`.
