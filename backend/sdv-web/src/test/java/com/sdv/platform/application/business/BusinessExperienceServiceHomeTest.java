@@ -116,6 +116,32 @@ class BusinessExperienceServiceHomeTest {
     }
 
     @Test
+    void summaryCarriesExpectedAndReceivedCountsOfIncompleteSubmissions() {
+        twoRecordsOneExpired();
+        when(records.findSubmissionsByIds(eq(TENANT), eq(SOURCE), anyList())).thenAnswer(inv -> {
+            List<UUID> ids = inv.getArgument(2);
+            return ids.stream().map(id -> new Submission(id, TENANT, SOURCE, "src-" + id, 2, "sha", SubmissionStatus.RECEIVING,
+                    NOW.minusSeconds(3600), NOW.minusSeconds(600), null)).toList();
+        });
+        when(records.countDocuments(eq(TENANT), eq(SOURCE), anyList()))
+                .thenReturn(List.of(new BusinessRecordRepository.DocumentCount(SUB_A, 1)));
+
+        var summary = service.recentRecords(TENANT, "maya.okafor", 8, "corr").records().getFirst().record();
+        assertTrue(summary.incomplete());
+        assertEquals(2, summary.incompleteExpectedCount());
+        assertEquals(1, summary.incompleteReceivedCount());
+    }
+
+    @Test
+    void completeRecordsReportNoMissingCounts() {
+        twoRecordsOneExpired();
+        var summary = service.recentRecords(TENANT, "maya.okafor", 8, "corr").records().getFirst().record();
+        assertFalse(summary.incomplete());
+        assertEquals(0, summary.incompleteExpectedCount());
+        assertEquals(0, summary.incompleteReceivedCount());
+    }
+
+    @Test
     void recentRecordsRejectAnOutOfRangeLimit() {
         assertThrows(IllegalArgumentException.class, () -> service.recentRecords(TENANT, "maya.okafor", 0, "corr"));
         assertThrows(IllegalArgumentException.class, () -> service.recentRecords(TENANT, "maya.okafor", 21, "corr"));

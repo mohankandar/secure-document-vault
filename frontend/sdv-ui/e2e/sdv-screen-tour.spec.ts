@@ -144,7 +144,7 @@ async function homeSteps(page: Page, testInfo: TestInfo) {
   const attention = page.getByRole('region', { name: 'Needs attention' })
   const attentionRow = attention.getByRole('button', { name: new RegExp(demoIncomplete) })
   if (!(await attentionRow.waitFor({ timeout: 15000 }).then(() => true, () => false))) return missingDemoData(testInfo, `record ${demoIncomplete} with missing documents is not under Needs attention`)
-  await expect(attentionRow).toContainText('Missing documents')
+  await expect(attentionRow).toContainText('1 of 2 documents received')
   await capture(page, testInfo, 'home')
 
   await attention.getByRole('button', { name: /Show all/ }).click()

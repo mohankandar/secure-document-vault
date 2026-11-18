@@ -130,7 +130,7 @@ export function Home() {
                   <li key={a.record.recordRef}>
                     <button type="button" className="home-row home-attention" onClick={() => openInRecords(a.sourceId, a.record)}>
                       <span><span className="mono">{a.record.identifiers[0]?.value ?? '—'}</span>{firstPreview(a.record, 2).length > 0 && <> · {firstPreview(a.record, 2).join(' ')}</>}</span>
-                      <span className="faint">{a.record.availableDocumentCount} received · <Badge tone="warn">Missing documents</Badge></span>
+                      <span className="faint">{a.record.incompleteExpectedCount ? `${a.record.incompleteReceivedCount ?? 0} of ${a.record.incompleteExpectedCount} documents received` : <Badge tone="warn">Missing documents</Badge>}</span>
                     </button>
                   </li>
                 ))}

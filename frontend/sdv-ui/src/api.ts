@@ -190,6 +190,9 @@ export type RecordSummary = {
   availableDocumentCount: number
   latestSubmissionAt: string
   incomplete: boolean
+  /** Over the record's incomplete submissions; 0 when complete. */
+  incompleteExpectedCount?: number
+  incompleteReceivedCount?: number
 }
 
 export type SearchResponse = {

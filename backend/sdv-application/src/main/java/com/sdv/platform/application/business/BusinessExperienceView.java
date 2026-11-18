@@ -60,7 +60,10 @@ public final class BusinessExperienceView {
             int submissionCount,
             int availableDocumentCount,
             Instant latestSubmissionAt,
-            boolean incomplete) {
+            boolean incomplete,
+            /* Over the record's incomplete submissions (0 when complete), counted as in record detail. */
+            int incompleteExpectedCount,
+            int incompleteReceivedCount) {
         public RecordSummary {
             identifiers = List.copyOf(identifiers);
             metadataPreview = List.copyOf(metadataPreview);

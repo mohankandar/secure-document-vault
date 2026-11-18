@@ -420,8 +420,14 @@ public class BusinessExperienceService {
                 .filter(value -> !value.businessIdentifier())
                 .limit(4)
                 .toList();
-        boolean incomplete = aggregate.submissions().stream()
-                .anyMatch(submission -> submission.status() != SubmissionStatus.COMPLETE);
+        List<Submission> open = aggregate.submissions().stream()
+                .filter(submission -> submission.status() != SubmissionStatus.COMPLETE)
+                .toList();
+        // Same counts as record detail's incomplete attention, added up over the incomplete submissions.
+        int expected = open.stream().mapToInt(Submission::expectedDocumentCount).sum();
+        int received = open.stream()
+                .mapToInt(submission -> aggregate.documentCounts().getOrDefault(submission.submissionId(), 0))
+                .sum();
 
         return new BusinessExperienceView.RecordSummary(
                 refs.encode(aggregate.identity()),
@@ -430,7 +436,9 @@ public class BusinessExperienceService {
                 aggregate.submissions().size(),
                 aggregate.documents().size(),
                 aggregate.submissions().getFirst().createdAt(),
-                incomplete);
+                !open.isEmpty(),
+                expected,
+                received);
     }
 
     private BusinessExperienceView.RecordView recordView(RecordAggregate aggregate) {

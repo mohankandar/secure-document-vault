@@ -2,7 +2,7 @@
 
 Date: 2026-11-17
 Branch: `feature/ui-home` (from `feature/ui-search-2`)
-Outcome: PARTLY DONE. Parts A and B are done. **Part C is stopped**: the task's condition for the migration cannot be met in SDV today (see "Not done, and why").
+Outcome: DONE after the follow-up of 2026-11-18. The first pass did Parts A and B and stopped Part C; the owner then chose a normal migration, which is now done (see "Follow-up after approval").
 
 ## What was done
 
@@ -108,3 +108,69 @@ One commit on `feature/ui-home`: "feat(home): Home page with Recently viewed and
 2. **"1 of 2 documents received" on Home.** The search summary only says a record is incomplete. Getting the counts would mean opening each record's detail, which writes a `BUSINESS_RECORD_OPENED` audit event for records the person never opened, on every Home visit. So Home shows "1 received · Missing documents". Showing "1 of 2" needs a small backend change: add the expected and received counts to the search summary. Should I?
 3. **Recently viewed window:** the last 90 days and the newest 500 view events. Are these acceptable?
 4. Reading Recently viewed is audited as `BUSINESS_RECENT_RECORDS_LISTED` (count only), like a search. Keep it, or not audit reading one's own list?
+
+## Follow-up after approval (2026-11-18)
+
+The owner approved 0005 and decided: Part C as option (a), with the indexes built concurrently plus an index for Recently viewed; counts on Home; 90 days and 500 opens is fine; keep auditing Recently viewed, but as routine.
+
+**1. Migration 018 (Part C)**
+- `db/changelog/018-search-date-indexes.yaml` and `.sql`, included in `db.changelog-master.yaml`. Three indexes, each `CREATE INDEX CONCURRENTLY`, in a changeset with `runInTransaction: false` (concurrent builds cannot run inside a transaction):
+  - `idx_submissions_tenant_source_created` on `submissions (tenant_id, source_id, created_at desc, submission_id)` (Received ranges);
+  - `idx_submissions_tenant_source_activity` on `submissions (tenant_id, source_id, last_activity_at desc, submission_id)` (Last updated ranges);
+  - `idx_audit_events_tenant_actor_action_time` on `audit_events (tenant_id, actor_id, action, occurred_at desc)` (Recently viewed).
+- It runs like every other migration: Liquibase at app startup. On the development database: `databasechangelog` shows `018-search-date-indexes EXECUTED`, and all three indexes are `indisvalid = true`.
+- **On a large existing table:** a concurrent build does not block reads or writes. It reads the table twice and waits for open transactions, so the first startup after the update takes longer, roughly one table scan per index.
+- **If the build is interrupted** (crash, cancel, duplicate error), PostgreSQL leaves an INVALID index. The changeset deliberately has no `IF NOT EXISTS`, so a rerun fails loudly instead of quietly keeping a broken index. Recovery: find the index with `select indexrelid::regclass from pg_index where not indisvalid;`, run `drop index concurrently <name>;`, and start again.
+- README: "Current latest Liquibase migration" corrected from 016 to 018.
+
+**Query plans, before and after** (development database; only 8 submissions and about 650 audit events, so the plans show which index is usable, not timings):
+
+| Query | Before | After |
+|---|---|---|
+| Received range only (`created_at`) | Index scan on `(tenant_id, …)`, then source and date checked row by row | With sequential scans off: **Index Only Scan on `idx_submissions_tenant_source_created`**, with the date range in the index condition and no sort step. With 8 rows the planner rightly reads the table directly. |
+| Last updated range only | As above | With sequential scans off the planner chose the Received index, because results are ordered by received date and the table is tiny. On real volumes it chooses by how selective the date is; the new last-activity index serves narrow Last updated ranges. |
+| Recently viewed (event scan) | Bitmap scan on `(tenant_id, action, occurred_at)`, then **filter on `actor_id`**: in a busy tenant, everyone's viewer opens from the last 90 days | **Index Scan on `idx_audit_events_tenant_actor_action_time`**: the condition includes tenant, actor, action and time, so only the person's own events are read |
+
+**2. Is startup seed data only for local mode? No.** I could not confirm this; the opposite is true today:
+- The seed changeset `002-local-foundation-seed.yaml` has `context: local`.
+- Only `application-local.yml` sets `spring.liquibase.contexts: local`; `application.yml` sets no context.
+- In Liquibase, **when no context is given at runtime, every changeset runs, including `context: local` ones.**
+- Checked with the bundled Liquibase 4.31.1 itself (`ContextChangeSetFilter`, no database involved):
+
+  | Runtime context | Seed runs? |
+  |---|---|
+  | none set | **yes** |
+  | `''` | **yes** |
+  | `local` | yes |
+  | `production` | no |
+
+- So an installation started without `--spring.profiles.active=local` would insert the two demo tenants (`local-demo`, `local-isolation`) on its first startup. Today every start script passes the local profile, and no other configuration sets a context.
+- I have **not** changed this, because it is a startup and schema behaviour change nobody asked for. The fix is one line in `application.yml`: a default context for everything that is not local, e.g. `spring.liquibase.contexts: ${SDV_LIQUIBASE_CONTEXTS:production}`. Changesets without a context still run; `context: local` ones are then skipped. Owner decision below.
+
+**3. Counts in search results and on Home**
+- `RecordSummary` (search results, and Recently viewed) gains `incompleteExpectedCount` and `incompleteReceivedCount`: the expected and received counts added up over the record's incomplete submissions, counted exactly as record detail counts them (0 when complete). They come from data the search already loads; there are no extra queries.
+- Home's Needs attention now reads "300000000090 · Omar Patelli · **1 of 2 documents received**".
+- The Records table row still shows the "Missing documents" badge; it could now show "1 of 2 received", as design screen 2 does, if wanted.
+- Tests: 2 new in `BusinessExperienceServiceHomeTest`: incomplete gives expected 2 and received 1; complete gives 0 and 0. The e2e Home step now checks "1 of 2 documents received".
+
+**4. Recently viewed audit is routine**
+- `BUSINESS_RECENT_RECORDS_LISTED` is still recorded, and is now in the Audit screen's routine set (`ROUTINE_AUDIT_ACTIONS` in `src/r7/Operations.tsx`). It is hidden by default and shown with **Include view events**, or when that action is chosen in the Action filter (new option "Recently viewed list read").
+- Checked as Platform operations: 0 rows by default, 10 rows with the toggle on.
+- **To be precise about "like view events":** in the Audit screen the routine set until now held only `AUDIT_VIEWED`. Document view events (`DOCUMENT_VIEW_OPENED`, `DOCUMENT_PAGE_VIEWED`) are hidden by default in the record and document **activity** panels (server-side), but **not** in the Audit screen. I did not change that. Should view events also be routine in Audit?
+
+**Checks**
+
+| Command | Result |
+|---|---|
+| `.\Build-SDV-All.ps1` | **PASS**: BUILD SUCCESS, 61 tests, 0 failures |
+| `npm run typecheck` | PASS |
+| `.\start-local.cmd` | Migration 018 applied at startup; three valid indexes |
+| `npm run ui:capture` | **PASS 14/14** (desktop + iPad) |
+| Audit routine check (Playwright, Platform operations) | Hidden by default; shown with the toggle |
+
+Screenshots refreshed in `.runtime/ui-checks/0005/` (Home now shows "1 of 2 documents received"), plus `audit-routine-included.png`.
+
+**Questions for the owner (follow-up)**
+1. Set a default Liquibase context outside local mode (one line in `application.yml`) so the demo tenants are never inserted outside local mode?
+2. Show "1 of 2 received" in the Records table row as well?
+3. Should document view events also be routine (hidden by default) in the Audit screen?

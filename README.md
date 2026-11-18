@@ -8,7 +8,7 @@ The repository contains the previously verified/frozen **SDV V1 Units 0–25** b
 
 **R3 is not yet re-frozen.** It adds post-V1 runtime behavior and must complete local build/runtime regression and the final release-readiness review before a new release baseline is declared.
 
-Current latest Liquibase migration: **016**.
+Current latest Liquibase migration: **018**.
 
 R3 includes:
 

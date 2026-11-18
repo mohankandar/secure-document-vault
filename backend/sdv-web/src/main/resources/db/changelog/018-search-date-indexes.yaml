@@ -1,0 +1,12 @@
+databaseChangeLog:
+  - changeSet:
+      id: 018-search-date-indexes
+      author: sdv
+      # CREATE INDEX CONCURRENTLY cannot run inside a transaction.
+      runInTransaction: false
+      changes:
+        - sqlFile:
+            path: db/changelog/018-search-date-indexes.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
