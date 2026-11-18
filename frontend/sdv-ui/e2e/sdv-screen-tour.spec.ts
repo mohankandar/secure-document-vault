@@ -88,12 +88,23 @@ async function captureSectionTabs(page: Page, testInfo: TestInfo, sectionsLabel:
   }
 }
 
-/** A name part matching the Contains/Starts with field of the seeded demo data (Seed-SDV-Demo-Records.ps1 -FreshTestData). */
-const demoName = process.env.SDV_DEMO_NAME ?? 'Pat'
+/** A lower-case name part matching the Contains/Starts with field of the seeded demo data: also checks that case is ignored. */
+const demoName = process.env.SDV_DEMO_NAME ?? 'pat'
+/** The demo record's member number: typed in the box it is read as a contract number, which triggers the suggestion. */
+const demoMember = process.env.SDV_DEMO_MEMBER ?? '20000000001'
+const allowNoData = process.env.SDV_E2E_ALLOW_NO_DATA === '1'
+const SEED_HELP = 'Run .\\Seed-SDV-Demo-Records.ps1 -SourceDisplayName LexaVault (and -FreshTestData -Count 3 for names, with Last Name set to Contains).'
+
+/** Missing demo data fails the test, unless SDV_E2E_ALLOW_NO_DATA=1 skips the record steps on purpose. */
+function missingDemoData(testInfo: TestInfo, what: string): void {
+  if (allowNoData) { testInfo.annotations.push({ type: 'skipped-no-data', description: what }); return }
+  throw new Error(`No demo records: ${what}. ${SEED_HELP} Set SDV_E2E_ALLOW_NO_DATA=1 to skip these steps on purpose.`)
+}
 
 const searchBox = (page: Page) => page.getByRole('searchbox', { name: 'Search records' })
 const resultRows = (page: Page) => page.getByRole('grid', { name: 'Records' }).locator('tbody tr')
 const chip = (page: Page, text: RegExp) => page.getByRole('search').locator('.ws-chip').filter({ hasText: text })
+const clearSearch = (page: Page) => page.getByRole('button', { name: 'Clear', exact: true }).click()
 
 async function waitForBusinessSearchReady(page: Page) {
   await expect(searchBox(page)).toBeVisible({ timeout: 15000 })
@@ -106,53 +117,93 @@ async function searchFor(page: Page, value: string) {
   await expect(page.getByRole('region', { name: 'Search results' }).locator('[aria-busy="true"]')).toHaveCount(0, { timeout: 15000 })
 }
 
+/** Results appear, or the test fails with the seeding help. */
+async function expectRows(page: Page, testInfo: TestInfo, what: string): Promise<boolean> {
+  const found = await resultRows(page).first().waitFor({ timeout: 15000 }).then(() => true, () => false)
+  if (!found) missingDemoData(testInfo, what)
+  return found
+}
+
 async function tryBusinessRecordJourney(page: Page, testInfo: TestInfo) {
   await waitForBusinessSearchReady(page)
   const placeholder = (await searchBox(page).getAttribute('placeholder')) ?? ''
-  if (!/Contract Number/i.test(placeholder)) {
-    // No searchable source on this machine (e.g. an empty local database): record screens cannot be shown.
-    testInfo.annotations.push({ type: 'skipped-journey', description: `Search box offers "${placeholder}"; no Contract Number field, so record screens were not captured.` })
-    return
-  }
+  if (!/Contract Number/i.test(placeholder)) return missingDemoData(testInfo, `the search box offers "${placeholder}", no Contract Number field`)
 
   // 1. Search by contract number: the box routes digits to the contract number field.
   await searchFor(page, demoRecord)
   await expect(chip(page, new RegExp(`Contract Number is ${demoRecord}`))).toBeVisible()
+  if (!(await expectRows(page, testInfo, `contract ${demoRecord} not found`))) return
   const recordRow = resultRows(page).filter({ hasText: demoRecord }).first()
   await expect(recordRow).toBeVisible({ timeout: 15000 })
   await capture(page, testInfo, 'results-contract')
 
-  // 2. Search by name: text goes to the source's Contains/Starts with field. Clear first, so only the name applies.
-  await page.getByRole('button', { name: 'Clear', exact: true }).click()
+  // 2. Suggestion: a member number typed in the box is read as a contract number, finds nothing,
+  //    and one click searches it as Member Number instead.
+  await clearSearch(page)
+  await searchFor(page, demoMember)
+  await expect(page.getByRole('heading', { name: `No Contract Number ${demoMember}` })).toBeVisible({ timeout: 15000 })
+  await capture(page, testInfo, 'suggestion')
+  await page.getByRole('button', { name: 'Search it as Member Number instead' }).click()
+  await expect(chip(page, new RegExp(`Member Number is ${demoMember}`))).toBeVisible()
+  await expect(resultRows(page).filter({ hasText: demoRecord })).toBeVisible({ timeout: 15000 })
+
+  // 3. Search by name in lower case: the server ignores case for Contains/Starts with ("pat" finds "Patel").
+  await clearSearch(page)
   await searchFor(page, demoName)
-  await expect(chip(page, new RegExp(`contains ${demoName}|starts with ${demoName}`))).toBeVisible()
-  await expect(resultRows(page).first()).toBeVisible({ timeout: 15000 })
+  await expect(chip(page, new RegExp(`(contains|starts with) ${demoName}$`))).toBeVisible()
+  if (!(await expectRows(page, testInfo, `no record whose name contains "${demoName}"`))) return
   const nameRows = await resultRows(page).count()
   await capture(page, testInfo, 'results-name')
 
-  // 3. Add a filter chip from the Filters panel, then remove it with ×.
-  const firstRowFirstName = await resultRows(page).first().locator('td[data-label="First Name"]').innerText().catch(() => '')
-  if (firstRowFirstName.trim()) {
-    await page.getByRole('button', { name: /^Filters/ }).click()
-    const filters = page.getByRole('dialog', { name: 'Filters' })
-    await expect(filters).toBeVisible()
-    await capture(page, testInfo, 'filters')
-    await filters.getByLabel(/^First Name/).fill(firstRowFirstName.trim().split(/\s/)[0])
-    await filters.getByRole('button', { name: 'Show results' }).click()
-    const added = chip(page, /^First Name is /)
-    await expect(added).toBeVisible()
-    await expect(page.getByRole('button', { name: /^Filters/ })).toContainText('2')
-    await expect(resultRows(page)).toHaveCount(1)
-    await capture(page, testInfo, 'results-filter-chip')
-    await added.getByRole('button', { name: /^Remove filter/ }).click()
-    await expect(added).toHaveCount(0)
-    await expect(resultRows(page)).toHaveCount(nameRows)
-  } else {
-    testInfo.annotations.push({ type: 'skipped-step', description: 'No First Name column in the name results; filter chip step not run.' })
-  }
+  // 4. Add a filter chip from the Filters panel, then remove it with ×.
+  const firstRowFirstName = (await resultRows(page).first().locator('td[data-label="First Name"]').innerText().catch(() => '')).trim()
+  if (!firstRowFirstName) return missingDemoData(testInfo, 'no First Name column in the name results')
+  await page.getByRole('button', { name: /^Filters/ }).click()
+  let filters = page.getByRole('dialog', { name: 'Filters' })
+  await expect(filters).toBeVisible()
+  await capture(page, testInfo, 'filters')
+  await filters.getByLabel(/^First Name/).fill(firstRowFirstName.split(/\s/)[0])
+  await filters.getByRole('button', { name: 'Show results' }).click()
+  const added = chip(page, /^First Name is /)
+  await expect(added).toBeVisible()
+  await expect(page.getByRole('button', { name: /^Filters/ })).toContainText('2')
+  await expect(resultRows(page)).toHaveCount(1)
+  await capture(page, testInfo, 'results-filter-chip')
+  await added.getByRole('button', { name: /^Remove filter/ }).click()
+  await expect(added).toHaveCount(0)
+  await expect(resultRows(page)).toHaveCount(nameRows)
 
-  // 4. Open the record panel for the demo contract.
-  await page.getByRole('button', { name: 'Clear', exact: true }).click()
+  // 5. Date range only, with a quick button: every record received in the last 30 days.
+  await clearSearch(page)
+  await page.getByRole('button', { name: /^Filters/ }).click()
+  filters = page.getByRole('dialog', { name: 'Filters' })
+  await filters.getByRole('group', { name: 'Received quick ranges' }).getByRole('button', { name: 'Last 30 days' }).click()
+  await filters.getByRole('button', { name: 'Show results' }).click()
+  await expect(chip(page, /^Received /)).toBeVisible()
+  if (!(await expectRows(page, testInfo, 'nothing received in the last 30 days'))) return
+  await capture(page, testInfo, 'results-received-last-30-days')
+
+  // 6. Date range only, typed: Last updated from 7 days ago to today (the person's own calendar days).
+  await clearSearch(page)
+  const [weekAgo, today] = await page.evaluate(() => {
+    const day = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    const now = new Date()
+    const before = new Date(now)
+    before.setDate(now.getDate() - 7)
+    return [day(before), day(now)]
+  })
+  await page.getByRole('button', { name: /^Filters/ }).click()
+  filters = page.getByRole('dialog', { name: 'Filters' })
+  const updated = filters.getByRole('group', { name: /^Last updated/ })
+  await updated.getByLabel('From').fill(weekAgo)
+  await updated.getByLabel('To').fill(today)
+  await filters.getByRole('button', { name: 'Show results' }).click()
+  await expect(chip(page, /^Updated /)).toBeVisible()
+  if (!(await expectRows(page, testInfo, 'nothing updated in the last 7 days'))) return
+  await capture(page, testInfo, 'results-updated-range')
+
+  // 7. Open the record panel for the demo contract.
+  await clearSearch(page)
   await searchFor(page, demoRecord)
   await recordRow.click()
   // Wide screens show the record in a side panel; narrower ones (e.g. iPad portrait) in a drawer.

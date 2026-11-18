@@ -5,10 +5,20 @@ export const session = () => roleApi<SessionInfo>('/api/v1/session', 'business')
 export const schema = () => roleApi<SearchSchema>('/api/v1/business/search-schema', 'business')
 /** Records per search page. The search request and the hints shown to people both use this value. */
 export const SEARCH_PAGE_SIZE = 25
-export const search = (sourceId: string, criteria: Record<string,string>, from: string, to: string, page: number) =>
+/** A date range typed as yyyy-mm-dd days. Both ends are optional. */
+export type DayRange = { from: string; to: string }
+/** Start of the From day and end of the To day, in the person's own time zone. */
+const dayStart = (d: string) => (d ? new Date(d + 'T00:00:00').toISOString() : null)
+const dayEnd = (d: string) => (d ? new Date(d + 'T23:59:59.999').toISOString() : null)
+/**
+ * received: when the submission arrived (server dateFrom/dateTo, which filter submissions.created_at).
+ * updated: last activity on the submission (server lastUpdatedFrom/lastUpdatedTo, submissions.last_activity_at).
+ */
+export const search = (sourceId: string, criteria: Record<string,string>, received: DayRange, updated: DayRange, page: number) =>
   roleApi<SearchResponse>('/api/v1/business/search', 'business', { method: 'POST', body: JSON.stringify({
-    sourceId, criteria: Object.fromEntries(Object.entries(criteria).map(([key,value]) => [key,value.trim()]).filter(([,value]) => value.length > 0)), lastUpdatedFrom: from ? new Date(from + 'T00:00:00Z').toISOString() : null,
-    lastUpdatedTo: to ? new Date(to + 'T23:59:59.999Z').toISOString() : null, page, pageSize: SEARCH_PAGE_SIZE
+    sourceId, criteria: Object.fromEntries(Object.entries(criteria).map(([key,value]) => [key,value.trim()]).filter(([,value]) => value.length > 0)),
+    dateFrom: dayStart(received.from), dateTo: dayEnd(received.to),
+    lastUpdatedFrom: dayStart(updated.from), lastUpdatedTo: dayEnd(updated.to), page, pageSize: SEARCH_PAGE_SIZE
   }) })
 export const record = (ref: string) => roleApi<BusinessRecord>('/api/v1/business/records/' + encodeURIComponent(ref), 'business')
 export function toSource(s: SearchSource): Source {

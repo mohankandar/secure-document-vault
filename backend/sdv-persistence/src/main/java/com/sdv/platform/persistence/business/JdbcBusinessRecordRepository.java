@@ -69,12 +69,15 @@ public class JdbcBusinessRecordRepository implements BusinessRecordRepository {
                 if (v > 0) sql.append(" or ");
                 String valueParam = prefix + "Value" + v;
                 params.addValue(valueParam, variants.get(v));
+                // Exact keeps the field's configured normalization. Starts with and Contains ignore case:
+                // "pat" finds "Patel". The row is already found through the unique
+                // (tenant_id, submission_id, field_key) index, so lower() does not change index use.
                 if (criterion.searchMode() == MetadataSearchMode.EXACT) {
                     sql.append("v.normalized_value=:").append(valueParam);
                 } else if (criterion.searchMode() == MetadataSearchMode.PREFIX) {
-                    sql.append("position(:").append(valueParam).append(" in v.normalized_value)=1");
+                    sql.append("position(lower(:").append(valueParam).append(") in lower(v.normalized_value))=1");
                 } else {
-                    sql.append("position(:").append(valueParam).append(" in v.normalized_value)>0");
+                    sql.append("position(lower(:").append(valueParam).append(") in lower(v.normalized_value))>0");
                 }
             }
             sql.append("))");

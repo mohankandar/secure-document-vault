@@ -5,10 +5,13 @@ import type { RecordItem, Source } from './data'
 import { schema, search, record, toSource, toSummary, toRecord, documentActivity, SEARCH_PAGE_SIZE, type LiveDocumentActivity } from './liveApi'
 import { Badge, Callout, Drawer, Empty, ErrorState, Skeleton, fmtDate, fmtRel, humanize } from './ui'
 import { Viewer } from './Viewer'
-import { MODE_HINT, MODE_WORD, boxLabel, routeBoxInput } from './searchRouting'
+import { MODE_HINT, MODE_WORD, QUICK_RANGES, alternativeFields, boxLabel, quickRange, rangeLabel, routeBoxInput, type Range } from './searchRouting'
 
 type Criteria = Record<string, string>
-type Applied = { sourceId: string; c: Criteria; from: string; to: string }
+/** received: when the submission arrived (server dateFrom/dateTo); updated: last activity (lastUpdatedFrom/To). */
+type Applied = { sourceId: string; c: Criteria; received: Range; updated: Range }
+const NO_RANGE: Range = { from: '', to: '' }
+const emptyApplied = (sourceId: string): Applied => ({ sourceId, c: {}, received: NO_RANGE, updated: NO_RANGE })
 type FieldValue = { label: string; value: string }
 /** What the search result said about a record; kept apart so loading the full record does not change the row. */
 type Summary = { identifiers: FieldValue[]; preview: FieldValue[]; docs: number; incomplete: boolean }
@@ -24,7 +27,8 @@ function useMediaQuery(q: string) {
   return m
 }
 
-const hasCriteria = (a: Pick<Applied, 'c' | 'from' | 'to'>) => Object.values(a.c).some((v) => v.trim()) || !!a.from || !!a.to
+// A date range alone is enough: the server lists every record in it, page by page.
+const hasCriteria = (a: Pick<Applied, 'c' | 'received' | 'updated'>) => Object.values(a.c).some((v) => v.trim()) || [a.received, a.updated].some((r) => !!r.from || !!r.to)
 const uniqueLabels = (rows: FieldValue[][]) => [...new Set(rows.flat().map((f) => f.label))]
 const valueOf = (list: FieldValue[] | undefined, label: string) => list?.find((f) => f.label === label)?.value ?? ''
 
@@ -40,6 +44,8 @@ export function Workspace() {
   const [applied, setApplied] = useState<Applied | null>(null)
   const [box, setBox] = useState('')
   const [boxMessage, setBoxMessage] = useState('')
+  // The field and value of the last search typed in the box; used for the no-results suggestion only.
+  const [boxSearch, setBoxSearch] = useState<{ key: string; value: string } | null>(null)
   const [filtersOpen, setFiltersOpen] = useState(false)
   const [panelOpen, setPanelOpen] = useState(false)
   const filtersButton = useRef<HTMLButtonElement>(null)
@@ -65,7 +71,7 @@ export function Workspace() {
     if (!applied) { setRecords([]); setSummaries({}); setHasMore(false); setStatus(sources.length ? 'live' : 'loading'); return }
     let active = true
     setStatus('loading')
-    search(applied.sourceId, applied.c, applied.from, applied.to, page).then((r) => {
+    search(applied.sourceId, applied.c, applied.received, applied.updated, page).then((r) => {
       if (!active) return
       setRecords(r.records.map((x) => toSummary(x, applied.sourceId)))
       setSummaries(Object.fromEntries(r.records.map((x) => [x.recordRef, {
@@ -89,6 +95,7 @@ export function Workspace() {
     setApplied(next && hasCriteria(next) ? next : null)
     setSelectedRef(null)
     setPanelOpen(false)
+    setBoxSearch(null)
   }
   const submitBox = (e?: FormEvent) => {
     e?.preventDefault()
@@ -96,17 +103,26 @@ export function Workspace() {
     if (!route) return
     if (!route.ok) { setBoxMessage(route.message); return }
     setBoxMessage('')
-    const base = applied ?? { sourceId: activeSourceId, c: {}, from: '', to: '' }
+    const base = applied ?? emptyApplied(activeSourceId)
     runSearch({ ...base, c: { ...base.c, [route.field.key]: route.value } })
+    setBoxSearch({ key: route.field.key, value: route.value })
     setBox('')
   }
   const removeChip = (key: string) => {
     if (!applied) return
-    if (key === 'from') return runSearch({ ...applied, from: '' })
-    if (key === 'to') return runSearch({ ...applied, to: '' })
+    if (key === 'received' || key === 'updated') return runSearch({ ...applied, [key]: NO_RANGE })
     const c = { ...applied.c }
     delete c[key]
     runSearch({ ...applied, c })
+  }
+  // When a number typed in the box found nothing, offer each other identifier that takes the same input. One click, no automatic request.
+  const boxField = boxSearch && applied?.c[boxSearch.key] === boxSearch.value ? fields.find((f) => f.key === boxSearch.key) : undefined
+  const suggestions = boxField && boxSearch ? alternativeFields(boxField, boxSearch.value, fields) : []
+  const searchAs = (key: string) => {
+    if (!applied || !boxSearch) return
+    const c = { ...applied.c }
+    delete c[boxSearch.key]
+    runSearch({ ...applied, c: { ...c, [key]: boxSearch.value } })
   }
   const clearAll = () => { setBox(''); setBoxMessage(''); runSearch(null) }
 
@@ -115,8 +131,10 @@ export function Workspace() {
       const f = source?.fields.find((x) => x.key === key)
       return { key, text: f ? `${f.label} ${MODE_WORD[f.mode]} ${v.trim()}` : `${key} ${v.trim()}` }
     }),
-    ...(applied.from ? [{ key: 'from', text: `Updated from ${fmtDate(applied.from)}` }] : []),
-    ...(applied.to ? [{ key: 'to', text: `Updated to ${fmtDate(applied.to)}` }] : []),
+    ...(['received', 'updated'] as const).flatMap((key) => {
+      const text = rangeLabel(key === 'received' ? 'Received' : 'Updated', applied[key])
+      return text ? [{ key, text }] : []
+    }),
   ] : []
 
   const openRecord = (ref: string) => { setSelectedRef(ref); setPanelOpen(true) }
@@ -163,7 +181,7 @@ export function Workspace() {
           </button>
           <button type="button" className="v-btn quiet" onClick={clearAll} disabled={!applied && !box}>Clear</button>
           {filtersOpen && sources.length > 0 && (
-            <FiltersPanel sources={sources} initial={applied ?? { sourceId: activeSourceId, c: {}, from: '', to: '' }}
+            <FiltersPanel sources={sources} initial={applied ?? emptyApplied(activeSourceId)}
               onApply={(next) => { setFiltersOpen(false); setBox(''); setBoxMessage(''); runSearch(next); filtersButton.current?.focus() }}
               onClose={() => { setFiltersOpen(false); filtersButton.current?.focus() }} />
           )}
@@ -176,9 +194,18 @@ export function Workspace() {
               Type in the search bar and press Enter, or open Filters to search by any field.
             </Empty>
           ) : results.length === 0 ? (
+            suggestions.length > 0 && boxField && boxSearch ? (
+              <Empty title={`No ${boxField.label} ${boxSearch.value}`} action={<div className="row wrap" style={{ justifyContent: 'center', gap: 8 }}>
+                {suggestions.map((f) => <button key={f.key} type="button" className="v-btn sm primary" onClick={() => searchAs(f.key)}>Search it as {f.label} instead</button>)}
+                <button type="button" className="v-btn sm" onClick={() => setFiltersOpen(true)}>Open Filters</button>
+              </div>}>
+                The search box read this number as a {boxField.label}. It may belong to another field.
+              </Empty>
+            ) : (
             <Empty title="No matching records" action={<button type="button" className="v-btn sm" onClick={() => setFiltersOpen(true)}>Open Filters</button>}>
               Check the number for typos, remove a filter, or search a shorter part of a name. Exact fields must match in full.
             </Empty>
+            )
           ) : (
             <>
               <div className="ws-results-head">
@@ -225,16 +252,16 @@ export function Workspace() {
 function FiltersPanel({ sources, initial, onApply, onClose }: { sources: Source[]; initial: Applied; onApply: (a: Applied) => void; onClose: () => void }) {
   const [srcId, setSrcId] = useState(initial.sourceId || sources[0].id)
   const [draft, setDraft] = useState<Criteria>(initial.c)
-  const [from, setFrom] = useState(initial.from)
-  const [to, setTo] = useState(initial.to)
+  const [received, setReceived] = useState<Range>(initial.received)
+  const [updated, setUpdated] = useState<Range>(initial.updated)
   const [touched, setTouched] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
   const src = sources.find((s) => s.id === srcId) ?? sources[0]
   const fields = src.fields.filter((f) => f.searchable)
-  const filled = hasCriteria({ c: draft, from, to })
+  const filled = hasCriteria({ c: draft, received, updated })
 
   useEffect(() => { ref.current?.querySelector<HTMLElement>('select, input')?.focus() }, [])
-  const apply = () => { setTouched(true); if (filled) onApply({ sourceId: src.id, c: draft, from, to }) }
+  const apply = () => { setTouched(true); if (filled) onApply({ sourceId: src.id, c: draft, received, updated }) }
 
   return (
     <div ref={ref} id="ws-filters" className="ws-filters" role="dialog" aria-modal="false" aria-labelledby="ws-filters-title"
@@ -262,19 +289,33 @@ function FiltersPanel({ sources, initial, onApply, onClose }: { sources: Source[
             </label>
           ))}
         </div>
-        <fieldset className="ws-dates">
-          <legend className="v-label">Last updated</legend>
-          <label className="v-field"><span>From</span><input className="v-input" type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></label>
-          <label className="v-field"><span>To</span><input className="v-input" type="date" value={to} onChange={(e) => setTo(e.target.value)} /></label>
-        </fieldset>
-        {touched && !filled && <Callout tone="warn" title="Enter at least one filter">Open-ended browsing isn&apos;t supported. Search by an identifier or field.</Callout>}
+        <DateRangeField legend="Received" hint="When the submission arrived" value={received} onChange={setReceived} />
+        <DateRangeField legend="Last updated" hint="Latest activity on the submission" value={updated} onChange={setUpdated} />
+        {touched && !filled && <Callout tone="warn" title="Enter at least one filter">Fill in a field, or choose a Received or Last updated date range.</Callout>}
         <footer className="ws-filters-foot">
           <span className="faint">Up to {SEARCH_PAGE_SIZE} records per page. You only see records your role allows.</span>
-          <button type="button" className="v-btn" onClick={() => { setDraft({}); setFrom(''); setTo(''); setTouched(false) }}>Clear</button>
+          <button type="button" className="v-btn" onClick={() => { setDraft({}); setReceived(NO_RANGE); setUpdated(NO_RANGE); setTouched(false) }}>Clear</button>
           <button type="submit" className="v-btn primary">Show results</button>
         </footer>
       </form>
     </div>
+  )
+}
+
+function DateRangeField({ legend, hint, value, onChange }: { legend: string; hint: string; value: Range; onChange: (r: Range) => void }) {
+  return (
+    <fieldset className="ws-dates">
+      <legend className="v-label">{legend}<span className="faint ws-dates-hint">{hint}</span></legend>
+      <div className="ws-quick" role="group" aria-label={`${legend} quick ranges`}>
+        {QUICK_RANGES.map((q) => {
+          const r = quickRange(q)
+          const on = r.from === value.from && r.to === value.to
+          return <button key={q} type="button" className="v-btn sm" aria-pressed={on} onClick={() => onChange(on ? NO_RANGE : r)}>{q}</button>
+        })}
+      </div>
+      <label className="v-field"><span>From</span><input className="v-input" type="date" value={value.from} max={value.to || undefined} onChange={(e) => onChange({ ...value, from: e.target.value })} /></label>
+      <label className="v-field"><span>To</span><input className="v-input" type="date" value={value.to} min={value.from || undefined} onChange={(e) => onChange({ ...value, to: e.target.value })} /></label>
+    </fieldset>
   )
 }
 

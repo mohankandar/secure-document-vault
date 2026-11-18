@@ -330,6 +330,10 @@ html.r7-html, html.r7-html body { margin: 0; background: var(--bg); color: var(-
 .ws-dates { border: 0; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; min-width: 0; }
 .ws-dates legend { margin-bottom: 8px; }
 .ws-dates .v-field > span { font-weight: 400; font-size: 12px; color: var(--ink-3); }
+.ws-dates legend { display: flex; align-items: baseline; justify-content: flex-start; gap: 8px; }
+.ws-dates-hint { font-size: 12px; font-weight: 400; }
+.ws-quick { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px; }
+.ws-quick .v-btn[aria-pressed='true'] { background: var(--primary-soft); border-color: var(--primary); color: var(--primary-hover); }
 .ws-filters-foot { margin-top: auto; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding-top: 14px; border-top: 1px solid var(--line); }
 .ws-filters-foot .faint { flex: 1 1 220px; font-size: 13px; }
 
