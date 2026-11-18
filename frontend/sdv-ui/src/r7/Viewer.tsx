@@ -3,6 +3,7 @@ import { ArrowLeft, ChevronLeft, ChevronRight, Download, Eraser, Info, Maximize2
 import { useStore } from './store'
 import { BUSINESS_LIMITS, PAGE_TEXT, RETENTION, type Doc, type RecordItem, type Redaction } from './data'
 import { ApiRequestError } from '../api'
+import { failureText } from './CardError'
 import { Badge, Callout, Dialog, Drawer, Tabs, auditEventLabel, fmtDate, fmtDateTime, fmtRel, humanize } from './ui'
 import { viewerMetadata, viewerPage, viewerSearch, record as fetchRecord, toRecord, documentActivity, type LiveDocumentActivity, type ViewerSearch, documentTags, documentComments, createDocumentTag, createDocumentComment, type LiveTag, type LiveComment, secureDownload, recordPrintEvent, permanentRedaction, viewerPreviews } from './liveApi'
 
@@ -14,7 +15,7 @@ const showDevelopmentUtilities = import.meta.env.DEV
 /** The server refused an action (e.g. permissions changed mid-session). Plain words, no codes. */
 export const REFUSED = { title: "You can't do this", detail: "Your role doesn't allow it. Ask your Business admin if you need it." }
 export const isRefused = (e: unknown) => e instanceof ApiRequestError && e.status === 403
-const errorText = (e: unknown) => (isRefused(e) ? `${REFUSED.title}. ${REFUSED.detail}` : e instanceof Error ? e.message : String(e))
+const errorText = (e: unknown) => (isRefused(e) ? `${REFUSED.title}. ${REFUSED.detail}` : failureText('Viewer action failed', e))
 
 /** A readable document kind from its file name: "loan-agreement.pdf" -> "Loan agreement". */
 export const docKind = (filename: string) => {
@@ -64,7 +65,7 @@ export function Viewer({ record, results, docId, onClose, recordTitle, backLabel
     canvasRef.current?.scrollTo({ top: 0 })
     setViewingId('')
     viewerMetadata(doc.id).then(m => { if(active){setViewingId(m.viewingId ?? '');setPageCount(m.pageCount)} })
-      .catch(e => {if(active)setViewerFailure(e instanceof Error ? e.message : 'Document unavailable')})
+      .catch(e => {if(active)setViewerFailure(failureText('Viewer: document did not open', e))})
       .finally(() => {if(active)setViewerLoading(false)})
     return () => {active=false}
   }, [doc.id])
@@ -74,7 +75,7 @@ export function Viewer({ record, results, docId, onClose, recordTitle, backLabel
     if(term.length>100){setSearchError('Search is limited to 100 characters');return}
     let active=true
     viewerSearch(doc.id,term).then(r=>{if(active){setSearchResults(r);setSearchError('')}})
-      .catch(e=>{if(active){setSearchResults(null);setSearchError(e instanceof Error?e.message:'Search failed')}})
+      .catch(e=>{if(active){setSearchResults(null);setSearchError(failureText('Viewer: find in document failed', e))}})
     return ()=>{active=false}
   },[doc.id,query])
 
@@ -211,7 +212,7 @@ export function Viewer({ record, results, docId, onClose, recordTitle, backLabel
       setMarks([]);setRedacting(false);setReview(false);setQuery('');setSearchResults(null)
       setRenderRevision(n=>n+1)
       setPageCount(0)
-      viewerMetadata(doc.id).then(m=>{setViewingId(m.viewingId ?? '');setPageCount(m.pageCount)}).catch(e=>setViewerFailure(String(e)))
+      viewerMetadata(doc.id).then(m=>{setViewingId(m.viewingId ?? '');setPageCount(m.pageCount)}).catch(e=>setViewerFailure(failureText('Viewer: document did not reopen', e)))
       toast({title:'Permanent corrective redaction completed'})
     }catch(e){setRedactionFailure(errorText(e)); if(isRefused(e))failed('Redaction failed',e)}
     finally{setActionBusy(false)}
@@ -231,7 +232,7 @@ export function Viewer({ record, results, docId, onClose, recordTitle, backLabel
       setRecords(prev => prev.map(r => r.ref === loaded.ref ? loaded : r))
       setSelectedRef(loaded.ref)
       setOpenDocId(loaded.docs[0].id)
-    } catch (e) { toast({ tone: 'bad', title: 'Unable to open next record', detail: String(e) }) }
+    } catch (e) { toast({ tone: 'bad', title: "The next record didn't open", detail: failureText('Viewer: next record did not open', e) }) }
     finally { setRecordLoading(false) }
   }
   const switchDoc = (id: string) => { setOpenDocId(id); if(!liveSession)addDocActivity(id, 'DOCUMENT_VIEWED'); setDocsOpen(false) }
@@ -417,7 +418,7 @@ function SecurePage({documentId,viewingId,page,scale,scrollRoot,matches,highligh
       const objectUrl=URL.createObjectURL(blob)
       if(active)setUrl(objectUrl)
       else URL.revokeObjectURL(objectUrl)
-    }).catch(e=>{if(active)setError(e instanceof Error?e.message:'Page failed to load')})
+    }).catch(e=>{if(active)setError(failureText('Viewer: page did not load', e))})
     return ()=>{active=false}
   },[visible,documentId,page,scale,viewingId])
   useEffect(()=>()=>{if(url)URL.revokeObjectURL(url)},[url])
@@ -487,7 +488,7 @@ function DocInfo({ doc, tab, setTab, embedded }: { doc: Doc; tab: InfoTab; setTa
   const [liveEvents,setLiveEvents] = useState<LiveDocumentActivity[]>([])
   const [includeViews,setIncludeViews] = useState(false)
   const [activityError,setActivityError] = useState('')
-  useEffect(()=>{if(!liveSession || tab!=='activity')return;let active=true;setActivityError('');documentActivity(doc.id,includeViews).then(rows=>{if(active)setLiveEvents(rows)}).catch(e=>{if(active){setLiveEvents([]);setActivityError(String(e))}});return()=>{active=false}},[liveSession,tab,doc.id,includeViews])
+  useEffect(()=>{if(!liveSession || tab!=='activity')return;let active=true;setActivityError('');documentActivity(doc.id,includeViews).then(rows=>{if(active)setLiveEvents(rows)}).catch(e=>{if(active){setLiveEvents([]);setActivityError(failureText('Viewer: activity did not load', e))}});return()=>{active=false}},[liveSession,tab,doc.id,includeViews])
   const [liveTags,setLiveTags] = useState<LiveTag[]>([])
   const [liveComments,setLiveComments] = useState<LiveComment[]>([])
   const [metadataLoading,setMetadataLoading] = useState(false)
@@ -499,7 +500,7 @@ function DocInfo({ doc, tab, setTab, embedded }: { doc: Doc; tab: InfoTab; setTa
     setMetadataLoading(true);setMetadataError('')
     const task=tab==='comments'?documentComments(doc.id):documentTags(doc.id)
     task.then(items=>{if(!active)return;if(tab==='comments')setLiveComments(items as LiveComment[]);else setLiveTags(items as LiveTag[])})
-      .catch(e=>{if(active)setMetadataError(e instanceof Error?e.message:'Unable to load document data')})
+      .catch(e=>{if(active)setMetadataError(failureText('Viewer: comments or tags did not load', e))})
       .finally(()=>{if(active)setMetadataLoading(false)})
     return()=>{active=false}
   },[liveSession,tab,doc.id])

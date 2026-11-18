@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { itSources, itFields, itUpsertField, itCreateSource, itUpdateSource, itSourceSummary, liveStorage, identityOverview, systemInfo, createStorageVolume, updateStorageVolume, saveIdentityDraft, testIdentityDraft, activateIdentityDraft, rollbackIdentity, type LiveStorageVolume, type IdentityOverview, type ItSourceSummary, type ItSource, type ItField } from './liveApi'
 import { CheckCircle2, Circle, History, Pencil, Plus, RotateCcw } from 'lucide-react'
 import { AREA_TABS, useStore } from './store'
+import { FailureNotice, actionFailed, loadFailed, type Failure } from './CardError'
 import { SYSTEM, type IdentityConfig, type Source, type Volume } from './data'
 import { AreaFrame } from './Governance'
 import { Badge, Callout, Dialog, Drawer, Meter, Panel, Scenario, Status, fmtDate, fmtRel } from './ui'
@@ -267,7 +268,8 @@ function ConnectedIntegrations(){
  const [sources,setSources]=useState<ItSource[]>([])
  const [sourceId,setSourceId]=useState('')
  const [fields,setFields]=useState<ItField[]>([])
- const [error,setError]=useState('')
+ const [error,setError]=useState<Failure|null>(null)
+ const [reload,setReload]=useState(0)
  const [form,setForm]=useState(false)
  const [revising,setRevising]=useState<ItField|null>(null)
  const [ack,setAck]=useState(false)
@@ -289,30 +291,30 @@ function ConnectedIntegrations(){
  const [sourceConfirm,setSourceConfirm]=useState(false)
  const selectedSourceRef=useRef(sourceId)
  selectedSourceRef.current=sourceId
- useEffect(()=>{let live=true;itSources().then(rows=>{if(live){setSources(rows);setSourceId(rows[0]?.sourceId??'')}}).catch(e=>{if(live)setError(String(e))});return()=>{live=false}},[])
- useEffect(()=>{if(!sourceId){setFields([]);setSummary(null);return}let live=true;setFields([]);setSummary(null);setError('');Promise.allSettled([itSourceSummary(sourceId),itFields(sourceId)]).then(([sr,fr])=>{if(!live)return;if(sr.status==='fulfilled')setSummary(sr.value);else setError(String(sr.reason));if(fr.status==='fulfilled')setFields(fr.value);else setError(String(fr.reason))});return()=>{live=false}},[sourceId])
+ useEffect(()=>{let live=true;itSources().then(rows=>{if(live){setSources(rows);setSourceId(rows[0]?.sourceId??'')}}).catch(e=>{if(live)setError(loadFailed('Integrations did not load',e))});return()=>{live=false}},[reload])
+ useEffect(()=>{if(!sourceId){setFields([]);setSummary(null);return}let live=true;setFields([]);setSummary(null);setError(null);Promise.allSettled([itSourceSummary(sourceId),itFields(sourceId)]).then(([sr,fr])=>{if(!live)return;if(sr.status==='fulfilled')setSummary(sr.value);else setError(loadFailed('Integration summary did not load',sr.reason));if(fr.status==='fulfilled')setFields(fr.value);else setError(loadFailed('Integration fields did not load',fr.reason))});return()=>{live=false}},[sourceId,reload])
  const valid=/^[A-Za-z][A-Za-z0-9_.-]{0,99}$/.test(key)&&label.trim().length>0&&(revising?.fieldKey===key||!fields.some(f=>f.fieldKey===key))&&!(type==='BOOLEAN'&&normalization==='DIGITS_ONLY')&&(!revising||ack)
- const save=async()=>{if(!valid||busy)return;setBusy(true);setError('');try{
+ const save=async()=>{if(!valid||busy)return;setBusy(true);setError(null);try{
   await itUpsertField(sourceId,key,{displayLabel:label.trim(),fieldType:type,required,normalization,validationRules:{}})
   const updatedFields=await itFields(sourceId);if(selectedSourceRef.current===sourceId)setFields(updatedFields);setForm(false);setRevising(null);setAck(false);setKey('');setLabel('');setRequired(false)
- }catch(e){setError(String(e))}finally{setBusy(false)}}
+ }catch(e){setError(actionFailed('Saving an integration field failed',e))}finally{setBusy(false)}}
  const source=sources.find(x=>x.sourceId===sourceId)
  const editSource=()=>{if(!source)return;setSourceConfirm(false);setSourceKey(source.sourceKey);setSourceName(source.displayName);setAuthType(source.authType);setCredential(source.credentialReference);setSourceStatus(source.status);setSourceForm('edit')}
  const toggleSourceStatus=()=>{if(!source)return;setSourceKey(source.sourceKey);setSourceName(source.displayName);setAuthType(source.authType);setCredential(source.credentialReference);setSourceStatus(source.status==='ACTIVE'?'DISABLED':'ACTIVE');setSourceConfirm(true);setSourceForm('edit')}
  const createSource=()=>{setSourceConfirm(false);setSourceKey('');setSourceName('');setAuthType('OAUTH2_CLIENT_CREDENTIALS');setCredential('');setSourceStatus('ACTIVE');setSourceForm('new')}
  const sourceValid=sourceName.trim().length>0&&(sourceForm==='edit'||/^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/.test(sourceKey.trim()))
  const persistSource=async()=>{if(!sourceForm||!sourceValid||sourceBusy)return;
-   if(sourceForm==='edit'&&source&&(source.authType!==authType||source.status!==sourceStatus)&&!sourceConfirm){setSourceConfirm(true);return}setSourceBusy(true);setError('')
+   if(sourceForm==='edit'&&source&&(source.authType!==authType||source.status!==sourceStatus)&&!sourceConfirm){setSourceConfirm(true);return}setSourceBusy(true);setError(null)
    try{
      const result=sourceForm==='new'
        ?await itCreateSource({sourceKey:sourceKey.trim(),displayName:sourceName.trim(),authType,credentialReference:credential.trim()})
        :await itUpdateSource(sourceId,{displayName:sourceName.trim(),status:sourceStatus,authType,credentialReference:credential.trim(),limits:source?.limits})
      const rows=await itSources();setSources(rows);setSourceId(result.sourceId);setSection(sourceForm==='new'?'contract':'configuration');setSourceForm(null);setSourceConfirm(false)
-   }catch(e){setError(String(e))}finally{setSourceBusy(false)}
+   }catch(e){setError(actionFailed('Saving the sending system failed',e))}finally{setSourceBusy(false)}
  }
  return <>
- {error&&<Callout tone="warn" title="Source configuration unavailable">{error}</Callout>}
- <ConnectedIntegrationsView sources={sources} selected={source} fields={fields} summary={summary} section={section} onSelect={id=>{setSourceId(id);setSection('configuration');setForm(false);setError('')}} onSection={setSection} onCreate={createSource} onEdit={editSource} onToggleStatus={toggleSourceStatus} onAddField={()=>{setRevising(null);setKey('');setLabel('');setType('TEXT');setNormalization('NONE');setRequired(false);setAck(false);setForm(true)}} onRevise={f=>{setRevising(f);setKey(f.fieldKey);setLabel(f.displayLabel);setType(f.fieldType);setNormalization(f.normalization);setRequired(f.required);setAck(false);setForm(true)}}/>
+ {error&&<FailureNotice failure={error} loadTitle="Integrations didn't load" onRetry={()=>setReload(n=>n+1)} />}
+ <ConnectedIntegrationsView sources={sources} selected={source} fields={fields} summary={summary} section={section} onSelect={id=>{setSourceId(id);setSection('configuration');setForm(false);setError(null)}} onSection={setSection} onCreate={createSource} onEdit={editSource} onToggleStatus={toggleSourceStatus} onAddField={()=>{setRevising(null);setKey('');setLabel('');setType('TEXT');setNormalization('NONE');setRequired(false);setAck(false);setForm(true)}} onRevise={f=>{setRevising(f);setKey(f.fieldKey);setLabel(f.displayLabel);setType(f.fieldType);setNormalization(f.normalization);setRequired(f.required);setAck(false);setForm(true)}}/>
  {sourceForm&&<Drawer eyebrow="Tenant IT · integration" title={sourceForm==='new'?'Add integration':'Edit integration'} onClose={()=>{if(!sourceBusy)setSourceForm(null)}} footer={<><button type="button" className="v-btn" disabled={sourceBusy} onClick={()=>setSourceForm(null)}>Cancel</button><button type="button" className="v-btn primary" disabled={!sourceValid||sourceBusy} onClick={()=>void persistSource()}>{sourceBusy?'Saving…':sourceForm==='new'?'Add integration':'Save integration'}</button></>}>
  <label className="v-field"><span>Source key</span><input className="v-input" readOnly={sourceForm==='edit'} value={sourceKey} onChange={e=>setSourceKey(e.target.value)}/><small>Immutable identity of the external producer after creation.</small></label>
  <label className="v-field"><span>Display name</span><input className="v-input" value={sourceName} onChange={e=>setSourceName(e.target.value)}/></label>
@@ -337,7 +339,8 @@ function ConnectedIntegrations(){
 
 function LiveStorage(){
  const [items,setItems]=useState<LiveStorageVolume[]>([])
- const [error,setError]=useState('')
+ const [error,setError]=useState<Failure|null>(null)
+ const [reload,setReload]=useState(0)
  const [editing,setEditing]=useState<LiveStorageVolume|'new'|null>(null)
  const [name,setName]=useState('')
  const [root,setRoot]=useState('')
@@ -347,15 +350,15 @@ function LiveStorage(){
  const [stop,setStop]=useState('95')
  const [busy,setBusy]=useState(false)
  const [confirmed,setConfirmed]=useState(false)
- const refresh=()=>liveStorage().then(setItems).catch(e=>setError(String(e)))
- useEffect(()=>{void refresh()},[])
+ const refresh=()=>liveStorage().then((x)=>{setItems(x);setError(null)}).catch(e=>setError(loadFailed('Storage did not load',e)))
+ useEffect(()=>{void refresh()},[reload])
  const begin=(v:LiveStorageVolume|'new')=>{setEditing(v);setName(v==='new'?'':v.volume.displayName);setRoot(v==='new'?'':v.volume.rootPath);setState(v==='new'?'ACTIVE':v.volume.state);setPriority(String(v==='new'?0:v.volume.priority));setWarning(String(v==='new'?80:v.volume.warningPercent));setStop(String(v==='new'?95:v.volume.stopWritePercent));setConfirmed(false)}
  const valid=name.trim().length>0&&Number.isInteger(Number(priority))&&Number(priority)>=0&&Number.isInteger(Number(warning))&&Number.isInteger(Number(stop))&&Number(warning)>0&&Number(stop)<=100&&Number(stop)>Number(warning)&&(editing!=='new'||root.trim().length>0)
- const save=async()=>{if(!editing||!valid||!confirmed||busy)return;setBusy(true);setError('')
+ const save=async()=>{if(!editing||!valid||!confirmed||busy)return;setBusy(true);setError(null)
  try{const v={displayName:name.trim(),state,priority:Number(priority),warningPercent:Number(warning),stopWritePercent:Number(stop)}
  if(editing==='new')await createStorageVolume({...v,rootPath:root.trim()});else await updateStorageVolume(editing.volume.volumeId,v)
- await refresh();setEditing(null)}catch(e){setError(String(e))}finally{setBusy(false)}}
- return <>{error&&<Callout tone="warn" title="Storage operation unavailable">{error}</Callout>}
+ await refresh();setEditing(null)}catch(e){setError(actionFailed('Saving the storage volume failed',e))}finally{setBusy(false)}}
+ return <>{error&&<FailureNotice failure={error} loadTitle="Storage didn't load" onRetry={()=>setReload(n=>n+1)} />}
  <Panel flush title="Storage volumes" meta={items.length} description="Live capacity, warning thresholds and stop-write status. Root paths are immutable after creation."
  actions={<button type="button" className="v-btn sm primary" onClick={()=>begin('new')}><Plus size={14}/>Add volume</button>}>
  {items.some(v=>v.observationError||v.stopWriteThresholdReached||v.warningThresholdReached)&&<div className="v-it-storage-alert"><strong>Storage needs attention</strong><span>One or more live volumes have reported a warning, stop-write threshold, or observation problem. Review the individual volume before changing settings.</span></div>}
@@ -373,7 +376,8 @@ function LiveStorage(){
 }
 function LiveIdentity(){
  const [data,setData]=useState<IdentityOverview|null>(null)
- const [error,setError]=useState('')
+ const [error,setError]=useState<Failure|null>(null)
+ const [reload,setReload]=useState(0)
  const [edit,setEdit]=useState(false)
  const [provider,setProvider]=useState('')
  const [name,setName]=useState('')
@@ -384,12 +388,12 @@ function LiveIdentity(){
  const [confirm,setConfirm]=useState('')
  const [action,setAction]=useState<'activate'|'rollback'|null>(null)
  const [target,setTarget]=useState<{connectionId:string;configurationVersion:number}|null>(null)
- const refresh=()=>identityOverview().then(setData).catch(e=>setError(String(e)))
- useEffect(()=>{void refresh()},[])
+ const refresh=()=>identityOverview().then((x)=>{setData(x);setError(null)}).catch(e=>setError(loadFailed('Sign-in settings did not load',e)))
+ useEffect(()=>{void refresh()},[reload])
  const draft=()=>{const c=data?.staged??data?.active;setProvider(c?.providerId??'customer-oidc');setName(c?.displayName??'');setIssuer(c?.issuerUri??'');setClient(c?.browserClientId??'');setAudience(c?.apiAudience??'');setEdit(true)}
- const perform=async(fn:()=>Promise<IdentityOverview>)=>{setBusy(true);setError('');try{setData(await fn());setAction(null);setEdit(false);setConfirm('')}catch(e){setError(String(e))}finally{setBusy(false)}}
+ const perform=async(fn:()=>Promise<IdentityOverview>)=>{setBusy(true);setError(null);try{setData(await fn());setAction(null);setEdit(false);setConfirm('')}catch(e){setError(actionFailed('Changing the sign-in settings failed',e))}finally{setBusy(false)}}
  const stageValid=name.trim()&&issuer.trim()&&client.trim()&&audience.trim()
- return <>{error&&<Callout tone="warn" title="Enterprise identity operation unavailable">{error}</Callout>}
+ return <>{error&&<FailureNotice failure={error} loadTitle="Sign-in settings didn't load" onRetry={()=>setReload(n=>n+1)} />}
  {!data?<p className="muted">Loading identity configuration…</p>:<ConnectedAuthenticationView auth={data} busy={busy} onEdit={draft} onTest={()=>void perform(testIdentityDraft)} onActivate={()=>{if(!data.staged)return;setTarget(data.staged);setConfirm('');setAction('activate')}} onRollback={c=>{setTarget(c);setConfirm('');setAction('rollback')}}/>}
  {edit&&<Drawer eyebrow="Tenant IT · authentication" title="Identity draft" onClose={()=>{if(!busy)setEdit(false)}} footer={<><button className="v-btn" type="button" disabled={busy} onClick={()=>setEdit(false)}>Cancel</button><button className="v-btn primary" type="button" disabled={!stageValid||busy} onClick={()=>void perform(()=>saveIdentityDraft({providerId:provider,displayName:name,issuerUri:issuer,browserClientId:client,apiAudience:audience}))}>Save draft</button></>}>
  {([['Provider ID',provider,setProvider],['Display name',name,setName],['Issuer URI',issuer,setIssuer],['Browser client ID',client,setClient],['API audience',audience,setAudience]] as const).map(([label,value,set])=><label key={label} className="v-field"><span>{label}</span><input className="v-input" value={value} onChange={e=>set(e.target.value)}/></label>)}
@@ -402,9 +406,10 @@ function LiveIdentity(){
 }
 function LiveEnvironment(){
  const [info,setInfo]=useState<{productName:string;version:string;status:string;activeProfiles:string[];timestamp:string}|null>(null)
- const [error,setError]=useState('')
- useEffect(()=>{let mounted=true;systemInfo().then(x=>{if(mounted)setInfo(x)}).catch(e=>{if(mounted)setError(String(e))});return()=>{mounted=false}},[])
- return <>{error&&<Callout tone="warn" title="Environment unavailable">{error}</Callout>}
+ const [error,setError]=useState<Failure|null>(null)
+ const [reload,setReload]=useState(0)
+ useEffect(()=>{let mounted=true;systemInfo().then(x=>{if(mounted)setInfo(x)}).catch(e=>{if(mounted)setError(loadFailed('Environment did not load',e))});return()=>{mounted=false}},[reload])
+ return <>{error&&<FailureNotice failure={error} loadTitle="Environment didn't load" onRetry={()=>{setError(null);setReload(n=>n+1)}} />}
  <Panel title="Environment" description="Read-only facts retrieved from the connected backend.">{info?<dl className="v-kv cols">
  <div><dt>Product</dt><dd>{info.productName}</dd></div><div><dt>Version</dt><dd>{info.version}</dd></div><div><dt>Status</dt><dd>{info.status}</dd></div><div><dt>Active profiles</dt><dd>{info.activeProfiles.join(', ')||'None'}</dd></div><div><dt>Observed at</dt><dd>{fmtDate(info.timestamp)}</dd></div>
  </dl>:<p className="muted">Loading environment…</p>}</Panel></>

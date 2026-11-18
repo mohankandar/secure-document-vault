@@ -5,6 +5,7 @@ import {
 } from './data'
 import { session as loadSession } from './liveApi'
 import type { SessionInfo } from '../api'
+import { failureText } from './CardError'
 
 export type Scenario = 'live' | 'loading' | 'empty' | 'error'
 export type Theme = 'light' | 'dark'
@@ -23,7 +24,8 @@ let searchRequestSeq = 0
 export const AREA_TABS: Record<AreaId, { id: string; label: string }[]> = {
   home: [{ id: 'home', label: 'Home' }],
   workspace: [{ id: 'search', label: 'Search' }],
-  governance: [{ id: 'access', label: 'Users & access' }, { id: 'roles', label: 'Roles & permissions' }, { id: 'retention', label: 'Retention policies' }, { id: 'metadata', label: 'Metadata configuration' }],
+  // Labels only; the addresses (#/governance/access …) stay the same.
+  governance: [{ id: 'access', label: 'People & roles' }, { id: 'roles', label: 'Roles & permissions' }, { id: 'retention', label: 'Keeping documents' }, { id: 'metadata', label: 'Search fields' }],
   tenant: [{ id: 'storage', label: 'Storage' }, { id: 'authentication', label: 'Authentication' }, { id: 'integrations', label: 'Integrations' }, { id: 'environment', label: 'Environment' }],
   operations: [{ id: 'overview', label: 'Overview' }, { id: 'intake', label: 'Intake' }, { id: 'storage', label: 'Storage' }, { id: 'health', label: 'Platform health' }, { id: 'incidents', label: 'Incidents' }, { id: 'audit', label: 'Audit' }, { id: 'configuration', label: 'Configuration' }],
   system: [{ id: 'foundations', label: 'Foundations' }, { id: 'components', label: 'Components' }, { id: 'states', label: 'States' }],
@@ -93,7 +95,7 @@ function useStoreValue() {
       if (!active) return
       setLiveSession(s)
       setRoleId(s.roles.includes('PLATFORM_OPERATIONS_ADMIN') ? 'platform' : s.roles.includes('TENANT_IT_ADMIN') ? 'tenantIt' : s.roles.includes('BUSINESS_ADMIN') ? 'businessAdmin' : s.roles.includes('DOCUMENT_STEWARD') ? 'steward' : 'business')
-    }).catch(e => { if (active) setSessionError(e instanceof Error ? e.message : 'Session unavailable') })
+    }).catch(e => { if (active) setSessionError(failureText('Session did not load', e)) })
       .finally(() => { if(active) setSessionLoading(false) })
     return () => { active = false }
   }, [])

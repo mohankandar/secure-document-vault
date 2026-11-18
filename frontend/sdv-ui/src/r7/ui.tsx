@@ -98,7 +98,7 @@ export function ErrorState({ what }: { what: string }) {
   const { setScenario } = useStore()
   return (
     <Empty title={`Could not load ${what}`} icon={<XCircle size={20} />} action={<button type="button" className="v-btn sm" onClick={() => setScenario('live')}><RefreshCw size={14} aria-hidden />Retry</button>}>
-      The service returned an error. Nothing was changed. Correlation ID <span className="mono">sim-err-4f10</span>.
+      Vero couldn&apos;t load this just now. Nothing was changed.
     </Empty>
   )
 }

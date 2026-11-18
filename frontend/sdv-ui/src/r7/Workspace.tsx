@@ -3,7 +3,8 @@ import { AlertTriangle, ArrowRight, ChevronDown, ChevronUp, FileText, Search, Sl
 import { useStore } from './store'
 import type { RecordItem, Source } from './data'
 import { schema, search, record, toSource, toSummary, toRecord, documentActivity, SEARCH_PAGE_SIZE, type LiveDocumentActivity } from './liveApi'
-import { Badge, Callout, Drawer, Empty, ErrorState, Skeleton, auditEventLabel, fmtDate, fmtRel, humanize } from './ui'
+import { LoadErrorCard, failureText, loadFailed, type Failure } from './CardError'
+import { Badge, Callout, Drawer, Empty, Skeleton, auditEventLabel, fmtDate, fmtRel, humanize } from './ui'
 import { Viewer } from './Viewer'
 import { MODE_HINT, MODE_WORD, QUICK_RANGES, alternativeFields, boxLabel, quickRange, rangeLabel, routeBoxInput, type Range } from './searchRouting'
 
@@ -36,7 +37,9 @@ export function Workspace() {
   const { records, setRecords, selectedRef, setSelectedRef, openDocId, setOpenDocId, can, setResultsShown, searchRequest } = useStore()
   const [sources, setSources] = useState<Source[]>([])
   const [status, setStatus] = useState<'loading' | 'live' | 'error'>('loading')
-  const [failure, setFailure] = useState('')
+  // A failed load shows the shared card (plain words + reference); Try again re-runs the loads.
+  const [failure, setFailure] = useState<Failure | null>(null)
+  const [reload, setReload] = useState(0)
   const [page, setPage] = useState(1)
   const [hasMore, setHasMore] = useState(false)
   const [summaries, setSummaries] = useState<Record<string, Summary>>({})
@@ -52,10 +55,10 @@ export function Workspace() {
   const wide = useMediaQuery('(min-width: 1024px)')
 
   useEffect(() => { let active = true; schema().then((s) => { if (active) { setSources(s.sources.map(toSource)); setStatus('live') } })
-    .catch((e) => { if (active) { setFailure(String(e)); setStatus('error') } }); return () => { active = false } }, [])
+    .catch((e) => { if (active) { setFailure(loadFailed('Search fields did not load', e)); setStatus('error') } }); return () => { active = false } }, [reload])
   useEffect(() => { if (!selectedRef) return; let active = true
     record(selectedRef).then((r) => { if (active) setRecords((prev) => prev.map((x) => (x.ref === selectedRef ? toRecord(r) : x))) })
-      .catch((e) => { if (active) { setFailure(String(e)); setStatus('error') } })
+      .catch((e) => { if (active) { setFailure(loadFailed('The record did not load', e)); setStatus('error') } })
     return () => { active = false }
   }, [selectedRef, setRecords])
   // A record chosen elsewhere (e.g. "Go to") opens the record panel.
@@ -82,9 +85,9 @@ export function Workspace() {
       }])))
       setHasMore(r.hasMore)
       setStatus('live')
-    }).catch((e) => { if (active) { setFailure(String(e)); setRecords([]); setSummaries({}); setStatus('error') } })
+    }).catch((e) => { if (active) { setFailure(loadFailed('The search did not load', e)); setRecords([]); setSummaries({}); setStatus('error') } })
     return () => { active = false }
-  }, [applied, page, setRecords, sources.length])
+  }, [applied, page, setRecords, sources.length, reload])
 
   const results = records
   useEffect(() => { setResultsShown(!!applied && status === 'live' && results.length > 0); return () => setResultsShown(false) }, [applied, status, results.length, setResultsShown])
@@ -168,7 +171,7 @@ export function Workspace() {
   }, [pendingSelect, status, records])
   const openDoc = (r: RecordItem, docId: string) => {
     if (!can('VIEW_PDF')) return
-    setFailure('')
+    setFailure(null)
     setSelectedRef(r.ref)
     setOpenDocId(docId)
   }
@@ -217,7 +220,7 @@ export function Workspace() {
         {boxMessage && <p id="ws-box-message" className="ws-box-message" role="status">{boxMessage}</p>}
 
         <section className="ws-results" aria-label="Search results">
-          {status === 'loading' ? <Skeleton rows={7} /> : status === 'error' ? <ErrorState what="search results" /> : !applied ? (
+          {status === 'loading' ? <Skeleton rows={7} /> : status === 'error' ? (failure ? <LoadErrorCard title={failure.title ?? "The search didn't load"} failure={failure} onRetry={() => { setFailure(null); setReload((n) => n + 1) }} /> : null) : !applied ? (
             <Empty title={label ? `Search by ${label}` : 'Search with Filters'} icon={<Search size={20} />}>
               Type in the search bar and press Enter, or open Filters to search by any field.
             </Empty>
@@ -272,7 +275,6 @@ export function Workspace() {
         </Drawer>
       )}
       {selected && openDocId && can('VIEW_PDF') && <Viewer record={selected} results={results} docId={openDocId} onClose={() => setOpenDocId(null)} recordTitle={panelTitle} />}
-      {failure && <div role="alert" className="v-callout">{failure}</div>}
     </div>
   )
 }
@@ -410,7 +412,7 @@ function RecordPanelBody({ record, summary, onOpen }: { record: RecordItem; summ
     setActivityFailure('')
     Promise.all(record.docs.map((d) => documentActivity(d.id, includeViews, 100).then((rows) => rows.map((e) => ({ ...e, filename: d.filename })))))
       .then((groups) => { if (active) setLiveEvents(groups.flat().sort((a, b) => b.occurredAt.localeCompare(a.occurredAt))) })
-      .catch((e) => { if (active) { setLiveEvents([]); setActivityFailure(String(e)) } })
+      .catch((e) => { if (active) { setLiveEvents([]); setActivityFailure(failureText('Record panel: activity did not load', e)) } })
     return () => { active = false }
   }, [liveSession, record.ref, record.docs.map((d) => d.id).join(','), includeViews])
   const recent = record.docs.flatMap((d) => d.activity.map((a) => ({ ...a, doc: d.kind }))).sort((a, b) => b.at.localeCompare(a.at)).slice(0, more ? 8 : 3)

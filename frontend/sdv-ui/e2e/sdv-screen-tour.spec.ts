@@ -70,10 +70,56 @@ async function expectNoRecordsAccess(page: Page, testInfo: TestInfo, ownArea: st
   await expect(areaTab(page, 'Records')).toHaveCount(0)
   const back = await page.evaluate(() => window.location.hash)
   await page.evaluate(() => { window.location.hash = '#/workspace/search' })
-  await expect(page.getByRole('heading', { name: /This area isn.t assigned to your role/ })).toBeVisible({ timeout: 15000 })
+  await expect(page.getByRole('heading', { name: /This page isn.t part of your role/ })).toBeVisible({ timeout: 15000 })
+  await expect(page.getByRole('button', { name: 'Sign out', exact: true })).toBeVisible()
+  await expect(page.getByText(/enforced by the server|only reflects it/)).toHaveCount(0)
   await expect(page.getByRole('searchbox', { name: 'Search records' })).toBeHidden()
   await capture(page, testInfo, 'records-not-assigned')
   await page.evaluate((h) => { window.location.hash = h }, back)
+}
+
+/** Business administration (task 0008): People & roles, Roles & permissions save, and a card that fails to load. */
+async function businessAdminChecks(page: Page, testInfo: TestInfo) {
+  const sections = page.getByRole('tablist', { name: 'Business administration sections' })
+  await sections.getByRole('tab', { name: 'People & roles' }).click()
+  const people = page.locator('table.v-table')
+  await expect(people).toContainText('Name in your sign-in system')
+  await expect(people).toContainText('Can change in Vero')
+  await expect(people.locator('tbody tr')).toHaveCount(4)
+  await expect(people.locator('tbody')).not.toContainText(/Platform operations/i)
+  await expect(page.getByText(/Claim value/)).toHaveCount(0)
+
+  await sections.getByRole('tab', { name: 'Roles & permissions' }).click()
+  const print = page.getByRole('switch', { name: 'Print for Business user' })
+  await expect(print).toBeVisible({ timeout: 15000 })
+  await expect(page.getByText(/Baseline|PRINT_DOCUMENT|PERMANENT_REDACTION/)).toHaveCount(0)
+  await expect(page.locator('table.v-table tbody tr').first()).toContainText('Always on')
+  const before = await print.getAttribute('aria-checked')
+  for (const _ of [0, 1]) {
+    // Change, save, then change back and save again, so the role rules end as they started.
+    await print.click()
+    await page.getByRole('button', { name: 'Save', exact: true }).click()
+    await expect(page.getByRole('status').filter({ hasText: 'Permissions saved' }).last()).toBeVisible({ timeout: 15000 })
+  }
+  await expect(print).toHaveAttribute('aria-checked', before ?? 'false')
+
+  // A card that fails to load: plain words, a reference, and Try again reloads only that card.
+  let fail = true
+  await page.route('**/api/v1/admin/role-capabilities', (route) => (fail && route.request().method() === 'GET'
+    ? route.fulfill({ status: 500, json: { message: 'ApiRequestError: not mocked' } })
+    : route.continue()))
+  await sections.getByRole('tab', { name: 'People & roles' }).click()
+  await sections.getByRole('tab', { name: 'Roles & permissions' }).click()
+  const card = page.getByRole('alert', { name: "Roles & permissions didn't load" })
+  await expect(card).toBeVisible({ timeout: 15000 })
+  await expect(card).toContainText('The rest of the page still works.')
+  await expect(card).toContainText('Ref ')
+  await expect(page.getByText(/ApiRequestError|not mocked/)).toHaveCount(0)
+  await capture(page, testInfo, 'card-error')
+  fail = false
+  await card.getByRole('button', { name: 'Try again' }).click()
+  await expect(page.getByRole('switch', { name: 'Print for Business user' })).toBeVisible({ timeout: 15000 })
+  await page.unroute('**/api/v1/admin/role-capabilities')
 }
 
 async function captureAccountMenu(page: Page, testInfo: TestInfo) {
@@ -460,11 +506,24 @@ test.describe('SDV role-based screen capture', () => {
     await expectNoRecordsAccess(page, testInfo, 'Business administration')
     await captureAccountMenu(page, testInfo)
     await captureSectionTabs(page, testInfo, 'Business administration sections', [
-      'Users & access',
+      'People & roles',
       'Roles & permissions',
-      'Retention policies',
-      'Metadata configuration',
+      'Keeping documents',
+      'Search fields',
     ])
+    await businessAdminChecks(page, testInfo)
+  })
+
+  test('A business user opening an admin page sees the no-access page', async ({ page }, testInfo) => {
+    await selectRole(page, 'Business User')
+    await page.evaluate(() => { window.location.hash = '#/governance/roles' })
+    await expect(page.getByRole('heading', { name: /This page isn.t part of your role/ })).toBeVisible({ timeout: 15000 })
+    await expect(page.getByText('Your role is Business user.')).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Go to Home' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Sign out', exact: true })).toBeVisible()
+    await capture(page, testInfo, 'no-access')
+    await page.getByRole('button', { name: 'Go to Home' }).click()
+    await expect(areaTab(page, 'Home')).toHaveAttribute('aria-current', 'page')
   })
 
   test('Tenant IT Administrator screens', async ({ page }, testInfo) => {

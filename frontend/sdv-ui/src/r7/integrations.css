@@ -1,11 +1,9 @@
-/* Tenant IT → Integrations. Blue = ordinary primary action; green (--primary) stays semantic success. */
+/* Tenant IT → Integrations. One main colour (change 11): actions use the product's main colour tokens, light and dark. */
 .r7 .ig {
-  --action: #1f5fbf; --action-hover: #194f9f; --action-ink: #ffffff; --action-soft: #e6eefb;
+  --action: var(--primary); --action-hover: var(--primary-hover); --action-ink: var(--primary-ink); --action-soft: var(--primary-soft);
   --ok: var(--primary);
   display: flex; flex-direction: column; gap: 16px; container-type: inline-size; container-name: ig;
 }
-.r7[data-theme='dark'] .ig, .dark .r7 .ig, :root.dark .ig { --action: #6aa5f0; --action-hover: #8bbaf4; --action-ink: #06111f; --action-soft: #12233a; }
-@media (prefers-color-scheme: dark) { .r7:not([data-theme='light']) .ig { --action: #6aa5f0; --action-hover: #8bbaf4; --action-ink: #06111f; --action-soft: #12233a; } }
 
 .r7 .ig .v-btn.primary { background: var(--action); border-color: var(--action); color: var(--action-ink); }
 .r7 .ig .v-btn.primary:hover:not(:disabled) { background: var(--action-hover); border-color: var(--action-hover); }

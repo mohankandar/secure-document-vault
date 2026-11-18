@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Activity, Building2, FileSearch, House, FlaskConical, Layers, Search, ServerCog, ShieldCheck, CornerDownLeft, UserRound } from 'lucide-react'
+import { Building2, FileSearch, House, FlaskConical, Layers, Search, ServerCog, ShieldCheck, CornerDownLeft, UserRound } from 'lucide-react'
 import { AREA_TABS, StoreProvider, useStore } from './store'
 import { type AreaId, type RoleId } from './data'
 import { opSummary } from './liveApi'
@@ -216,8 +216,9 @@ function ShellInner() {
           }
         />
         <main className="v-main" id="main">
-          <div style={{ display: route.area === 'workspace' && !sessionLoading && !sessionError && allowed ? 'contents' : 'none' }}><Workspace /></div>
-          {sessionLoading ? <div className="v-body">Connecting to SDV…</div> : sessionError ? <div className="v-body" role="alert">Session unavailable: {sessionError}</div> : route.area === 'workspace' && allowed ? null : !allowed ? <AccessBoundary /> :
+          {/* Records stays mounted (hidden) to keep its state, but only for roles that may search: other roles must not call it. */}
+          {liveSession?.capabilities.includes('SEARCH_RECORDS') && <div style={{ display: route.area === 'workspace' && !sessionLoading && !sessionError && allowed ? 'contents' : 'none' }}><Workspace /></div>}
+          {sessionLoading ? <div className="v-body">Connecting to {PRODUCT_NAME}…</div> : sessionError ? <div className="v-body" role="alert"><strong>Your session didn&apos;t start.</strong> <span className="muted">{sessionError}</span></div> : route.area === 'workspace' && allowed ? null : !allowed ? <AccessBoundary /> :
             route.area === 'home' ? <Home /> :
             route.area === 'system' ? <DesignSystem /> :
             route.area === 'governance' ? <Governance /> :
@@ -232,15 +233,25 @@ function ShellInner() {
   )
 }
 
+/** Sign out from the no-access page. OIDC: the normal sign-out. LOCAL (no real sign-in): forget the local test role and start again. */
+const signOutHere = () => {
+  if (!isLocalSecurityMode()) { void endOidcSession(); return }
+  try { window.sessionStorage.removeItem('sdv.r7.local-test-persona') } catch { /* storage unavailable */ }
+  window.location.assign(window.location.pathname)
+}
+
 function AccessBoundary() {
-  const { role, areas, navigate } = useStore()
+  const { heldRoles, areas, navigate } = useStore()
+  const roles = heldRoles.map((r) => ROLE_LABEL[r.id]).join(', ')
   return (
-    <div className="v-body" style={{ maxWidth: 560, margin: '10vh auto' }}>
+    <div className="v-body" style={{ maxWidth: 600, margin: '10vh auto' }}>
       <div className="v-panel"><div className="v-panel-body stack">
-        <Activity size={22} aria-hidden className="faint" />
-        <h1>This area isn&apos;t assigned to your role</h1>
-        <p className="muted">{role.name} can&apos;t open this area. Access is decided by roles in your identity provider and enforced by the server; the interface only reflects it.</p>
-        <button type="button" className="v-btn primary" style={{ alignSelf: 'flex-start' }} onClick={() => navigate(areas[0])}>Go to {AREA_META[areas[0]].label}</button>
+        <h1>This page isn&apos;t part of your role</h1>
+        <p className="muted">Your role is {roles}. If you need this page, ask your administrator to add the right role in your company&apos;s sign-in system.</p>
+        <div className="row wrap" style={{ gap: 10 }}>
+          <button type="button" className="v-btn primary" onClick={() => navigate(areas[0])}>Go to {AREA_META[areas[0]].tab}</button>
+          <button type="button" className="v-btn" onClick={signOutHere}>Sign out</button>
+        </div>
       </div></div>
     </div>
   )

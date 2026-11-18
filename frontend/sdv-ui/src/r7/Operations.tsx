@@ -5,6 +5,7 @@ import { AREA_TABS, useStore } from './store'
 import { FAILURES, RETENTION_SWEEP, SERVICES, STUCK, SUBMISSIONS, type AuditEvent, type Submission } from './data'
 import { AreaFrame } from './Governance'
 import { EnvironmentPanel, StorageTab, volumeAttention } from './TenantAdmin'
+import { FailureNotice, loadFailed, type Failure } from './CardError'
 import { Badge, Callout, Drawer, Panel, Scenario, Seg, Status, auditEventLabel, fmtDateTime, fmtRel, humanize, toneFor } from './ui'
 
 const LEDE: Record<string, string> = {
@@ -255,15 +256,16 @@ function ConnectedOverview(){
  const {navigate}=useStore()
  const [data,setData]=useState<OpSummary|null>(null)
  const [details,setDetails]=useState<OpsDetail|null>(null)
- const [error,setError]=useState('')
- useEffect(()=>{let live=true;opSummary().then(d=>{if(live)setData(d)}).catch(e=>{if(live)setError(String(e))});opsDetail().then(d=>{if(live)setDetails(d)}).catch(()=>{});return()=>{live=false}},[])
+ const [error,setError]=useState<Failure|null>(null)
+ const [reload,setReload]=useState(0)
+ useEffect(()=>{let live=true;opSummary().then(d=>{if(live)setData(d)}).catch(e=>{if(live)setError(loadFailed('Operations overview did not load',e))});opsDetail().then(d=>{if(live)setDetails(d)}).catch(()=>{});return()=>{live=false}},[reload])
  const signals=data?[
   {label:'Processing failures',count:data.processingFailureCount,description:'Documents requiring investigation',tab:'incidents',Icon:FileWarning},
   {label:'Stuck documents',count:data.stuckDocumentCount,description:'Documents stalled in processing',tab:'incidents',Icon:Timer},
   {label:'Attention submissions',count:data.attentionSubmissionCount,description:'Incomplete or attention-required intake',tab:'intake',Icon:PackageOpen},
   {label:'Storage attention',count:details?details.storageVolumes.filter(v=>v.warningThresholdReached||v.stopWriteThresholdReached||!!v.observationError).length:null,description:'Volumes requiring attention',tab:'storage',Icon:HardDrive}
  ] as const:[]
- return <>{error&&<Callout tone="warn" title="Operations unavailable">{error}</Callout>}
+ return <>{error&&<FailureNotice failure={error} loadTitle="The overview didn't load" onRetry={()=>{setError(null);setReload(n=>n+1)}} />}
  {!data&&!error&&<Callout title="Loading operations">Reading operational summary…</Callout>}
  {data&&<>
  <Panel title="Platform status" actions={<Status value={data.overallStatus}/>} description="Live operational counts and core service health reported by SDV.">
@@ -292,24 +294,24 @@ function LiveOperationsSection({section}:{section:string}){
  const [cursor,setCursor]=useState<string|null>(null)
  const [filters,setFilters]=useState({action:'',outcome:'',actorId:'',actorType:'',targetType:'',targetId:'',correlationId:'',from:'',to:''})
  const [applied,setApplied]=useState({action:'',outcome:'',actorId:'',actorType:'',targetType:'',targetId:'',correlationId:'',from:'',to:''})
- const [error,setError]=useState('')
+ const [error,setError]=useState<Failure|null>(null)
  const [loading,setLoading]=useState(false)
  const [retention,setRetention]=useState<Record<string,unknown>|null>(null)
  const [configuration,setConfiguration]=useState('')
  const [refreshedAt,setRefreshedAt]=useState<string|null>(null)
  const [incident,setIncident]=useState<{title:string;details:[string,string][]}|null>(null)
- const load=async(f=applied)=>{setLoading(true);setError('');try{
+ const load=async(f=applied)=>{setLoading(true);setError(null);try{
  if(section==='audit'){const r=await opsAudit(undefined,f);setEvents(r.events);setCursor(r.nextCursor)}
  else if(section==='configuration'){const x=await systemInfo('platform');setConfiguration([x.productName,x.version,x.status,x.activeProfiles.join(', ')].join(' · '))}
- else if(section==='health'){const results=await Promise.allSettled([opsDetail(),opsRetention()]);if(results[0].status==='fulfilled')setData(results[0].value);else throw results[0].reason;if(results[1].status==='fulfilled')setRetention(results[1].value);else setError('Retention status unavailable: '+String(results[1].reason))}
+ else if(section==='health'){const results=await Promise.allSettled([opsDetail(),opsRetention()]);if(results[0].status==='fulfilled')setData(results[0].value);else throw results[0].reason;if(results[1].status==='fulfilled')setRetention(results[1].value);else setError(loadFailed('Retention status did not load',results[1].reason,"Retention status didn't load"))}
  else setData(await opsDetail())
  setRefreshedAt(new Date().toISOString())
- }catch(e){setError(String(e))}finally{setLoading(false)}}
+ }catch(e){setError(loadFailed('Operational data did not load',e))}finally{setLoading(false)}}
  useEffect(()=>{void load()},[section])
  const renderRecords=(heading:string,columns:string[],rows:(string|number|null|undefined)[][])=> <Panel flush title={heading} meta={rows.length}><table className="v-table"><thead><tr>{columns.map(c=><th key={c}>{c}</th>)}</tr></thead><tbody>{rows.map((r,i)=><tr key={i}>{r.map((v,j)=><td key={j} className={j===0?'lead':undefined}>{v??'Unavailable'}</td>)}</tr>)}</tbody></table>{rows.length===0&&<Callout title="No records returned">No records returned by the backend for this view.</Callout>}</Panel>
  return <div className="stack-lg">
  <div className="row" style={{justifyContent:'flex-end',gap:12,alignItems:'center'}}>{refreshedAt&&<span className="muted">Refreshed {fmtDateTime(refreshedAt)}</span>}<button type="button" className="v-btn sm" disabled={loading} onClick={()=>void load()}>{loading?'Refreshing…':'Refresh'}</button></div>
- {error&&<Callout tone="warn" title="Operational data unavailable">{error}</Callout>}
+ {error&&<FailureNotice failure={error} loadTitle="This section didn't load" onRetry={()=>void load()} />}
  {section==='audit'?<>
  <Panel title="Audit filters" description="Filter server-recorded audit evidence. Routine audit-view activity is hidden by default.">
  <div className="op-audit-filters">
@@ -332,7 +334,7 @@ function LiveOperationsSection({section}:{section:string}){
  <Panel flush title="Audit events" meta={events.filter(e=>includeViewEvents||!ROUTINE_AUDIT_ACTIONS.has(e.action)||filters.action===e.action).length}>
  <table className="v-table"><thead><tr><th>When</th><th>Event</th><th>Actor</th><th>Target</th><th>Outcome</th><th className="act">Details</th></tr></thead><tbody>{events.filter(e=>includeViewEvents||!ROUTINE_AUDIT_ACTIONS.has(e.action)||filters.action===e.action).map(e=><tr key={e.auditEventId}><td data-label="When">{fmtDateTime(e.occurredAt)}</td><td data-label="Event" className="lead"><strong>{auditEventLabel(e.action,e.safeDetailsJson)}</strong><div className="mono faint">{e.action}</div></td><td data-label="Actor">{e.actorId}<div className="faint">{e.actorType}</div></td><td data-label="Target" className="mono">{e.targetId}</td><td data-label="Outcome"><Status value={e.outcome}/></td><td className="act"><button type="button" className="v-btn sm" aria-label={'View details for '+humanize(e.action)} onClick={()=>setSelected(e)}>View details</button></td></tr>)}</tbody></table>
  {events.filter(e=>includeViewEvents||!ROUTINE_AUDIT_ACTIONS.has(e.action)||filters.action===e.action).length===0&&<p className="muted" style={{padding:16}}>No events to display in this page. Try changing the filters or loading older events.</p>}
- {cursor&&<div style={{padding:12}}><button type="button" disabled={loading||moreLoading} className="v-btn" onClick={async()=>{setMoreLoading(true);try{const r=await opsAudit(cursor,applied);setEvents(x=>[...x,...r.events]);setCursor(r.nextCursor)}catch(e){setError(String(e))}finally{setMoreLoading(false)}}}>{moreLoading?'Loading…':'Load older events'}</button></div>}
+ {cursor&&<div style={{padding:12}}><button type="button" disabled={loading||moreLoading} className="v-btn" onClick={async()=>{setMoreLoading(true);try{const r=await opsAudit(cursor,applied);setEvents(x=>[...x,...r.events]);setCursor(r.nextCursor)}catch(e){setError(loadFailed('Older audit events did not load',e,"Older events didn't load"))}finally{setMoreLoading(false)}}}>{moreLoading?'Loading…':'Load older events'}</button></div>}
  </Panel>
  {selected&&<Drawer eyebrow="Audit evidence" title={humanize(selected.action)} onClose={()=>setSelected(null)}><dl className="v-kv"><div><dt>Outcome</dt><dd><Status value={selected.outcome}/></dd></div><div><dt>Time</dt><dd>{fmtDateTime(selected.occurredAt)}</dd></div><div><dt>Action code</dt><dd className="mono">{selected.action}</dd></div><div><dt>Event ID</dt><dd className="mono">{selected.auditEventId}</dd></div><div><dt>Target</dt><dd className="mono">{selected.targetType} · {selected.targetId}</dd></div><div><dt>Correlation ID</dt><dd className="mono">{selected.correlationId??'—'}</dd></div><div><dt>Actor</dt><dd>{selected.actorType} · {selected.actorId}</dd></div></dl><h3>Safe audit details</h3><pre className="mono op-audit-details">{selected.safeDetailsJson??'—'}</pre></Drawer>}
  </>:section==='configuration'?<Panel title="Deployment configuration"><p>{configuration||'Unavailable'}</p></Panel>:

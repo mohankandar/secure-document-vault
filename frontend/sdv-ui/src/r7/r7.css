@@ -387,6 +387,11 @@ html.r7-html, html.r7-html body { margin: 0; background: var(--bg); color: var(-
 }
 @media (min-width: 1280px) { .ws.has-insp { grid-template-columns: minmax(0, 1fr) 420px; } }
 
+/* ---------- Shared error card (task 0008) ---------- */
+.card-error { border-color: color-mix(in oklab, var(--attention) 35%, var(--line)); }
+.card-error-icon { color: var(--attention); flex: none; }
+.roles-foot { gap: 10px; align-items: center; padding: 12px 16px; border-top: 1px solid var(--line); }
+
 /* ---------- Home ---------- */
 .home { display: flex; flex-direction: column; gap: 18px; padding: 20px 16px 32px; max-width: 1200px; margin: 0 auto; width: 100%; }
 .home-head { display: flex; flex-direction: column; gap: 4px; }

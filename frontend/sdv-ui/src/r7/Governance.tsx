@@ -1,7 +1,8 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { Lock, Pencil, Plus } from 'lucide-react'
 import { AREA_TABS, useStore } from './store'
-import { BASELINE, BUSINESS_LIMITS, CAPABILITY_LABELS, CONFIGURABLE, ROLES, type Capability, type SearchMode } from './data'
+import { BUSINESS_LIMITS, type Capability, type SearchMode } from './data'
+import { ActionError, FailureNotice, LoadErrorCard, actionFailed, loadFailed, toFailure, type Failure } from './CardError'
 import { Badge, Callout, Drawer, PageHead, Panel, Scenario, Status, Switch, Tabs, fmtDate } from './ui'
 import { getRolePolicy, saveRolePolicy, getRetentionPolicy, activateRetentionPolicy, type RolePolicy, type RetentionPolicyOverview, adminMetadataSources, adminMetadataFields, updateBusinessMetadata, getMetadataDisplayOrder, saveMetadataDisplayOrder, type AdminMetadataSource, type AdminMetadataField } from './liveApi'
 
@@ -17,8 +18,8 @@ export function AreaFrame({ crumbs, title, lede, actions, children, attention = 
 }
 
 const LEDE: Record<string, string> = {
-  access: 'Who can do what with business content. Sign-in and role assignment live in your identity provider.',
-  roles: 'Choose the document actions each business role may perform. Search and view are baseline.',
+  access: 'The roles Vero knows, and what each one is for. People get a role in your company’s sign-in system.',
+  roles: 'Choose what each business role may do with documents.',
   retention: 'How long newly ingested documents are kept. Each activation creates an immutable version.',
   metadata: 'How each source’s fields are labelled and matched in business search.',
 }
@@ -28,7 +29,7 @@ export function Governance() {
   const tab = AREA_TABS.governance.find((t) => t.id === route.tab)!
   return (
     <AreaFrame crumbs={['Business administration', tab.label]} title={tab.label} lede={LEDE[route.tab]}>
-      {route.tab === 'access' && <AccessTab />}
+      {route.tab === 'access' && <PeopleTab />}
       {route.tab === 'roles' && <RolesTab />}
       {route.tab === 'retention' && <RetentionTab />}
       {route.tab === 'metadata' && <LiveMetadataTab />}
@@ -36,26 +37,40 @@ export function Governance() {
   )
 }
 
-function AccessTab(){
-  const [policy,setPolicy]=useState<RolePolicy|null>(null)
-  const [error,setError]=useState('')
-  useEffect(()=>{let active=true;getRolePolicy().then(p=>{if(active)setPolicy(p)}).catch(e=>{if(active)setError(String(e))});return()=>{active=false}},[])
-  const business=ROLES.filter(r=>['BUSINESS_USER','DOCUMENT_STEWARD','BUSINESS_ADMIN'].includes(r.code))
+/** The roles a customer manages. Platform operations is the service provider's role and is not listed. */
+const PEOPLE_ROLES: { name: string; purpose: string; claim: string; changeable: boolean }[] = [
+  { name: 'Business user', purpose: 'Find records and read their documents', claim: 'BUSINESS_USER', changeable: true },
+  { name: 'Document steward', purpose: 'Everything a business user does, plus download and permanent redaction', claim: 'DOCUMENT_STEWARD', changeable: true },
+  { name: 'Business admin', purpose: 'Rules for roles, keeping documents and search fields', claim: 'BUSINESS_ADMIN', changeable: false },
+  { name: 'Tenant IT', purpose: 'Storage, sign-in and the systems that send documents', claim: 'TENANT_IT_ADMIN', changeable: false },
+]
+
+function PeopleTab() {
   return <>
-    {error&&<Callout tone="warn" title="Roles unavailable">{error}</Callout>}
-    <Panel flush title="Business roles" meta={business.length} description="Roles SDV recognises for business content, read from the sign-in token's roles claim.">
-      <table className="v-table"><thead><tr><th>Role</th><th>Claim value</th><th>Responsibility</th><th className="num">Document actions</th><th>Configurable</th></tr></thead>
-        <tbody>{business.map(r=>{const states=policy?.roles[r.code];const actionCount=states?BASELINE.length+Object.values(states).filter(Boolean).length:null;return <tr key={r.code}>
-          <td className="lead" data-label="Role"><strong style={{fontWeight:500}}>{r.name}</strong></td><td data-label="Claim value"><span className="mono">{r.code}</span></td>
-          <td data-label="Responsibility" className="muted">{r.responsibility}</td>
-          <td data-label="Document actions" className="num">{r.code==='BUSINESS_ADMIN'?'—':actionCount===null?'Loading…':actionCount+' of 7'}</td>
-          <td data-label="Configurable">{r.code==='BUSINESS_ADMIN'?<Badge><Lock size={11} aria-hidden/>Fixed</Badge>:<Badge tone="ok">Yes</Badge>}</td>
-        </tr>})}</tbody>
+    <Panel flush>
+      <table className="v-table"><thead><tr><th>Role</th><th>What it is for</th><th>Name in your sign-in system</th><th>Can change in Vero</th></tr></thead>
+        <tbody>{PEOPLE_ROLES.map((r) => <tr key={r.claim}>
+          <td className="lead" data-label="Role"><strong style={{ fontWeight: 500 }}>{r.name}</strong></td>
+          <td data-label="What it is for">{r.purpose}</td>
+          <td data-label="Name in your sign-in system"><span className="mono">{r.claim}</span></td>
+          <td data-label="Can change in Vero" className={r.changeable ? undefined : 'faint'}>{r.changeable ? 'Yes, in Roles & permissions' : 'Fixed'}</td>
+        </tr>)}</tbody>
       </table>
     </Panel>
-    <Callout title="Assignments are managed in your identity provider">Add or remove people from these roles in the IdP group or app-role assignment. SDV never stores passwords or grants roles itself, so there is no user editor here by design.</Callout>
+    <Callout title="To give someone a role,">add them to the group with that name in your sign-in system (for example Okta). Vero never stores passwords and does not keep its own list of people, so there is nothing to add here.</Callout>
+    <p className="faint" style={{ fontSize: 13 }}>Platform operations is your service provider’s role and is not listed here.</p>
   </>
 }
+
+/** Document actions in words. "Search records and open documents" is always on (search and view). */
+const ROLE_ACTIONS: { label: string; capability?: Capability; permanent?: boolean }[] = [
+  { label: 'Search records and open documents' },
+  { label: 'Download the PDF', capability: 'DOWNLOAD_CURRENT_PDF' },
+  { label: 'Print', capability: 'PRINT_DOCUMENT' },
+  { label: 'Add tags', capability: 'ADD_DOCUMENT_TAG' },
+  { label: 'Add comments', capability: 'ADD_DOCUMENT_COMMENT' },
+  { label: 'Permanently redact', capability: 'PERMANENT_REDACTION', permanent: true },
+]
 
 function RolesTab() {
   const { can, toast } = useStore()
@@ -63,35 +78,45 @@ function RolesTab() {
   const [draft,setDraft] = useState<RolePolicy['roles']>({})
   const [loading,setLoading] = useState(true)
   const [saving,setSaving] = useState(false)
-  const [error,setError] = useState('')
-  useEffect(()=>{let active=true;getRolePolicy().then(p=>{if(active){setPolicy(p);setDraft(p.roles)}}).catch(e=>{if(active)setError(String(e))}).finally(()=>{if(active)setLoading(false)});return()=>{active=false}},[])
-  const cols = [{code:'BUSINESS_USER',name:'Business User'},{code:'DOCUMENT_STEWARD',name:'Document Steward'}]
-  const caps:Capability[]=[...BASELINE,...CONFIGURABLE]
+  const [loadFailure,setLoadFailure] = useState<Failure|null>(null)
+  const [saveFailure,setSaveFailure] = useState<Failure|null>(null)
+  const [reload,setReload] = useState(0)
+  useEffect(()=>{let active=true;setLoading(true);setLoadFailure(null);getRolePolicy().then(p=>{if(active){setPolicy(p);setDraft(p.roles)}}).catch(e=>{if(active)setLoadFailure(toFailure('Roles & permissions did not load',e))}).finally(()=>{if(active)setLoading(false)});return()=>{active=false}},[reload])
+  const cols = [{code:'BUSINESS_USER',name:'Business user'},{code:'DOCUMENT_STEWARD',name:'Document steward'}]
   const dirty=policy!==null && JSON.stringify(draft)!==JSON.stringify(policy.roles)
   const toggle=(code:string,c:Capability,on:boolean)=>setDraft(d=>({...d,[code]:{...d[code],[c]:on}}))
   const save=async()=>{
     if(saving||!can('CONFIGURE_ROLE_PERMISSIONS'))return
-    setSaving(true);setError('')
-    try{const result=await saveRolePolicy(draft);setPolicy(result);setDraft(result.roles);toast({title:'Permissions saved'})}
-    catch(e){setError(String(e))}
+    setSaving(true);setSaveFailure(null)
+    try{const result=await saveRolePolicy(draft);setPolicy(result);setDraft(result.roles);toast({tone:'ok',title:'Permissions saved'})}
+    catch(e){setSaveFailure(toFailure('Saving roles & permissions failed',e))}
     finally{setSaving(false)}
   }
   return <>
-    {loading && <Callout title="Loading role permissions">Reading current tenant permissions…</Callout>}
-    {error && <Callout tone="warn" title="Role permissions unavailable">{error}</Callout>}
-    {policy && <Panel flush title="Document actions by role" description="Changes apply on each user's next request. Every change is audited.">
-      <table className="v-table"><thead><tr><th>Action</th>{cols.map(c=><th key={c.code}>{c.name}</th>)}</tr></thead>
-      <tbody>{caps.map(c=><tr key={c}><td className="lead" data-label="Action"><div className="stack" style={{gap:0}}><span style={{fontWeight:500}}>{CAPABILITY_LABELS[c]}</span><span className="mono faint" style={{fontSize:12}}>{c}</span></div>{c==='PERMANENT_REDACTION'&&<Badge tone="bad">Irreversible</Badge>}</td>
-      {cols.map(col=><td key={col.code} data-label={col.name}>{BASELINE.includes(c)?<span className="row faint" style={{fontSize:13}}><Lock size={13}/>Baseline</span>:<Switch label={CAPABILITY_LABELS[c]+' for '+col.name} checked={!!draft[col.code]?.[c]} onChange={on=>toggle(col.code,c,on)} disabled={!can('CONFIGURE_ROLE_PERMISSIONS') || saving || !policy.configurableCapabilities.includes(c)}/>}</td>)}</tr>)}</tbody></table>
-    </Panel>}
-    {dirty&&<div className="v-panel" style={{position:'sticky',bottom:'calc(var(--bottom) + 12px)',zIndex:5}}><div className="v-panel-body row between wrap"><span><strong>Unsaved changes.</strong> <span className="muted">Changes take effect on the next request.</span></span><span className="row"><button type="button" className="v-btn" onClick={()=>setDraft(policy!.roles)} disabled={saving}>Discard</button><button type="button" className="v-btn primary" disabled={saving||!can('CONFIGURE_ROLE_PERMISSIONS')} onClick={()=>void save()}>Save changes</button></span></div></div>}
+    {loading && !policy && <Callout title="Loading roles & permissions" />}
+    {loadFailure && <LoadErrorCard title="Roles & permissions didn't load" failure={loadFailure} onRetry={()=>setReload(n=>n+1)} />}
+    {saveFailure && <ActionError title="The changes weren't saved" failure={saveFailure} />}
+    {policy && <section className="v-panel flush">
+      <div className="v-panel-body">
+        <table className="v-table"><thead><tr><th>Action</th>{cols.map(c=><th key={c.code}>{c.name}</th>)}</tr></thead>
+        <tbody>{ROLE_ACTIONS.map(a=><tr key={a.label}><td className="lead" data-label="Action"><span style={{fontWeight:500}}>{a.label}</span>{a.permanent&&<> <Badge tone="bad">Cannot be undone</Badge></>}</td>
+        {cols.map(col=><td key={col.code} data-label={col.name}>{!a.capability?<span className="faint" style={{fontSize:13}}>Always on</span>:<Switch label={a.label+' for '+col.name} checked={!!draft[col.code]?.[a.capability]} onChange={on=>toggle(col.code,a.capability!,on)} disabled={!can('CONFIGURE_ROLE_PERMISSIONS') || saving || !policy.configurableCapabilities.includes(a.capability)}/>}</td>)}</tr>)}</tbody></table>
+      </div>
+      <footer className="roles-foot row wrap">
+        <span className="faint grow" style={{fontSize:13}}>Changes apply the next time each person does something. Every change is recorded in the audit.</span>
+        <button type="button" className="v-btn" onClick={()=>setDraft(policy.roles)} disabled={!dirty||saving}>Undo changes</button>
+        <button type="button" className="v-btn primary" disabled={!dirty||saving||!can('CONFIGURE_ROLE_PERMISSIONS')} onClick={()=>void save()}>{saving?'Saving…':'Save'}</button>
+      </footer>
+    </section>}
   </>
 }
 
 function RetentionTab() {
   const {can,toast}=useStore()
   const [policy,setPolicy]=useState<RetentionPolicyOverview|null>(null)
-  const [error,setError]=useState('')
+  const [error,setError]=useState<Failure|null>(null)
+  const [reload,setReload]=useState(0)
+  const [stale,setStale]=useState(false)
   const [loading,setLoading]=useState(true)
   const [saving,setSaving]=useState(false)
   const [open,setOpen]=useState(false)
@@ -99,23 +124,24 @@ function RetentionTab() {
   const [indefinite,setIndefinite]=useState(false)
   const [note,setNote]=useState('')
   const [ack,setAck]=useState(false)
-  useEffect(()=>{let active=true;getRetentionPolicy().then(p=>{if(active)setPolicy(p)}).catch(e=>{if(active)setError(String(e))}).finally(()=>{if(active)setLoading(false)});return()=>{active=false}},[])
+  useEffect(()=>{let active=true;getRetentionPolicy().then(p=>{if(active)setPolicy(p)}).catch(e=>{if(active)setError(loadFailed('Keeping documents did not load',e))}).finally(()=>{if(active)setLoading(false)});return()=>{active=false}},[reload])
   const n=Number(days)
   const valid=indefinite||(days.trim().length>0&&Number.isInteger(n)&&n>=1&&n<=36500)
   const activate=async()=>{
     if(!policy||saving||!valid||!ack||!can('CONFIGURE_RETENTION'))return
-    setSaving(true);setError('')
+    setSaving(true);setError(null);setStale(false)
     try{
       const current=await getRetentionPolicy()
-      if(current.policyVersionId!==policy.policyVersionId)throw new Error('Retention policy changed since this screen was loaded. Reload before activating a new version.')
+      if(current.policyVersionId!==policy.policyVersionId){setStale(true);return}
       const updated=await activateRetentionPolicy('Retention policy version '+(policy.version+1),note,indefinite?null:n)
       setPolicy(updated);setOpen(false);toast({title:'Retention policy activated',detail:'Newly ingested documents use the new retention period.'})
-    }catch(e){setError(String(e))}
+    }catch(e){setError(actionFailed('Starting a new keeping rule failed',e))}
     finally{setSaving(false)}
   }
   return <>
     {loading&&<Callout title="Loading retention policy">Reading tenant retention configuration…</Callout>}
-    {error&&<Callout tone="warn" title="Retention operation unavailable">{error}</Callout>}
+    {error&&<FailureNotice failure={error} loadTitle="Keeping documents didn't load" actionTitle="The new rule wasn't started" onRetry={()=>setReload(n=>n+1)} />}
+    {stale&&<Callout tone="warn" title="The rule changed while you were editing">Someone else started a new rule. Reload the page, then make your change again.</Callout>}
     {policy&&<>
       <section className="v-panel"><div className="v-panel-body" style={{display:'flex',flexDirection:'column',gap:16}}>
         <div className="row between wrap" style={{gap:12}}>
@@ -159,33 +185,34 @@ function LiveMetadataTab(){
   const [fields,setFields]=useState<AdminMetadataField[]>([])
   const [editing,setEditing]=useState<AdminMetadataField|null>(null)
   const [draft,setDraft]=useState<AdminMetadataField|null>(null)
-  const [error,setError]=useState('')
+  const [error,setError]=useState<Failure|null>(null)
+  const [reload,setReload]=useState(0)
   const [loading,setLoading]=useState(true)
   const [saving,setSaving]=useState(false)
   const [ordering,setOrdering]=useState(false)
   const [orderDraft,setOrderDraft]=useState<string[]>([])
   const [orderSaved,setOrderSaved]=useState<string[]>([])
   const [orderSaving,setOrderSaving]=useState(false)
-  useEffect(()=>{let active=true;adminMetadataSources().then(rows=>{if(active){setSources(rows);setSourceId(rows[0]?.sourceId??'')}}).catch(e=>{if(active)setError(String(e))}).finally(()=>{if(active)setLoading(false)});return()=>{active=false}},[])
-  useEffect(()=>{if(!sourceId){setFields([]);setEditing(null);setDraft(null);return}let active=true;setLoading(true);setError('');setFields([]);setOrdering(false);setEditing(null);setDraft(null);Promise.all([adminMetadataFields(sourceId),getMetadataDisplayOrder(sourceId)]).then(([rows,order])=>{
+  useEffect(()=>{let active=true;adminMetadataSources().then(rows=>{if(active){setSources(rows);setSourceId(rows[0]?.sourceId??'')}}).catch(e=>{if(active)setError(loadFailed('Search fields did not load',e))}).finally(()=>{if(active)setLoading(false)});return()=>{active=false}},[reload])
+  useEffect(()=>{if(!sourceId){setFields([]);setEditing(null);setDraft(null);return}let active=true;setLoading(true);setError(null);setFields([]);setOrdering(false);setEditing(null);setDraft(null);Promise.all([adminMetadataFields(sourceId),getMetadataDisplayOrder(sourceId)]).then(([rows,order])=>{
     if(active){
       const keys=[...order.filter(k=>rows.some(f=>f.fieldKey===k)),...rows.map(f=>f.fieldKey).filter(k=>!order.includes(k))]
       setFields([...rows].sort((a,b)=>keys.indexOf(a.fieldKey)-keys.indexOf(b.fieldKey)))
       setOrderDraft(keys);setOrderSaved(keys)
     }
-  }).catch(e=>{if(active)setError(String(e))}).finally(()=>{if(active)setLoading(false)});return()=>{active=false}},[sourceId])
+  }).catch(e=>{if(active)setError(loadFailed('Search fields did not load',e))}).finally(()=>{if(active)setLoading(false)});return()=>{active=false}},[sourceId,reload])
   const save=async()=>{
     if(!draft||!can('CONFIGURE_METADATA_SEARCH')||saving||!draft.displayLabel.trim())return
-    setSaving(true);setError('')
+    setSaving(true);setError(null)
     try{
       const result=await updateBusinessMetadata(sourceId,{...draft,displayLabel:draft.displayLabel.trim()})
       setFields(rows=>rows.map(f=>f.fieldKey===result.fieldKey?result:f))
       setEditing(null);setDraft(null);toast({title:'Field updated'})
-    }catch(e){setError(String(e))}
+    }catch(e){setError(actionFailed('Saving a search field failed',e))}
     finally{setSaving(false)}
   }
   return <>
-    {error&&<Callout tone="warn" title="Metadata operation unavailable">{error}</Callout>}
+    {error&&<FailureNotice failure={error} loadTitle="Search fields didn't load" onRetry={()=>setReload(n=>n+1)} />}
     {ordering&&<Panel title="Business Search display order" description="Business Search uses this order for the selected source. Hidden fields retain their position when enabled again; incoming source contracts are unchanged.">
       <div className="stack" style={{gap:8}}>
         {orderDraft.map((key,i)=>{const f=fields.find(x=>x.fieldKey===key);return f&&<div key={key} className="row between" style={{gap:12,padding:8,border:'1px solid var(--line)',borderRadius:8}}>
@@ -199,7 +226,7 @@ function LiveMetadataTab(){
       <div className="row" style={{justifyContent:'flex-end',marginTop:12}}>
         <button className="v-btn" type="button" disabled={orderSaving} onClick={()=>{setOrderDraft(orderSaved);setOrdering(false)}}>Cancel</button>
         <button className="v-btn primary" type="button" disabled={orderSaving||orderDraft.every((k,i)=>k===orderSaved[i])} onClick={async()=>{
-          setOrderSaving(true);setError('')
+          setOrderSaving(true);setError(null)
           try{
             const keys=await saveMetadataDisplayOrder(sourceId,orderDraft)
             // Read the persisted order back; never report success based only on the PUT response.
@@ -209,7 +236,7 @@ function LiveMetadataTab(){
             setOrderDraft(all);setOrderSaved(all)
             setFields(old=>[...old].sort((a,b)=>all.indexOf(a.fieldKey)-all.indexOf(b.fieldKey)))
             setOrdering(false);toast({title:'Display order saved'})
-          }catch(e){setError(String(e))}finally{setOrderSaving(false)}
+          }catch(e){setError(actionFailed('Saving the field order failed',e))}finally{setOrderSaving(false)}
         }}>Save order</button>
       </div>
     </Panel>}

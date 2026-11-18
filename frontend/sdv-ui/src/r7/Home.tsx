@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { AlertTriangle, ArrowRight, Clock, Search, SlidersHorizontal, Sparkles } from 'lucide-react'
 import { useStore } from './store'
+import { failureText } from './CardError'
 import type { Source } from './data'
 import type { RecordSummary } from '../api'
 import { recentRecords, schema, search, toSource, type RecentRecord } from './liveApi'
@@ -32,10 +33,10 @@ export function Home() {
   const [box, setBox] = useState('')
   const [boxMessage, setBoxMessage] = useState('')
 
-  useEffect(() => { let active = true; schema().then((s) => { if (active) setSources(s.sources.map(toSource)) }).catch((e) => { if (active) setAttentionError(String(e)) }); return () => { active = false } }, [])
+  useEffect(() => { let active = true; schema().then((s) => { if (active) setSources(s.sources.map(toSource)) }).catch((e) => { if (active) setAttentionError(failureText('Home: search fields did not load', e)) }); return () => { active = false } }, [])
   useEffect(() => {
     let active = true
-    recentRecords(RECENT_LIMIT).then((r) => { if (active) setRecent(r.records) }).catch((e) => { if (active) { setRecent([]); setRecentError(String(e)) } })
+    recentRecords(RECENT_LIMIT).then((r) => { if (active) setRecent(r.records) }).catch((e) => { if (active) { setRecent([]); setRecentError(failureText('Home: recently viewed did not load', e)) } })
     return () => { active = false }
   }, [])
   // Needs attention: records with missing documents received in the last 30 days, from each source.
@@ -46,7 +47,7 @@ export function Home() {
     Promise.all(sources.map((s) => search(s.id, {}, last30, { from: '', to: '' }, 1, { incompleteOnly: true, pageSize: ATTENTION_LIMIT })
       .then((r) => r.records.map((record) => ({ sourceId: s.id, record })))))
       .then((lists) => { if (active) setAttention(lists.flat().sort((a, b) => b.record.latestSubmissionAt.localeCompare(a.record.latestSubmissionAt)).slice(0, ATTENTION_LIMIT)) })
-      .catch((e) => { if (active) { setAttention([]); setAttentionError(String(e)) } })
+      .catch((e) => { if (active) { setAttention([]); setAttentionError(failureText('Home: needs attention did not load', e)) } })
     return () => { active = false }
   }, [sources])
 

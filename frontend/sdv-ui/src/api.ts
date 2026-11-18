@@ -40,7 +40,8 @@ const localHeaders = (persona: LocalPersona): Record<string, string> => {
   }
 }
 
-export class ApiRequestError extends Error { constructor(message: string, public readonly status: number) { super(message); this.name = 'ApiRequestError' } }
+/** correlationId: the server's X-Correlation-Id for the failed request, when it sent one (shown to people as a reference for IT). */
+export class ApiRequestError extends Error { constructor(message: string, public readonly status: number, public readonly correlationId?: string) { super(message); this.name = 'ApiRequestError' } }
 
 async function request<T>(path: string, persona: LocalPersona, init?: RequestInit): Promise<T> {
   const enterpriseHeaders = await bearerHeaders()
@@ -57,7 +58,7 @@ async function request<T>(path: string, persona: LocalPersona, init?: RequestIni
   if (!response.ok) {
     if (response.status === 401 && isOidcSecurityMode()) expireOidcSession()
     const body = await response.json().catch(() => null) as { message?: string } | null
-    throw new ApiRequestError(body?.message ?? `HTTP ${response.status}`, response.status)
+    throw new ApiRequestError(body?.message ?? `HTTP ${response.status}`, response.status, response.headers.get('X-Correlation-Id') ?? undefined)
   }
   if (response.status === 204) return undefined as T
   return response.json() as Promise<T>
@@ -79,7 +80,7 @@ export async function contentBinary(path: string, persona: 'business' | 'steward
   if (!response.ok) {
     if (response.status === 401 && isOidcSecurityMode()) expireOidcSession()
     const body = await response.json().catch(() => null) as { message?: string } | null
-    throw new ApiRequestError(body?.message ?? `HTTP ${response.status}`, response.status)
+    throw new ApiRequestError(body?.message ?? `HTTP ${response.status}`, response.status, response.headers.get('X-Correlation-Id') ?? undefined)
   }
   return response.blob()
 }
