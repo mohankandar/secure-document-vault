@@ -1,5 +1,7 @@
 spring:
   liquibase:
+    # Local mode only: migrate at startup, including the local seed data.
+    enabled: true
     contexts: local
   datasource:
     url: jdbc:postgresql://localhost:5433/sdv

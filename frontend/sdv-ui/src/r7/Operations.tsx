@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { ArrowRight, RefreshCw } from 'lucide-react'
-import { opsAudit, opsDetail, opsRetention, type OpsAuditEvent, type OpsDetail, type OpsRetention } from './liveApi'
+import { opsAudit, opsDetail, opsRetention, systemInfo, type OpsAuditEvent, type OpsDetail, type OpsRetention, type SystemInfo } from './liveApi'
 import { AREA_TABS, useStore } from './store'
 import { AreaFrame } from './Governance'
 import { FailureNotice, loadFailed, type Failure } from './CardError'
@@ -187,12 +187,24 @@ function Health() {
   useTick()
   const { data, cleanup, cleanupError, error, checkedAt, tookMs, loading, load } = useOps(true)
   const sweep = cleanupWords(cleanup)
+  // Vero checks the database against its own version once, at start-up. While they don't match, every other
+  // request is refused, so the sentence from system information replaces the generic "couldn't check" notice.
+  const [schema, setSchema] = useState<SystemInfo['databaseSchema'] | null>(null)
+  useEffect(() => {
+    if (loading) return
+    let live = true
+    systemInfo('platform').then((i) => { if (live) setSchema(i.databaseSchema ?? null) }).catch(() => { if (live) setSchema(null) })
+    return () => { live = false }
+  }, [loading])
+  const schemaOff = schema != null && schema.state !== 'CURRENT'
   return <>
     <div className="row ov-checked" style={{ justifyContent: 'flex-end', gap: 12 }}>
       <span className="muted" role="status">{checkedAt ? `Checked ${ago(checkedAt)}` : loading ? 'Checking…' : ''}</span>
       <button type="button" className="v-btn sm" disabled={loading} onClick={() => void load()}><RefreshCw size={14} aria-hidden />{loading ? 'Checking…' : 'Check now'}</button>
     </div>
-    {error && <FailureNotice failure={error} loadTitle="Vero couldn't check its services" onRetry={() => void load()} />}
+    {schemaOff && <Callout tone="bad" title="The database doesn’t match this Vero version">{schema.message}
+      <span className="muted" style={{ display: 'block', marginTop: 6 }}>Vero checks this when it starts. After the schema step, start Vero again.</span></Callout>}
+    {error && !schemaOff && <FailureNotice failure={error} loadTitle="Vero couldn't check its services" onRetry={() => void load()} />}
     {data && <>
       {SERVICE_KEYS.map((k) => { const s = serviceSentence(k, data[k]?.status); return s && serviceState(data[k]?.status) !== 'notConfigured'
         ? <Callout key={k} tone="bad" title={`${SERVICE_WORDS[k].name} isn’t working`}>{s}</Callout> : null })}
@@ -205,14 +217,14 @@ function Health() {
                 {st === 'notConfigured' && <div className="faint">{serviceSentence(k, data[k]?.status)}</div>}</td></tr>) })}</tbody></table>
       </Panel>
     </>}
-    <section className={`v-panel ov-cleanup ${sweep.tone}`} aria-label="Automatic cleanup"><div className="v-panel-body">
+    {!schemaOff && <section className={`v-panel ov-cleanup ${sweep.tone}`} aria-label="Automatic cleanup"><div className="v-panel-body">
       <h2 className="ov-h">Automatic cleanup</h2>
       {cleanupError ? <p>Vero couldn’t say how automatic cleanup is doing. Check now again.</p> : <>
         <p>{sweep.sentence}</p>
         {sweep.whatToDo && <p><strong>What to do:</strong> {sweep.whatToDo}</p>}
         <p className="muted">It runs by itself. If a run fails, it shows here in red with what to do.</p>
       </>}
-    </div></section>
+    </div></section>}
     {data && <details className="st-tech"><summary>Technical details</summary>
       <dl className="v-kv">
         {SERVICE_KEYS.map((k) => <div key={k}><dt>{SERVICE_WORDS[k].name}</dt><dd><span className="mono">{data[k]?.component} · {data[k]?.status}</span><div className="faint">{data[k]?.message} · checked {fmtDateTime(data[k]?.observedAt)}</div></dd></div>)}

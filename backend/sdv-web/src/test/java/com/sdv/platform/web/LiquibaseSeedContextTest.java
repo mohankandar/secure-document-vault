@@ -24,15 +24,20 @@ import static org.junit.jupiter.api.Assertions.*;
  * Proves which changesets a start would run, using the same pieces the app uses at startup: Spring resolves
  * spring.liquibase.contexts from application.yml (plus application-local.yml for the local profile), and
  * Liquibase's own parser and context filter decide which changesets of the real master changelog run.
- * A start without the local profile must not run the local seed (002), which inserts the demo tenants.
+ * A start without the local profile must not run Liquibase at all (task 0013: the schema step does that), and
+ * the production context must never select the local seed (002), which inserts the demo tenants.
  */
 class LiquibaseSeedContextTest {
     private static final String MASTER = "db/changelog/db.changelog-master.yaml";
     private static final String LOCAL_SEED = "002-local-foundation-seed";
 
     private static String liquibaseContexts(boolean localProfile) throws Exception {
+        return property(localProfile, "spring.liquibase.contexts");
+    }
+
+    private static String property(boolean localProfile, String name) throws Exception {
         StandardEnvironment env = new StandardEnvironment();
-        // Without SDV_LIQUIBASE_CONTEXTS set, as on a fresh install; an override would change the result.
+        // Without environment overrides, as on a fresh install.
         env.getPropertySources().remove(StandardEnvironment.SYSTEM_ENVIRONMENT_PROPERTY_SOURCE_NAME);
         YamlPropertySourceLoader loader = new YamlPropertySourceLoader();
         if (localProfile) {
@@ -43,7 +48,25 @@ class LiquibaseSeedContextTest {
         for (PropertySource<?> source : loader.load("base", new ClassPathResource("application.yml"))) {
             env.getPropertySources().addLast(source);
         }
-        return env.getProperty("spring.liquibase.contexts");
+        return env.getProperty(name);
+    }
+
+    @Test
+    void aStartWithoutTheLocalProfileDoesNotRunLiquibase() throws Exception {
+        assertEquals("false", property(false, "spring.liquibase.enabled"));
+    }
+
+    @Test
+    void theLocalProfileStillMigratesAtStartup() throws Exception {
+        assertEquals("true", property(true, "spring.liquibase.enabled"));
+    }
+
+    @Test
+    void theProductionContextCannotBeOverriddenFromTheEnvironment() throws Exception {
+        // The old SDV_LIQUIBASE_CONTEXTS placeholder is gone: the value is the literal "production".
+        assertEquals("production", property(false, "spring.liquibase.contexts"));
+        String yaml = new String(new ClassPathResource("application.yml").getInputStream().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+        assertFalse(yaml.contains("SDV_LIQUIBASE_CONTEXTS"));
     }
 
     private static List<ChangeSet> changeSets() throws Exception {

@@ -679,6 +679,26 @@ async function healthChecks(page: Page, testInfo: TestInfo) {
   await expect(page.getByRole('region', { name: 'How Vero is doing' })).toContainText(/the key service isn’t answering/, { timeout: 15000 })
   await page.unroute('**/api/v1/operations/summary')
   await page.unroute('**/api/v1/operations/retention-status')
+
+  // Task 0013: Vero started against an older database (simulated in the browser only). The server then refuses
+  // every request except system information, and Health shows the same sentence as the startup log.
+  const older = 'The database is older than this Vero version. Ask your database team to run the schema step (install guide, "Update the database").'
+  await page.route('**/api/v1/system/info', async (route) => {
+    const i = await (await route.fetch()).json()
+    await route.fulfill({ json: { ...i, status: 'DOWN', databaseSchema: { state: 'OLDER', message: older } } })
+  })
+  await page.route('**/api/v1/operations/summary', (route) => route.fulfill({ status: 503, json: { code: 'DATABASE_OLDER', message: older } }))
+  await page.route('**/api/v1/operations/retention-status', (route) => route.fulfill({ status: 503, json: { code: 'DATABASE_OLDER', message: older } }))
+  await opsTab(page, 'Health').click()
+  const mismatch = page.getByRole('alert').filter({ hasText: 'The database doesn’t match this Vero version' })
+  await expect(mismatch).toContainText(older, { timeout: 15000 })
+  await expect(page.getByText('Vero couldn\'t check its services')).toHaveCount(0)
+  // Cleanup is off while the database doesn't match, so its "check now again" advice isn't shown.
+  await expect(page.getByRole('region', { name: 'Automatic cleanup' })).toHaveCount(0)
+  await capture(page, testInfo, 'health-database-older')
+  await page.unroute('**/api/v1/system/info')
+  await page.unroute('**/api/v1/operations/summary')
+  await page.unroute('**/api/v1/operations/retention-status')
 }
 
 /** About: the facts, Copy details for support without personal data, and the old addresses open it. */
