@@ -102,6 +102,9 @@ export type SessionInfo = {
   subject: string
   roles: string[]
   capabilities: string[]
+  /** From the sign-in token's name/email claims; absent or null when the token has none. Display only. */
+  displayName?: string | null
+  email?: string | null
 }
 
 export type IngestionSource = {

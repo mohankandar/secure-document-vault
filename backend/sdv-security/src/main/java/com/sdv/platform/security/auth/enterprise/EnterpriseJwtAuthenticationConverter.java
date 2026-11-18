@@ -114,7 +114,9 @@ public final class EnterpriseJwtAuthenticationConverter implements Converter<Jwt
             UUID tenantId = resolveHumanTenant(jwt);
             AuthenticatedIdentity identity = identityNormalizer.normalize(jwt);
             EnumSet<SdvRole> roles = roleMapper.map(identity.groups());
-            SdvPrincipal principal = new SdvPrincipal(tenantId, identity.subject(), roles);
+            // Name and email are display-only; they come from the claims configured for the shared normalizer
+            // (defaults: "name" and "email") and never influence roles or tenant.
+            SdvPrincipal principal = new SdvPrincipal(tenantId, identity.subject(), roles, identity.displayName(), identity.email());
             List<SimpleGrantedAuthority> authorities = roles.stream()
                     .map(role -> new SimpleGrantedAuthority("ROLE_" + role.name()))
                     .toList();

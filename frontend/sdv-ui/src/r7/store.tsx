@@ -8,6 +8,12 @@ import type { SessionInfo } from '../api'
 
 export type Scenario = 'live' | 'loading' | 'empty' | 'error'
 export type Theme = 'light' | 'dark'
+export type ThemePref = Theme | 'system'
+const THEME_KEY = 'sdv.r7.theme'
+const readThemePref = (): ThemePref => {
+  try { const v = window.localStorage.getItem(THEME_KEY); return v === 'light' || v === 'dark' || v === 'system' ? v : 'system' } catch { return 'system' }
+}
+const systemTheme = (): Theme => (window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
 export type Toast = { id: number; title: string; detail?: string; tone?: 'sim' | 'ok' | 'bad' }
 export type Route = { area: AreaId; tab: string }
 
@@ -43,7 +49,21 @@ function useStoreValue() {
   const [sessionError, setSessionError] = useState<string | null>(null)
   const [sessionLoading, setSessionLoading] = useState(true)
   const [scenario, setScenario] = useState<Scenario>('live')
-  const [theme, setThemeState] = useState<Theme>(() => (window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'))
+  // Theme choice: Light, Dark or System (follows the computer; default). Remembered in this browser.
+  const [themePref, setThemePrefState] = useState<ThemePref>(readThemePref)
+  const [systemThemeValue, setSystemThemeValue] = useState<Theme>(systemTheme)
+  const theme: Theme = themePref === 'system' ? systemThemeValue : themePref
+  const setThemePref = useCallback((pref: ThemePref) => {
+    setThemePrefState(pref)
+    try { window.localStorage.setItem(THEME_KEY, pref) } catch { /* storage unavailable: choice lasts for this page only */ }
+  }, [])
+  useEffect(() => {
+    const mq = window.matchMedia?.('(prefers-color-scheme: dark)')
+    if (!mq) return
+    const on = () => setSystemThemeValue(mq.matches ? 'dark' : 'light')
+    mq.addEventListener('change', on)
+    return () => mq.removeEventListener('change', on)
+  }, [])
   const [route, setRouteState] = useState<Route>(() => parseHash() ?? { area: 'workspace', tab: 'search' })
   const [toasts, setToasts] = useState<Toast[]>([])
   const [roleCaps, setRoleCaps] = useState(DEFAULT_ROLE_CAPS)
@@ -55,7 +75,6 @@ function useStoreValue() {
   const [audit, setAudit] = useState<AuditEvent[]>(AUDIT)
   const [selectedRef, setSelectedRef] = useState<string | null>(null)
   const [openDocId, setOpenDocId] = useState<string | null>(null)
-  const [navPref,setNavPref]=useState<'auto'|'expanded'|'collapsed'>('collapsed')
   const [resultsShown,setResultsShown]=useState(false)
 
   useEffect(() => {
@@ -124,10 +143,10 @@ function useStoreValue() {
   }, [recordAudit, role.person, updateDoc])
 
   return {
-    role, roleId, switchRole, liveSession, sessionLoading, sessionError, scenario, setScenario, theme, setTheme: setThemeState, route, navigate,
+    role, roleId, switchRole, liveSession, sessionLoading, sessionError, scenario, setScenario, theme, themePref, setThemePref, route, navigate,
     toasts, toast, dismissToast: (id: number) => setToasts((l) => l.filter((t) => t.id !== id)),
     roleCaps, setRoleCaps, caps, can,
-    records, setRecords, updateDoc, addDocActivity, selectedRef, setSelectedRef, openDocId, setOpenDocId, navPref, setNavPref, resultsShown, setResultsShown,
+    records, setRecords, updateDoc, addDocActivity, selectedRef, setSelectedRef, openDocId, setOpenDocId, resultsShown, setResultsShown,
     retention, setRetention, volumes, setVolumes, sources, setSources,
     identity, setIdentity: setIdentity as (fn: (prev: typeof IDENTITY) => typeof IDENTITY) => void, audit, recordAudit,
   }

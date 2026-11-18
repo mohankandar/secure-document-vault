@@ -1,84 +1,108 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { Activity, Building2, FileSearch, FlaskConical, Layers, Moon, Search, ServerCog, ShieldCheck, Sun, CornerDownLeft, PanelLeftOpen, PanelLeftClose } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import { Activity, Building2, FileSearch, FlaskConical, Layers, Search, ServerCog, ShieldCheck, CornerDownLeft, UserRound } from 'lucide-react'
 import { AREA_TABS, StoreProvider, useStore } from './store'
-import { type AreaId } from './data'
+import { type AreaId, type RoleId } from './data'
 import { opSummary } from './liveApi'
-import { Drawer, Toasts } from './ui'
-import { localRoleSwitchEnabled, setLocalTestPersona, type LocalPersona } from '../api'
+import { Toasts } from './ui'
+import { localRoleSwitchEnabled, setLocalTestPersona, type LocalPersona, type SessionInfo } from '../api'
+import { endOidcSession, isLocalSecurityMode } from '../auth'
 import { Workspace } from './Workspace'
 import { Governance } from './Governance'
 import { TenantAdmin } from './TenantAdmin'
 import { Operations } from './Operations'
 import { DesignSystem } from './DesignSystem'
 import { PRODUCT_NAME } from './brand'
+import { TopBar, type TopBarTab } from './topbar/TopBar'
+import { AccountMenu, type AccountPerson } from './topbar/AccountMenu'
 
 const showDevelopmentUtilities = import.meta.env.DEV
 
-const AREA_META: Record<AreaId, { label: string; short: string; Icon: typeof Search; group: string }> = {
-  workspace: { label: 'Records workspace', short: 'Records', Icon: FileSearch, group: 'Work' },
-  governance: { label: 'Business administration', short: 'Governance', Icon: ShieldCheck, group: 'Administration' },
-  tenant: { label: 'Tenant IT', short: 'Tenant IT', Icon: Building2, group: 'Administration' },
-  operations: { label: 'Platform operations', short: 'Operations', Icon: ServerCog, group: 'Operations' },
-  system: { label: 'Design system', short: 'System', Icon: Layers, group: 'Prototype' },
+const AREA_META: Record<AreaId, { label: string; tab: string; short: string; Icon: typeof Search }> = {
+  workspace: { label: 'Records workspace', tab: 'Records', short: 'Records', Icon: FileSearch },
+  governance: { label: 'Business administration', tab: 'Business administration', short: 'Governance', Icon: ShieldCheck },
+  tenant: { label: 'Tenant IT', tab: 'Tenant IT', short: 'Tenant IT', Icon: Building2 },
+  operations: { label: 'Platform operations', tab: 'Platform operations', short: 'Operations', Icon: ServerCog },
+  system: { label: 'Design system', tab: 'Design system', short: 'System', Icon: Layers },
 }
 
-function useMediaQuery(q: string) {
-  const [m, setM] = useState(() => window.matchMedia(q).matches)
+/** The role in plain words, as shown in the account menu. */
+const ROLE_LABEL: Record<RoleId, string> = {
+  business: 'Business user',
+  steward: 'Document steward',
+  businessAdmin: 'Business administrator',
+  tenantIt: 'Tenant IT administrator',
+  platform: 'Platform operations administrator',
+}
+/** Readable names for the local test sign-in, which has no name claim. */
+const LOCAL_NAME: Record<RoleId, string> = {
+  business: 'Local business user',
+  steward: 'Local document steward',
+  businessAdmin: 'Local business administrator',
+  tenantIt: 'Local Tenant IT administrator',
+  platform: 'Local platform operations administrator',
+}
+const LOCAL_INITIALS: Record<RoleId, string> = { business: 'BU', steward: 'DS', businessAdmin: 'BA', tenantIt: 'IT', platform: 'PO' }
+
+const initialsOf = (name: string) => {
+  const words = name.trim().split(/\s+/).filter((w) => /^\p{L}/u.test(w))
+  if (words.length === 0) return undefined
+  return (words.length === 1 ? words[0][0] : words[0][0] + words[words.length - 1][0]).toUpperCase()
+}
+
+/** Never shows the technical subject: name claim, else (LOCAL) a per-role name, else email, else "Signed in". */
+export function accountPerson(session: SessionInfo | null, roleId: RoleId, localMode: boolean): AccountPerson {
+  const roleLabel = ROLE_LABEL[roleId]
+  const organization = session?.tenantDisplayName?.trim() || PRODUCT_NAME
+  const email = session?.email?.trim() || undefined
+  const displayName = session?.displayName?.trim()
+  if (!session) return { name: 'Signing in…', roleLabel, organization }
+  if (displayName) return { name: displayName, initials: initialsOf(displayName), email, roleLabel, organization }
+  if (localMode) return { name: LOCAL_NAME[roleId], initials: LOCAL_INITIALS[roleId], email, roleLabel, organization }
+  if (email) return { name: email, initials: email[0].toUpperCase(), email, roleLabel, organization }
+  return { name: 'Signed in', roleLabel, organization }
+}
+
+const LOCAL_ROLE_OPTIONS: { value: LocalPersona; label: string }[] = [
+  { value: 'business', label: 'Business User' },
+  { value: 'steward', label: 'Document Steward' },
+  { value: 'businessAdmin', label: 'Business Administrator' },
+  { value: 'tenantIt', label: 'Tenant IT Administrator' },
+  { value: 'platform', label: 'Platform Operations Administrator' },
+]
+const switchLocalRole = (selected: LocalPersona) => {
+  const area = selected === 'business' || selected === 'steward' ? 'workspace' : selected === 'businessAdmin' ? 'governance' : selected === 'tenantIt' ? 'tenant' : 'operations'
+  setLocalTestPersona(selected)
+  // Reload discards previous persona's documents, cached queries, and pending component state.
+  window.history.replaceState(null, '', '#/' + area + '/' + (area === 'workspace' ? 'search' : area === 'governance' ? 'access' : area === 'tenant' ? 'storage' : 'overview'))
+  window.location.reload()
+}
+
+function useIncidentCount(enabled: boolean, roleKey: string) {
+  const [count, setCount] = useState<number | null>(null)
   useEffect(() => {
-    const mq = window.matchMedia(q)
-    const on = () => setM(mq.matches)
-    mq.addEventListener('change', on)
-    return () => mq.removeEventListener('change', on)
-  }, [q])
-  return m
+    if (!enabled) return
+    let live = true
+    opSummary().then((s) => {
+      if (!live) return
+      const counts = [s.processingFailureCount, s.stuckDocumentCount, s.attentionSubmissionCount]
+      setCount(counts.every((x) => typeof x === 'number') ? counts.reduce<number>((sum, x) => sum + (x ?? 0), 0) : null)
+    }).catch(() => { if (live) setCount(null) })
+    return () => { live = false }
+  }, [enabled, roleKey])
+  return count
 }
 
-function Rail({ collapsed, onToggle, onNavigated, onOpenSession }: { collapsed: boolean; onToggle: () => void; onNavigated: () => void; onOpenSession: () => void }) {
+function BottomNav({ onOpenAccount, onOpenPalette }: { onOpenAccount: () => void; onOpenPalette: () => void }) {
   const { role, route, navigate } = useStore()
-  const [incidentCount,setIncidentCount]=useState<number|null>(null)
-  const ToggleIcon = collapsed ? PanelLeftOpen : PanelLeftClose
-  const go = (a: AreaId) => { navigate(a); onNavigated() }
-  useEffect(()=>{
-    if(!role.areas.includes('operations'))return
-    let live=true
-    opSummary().then(s=>{if(live){const counts=[s.processingFailureCount,s.stuckDocumentCount,s.attentionSubmissionCount];setIncidentCount(counts.every(x=>typeof x==='number')?counts.reduce<number>((sum,x)=>sum+(x??0),0):null)}}).catch(()=>{if(live)setIncidentCount(null)})
-    return()=>{live=false}
-  },[role.id])
   return (
-    <nav className="v-rail" id="primary-nav" aria-label="Primary" data-collapsed={collapsed}>
-      <div className="v-rail-group">{AREA_META[role.areas[0]].group}</div>
-      {role.areas.map((a) => {
-        const { label, Icon } = AREA_META[a]
-        const attention = a === 'operations' ? incidentCount : null
-        return (
-          <button key={a} type="button" className="v-rail-item" aria-current={route.area === a ? 'page' : undefined} onClick={() => go(a)} title={label} aria-label={label} data-tip={label}>
-            <Icon size={20} aria-hidden /><span className="lbl">{label}</span>
-            {attention != null && attention > 0 && <><span className="count" aria-label={`${attention} need attention`}>{attention}</span><span className="v-rail-dot" aria-hidden /></>}
-          </button>
-        )
+    <nav className="v-bottom" aria-label="Bottom navigation">
+      {role.areas.map((area) => {
+        const { short, Icon } = AREA_META[area]
+        return <button key={area} type="button" aria-current={route.area === area ? 'page' : undefined} onClick={() => navigate(area)}><Icon size={22} aria-hidden />{short}</button>
       })}
-      <div className="v-rail-foot">
-        {showDevelopmentUtilities && <>
-          <div className="v-rail-group">Prototype</div>
-          <button type="button" className="v-rail-item" aria-current={route.area === 'system' ? 'page' : undefined} onClick={() => go('system')} title="Design system" aria-label="Design system" data-tip="Design system"><Layers size={20} aria-hidden /><span className="lbl">Design system</span></button>
-          <button type="button" className="v-rail-item" onClick={onOpenSession} title="Local test session" aria-label="Local test session" data-tip="Local test session"><FlaskConical size={20} aria-hidden /><span className="lbl">Session & scenarios</span></button>
-        </>}
-        <button type="button" className="v-rail-item v-rail-toggle" onClick={onToggle} aria-expanded={!collapsed} aria-controls="primary-nav" aria-label={collapsed ? "Expand navigation" : "Collapse navigation"} data-tip={collapsed ? "Expand navigation" : "Collapse navigation"}><ToggleIcon size={20} aria-hidden /><span className="lbl" aria-hidden>Collapse</span><kbd className="v-rail-kbd" aria-hidden>[</kbd></button>
-      </div>
-    </nav>
-  )
-}
-
-function BottomNav({ onOpenSession, onOpenPalette }: { onOpenSession: () => void; onOpenPalette: () => void }) {
-  const { role, route, navigate } = useStore()
-  const area = role.areas[0]
-  const { short, Icon } = AREA_META[area]
-  return (
-    <nav className="v-bottom" aria-label="Primary">
-      <button type="button" aria-current={route.area === area ? 'page' : undefined} onClick={() => navigate(area)}><Icon size={22} aria-hidden />{short}</button>
-      <button type="button" onClick={onOpenPalette}><Search size={22} aria-hidden />Find</button>
+      <button type="button" onClick={onOpenPalette}><Search size={22} aria-hidden />Go to</button>
       {showDevelopmentUtilities && <button type="button" aria-current={route.area === 'system' ? 'page' : undefined} onClick={() => navigate('system')}><Layers size={22} aria-hidden />System</button>}
-      <button type="button" onClick={onOpenSession}><FlaskConical size={22} aria-hidden />Session</button>
+      {showDevelopmentUtilities && <button type="button" onClick={onOpenAccount}><UserRound size={22} aria-hidden />Session</button>}
     </nav>
   )
 }
@@ -119,47 +143,62 @@ function Palette({ onClose }: { onClose: () => void }) {
   )
 }
 
-function ShellInner() {
-  const { role, route, theme, setTheme, liveSession, sessionLoading, sessionError, navPref, setNavPref } = useStore()
-  const [session, setSession] = useState(false)
-  const [palette, setPalette] = useState(false)
+const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform)
 
-  const docked = useMediaQuery('(min-width: 1280px)')
-  const [peek,setPeek] = useState(false)
-  const dockedCollapsed = navPref === 'collapsed'
-  const collapsed = docked ? dockedCollapsed : !peek
-  const overlay = !docked && peek
-  const toggleNav = () => { if(docked)setNavPref(dockedCollapsed?'expanded':'collapsed');else setPeek(p=>!p) }
-  const toggleRef=useRef(toggleNav)
-  toggleRef.current=toggleNav
-  useEffect(()=>{if(docked)setPeek(false)},[docked])
+function ShellInner() {
+  const { role, route, navigate, themePref, setThemePref, liveSession, sessionLoading, sessionError } = useStore()
+  const [palette, setPalette] = useState(false)
+  const [accountOpen, setAccountOpen] = useState(false)
+  const localMode = isLocalSecurityMode()
+  const incidentCount = useIncidentCount(role.areas.includes('operations'), role.id)
+
   useEffect(() => {
-    const k = (e: KeyboardEvent) => { if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); setPalette((p) => !p) }
-      if(e.key==='Escape')setPeek(false)
-      const t=e.target as HTMLElement|null
-      if(e.key==='['&&!e.metaKey&&!e.ctrlKey&&!e.altKey&&!(t&&(t.isContentEditable||/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)))){e.preventDefault();toggleRef.current()} }
+    const k = (e: KeyboardEvent) => { if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); setPalette((p) => !p) } }
     window.addEventListener('keydown', k)
     return () => window.removeEventListener('keydown', k)
   }, [])
 
+  const tabs: TopBarTab[] = role.areas.map((a) => ({ id: a, label: AREA_META[a].tab, count: a === 'operations' && incidentCount ? incidentCount : undefined }))
+  const person = accountPerson(liveSession, role.id, localMode)
+
   const allowed = (route.area === 'system' && showDevelopmentUtilities) || (route.area === 'workspace' && !!liveSession?.capabilities.includes('SEARCH_RECORDS')) || (route.area === 'governance' && !!liveSession && ['CONFIGURE_ROLE_PERMISSIONS','CONFIGURE_RETENTION','CONFIGURE_METADATA_SEARCH','CONFIGURE_BUSINESS_LIMITS'].some(c=>liveSession.capabilities.includes(c))) || (route.area === 'tenant' && !!liveSession?.capabilities.includes('CONFIGURE_INGESTION_SOURCES')) || (route.area === 'operations' && !!liveSession?.capabilities.includes('VIEW_TECHNICAL_FAILURES'))
   return (
     <div className="r7">
-      <div className="v-app" data-nav={docked?(collapsed?"collapsed":"expanded"):overlay?"overlay":"rail"}>
-        <header className="v-top">
-          <a className="v-brand" href="#/" aria-label={`${PRODUCT_NAME} home`} onClick={(e) => { e.preventDefault() }}>{PRODUCT_NAME}<i aria-hidden /></a>
-          <div className="v-tenant"><strong>{liveSession?.tenantDisplayName ?? PRODUCT_NAME}</strong><span>{liveSession ? 'Connected session' : 'Connecting'}</span></div>
-          <div className="grow" />
-          <button type="button" className="v-command" onClick={() => setPalette(true)} aria-label="Go to page or record"><Search size={16} aria-hidden /><span>Go to…</span><kbd>⌘K</kbd></button>
-          {showDevelopmentUtilities && <span className="v-sim-chip" title="Business search uses SDV backend; other workflows pending"><FlaskConical size={13} aria-hidden /><span className="long">R7 · business integration</span><span className="short">Simulated</span></span>}
-          <button type="button" className="v-btn quiet icon vw-hide-sm" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`}>{theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}</button>
-          <button type="button" className="v-me" onClick={() => setSession(true)} aria-label={`Signed in as ${liveSession?.subject ?? 'Connecting'}, ${role.name}`}>
-            <span className="v-avatar" aria-hidden>{role.initials}</span>
-            <span className="who"><strong>{liveSession?.subject ?? 'Connecting'}</strong><span>{role.name}</span></span>
-          </button>
-        </header>
-        <Rail collapsed={collapsed} onToggle={toggleNav} onNavigated={()=>setPeek(false)} onOpenSession={() => {setPeek(false);setSession(true)}} />
-        {overlay&&<div className="v-rail-scrim" onClick={()=>setPeek(false)} aria-hidden />}
+      <div className="v-app">
+        <TopBar
+          productName={PRODUCT_NAME}
+          tabs={tabs}
+          currentTabId={route.area}
+          onSelectTab={(id) => navigate(id as AreaId)}
+          onOpenCommand={() => setPalette(true)}
+          commandShortcut={isMac ? '⌘K' : 'Ctrl K'}
+          extra={showDevelopmentUtilities && <span className="v-sim-chip" title="Business search uses SDV backend; other workflows pending"><FlaskConical size={13} aria-hidden /><span className="long">R7 · business integration</span><span className="short">Simulated</span></span>}
+          account={
+            <AccountMenu
+              person={person}
+              theme={themePref}
+              onThemeChange={setThemePref}
+              open={accountOpen}
+              onOpenChange={setAccountOpen}
+              // Entity switch: SDV has no entities yet, so no entities are passed and the section stays hidden.
+              onSignOut={localMode ? undefined : () => { void endOidcSession() }}
+              extraSection={showDevelopmentUtilities ? { title: 'Development only', render: (close) => (
+                <>
+                  {localRoleSwitchEnabled() && (
+                    <label className="am-field">
+                      <span>Local test role</span>
+                      <select value={role.id} data-menu-stop="" onChange={(e) => switchLocalRole(e.target.value as LocalPersona)}>
+                        {LOCAL_ROLE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                      </select>
+                      <small>Switching reloads with the new test identity.</small>
+                    </label>
+                  )}
+                  <button type="button" className="am-item" data-menu-stop="" onClick={() => { navigate('system'); close() }}><Layers size={16} aria-hidden />Design system</button>
+                </>
+              ) } : undefined}
+            />
+          }
+        />
         <main className="v-main" id="main">
           <div style={{ display: route.area === 'workspace' && !sessionLoading && !sessionError && allowed ? 'contents' : 'none' }}><Workspace /></div>
           {sessionLoading ? <div className="v-body">Connecting to SDV…</div> : sessionError ? <div className="v-body" role="alert">Session unavailable: {sessionError}</div> : route.area === 'workspace' && allowed ? null : !allowed ? <AccessBoundary /> :
@@ -168,27 +207,8 @@ function ShellInner() {
             route.area === 'tenant' ? <TenantAdmin /> :
             route.area === 'operations' ? <Operations /> : null}
         </main>
-        <BottomNav onOpenSession={() => setSession(true)} onOpenPalette={() => setPalette(true)} />
+        <BottomNav onOpenAccount={() => setAccountOpen(true)} onOpenPalette={() => setPalette(true)} />
       </div>
-      {session && <Drawer eyebrow="Session" title="Authenticated session" onClose={() => setSession(false)}>
-        {localRoleSwitchEnabled() ? <>
-          <label className="v-field"><span>Local test role</span><select className="v-select" value={role.id} onChange={e=>{
-            const selected=e.target.value as LocalPersona
-            const area=selected==='business'||selected==='steward'?'workspace':selected==='businessAdmin'?'governance':selected==='tenantIt'?'tenant':'operations'
-            setLocalTestPersona(selected)
-            // Reload discards previous persona's documents, cached queries, and pending component state.
-            window.history.replaceState(null,'','#/'+area+'/'+(area==='workspace'?'search':area==='governance'?'access':area==='tenant'?'storage':'overview'))
-            window.location.reload()
-          }}>
-            <option value="business">Business User</option>
-            <option value="steward">Document Steward</option>
-            <option value="businessAdmin">Business Administrator</option>
-            <option value="tenantIt">Tenant IT Administrator</option>
-            <option value="platform">Platform Operations Administrator</option>
-          </select><small>Local development only. Switching refreshes the authenticated test identity and clears the previous workspace.</small></label>
-          <p>{liveSession?.subject ?? 'Not authenticated'}</p>
-        </> : <><p>Identity and permissions are provided by the SDV backend. Role switching and simulated scenarios are unavailable in connected mode.</p><p>{liveSession?.subject ?? 'Not authenticated'}</p></>}
-      </Drawer>}
       {palette && <Palette onClose={() => setPalette(false)} />}
       <Toasts />
     </div>

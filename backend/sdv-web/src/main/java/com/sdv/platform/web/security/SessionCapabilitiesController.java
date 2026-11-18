@@ -42,10 +42,13 @@ public class SessionCapabilitiesController {
                 .map(tenant -> tenant.displayName())
                 .filter(name -> !name.isBlank())
                 .orElse("Unavailable");
-        return new SessionResponse(principal.tenantId(), tenantDisplayName, principal.subject(), roles, effectiveCapabilities);
+        return new SessionResponse(principal.tenantId(), tenantDisplayName, principal.subject(), roles, effectiveCapabilities,
+                principal.displayName(), principal.email());
     }
 
-    public record SessionResponse(UUID tenantId, String tenantDisplayName, String subject, List<String> roles, List<String> capabilities) {
+    /** {@code displayName} and {@code email} are optional (null when the sign-in token has no such claims). */
+    public record SessionResponse(UUID tenantId, String tenantDisplayName, String subject, List<String> roles, List<String> capabilities,
+                                  String displayName, String email) {
         public SessionResponse {
             roles = List.copyOf(roles);
             capabilities = List.copyOf(capabilities);

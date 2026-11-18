@@ -39,6 +39,45 @@ class EnterpriseJwtAuthenticationConverterTest {
     }
 
     @Test
+    void carriesNameAndEmailClaimsAsDisplayOnlyValues() {
+        var auth = converter.convert(jwt(Map.of(
+                "sdv_tenant_id", TENANT.toString(),
+                "sdv_roles", List.of("BUSINESS_USER"),
+                "name", "  Maya Okafor ",
+                "email", "maya.okafor@example.com")));
+
+        SdvPrincipal principal = (SdvPrincipal) auth.getPrincipal();
+        assertEquals("Maya Okafor", principal.displayName());
+        assertEquals("maya.okafor@example.com", principal.email());
+        assertEquals("enterprise-user", principal.subject());
+        assertEquals(Set.of(SdvRole.BUSINESS_USER), principal.roles());
+    }
+
+    @Test
+    void leavesNameAndEmailEmptyWhenTokenHasNoSuchClaims() {
+        var auth = converter.convert(jwt(Map.of(
+                "sdv_tenant_id", TENANT.toString(),
+                "sdv_roles", List.of("BUSINESS_USER"))));
+
+        SdvPrincipal principal = (SdvPrincipal) auth.getPrincipal();
+        assertNull(principal.displayName());
+        assertNull(principal.email());
+    }
+
+    @Test
+    void dropsBlankNameAndEmailClaims() {
+        var auth = converter.convert(jwt(Map.of(
+                "sdv_tenant_id", TENANT.toString(),
+                "sdv_roles", List.of("BUSINESS_USER"),
+                "name", "   ",
+                "email", "")));
+
+        SdvPrincipal principal = (SdvPrincipal) auth.getPrincipal();
+        assertNull(principal.displayName());
+        assertNull(principal.email());
+    }
+
+    @Test
     void mapsCustomerGroupsIntoSdvRoles() {
         var mapper = new SdvGroupRoleMapper(Map.of(
                 SdvRole.BUSINESS_USER, Set.of("claims-users"),
