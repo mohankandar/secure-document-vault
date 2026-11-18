@@ -64,11 +64,12 @@ public class OperationsController {
             @RequestParam(required = false) Instant from,
             @RequestParam(required = false) Instant to,
             @RequestParam(required = false) Integer limit,
-            @RequestParam(required = false) String cursor) {
+            @RequestParam(required = false) String cursor,
+            @RequestParam(required = false) String recordNumber) {
         SdvPrincipal principal = requireTechnicalView();
         return audit.search(principal.tenantId(), principal.subject(),
                 new AuditQueryService.SearchRequest(action, outcome, actorType, actorId, targetType, targetId,
-                        correlationId, from, to, limit, cursor), correlationId());
+                        correlationId, from, to, limit, cursor, recordNumber), correlationId());
     }
 
     private SdvPrincipal requireTechnicalView() {

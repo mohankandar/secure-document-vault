@@ -6,15 +6,16 @@ import { FAILURES, RETENTION_SWEEP, SERVICES, STUCK, SUBMISSIONS, type AuditEven
 import { AreaFrame } from './Governance'
 import { EnvironmentPanel, StorageTab, volumeAttention } from './TenantAdmin'
 import { FailureNotice, loadFailed, type Failure } from './CardError'
+import { Problems } from './Problems'
+import { AuditLog } from './AuditLog'
 import { Badge, Callout, Drawer, Panel, Scenario, Seg, Status, auditEventLabel, fmtDateTime, fmtRel, humanize, toneFor } from './ui'
 
 const LEDE: Record<string, string> = {
   overview: 'What needs attention across this deployment right now.',
-  intake: 'Submissions arriving from producer systems through the ingestion API, and where they are in processing.',
+  problems: 'Documents Vero could not store, documents that are stuck, and deliveries with documents missing.',
   storage: 'Capacity and health of processing storage. Edit volumes in Tenant IT.',
   health: 'Live status of the services SDV depends on.',
-  incidents: 'Processing failures, stuck transitions and incomplete submissions.',
-  audit: 'Append-only technical evidence. Document content is never shown here.',
+  audit: 'Who did what, and when. Document content is never shown here.',
   configuration: 'Deployment facts for this customer environment.',
 }
 
@@ -27,11 +28,10 @@ export function Operations() {
   return (
     <AreaFrame crumbs={['Platform operations', tab.label]} title={tab.label} lede={LEDE[route.tab]} attention={attention}>
       {route.tab === 'overview' && <ConnectedOverview />}
-      {route.tab === 'intake' && <LiveOperationsSection section="intake" />}
+      {route.tab === 'problems' && <Problems role="platform" />}
       {route.tab === 'storage' && <LiveOperationsSection section="storage" />}
       {route.tab === 'health' && <LiveOperationsSection section="health" />}
-      {route.tab === 'incidents' && <LiveOperationsSection section="incidents" />}
-      {route.tab === 'audit' && <LiveOperationsSection section="audit" />}
+      {route.tab === 'audit' && <AuditLog />}
       {route.tab === 'configuration' && <LiveOperationsSection section="configuration" />}
     </AreaFrame>
   )
@@ -260,9 +260,9 @@ function ConnectedOverview(){
  const [reload,setReload]=useState(0)
  useEffect(()=>{let live=true;opSummary().then(d=>{if(live)setData(d)}).catch(e=>{if(live)setError(loadFailed('Operations overview did not load',e))});opsDetail().then(d=>{if(live)setDetails(d)}).catch(()=>{});return()=>{live=false}},[reload])
  const signals=data?[
-  {label:'Processing failures',count:data.processingFailureCount,description:'Documents requiring investigation',tab:'incidents',Icon:FileWarning},
-  {label:'Stuck documents',count:data.stuckDocumentCount,description:'Documents stalled in processing',tab:'incidents',Icon:Timer},
-  {label:'Attention submissions',count:data.attentionSubmissionCount,description:'Incomplete or attention-required intake',tab:'intake',Icon:PackageOpen},
+  {label:'Processing failures',count:data.processingFailureCount,description:'Documents requiring investigation',tab:'problems',Icon:FileWarning},
+  {label:'Stuck documents',count:data.stuckDocumentCount,description:'Documents stalled in processing',tab:'problems',Icon:Timer},
+  {label:'Attention submissions',count:data.attentionSubmissionCount,description:'Incomplete or attention-required intake',tab:'problems',Icon:PackageOpen},
   {label:'Storage attention',count:details?details.storageVolumes.filter(v=>v.warningThresholdReached||v.stopWriteThresholdReached||!!v.observationError).length:null,description:'Volumes requiring attention',tab:'storage',Icon:HardDrive}
  ] as const:[]
  return <>{error&&<FailureNotice failure={error} loadTitle="The overview didn't load" onRetry={()=>{setError(null);setReload(n=>n+1)}} />}

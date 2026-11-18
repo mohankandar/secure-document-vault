@@ -26,16 +26,19 @@ public class OperationsService {
     private final StorageVolumeAdminService storage;
     private final KeyServiceHealthProbe keyHealth;
     private final TenantRepository tenants;
+    private final ProblemRecordResolver problemRecords;
     private final Clock clock = Clock.systemUTC();
 
     public OperationsService(OperationalRepository repository,
                              StorageVolumeAdminService storage,
                              KeyServiceHealthProbe keyHealth,
-                             TenantRepository tenants) {
+                             TenantRepository tenants,
+                             ProblemRecordResolver problemRecords) {
         this.repository = repository;
         this.storage = storage;
         this.keyHealth = keyHealth;
         this.tenants = tenants;
+        this.problemRecords = problemRecords;
     }
 
     public CapacityBanner capacityBanner(UUID tenantId) {
@@ -106,8 +109,21 @@ public class OperationsService {
                 : (dataDegraded || key.status().equals("NOT_CONFIGURED") || storageWarning || incidentsPresent)
                     ? "ATTENTION" : "UP";
 
+        // The record behind each problem (task 0011); a failed lookup leaves the problems as they are.
+        java.util.Map<UUID, UUID> submissions = new java.util.LinkedHashMap<>();
+        failures.items().forEach(f -> submissions.putIfAbsent(f.submissionId(), f.sourceId()));
+        stuck.items().forEach(s -> submissions.putIfAbsent(s.submissionId(), s.sourceId()));
+        incomplete.items().forEach(a -> submissions.putIfAbsent(a.submissionId(), a.sourceId()));
+        java.util.Map<UUID, ProblemRecordResolver.ProblemRecord> records;
+        try {
+            records = submissions.isEmpty() ? java.util.Map.of() : problemRecords.resolve(tenantId, submissions);
+        } catch (RuntimeException ex) {
+            records = java.util.Map.of();
+        }
+
         return new OperationsSummary(overall, now, application, database, key, observations, storageRead.items(),
-                failures.count(), failures.items(), stuck.count(), stuck.items(), incomplete.count(), incomplete.items());
+                failures.count(), failures.items(), stuck.count(), stuck.items(), incomplete.count(), incomplete.items(),
+                records);
     }
 
     private static boolean positive(Long value) {
@@ -235,13 +251,16 @@ public class OperationsService {
             Long stuckDocumentCount,
             List<OperationalRepository.StuckDocument> stuckDocuments,
             Long attentionSubmissionCount,
-            List<OperationalRepository.AttentionSubmission> attentionSubmissions) {
+            List<OperationalRepository.AttentionSubmission> attentionSubmissions,
+            /* Keyed by submission ID: the record and sending system behind each problem. */
+            java.util.Map<UUID, ProblemRecordResolver.ProblemRecord> problemRecords) {
         public OperationsSummary {
             dataObservations = List.copyOf(dataObservations);
             storageVolumes = List.copyOf(storageVolumes);
             processingFailures = List.copyOf(processingFailures);
             stuckDocuments = List.copyOf(stuckDocuments);
             attentionSubmissions = List.copyOf(attentionSubmissions);
+            problemRecords = java.util.Map.copyOf(problemRecords);
         }
     }
 }

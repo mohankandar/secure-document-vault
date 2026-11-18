@@ -33,7 +33,7 @@ public class AuditQueryService {
                             SearchRequest request,
                             String correlationId) {
         if (tenantId == null) throw new IllegalArgumentException("tenantId is required.");
-        SearchRequest safe = request == null ? new SearchRequest(null, null, null, null, null, null, null, null, null, null, null) : request;
+        SearchRequest safe = request == null ? new SearchRequest(null, null, null, null, null, null, null, null, null, null, null, null) : request;
         int limit = safe.limit() == null ? DEFAULT_LIMIT : safe.limit();
         if (limit < 1 || limit > MAX_LIMIT) throw new IllegalArgumentException("limit must be between 1 and " + MAX_LIMIT + ".");
         validateLength(safe.action(), "action", 120);
@@ -42,6 +42,7 @@ public class AuditQueryService {
         validateLength(safe.targetType(), "targetType", 80);
         validateLength(safe.targetId(), "targetId", 300);
         validateLength(safe.correlationId(), "correlationId", 200);
+        validateLength(safe.recordNumber(), "recordNumber", 300);
         if (safe.from() != null && safe.to() != null && safe.from().isAfter(safe.to())) {
             throw new IllegalArgumentException("from cannot be after to.");
         }
@@ -50,14 +51,15 @@ public class AuditQueryService {
         AuditQueryPort.Filter filter = new AuditQueryPort.Filter(
                 blankToNull(safe.action()), safe.outcome(), blankToNull(safe.actorType()), blankToNull(safe.actorId()),
                 blankToNull(safe.targetType()), blankToNull(safe.targetId()), blankToNull(safe.correlationId()),
-                safe.from(), safe.to(), cursor == null ? null : cursor.occurredAt(), cursor == null ? null : cursor.auditEventId());
+                safe.from(), safe.to(), cursor == null ? null : cursor.occurredAt(), cursor == null ? null : cursor.auditEventId(),
+                blankToNull(safe.recordNumber() == null ? null : safe.recordNumber().strip()));
 
-        List<AuditEvent> fetched = query.find(tenantId, filter, limit + 1);
+        List<AuditQueryPort.Row> fetched = query.findRows(tenantId, filter, limit + 1);
         boolean hasMore = fetched.size() > limit;
-        List<AuditEvent> page = hasMore ? List.copyOf(fetched.subList(0, limit)) : List.copyOf(fetched);
+        List<AuditQueryPort.Row> page = hasMore ? List.copyOf(fetched.subList(0, limit)) : List.copyOf(fetched);
         String nextCursor = null;
         if (hasMore && !page.isEmpty()) {
-            AuditEvent last = page.get(page.size() - 1);
+            AuditEvent last = page.get(page.size() - 1).event();
             nextCursor = encodeCursor(last.occurredAt(), last.auditEventId());
         }
 
@@ -74,7 +76,7 @@ public class AuditQueryService {
         return blankToNull(request.action()) != null || request.outcome() != null || blankToNull(request.actorType()) != null
                 || blankToNull(request.actorId()) != null || blankToNull(request.targetType()) != null
                 || blankToNull(request.targetId()) != null || blankToNull(request.correlationId()) != null
-                || request.from() != null || request.to() != null;
+                || request.from() != null || request.to() != null || blankToNull(request.recordNumber()) != null;
     }
 
     private static void validateLength(String value, String name, int max) {
@@ -116,7 +118,8 @@ public class AuditQueryService {
             Instant from,
             Instant to,
             Integer limit,
-            String cursor) { }
+            String cursor,
+            String recordNumber) { }
 
     public record AuditEntry(
             UUID auditEventId,
@@ -128,11 +131,17 @@ public class AuditQueryService {
             Instant occurredAt,
             String correlationId,
             AuditOutcome outcome,
-            String safeDetailsJson) {
-        static AuditEntry from(AuditEvent event) {
+            String safeDetailsJson,
+            /* Null for events before migration 020: show actorId. */
+            String actorDisplayName,
+            /* Document events: looked up when the list is read. */
+            String recordNumber,
+            String filename) {
+        static AuditEntry from(AuditQueryPort.Row row) {
+            AuditEvent event = row.event();
             return new AuditEntry(event.auditEventId(), event.actorType(), event.actorId(), event.action(),
                     event.targetType(), event.targetId(), event.occurredAt(), event.correlationId(),
-                    event.outcome(), event.safeDetailsJson());
+                    event.outcome(), event.safeDetailsJson(), event.actorDisplayName(), row.recordNumber(), row.filename());
         }
     }
 

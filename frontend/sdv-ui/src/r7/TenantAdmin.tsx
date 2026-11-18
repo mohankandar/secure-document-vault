@@ -1,5 +1,6 @@
 import { Integrations } from './Integrations'
 import { Storage } from './Storage'
+import { Problems } from './Problems'
 import { ConnectedAuthenticationView } from './ConnectedAuthenticationView'
 import { useEffect, useState } from 'react'
 import { identityOverview, systemInfo, saveIdentityDraft, testIdentityDraft, activateIdentityDraft, rollbackIdentity, type IdentityOverview } from './liveApi'
@@ -15,6 +16,7 @@ const LEDE: Record<string, string> = {
   storage: 'Where Vero keeps documents, and how full each place is.',
   authentication: 'The enterprise identity provider for sign-in. Test a draft before activating; roll back to a known-good version.',
   integrations: 'The systems that send documents to Vero, what they send, and how they prove who they are.',
+  problems: 'Documents Vero could not store, documents that are stuck, and deliveries with documents missing. Read only.',
   environment: 'Read-only facts about this customer environment.',
 }
 
@@ -28,6 +30,7 @@ export function TenantAdmin() {
       {route.tab === 'storage' && <Storage />}
       {route.tab === 'authentication' && <LiveIdentity />}
       {route.tab === 'integrations' && <Integrations />}
+      {route.tab === 'problems' && <Problems role="tenantIt" />}
       {route.tab === 'environment' && <LiveEnvironment />}
     </AreaFrame>
   )

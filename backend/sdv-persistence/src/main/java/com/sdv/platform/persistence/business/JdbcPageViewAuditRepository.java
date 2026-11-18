@@ -52,9 +52,9 @@ public class JdbcPageViewAuditRepository implements PageViewAuditPort {
         // Uses idx_audit_events_tenant_actor_action_time (tenant_id, actor_id, action, occurred_at) from migration 018.
         int written = jdbc.update("""
                 insert into audit_events(audit_event_id, tenant_id, actor_type, actor_id, action, target_type,
-                                         target_id, occurred_at, correlation_id, outcome, safe_details)
+                                         target_id, occurred_at, correlation_id, outcome, safe_details, actor_display_name)
                 select :id, :tenantId, :actorType, :actorId, :action, :targetType,
-                       :targetId, :occurredAt, :correlationId, :outcome, cast(:safeDetails as jsonb)
+                       :targetId, :occurredAt, :correlationId, :outcome, cast(:safeDetails as jsonb), :actorDisplayName
                  where not exists (
                     select 1 from audit_events
                      where tenant_id=:tenantId
@@ -77,6 +77,7 @@ public class JdbcPageViewAuditRepository implements PageViewAuditPort {
                 .addValue("correlationId", event.correlationId())
                 .addValue("outcome", event.outcome().name())
                 .addValue("safeDetails", event.safeDetailsJson())
+                .addValue("actorDisplayName", event.actorDisplayName())
                 .addValue("notBefore", Timestamp.from(notBefore))
                 .addValue("viewingId", viewingId.toString())
                 .addValue("page", Integer.toString(pageNumber)));

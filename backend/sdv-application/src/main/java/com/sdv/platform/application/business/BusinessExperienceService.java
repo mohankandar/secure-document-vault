@@ -499,7 +499,7 @@ public class BusinessExperienceService {
      * chosen field has a value on this record. Otherwise (no setting, or a chosen field missing): the first preview
      * field, as before. Never an identifier; null when the record has no other field with a value.
      */
-    static String recordTitle(List<BusinessExperienceView.FieldValue> latestMetadata, List<String> titleFields) {
+    public static String recordTitle(List<BusinessExperienceView.FieldValue> latestMetadata, List<String> titleFields) {
         if (titleFields != null && !titleFields.isEmpty()) {
             Map<String, BusinessExperienceView.FieldValue> byKey = latestMetadata.stream()
                     .collect(Collectors.toMap(BusinessExperienceView.FieldValue::fieldKey, Function.identity(), (a, b) -> a));

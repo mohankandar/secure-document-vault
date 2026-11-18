@@ -26,8 +26,8 @@ export const AREA_TABS: Record<AreaId, { id: string; label: string }[]> = {
   workspace: [{ id: 'search', label: 'Search' }],
   // Labels only; the addresses (#/governance/access …) stay the same.
   governance: [{ id: 'access', label: 'People & roles' }, { id: 'roles', label: 'Roles & permissions' }, { id: 'retention', label: 'Keeping documents' }, { id: 'metadata', label: 'Search fields' }],
-  tenant: [{ id: 'storage', label: 'Storage' }, { id: 'authentication', label: 'Sign-in' }, { id: 'integrations', label: 'Integrations' }, { id: 'environment', label: 'Environment' }],
-  operations: [{ id: 'overview', label: 'Overview' }, { id: 'intake', label: 'Intake' }, { id: 'storage', label: 'Storage' }, { id: 'health', label: 'Platform health' }, { id: 'incidents', label: 'Incidents' }, { id: 'audit', label: 'Audit' }, { id: 'configuration', label: 'Configuration' }],
+  tenant: [{ id: 'storage', label: 'Storage' }, { id: 'authentication', label: 'Sign-in' }, { id: 'integrations', label: 'Integrations' }, { id: 'problems', label: 'Problems' }, { id: 'environment', label: 'Environment' }],
+  operations: [{ id: 'overview', label: 'Overview' }, { id: 'problems', label: 'Problems' }, { id: 'storage', label: 'Storage' }, { id: 'health', label: 'Platform health' }, { id: 'audit', label: 'Audit' }, { id: 'configuration', label: 'Configuration' }],
   system: [{ id: 'foundations', label: 'Foundations' }, { id: 'components', label: 'Components' }, { id: 'states', label: 'States' }],
 }
 
@@ -35,7 +35,9 @@ const parseHash = (): Route | null => {
   const [area, tab] = window.location.hash.replace(/^#\/?/, '').split('/')
   if (!area || !(area in AREA_TABS)) return null
   const tabs = AREA_TABS[area as AreaId]
-  return { area: area as AreaId, tab: tabs.some((t) => t.id === tab) ? tab : tabs[0].id }
+  // Old addresses (task 0011): Intake and Incidents are now Problems.
+  const wanted = area === 'operations' && (tab === 'intake' || tab === 'incidents') ? 'problems' : tab
+  return { area: area as AreaId, tab: tabs.some((t) => t.id === wanted) ? wanted : tabs[0].id }
 }
 
 type Store = ReturnType<typeof useStoreValue>

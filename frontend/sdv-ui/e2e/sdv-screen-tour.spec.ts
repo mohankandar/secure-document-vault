@@ -48,7 +48,7 @@ async function selectRole(page: Page, role: string) {
   // Wait for the actual principal: the account button names the person and role, never the login ID.
   await expect(accountButton(page)).toHaveAttribute('aria-label', expected, { timeout: 15000 })
   await expect(page.getByRole('banner')).not.toContainText('local-')
-  await expect(page.getByRole('banner').getByRole('navigation', { name: 'Areas' }).getByRole('button', { name: AREA_TAB_BY_ROLE[role], exact: true }))
+  await expect(page.getByRole('banner').getByRole('navigation', { name: 'Areas' }).getByRole('button', { name: new RegExp(`^${AREA_TAB_BY_ROLE[role]}( .+)?$`) }))
     .toHaveAttribute('aria-current', 'page')
 }
 
@@ -57,7 +57,8 @@ async function capture(page: Page, testInfo: TestInfo, name: string) {
   await testInfo.attach(name, { body: screenshot, contentType: 'image/png' })
 }
 
-const areaTab = (page: Page, name: string) => page.getByRole('banner').getByRole('navigation', { name: 'Areas' }).getByRole('button', { name, exact: true })
+/** An area button; it may carry a count of things needing attention ("Platform operations 2 need attention"). */
+const areaTab = (page: Page, name: string) => page.getByRole('banner').getByRole('navigation', { name: 'Areas' }).getByRole('button', { name: new RegExp(`^${name}( .+)?$`) })
 
 /** Opening the app without an address lands on the person's first area (Home for search roles). */
 async function expectLanding(page: Page, area: string) {
@@ -430,6 +431,123 @@ async function storageChecks(page: Page, testInfo: TestInfo) {
   await edit.getByLabel('Takes new documents').selectOption('OFFLINE')
   await edit.getByRole('button', { name: 'Save', exact: true }).click()
   await expect(page.getByRole('article', { name: 'tour-volume' }).last()).toContainText('Offline', { timeout: 15000 })
+}
+
+// ---- Problems and Audit (task 0011) ----
+
+/** Seeded by Seed-SDV-Demo-Records.ps1 -ProblemDemo (could not store, stuck) and earlier (missing documents). */
+const problemDemo = { store: '300000000094', stuck: '300000000095', missing: '300000000096' }
+const OPS_HEADERS = { 'X-SDV-Tenant-Id': '11111111-1111-1111-1111-111111111111', 'X-SDV-Subject': 'local-platform-operations', 'X-SDV-Roles': 'PLATFORM_OPERATIONS_ADMIN' }
+
+/** Problems: each filter, a detail with its three blocks and the note to copy; read-only for both roles. */
+async function problemsChecks(page: Page, testInfo: TestInfo, area: 'Platform operations' | 'Tenant IT') {
+  await page.getByRole('tablist', { name: `${area} sections` }).getByRole('tab', { name: /^Problems/ }).click()
+  const list = page.getByRole('table', { name: 'Problems list' })
+  const chip = (label: string) => page.getByRole('group', { name: 'Show' }).getByRole('button', { name: new RegExp(`^${label} \\d+$`) })
+  if (!(await list.waitFor({ timeout: 15000 }).then(() => true, () => false))) return missingDemoData(testInfo, 'no problems listed. Run .\\Seed-SDV-Demo-Records.ps1 -SourceDisplayName LexaVault -ProblemDemo')
+  await expect(visible(page, /producer API|retry finali[sz]ation|Retry/)).toHaveCount(0)
+  const expectations: [string, string, RegExp][] = [
+    ['Could not store', problemDemo.store, /Vero couldn’t finish storing the file/],
+    ['Stuck', problemDemo.stuck, /Still being stored after \d+ (day|hour)s?/],
+    ['Missing documents', problemDemo.missing, /1 of 2 received/],
+  ]
+  for (const [label, record, what] of expectations) {
+    await chip(label).click()
+    const row = list.locator('tbody tr').filter({ hasText: record })
+    if (!(await row.first().waitFor({ timeout: 10000 }).then(() => true, () => false))) { missingDemoData(testInfo, `no "${label}" problem for ${record}`); continue }
+    await expect(row.first()).toContainText(what)
+    await expect(row.first()).toContainText('LexaVault')
+    await capture(page, testInfo, `problems-${label.toLowerCase().replace(/\s+/g, '-')}`)
+  }
+  await chip('All').click()
+  await expect(page.getByRole('button', { name: /Retry|Fix|Resolve/ })).toHaveCount(0)
+
+  const storeRow = list.locator('tbody tr').filter({ hasText: problemDemo.store }).first()
+  if (await storeRow.isVisible().catch(() => false)) {
+    await storeRow.click()
+    const panel = page.getByRole('dialog').filter({ hasText: 'What happened' })
+    for (const heading of ['What happened', 'What it means', 'What you can do']) await expect(panel.getByRole('heading', { name: heading })).toBeVisible()
+    await expect(panel).toContainText(/Vero received appraisal\.pdf from LexaVault on \d+ \w+ and tried 3 times\./)
+    await expect(panel).toContainText('there is nothing to retry here')
+    const note = panel.getByLabel('Note to copy')
+    await expect(note).toContainText(`Record: Contract Number ${problemDemo.store}`)
+    await expect(note).toContainText('File: appraisal.pdf')
+    await expect(note).not.toContainText('Olivia')
+    await expect(visible(page, 'DOCUMENT_FINALIZATION_FAILED')).toHaveCount(0)
+    if (isDesktop(testInfo)) {
+      await page.context().grantPermissions(['clipboard-read', 'clipboard-write'])
+      await panel.getByRole('button', { name: 'Copy note' }).click()
+      await expect(panel.getByRole('status').filter({ hasText: 'Copied' })).toBeVisible()
+      expect(await page.evaluate(() => navigator.clipboard.readText())).toContain(`Contract Number ${problemDemo.store}`)
+    }
+    await capture(page, testInfo, 'problems-detail')
+    await panel.getByRole('button', { name: 'Close' }).click()
+  }
+  if (area === 'Platform operations') {
+    await page.evaluate(() => { window.location.hash = '#/operations/incidents' })
+    await expect(page.getByRole('tablist', { name: 'Platform operations sections' }).getByRole('tab', { name: /^Problems/ })).toHaveAttribute('aria-selected', 'true')
+  }
+}
+
+/** Audit: sentences for open, download, refused, settings change and delivery; the record-number filter; codes folded. */
+async function auditChecks(page: Page, testInfo: TestInfo) {
+  // A download to read about: the steward downloads one document of the title record through the API.
+  const found = await (await page.request.post('/api/v1/business/search', { headers: { ...STEWARD_HEADERS, 'Content-Type': 'application/json' }, data: { sourceId: (await (await page.request.get('/api/v1/business/search-schema', { headers: STEWARD_HEADERS })).json() as { sources: { sourceId: string; displayName: string }[] }).sources.find((x) => x.displayName === 'LexaVault')!.sourceId, criteria: { contractNumber: titleRecord }, page: 1, pageSize: 5 } })).json() as { records: { recordRef: string }[] }
+  const record = await (await page.request.get(`/api/v1/business/records/${encodeURIComponent(found.records[0].recordRef)}`, { headers: STEWARD_HEADERS })).json() as { documents: { documentId: string }[] }
+  expect((await page.request.get(`/api/v1/business/documents/${record.documents[0].documentId}/download`, { headers: STEWARD_HEADERS })).ok()).toBeTruthy()
+  // Fresh events to read about: an open, a refusal and a settings change (the setting is saved unchanged).
+  expect((await page.request.get(`/api/v1/business/documents/${record.documents[0].documentId}/viewer`, { headers: STEWARD_HEADERS })).ok()).toBeTruthy()
+  expect((await page.request.get('/api/v1/admin/role-capabilities', { headers: { ...STEWARD_HEADERS } })).status()).toBe(403)
+  const sourceId = (await (await page.request.get('/api/v1/admin/metadata-sources', { headers: ADMIN_HEADERS })).json() as { sourceId: string; displayName: string }[]).find((x) => x.displayName === 'LexaVault')!.sourceId
+  const title = await (await page.request.get(`/api/v1/admin/metadata-sources/${sourceId}/record-title`, { headers: ADMIN_HEADERS })).json() as string[]
+  expect((await page.request.put(`/api/v1/admin/metadata-sources/${sourceId}/record-title`, { headers: { ...ADMIN_HEADERS, 'Content-Type': 'application/json' }, data: { fieldKeys: title } })).ok()).toBeTruthy()
+
+  await page.getByRole('tablist', { name: 'Platform operations sections' }).getByRole('tab', { name: 'Audit' }).click()
+  const list = page.getByRole('table', { name: 'Audit list' })
+  await expect(list).toBeVisible({ timeout: 15000 })
+  const activity = page.getByLabel('Activity')
+  const sentences: [string, RegExp][] = [
+    ['Opening and reading', /opened .+\.pdf/],
+    ['Downloads and prints', /downloaded .+\.pdf/],
+    ['Refused', /tried to .+ without permission/],
+    ['Settings changes', /changed /],
+    ['Deliveries', /delivered \d+ documents?|sent .+\.pdf/],
+  ]
+  for (const [group, sentence] of sentences) {
+    await activity.selectOption({ label: group })
+    // Deliveries of the seeded record with missing documents, found by its number.
+    await page.getByLabel('Record number').fill(group === 'Deliveries' ? problemDemo.missing : '')
+    await page.getByRole('button', { name: 'Show', exact: true }).click()
+    let row = list.locator('tbody tr').filter({ hasText: sentence }).first()
+    // Groups are applied to the loaded pages: look further back until one shows.
+    for (let i = 0; i < 6 && !(await row.isVisible().catch(() => false)); i++) {
+      const older = page.getByRole('button', { name: 'Load older events' })
+      if (!(await older.isVisible().catch(() => false))) break
+      await older.click(); await page.waitForTimeout(500)
+      row = list.locator('tbody tr').filter({ hasText: sentence }).first()
+    }
+    await expect(row, `a "${group}" sentence`).toBeVisible({ timeout: 15000 })
+    if (group === 'Refused') await expect(row).toContainText('Refused')
+    if (group === 'Downloads and prints') await expect(row).toContainText(/\d{12}/)
+    await capture(page, testInfo, `audit-${group.toLowerCase().replace(/[^a-z]+/g, '-')}`)
+  }
+  await expect(visible(page, /^DOCUMENT_[A-Z_]+$|^AUTHORIZATION_DENIED$/)).toHaveCount(0)
+
+  // Record-number filter: every row is about that record.
+  await activity.selectOption({ label: 'All activity' })
+  await page.getByLabel('Record number').fill(titleRecord)
+  await page.getByRole('button', { name: 'Show', exact: true }).click()
+  await expect(list.locator('tbody tr').first()).toContainText(titleRecord, { timeout: 15000 })
+  const records = await list.locator('td[data-label="Record"]').allInnerTexts()
+  expect(records.every((r) => r.trim() === titleRecord), `only ${titleRecord}: ${records.join(', ')}`).toBeTruthy()
+
+  // Detail: the sentence first, codes under Technical details.
+  await list.locator('tbody tr').first().click()
+  const detail = page.getByRole('dialog').filter({ hasText: 'Technical details' })
+  await expect(detail.locator('details')).not.toHaveAttribute('open', '')
+  await capture(page, testInfo, 'audit-detail')
+  await detail.getByRole('button', { name: 'Close' }).click()
+  expect((await page.request.get(`/api/v1/operations/audit-events?limit=5&recordNumber=${titleRecord}`, { headers: OPS_HEADERS })).ok()).toBeTruthy()
 }
 
 async function captureAccountMenu(page: Page, testInfo: TestInfo) {
@@ -852,8 +970,11 @@ test.describe('SDV role-based screen capture', () => {
       'Storage',
       'Sign-in',
       'Integrations',
+      'Problems',
       'Environment',
     ])
+    await expect(page.getByRole('tablist', { name: 'Tenant IT sections' }).getByRole('tab', { name: 'Audit' })).toHaveCount(0)
+    await problemsChecks(page, testInfo, 'Tenant IT')
     await integrationsChecks(page, testInfo)
     await storageChecks(page, testInfo)
   })
@@ -873,17 +994,19 @@ test.describe('SDV role-based screen capture', () => {
   })
 
   test('Platform Operations Administrator screens', async ({ page }, testInfo) => {
+    test.setTimeout(150_000)
     await selectRole(page, 'Platform Operations Administrator')
     await expectNoRecordsAccess(page, testInfo, 'Platform operations')
     await captureAccountMenu(page, testInfo)
     await captureSectionTabs(page, testInfo, 'Platform operations sections', [
       'Overview',
-      'Intake',
+      'Problems',
       'Storage',
       'Platform health',
-      'Incidents',
       'Audit',
       'Configuration',
     ])
+    await problemsChecks(page, testInfo, 'Platform operations')
+    await auditChecks(page, testInfo)
   })
 })

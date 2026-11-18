@@ -226,12 +226,14 @@ public class JdbcFoundationRepository implements TenantRepository, IngestionSour
                 .addValue("occurredAt", Timestamp.from(event.occurredAt()))
                 .addValue("correlationId", event.correlationId())
                 .addValue("outcome", event.outcome().name())
-                .addValue("safeDetails", event.safeDetailsJson());
+                .addValue("safeDetails", event.safeDetailsJson())
+                .addValue("actorDisplayName", event.actorDisplayName() == null || event.actorDisplayName().isBlank()
+                        ? null : event.actorDisplayName().strip().substring(0, Math.min(300, event.actorDisplayName().strip().length())));
         jdbc.update("""
                 insert into audit_events(audit_event_id, tenant_id, actor_type, actor_id, action, target_type,
-                                         target_id, occurred_at, correlation_id, outcome, safe_details)
+                                         target_id, occurred_at, correlation_id, outcome, safe_details, actor_display_name)
                 values (:id, :tenantId, :actorType, :actorId, :action, :targetType,
-                        :targetId, :occurredAt, :correlationId, :outcome, cast(:safeDetails as jsonb))
+                        :targetId, :occurredAt, :correlationId, :outcome, cast(:safeDetails as jsonb), :actorDisplayName)
                 """, p);
     }
 

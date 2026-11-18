@@ -612,3 +612,18 @@ small.bad { color: var(--danger); }
 .st-volume { border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 12px 14px; display: grid; gap: 8px; }
 .st-role { font-size: 13px; }
 .st-numbers { font-size: 13px; gap: 4px 12px; }
+
+/* Problems and Audit (task 0011) */
+.pr-intro { margin: 0; }
+.pr-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.v-chip { display: inline-flex; align-items: center; gap: 6px; min-height: 34px; padding: 4px 12px; border: 1px solid var(--line-strong); border-radius: 999px; background: var(--surface); color: var(--ink); font: inherit; font-size: 14px; cursor: pointer; }
+.v-chip[aria-pressed='true'] { background: var(--primary-soft); border-color: var(--primary); color: var(--ink); font-weight: 500; }
+.pr-count { font-size: 12px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+.pr-title { display: block; font-size: 13px; color: var(--ink-2); margin-top: 2px; }
+.pr-block h3 { font-size: 14px; font-weight: 600; margin: 0 0 4px; }
+.pr-block p { margin: 0; }
+.pr-note { white-space: pre-wrap; font-family: var(--font-mono); font-size: 13px; background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 10px 12px; margin: 0 0 8px; }
+.au-filters { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; align-items: end; }
+.au-record label { font-size: 14px; font-weight: 500; }
+.au-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 8px 16px; border-top: 1px solid var(--line); flex-wrap: wrap; }
+.au-advanced { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; padding: 12px 16px 16px; border-top: 1px solid var(--line); }

@@ -51,3 +51,6 @@ databaseChangeLog:
 
   - include:
       file: db/changelog/019-record-title-fields.yaml
+
+  - include:
+      file: db/changelog/020-audit-actor-display-name.yaml
