@@ -181,7 +181,105 @@ async function recentlyViewedSteps(page: Page, testInfo: TestInfo) {
   await capture(page, testInfo, 'records-from-recently-viewed')
 }
 
-async function tryBusinessRecordJourney(page: Page, testInfo: TestInfo) {
+
+// ---- Viewer (task 0006) ----
+
+const LOCAL_TENANT = '11111111-1111-1111-1111-111111111111'
+const STEWARD_HEADERS = { 'X-SDV-Tenant-Id': LOCAL_TENANT, 'X-SDV-Subject': 'local-document-steward', 'X-SDV-Roles': 'DOCUMENT_STEWARD' }
+/** Demo record used for the end-to-end redaction; every run permanently redacts a small area of its first page. */
+const redactionRecord = process.env.SDV_REDACTION_DEMO_CONTRACT ?? '100000000003'
+const isDesktop = (testInfo: TestInfo) => testInfo.project.name === 'desktop-chromium'
+const viewer = (page: Page) => page.getByRole('dialog').filter({ has: page.getByRole('img', { name: /Document page 1/ }) })
+
+async function openViewerFor(page: Page, contract: string) {
+  await searchFor(page, contract)
+  const row = resultRows(page).filter({ hasText: contract }).first()
+  await expect(row).toBeVisible({ timeout: 15000 })
+  await row.click()
+  const inspector = page.getByRole('complementary', { name: 'Record inspector' }).or(page.getByRole('dialog').filter({ hasText: contract }))
+  await inspector.getByRole('button', { name: /Open documents/ }).click()
+  await expect(page.getByRole('img', { name: /Document page 1/ })).toBeVisible({ timeout: 20000 })
+}
+
+/** The open document's ID, from the Details tab (wide screens). */
+async function openDocumentId(page: Page) {
+  return (await page.locator('.vw-panel dt', { hasText: 'Document ID' }).locator('xpath=following-sibling::dd[1]').innerText()).trim()
+}
+
+/** Make sure the open document has a tag, so a read-only role can show it reads tags. Adds one as the steward if needed. */
+async function ensureDemoTag(page: Page) {
+  const id = await openDocumentId(page)
+  const tags = await (await page.request.get(`/api/v1/business/documents/${id}/tags`, { headers: STEWARD_HEADERS })).json() as unknown[]
+  if (tags.length === 0) {
+    const created = await page.request.post(`/api/v1/business/documents/${id}/tags`, { headers: { ...STEWARD_HEADERS, 'Content-Type': 'application/json' }, data: { tag: 'e2e-demo' } })
+    expect(created.ok()).toBeTruthy()
+  }
+}
+
+async function viewerChecks(page: Page, testInfo: TestInfo, role: string) {
+  const v = viewer(page)
+  if (!isDesktop(testInfo)) {
+    // Narrower screens: the information panel is a drawer; its actions follow the same rules.
+    await v.getByRole('button', { name: 'Document information' }).click()
+  }
+  // Wide screens show the panel; narrower ones the drawer (the hidden panel copy is ignored).
+  const drawerOrPanel = isDesktop(testInfo) ? page.locator('.vw-panel') : page.getByRole('dialog', { name: 'Document information' })
+  const info = drawerOrPanel.getByRole('tablist', { name: 'Document information' })
+  if (role === 'Business User') {
+    // Out of the box a business user has no Download, Print or Redact: hidden, not greyed out.
+    for (const name of ['Download', 'Print', 'Redact']) await expect(page.getByRole('button', { name, exact: true })).toHaveCount(0)
+    await expect(page.getByText(/not permitted|isn.t assigned/i)).toHaveCount(0)
+    if (isDesktop(testInfo)) await ensureDemoTag(page)
+    await info.getByRole('tab', { name: /^Comments/ }).click()
+    await expect(drawerOrPanel.locator('.v-comment').first()).toBeVisible({ timeout: 15000 })
+    await expect(drawerOrPanel.getByLabel('New comment')).toHaveCount(0)
+    await info.getByRole('tab', { name: 'Tags', exact: true }).click()
+    if (isDesktop(testInfo)) await expect(drawerOrPanel.locator('.v-tagrow .v-badge').first()).toBeVisible({ timeout: 15000 })
+    await expect(drawerOrPanel.getByLabel('New tag')).toHaveCount(0)
+    await expect(page.getByText(/isn.t assigned/i)).toHaveCount(0)
+    await capture(page, testInfo, 'viewer-read-only')
+  } else {
+    // Document steward: actions carry words.
+    for (const name of ['Find', 'Download', 'Print', 'Redact']) {
+      const button = v.locator('.vw-bar').first().getByRole('button', { name: new RegExp(`^${name}`) }).or(page.getByRole('dialog', { name: 'Document information' }).getByRole('button', { name, exact: true }))
+      await expect(button.first()).toBeVisible()
+      await expect(button.first()).toContainText(name)
+    }
+    await info.getByRole('tab', { name: /^Comments/ }).click()
+    await expect(drawerOrPanel.getByLabel('New comment')).toBeVisible()
+    await info.getByRole('tab', { name: 'Tags', exact: true }).click()
+    await expect(drawerOrPanel.getByLabel('New tag')).toBeVisible()
+    // The server refuses (e.g. permissions changed mid-session): plain words, no codes.
+    await page.route('**/api/v1/business/documents/*/download', (route) => route.fulfill({ status: 403, json: { message: 'Required capability is not granted: DOWNLOAD_CURRENT_PDF' } }))
+    // Wide screens: the header's Download; narrower ones: the drawer's (the drawer covers the header).
+    await (isDesktop(testInfo) ? v.locator('.vw-bar').first() : drawerOrPanel).getByRole('button', { name: 'Download', exact: true }).click()
+    const toast = page.getByRole('status').filter({ hasText: "You can't do this" })
+    await expect(toast).toBeVisible()
+    await expect(toast).toContainText("Your role doesn't allow it. Ask your Business admin if you need it.")
+    await expect(page.getByText(/In production|DENIED|DOWNLOAD_CURRENT_PDF/)).toHaveCount(0)
+    await capture(page, testInfo, 'viewer-refused')
+    await page.unroute('**/api/v1/business/documents/*/download')
+  }
+  if (!isDesktop(testInfo)) await page.getByRole('dialog', { name: 'Document information' }).getByRole('button', { name: 'Close' }).click()
+
+  if (isDesktop(testInfo)) {
+    // Real page previews (decoded images), and the left column fold is remembered across a reload.
+    const preview = page.locator('.vw-pagethumb img').first()
+    await expect(preview).toBeVisible({ timeout: 15000 })
+    expect(await preview.evaluate((img: HTMLImageElement) => img.naturalWidth)).toBeGreaterThan(0)
+    await page.getByRole('button', { name: 'Hide document list' }).click()
+    await expect(page.getByRole('navigation', { name: 'Record documents' })).toHaveCount(0)
+    await page.reload()
+    await openViewerFor(page, demoRecord)
+    await expect(page.getByRole('button', { name: 'Show document list' })).toBeVisible()
+    await expect(page.getByRole('navigation', { name: 'Record documents' })).toHaveCount(0)
+    await capture(page, testInfo, 'viewer-folded')
+    await page.getByRole('button', { name: 'Show document list' }).click()
+    await expect(page.getByRole('navigation', { name: 'Record documents' })).toBeVisible()
+  }
+}
+
+async function tryBusinessRecordJourney(page: Page, testInfo: TestInfo, role: string) {
   await waitForBusinessSearchReady(page)
   const placeholder = (await searchBox(page).getAttribute('placeholder')) ?? ''
   if (!/Contract Number/i.test(placeholder)) return missingDemoData(testInfo, `the search box offers "${placeholder}", no Contract Number field`)
@@ -272,6 +370,7 @@ async function tryBusinessRecordJourney(page: Page, testInfo: TestInfo) {
   await inspector.getByRole('button', { name: /Open documents/ }).click()
   await expect(page.getByRole('img', { name: /Document page 1/ })).toBeVisible({ timeout: 15000 })
   await capture(page, testInfo, 'document-viewer')
+  await viewerChecks(page, testInfo, role)
 
   const activity = page.getByRole('tablist', { name: 'Document information' }).getByRole('tab', { name: 'Activity', exact: true })
   if (await activity.isVisible().catch(() => false)) {
@@ -297,8 +396,35 @@ test.describe('SDV role-based screen capture', () => {
     await waitForBusinessSearchReady(page)
     await capture(page, testInfo, 'search')
     await captureAccountMenu(page, testInfo)
-    await tryBusinessRecordJourney(page, testInfo)
+    await tryBusinessRecordJourney(page, testInfo, 'Business User')
     await recentlyViewedSteps(page, testInfo)
+  })
+
+  test('Document Steward redaction end to end', async ({ page }, testInfo) => {
+    test.skip(!isDesktop(testInfo), 'Runs once per tour (desktop): every run permanently redacts a small area of a demo document.')
+    await selectRole(page, 'Document Steward')
+    await areaTab(page, 'Records').click()
+    await waitForBusinessSearchReady(page)
+    await openViewerFor(page, redactionRecord)
+    await page.getByRole('button', { name: 'Redact', exact: true }).click()
+    const img = page.getByRole('img', { name: /Document page 1/ })
+    const box = await img.boundingBox()
+    if (!box) throw new Error('page 1 image has no box')
+    await page.mouse.move(box.x + box.width * 0.15, box.y + box.height * 0.08)
+    await page.mouse.down()
+    await page.mouse.move(box.x + box.width * 0.45, box.y + box.height * 0.14, { steps: 6 })
+    await page.mouse.up()
+    await expect(page.locator('.vw-redact-bar')).toContainText('1 region marked')
+    await page.getByRole('button', { name: 'Review', exact: true }).click()
+    const review = page.getByRole('alertdialog', { name: 'Apply permanent redaction' })
+    await expect(review).toContainText('Marked areas are removed for every user and the original is not kept.')
+    await review.getByLabel(/Corrective reason/).fill('Automated e2e check of permanent redaction on a demo document.')
+    await review.getByLabel(/I understand this cannot be undone/).check()
+    await capture(page, testInfo, 'redaction-review')
+    await review.getByRole('button', { name: 'Apply permanent redaction' }).click()
+    await expect(page.getByRole('status').filter({ hasText: 'Permanent corrective redaction completed' })).toBeVisible({ timeout: 30000 })
+    await expect(page.getByRole('img', { name: /Document page 1/ })).toBeVisible({ timeout: 20000 })
+    await capture(page, testInfo, 'redaction-applied')
   })
 
   test('Home empty states', async ({ page }, testInfo) => {
@@ -323,7 +449,7 @@ test.describe('SDV role-based screen capture', () => {
     await waitForBusinessSearchReady(page)
     await capture(page, testInfo, 'search')
     await captureAccountMenu(page, testInfo)
-    await tryBusinessRecordJourney(page, testInfo)
+    await tryBusinessRecordJourney(page, testInfo, 'Document Steward')
     await recentlyViewedSteps(page, testInfo)
   })
 

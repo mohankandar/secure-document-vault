@@ -1,17 +1,35 @@
 import { useEffect, useRef, useState, type PointerEvent as RPointerEvent, type ReactNode } from 'react'
-import { ArrowLeft, ChevronLeft, ChevronRight, Download, Eraser, Info, Lock, Maximize2, Minus, PanelRight, Plus, Printer, Search, ShieldAlert, Trash2, X } from 'lucide-react'
+import { ArrowLeft, ChevronLeft, ChevronRight, Download, Eraser, Info, Maximize2, Minus, PanelLeftClose, PanelLeftOpen, PanelRight, Plus, Printer, Search, ShieldAlert, Sparkles, Trash2, X } from 'lucide-react'
 import { useStore } from './store'
-import { BUSINESS_LIMITS, CAPABILITY_LABELS, PAGE_TEXT, RETENTION, type Capability, type Doc, type RecordItem, type Redaction } from './data'
+import { BUSINESS_LIMITS, PAGE_TEXT, RETENTION, type Doc, type RecordItem, type Redaction } from './data'
+import { ApiRequestError } from '../api'
 import { Badge, Callout, Dialog, Drawer, Tabs, fmtDate, fmtDateTime, fmtRel, humanize } from './ui'
-import { viewerMetadata, viewerPage, viewerSearch, record as fetchRecord, toRecord, documentActivity, type LiveDocumentActivity, type ViewerSearch, documentTags, documentComments, createDocumentTag, createDocumentComment, type LiveTag, type LiveComment, secureDownload, recordPrintEvent, permanentRedaction } from './liveApi'
+import { viewerMetadata, viewerPage, viewerSearch, record as fetchRecord, toRecord, documentActivity, type LiveDocumentActivity, type ViewerSearch, documentTags, documentComments, createDocumentTag, createDocumentComment, type LiveTag, type LiveComment, secureDownload, recordPrintEvent, permanentRedaction, viewerPreviews } from './liveApi'
 
 type Zoom = 'width' | 'page' | number
-type InfoTab = 'details' | 'comments' | 'tags' | 'activity'
+type InfoTab = 'ask' | 'details' | 'comments' | 'tags' | 'activity'
+
+const showDevelopmentUtilities = import.meta.env.DEV
+
+/** The server refused an action (e.g. permissions changed mid-session). Plain words, no codes. */
+export const REFUSED = { title: "You can't do this", detail: "Your role doesn't allow it. Ask your Business admin if you need it." }
+export const isRefused = (e: unknown) => e instanceof ApiRequestError && e.status === 403
+const errorText = (e: unknown) => (isRefused(e) ? `${REFUSED.title}. ${REFUSED.detail}` : e instanceof Error ? e.message : String(e))
+
+/** A readable document kind from its file name: "loan-agreement.pdf" -> "Loan agreement". */
+export const docKind = (filename: string) => {
+  const base = filename.replace(/\.[a-z0-9]{1,5}$/i, '').replace(/[-_]+/g, ' ').replace(/\s+/g, ' ').trim()
+  return base ? base.charAt(0).toUpperCase() + base.slice(1) : filename
+}
+
+const DOCS_FOLDED_KEY = 'sdv.r7.viewer.docsFolded'
+const readFolded = () => { try { return window.localStorage.getItem(DOCS_FOLDED_KEY) === 'true' } catch { return false } }
+const PREVIEW_CHUNK = 12
 
 const SSN = /\d{3}-\d{2}-\d{4}/
 
-export function Viewer({ record, results, docId, onClose }: { record: RecordItem; results: RecordItem[]; docId: string; onClose: () => void }) {
-  const { can, role, setOpenDocId, setSelectedRef, setRecords, updateDoc, addDocActivity, toast, liveSession } = useStore()
+export function Viewer({ record, results, docId, onClose, recordTitle, backLabel = 'Results' }: { record: RecordItem; results: RecordItem[]; docId: string; onClose: () => void; /** Same title as the record panel. */ recordTitle?: string; backLabel?: string }) {
+  const { can, setOpenDocId, setSelectedRef, setRecords, updateDoc, addDocActivity, toast, liveSession } = useStore()
   const doc = record.docs.find((d) => d.id === docId) ?? record.docs[0]
   const [pageCount, setPageCount] = useState(0)
   const [viewerFailure, setViewerFailure] = useState('')
@@ -112,13 +130,13 @@ export function Viewer({ record, results, docId, onClose }: { record: RecordItem
     if (item.top < navBox.top || item.bottom > navBox.bottom) nav.scrollTop += item.top - navBox.top - nav.clientHeight / 2
   }, [page])
 
-  const deny = (c: Capability) => toast({ tone: 'bad', title: 'Not permitted for your role', detail: `${role.name} doesn't include "${CAPABILITY_LABELS[c]}". In production the server enforces this and records a DENIED audit event.` })
-  const gated = (c: Capability, run: () => void) => () => (can(c) ? run() : deny(c))
+  // Actions are only shown to roles that have them; the server still decides. A refusal reads in plain words.
+  const failed = (title: string, e: unknown) => toast(isRefused(e) ? { tone: 'bad', ...REFUSED } : { tone: 'bad', title, detail: errorText(e) })
 
   const [actionBusy,setActionBusy] = useState(false)
   const [redactionFailure,setRedactionFailure] = useState('')
   const [renderRevision,setRenderRevision] = useState(0)
-  const download = gated('DOWNLOAD_CURRENT_PDF', async () => {
+  const download = async () => {
     if(actionBusy)return
     setActionBusy(true)
     try {
@@ -128,10 +146,10 @@ export function Viewer({ record, results, docId, onClose }: { record: RecordItem
       a.href=url;a.download=doc.filename;a.click()
       window.setTimeout(()=>URL.revokeObjectURL(url),30000)
       toast({title:'Document downloaded'})
-    } catch(e){toast({tone:'bad',title:'Download failed',detail:String(e)})}
+    } catch(e){failed('Download failed',e)}
     finally{setActionBusy(false)}
-  })
-  const print = gated('PRINT_DOCUMENT', async () => {
+  }
+  const print = async () => {
     if(actionBusy)return
     setActionBusy(true)
     try {
@@ -151,13 +169,13 @@ export function Viewer({ record, results, docId, onClose }: { record: RecordItem
       await recordPrintEvent(doc.id)
       win.focus();win.print()
       window.setTimeout(()=>{frame.remove();urls.forEach(u=>URL.revokeObjectURL(u))},60000)
-    }catch(e){toast({tone:'bad',title:'Print failed',detail:String(e)})}
+    }catch(e){failed('Print failed',e)}
     finally{setActionBusy(false)}
-  })
-  const startRedact = gated('PERMANENT_REDACTION', () => {
+  }
+  const startRedact = () => {
     if(actionBusy)return
     setMarks([]);setRedactionFailure('');setRedacting(true);setInfoOpen(false)
-  })
+  }
 
   const toPct = (e: RPointerEvent, el: HTMLDivElement) => { const r = el.getBoundingClientRect(); return { x: ((e.clientX - r.left) / r.width) * 100, y: ((e.clientY - r.top) / r.height) * 100 } }
   const onDown = (p: number) => (e: RPointerEvent<HTMLDivElement>) => {
@@ -192,7 +210,7 @@ export function Viewer({ record, results, docId, onClose }: { record: RecordItem
       setPageCount(0)
       viewerMetadata(doc.id).then(m=>setPageCount(m.pageCount)).catch(e=>setViewerFailure(String(e)))
       toast({title:'Permanent corrective redaction completed'})
-    }catch(e){setRedactionFailure(String(e))}
+    }catch(e){setRedactionFailure(errorText(e)); if(isRefused(e))failed('Redaction failed',e)}
     finally{setActionBusy(false)}
     return
 
@@ -215,7 +233,31 @@ export function Viewer({ record, results, docId, onClose }: { record: RecordItem
   }
   const switchDoc = (id: string) => { setOpenDocId(id); if(!liveSession)addDocActivity(id, 'DOCUMENT_VIEWED'); setDocsOpen(false) }
 
-  const docsNav = (
+  // Real page previews, loaded in chunks of PREVIEW_CHUNK only for pages whose thumbnail is on screen
+  // (so only while the column or the phone drawer is open). On failure the list falls back to plain boxes.
+  const [previews, setPreviews] = useState<Record<number, string>>({})
+  const [previewsFailed, setPreviewsFailed] = useState(false)
+  const requestedChunks = useRef(new Set<number>())
+  useEffect(() => { setPreviews({}); setPreviewsFailed(false); requestedChunks.current = new Set() }, [doc.id, renderRevision])
+  const needPreview = (p: number) => {
+    if (previewsFailed || !pageTotal) return
+    const first = Math.floor((p - 1) / PREVIEW_CHUNK) * PREVIEW_CHUNK + 1
+    if (requestedChunks.current.has(first)) return
+    requestedChunks.current.add(first)
+    const forDoc = doc.id
+    viewerPreviews(forDoc, first, Math.min(PREVIEW_CHUNK, pageTotal - first + 1))
+      .then((r) => { if (forDoc === doc.id) setPreviews((prev) => ({ ...prev, ...Object.fromEntries(r.previews.map((x) => [x.pageNumber, x.dataUrl])) })) })
+      .catch(() => setPreviewsFailed(true))
+  }
+
+  // The left column folds away on wide screens; the choice is remembered in this browser.
+  const [folded, setFolded] = useState(readFolded)
+  const setFold = (next: boolean) => { setFolded(next); try { window.localStorage.setItem(DOCS_FOLDED_KEY, String(next)) } catch { /* storage unavailable */ } }
+
+  const title = recordTitle || record.title
+  const kind = docKind(doc.filename)
+
+  const docsNav = (inDrawer: boolean) => (
     <>
       <div className="stack" style={{ gap: 8 }}>
         <div className="row between">
@@ -223,25 +265,27 @@ export function Viewer({ record, results, docId, onClose }: { record: RecordItem
           <span className="row" style={{ gap: 2 }}>
             <button type="button" className="v-btn quiet icon sm" disabled={recordLoading || recIndex <= 0} onClick={() => switchRecord(-1)} aria-label="Previous record"><ChevronLeft size={16} /></button>
             <button type="button" className="v-btn quiet icon sm" disabled={recordLoading || recIndex < 0 || recIndex >= results.length - 1} onClick={() => switchRecord(1)} aria-label="Next record"><ChevronRight size={16} /></button>
+            {!inDrawer && <button type="button" className="v-btn quiet icon sm" onClick={() => setFold(true)} aria-label="Hide document list" title="Hide document list"><PanelLeftClose size={16} /></button>}
           </span>
         </div>
-        <strong style={{ fontSize: 14 }}>{record.title}</strong>
+        <strong style={{ fontSize: 14 }}>{title}</strong>
         <div className="ws-ids stacked">{record.identifiers.map((i) => <div key={i.label}><span>{i.label}</span><strong style={{ fontSize: 13 }} title={i.value}>{i.value}</strong></div>)}</div>
       </div>
       <div className="stack" style={{ gap: 6 }}>
         <span className="eyebrow">Documents · {record.docs.length}</span>
         {record.docs.map((d) => (
           <button key={d.id} type="button" className="vw-thumb" aria-current={d.id === doc.id} onClick={() => switchDoc(d.id)}>
-            <i aria-hidden /><span className="grow" style={{ minWidth: 0 }}><strong className="truncate" style={{ display: 'block', fontWeight: 500, fontSize: 13 }}>{d.kind}</strong>{d.id === doc.id ? pageTotal + ' pp · ' : ''}{fmtDate(d.ingestedAt)}</span>
+            <i aria-hidden /><span className="grow" style={{ minWidth: 0 }}><strong className="truncate" style={{ display: 'block', fontWeight: 500, fontSize: 13 }}>{docKind(d.filename)}</strong>{d.id === doc.id && pageTotal ? `${pageTotal} page${pageTotal === 1 ? '' : 's'} · ` : ''}{fmtDate(d.ingestedAt)}</span>
           </button>
         ))}
       </div>
       {pageTotal > 1 && (
         <div className="stack" style={{ gap: 6 }}>
           <span className="eyebrow">Pages</span>
-          <div className="vw-thumbs">
+          <div className="vw-pages">
             {Array.from({ length: pageTotal }, (_, i) => (
-              <button key={i} type="button" className="vw-thumb" aria-current={page === i + 1} onClick={() => { goPage(i + 1); setDocsOpen(false) }}><i aria-hidden />Page {i + 1}</button>
+              <PageThumb key={doc.id + ':' + renderRevision + ':' + (i + 1)} page={i + 1} current={page === i + 1} src={previews[i + 1]} failed={previewsFailed}
+                onVisible={needPreview} onOpen={() => { goPage(i + 1); setDocsOpen(false) }} />
             ))}
           </div>
         </div>
@@ -250,19 +294,19 @@ export function Viewer({ record, results, docId, onClose }: { record: RecordItem
   )
 
   return (
-    <div className="vw" role="dialog" aria-modal="true" aria-label={`${doc.kind}, ${record.identifiers[0].value}`}>
+    <div className="vw" role="dialog" aria-modal="true" aria-label={`${kind}, ${record.identifiers[0].value}`}>
       <div className="vw-bar">
-        <button type="button" className="v-btn quiet icon" onClick={onClose} aria-label="Back to results"><ArrowLeft size={20} /></button>
-        <button type="button" className="vw-title grow" style={{ border: 0, background: 'none', textAlign: 'left', cursor: 'pointer' }} onClick={() => setDocsOpen(true)} aria-label="Switch document">
-          <strong className="truncate">{doc.kind}</strong>
-          <span className="truncate">{record.identifiers[0].value} · Doc {docIndex + 1}/{record.docs.length} · {pageTotal} pp</span>
+        <button type="button" className="v-btn quiet sm vw-back" onClick={onClose} aria-label={`Back to ${backLabel.toLowerCase()}`}><ArrowLeft size={18} aria-hidden /><span className="vw-label">{backLabel}</span></button>
+        <span className="vw-sep vw-hide-sm" aria-hidden />
+        <button type="button" className="vw-title grow" style={{ border: 0, background: 'none', textAlign: 'left', cursor: 'pointer' }} onClick={() => setDocsOpen(true)} aria-label={`${kind} · ${title}. Switch document`}>
+          <strong className="truncate">{kind} · {title}</strong>
+          <span className="truncate mono-ish">{record.identifiers[0].value} · {doc.filename} · {docIndex + 1} of {record.docs.length} document{record.docs.length === 1 ? '' : 's'}</span>
         </button>
         <div className="vw-group">
-          <button type="button" className="v-btn quiet icon" aria-pressed={findOpen} onClick={() => setFindOpen((f) => !f)} aria-label="Find in document"><Search size={18} /></button>
-          <span className="vw-sep vw-hide-sm" aria-hidden />
-          <ActionButton label="Download" icon={<Download size={18} />} allowed={can('DOWNLOAD_CURRENT_PDF') && !actionBusy} onClick={download} className="vw-hide-sm" />
-          <ActionButton label="Print" icon={<Printer size={18} />} allowed={can('PRINT_DOCUMENT') && !actionBusy} onClick={print} className="vw-hide-sm" />
-          <ActionButton label="Redact" icon={<Eraser size={18} />} allowed={can('PERMANENT_REDACTION') && !actionBusy} onClick={startRedact} pressed={redacting} />
+          <button type="button" className="v-btn quiet sm" aria-pressed={findOpen} onClick={() => setFindOpen((f) => !f)} aria-label="Find in document"><Search size={16} aria-hidden /><span className="vw-label">Find</span></button>
+          {can('DOWNLOAD_CURRENT_PDF') && <button type="button" className="v-btn sm vw-hide-sm" disabled={actionBusy} onClick={download}><Download size={16} aria-hidden />Download</button>}
+          {can('PRINT_DOCUMENT') && <button type="button" className="v-btn sm vw-hide-sm" disabled={actionBusy} onClick={print}><Printer size={16} aria-hidden />Print</button>}
+          {can('PERMANENT_REDACTION') && <button type="button" className="v-btn sm vw-redact" disabled={actionBusy} aria-pressed={redacting} onClick={startRedact} aria-label="Redact"><Eraser size={16} aria-hidden /><span className="vw-label">Redact</span></button>}
           <button type="button" className="v-btn quiet icon vw-panel-toggle" aria-pressed={infoOpen} onClick={() => setInfoOpen(true)} aria-label="Document information"><PanelRight size={18} /></button>
         </div>
       </div>
@@ -282,7 +326,9 @@ export function Viewer({ record, results, docId, onClose }: { record: RecordItem
       )}
 
       <div className="vw-body">
-        <nav className="vw-docs" aria-label="Record documents">{docsNav}</nav>
+        {folded
+          ? <div className="vw-docs-rail"><button type="button" className="v-btn quiet icon sm" onClick={() => setFold(false)} aria-label="Show document list" title="Show document list"><PanelLeftOpen size={16} /></button></div>
+          : <nav className="vw-docs" aria-label="Record documents">{docsNav(false)}</nav>}
         <div className="vw-stage">
         <div className="vw-canvas" ref={canvasRef} style={{ position: 'relative' }}>
           {viewerFailure && <div className="v-callout" role="alert">{viewerFailure}</div>}
@@ -325,14 +371,16 @@ export function Viewer({ record, results, docId, onClose }: { record: RecordItem
 
       {infoOpen && (
         <Drawer eyebrow={doc.kind} title="Document information" onClose={() => setInfoOpen(false)}>
-          <div className="row wrap vw-actions-sm" style={{ gap: 8 }}>
-            <ActionButton label="Download" icon={<Download size={16} />} allowed={can('DOWNLOAD_CURRENT_PDF') && !actionBusy} onClick={download} text />
-            <ActionButton label="Print" icon={<Printer size={16} />} allowed={can('PRINT_DOCUMENT') && !actionBusy} onClick={print} text />
-          </div>
+          {(can('DOWNLOAD_CURRENT_PDF') || can('PRINT_DOCUMENT')) && (
+            <div className="row wrap vw-actions-sm" style={{ gap: 8 }}>
+              {can('DOWNLOAD_CURRENT_PDF') && <button type="button" className="v-btn sm" disabled={actionBusy} onClick={download}><Download size={16} aria-hidden />Download</button>}
+              {can('PRINT_DOCUMENT') && <button type="button" className="v-btn sm" disabled={actionBusy} onClick={print}><Printer size={16} aria-hidden />Print</button>}
+            </div>
+          )}
           <DocInfo doc={{...doc,pages:pageTotal}} tab={infoTab} setTab={setInfoTab} embedded />
         </Drawer>
       )}
-      {docsOpen && <Drawer eyebrow="Record documents" title={record.identifiers[0].value} onClose={() => setDocsOpen(false)}>{docsNav}</Drawer>}
+      {docsOpen && <Drawer eyebrow="Record documents" title={record.identifiers[0].value} onClose={() => setDocsOpen(false)}>{docsNav(true)}</Drawer>}
       {review && <RedactionReview doc={doc} marks={marks} onCancel={() => setReview(false)} onApply={applyRedaction} busy={actionBusy} failure={redactionFailure} />}
     </div>
   )
@@ -383,12 +431,19 @@ function SecurePage({documentId,page,scale,scrollRoot,matches,highlights,redacti
   </div>
 }
 
-function ActionButton({ label, icon, allowed, onClick, pressed, className = '', text }: { label: string; icon: ReactNode; allowed: boolean; onClick: () => void; pressed?: boolean; className?: string; text?: boolean }) {
+function PageThumb({ page, current, src, failed, onVisible, onOpen }: { page: number; current: boolean; src?: string; failed: boolean; onVisible: (p: number) => void; onOpen: () => void }) {
+  const ref = useRef<HTMLButtonElement>(null)
+  useEffect(() => {
+    const el = ref.current
+    if (!el || src || failed) return
+    const obs = new IntersectionObserver((entries) => { if (entries.some((e) => e.isIntersecting)) onVisible(page) }, { rootMargin: '120px 0px' })
+    obs.observe(el)
+    return () => obs.disconnect()
+  }, [page, src, failed])
   return (
-    <button type="button" className={`v-btn ${text ? 'sm' : 'quiet icon'} ${className}`} aria-disabled={!allowed} aria-pressed={pressed} onClick={onClick}
-      aria-label={allowed ? label : `${label} (not permitted for your role)`} title={allowed ? label : `${label} — not permitted for your role`} style={{ position: 'relative' }}>
-      {icon}{text && label}
-      {!allowed && <Lock size={10} aria-hidden style={{ position: text ? 'static' : 'absolute', right: 6, bottom: 6 }} />}
+    <button ref={ref} type="button" className="vw-pagethumb" aria-current={current} aria-label={`Page ${page}`} onClick={onOpen}>
+      {src ? <img src={src} alt="" /> : <span className="vw-pagebox" aria-hidden>{failed ? `Page ${page}` : ''}</span>}
+      <span className="vw-pagenum" aria-hidden>{page}</span>
     </button>
   )
 }
@@ -445,6 +500,13 @@ function DocInfo({ doc, tab, setTab, embedded }: { doc: Doc; tab: InfoTab; setTa
       .finally(()=>{if(active)setMetadataLoading(false)})
     return()=>{active=false}
   },[liveSession,tab,doc.id])
+  // Load comments when a document opens so the Comments tab shows its count (reading comments is not audited).
+  useEffect(()=>{
+    if(!liveSession)return
+    let active=true
+    documentComments(doc.id).then(items=>{if(active)setLiveComments(items)}).catch(()=>{})
+    return()=>{active=false}
+  },[liveSession,doc.id])
   const submitLiveComment=async()=>{
     const value=comment.trim()
     if(!value || saving)return
@@ -453,7 +515,7 @@ function DocInfo({ doc, tab, setTab, embedded }: { doc: Doc; tab: InfoTab; setTa
       const saved=await createDocumentComment(doc.id,value)
       setLiveComments(items=>[...items,saved]);setComment('')
       toast({title:'Comment added'})
-    }catch(e){setMetadataError(e instanceof Error?e.message:'Unable to add comment')}
+    }catch(e){setMetadataError(errorText(e))}
     finally{setSaving(false)}
   }
   const submitLiveTag=async()=>{
@@ -465,12 +527,18 @@ function DocInfo({ doc, tab, setTab, embedded }: { doc: Doc; tab: InfoTab; setTa
       const saved=await createDocumentTag(doc.id,value)
       setLiveTags(items=>[...items,saved]);setTag('')
       toast({title:'Tag added'})
-    }catch(e){setMetadataError(e instanceof Error?e.message:'Unable to add tag')}
+    }catch(e){setMetadataError(errorText(e))}
     finally{setSaving(false)}
   }
   const suggestsSsn = !liveSession && (PAGE_TEXT[doc.kind] ?? []).some((t) => SSN.test(t)) && doc.redactions.length === 0
   const body = (
     <>
+      {tab === 'ask' && showDevelopmentUtilities && (
+        <section className="home-card home-ask">
+          <h2><Sparkles size={16} aria-hidden />Ask and Key terms <Badge tone="ok">Later release</Badge></h2>
+          <p className="muted">Development marker: questions about this document and its key terms will sit here.</p>
+        </section>
+      )}
       {tab === 'details' && (
         <>
           {suggestsSsn && can('PERMANENT_REDACTION') && <Callout tone="warn" title="Possible sensitive identifier on page 1">Sample content includes a full SSN. Stewards can correct this with permanent redaction.</Callout>}
@@ -489,7 +557,7 @@ function DocInfo({ doc, tab, setTab, embedded }: { doc: Doc; tab: InfoTab; setTa
       {tab === 'comments' && (
         <>
           {liveSession && metadataLoading && <p className="faint">Loading comments…</p>}
-          {liveSession && metadataError && <Callout tone="warn" title="Comments unavailable">{metadataError}</Callout>}
+          {liveSession && metadataError && <Callout tone="warn" title={metadataError.startsWith(REFUSED.title) ? REFUSED.title : 'Comments unavailable'}>{metadataError.startsWith(REFUSED.title) ? REFUSED.detail : metadataError}</Callout>}
           {liveSession && !metadataLoading && !metadataError && liveComments.length === 0 && <p className="faint">No comments yet.</p>}
           {liveSession && liveComments.map(c=><article key={c.commentId} className="v-comment"><header><strong>{c.createdBy}</strong><span>{fmtRel(c.createdAt)}</span></header><p>{c.comment}</p></article>)}
           {liveSession && can('ADD_DOCUMENT_COMMENT') && <form className="stack" style={{gap:8}} onSubmit={e=>{e.preventDefault();void submitLiveComment()}}>
@@ -506,14 +574,13 @@ function DocInfo({ doc, tab, setTab, embedded }: { doc: Doc; tab: InfoTab; setTa
               <textarea className="v-textarea" aria-label="New comment" value={comment} maxLength={BUSINESS_LIMITS.maxCommentLength} onChange={(e) => setComment(e.target.value)} placeholder="Add a comment for other authorized users" />
               <button type="submit" className="v-btn sm" style={{ alignSelf: 'flex-end' }} disabled={!comment.trim()}>Add comment</button>
             </form>
-          ) : !liveSession && <Callout title="Commenting isn't assigned to your role" />}
-          {liveSession && !can('ADD_DOCUMENT_COMMENT') && <Callout title="Commenting isn't assigned to your role" />}
+          ) : null}
         </>
       )}
       {tab === 'tags' && (
         <>
           {liveSession && metadataLoading && <p className="faint">Loading tags…</p>}
-          {liveSession && metadataError && <Callout tone="warn" title="Tags unavailable">{metadataError}</Callout>}
+          {liveSession && metadataError && <Callout tone="warn" title={metadataError.startsWith(REFUSED.title) ? REFUSED.title : 'Tags unavailable'}>{metadataError.startsWith(REFUSED.title) ? REFUSED.detail : metadataError}</Callout>}
           <div className="v-tagrow">{liveSession ? (liveTags.length===0 ? <span className="faint">No tags yet.</span> : liveTags.map(t=><Badge key={t.tagId} tone="outline">{t.tag}</Badge>)) : doc.tags.length === 0 ? <span className="faint">No tags yet.</span> : doc.tags.map((t) => <Badge key={t.id} tone="outline">{t.tag}</Badge>)}</div>
           {liveSession && can('ADD_DOCUMENT_TAG') && <form className="row" onSubmit={e=>{e.preventDefault();void submitLiveTag()}}>
             <input className="v-input grow" aria-label="New tag" value={tag} maxLength={BUSINESS_LIMITS.maxTagLength} onChange={e=>setTag(e.target.value)} placeholder="Add tag"/>
@@ -529,8 +596,7 @@ function DocInfo({ doc, tab, setTab, embedded }: { doc: Doc; tab: InfoTab; setTa
               <input className="v-input grow" aria-label="New tag" value={tag} maxLength={BUSINESS_LIMITS.maxTagLength} onChange={(e) => setTag(e.target.value)} placeholder="Add tag" />
               <button type="submit" className="v-btn" disabled={!tag.trim()}>Add</button>
             </form>
-          ) : !liveSession && <Callout title="Tagging isn't assigned to your role" />}
-          {liveSession && !can('ADD_DOCUMENT_TAG') && <Callout title="Tagging isn't assigned to your role" />}
+          ) : null}
         </>
       )}
       {tab === 'activity' && (<>
@@ -550,7 +616,7 @@ function DocInfo({ doc, tab, setTab, embedded }: { doc: Doc; tab: InfoTab; setTa
   )
   return (
     <>
-      <Tabs label="Document information" value={tab} onChange={(t) => setTab(t as InfoTab)} tabs={[{ id: 'details', label: 'Details' }, { id: 'comments', label: `Comments${(liveSession?liveComments.length:doc.comments.length) ? ` ${liveSession?liveComments.length:doc.comments.length}` : ''}` }, { id: 'tags', label: 'Tags' }, { id: 'activity', label: 'Activity' }]} />
+      <Tabs label="Document information" value={tab} onChange={(t) => setTab(t as InfoTab)} tabs={[...(showDevelopmentUtilities ? [{ id: 'ask', label: 'Ask' }] : []), { id: 'details', label: 'Details' }, { id: 'comments', label: `Comments${(liveSession?liveComments.length:doc.comments.length) ? ` ${liveSession?liveComments.length:doc.comments.length}` : ''}` }, { id: 'tags', label: 'Tags' }, { id: 'activity', label: 'Activity' }]} />
       {embedded ? <div className="stack-lg">{body}</div> : <div className="vw-panel-body">{body}</div>}
       {!embedded && <div style={{ padding: 12, borderTop: '1px solid var(--line)' }} className="faint"><Info size={13} aria-hidden style={{ verticalAlign: '-2px', marginRight: 6 }} /><small>Every view, download, print and correction is audited.</small></div>}
     </>

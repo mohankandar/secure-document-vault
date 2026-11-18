@@ -57,6 +57,9 @@ export function toRecord(r: BusinessRecord):RecordItem {
 export type ViewerMetadata = { documentId: string; originalFilename: string; pageCount: number }
 export type ViewerSearch = { pageCount: number; totalMatches: number; pages: {pageNumber:number; matchCount:number}[]; highlights?: {pageNumber:number;x:number;y:number;width:number;height:number}[] }
 const viewerPath = (id: string) => '/api/v1/business/documents/' + encodeURIComponent(id) + '/viewer'
+/** Small page previews (PNG data URLs), at most 24 pages per request. The server writes no audit event for them. */
+export type ViewerPreviews = { documentId: string; pageCount: number; first: number; previews: { pageNumber: number; width: number; height: number; dataUrl: string }[] }
+export const viewerPreviews = (id: string, first: number, count: number) => roleApi<ViewerPreviews>(viewerPath(id) + '/previews?first=' + first + '&count=' + count, 'business')
 export const viewerMetadata = (id:string) => roleApi<ViewerMetadata>(viewerPath(id), 'business')
 export const viewerPage = (id:string, page:number, scale=1) =>
   contentBinary(viewerPath(id) + '/pages/' + page + '?scale=' + scale, 'business')

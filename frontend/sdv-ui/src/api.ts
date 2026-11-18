@@ -79,7 +79,7 @@ export async function contentBinary(path: string, persona: 'business' | 'steward
   if (!response.ok) {
     if (response.status === 401 && isOidcSecurityMode()) expireOidcSession()
     const body = await response.json().catch(() => null) as { message?: string } | null
-    throw new Error(body?.message ?? `HTTP ${response.status}`)
+    throw new ApiRequestError(body?.message ?? `HTTP ${response.status}`, response.status)
   }
   return response.blob()
 }

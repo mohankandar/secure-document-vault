@@ -69,6 +69,18 @@ public class SecurePdfViewerController {
         return ResponseEntity.ok().headers(headers).body(page.pngBytes());
     }
 
+    /** Small page previews (JSON, a PNG data URL per page). No audit event per preview. */
+    @GetMapping("/previews")
+    public ResponseEntity<DocumentViewerService.PagePreviews> previews(
+            @PathVariable UUID documentId,
+            @RequestParam(defaultValue = "1") int first,
+            @RequestParam(defaultValue = "12") int count) {
+        SdvPrincipal principal = requireView();
+        return ResponseEntity.ok()
+                .headers(viewerHeaders())
+                .body(viewer.previews(principal.tenantId(), documentId, first, count));
+    }
+
     @GetMapping("/search")
     public ResponseEntity<DocumentViewerService.SearchResults> search(
             @PathVariable UUID documentId,

@@ -34,6 +34,7 @@ import java.security.NoSuchAlgorithmException;
 import java.time.Clock;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Base64;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Locale;
@@ -47,6 +48,9 @@ public class DocumentViewerService {
     private static final float BASE_DPI = 96.0f;
     private static final double MAX_RENDER_PIXELS = 24_000_000d;
     private static final int MAX_SEARCH_QUERY_LENGTH = 100;
+    public static final int PREVIEW_WIDTH_PX = 120;
+    static final int PREVIEW_MAX_HEIGHT_PX = 400;
+    public static final int MAX_PREVIEW_COUNT = 24;
 
     private final DocumentIntakeRepository documents;
     private final StorageVolumeRepository volumes;
@@ -151,6 +155,59 @@ public class DocumentViewerService {
                     image.getHeight(),
                     pageNumber,
                     pdf.getNumberOfPages());
+        } catch (IOException ex) {
+            throw unavailable(ex);
+        } finally {
+            Arrays.fill(plaintext, (byte) 0);
+        }
+    }
+
+    /**
+     * Small page previews for the viewer's page list: pages {@code first} to {@code first + count - 1} (clipped to the
+     * page count), each about {@link #PREVIEW_WIDTH_PX} px wide. Same checks as the viewer (AVAILABLE document in the
+     * caller's tenant, verified plaintext of the current PDF, so redactions show), the document is decrypted once per
+     * request, and no audit event is written: previews belong to the DOCUMENT_VIEW_OPENED already recorded.
+     */
+    public PagePreviews previews(UUID tenantId, UUID documentId, int first, int count) {
+        if (first < 1) throw new IllegalArgumentException("first must be at least 1.");
+        if (count < 1 || count > MAX_PREVIEW_COUNT) {
+            throw new IllegalArgumentException("count must be between 1 and " + MAX_PREVIEW_COUNT + ".");
+        }
+
+        Document document = requireAvailableDocument(tenantId, documentId);
+        byte[] plaintext = verifiedPlaintext(document);
+        try (PDDocument pdf = load(plaintext)) {
+            int pageCount = pdf.getNumberOfPages();
+            if (first > pageCount) {
+                throw new IllegalArgumentException("first exceeds the document page count of " + pageCount + ".");
+            }
+            int last = Math.min(pageCount, first + count - 1);
+            PDFRenderer renderer = new PDFRenderer(pdf);
+            renderer.setSubsamplingAllowed(true);
+            List<PagePreview> previews = new ArrayList<>(last - first + 1);
+            Base64.Encoder base64 = Base64.getEncoder();
+            for (int pageNumber = first; pageNumber <= last; pageNumber++) {
+                PDPage page = pdf.getPage(pageNumber - 1);
+                PDRectangle box = page.getCropBox();
+                boolean quarterTurn = Math.floorMod(page.getRotation(), 180) == 90;
+                double widthPoints = quarterTurn ? box.getHeight() : box.getWidth();
+                double heightPoints = quarterTurn ? box.getWidth() : box.getHeight();
+                if (widthPoints <= 0 || heightPoints <= 0) {
+                    throw new IOException("Page " + pageNumber + " has no printable area.");
+                }
+                // Fixed width; very tall pages are capped in height instead.
+                float dpi = (float) Math.min(
+                        PREVIEW_WIDTH_PX * 72.0d / widthPoints,
+                        PREVIEW_MAX_HEIGHT_PX * 72.0d / heightPoints);
+                BufferedImage image = renderer.renderImageWithDPI(pageNumber - 1, dpi, ImageType.RGB);
+                ByteArrayOutputStream png = new ByteArrayOutputStream(16 * 1024);
+                if (!ImageIO.write(image, "PNG", png)) {
+                    throw new IOException("PNG renderer is unavailable.");
+                }
+                previews.add(new PagePreview(pageNumber, image.getWidth(), image.getHeight(),
+                        "data:image/png;base64," + base64.encodeToString(png.toByteArray())));
+            }
+            return new PagePreviews(document.documentId(), pageCount, first, previews);
         } catch (IOException ex) {
             throw unavailable(ex);
         } finally {
@@ -401,6 +458,15 @@ public class DocumentViewerService {
             int height,
             int pageNumber,
             int pageCount) { }
+
+    /** One page preview: a PNG as a data URL, so the browser can show it without another request. */
+    public record PagePreview(int pageNumber, int width, int height, String dataUrl) { }
+
+    public record PagePreviews(UUID documentId, int pageCount, int first, List<PagePreview> previews) {
+        public PagePreviews {
+            previews = List.copyOf(previews);
+        }
+    }
 
     public record PageMatch(int pageNumber, int matchCount) { }
 

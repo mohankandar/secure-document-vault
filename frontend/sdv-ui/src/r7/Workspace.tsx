@@ -271,7 +271,7 @@ export function Workspace() {
           <RecordPanelBody record={selected} summary={summary} onOpen={(id) => openDoc(selected, id)} />
         </Drawer>
       )}
-      {selected && openDocId && can('VIEW_PDF') && <Viewer record={selected} results={results} docId={openDocId} onClose={() => setOpenDocId(null)} />}
+      {selected && openDocId && can('VIEW_PDF') && <Viewer record={selected} results={results} docId={openDocId} onClose={() => setOpenDocId(null)} recordTitle={panelTitle} />}
       {failure && <div role="alert" className="v-callout">{failure}</div>}
     </div>
   )
