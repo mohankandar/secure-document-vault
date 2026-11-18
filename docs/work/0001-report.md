@@ -2,7 +2,7 @@
 
 Date: 2026-11-17
 Branch: `fix/ui-quick-fixes` (from `release/vero-r7`)
-Outcome: PARTLY DONE. All code changes are made, the type check and build pass, and they are committed. The checks against the running app (search times, record panel and viewer with seeded records, `npm run ui:capture`) could not run. See "Not done, and why".
+Outcome: PARTLY DONE. All code changes are made, the type check and build pass, and they are committed. The owner approved this task on 2026-11-17. The live checks with records still cannot run, because the local database has no demo records (see "Live checks, second run").
 
 ## What was done
 
@@ -55,6 +55,19 @@ Not touched: `ConnectedAuthenticationView.tsx:14` has its own local `fmtRel` tha
 | `fmtRel` run in Node (esbuild bundle of `ui.tsx`) | 30 s → "just now", 10 min → "10 min ago", 3 h → "3 h ago", 5 d → "5 d ago", 100 d → date, +2 min → "just now", +2 h → date, invalid → "—", 15 Oct 2026 → "34 d ago" |
 | `.\start-local.cmd` | **FAILED**: "sdv-vault is not healthy/unsealed". The script started the existing `sdv-postgres` and `sdv-vault` containers, which were stopped. The Vault is sealed. |
 | `npm run ui:capture` | Not run: the app is not running, and Playwright is not installed (see Questions) |
+
+### Live checks, second run (2026-11-17, after the owner unsealed the Vault)
+
+| Step | Result |
+|---|---|
+| `.\start-local.cmd` (twice) | **FAILED** both times: "SDV frontend did not become reachable". Vite was in fact ready in 0.3 s on `127.0.0.1:5183`. The script checks `http://localhost:5183` with Windows PowerShell `Invoke-WebRequest`, which tries IPv6 `::1` first and times out, because Vite is started with `--host 127.0.0.1`. The script then stops both services. The probe line is the same in the committed version, so this problem existed before; it is not caused by the uncommitted changes. I did not edit the script. |
+| Workaround | I started the backend and frontend in their own windows, with the same commands and environment as `Start-SDV-Local.ps1`, and wrote `.runtime/backend.pid` and `.runtime/frontend.pid` so `stop-local.cmd` can stop them. The Vault token file is passed to the backend by path only, as the script does; I did not open it. Backend health UP, frontend 200. |
+| Search results show real update times | **Could not check: there are no records.** `GET /api/v1/business/search-schema` returns `{"sources":[]}`. A read-only check of `sdv-postgres` shows 2 tenants, 0 ingestion sources, 0 submissions, 0 documents, and 8 audit events in total. The database volume was created on 2026-11-07 and has never held documents, so nothing was lost. `Seed-SDV-Demo-Records.ps1` needs an existing source ("laxavault" / `lexaVault`), so it would fail. I did not create a source or write any data. |
+| Record panel and viewer identifier box with real records | Could not check (no records). The static check above, which uses the same CSS at the same widths, still stands. |
+| Product build has no chip | PASS (see above). |
+| `npm run ui:capture` (Playwright 1.56.1, now installed) | **5 of 5 FAILED** (desktop project) at the first step. The spec looks for `getByLabel('Demo role')` and `.sidebar-identity`, which are R5 elements, but `/` now serves R7. The spec was already broken before this task; it is not caused by these changes. Task 0002 updates the specs. |
+
+Playwright: `@playwright/test` 1.56.1 was added as an exact-pinned dev dependency (owner approved 2026-11-17). 1.49.1 was tried first and replaced, because it has a high-severity advisory: browsers were downloaded without SSL certificate checks (fixed in 1.55.1). `npm audit` still lists the existing `vite`, `esbuild` and `source-map-js` advisories, which were there before.
 
 Screenshots: `.runtime/ui-checks/0001/` (ignored by git): `ids-check.png`, `topbar-product-1440.png`, `topbar-product-390.png`.
 
