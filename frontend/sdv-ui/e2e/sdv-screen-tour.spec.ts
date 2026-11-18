@@ -1064,10 +1064,77 @@ async function tryBusinessRecordJourney(page: Page, testInfo: TestInfo, role: st
   await expect(recordRow).toBeVisible()
 }
 
+// ---- Which sending system Records searches (task 0017) ----
+
+const BUSINESS_HEADERS = { 'X-SDV-Tenant-Id': LOCAL_TENANT, 'X-SDV-Subject': 'local-business-user', 'X-SDV-Roles': 'BUSINESS_USER' }
+const LAST_SOURCE_KEY = 'vero.records.sourceId'
+type SchemaSource = { sourceId: string; displayName: string; fields: unknown[] }
+async function searchSources(page: Page) {
+  const r = await page.request.get('/api/v1/business/search-schema', { headers: BUSINESS_HEADERS })
+  expect(r.ok(), 'reading the search schema').toBeTruthy()
+  return ((await r.json()) as { sources: SchemaSource[] }).sources
+}
+
+/** The tour searches LexaVault's demo records, so it chooses LexaVault the way a person does: as their last choice in this browser. */
+async function chooseLexaVault(page: Page) {
+  const lexa = (await searchSources(page)).find((s) => s.displayName === 'LexaVault')
+  expect(lexa, 'the LexaVault sending system').toBeTruthy()
+  await page.evaluate(([key, id]) => { try { window.localStorage.setItem(key, id) } catch { /* the default rule still picks it */ } }, [LAST_SOURCE_KEY, lexa!.sourceId])
+}
+
 test.describe('SDV role-based screen capture', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/')
     await page.waitForLoadState('domcontentloaded')
+    await chooseLexaVault(page)
+  })
+
+  test('Records starts with LexaVault while a half-set-up system exists', async ({ page }, testInfo) => {
+    test.skip(!isDesktop(testInfo), 'Runs once per tour (desktop only).')
+    test.setTimeout(150_000) // ten full page loads
+    // The test case is the leftover paused "Tour test system …" source, which has no search fields (report 0013).
+    const sources = await searchSources(page)
+    const leftover = sources.find((s) => /^Tour test system /.test(s.displayName) && s.fields.length === 0)
+    expect(leftover, 'the test case: a "Tour test system" source without search fields must exist (keep it, task 0017)').toBeTruthy()
+    await selectRole(page, 'Business User')
+    await areaTab(page, 'Records').click()
+    await waitForBusinessSearchReady(page)
+
+    // Ten loads in a row with no remembered choice, and with the half-set-up system remembered (it can't be chosen).
+    for (let i = 1; i <= 10; i++) {
+      const remembered = i % 2 === 0 ? leftover!.sourceId : null
+      await page.evaluate(([key, id]) => { if (id) window.localStorage.setItem(key, id); else window.localStorage.removeItem(key) }, [LAST_SOURCE_KEY, remembered] as const)
+      await page.reload()
+      // Typed straight away, before the sending systems have loaded (the cause in report 0017).
+      await searchBox(page).fill(demoRecord)
+      await searchBox(page).press('Enter')
+      await expect(resultRows(page).filter({ hasText: demoRecord }).first(), `load ${i}: the default is LexaVault`).toBeVisible({ timeout: 15000 })
+      await expect(page.getByText('no field the search box can use')).toHaveCount(0)
+      await page.getByRole('button', { name: /^Filters/ }).click()
+      const filters = page.getByRole('dialog', { name: 'Filters' })
+      await expect(filters).toBeVisible()
+      await expect(filters).not.toContainText('Tour test system')
+      await page.keyboard.press('Escape')
+      await expect(filters).toHaveCount(0)
+    }
+
+    // With only systems that can't be searched (simulated in the browser), Records and Home say so.
+    await page.route('**/api/v1/business/search-schema', async (route) => {
+      const s = await (await route.fetch()).json() as { sources: SchemaSource[] }
+      await route.fulfill({ json: { ...s, sources: s.sources.filter((x) => x.fields.length === 0) } })
+    })
+    await page.reload()
+    const results = page.getByRole('region', { name: 'Search results' })
+    await expect(results.getByRole('heading', { name: 'There’s nothing to search yet.' })).toBeVisible({ timeout: 15000 })
+    await expect(results).toContainText('Records appear here once a sending system delivers documents.')
+    await expect(page.getByRole('button', { name: /^Filters/ })).toBeDisabled()
+    await expect(searchBox(page)).toHaveAttribute('placeholder', 'Nothing to search yet')
+    await capture(page, testInfo, 'records-nothing-to-search')
+    await areaTab(page, 'Home').click()
+    await searchBox(page).fill(demoRecord)
+    await searchBox(page).press('Enter')
+    await expect(page.getByRole('status').filter({ hasText: 'There’s nothing to search yet. Records appear here once a sending system delivers documents.' })).toBeVisible({ timeout: 15000 })
+    await page.unrouteAll({ behavior: 'ignoreErrors' }) // a schema request may still be in flight
   })
 
   test('Business User screens', async ({ page }, testInfo) => {

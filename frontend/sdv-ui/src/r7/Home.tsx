@@ -7,6 +7,7 @@ import type { RecordSummary } from '../api'
 import { recentRecords, schema, search, toSource, type RecentRecord } from './liveApi'
 import { Badge, Callout, Skeleton, fmtRel } from './ui'
 import { boxLabel, quickRange, routeBoxInput } from './searchRouting'
+import { NOTHING_TO_SEARCH, defaultSource, searchableSources } from './sourceChoice'
 
 const showDevelopmentUtilities = import.meta.env.DEV
 const RECENT_LIMIT = 8
@@ -26,6 +27,9 @@ function identifierCriteria(record: RecordSummary, source: Source | undefined): 
 export function Home() {
   const { liveSession, navigate, requestSearch } = useStore()
   const [sources, setSources] = useState<Source[]>([])
+  const [sourcesLoaded, setSourcesLoaded] = useState(false)
+  // The same rule as Records (sourceChoice.ts): only systems with a searchable field, and the same default.
+  const candidates = useMemo(() => searchableSources(sources), [sources])
   const [recent, setRecent] = useState<RecentRecord[] | null>(null)
   const [recentError, setRecentError] = useState('')
   const [attention, setAttention] = useState<Attention[] | null>(null)
@@ -33,7 +37,7 @@ export function Home() {
   const [box, setBox] = useState('')
   const [boxMessage, setBoxMessage] = useState('')
 
-  useEffect(() => { let active = true; schema().then((s) => { if (active) setSources(s.sources.map(toSource)) }).catch((e) => { if (active) setAttentionError(failureText('Home: search fields did not load', e)) }); return () => { active = false } }, [])
+  useEffect(() => { let active = true; schema().then((s) => { if (active) { setSources(s.sources.map(toSource)); setSourcesLoaded(true) } }).catch((e) => { if (active) setAttentionError(failureText('Home: search fields did not load', e)) }); return () => { active = false } }, [])
   useEffect(() => {
     let active = true
     recentRecords(RECENT_LIMIT).then((r) => { if (active) setRecent(r.records) }).catch((e) => { if (active) { setRecent([]); setRecentError(failureText('Home: recently viewed did not load', e)) } })
@@ -41,17 +45,19 @@ export function Home() {
   }, [])
   // Needs attention: records with missing documents received in the last 30 days, from each source.
   useEffect(() => {
-    if (!sources.length) return
+    if (!sourcesLoaded) return
+    if (!candidates.length) { setAttention([]); return }
     let active = true
     const last30 = quickRange('Last 30 days')
-    Promise.all(sources.map((s) => search(s.id, {}, last30, { from: '', to: '' }, 1, { incompleteOnly: true, pageSize: ATTENTION_LIMIT })
+    Promise.all(candidates.map((s) => search(s.id, {}, last30, { from: '', to: '' }, 1, { incompleteOnly: true, pageSize: ATTENTION_LIMIT })
       .then((r) => r.records.map((record) => ({ sourceId: s.id, record })))))
       .then((lists) => { if (active) setAttention(lists.flat().sort((a, b) => b.record.latestSubmissionAt.localeCompare(a.record.latestSubmissionAt)).slice(0, ATTENTION_LIMIT)) })
       .catch((e) => { if (active) { setAttention([]); setAttentionError(failureText('Home: needs attention did not load', e)) } })
     return () => { active = false }
-  }, [sources])
+  }, [sourcesLoaded, candidates])
 
-  const source = sources[0]
+  const source = defaultSource(sources)
+  const nothingToSearch = sourcesLoaded && candidates.length === 0
   const fields = useMemo(() => source?.fields.filter((f) => f.searchable) ?? [], [source])
   const label = boxLabel(fields)
   const firstName = firstNameOf(liveSession?.displayName)
@@ -60,6 +66,7 @@ export function Home() {
   const submit = (e: FormEvent) => {
     e.preventDefault()
     if (!box.trim()) return
+    if (nothingToSearch) { setBoxMessage(NOTHING_TO_SEARCH); return }
     // Before the source list has loaded, Records routes the text itself once its sources are known.
     if (!source) { requestSearch({ box }); navigate('workspace'); return }
     const route = routeBoxInput(box, fields)
@@ -84,11 +91,11 @@ export function Home() {
         <form className="ws-searchbar" role="search" onSubmit={submit}>
           <Search size={18} aria-hidden className="faint" />
           <input type="search" className="ws-searchinput" aria-label="Search records" value={box} autoComplete="off" spellCheck={false}
-            placeholder={label ?? 'Use Filters to search'} aria-describedby={boxMessage ? 'home-box-message' : undefined}
+            placeholder={nothingToSearch ? 'Nothing to search yet' : label ?? 'Use Filters to search'} aria-describedby={boxMessage ? 'home-box-message' : undefined}
             onChange={(e) => { setBox(e.target.value); setBoxMessage('') }}
             onKeyDown={(e) => { if (e.key === 'Escape') { e.preventDefault(); setBox(''); setBoxMessage('') } }} />
         </form>
-        <button type="button" className="v-btn" onClick={() => { requestSearch({ openFilters: true, sourceId: source?.id }); navigate('workspace') }}><SlidersHorizontal size={16} aria-hidden />Filters</button>
+        <button type="button" className="v-btn" disabled={nothingToSearch} onClick={() => { requestSearch({ openFilters: true, sourceId: source?.id }); navigate('workspace') }}><SlidersHorizontal size={16} aria-hidden />Filters</button>
         <button type="button" className="v-btn primary" onClick={submit}>Search</button>
       </section>
       {boxMessage && <p id="home-box-message" className="ws-box-message" role="status">{boxMessage}</p>}

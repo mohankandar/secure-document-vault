@@ -7,6 +7,7 @@ import { LoadErrorCard, failureText, loadFailed, type Failure } from './CardErro
 import { Badge, Callout, Drawer, Empty, Skeleton, auditEventLabel, fmtDate, fmtRel, humanize } from './ui'
 import { Viewer } from './Viewer'
 import { MODE_HINT, MODE_WORD, QUICK_RANGES, alternativeFields, boxLabel, quickRange, rangeLabel, routeBoxInput, type Range } from './searchRouting'
+import { NOTHING_TO_SEARCH, defaultSource, rememberSourceChoice, searchableSources } from './sourceChoice'
 
 type Criteria = Record<string, string>
 /** received: when the submission arrived (server dateFrom/dateTo); updated: last activity (lastUpdatedFrom/To). */
@@ -34,7 +35,7 @@ const uniqueLabels = (rows: FieldValue[][]) => [...new Set(rows.flat().map((f) =
 const valueOf = (list: FieldValue[] | undefined, label: string) => list?.find((f) => f.label === label)?.value ?? ''
 
 export function Workspace() {
-  const { records, setRecords, selectedRef, setSelectedRef, openDocId, setOpenDocId, can, setResultsShown, searchRequest } = useStore()
+  const { records, setRecords, selectedRef, setSelectedRef, openDocId, setOpenDocId, can, setResultsShown, searchRequest, requestSearch } = useStore()
   const [sources, setSources] = useState<Source[]>([])
   const [status, setStatus] = useState<'loading' | 'live' | 'error'>('loading')
   // A failed load shows the shared card (plain words + reference); Try again re-runs the loads.
@@ -63,10 +64,14 @@ export function Workspace() {
   }, [selectedRef, setRecords])
   // A record chosen elsewhere (e.g. "Go to") opens the record panel.
   useEffect(() => { if (selectedRef) setPanelOpen(true) }, [selectedRef])
-  useEffect(() => { if (!sources.length || sourceId) return; setSourceId(sources[0].id) }, [sources, sourceId])
+  // One fixed rule for the default (sourceChoice.ts); a system without a searchable field is never chosen.
+  useEffect(() => { if (!sources.length || sourceId) return; const d = defaultSource(sources); if (d) setSourceId(d.id) }, [sources, sourceId])
+  const candidates = useMemo(() => searchableSources(sources), [sources])
+  const sourcesKnown = status !== 'loading' || sources.length > 0
+  const nothingToSearch = sourcesKnown && status !== 'error' && candidates.length === 0
 
   const activeSourceId = applied?.sourceId ?? sourceId
-  const source = sources.find((s) => s.id === activeSourceId) ?? sources[0]
+  const source = sources.find((s) => s.id === activeSourceId) ?? defaultSource(sources)
   const fields = useMemo(() => source?.fields.filter((f) => f.searchable) ?? [], [source])
   const label = boxLabel(fields)
 
@@ -103,6 +108,11 @@ export function Workspace() {
   }
   const submitBox = (e?: FormEvent) => {
     e?.preventDefault()
+    if (!box.trim()) return
+    // Enter before the sending systems have loaded: hand the text to the request below, which routes it once
+    // they are known (before, it was routed against no fields and refused with "no field the search box can use").
+    if (!sources.length && status !== 'error') { requestSearch({ box }); return }
+    if (nothingToSearch) { setBoxMessage(NOTHING_TO_SEARCH); return }
     const route = routeBoxInput(box, fields)
     if (!route) return
     if (!route.ok) { setBoxMessage(route.message); return }
@@ -151,7 +161,9 @@ export function Workspace() {
   useEffect(() => {
     if (!searchRequest || handledRequest.current === searchRequest.id || !sources.length) return
     handledRequest.current = searchRequest.id
-    const src = sources.find((s) => s.id === searchRequest.sourceId) ?? sources.find((s) => s.id === sourceId) ?? sources[0]
+    // A named system (a record opened from Home) is searched even if it can't be the default; otherwise the rule.
+    const src = sources.find((s) => s.id === searchRequest.sourceId) ?? sources.find((s) => s.id === sourceId) ?? defaultSource(sources)
+    if (!src) { if (searchRequest.box !== undefined) { setBox(searchRequest.box); setBoxMessage(NOTHING_TO_SEARCH) } return }
     const base: Applied = { ...emptyApplied(src.id), incompleteOnly: !!searchRequest.incompleteOnly, received: searchRequest.receivedLast30Days ? quickRange('Last 30 days') : NO_RANGE }
     setFiltersOpen(false)
     if (searchRequest.box !== undefined) {
@@ -204,24 +216,26 @@ export function Workspace() {
               </span>
             ))}
             <input type="search" className="ws-searchinput" aria-label="Search records" value={box} autoComplete="off" spellCheck={false}
-              placeholder={label ?? 'Use Filters to search this source'} aria-describedby={boxMessage ? 'ws-box-message' : undefined}
+              placeholder={nothingToSearch ? 'Nothing to search yet' : label ?? 'Use Filters to search this source'} aria-describedby={boxMessage ? 'ws-box-message' : undefined}
               onChange={(e) => { setBox(e.target.value); setBoxMessage('') }}
               onKeyDown={(e) => { if (e.key === 'Escape') { e.preventDefault(); setBox(''); setBoxMessage('') } }} />
           </form>
-          <button ref={filtersButton} type="button" className="v-btn" aria-expanded={filtersOpen} aria-controls="ws-filters" onClick={() => setFiltersOpen((o) => !o)}>
+          <button ref={filtersButton} type="button" className="v-btn" aria-expanded={filtersOpen} aria-controls="ws-filters" disabled={nothingToSearch} onClick={() => setFiltersOpen((o) => !o)}>
             <SlidersHorizontal size={16} aria-hidden />Filters{chips.length > 0 && <span className="ws-count" aria-label={`${chips.length} active`}>{chips.length}</span>}
           </button>
           <button type="button" className="v-btn quiet" onClick={clearAll} disabled={!applied && !box}>Clear</button>
-          {filtersOpen && sources.length > 0 && (
-            <FiltersPanel sources={sources} initial={applied ?? emptyApplied(activeSourceId)}
-              onApply={(next) => { setFiltersOpen(false); setBox(''); setBoxMessage(''); runSearch(next); filtersButton.current?.focus() }}
+          {filtersOpen && candidates.length > 0 && (
+            <FiltersPanel sources={candidates} initial={applied ?? emptyApplied(activeSourceId)}
+              onApply={(next) => { setFiltersOpen(false); setBox(''); setBoxMessage(''); rememberSourceChoice(next.sourceId); setSourceId(next.sourceId); runSearch(next); filtersButton.current?.focus() }}
               onClose={() => { setFiltersOpen(false); filtersButton.current?.focus() }} />
           )}
         </section>
         {boxMessage && <p id="ws-box-message" className="ws-box-message" role="status">{boxMessage}</p>}
 
         <section className="ws-results" aria-label="Search results">
-          {status === 'loading' ? <Skeleton rows={7} /> : status === 'error' ? (failure ? <LoadErrorCard title={failure.title ?? "The search didn't load"} failure={failure} onRetry={() => { setFailure(null); setReload((n) => n + 1) }} /> : null) : !applied ? (
+          {status === 'loading' ? <Skeleton rows={7} /> : status === 'error' ? (failure ? <LoadErrorCard title={failure.title ?? "The search didn't load"} failure={failure} onRetry={() => { setFailure(null); setReload((n) => n + 1) }} /> : null) : !applied && nothingToSearch ? (
+            <Empty title="There’s nothing to search yet." icon={<Search size={20} />}>Records appear here once a sending system delivers documents.</Empty>
+          ) : !applied ? (
             <Empty title={label ? `Search by ${label}` : 'Search with Filters'} icon={<Search size={20} />}>
               Type in the search bar and press Enter, or open Filters to search by any field.
             </Empty>
