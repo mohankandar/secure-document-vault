@@ -1,12 +1,18 @@
 import { useEffect, useId, type ReactNode } from 'react'
 import { AlertTriangle, CheckCircle2, FlaskConical, Info, X, XCircle, Inbox, RefreshCw } from 'lucide-react'
 import { useStore } from './store'
-import { NOW } from './data'
 
 export const fmtDate = (v?: string | null) => (v ? new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }).format(new Date(v)) : '—')
 export const fmtDateTime = (v?: string | null) => (v ? new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }).format(new Date(v)) : '—')
-export const fmtRel = (v: string) => {
-  const s = Math.max(0, (NOW - new Date(v).getTime()) / 1000)
+/** Allowed browser clock lag behind the server before a future time is shown as a date instead of "just now". */
+const CLOCK_SKEW_MS = 5 * 60 * 1000
+export const fmtRel = (v: string, now: number = Date.now()) => {
+  const t = new Date(v).getTime()
+  if (Number.isNaN(t)) return '—'
+  const diff = now - t
+  // Slightly in the future (server clock ahead of the browser) reads as "just now"; further ahead shows the date.
+  if (diff < -CLOCK_SKEW_MS) return fmtDate(v)
+  const s = Math.max(0, diff / 1000)
   if (s < 90) return 'just now'
   if (s < 3600) return `${Math.round(s / 60)} min ago`
   if (s < 86400) return `${Math.round(s / 3600)} h ago`

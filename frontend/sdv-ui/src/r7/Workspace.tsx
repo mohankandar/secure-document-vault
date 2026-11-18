@@ -259,7 +259,7 @@ function InspectorBody({ record, onOpen }: { record: RecordItem; onOpen: (id: st
   const recent = record.docs.flatMap((d) => d.activity.map((a) => ({ ...a, doc: d.kind }))).sort((a, b) => b.at.localeCompare(a.at)).slice(0, more ? 8 : 3)
   return (
     <>
-      <div className="ws-ids">{record.identifiers.map((i) => <div key={i.label}><span>{i.label}</span><strong>{i.value}</strong></div>)}</div>
+      <div className="ws-ids">{record.identifiers.map((i) => <div key={i.label}><span>{i.label}</span><strong title={i.value}>{i.value}</strong></div>)}</div>
       {record.incomplete && (
         <Callout tone="warn" title={`Submission incomplete · ${record.incomplete.received} of ${record.incomplete.expected} documents`}>
           The producer hasn&apos;t delivered every expected document yet. Received documents are already available below.

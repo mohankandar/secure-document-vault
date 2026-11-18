@@ -10,6 +10,7 @@ import { Governance } from './Governance'
 import { TenantAdmin } from './TenantAdmin'
 import { Operations } from './Operations'
 import { DesignSystem } from './DesignSystem'
+import { PRODUCT_NAME } from './brand'
 
 const showDevelopmentUtilities = import.meta.env.DEV
 
@@ -146,11 +147,11 @@ function ShellInner() {
     <div className="r7">
       <div className="v-app" data-nav={docked?(collapsed?"collapsed":"expanded"):overlay?"overlay":"rail"}>
         <header className="v-top">
-          <a className="v-brand" href="#/" aria-label="vero home" onClick={(e) => { e.preventDefault() }}>vero<i aria-hidden /></a>
-          <div className="v-tenant"><strong>{liveSession?.tenantDisplayName ?? 'Vero'}</strong><span>{liveSession ? 'Connected session' : 'Connecting'}</span></div>
+          <a className="v-brand" href="#/" aria-label={`${PRODUCT_NAME} home`} onClick={(e) => { e.preventDefault() }}>{PRODUCT_NAME}<i aria-hidden /></a>
+          <div className="v-tenant"><strong>{liveSession?.tenantDisplayName ?? PRODUCT_NAME}</strong><span>{liveSession ? 'Connected session' : 'Connecting'}</span></div>
           <div className="grow" />
           <button type="button" className="v-command" onClick={() => setPalette(true)} aria-label="Go to page or record"><Search size={16} aria-hidden /><span>Go to…</span><kbd>⌘K</kbd></button>
-          <span className="v-sim-chip" title="Business search uses SDV backend; other workflows pending"><FlaskConical size={13} aria-hidden /><span className="long">R7 · business integration</span><span className="short">Simulated</span></span>
+          {showDevelopmentUtilities && <span className="v-sim-chip" title="Business search uses SDV backend; other workflows pending"><FlaskConical size={13} aria-hidden /><span className="long">R7 · business integration</span><span className="short">Simulated</span></span>}
           <button type="button" className="v-btn quiet icon vw-hide-sm" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`}>{theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}</button>
           <button type="button" className="v-me" onClick={() => setSession(true)} aria-label={`Signed in as ${liveSession?.subject ?? 'Connecting'}, ${role.name}`}>
             <span className="v-avatar" aria-hidden>{role.initials}</span>

@@ -226,7 +226,7 @@ export function Viewer({ record, results, docId, onClose }: { record: RecordItem
           </span>
         </div>
         <strong style={{ fontSize: 14 }}>{record.title}</strong>
-        <div className="ws-ids">{record.identifiers.map((i) => <div key={i.label}><span>{i.label}</span><strong style={{ fontSize: 13 }}>{i.value}</strong></div>)}</div>
+        <div className="ws-ids stacked">{record.identifiers.map((i) => <div key={i.label}><span>{i.label}</span><strong style={{ fontSize: 13 }} title={i.value}>{i.value}</strong></div>)}</div>
       </div>
       <div className="stack" style={{ gap: 6 }}>
         <span className="eyebrow">Documents · {record.docs.length}</span>
@@ -402,7 +402,7 @@ function RedactionReview({ doc, marks, onCancel, onApply, busy, failure }: { doc
     <Dialog title="Apply permanent redaction" onClose={onCancel}
       footer={<><button type="button" className="v-btn" onClick={onCancel}>Back to marking</button><button type="button" className="v-btn danger" disabled={!ready || busy} onClick={() => onApply(reason.trim())}>{busy?'Applying…':'Apply permanent redaction'}</button></>}>
       <Callout tone="bad" title="This permanently replaces the current PDF">
-        In production, marked regions are irreversibly removed for every user and the original is not retained. Use only for corrective removal of content that should never have been stored.
+        Marked areas are removed for every user and the original is not kept. Use this only to remove content that should never have been stored.
       </Callout>
       <dl className="v-kv">
         <div><dt>Document</dt><dd>{doc.kind} · <span className="mono">{doc.id}</span></dd></div>

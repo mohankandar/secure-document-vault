@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Download, Eraser, Lock, Plus } from 'lucide-react'
 import { useStore } from './store'
 import { AreaFrame } from './Governance'
+import { PRODUCT_NAME } from './brand'
 import { Badge, Callout, Empty, ErrorState, Meter, Panel, Seg, Skeleton, Status, Switch } from './ui'
 
 const SWATCHES = [
@@ -15,7 +16,7 @@ const SWATCHES = [
 export function DesignSystem() {
   const { route } = useStore()
   return (
-    <AreaFrame crumbs={['Prototype', 'Design system']} title="Vero R7 design system" lede="Custody ledger: calm, dense surfaces where identifiers, state and accountability are always legible.">
+    <AreaFrame crumbs={['Prototype', 'Design system']} title={`${PRODUCT_NAME} design system`} lede="Custody ledger: calm, dense surfaces where identifiers, state and accountability are always legible.">
       {route.tab === 'foundations' && <Foundations />}
       {route.tab === 'components' && <Components />}
       {route.tab === 'states' && <States />}
