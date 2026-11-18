@@ -80,7 +80,9 @@ function Invoke-Sql {
 function Get-Http([string]$Path) {
     try {
         $r = Invoke-WebRequest -UseBasicParsing -Uri ("http://localhost:$Port" + $Path) -TimeoutSec 5
-        return [pscustomobject]@{ Status = [int]$r.StatusCode; Body = $r.Content }
+        # Windows PowerShell returns bytes for content types it doesn't know (the actuator's vnd.spring-boot JSON).
+        $content = if ($r.Content -is [byte[]]) { [System.Text.Encoding]::UTF8.GetString($r.Content) } else { $r.Content }
+        return [pscustomobject]@{ Status = [int]$r.StatusCode; Body = $content }
     } catch [System.Net.WebException] {
         $resp = $_.Exception.Response
         if ($null -eq $resp) { return $null }
@@ -94,6 +96,23 @@ function Get-Http([string]$Path) {
 function New-Secret { -join ((1..32) | ForEach-Object { '{0:x}' -f (Get-Random -Maximum 16) }) }
 
 $script:appProcess = $null
+# Every connection the Vero process opens to anything other than this computer (expected: none; Vero sends no usage
+# data, and in this check the database is local, the key service and sign-in are off).
+$script:outbound = New-Object 'System.Collections.Generic.HashSet[string]'
+$script:connectionSamples = 0
+function Watch-Outbound {
+    if (-not $script:appProcess -or $script:appProcess.HasExited) { return }
+    $script:connectionSamples++
+    foreach ($c in @(Get-NetTCPConnection -OwningProcess $script:appProcess.Id -ErrorAction SilentlyContinue)) {
+        if ($c.RemoteAddress -notin @('127.0.0.1', '::1', '0.0.0.0', '::') -and $c.RemotePort -ne 0) {
+            [void]$script:outbound.Add("$($c.RemoteAddress):$($c.RemotePort)")
+        }
+    }
+}
+function Wait-Watching([double]$seconds) {
+    $w = [System.Diagnostics.Stopwatch]::StartNew()
+    while ($w.Elapsed.TotalSeconds -lt $seconds) { Watch-Outbound; Start-Sleep -Milliseconds 200 }
+}
 function Start-Vero([string]$name) {
     $out = Join-Path $run "$name.out.log"; $err = Join-Path $run "$name.err.log"
     $env:SDV_DB_URL = $hostUrl; $env:SDV_DB_USERNAME = $app; $env:SDV_DB_PASSWORD = $appPassword
@@ -109,14 +128,16 @@ function Start-Vero([string]$name) {
     }
     while ($watch.Elapsed.TotalSeconds -lt $StartTimeoutSeconds) {
         if ($script:appProcess.HasExited) { throw "FAIL: Vero exited during start ($name). See $out" }
+        Watch-Outbound
         $h = Get-Http '/actuator/health'
         if ($null -ne $h) { return [pscustomobject]@{ Seconds = $watch.Elapsed.TotalSeconds; Health = $h; Log = $out } }
-        Start-Sleep -Milliseconds 250
+        Start-Sleep -Milliseconds 200
     }
     throw "FAIL: Vero did not answer within $StartTimeoutSeconds s ($name). See $out"
 }
 function Stop-Vero {
     if ($script:appProcess -and -not $script:appProcess.HasExited) {
+        Watch-Outbound
         Stop-Process -Id $script:appProcess.Id -Force
         $script:appProcess.WaitForExit(30000) | Out-Null
     }
@@ -189,7 +210,12 @@ alter default privileges for role $owner in schema public grant select, insert, 
     Assert-That ($info.databaseSchema.message -eq $older) 'system info message differs from the agreed sentence'
     $gated = Get-Http '/api/v1/operations/summary'
     Assert-That ($gated.Status -eq 503 -and $gated.Body -like '*DATABASE_OLDER*') "a protected request should get 503 DATABASE_OLDER, got $($gated.Status)"
-    Start-Sleep -Seconds 3   # let the background jobs' 1 s initial delay pass: they must stay off
+    Wait-Watching 3   # let the background jobs' 1 s initial delay pass: they must stay off
+    # Up but not ready: health and readiness OUT_OF_SERVICE (503), liveness UP (200).
+    $health = Get-Http '/actuator/health'; $ready = Get-Http '/actuator/health/readiness'; $live = Get-Http '/actuator/health/liveness'
+    Assert-That ($health.Status -eq 503 -and $health.Body -like '*OUT_OF_SERVICE*') "health should be 503 OUT_OF_SERVICE, was $($health.Status) $($health.Body)"
+    Assert-That ($ready.Status -eq 503 -and $ready.Body -like '*OUT_OF_SERVICE*') "readiness should be 503 OUT_OF_SERVICE, was $($ready.Status) $($ready.Body)"
+    Assert-That ($live.Status -eq 200 -and $live.Body -like '*UP*') "liveness should be 200 UP, was $($live.Status) $($live.Body)"
     $log = Get-Content -Raw $s.Log
     Assert-That ($log.Contains($older)) 'the startup log does not contain the "older" sentence'
     Assert-That (-not ($log -match 'liquibase\.(changelog|lockservice)')) 'Liquibase ran during a production start'
@@ -197,7 +223,7 @@ alter default privileges for role $owner in schema public grant select, insert, 
     $tables = (Invoke-Sql -Database $db -Sql "select count(*) from pg_tables where schemaname = 'public';").Out.Trim()
     Assert-That ($tables -eq '0') "the production start created $tables tables; it must change nothing"
     Stop-Vero
-    Write-Step '1. Start on the empty database: refuses with "older"' $s.Seconds 'health 503, API 503, 0 tables created'
+    Write-Step '1. Start on the empty database: refuses with "older"' $s.Seconds 'not ready (health and readiness 503 OUT_OF_SERVICE, liveness UP), API 503, 0 tables created'
 
     # ------------------------------------------------------------ 2. schema step
     $st = Invoke-SchemaStep @('status')
@@ -245,7 +271,9 @@ alter default privileges for role $owner in schema public grant select, insert, 
     Assert-That ($info.databaseSchema.state -eq 'CURRENT' -and $info.status -eq 'UP') "system info should say CURRENT, said $($info.databaseSchema.state)"
     $protected = Get-Http '/api/v1/operations/summary'
     Assert-That ($protected.Status -eq 401) "with the gate open a request without sign-in should get 401, got $($protected.Status)"
-    Start-Sleep -Seconds 4   # let the cleanup and redaction-recovery jobs run once as the read/write user
+    Wait-Watching 4   # let the cleanup and redaction-recovery jobs run once as the read/write user
+    $ready = Get-Http '/actuator/health/readiness'
+    Assert-That ($ready.Status -eq 200 -and $ready.Body -like '*UP*') "readiness should be 200 UP after the update, was $($ready.Status) $($ready.Body)"
     $log = Get-Content -Raw $s.Log
     Assert-That ($log.Contains('the database matches this Vero version')) 'the startup log does not say the database matches'
     Assert-That (-not ($log -match 'RETENTION_SWEEP_FAILED|recovery sweep failed|permission denied')) 'a background job failed as the read/write user'
@@ -254,7 +282,7 @@ alter default privileges for role $owner in schema public grant select, insert, 
     Assert-That ($readsAfter -gt $readsBefore) 'the background jobs did not read any table while Vero ran'
     $tenants = (Invoke-Sql -Database $db -Sql 'select count(*) from tenants;').Out.Trim()
     Assert-That ($tenants -eq '0') "the tenants table should be empty (no seed data), has $tenants rows"
-    Write-Step '3. Start after update: serves as the read/write user' $s.Seconds "health 200, CURRENT, 0 tenants, jobs read tables $($readsAfter - $readsBefore) times, no errors"
+    Write-Step '3. Start after update: serves as the read/write user' $s.Seconds "health and readiness 200, CURRENT, 0 tenants, jobs read tables $($readsAfter - $readsBefore) times, no errors"
 
     # ------------------------------------------------------------ 4. start again: nothing new
     $before = (Invoke-Sql -Database $db -Sql "select count(*) || ' ' || max(orderexecuted) from databasechangelog;").Out.Trim()
@@ -267,6 +295,10 @@ alter default privileges for role $owner in schema public grant select, insert, 
     Assert-That ($before -eq $after) "the changelog changed on a plain start ($before -> $after)"
     $springStart = ([regex]::Match((Get-Content -Raw $s.Log), 'Started SdvApplication in ([\d.]+) seconds')).Groups[1].Value
     Write-Step '4. Start again: nothing applied' $s.Seconds "Spring start $springStart s; changelog unchanged ($($before.Split(' ')[0]) rows); status: up to date ($([math]::Round($st2.Seconds,1)) s)"
+
+    # ------------------------------------------------------------ no usage data out
+    Assert-That ($script:outbound.Count -eq 0) ("Vero opened connections outside this computer: " + (@($script:outbound) -join ', '))
+    Write-Step 'Vero opened no connection outside this computer' 0 "$($script:connectionSamples) samples over the three starts"
 }
 finally {
     Stop-Vero

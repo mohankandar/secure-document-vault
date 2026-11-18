@@ -36,7 +36,7 @@ class SchemaGateFilterTest {
 
     @Test
     void healthAndSystemInformationStayOpen() throws Exception {
-        for (String path : List.of("/actuator/health", "/actuator/health/liveness", "/api/v1/system/info", "/error")) {
+        for (String path : List.of("/actuator/health", "/actuator/health/liveness", "/actuator/health/readiness", "/api/v1/system/info", "/error")) {
             assertEquals(200, call(SchemaVersion.State.OLDER, path).getStatus(), path);
         }
     }

@@ -1,4 +1,4 @@
-**FINISHED (2026-11-18): every task in the queue is done; 0013 was the last. See `QUEUE-report.md` (three questions from 0013 are open).**
+**FINISHED (2026-11-18): every task in the queue is done; 0013 was the last and is approved. See `QUEUE-report.md`; no questions are open.**
 
 # Task queue
 

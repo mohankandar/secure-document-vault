@@ -97,7 +97,7 @@ One commit on `feature/install-1` (hash in the commit log). Not pushed or merged
 - **Customer creation:** the clean database stays without tenants; the later shared setup command creates the customer, as the task says.
 - **Rest of the runbook:** the older parts still describe the frozen V1.0.0 source archive and migration 010. Only the new section was added.
 
-## Questions for the owner
+## Questions for the owner (answered: see the end)
 
 1. **A mismatched database keeps Vero running but closed** (health and system information only) instead of exiting. That is what lets Health show the sentence. Is that right, or should Vero exit after logging the line?
 2. **The check runs once, at start-up.** After the schema step, Vero has to be started again (the guide and the Health notice say so). Fine, or should it re-check by itself?
@@ -107,6 +107,64 @@ Also for your information:
 - The check created two scratch login roles at server level in `sdv-postgres` for the run and dropped them.
 - To confirm that local mode still migrates, I read one count from the `sdv` database's `databasechangelog` (21 rows, as before). Nothing was written there.
 
+## Owner's answers and follow-up (2026-11-18)
+
+0013 is approved.
+
+1. **Keep Vero up but closed, and report "not ready"**: done.
+   - `/actuator/health/readiness` (new) answers 503 `OUT_OF_SERVICE` while the database doesn't match, and `/actuator/health` does too (before: `DOWN`).
+   - `/actuator/health/liveness` (new) stays 200 `UP`, so a platform doesn't restart Vero in a loop.
+   - **How:** probes are switched on, and the readiness group holds `readinessState` and `databaseSchema`. The schema indicator reports `OUT_OF_SERVICE`, and Vero sets Spring's readiness to `REFUSING_TRAFFIC` once it has started.
+   - **Open without sign-in:** the two probe addresses, in `SecurityConfiguration` and the schema gate. All other `/actuator/health/…` addresses stay closed.
+   - **Guide:** the runbook says which address to use for what.
+2. **Restart after the schema step, no self re-check**: kept as built. Nothing changed.
+3. **Liquibase analytics off in every mode**: done.
+   - `UsageReporting.switchOff()` sets `liquibase.analytics.enabled=false`. It runs first in `SdvApplication.main` (the running app and local mode) and in the schema step.
+   - Liquibase reads this setting from Java system properties, not from `application.yml`, which is why it is set in code.
+   - A test reads the value back through Liquibase's own setting (`AnalyticsArgs.ENABLED`).
+
+**Nothing else in the app sends usage data out.** What I checked:
+- **Libraries in the app jar** (all 73): none reports usage. Micrometer is there for the health endpoint, but no metrics exporter is bundled, and only `health` and `info` are exposed. The only library that did report usage was Liquibase.
+- **Outbound calls in the code:**
+  - `VaultTransitKeyProtectionProvider` calls the configured key service.
+  - `OidcDiscoveryTester` calls the configured sign-in server, and only from the draft test endpoint that the UI no longer uses.
+  - The JWT validation library fetches the configured sign-in server's keys.
+  - The shared identity library (`enterprise-identity-parent`, 32 source files) makes no outbound calls.
+  - The PostgreSQL driver connects to the configured database.
+- **Frontend:**
+  - It depends only on `react`, `react-dom` and `lucide-react`. The HTML loads no outside script.
+  - The built bundle has no tracker.
+  - Its only outside call is the configured sign-in server (`auth.ts`).
+  - The other outside addresses in the bundle aren't calls. They are prototype text in `data.ts`, a placeholder, and React's error-message link.
+- **At runtime:** `Test-SDV-CleanInstall.ps1` now records every connection the Vero process opens to anything other than this computer. It saw none over its three starts (18 samples). A separate watch of a `start-local.cmd` start, where Liquibase runs, saw none in 144 samples.
+
+**Commands run for the follow-up:**
+
+| Command | Result |
+|---|---|
+| `.\stop-local.cmd`, `.\Build-SDV-All.ps1` | PASS: BUILD SUCCESS, 0 failures; sdv-web 108 tests (+4 health indicator, +3 usage reporting) |
+| `.\Test-SDV-CleanInstall.ps1` | PASS in 43 s. Step 1: health and readiness 503 `OUT_OF_SERVICE`, liveness 200 `UP`. Step 3: readiness 200. No outside connection |
+| `.\start-local.cmd` | Started (UP, CURRENT, local); no outside connection while it started |
+| `npm run ui:capture` | 1st run: 14 passed, 2 failed, 2 skipped. Rerun unchanged: **16 passed, 2 skipped** |
+
+**The failed tour run (not fixed: it is outside this task):**
+- **Symptom:** both failures were the Business User's and the Document Steward's search for record 100000000001. The Records page had a source with no search field selected ("This source has no field the search box can use"). This is the same failure as the one earlier in this task.
+- **Not caused by this change:** the Records page and the tour's search steps are unchanged.
+- **What I found:**
+  - A tour run at 13:16 today left a paused source, "Tour test system 20261118181639", with no fields. Business users still see it in the search schema.
+  - The schema sorts sources by name, so LexaVault comes first, and the tour runs one test at a time. I haven't found what makes the page select the other source.
+- **Suggested follow-up:**
+  - remove that leftover source (your call: it is development data);
+  - have the tour pick LexaVault explicitly before searching.
+
+**Files:**
+- **New:** `UsageReporting.java`, `UsageReportingTest.java`, `DatabaseSchemaHealthIndicatorTest.java`, `SchemaStepAccess.java` (test helper).
+- **Changed:**
+  - `SdvApplication.java`, `SchemaStep.java`
+  - `DatabaseSchemaHealthIndicator.java`, `SchemaGateFilter.java`, `SchemaGateFilterTest.java`
+  - `application.yml`, `SecurityConfiguration.java` (sdv-security)
+  - `Test-SDV-CleanInstall.ps1`, the runbook
+
 ## Suggested next step
 
-Answer the three questions. Then test the clean-install check and an upgrade on a real customer-like PostgreSQL with the team's own users.
+Test the clean-install check and an upgrade on a real customer-like PostgreSQL with the team's own users. Point a load balancer at `/actuator/health/readiness` and a restart policy at `/actuator/health/liveness`.

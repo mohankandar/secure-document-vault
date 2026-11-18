@@ -178,6 +178,19 @@ The startup log and Platform operations › Health say one of:
 - "The database is older than this Vero version. Ask your database team to run the schema step (install guide, "Update the database")."
 - "The database is newer than this Vero version. …" (an older Vero was started against a database that a newer one updated).
 
+In that state Vero is up but **not ready**. Point load balancers and orchestrators at these addresses (no sign-in needed):
+
+| Address | Database matches | Database doesn't match |
+|---|---|---|
+| `/actuator/health/readiness` | 200 `UP` | 503 `OUT_OF_SERVICE`: send no traffic |
+| `/actuator/health/liveness` | 200 `UP` | 200 `UP`: don't restart it; it keeps showing why |
+| `/actuator/health` | 200 `UP` | 503 `OUT_OF_SERVICE` |
+
+Vero checks the database once, when it starts. After the schema step, start Vero again.
+
+Vero sends no usage data anywhere. Liquibase's anonymous usage analytics are switched off in every mode (the
+running app, local mode and the schema step).
+
 ### Two database users
 
 | User | Used by | Rights |

@@ -29,6 +29,13 @@ management:
   endpoint:
     health:
       show-details: never
+      # /actuator/health/liveness: the process is alive. /actuator/health/readiness: Vero can take work. While the
+      # database doesn't match this version Vero stays up (liveness UP) but is not ready (readiness OUT_OF_SERVICE).
+      probes:
+        enabled: true
+      group:
+        readiness:
+          include: readinessState,databaseSchema
   health:
     defaults:
       enabled: true

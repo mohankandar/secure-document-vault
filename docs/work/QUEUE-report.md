@@ -14,23 +14,36 @@ Every branch is local only: nothing was pushed or merged. Each branch is taken f
 | 4 | 0010 Tenant IT: Integrations and Storage | `feature/admin-3` | Done | `25bfb4a` |
 | 5 | 0011 Problems and Audit in plain words (migration 020) | `feature/admin-4` | Done; the CSV export question was answered with option (a), then built | `e73de74`, `3693884` |
 | 6 | 0012 Overview, Storage, Health, About; Sign-in read-only | `feature/admin-5` | Done; the two unused files were deleted as approved, and the four missing facts stay out | `8ecdb8d`, `b8c43ed` |
-| 7 | 0013 Separate schema step | `feature/install-1` | Done; three points to confirm (below) | `2ec76f9` |
+| 7 | 0013 Separate schema step | `feature/install-1` | Done and approved; the owner's three answers are built (below) | `2ec76f9` and the follow-up commit after it |
 | 8–10 | 0014–0016 | — | Replaced by the shared install work; not started | — |
 
-**Last checks, on `feature/install-1`:**
-- `Build-SDV-All.ps1`: BUILD SUCCESS, 0 failures; sdv-web has 101 tests.
-- `Test-SDV-CleanInstall.ps1`: PASS in 39 s.
+**Last checks, on `feature/install-1`** (after the 0013 follow-up):
+- `Build-SDV-All.ps1`: BUILD SUCCESS, 0 failures; sdv-web has 108 tests.
+- `Test-SDV-CleanInstall.ps1`: PASS in 43 s, including "not ready" and no outside connection.
 - `start-local.cmd`: works as before.
 - `ui:capture`: 16 passed, 2 skipped (the opt-in tests).
-  - One run in between had one failure: the Document Steward's search, which 0013 doesn't touch. The rerun passed. See report 0013.
+  - Two runs had failures in the Business User's and the Document Steward's record search, which 0013 doesn't touch. The reruns passed. See "Known issue" below.
+
+## 0013: the owner's answers (2026-11-18)
+
+1. **A mismatched database: keep Vero up but closed, and report "not ready".** Built.
+   - `/actuator/health/readiness` and `/actuator/health` answer 503 `OUT_OF_SERVICE`.
+   - `/actuator/health/liveness` stays 200 `UP`.
+2. **Restart after the schema step; no self re-check.** Kept as built.
+3. **Liquibase analytics off in every mode.** Built: the running app, local mode and the schema step.
+   - **Nothing else in the app sends usage data out.** Checked in the bundled libraries, the backend and shared library code, the frontend and its bundle, and by watching Vero's network connections: none to outside this computer.
+   - The only outside calls are to services the customer configures: the database, the key service and the sign-in server.
+   - Details are in report 0013.
 
 ## Open questions
 
-All from report 0013.
+None.
 
-1. **A mismatched database:** Vero keeps running but closed (health and system information only) instead of exiting, so that Health can show the message. Keep it that way?
-2. **When Vero checks:** only at start-up. After the schema step, Vero has to be started again. Fine, or should it re-check by itself?
-3. **Liquibase analytics in local mode:** Liquibase 4.31 has anonymous usage analytics, and the schema step turns them off. Should local-mode startup turn them off too? It is a one-line setting.
+## Known issue (not fixed)
+
+The tour's record search sometimes lands on a source with no search fields. A tour run at 13:16 today left a paused source, "Tour test system 20261118181639", with no fields. Suggested:
+- remove that source (development data, so your call);
+- make the tour pick LexaVault explicitly before searching.
 
 **Backlog from earlier reports:**
 - **Next cleanup time** (0012).
@@ -40,7 +53,7 @@ All from report 0013.
 
 ## What to test first
 
-1. **Clean install** (`feature/install-1`): run `.\Test-SDV-CleanInstall.ps1`, then read "Update the database" in `docs/operations/SDV_V1_GA_CLEAN_INSTALL_RUNBOOK.md`. This is the newest change and changes how Vero starts outside local mode.
+1. **Clean install** (`feature/install-1`): run `.\Test-SDV-CleanInstall.ps1`, then read "Update the database" in `docs/operations/SDV_V1_GA_CLEAN_INSTALL_RUNBOOK.md`. This is the newest change and changes how Vero starts outside local mode. Point a load balancer at `/actuator/health/readiness`, and a restart policy at `/actuator/health/liveness`.
 2. **Local start still works:** `.\start-local.cmd`, then sign in as each role. Local mode still migrates and seeds at startup.
 3. **Platform operations › Overview, Health, About, and Tenant IT › Sign-in (0012):**
    - the sentences;

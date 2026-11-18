@@ -1,5 +1,6 @@
 package com.sdv.platform.web.schema;
 
+import com.sdv.platform.web.UsageReporting;
 import liquibase.Contexts;
 import liquibase.LabelExpression;
 import liquibase.Liquibase;
@@ -76,7 +77,7 @@ public final class SchemaStep {
     }
 
     static int run(String[] args, Function<String, String> env, Console console) {
-        System.setProperty("liquibase.analytics.enabled", "false");
+        UsageReporting.switchOff();
         Command command;
         try {
             command = parse(args, env);

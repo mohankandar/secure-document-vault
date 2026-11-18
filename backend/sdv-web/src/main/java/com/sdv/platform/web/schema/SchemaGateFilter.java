@@ -20,7 +20,7 @@ import java.util.Set;
 @Component
 @Order(Ordered.HIGHEST_PRECEDENCE + 1)
 public final class SchemaGateFilter extends OncePerRequestFilter {
-    static final Set<String> OPEN = Set.of("/actuator/health", "/actuator/info", "/api/v1/system/info", "/error");
+    static final Set<String> OPEN = Set.of("/actuator/health", "/actuator/health/liveness", "/actuator/health/readiness", "/actuator/info", "/api/v1/system/info", "/error");
 
     private final DatabaseSchemaCheck check;
 
@@ -32,7 +32,7 @@ public final class SchemaGateFilter extends OncePerRequestFilter {
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
             throws ServletException, IOException {
         String path = request.getRequestURI().substring(request.getContextPath().length());
-        if (check.current() || OPEN.contains(path) || path.startsWith("/actuator/health/")) {
+        if (check.current() || OPEN.contains(path)) {
             chain.doFilter(request, response);
             return;
         }
