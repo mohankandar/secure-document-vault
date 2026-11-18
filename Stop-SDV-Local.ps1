@@ -1,5 +1,9 @@
 [CmdletBinding()]
 param(
+    # The database and Vault containers hold development data and stay running by default.
+    # Pass -StopDatabase to also stop sdv-postgres (the container and its data volume are kept).
+    [switch]$StopDatabase,
+    # Accepted for older callers; keeping the database running is now the default.
     [switch]$KeepDatabase
 )
 
@@ -64,10 +68,21 @@ foreach ($name in @('frontend', 'backend')) {
     }
 }
 
-if (-not $KeepDatabase) {
-    Write-Host 'Stopping SDV PostgreSQL container (data volume is preserved)...'
-    & docker compose -f (Join-Path $Root 'compose.local.yml') down
-    if ($LASTEXITCODE -ne 0) { throw 'docker compose down failed.' }
+if ($StopDatabase -and -not $KeepDatabase) {
+    # Stop only the database container. `docker compose down` must not be used
+    # here: compose.local.yml also defines the sdv-vault service, so `down`
+    # would stop and remove the persistent Vault container as well.
+    $postgresRunning = (& docker ps --filter 'name=^/sdv-postgres$' --format '{{.Names}}' | Out-String).Trim()
+    if ($postgresRunning -eq 'sdv-postgres') {
+        Write-Host 'Stopping SDV PostgreSQL container (container and data volume are preserved)...'
+        & docker stop sdv-postgres | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw 'Could not stop sdv-postgres.' }
+    } else {
+        Write-Host 'sdv-postgres is not running.'
+    }
+} else {
+    Write-Host 'sdv-postgres was left running (use -StopDatabase to stop it).'
 }
+Write-Host 'Persistent sdv-vault was left untouched.'
 
 Write-Host 'SDV local services stopped.'
