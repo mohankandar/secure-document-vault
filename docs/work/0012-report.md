@@ -172,6 +172,14 @@ The server doesn't report these, and the task allows no other backend change, so
    - CLAUDE.md asks before deleting files, so they are still there.
 2. **Should the four gaps above be added on the server later** (deployment mode, cleanup schedule, role-group mappings, response times)? Each needs a small backend change. Deployment mode and the role groups may belong to the shared install work.
 
+## Owner's answers (2026-11-18)
+
+1. **Deleting the two files: approved.** `ConnectedAuthenticationView.tsx` and `authentication.css` are deleted in a follow-up commit on `feature/admin-5`. Nothing imported them; typecheck and build pass without them.
+2. **The four missing facts stay out:**
+   - Deployment mode ("Installed") and the role groups in Sign-in come with the shared install work.
+   - The next cleanup time goes to the backlog.
+   - Response time per service is dropped.
+
 ## Suggested next step
 
-Answer question 1 (yes or no). Then task 0013 (separate schema step) on `feature/install-1`.
+Task 0013 (separate schema step) on `feature/install-1`.
