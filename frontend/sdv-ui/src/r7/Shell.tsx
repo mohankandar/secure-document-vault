@@ -4,7 +4,7 @@ import { AREA_TABS, StoreProvider, useStore } from './store'
 import { type AreaId, type RoleId } from './data'
 import { opSummary } from './liveApi'
 import { Toasts } from './ui'
-import { localRoleSwitchEnabled, setLocalTestPersona, type LocalPersona, type SessionInfo } from '../api'
+import { getLocalTestPersona, localRoleSwitchEnabled, setLocalTestPersona, type LocalPersona, type SessionInfo } from '../api'
 import { endOidcSession, isLocalSecurityMode } from '../auth'
 import { Workspace } from './Workspace'
 import { Governance } from './Governance'
@@ -33,15 +33,16 @@ const ROLE_LABEL: Record<RoleId, string> = {
   tenantIt: 'Tenant IT administrator',
   platform: 'Platform operations administrator',
 }
-/** Readable names for the local test sign-in, which has no name claim. */
-const LOCAL_NAME: Record<RoleId, string> = {
+/** Readable names for the local test sign-in (keyed by local test persona), which has no name claim. */
+const LOCAL_NAME: Record<LocalPersona, string> = {
   business: 'Local business user',
   steward: 'Local document steward',
   businessAdmin: 'Local business administrator',
   tenantIt: 'Local Tenant IT administrator',
   platform: 'Local platform operations administrator',
+  admin: 'Local administrator',
 }
-const LOCAL_INITIALS: Record<RoleId, string> = { business: 'BU', steward: 'DS', businessAdmin: 'BA', tenantIt: 'IT', platform: 'PO' }
+const LOCAL_INITIALS: Record<LocalPersona, string> = { business: 'BU', steward: 'DS', businessAdmin: 'BA', tenantIt: 'IT', platform: 'PO', admin: 'LA' }
 
 const initialsOf = (name: string) => {
   const words = name.trim().split(/\s+/).filter((w) => /^\p{L}/u.test(w))
@@ -49,15 +50,18 @@ const initialsOf = (name: string) => {
   return (words.length === 1 ? words[0][0] : words[0][0] + words[words.length - 1][0]).toUpperCase()
 }
 
-/** Never shows the technical subject: name claim, else (LOCAL) a per-role name, else email, else "Signed in". */
-export function accountPerson(session: SessionInfo | null, roleId: RoleId, localMode: boolean): AccountPerson {
-  const roleLabel = ROLE_LABEL[roleId]
+/**
+ * Never shows the technical subject: name claim, else (LOCAL) a per-persona name, else email, else "Signed in".
+ * The role line lists every role the person holds, in plain words.
+ */
+export function accountPerson(session: SessionInfo | null, roleIds: RoleId[], localPersona: LocalPersona | null): AccountPerson {
+  const roleLabel = roleIds.map((id) => ROLE_LABEL[id]).join(', ')
   const organization = session?.tenantDisplayName?.trim() || PRODUCT_NAME
   const email = session?.email?.trim() || undefined
   const displayName = session?.displayName?.trim()
   if (!session) return { name: 'Signing in…', roleLabel, organization }
   if (displayName) return { name: displayName, initials: initialsOf(displayName), email, roleLabel, organization }
-  if (localMode) return { name: LOCAL_NAME[roleId], initials: LOCAL_INITIALS[roleId], email, roleLabel, organization }
+  if (localPersona) return { name: LOCAL_NAME[localPersona], initials: LOCAL_INITIALS[localPersona], email, roleLabel, organization }
   if (email) return { name: email, initials: email[0].toUpperCase(), email, roleLabel, organization }
   return { name: 'Signed in', roleLabel, organization }
 }
@@ -68,9 +72,10 @@ const LOCAL_ROLE_OPTIONS: { value: LocalPersona; label: string }[] = [
   { value: 'businessAdmin', label: 'Business Administrator' },
   { value: 'tenantIt', label: 'Tenant IT Administrator' },
   { value: 'platform', label: 'Platform Operations Administrator' },
+  { value: 'admin', label: 'Local Administrator (Tenant IT + Business admin)' },
 ]
 const switchLocalRole = (selected: LocalPersona) => {
-  const area = selected === 'business' || selected === 'steward' ? 'workspace' : selected === 'businessAdmin' ? 'governance' : selected === 'tenantIt' ? 'tenant' : 'operations'
+  const area = selected === 'business' || selected === 'steward' ? 'workspace' : selected === 'businessAdmin' || selected === 'admin' ? 'governance' : selected === 'tenantIt' ? 'tenant' : 'operations'
   setLocalTestPersona(selected)
   // Reload discards previous persona's documents, cached queries, and pending component state.
   window.history.replaceState(null, '', '#/' + area + '/' + (area === 'workspace' ? 'search' : area === 'governance' ? 'access' : area === 'tenant' ? 'storage' : 'overview'))
@@ -93,10 +98,10 @@ function useIncidentCount(enabled: boolean, roleKey: string) {
 }
 
 function BottomNav({ onOpenAccount, onOpenPalette }: { onOpenAccount: () => void; onOpenPalette: () => void }) {
-  const { role, route, navigate } = useStore()
+  const { areas, route, navigate } = useStore()
   return (
     <nav className="v-bottom" aria-label="Bottom navigation">
-      {role.areas.map((area) => {
+      {areas.map((area) => {
         const { short, Icon } = AREA_META[area]
         return <button key={area} type="button" aria-current={route.area === area ? 'page' : undefined} onClick={() => navigate(area)}><Icon size={22} aria-hidden />{short}</button>
       })}
@@ -108,15 +113,15 @@ function BottomNav({ onOpenAccount, onOpenPalette }: { onOpenAccount: () => void
 }
 
 function Palette({ onClose }: { onClose: () => void }) {
-  const { role, navigate, records, can, setSelectedRef } = useStore()
+  const { areas, navigate, records, can, setSelectedRef } = useStore()
   const [q, setQ] = useState('')
   const [active, setActive] = useState(0)
   const items = useMemo(() => {
-    const dest = [...role.areas, ...(showDevelopmentUtilities ? ['system' as AreaId] : [])].flatMap((a) => AREA_TABS[a].map((t) => ({ key: `${a}/${t.id}`, label: t.label, hint: AREA_META[a].label, run: () => navigate(a, t.id) })))
+    const dest = [...areas, ...(showDevelopmentUtilities ? ['system' as AreaId] : [])].flatMap((a) => AREA_TABS[a].map((t) => ({ key: `${a}/${t.id}`, label: t.label, hint: AREA_META[a].label, run: () => navigate(a, t.id) })))
     const recs = can('SEARCH_RECORDS') ? records.map((r) => ({ key: r.ref, label: `${r.identifiers[0].value} · ${r.title}`, hint: 'Record', run: () => { navigate('workspace'); setSelectedRef(r.ref) } })) : []
     const needle = q.trim().toLowerCase()
     return [...dest, ...recs].filter((i) => !needle || `${i.label} ${i.hint}`.toLowerCase().includes(needle)).slice(0, 12)
-  }, [q, role.areas, records, can, navigate, setSelectedRef])
+  }, [q, areas, records, can, navigate, setSelectedRef])
   const run = (i: number) => { items[i]?.run(); onClose() }
   return (
     <>
@@ -146,11 +151,11 @@ function Palette({ onClose }: { onClose: () => void }) {
 const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform)
 
 function ShellInner() {
-  const { role, route, navigate, themePref, setThemePref, liveSession, sessionLoading, sessionError } = useStore()
+  const { role, heldRoles, areas, route, navigate, themePref, setThemePref, liveSession, sessionLoading, sessionError } = useStore()
   const [palette, setPalette] = useState(false)
   const [accountOpen, setAccountOpen] = useState(false)
   const localMode = isLocalSecurityMode()
-  const incidentCount = useIncidentCount(role.areas.includes('operations'), role.id)
+  const incidentCount = useIncidentCount(areas.includes('operations'), role.id)
 
   useEffect(() => {
     const k = (e: KeyboardEvent) => { if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); setPalette((p) => !p) } }
@@ -158,8 +163,10 @@ function ShellInner() {
     return () => window.removeEventListener('keydown', k)
   }, [])
 
-  const tabs: TopBarTab[] = role.areas.map((a) => ({ id: a, label: AREA_META[a].tab, count: a === 'operations' && incidentCount ? incidentCount : undefined }))
-  const person = accountPerson(liveSession, role.id, localMode)
+  const tabs: TopBarTab[] = areas.map((a) => ({ id: a, label: AREA_META[a].tab, count: a === 'operations' && incidentCount ? incidentCount : undefined }))
+  // In LOCAL mode the test persona names the person; without a stored choice the session is the role's own persona.
+  const localPersona: LocalPersona | null = localMode ? (getLocalTestPersona() ?? role.id) : null
+  const person = accountPerson(liveSession, heldRoles.map((r) => r.id), localPersona)
 
   const allowed = (route.area === 'system' && showDevelopmentUtilities) || (route.area === 'workspace' && !!liveSession?.capabilities.includes('SEARCH_RECORDS')) || (route.area === 'governance' && !!liveSession && ['CONFIGURE_ROLE_PERMISSIONS','CONFIGURE_RETENTION','CONFIGURE_METADATA_SEARCH','CONFIGURE_BUSINESS_LIMITS'].some(c=>liveSession.capabilities.includes(c))) || (route.area === 'tenant' && !!liveSession?.capabilities.includes('CONFIGURE_INGESTION_SOURCES')) || (route.area === 'operations' && !!liveSession?.capabilities.includes('VIEW_TECHNICAL_FAILURES'))
   return (
@@ -187,7 +194,7 @@ function ShellInner() {
                   {localRoleSwitchEnabled() && (
                     <label className="am-field">
                       <span>Local test role</span>
-                      <select value={role.id} data-menu-stop="" onChange={(e) => switchLocalRole(e.target.value as LocalPersona)}>
+                      <select value={localPersona ?? role.id} data-menu-stop="" onChange={(e) => switchLocalRole(e.target.value as LocalPersona)}>
                         {LOCAL_ROLE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                       </select>
                       <small>Switching reloads with the new test identity.</small>
@@ -216,14 +223,14 @@ function ShellInner() {
 }
 
 function AccessBoundary() {
-  const { role, navigate } = useStore()
+  const { role, areas, navigate } = useStore()
   return (
     <div className="v-body" style={{ maxWidth: 560, margin: '10vh auto' }}>
       <div className="v-panel"><div className="v-panel-body stack">
         <Activity size={22} aria-hidden className="faint" />
         <h1>This area isn&apos;t assigned to your role</h1>
         <p className="muted">{role.name} can&apos;t open this area. Access is decided by roles in your identity provider and enforced by the server; the interface only reflects it.</p>
-        <button type="button" className="v-btn primary" style={{ alignSelf: 'flex-start' }} onClick={() => navigate(role.areas[0])}>Go to {AREA_META[role.areas[0]].label}</button>
+        <button type="button" className="v-btn primary" style={{ alignSelf: 'flex-start' }} onClick={() => navigate(areas[0])}>Go to {AREA_META[areas[0]].label}</button>
       </div></div>
     </div>
   )

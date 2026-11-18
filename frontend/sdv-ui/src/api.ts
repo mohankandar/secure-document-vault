@@ -9,7 +9,7 @@ export const localRoleSwitchEnabled = () => import.meta.env.DEV && window.locati
 export const getLocalTestPersona = (): LocalPersona | null => {
   if (!localRoleSwitchEnabled()) return null
   const value = window.sessionStorage.getItem(LOCAL_ROLE_KEY)
-  return value === 'business' || value === 'steward' || value === 'businessAdmin' || value === 'tenantIt' || value === 'platform' ? value : null
+  return value === 'business' || value === 'steward' || value === 'businessAdmin' || value === 'tenantIt' || value === 'platform' || value === 'admin' ? value : null
 }
 export const setLocalTestPersona = (persona: LocalPersona) => {
   if (!localRoleSwitchEnabled()) return

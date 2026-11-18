@@ -121,3 +121,49 @@ One commit on `feature/ui-top-bar`: "feat(ui): top bar with area tabs and accoun
 ## Suggested next step
 
 Owner reviews the screenshots in `.runtime/ui-checks/0002/`. Then seed the demo data (0001 question 1) and rerun `npm run ui:capture` so the record and viewer screens are covered.
+
+## Follow-up after approval (2026-11-17)
+
+The owner approved 0002 and asked for six items before task 0003. All are done except item 3, which is done in the working copy but not committed (see below).
+
+**1. Demo data and the 0001 live checks**
+- Created the ingestion source **LexaVault** (`lexaVault`, ACTIVE) through the Tenant IT API. The seed script only looks up an existing source; there was none.
+- The first seed run created record 100000000001, then failed: "No healthy ACTIVE storage volume". There was no volume. I created **Local demo volume** at `.runtime\demo-storage` (ignored by git; ACTIVE; warning 80%, stop-write 95%) through the Tenant IT API. This follows the existing `Test-SDV-*` scripts, which keep storage under `.runtime\`.
+- `Seed-SDV-Demo-Records.ps1 -SourceDisplayName 'LexaVault'` then completed: contracts 100000000001 (3 PDFs), 100000000002 (1) and 100000000003 (1), all AVAILABLE.
+- Windows PowerShell 5.1 left `$PSScriptRoot` empty in the script's `-PdfPath` default, so I passed the fixture path explicitly.
+- 0001 live checks:
+  - search results showed "Updated just now" right after seeding and "Updated 7 min ago" seven minutes later, so the times are real;
+  - record panel: 3 identifiers side by side, each on one line, no grey half;
+  - viewer: identifiers stacked; a 20-character value stays on one line (`.runtime/ui-checks/0001/live-*.png`).
+
+**2. Start check.** `Start-SDV-Local.ps1` now checks `http://127.0.0.1:5183`. The backend health check also uses `http://127.0.0.1:8280`; it worked on `localhost` only because Java also listens on IPv6. `.\start-local.cmd` now completes: "SDV local services started." Only these two lines are committed; your other uncommitted changes in the file are left as they were.
+
+**3. stop-local leaves the containers running.** `Stop-SDV-Local.ps1` now stops only the backend and frontend by default. A new `-StopDatabase` switch also stops `sdv-postgres`. `-KeepDatabase` is still accepted. The Vault is never touched.
+- Tested: `.\stop-local.cmd` stopped both processes; `sdv-postgres` and `sdv-vault` stayed up.
+- **Not committed.** The change builds on your uncommitted switch from `docker compose down` to `docker stop sdv-postgres`. Committing my part alone would leave `-StopDatabase` running `compose down`, which also removes the Vault container. Should I commit the whole file, including your change?
+
+**4. All areas for people with several roles**
+- The store now gives `areas`: the union of the areas of every role in the session, in a fixed order. Top-bar tabs, the bottom bar, "Go to" and the access page use them. What each request may do is still decided by the server.
+- The menu's role line lists every role (e.g. "Business administrator, Tenant IT administrator").
+- To test this, the development role switch offers the existing local admin persona: "Local Administrator (Tenant IT + Business admin)", shown as "Local administrator". `getLocalTestPersona()` in `src/api.ts` now accepts `admin`; this is development only.
+- The local admin sees two tabs, **Business administration** and **Tenant IT**, and can switch between them.
+
+**5. Long names.** The account button's name and organization still end in "…" when too long. The full text now shows on hover (`title`) and stays in the open menu and the button's accessible name.
+
+**6. e2e**
+- New screen-tour test: "Local Administrator with several roles sees every area".
+- The default demo contract is now `100000000001`, which the seed creates.
+- Below 1024 px (iPad) the record opens in a drawer, not the side inspector; both specs now accept either.
+
+**Checks**
+
+| Command | Result |
+|---|---|
+| `npm run typecheck`, `npm run build` | PASS |
+| `npm run ui:capture` | **PASS 12/12** (desktop + iPad, 6 tests). The full record journey ran: results, inspector, viewer, activity. |
+| `SDV_COMMENT_REGRESSION=1` comment spec (desktop) | **PASS** (added one tagged test comment to demo record 100000000001) |
+| Shell check script (5 roles × 1440/390 × light/dark) | All checks passed |
+| Product build check (1440, 390, menu open) | No development items |
+| `.\stop-local.cmd` then `.\start-local.cmd` | Containers stayed up; start completed |
+
+No backend code changed in this follow-up, so the full build was not rerun; the last full build passed before it.

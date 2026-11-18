@@ -89,7 +89,8 @@ export function AccountMenu({ person, theme, onThemeChange, entities, currentEnt
         onClick={() => setOpen(!open)}
         onKeyDown={(e) => { if (e.key === 'ArrowDown' && !open) { e.preventDefault(); setOpen(true) } if (e.key === 'Escape' && open) { e.preventDefault(); close() } }}>
         <Avatar initials={person.initials} size="sm" />
-        <span className="am-who"><strong>{person.name}</strong><span>{subtitle}</span></span>
+        {/* Long values end in "…"; the full text shows on hover (title) and in the open menu. */}
+        <span className="am-who"><strong title={person.name}>{person.name}</strong><span title={subtitle}>{subtitle}</span></span>
         {open ? <ChevronUp size={16} aria-hidden className="am-chev" /> : <ChevronDown size={16} aria-hidden className="am-chev" />}
       </button>
 

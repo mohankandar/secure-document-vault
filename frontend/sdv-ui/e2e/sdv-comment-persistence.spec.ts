@@ -7,7 +7,7 @@ import { expect, test } from '@playwright/test'
  */
 test('a document comment persists after leaving and reopening Viewer', async ({ page }) => {
   test.skip(process.env.SDV_COMMENT_REGRESSION !== '1', 'Opt-in test: creates a persistent diagnostic comment')
-  const contract = process.env.SDV_DEMO_CONTRACT ?? '300000000076'
+  const contract = process.env.SDV_DEMO_CONTRACT ?? '100000000001' // created by Seed-SDV-Demo-Records.ps1
   const marker = `R7-comment-persistence-${Date.now()}`
   const responses: Array<{ status: number; url: string; body?: string }> = []
 
@@ -37,7 +37,8 @@ test('a document comment persists after leaving and reopening Viewer', async ({ 
     const row = page.locator('.ws-rec').filter({ hasText: contract }).first()
     await expect(row).toBeVisible({ timeout: 15000 })
 
-    const inspector = page.getByRole('complementary', { name: 'Record inspector' })
+    // Wide screens show the record in a side inspector; narrower ones in a drawer.
+    const inspector = page.getByRole('complementary', { name: 'Record inspector' }).or(page.getByRole('dialog', { name: contract }))
     const openViewer = async () => {
       // The record stays selected after returning from the viewer; clicking it again would close the inspector.
       if (!(await inspector.isVisible().catch(() => false))) await row.click()

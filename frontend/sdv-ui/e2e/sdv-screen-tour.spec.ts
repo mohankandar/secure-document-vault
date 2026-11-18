@@ -3,7 +3,7 @@ import { expect, test, type Page, type TestInfo } from '@playwright/test'
 // Screen tour of the R7 UI (served at /). Needs the app running locally in LOCAL security mode,
 // where the account menu offers the development-only "Local test role" switch.
 
-const demoRecord = process.env.SDV_DEMO_CONTRACT ?? '300000000001'
+const demoRecord = process.env.SDV_DEMO_CONTRACT ?? '100000000001' // created by Seed-SDV-Demo-Records.ps1
 
 /** Readable names the account button shows for each local test role (never the technical subject). */
 const ACCOUNT_BY_ROLE: Record<string, string> = {
@@ -12,6 +12,7 @@ const ACCOUNT_BY_ROLE: Record<string, string> = {
   'Business Administrator': 'Account: Local business administrator, Business administrator',
   'Tenant IT Administrator': 'Account: Local Tenant IT administrator, Tenant IT administrator',
   'Platform Operations Administrator': 'Account: Local platform operations administrator, Platform operations administrator',
+  'Local Administrator (Tenant IT + Business admin)': 'Account: Local administrator, Business administrator, Tenant IT administrator',
 }
 const AREA_TAB_BY_ROLE: Record<string, string> = {
   'Business User': 'Records',
@@ -19,6 +20,7 @@ const AREA_TAB_BY_ROLE: Record<string, string> = {
   'Business Administrator': 'Business administration',
   'Tenant IT Administrator': 'Tenant IT',
   'Platform Operations Administrator': 'Platform operations',
+  'Local Administrator (Tenant IT + Business admin)': 'Business administration',
 }
 
 const accountButton = (page: Page) => page.getByRole('banner').getByRole('button', { name: /^Account: / })
@@ -102,7 +104,8 @@ async function tryBusinessRecordJourney(page: Page, testInfo: TestInfo) {
   }
 
   await recordRow.click()
-  const inspector = page.getByRole('complementary', { name: 'Record inspector' })
+  // Wide screens show the record in a side inspector; narrower ones (e.g. iPad portrait) in a drawer.
+  const inspector = page.getByRole('complementary', { name: 'Record inspector' }).or(page.getByRole('dialog', { name: demoRecord }))
   await expect(inspector).toBeVisible({ timeout: 15000 })
   await capture(page, testInfo, 'record-inspector')
 
@@ -163,6 +166,19 @@ test.describe('SDV role-based screen capture', () => {
       'Integrations',
       'Environment',
     ])
+  })
+
+  test('Local Administrator with several roles sees every area', async ({ page }, testInfo) => {
+    await selectRole(page, 'Local Administrator (Tenant IT + Business admin)')
+    const areas = page.getByRole('banner').getByRole('navigation', { name: 'Areas' })
+    await expect(areas.getByRole('button')).toHaveText(['Business administration', 'Tenant IT'])
+    await expect(page.getByRole('tablist', { name: 'Business administration sections' })).toBeVisible({ timeout: 15000 })
+    await capture(page, testInfo, 'business-administration')
+    await areas.getByRole('button', { name: 'Tenant IT', exact: true }).click()
+    await expect(areas.getByRole('button', { name: 'Tenant IT', exact: true })).toHaveAttribute('aria-current', 'page')
+    await expect(page.getByRole('tablist', { name: 'Tenant IT sections' })).toBeVisible({ timeout: 15000 })
+    await capture(page, testInfo, 'tenant-it')
+    await captureAccountMenu(page, testInfo)
   })
 
   test('Platform Operations Administrator screens', async ({ page }, testInfo) => {

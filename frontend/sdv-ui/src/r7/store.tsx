@@ -40,6 +40,8 @@ export const useStore = () => {
   return value
 }
 
+const AREA_ORDER: AreaId[] = ['workspace', 'governance', 'tenant', 'operations']
+
 let toastSeq = 0
 let eventSeq = 0
 
@@ -88,6 +90,15 @@ function useStoreValue() {
     return () => { active = false }
   }, [])
   const role = ROLES.find((r) => r.id === roleId)!
+  // A person with several roles sees the areas of all of them (the server still enforces each request).
+  const heldRoles = useMemo(() => {
+    const held = liveSession ? ROLES.filter((r) => liveSession.roles.includes(r.code)) : []
+    return held.length ? held : [role]
+  }, [liveSession, role])
+  const areas = useMemo<AreaId[]>(() => {
+    const set = new Set(heldRoles.flatMap((r) => r.areas))
+    return AREA_ORDER.filter((a) => set.has(a))
+  }, [heldRoles])
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme
@@ -143,7 +154,7 @@ function useStoreValue() {
   }, [recordAudit, role.person, updateDoc])
 
   return {
-    role, roleId, switchRole, liveSession, sessionLoading, sessionError, scenario, setScenario, theme, themePref, setThemePref, route, navigate,
+    role, roleId, heldRoles, areas, switchRole, liveSession, sessionLoading, sessionError, scenario, setScenario, theme, themePref, setThemePref, route, navigate,
     toasts, toast, dismissToast: (id: number) => setToasts((l) => l.filter((t) => t.id !== id)),
     roleCaps, setRoleCaps, caps, can,
     records, setRecords, updateDoc, addDocActivity, selectedRef, setSelectedRef, openDocId, setOpenDocId, resultsShown, setResultsShown,
