@@ -94,11 +94,13 @@ See `git log fix/ui-quick-fixes`: one commit, "fix(ui): remove prototype wording
 
 ## Questions for the owner
 
-1. Please unseal the local Vault. Then I can run the live checks (search times, identifier box with real records) and add them to this report.
-2. Should I add `@playwright/test` as a dev dependency so `npm run ui:capture` can run? Task 0002 also depends on it.
-3. Should the "In production the server enforces this…" text in the "not permitted" toast (`Viewer.tsx:115`) be reworded in a later task? It is prototype wording and it is reachable in a connected session.
-4. `sdv-postgres` and `sdv-vault` were started by the start script and are still running. Should I leave them running, or stop them with `.\stop-local.cmd`?
+Answered on 2026-11-17: the Vault is unsealed, Playwright is approved, the containers stay running, and task 0001 is approved.
+
+Still open:
+1. **Demo data.** The local database has no ingestion source and no documents. Should I create the "laxavault" source and run `Seed-SDV-Demo-Records.ps1 -FreshTestData`? That writes to the development database. Or will you seed it, or point me at the data you meant?
+2. **Start script.** `Start-SDV-Local.ps1` checks `localhost:5183` while Vite listens only on `127.0.0.1`, so it fails on this machine. The fix is to probe `http://127.0.0.1:5183`. The file has your uncommitted changes, so I have left it alone. Should a task fix it?
+3. Should the "In production the server enforces this…" text in the "not permitted" toast (`Viewer.tsx:115`) be reworded in a later task?
 
 ## Suggested next step
 
-Owner reviews this report, unseals the Vault and decides on Playwright. Then I run the live checks, and task 0002 can start from `fix/ui-quick-fixes`.
+Seed demo data (question 1), then rerun the search-time and identifier checks.
