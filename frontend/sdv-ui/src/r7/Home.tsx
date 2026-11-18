@@ -72,7 +72,6 @@ export function Home() {
     requestSearch({ sourceId, criteria: identifierCriteria(record, sources.find((s) => s.id === sourceId)), selectRef: record.recordRef })
     navigate('workspace')
   }
-  const firstPreview = (r: RecordSummary, n: number) => r.metadataPreview.slice(0, n).map((f) => f.value).filter(Boolean)
 
   return (
     <div className="home">
@@ -105,7 +104,7 @@ export function Home() {
                 <li key={r.record.recordRef}>
                   <button type="button" className="home-row" onClick={() => openInRecords(r.sourceId, r.record)}>
                     <span className="mono">{r.record.identifiers[0]?.value ?? '—'}</span>
-                    <span className="home-name">{firstPreview(r.record, 2).join(' ') || '—'}</span>
+                    <span className="home-name">{r.record.title || '—'}</span>
                     <span className="faint home-when">{fmtRel(r.lastOpenedAt)}</span>
                   </button>
                 </li>
@@ -130,7 +129,7 @@ export function Home() {
                 {attention.map((a) => (
                   <li key={a.record.recordRef}>
                     <button type="button" className="home-row home-attention" onClick={() => openInRecords(a.sourceId, a.record)}>
-                      <span><span className="mono">{a.record.identifiers[0]?.value ?? '—'}</span>{firstPreview(a.record, 2).length > 0 && <> · {firstPreview(a.record, 2).join(' ')}</>}</span>
+                      <span><span className="mono">{a.record.identifiers[0]?.value ?? '—'}</span>{a.record.title && <> · {a.record.title}</>}</span>
                       <span className="faint">{a.record.incompleteExpectedCount ? `${a.record.incompleteReceivedCount ?? 0} of ${a.record.incompleteExpectedCount} documents received` : <Badge tone="warn">Missing documents</Badge>}</span>
                     </button>
                   </li>

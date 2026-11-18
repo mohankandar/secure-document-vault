@@ -53,8 +53,10 @@ public final class BusinessExperienceView {
         }
     }
 
+    /** title: the record name from the source's Record title setting (or the default); null when there is none. */
     public record RecordSummary(
             String recordRef,
+            String title,
             List<FieldValue> identifiers,
             List<FieldValue> metadataPreview,
             int submissionCount,
@@ -81,6 +83,7 @@ public final class BusinessExperienceView {
 
     public record RecordView(
             String recordRef,
+            String title,
             UUID sourceId,
             String sourceKey,
             String sourceDisplayName,

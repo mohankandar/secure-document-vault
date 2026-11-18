@@ -122,6 +122,152 @@ async function businessAdminChecks(page: Page, testInfo: TestInfo) {
   await page.unroute('**/api/v1/admin/role-capabilities')
 }
 
+// ---- Keeping documents, Search fields, Record title (task 0009) ----
+
+const ADMIN_HEADERS = { 'X-SDV-Tenant-Id': '11111111-1111-1111-1111-111111111111', 'X-SDV-Subject': 'local-business-admin', 'X-SDV-Roles': 'BUSINESS_ADMIN' }
+/** A demo record with First Name Ava and Last Name Patel (seeded with -FreshTestData). */
+const titleRecord = process.env.SDV_DEMO_TITLE_CONTRACT ?? '300000000076'
+const sectionTab = (page: Page, name: string) => page.getByRole('tablist', { name: 'Business administration sections' }).getByRole('tab', { name })
+
+/** Starts a keeping rule through the New rule panel. amount is ignored for Forever. */
+async function startKeepingRule(page: Page, amount: string, unit: 'years' | 'months' | 'days' | 'forever', why: string) {
+  await page.getByRole('button', { name: 'New rule' }).click()
+  const panel = page.getByRole('dialog', { name: 'New rule for how long to keep' })
+  await panel.getByLabel('Unit').selectOption(unit)
+  if (unit !== 'forever') await panel.getByLabel('How many').fill(amount)
+  await panel.getByLabel('Why this changed').fill(why)
+  await panel.getByLabel('This change has been approved').check()
+  return panel
+}
+
+/** A new rule in years saves and is listed under Earlier rules; the earlier rule is then put back. */
+async function keepingDocumentsChecks(page: Page, testInfo: TestInfo) {
+  await sectionTab(page, 'Keeping documents').click()
+  const current = page.getByRole('region', { name: 'Rule in use' }).locator('.keep-rule')
+  await expect(current).toHaveText(/^Keep (forever|for )/, { timeout: 15000 })
+  await expect(page.getByText(/Superseded|Version \d|Indefinite/)).toHaveCount(0)
+  await expect(page.getByText('Counted from the day each document arrives.')).toBeVisible()
+  const before = (await current.innerText()).trim()
+
+  const panel = await startKeepingRule(page, '7', 'years', 'e2e tour: seven years')
+  await expect(panel).toContainText('2,555 days. Or choose “Forever”.')
+  await capture(page, testInfo, 'keeping-documents-new-rule')
+  await panel.getByRole('button', { name: 'Start using this rule' }).click()
+  await expect(page.getByRole('status').filter({ hasText: 'New rule in use' }).last()).toBeVisible({ timeout: 15000 })
+  await expect(current).toHaveText('Keep for 7 years')
+  const earlier = page.locator('table.v-table').filter({ hasText: 'Set by' })
+  await expect(earlier.locator('tbody tr').first()).toContainText('Keep for 7 years')
+  await expect(earlier.locator('tbody tr').first()).toContainText('In use')
+  await expect(earlier.locator('tbody tr').first()).toContainText('e2e tour: seven years')
+  await expect(earlier.locator('tbody tr').nth(1)).toContainText(before)
+  await capture(page, testInfo, 'keeping-documents-earlier-rules')
+
+  // Put the earlier rule back (rules are never edited, so this is one more rule in the list).
+  const m = /^Keep for ([\d,]+) (year|month|day)s?$/.exec(before)
+  const back = await startKeepingRule(page, m ? m[1].replace(/,/g, '') : '', m ? (`${m[2]}s` as 'years' | 'months' | 'days') : 'forever', 'e2e tour: back to the earlier rule')
+  await back.getByRole('button', { name: 'Start using this rule' }).click()
+  await expect(current).toHaveText(before, { timeout: 15000 })
+}
+
+/** Search fields: words only, a match change saves, drag reorder saves, and the Record title is set. Returns what to put back. */
+async function searchFieldsChecks(page: Page, testInfo: TestInfo) {
+  const sources = await (await page.request.get('/api/v1/admin/metadata-sources', { headers: ADMIN_HEADERS })).json() as { sourceId: string }[]
+  const sourceId = sources[0].sourceId
+  const path = (what: string) => `/api/v1/admin/metadata-sources/${sourceId}/${what}`
+  const storedOrder = await (await page.request.get(path('display-order'), { headers: ADMIN_HEADERS })).json() as string[]
+  const fields = await (await page.request.get(`/api/v1/admin/ingestion-sources/${sourceId}/metadata-fields`, { headers: ADMIN_HEADERS })).json() as { fieldKey: string; displayLabel: string }[]
+  const saved = {
+    // No stored order means label order (A to Z); the server only accepts a full list, so that is what is put back.
+    order: storedOrder.length ? storedOrder : [...fields].sort((a, b) => a.displayLabel.localeCompare(b.displayLabel, undefined, { sensitivity: 'base' }) || a.fieldKey.localeCompare(b.fieldKey)).map((f) => f.fieldKey),
+    title: await (await page.request.get(path('record-title'), { headers: ADMIN_HEADERS })).json() as string[],
+  }
+  const restore = async () => {
+    for (const [what, fieldKeys] of [['display-order', saved.order], ['record-title', saved.title]] as const) {
+      const r = await page.request.put(path(what), { headers: { ...ADMIN_HEADERS, 'Content-Type': 'application/json' }, data: { fieldKeys } })
+      expect(r.ok(), `restoring ${what}`).toBeTruthy()
+    }
+  }
+
+  await sectionTab(page, 'Search fields').click()
+  const table = page.getByRole('table', { name: 'Search fields' })
+  await expect(table).toBeVisible({ timeout: 15000 })
+  await expect(page.getByRole('button', { name: /Reorder/ })).toHaveCount(0)
+  await expect(page.getByText(/current UI|Field key|DIGITS_ONLY|PARTIAL|PREFIX/)).toHaveCount(0)
+  await expect(page.getByText(/^Records per page: \d+ \(most 50\)$/)).toBeVisible()
+  await expect(table.locator('tbody tr').filter({ hasText: 'Contract Number' })).toContainText('Identifier · always searchable')
+
+  // How it matches: change Last Name to Starts with, save, then put it back.
+  const lastName = table.locator('tbody tr').filter({ hasText: 'Last Name' })
+  const match = lastName.locator('td[data-label="How it matches"]')
+  const originalMatch = (await match.innerText()).trim()
+  const choose = async (choice: RegExp) => {
+    await lastName.getByRole('button', { name: 'Edit Last Name' }).click()
+    const panel = page.getByRole('dialog', { name: 'Last Name' })
+    await panel.getByRole('radio', { name: choice }).check()
+    await panel.getByRole('button', { name: 'Save', exact: true }).click()
+    await expect(panel).toHaveCount(0, { timeout: 15000 })
+  }
+  try {
+    await choose(/^Starts with/)
+    await expect(match).toHaveText('Starts with, any case')
+    await choose(originalMatch.startsWith('Contains') ? /^Contains/ : originalMatch.startsWith('Starts') ? /^Starts with/ : /^Exact/)
+    await expect(match).toHaveText(originalMatch)
+
+    // Drag the last field above the first one.
+    const labels = () => table.locator('tbody tr td.lead strong').allInnerTexts()
+    const start = await labels()
+    const moved = start[start.length - 1]
+    const handle = table.getByRole('button', { name: new RegExp(`^Move ${moved}\\.`) })
+    const from = (await handle.boundingBox())!
+    const to = (await table.locator('tbody tr').first().boundingBox())!
+    await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2)
+    await page.mouse.down()
+    await page.mouse.move(from.x + from.width / 2, to.y + 4, { steps: 12 })
+    await page.mouse.up()
+    await expect(page.getByRole('status').filter({ hasText: 'Field order saved' }).last()).toBeVisible({ timeout: 15000 })
+    const order = [moved, ...start.slice(0, -1)]
+    expect(await labels()).toEqual(order)
+
+    // Record title: Last Name + First Name.
+    await page.getByLabel('Record title, first field').selectOption({ label: 'Last Name' })
+    await page.getByLabel('Record title, second field').selectOption({ label: 'First Name' })
+    await page.locator('.sf-title').getByRole('button', { name: 'Save', exact: true }).click()
+    await expect(page.getByRole('status').filter({ hasText: 'Record title saved' }).last()).toBeVisible({ timeout: 15000 })
+    await capture(page, testInfo, 'search-fields-changed')
+
+    // A business user sees the new order in Filters and the new title on Records, the viewer and Home.
+    await selectRole(page, 'Business User')
+    await areaTab(page, 'Records').click()
+    await waitForBusinessSearchReady(page)
+    await page.getByRole('button', { name: /^Filters/ }).click()
+    const filterLabels = await page.locator('.ws-filter-fields .v-field > span').allInnerTexts()
+    const searchable = order.filter((label) => filterLabels.some((t) => t.startsWith(label)))
+    expect(filterLabels.map((t) => searchable.find((label) => t.startsWith(label)))).toEqual(searchable)
+    expect(searchable[0]).toBe(moved)
+    await page.locator('.ws-filter-fields input').first().press('Escape')
+    await expect(page.getByRole('dialog', { name: 'Filters' })).toHaveCount(0)
+
+    await openViewerFor(page, titleRecord)
+    await expect(viewer(page)).toContainText('Patel Ava')
+    await page.getByRole('button', { name: 'Back to results' }).click()
+    const inspector = page.getByRole('complementary', { name: 'Record inspector' }).or(page.getByRole('dialog').filter({ hasText: titleRecord }))
+    await expect(inspector.getByRole('heading', { name: 'Patel Ava' })).toBeVisible()
+    await capture(page, testInfo, 'records-record-title')
+    const drawer = page.getByRole('dialog').filter({ hasText: titleRecord })
+    if (await drawer.isVisible().catch(() => false)) await drawer.getByRole('button', { name: 'Close', exact: true }).click()
+    await areaTab(page, 'Home').click()
+    const recent = page.getByRole('region', { name: 'Recently viewed' }).getByRole('listitem').first()
+    await expect(recent).toContainText(titleRecord, { timeout: 15000 })
+    await expect(recent).toContainText('Patel Ava')
+    await capture(page, testInfo, 'home-record-title')
+  } finally {
+    await restore()
+  }
+  // Back to the default title: the first preview field, A to Z (First Name).
+  await page.reload()
+  await expect(page.getByRole('region', { name: 'Recently viewed' }).getByRole('listitem').first()).toContainText(/Ava/, { timeout: 15000 })
+}
+
 async function captureAccountMenu(page: Page, testInfo: TestInfo) {
   const menu = await openAccountMenu(page)
   await expect(menu.getByRole('button', { name: 'System', exact: true })).toBeVisible()
@@ -502,6 +648,8 @@ test.describe('SDV role-based screen capture', () => {
   })
 
   test('Business Administrator screens', async ({ page }, testInfo) => {
+    // The desktop run also changes and restores the keeping rule, search fields and record title.
+    test.setTimeout(180_000)
     await selectRole(page, 'Business Administrator')
     await expectNoRecordsAccess(page, testInfo, 'Business administration')
     await captureAccountMenu(page, testInfo)
@@ -512,6 +660,11 @@ test.describe('SDV role-based screen capture', () => {
       'Search fields',
     ])
     await businessAdminChecks(page, testInfo)
+    // Settings that change shared rules run once, on the desktop project; the tablet project only tours the screens.
+    if (isDesktop(testInfo)) {
+      await keepingDocumentsChecks(page, testInfo)
+      await searchFieldsChecks(page, testInfo)
+    }
   })
 
   test('A business user opening an admin page sees the no-access page', async ({ page }, testInfo) => {

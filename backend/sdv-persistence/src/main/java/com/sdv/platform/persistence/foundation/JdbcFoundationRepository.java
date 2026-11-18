@@ -128,6 +128,28 @@ public class JdbcFoundationRepository implements TenantRepository, IngestionSour
     }
 
     @Override
+    public List<String> findRecordTitleFields(UUID tenantId, UUID sourceId) {
+        return jdbc.queryForList("""
+                select field_key from record_title_fields
+                where tenant_id=:tenantId and source_id=:sourceId
+                order by title_position
+                """, params("tenantId", tenantId).addValue("sourceId", sourceId), String.class);
+    }
+
+    @Override
+    public void replaceRecordTitleFields(UUID tenantId, UUID sourceId, List<String> fieldKeys) {
+        var scope = params("tenantId", tenantId).addValue("sourceId", sourceId);
+        jdbc.update("delete from record_title_fields where tenant_id=:tenantId and source_id=:sourceId", scope);
+        for (int i=0; i<fieldKeys.size(); i++) {
+            jdbc.update("""
+                    insert into record_title_fields (tenant_id, source_id, field_key, title_position)
+                    values (:tenantId, :sourceId, :fieldKey, :position)
+                    """, params("tenantId", tenantId).addValue("sourceId", sourceId)
+                         .addValue("fieldKey", fieldKeys.get(i)).addValue("position", i));
+        }
+    }
+
+    @Override
     public List<MetadataFieldDefinition> findCurrent(UUID tenantId, UUID sourceId) {
         var p = params("tenantId", tenantId).addValue("sourceId", sourceId);
         return jdbc.query(metadataSelect() + " where tenant_id=:tenantId and source_id=:sourceId and active=true order by field_key",

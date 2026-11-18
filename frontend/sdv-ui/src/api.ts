@@ -185,6 +185,8 @@ export type FieldValue = {
 
 export type RecordSummary = {
   recordRef: string
+  /** The record's name from the source's Record title setting (or the default); null when it has none. */
+  title?: string | null
   identifiers: FieldValue[]
   metadataPreview: FieldValue[]
   submissionCount: number
@@ -226,6 +228,7 @@ export type IncompleteSubmission = {
 
 export type BusinessRecord = {
   recordRef: string
+  title?: string | null
   sourceId: string
   sourceKey: string
   sourceDisplayName: string

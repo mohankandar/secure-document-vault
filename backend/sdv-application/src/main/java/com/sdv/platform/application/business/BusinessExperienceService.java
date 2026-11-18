@@ -240,11 +240,12 @@ public class BusinessExperienceService {
         }
 
         int pageEndExclusive = Math.min(firstIndex + pageSize, ordered.size());
+        List<String> titleFields = definitions.findRecordTitleFields(tenantId, sourceId);
         List<BusinessExperienceView.RecordSummary> results = new ArrayList<>();
         for (BusinessRecordRefCodec.RecordIdentity identity : ordered.subList(firstIndex, pageEndExclusive)) {
             RecordAggregate aggregate = aggregate(tenantId, source, identity);
             if (!aggregate.submissions().isEmpty()) {
-                results.add(summary(aggregate));
+                results.add(summary(aggregate, titleFields));
             }
         }
 
@@ -298,6 +299,7 @@ public class BusinessExperienceService {
         }
 
         Map<UUID, Optional<IngestionSource>> sourceCache = new HashMap<>();
+        Map<UUID, List<String>> titleFieldsBySource = new HashMap<>();
         for (Map.Entry<String, BusinessRecordRefCodec.RecordIdentity> entry : identities.entrySet()) {
             if (byRecord.size() >= limit) break;
             BusinessRecordRefCodec.RecordIdentity identity = entry.getValue();
@@ -307,7 +309,10 @@ public class BusinessExperienceService {
             RecordAggregate aggregate = aggregate(tenantId, source.get(), identity);
             if (aggregate.submissions().isEmpty() || aggregate.documents().isEmpty()) continue;
             byRecord.put(entry.getKey(), new BusinessExperienceView.RecentRecord(
-                    identity.sourceId(), summary(aggregate), openedByRecord.get(entry.getKey())));
+                    identity.sourceId(),
+                    summary(aggregate, titleFieldsBySource.computeIfAbsent(identity.sourceId(),
+                            id -> definitions.findRecordTitleFields(tenantId, id))),
+                    openedByRecord.get(entry.getKey())));
         }
 
         audit.append(new AuditEvent(
@@ -332,7 +337,8 @@ public class BusinessExperienceService {
             throw new NoSuchElementException("Business record not found.");
         }
 
-        BusinessExperienceView.RecordView view = recordView(aggregate);
+        BusinessExperienceView.RecordView view = recordView(aggregate,
+                definitions.findRecordTitleFields(tenantId, source.sourceId()));
         audit.append(new AuditEvent(
                 UUID.randomUUID(), tenantId, "USER", actorId,
                 "BUSINESS_RECORD_OPENED", "BUSINESS_RECORD", sha256(recordRef),
@@ -413,7 +419,7 @@ public class BusinessExperienceService {
         return new RecordAggregate(source, identity, submissions, metadata, documents, expected, documentCounts);
     }
 
-    private BusinessExperienceView.RecordSummary summary(RecordAggregate aggregate) {
+    private BusinessExperienceView.RecordSummary summary(RecordAggregate aggregate, List<String> titleFields) {
         List<BusinessExperienceView.FieldValue> latestMetadata = latestMetadata(aggregate);
         List<BusinessExperienceView.FieldValue> identifiers = displayIdentifiers(aggregate, latestMetadata);
         List<BusinessExperienceView.FieldValue> preview = latestMetadata.stream()
@@ -431,6 +437,7 @@ public class BusinessExperienceService {
 
         return new BusinessExperienceView.RecordSummary(
                 refs.encode(aggregate.identity()),
+                recordTitle(latestMetadata, titleFields),
                 identifiers,
                 preview,
                 aggregate.submissions().size(),
@@ -441,7 +448,7 @@ public class BusinessExperienceService {
                 received);
     }
 
-    private BusinessExperienceView.RecordView recordView(RecordAggregate aggregate) {
+    private BusinessExperienceView.RecordView recordView(RecordAggregate aggregate, List<String> titleFields) {
         List<BusinessExperienceView.FieldValue> metadata = latestMetadata(aggregate);
         List<BusinessExperienceView.FieldValue> identifiers = displayIdentifiers(aggregate, metadata);
         List<BusinessExperienceView.DocumentSummary> documents = aggregate.documents().stream()
@@ -475,6 +482,7 @@ public class BusinessExperienceService {
 
         return new BusinessExperienceView.RecordView(
                 refs.encode(aggregate.identity()),
+                recordTitle(metadata, titleFields),
                 aggregate.source().sourceId(),
                 aggregate.source().sourceKey(),
                 aggregate.source().displayName(),
@@ -484,6 +492,34 @@ public class BusinessExperienceService {
                 aggregate.submissions().getFirst().createdAt(),
                 documents,
                 attention);
+    }
+
+    /**
+     * The record's name. With a Record title setting: the chosen fields' values joined by a space, as long as every
+     * chosen field has a value on this record. Otherwise (no setting, or a chosen field missing): the first preview
+     * field, as before. Never an identifier; null when the record has no other field with a value.
+     */
+    static String recordTitle(List<BusinessExperienceView.FieldValue> latestMetadata, List<String> titleFields) {
+        if (titleFields != null && !titleFields.isEmpty()) {
+            Map<String, BusinessExperienceView.FieldValue> byKey = latestMetadata.stream()
+                    .collect(Collectors.toMap(BusinessExperienceView.FieldValue::fieldKey, Function.identity(), (a, b) -> a));
+            List<String> parts = new ArrayList<>();
+            for (String key : titleFields) {
+                BusinessExperienceView.FieldValue value = byKey.get(key);
+                if (value == null || value.businessIdentifier() || value.value() == null || value.value().isBlank()) {
+                    parts = null;
+                    break;
+                }
+                parts.add(value.value().trim());
+            }
+            if (parts != null) return String.join(" ", parts);
+        }
+        return latestMetadata.stream()
+                .filter(value -> !value.businessIdentifier())
+                .map(BusinessExperienceView.FieldValue::value)
+                .filter(value -> value != null && !value.isBlank())
+                .findFirst()
+                .orElse(null);
     }
 
     private static List<BusinessExperienceView.FieldValue> latestMetadata(RecordAggregate aggregate) {

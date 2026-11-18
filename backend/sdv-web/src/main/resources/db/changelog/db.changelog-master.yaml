@@ -48,3 +48,6 @@ databaseChangeLog:
 
   - include:
       file: db/changelog/018-search-date-indexes.yaml
+
+  - include:
+      file: db/changelog/019-record-title-fields.yaml

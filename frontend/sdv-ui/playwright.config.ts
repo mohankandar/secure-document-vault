@@ -18,6 +18,8 @@ export default defineConfig({
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',
+    // A stuck click fails within this time instead of using up the whole test, so clean-up steps still run.
+    actionTimeout: 20_000,
   },
   projects: [
     {

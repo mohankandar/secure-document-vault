@@ -35,9 +35,11 @@ export function toSource(s: SearchSource): Source {
   } as Field)) }
 }
 const fields = (a: {displayLabel:string,value:string}[]) => a.map(f=>({ label:f.displayLabel,value:f.value }))
+/** The server's record title; a record without one is named by its identifier (never guessed from other fields). */
+export const recordName = (title: string | null | undefined, ids: {value:string}[], ref: string) => title || ids.map(x=>x.value).join(' · ') || ref
 export function toSummary(r: RecordSummary, sourceId:string):RecordItem {
   const ids=fields(r.identifiers), metadata=fields(r.metadataPreview)
-  return { ref:r.recordRef,sourceId,identifiers:ids,metadata,title:ids.map(x=>x.value).join(' · ') || r.recordRef,
+  return { ref:r.recordRef,sourceId,identifiers:ids,metadata,title:recordName(r.title,ids,r.recordRef),
     updatedAt:r.latestSubmissionAt,submissions:r.submissionCount,incomplete:r.incomplete?{submissionId:'',expected:0,received:0,since:r.latestSubmissionAt}:null,
     docs:[] }
 }
@@ -50,7 +52,7 @@ export function toRecord(r: BusinessRecord):RecordItem {
   const open=r.incompleteAttention?.submissions ?? []
   const incomplete=open.length?{submissionId:open[0].submissionId,expectedCount:open.reduce((n,s)=>n+s.expectedCount,0),receivedCount:open.reduce((n,s)=>n+s.receivedCount,0),missing:open.flatMap(s=>s.missingSourceDocumentIds ?? [])}:null
   return {ref:r.recordRef,sourceId:r.sourceId,identifiers:ids,metadata:fields(r.metadata),
-    title:ids.map(x=>x.value).join(' · ') || r.recordRef,updatedAt:r.latestSubmissionAt,submissions:r.submissionCount,
+    title:recordName(r.title,ids,r.recordRef),updatedAt:r.latestSubmissionAt,submissions:r.submissionCount,
     incomplete:incomplete?{submissionId:incomplete.submissionId,expected:incomplete.expectedCount,received:incomplete.receivedCount,since:r.latestSubmissionAt,missing:incomplete.missing}:null,docs}
 }
 
@@ -99,6 +101,9 @@ export const adminMetadataSources=()=>roleApi<AdminMetadataSource[]>('/api/v1/ad
 export const adminMetadataFields=(sourceId:string)=>roleApi<AdminMetadataField[]>('/api/v1/admin/ingestion-sources/'+encodeURIComponent(sourceId)+'/metadata-fields','businessAdmin')
 export const updateBusinessMetadata=(sourceId:string,field:AdminMetadataField)=>roleApi<AdminMetadataField>('/api/v1/admin/metadata-sources/'+encodeURIComponent(sourceId)+'/fields/'+encodeURIComponent(field.fieldKey),'businessAdmin',{method:'PUT',body:JSON.stringify({displayLabel:field.displayLabel,businessIdentifier:field.businessIdentifier,searchable:field.searchable,normalization:field.normalization,searchMode:field.searchMode})})
 
+/** The one or two fields that name a record (task 0009); an empty list means the default title. */
+export const getRecordTitleFields=(sourceId:string)=>roleApi<string[]>('/api/v1/admin/metadata-sources/'+encodeURIComponent(sourceId)+'/record-title','businessAdmin')
+export const saveRecordTitleFields=(sourceId:string,fieldKeys:string[])=>roleApi<string[]>('/api/v1/admin/metadata-sources/'+encodeURIComponent(sourceId)+'/record-title','businessAdmin',{method:'PUT',body:JSON.stringify({fieldKeys})})
 export const getMetadataDisplayOrder=(sourceId:string)=>roleApi<string[]>('/api/v1/admin/metadata-sources/'+encodeURIComponent(sourceId)+'/display-order','businessAdmin')
 export const saveMetadataDisplayOrder=(sourceId:string,fieldKeys:string[])=>roleApi<string[]>('/api/v1/admin/metadata-sources/'+encodeURIComponent(sourceId)+'/display-order','businessAdmin',{method:'PUT',body:JSON.stringify({fieldKeys})})
 

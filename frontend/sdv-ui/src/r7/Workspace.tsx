@@ -189,7 +189,8 @@ export function Workspace() {
 
   const appliedSource = (applied ? sources.find((s) => s.id === applied.sourceId) : source) ?? source
   const summary = selected ? summaries[selected.ref] : undefined
-  const panelTitle = selected ? (summary?.preview[0]?.value || selected.identifiers.map((i) => i.value).join(' · ')) : ''
+  // The server names the record (Record title setting); the same title shows in the viewer.
+  const panelTitle = selected ? selected.title : ''
 
   return (
     <div className={`ws${showPanel && wide ? ' has-insp' : ''}`}>

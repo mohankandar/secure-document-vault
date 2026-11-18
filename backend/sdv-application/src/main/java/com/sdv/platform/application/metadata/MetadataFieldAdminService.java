@@ -87,6 +87,46 @@ public class MetadataFieldAdminService {
         return definitions.findDisplayOrder(tenantId, sourceId);
     }
 
+    /** The most fields a record title may combine (e.g. First name + Last name). */
+    public static final int MAX_RECORD_TITLE_FIELDS = 2;
+
+    /** The fields that name a record for this source, in title order; empty means the default title. */
+    public List<String> recordTitleFields(UUID tenantId, UUID sourceId) {
+        requireSource(tenantId, sourceId);
+        return definitions.findRecordTitleFields(tenantId, sourceId);
+    }
+
+    /**
+     * Sets the one or two fields that name a record; an empty list goes back to the default title. Each key must be
+     * a current field of the source and must not be an identifier (the identifier is shown beside the title anyway).
+     */
+    @Transactional
+    public List<String> updateRecordTitleFields(UUID tenantId, UUID sourceId, List<String> keys,
+                                                String actorId, String correlationId) {
+        requireSource(tenantId, sourceId);
+        if (keys == null) throw new IllegalArgumentException("fieldKeys is required.");
+        if (keys.size() > MAX_RECORD_TITLE_FIELDS) {
+            throw new IllegalArgumentException("A record title uses at most " + MAX_RECORD_TITLE_FIELDS + " fields.");
+        }
+        if (keys.stream().distinct().count() != keys.size()) {
+            throw new IllegalArgumentException("Each record title field may be chosen once.");
+        }
+        java.util.Map<String, MetadataFieldDefinition> current = new java.util.HashMap<>();
+        definitions.findCurrent(tenantId, sourceId).forEach(field -> current.put(field.fieldKey(), field));
+        for (String key : keys) {
+            MetadataFieldDefinition field = key == null ? null : current.get(key);
+            if (field == null) throw new IllegalArgumentException("Record title fields must be current source fields.");
+            if (field.businessIdentifier()) {
+                throw new IllegalArgumentException("An identifier cannot be a record title field.");
+            }
+        }
+        definitions.replaceRecordTitleFields(tenantId, sourceId, keys);
+        audit.append(new AuditEvent(UUID.randomUUID(), tenantId, "USER", actorId,
+                "RECORD_TITLE_FIELDS_UPDATED", "INGESTION_SOURCE", sourceId.toString(), clock.instant(),
+                correlationId, AuditOutcome.SUCCESS, "{\"fieldCount\":" + keys.size() + "}"));
+        return definitions.findRecordTitleFields(tenantId, sourceId);
+    }
+
     @Transactional
     public MetadataFieldDefinition createOrRevise(UUID tenantId,
                                                    UUID sourceId,
