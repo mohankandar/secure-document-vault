@@ -6,7 +6,7 @@ export const ago = (days: number) => new Date(NOW - days * 86400000).toISOString
 export const ahead = (days: number) => new Date(NOW + days * 86400000).toISOString()
 
 export type RoleId = 'business' | 'steward' | 'businessAdmin' | 'tenantIt' | 'platform'
-export type AreaId = 'workspace' | 'governance' | 'tenant' | 'operations' | 'system'
+export type AreaId = 'home' | 'workspace' | 'governance' | 'tenant' | 'operations' | 'system'
 
 export type Capability =
   | 'SEARCH_RECORDS' | 'VIEW_PDF' | 'PERMANENT_REDACTION' | 'DOWNLOAD_CURRENT_PDF' | 'PRINT_DOCUMENT'
@@ -31,8 +31,8 @@ export const CONFIGURABLE: Capability[] = ['DOWNLOAD_CURRENT_PDF', 'PRINT_DOCUME
 
 export type RoleDef = { id: RoleId; code: string; name: string; short: string; person: string; initials: string; areas: AreaId[]; responsibility: string }
 export const ROLES: RoleDef[] = [
-  { id: 'business', code: 'BUSINESS_USER', name: 'Business User', short: 'Business', person: 'Maya Okafor', initials: 'MO', areas: ['workspace'], responsibility: 'Search and view authorized documents.' },
-  { id: 'steward', code: 'DOCUMENT_STEWARD', name: 'Document Steward', short: 'Steward', person: 'Daniel Reyes', initials: 'DR', areas: ['workspace'], responsibility: 'Controlled download and permanent corrective redaction.' },
+  { id: 'business', code: 'BUSINESS_USER', name: 'Business User', short: 'Business', person: 'Maya Okafor', initials: 'MO', areas: ['home', 'workspace'], responsibility: 'Search and view authorized documents.' },
+  { id: 'steward', code: 'DOCUMENT_STEWARD', name: 'Document Steward', short: 'Steward', person: 'Daniel Reyes', initials: 'DR', areas: ['home', 'workspace'], responsibility: 'Controlled download and permanent corrective redaction.' },
   { id: 'businessAdmin', code: 'BUSINESS_ADMIN', name: 'Business Administrator', short: 'Business admin', person: 'Priya Natarajan', initials: 'PN', areas: ['governance'], responsibility: 'Business policy and metadata administration.' },
   { id: 'tenantIt', code: 'TENANT_IT_ADMIN', name: 'Tenant IT Administrator', short: 'Tenant IT', person: 'Jonas Weber', initials: 'JW', areas: ['tenant'], responsibility: 'Storage, identity, integrations and environment.' },
   { id: 'platform', code: 'PLATFORM_OPERATIONS_ADMIN', name: 'Platform Operations', short: 'Platform ops', person: 'Aiko Tanaka', initials: 'AT', areas: ['operations'], responsibility: 'Health, incidents, intake, audit and configuration.' },

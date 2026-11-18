@@ -387,6 +387,43 @@ html.r7-html, html.r7-html body { margin: 0; background: var(--bg); color: var(-
 }
 @media (min-width: 1280px) { .ws.has-insp { grid-template-columns: minmax(0, 1fr) 420px; } }
 
+/* ---------- Home ---------- */
+.home { display: flex; flex-direction: column; gap: 18px; padding: 20px 16px 32px; max-width: 1200px; margin: 0 auto; width: 100%; }
+.home-head { display: flex; flex-direction: column; gap: 4px; }
+.home-head h1 { font-size: 24px; font-weight: 600; letter-spacing: -0.02em; }
+.home-head p { font-size: 15px; }
+.home-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; align-items: start; }
+.home-side { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.home-card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; min-width: 0; }
+.home-card-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 14px 16px; border-bottom: 1px solid var(--line); }
+.home-card-head h2, .home-ask h2 { display: flex; align-items: center; gap: 8px; font-size: 16px; font-weight: 600; }
+.home-card-head .faint { font-size: 13px; }
+.home-list { list-style: none; margin: 0; padding: 0; }
+.home-list li + li { border-top: 1px solid var(--line); }
+.home-row { display: grid; grid-template-columns: minmax(0, 150px) minmax(0, 1fr) auto; align-items: center; gap: 12px; width: 100%; padding: 13px 16px; border: 0; background: none; color: var(--ink); font: inherit; font-size: 14px; text-align: left; cursor: pointer; }
+.home-row:hover { background: var(--surface-2); }
+.home-row .mono { font-family: var(--font-mono); font-weight: 500; }
+.home-name { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.home-when { font-size: 13px; text-align: right; white-space: nowrap; }
+.home-row.home-attention { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+.home-row.home-attention .faint { font-size: 13px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.home-empty { padding: 18px 16px; color: var(--ink-3); font-size: 14px; }
+.home-note { padding: 0 16px 14px; font-size: 12px; }
+.home-card .v-callout { margin: 12px 16px; }
+.home-ask { border-style: dashed; padding: 16px; display: flex; flex-direction: column; gap: 8px; }
+.home-ask p { font-size: 14px; }
+.home-ask-slot { min-height: 0; }
+@media (min-width: 768px) {
+  .home { padding: 32px 32px 40px; gap: 22px; }
+  .home-head h1 { font-size: 26px; }
+}
+@media (min-width: 1024px) {
+  .home { padding: 40px 64px; }
+  .home-grid { grid-template-columns: minmax(0, 1fr) 380px; gap: 24px; }
+  /* Keeps the right column's shape whether or not the Ask card is shown. */
+  .home-ask-slot { min-height: 120px; }
+}
+
 /* ---------- Viewer ---------- */
 .vw { position: fixed; z-index: 50; inset: 0; display: flex; flex-direction: column; background: var(--canvas); }
 @media (min-width: 768px) { .vw { left: 0; top: var(--top); } }

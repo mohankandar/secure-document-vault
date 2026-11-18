@@ -15,8 +15,8 @@ const ACCOUNT_BY_ROLE: Record<string, string> = {
   'Local Administrator (Tenant IT + Business admin)': 'Account: Local administrator, Business administrator, Tenant IT administrator',
 }
 const AREA_TAB_BY_ROLE: Record<string, string> = {
-  'Business User': 'Records',
-  'Document Steward': 'Records',
+  'Business User': 'Home',
+  'Document Steward': 'Home',
   'Business Administrator': 'Business administration',
   'Tenant IT Administrator': 'Tenant IT',
   'Platform Operations Administrator': 'Platform operations',
@@ -55,9 +55,19 @@ async function capture(page: Page, testInfo: TestInfo, name: string) {
   await testInfo.attach(name, { body: screenshot, contentType: 'image/png' })
 }
 
-/** Roles without SEARCH_RECORDS: no Records tab, and the Records address shows the access page. */
-async function expectNoRecordsAccess(page: Page, testInfo: TestInfo) {
-  await expect(page.getByRole('banner').getByRole('navigation', { name: 'Areas' }).getByRole('button', { name: 'Records', exact: true })).toHaveCount(0)
+const areaTab = (page: Page, name: string) => page.getByRole('banner').getByRole('navigation', { name: 'Areas' }).getByRole('button', { name, exact: true })
+
+/** Opening the app without an address lands on the person's first area (Home for search roles). */
+async function expectLanding(page: Page, area: string) {
+  await page.goto('/')
+  await expect(areaTab(page, area)).toHaveAttribute('aria-current', 'page', { timeout: 15000 })
+}
+
+/** Roles without SEARCH_RECORDS: they land on their own area, have no Home or Records tab, and the Records address shows the access page. */
+async function expectNoRecordsAccess(page: Page, testInfo: TestInfo, ownArea: string) {
+  await expectLanding(page, ownArea)
+  await expect(areaTab(page, 'Home')).toHaveCount(0)
+  await expect(areaTab(page, 'Records')).toHaveCount(0)
   const back = await page.evaluate(() => window.location.hash)
   await page.evaluate(() => { window.location.hash = '#/workspace/search' })
   await expect(page.getByRole('heading', { name: /This area isn.t assigned to your role/ })).toBeVisible({ timeout: 15000 })
@@ -122,6 +132,52 @@ async function expectRows(page: Page, testInfo: TestInfo, what: string): Promise
   const found = await resultRows(page).first().waitFor({ timeout: 15000 }).then(() => true, () => false)
   if (!found) missingDemoData(testInfo, what)
   return found
+}
+
+/** The demo record with missing documents (created for task 0003: 1 of 2 documents received). */
+const demoIncomplete = process.env.SDV_DEMO_INCOMPLETE ?? '300000000090'
+
+/** Home: landing, greeting, Needs attention and Show all, and a search started on Home that moves to Records. */
+async function homeSteps(page: Page, testInfo: TestInfo) {
+  await expectLanding(page, 'Home')
+  await expect(page.getByRole('heading', { level: 1, name: /^Good (morning|afternoon|evening)/ })).toBeVisible()
+  const attention = page.getByRole('region', { name: 'Needs attention' })
+  const attentionRow = attention.getByRole('button', { name: new RegExp(demoIncomplete) })
+  if (!(await attentionRow.waitFor({ timeout: 15000 }).then(() => true, () => false))) return missingDemoData(testInfo, `record ${demoIncomplete} with missing documents is not under Needs attention`)
+  await expect(attentionRow).toContainText('Missing documents')
+  await capture(page, testInfo, 'home')
+
+  await attention.getByRole('button', { name: /Show all/ }).click()
+  await expect(areaTab(page, 'Records')).toHaveAttribute('aria-current', 'page')
+  await expect(chip(page, /^Missing documents$/)).toBeVisible()
+  await expect(chip(page, /^Received /)).toBeVisible()
+  await expect(resultRows(page).filter({ hasText: demoIncomplete })).toBeVisible({ timeout: 15000 })
+  await capture(page, testInfo, 'records-needs-attention')
+
+  await areaTab(page, 'Home').click()
+  await searchBox(page).fill(demoRecord)
+  await searchBox(page).press('Enter')
+  await expect(areaTab(page, 'Records')).toHaveAttribute('aria-current', 'page')
+  await expect(chip(page, new RegExp(`Contract Number is ${demoRecord}`))).toBeVisible()
+  await expect(resultRows(page).filter({ hasText: demoRecord })).toBeVisible({ timeout: 15000 })
+  await capture(page, testInfo, 'records-from-home-search')
+  await clearSearch(page)
+}
+
+/** After the journey opened the demo record in the viewer: it is first under Recently viewed and opens in Records with its panel. */
+async function recentlyViewedSteps(page: Page, testInfo: TestInfo) {
+  // On narrower screens the record drawer is open again after leaving the viewer; close it first.
+  const drawer = page.getByRole('dialog').filter({ hasText: demoRecord })
+  if (await drawer.isVisible().catch(() => false)) await drawer.getByRole('button', { name: 'Close', exact: true }).click()
+  await areaTab(page, 'Home').click()
+  const recent = page.getByRole('region', { name: 'Recently viewed' })
+  await expect(recent.getByRole('listitem').first()).toContainText(demoRecord, { timeout: 15000 })
+  await capture(page, testInfo, 'home-recently-viewed')
+  await recent.getByRole('button', { name: new RegExp(demoRecord) }).first().click()
+  await expect(areaTab(page, 'Records')).toHaveAttribute('aria-current', 'page')
+  const panel = page.getByRole('complementary', { name: 'Record inspector' }).or(page.getByRole('dialog').filter({ hasText: demoRecord }))
+  await expect(panel).toBeVisible({ timeout: 15000 })
+  await capture(page, testInfo, 'records-from-recently-viewed')
 }
 
 async function tryBusinessRecordJourney(page: Page, testInfo: TestInfo) {
@@ -235,23 +291,44 @@ test.describe('SDV role-based screen capture', () => {
 
   test('Business User screens', async ({ page }, testInfo) => {
     await selectRole(page, 'Business User')
+    await homeSteps(page, testInfo)
+    await areaTab(page, 'Records').click()
     await waitForBusinessSearchReady(page)
     await capture(page, testInfo, 'search')
     await captureAccountMenu(page, testInfo)
     await tryBusinessRecordJourney(page, testInfo)
+    await recentlyViewedSteps(page, testInfo)
+  })
+
+  test('Home empty states', async ({ page }, testInfo) => {
+    // Serve empty lists so the empty states can be seen whatever the local data holds.
+    await page.route('**/api/v1/business/me/recent-records**', (route) => route.fulfill({ json: { records: [] } }))
+    await page.route('**/api/v1/business/search', async (route) => {
+      const body = route.request().postDataJSON() as { sourceId: string; incompleteOnly?: boolean }
+      if (body?.incompleteOnly) return route.fulfill({ json: { sourceId: body.sourceId, records: [], page: 1, pageSize: 5, hasMore: false, truncated: false } })
+      return route.continue()
+    })
+    await selectRole(page, 'Business User')
+    await expectLanding(page, 'Home')
+    await expect(page.getByText('Records you open will show here.')).toBeVisible({ timeout: 15000 })
+    await expect(page.getByText('Nothing needs attention.')).toBeVisible({ timeout: 15000 })
+    await capture(page, testInfo, 'home-empty')
   })
 
   test('Document Steward screens', async ({ page }, testInfo) => {
     await selectRole(page, 'Document Steward')
+    await homeSteps(page, testInfo)
+    await areaTab(page, 'Records').click()
     await waitForBusinessSearchReady(page)
     await capture(page, testInfo, 'search')
     await captureAccountMenu(page, testInfo)
     await tryBusinessRecordJourney(page, testInfo)
+    await recentlyViewedSteps(page, testInfo)
   })
 
   test('Business Administrator screens', async ({ page }, testInfo) => {
     await selectRole(page, 'Business Administrator')
-    await expectNoRecordsAccess(page, testInfo)
+    await expectNoRecordsAccess(page, testInfo, 'Business administration')
     await captureAccountMenu(page, testInfo)
     await captureSectionTabs(page, testInfo, 'Business administration sections', [
       'Users & access',
@@ -263,7 +340,7 @@ test.describe('SDV role-based screen capture', () => {
 
   test('Tenant IT Administrator screens', async ({ page }, testInfo) => {
     await selectRole(page, 'Tenant IT Administrator')
-    await expectNoRecordsAccess(page, testInfo)
+    await expectNoRecordsAccess(page, testInfo, 'Tenant IT')
     await captureAccountMenu(page, testInfo)
     await captureSectionTabs(page, testInfo, 'Tenant IT sections', [
       'Storage',
@@ -275,7 +352,7 @@ test.describe('SDV role-based screen capture', () => {
 
   test('Local Administrator with several roles sees every area', async ({ page }, testInfo) => {
     await selectRole(page, 'Local Administrator (Tenant IT + Business admin)')
-    await expectNoRecordsAccess(page, testInfo)
+    await expectNoRecordsAccess(page, testInfo, 'Business administration')
     const areas = page.getByRole('banner').getByRole('navigation', { name: 'Areas' })
     await expect(areas.getByRole('button')).toHaveText(['Business administration', 'Tenant IT'])
     await expect(page.getByRole('tablist', { name: 'Business administration sections' })).toBeVisible({ timeout: 15000 })
@@ -289,7 +366,7 @@ test.describe('SDV role-based screen capture', () => {
 
   test('Platform Operations Administrator screens', async ({ page }, testInfo) => {
     await selectRole(page, 'Platform Operations Administrator')
-    await expectNoRecordsAccess(page, testInfo)
+    await expectNoRecordsAccess(page, testInfo, 'Platform operations')
     await captureAccountMenu(page, testInfo)
     await captureSectionTabs(page, testInfo, 'Platform operations sections', [
       'Overview',

@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react'
-import { Activity, Building2, FileSearch, FlaskConical, Layers, Search, ServerCog, ShieldCheck, CornerDownLeft, UserRound } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { Activity, Building2, FileSearch, House, FlaskConical, Layers, Search, ServerCog, ShieldCheck, CornerDownLeft, UserRound } from 'lucide-react'
 import { AREA_TABS, StoreProvider, useStore } from './store'
 import { type AreaId, type RoleId } from './data'
 import { opSummary } from './liveApi'
@@ -7,6 +7,7 @@ import { Toasts } from './ui'
 import { getLocalTestPersona, localRoleSwitchEnabled, setLocalTestPersona, type LocalPersona, type SessionInfo } from '../api'
 import { endOidcSession, isLocalSecurityMode } from '../auth'
 import { Workspace } from './Workspace'
+import { Home } from './Home'
 import { Governance } from './Governance'
 import { TenantAdmin } from './TenantAdmin'
 import { Operations } from './Operations'
@@ -18,6 +19,7 @@ import { AccountMenu, type AccountPerson } from './topbar/AccountMenu'
 const showDevelopmentUtilities = import.meta.env.DEV
 
 const AREA_META: Record<AreaId, { label: string; tab: string; short: string; Icon: typeof Search }> = {
+  home: { label: 'Home', tab: 'Home', short: 'Home', Icon: House },
   workspace: { label: 'Records workspace', tab: 'Records', short: 'Records', Icon: FileSearch },
   governance: { label: 'Business administration', tab: 'Business administration', short: 'Governance', Icon: ShieldCheck },
   tenant: { label: 'Tenant IT', tab: 'Tenant IT', short: 'Tenant IT', Icon: Building2 },
@@ -75,10 +77,10 @@ const LOCAL_ROLE_OPTIONS: { value: LocalPersona; label: string }[] = [
   { value: 'admin', label: 'Local Administrator (Tenant IT + Business admin)' },
 ]
 const switchLocalRole = (selected: LocalPersona) => {
-  const area = selected === 'business' || selected === 'steward' ? 'workspace' : selected === 'businessAdmin' || selected === 'admin' ? 'governance' : selected === 'tenantIt' ? 'tenant' : 'operations'
+  const area = selected === 'business' || selected === 'steward' ? 'home' : selected === 'businessAdmin' || selected === 'admin' ? 'governance' : selected === 'tenantIt' ? 'tenant' : 'operations'
   setLocalTestPersona(selected)
   // Reload discards previous persona's documents, cached queries, and pending component state.
-  window.history.replaceState(null, '', '#/' + area + '/' + (area === 'workspace' ? 'search' : area === 'governance' ? 'access' : area === 'tenant' ? 'storage' : 'overview'))
+  window.history.replaceState(null, '', '#/' + area + '/' + (area === 'home' ? 'home' : area === 'governance' ? 'access' : area === 'tenant' ? 'storage' : 'overview'))
   window.location.reload()
 }
 
@@ -151,7 +153,14 @@ function Palette({ onClose }: { onClose: () => void }) {
 const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform)
 
 function ShellInner() {
-  const { role, heldRoles, areas, route, navigate, themePref, setThemePref, liveSession, sessionLoading, sessionError } = useStore()
+  const { role, heldRoles, areas, route, navigate, themePref, setThemePref, liveSession, sessionLoading, sessionError, startedWithoutRoute } = useStore()
+  // Opened without an address: land on the person's first area (Home for search roles, their own area for admins).
+  const landed = useRef(false)
+  useEffect(() => {
+    if (landed.current || !liveSession) return
+    landed.current = true
+    if (startedWithoutRoute && areas[0]) navigate(areas[0], undefined, true)
+  }, [liveSession, startedWithoutRoute, areas, navigate])
   const [palette, setPalette] = useState(false)
   const [accountOpen, setAccountOpen] = useState(false)
   const localMode = isLocalSecurityMode()
@@ -168,7 +177,7 @@ function ShellInner() {
   const localPersona: LocalPersona | null = localMode ? (getLocalTestPersona() ?? role.id) : null
   const person = accountPerson(liveSession, heldRoles.map((r) => r.id), localPersona)
 
-  const allowed = (route.area === 'system' && showDevelopmentUtilities) || (route.area === 'workspace' && !!liveSession?.capabilities.includes('SEARCH_RECORDS')) || (route.area === 'governance' && !!liveSession && ['CONFIGURE_ROLE_PERMISSIONS','CONFIGURE_RETENTION','CONFIGURE_METADATA_SEARCH','CONFIGURE_BUSINESS_LIMITS'].some(c=>liveSession.capabilities.includes(c))) || (route.area === 'tenant' && !!liveSession?.capabilities.includes('CONFIGURE_INGESTION_SOURCES')) || (route.area === 'operations' && !!liveSession?.capabilities.includes('VIEW_TECHNICAL_FAILURES'))
+  const allowed = (route.area === 'system' && showDevelopmentUtilities) || ((route.area === 'workspace' || route.area === 'home') && !!liveSession?.capabilities.includes('SEARCH_RECORDS')) || (route.area === 'governance' && !!liveSession && ['CONFIGURE_ROLE_PERMISSIONS','CONFIGURE_RETENTION','CONFIGURE_METADATA_SEARCH','CONFIGURE_BUSINESS_LIMITS'].some(c=>liveSession.capabilities.includes(c))) || (route.area === 'tenant' && !!liveSession?.capabilities.includes('CONFIGURE_INGESTION_SOURCES')) || (route.area === 'operations' && !!liveSession?.capabilities.includes('VIEW_TECHNICAL_FAILURES'))
   return (
     <div className="r7">
       <div className="v-app">
@@ -209,6 +218,7 @@ function ShellInner() {
         <main className="v-main" id="main">
           <div style={{ display: route.area === 'workspace' && !sessionLoading && !sessionError && allowed ? 'contents' : 'none' }}><Workspace /></div>
           {sessionLoading ? <div className="v-body">Connecting to SDV…</div> : sessionError ? <div className="v-body" role="alert">Session unavailable: {sessionError}</div> : route.area === 'workspace' && allowed ? null : !allowed ? <AccessBoundary /> :
+            route.area === 'home' ? <Home /> :
             route.area === 'system' ? <DesignSystem /> :
             route.area === 'governance' ? <Governance /> :
             route.area === 'tenant' ? <TenantAdmin /> :

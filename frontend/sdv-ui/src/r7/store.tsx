@@ -16,8 +16,12 @@ const readThemePref = (): ThemePref => {
 const systemTheme = (): Theme => (window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
 export type Toast = { id: number; title: string; detail?: string; tone?: 'sim' | 'ok' | 'bad' }
 export type Route = { area: AreaId; tab: string }
+/** A search started outside Records (e.g. on Home), carried out by the Records page. */
+export type SearchRequest = { id: number; box?: string; openFilters?: boolean; incompleteOnly?: boolean; receivedLast30Days?: boolean; sourceId?: string; criteria?: Record<string, string>; selectRef?: string }
+let searchRequestSeq = 0
 
 export const AREA_TABS: Record<AreaId, { id: string; label: string }[]> = {
+  home: [{ id: 'home', label: 'Home' }],
   workspace: [{ id: 'search', label: 'Search' }],
   governance: [{ id: 'access', label: 'Users & access' }, { id: 'roles', label: 'Roles & permissions' }, { id: 'retention', label: 'Retention policies' }, { id: 'metadata', label: 'Metadata configuration' }],
   tenant: [{ id: 'storage', label: 'Storage' }, { id: 'authentication', label: 'Authentication' }, { id: 'integrations', label: 'Integrations' }, { id: 'environment', label: 'Environment' }],
@@ -40,7 +44,7 @@ export const useStore = () => {
   return value
 }
 
-const AREA_ORDER: AreaId[] = ['workspace', 'governance', 'tenant', 'operations']
+const AREA_ORDER: AreaId[] = ['home', 'workspace', 'governance', 'tenant', 'operations']
 
 let toastSeq = 0
 let eventSeq = 0
@@ -66,7 +70,11 @@ function useStoreValue() {
     mq.addEventListener('change', on)
     return () => mq.removeEventListener('change', on)
   }, [])
-  const [route, setRouteState] = useState<Route>(() => parseHash() ?? { area: 'workspace', tab: 'search' })
+  // Without an address the person lands on their first area once the session is known (see Shell).
+  const [startedWithoutRoute] = useState(() => parseHash() === null)
+  const [route, setRouteState] = useState<Route>(() => parseHash() ?? { area: 'home', tab: 'home' })
+  const [searchRequest, setSearchRequest] = useState<SearchRequest | null>(null)
+  const requestSearch = useCallback((r: Omit<SearchRequest, 'id'>) => { searchRequestSeq += 1; setSearchRequest({ ...r, id: searchRequestSeq }) }, [])
   const [toasts, setToasts] = useState<Toast[]>([])
   const [roleCaps, setRoleCaps] = useState(DEFAULT_ROLE_CAPS)
   const [records, setRecords] = useState<RecordItem[]>([])
@@ -110,11 +118,11 @@ function useStoreValue() {
     return () => window.removeEventListener('hashchange', onHash)
   }, [])
 
-  const navigate = useCallback((area: AreaId, tab?: string) => {
+  const navigate = useCallback((area: AreaId, tab?: string, replace?: boolean) => {
     const next = { area, tab: tab ?? AREA_TABS[area][0].id }
     setRouteState(next)
     const hash = `#/${next.area}/${next.tab}`
-    if (window.location.hash !== hash) window.history.pushState(null, '', hash)
+    if (window.location.hash !== hash) window.history[replace ? 'replaceState' : 'pushState'](null, '', hash)
   }, [])
 
   const switchRole = useCallback((id: RoleId) => {
@@ -154,7 +162,7 @@ function useStoreValue() {
   }, [recordAudit, role.person, updateDoc])
 
   return {
-    role, roleId, heldRoles, areas, switchRole, liveSession, sessionLoading, sessionError, scenario, setScenario, theme, themePref, setThemePref, route, navigate,
+    role, roleId, heldRoles, areas, switchRole, startedWithoutRoute, searchRequest, requestSearch, liveSession, sessionLoading, sessionError, scenario, setScenario, theme, themePref, setThemePref, route, navigate,
     toasts, toast, dismissToast: (id: number) => setToasts((l) => l.filter((t) => t.id !== id)),
     roleCaps, setRoleCaps, caps, can,
     records, setRecords, updateDoc, addDocActivity, selectedRef, setSelectedRef, openDocId, setOpenDocId, resultsShown, setResultsShown,

@@ -9,7 +9,7 @@ import { MODE_HINT, MODE_WORD, QUICK_RANGES, alternativeFields, boxLabel, quickR
 
 type Criteria = Record<string, string>
 /** received: when the submission arrived (server dateFrom/dateTo); updated: last activity (lastUpdatedFrom/To). */
-type Applied = { sourceId: string; c: Criteria; received: Range; updated: Range }
+type Applied = { sourceId: string; c: Criteria; received: Range; updated: Range; /** only records with missing documents */ incompleteOnly?: boolean }
 const NO_RANGE: Range = { from: '', to: '' }
 const emptyApplied = (sourceId: string): Applied => ({ sourceId, c: {}, received: NO_RANGE, updated: NO_RANGE })
 type FieldValue = { label: string; value: string }
@@ -28,12 +28,12 @@ function useMediaQuery(q: string) {
 }
 
 // A date range alone is enough: the server lists every record in it, page by page.
-const hasCriteria = (a: Pick<Applied, 'c' | 'received' | 'updated'>) => Object.values(a.c).some((v) => v.trim()) || [a.received, a.updated].some((r) => !!r.from || !!r.to)
+const hasCriteria = (a: Pick<Applied, 'c' | 'received' | 'updated' | 'incompleteOnly'>) => Object.values(a.c).some((v) => v.trim()) || !!a.incompleteOnly || [a.received, a.updated].some((r) => !!r.from || !!r.to)
 const uniqueLabels = (rows: FieldValue[][]) => [...new Set(rows.flat().map((f) => f.label))]
 const valueOf = (list: FieldValue[] | undefined, label: string) => list?.find((f) => f.label === label)?.value ?? ''
 
 export function Workspace() {
-  const { records, setRecords, selectedRef, setSelectedRef, openDocId, setOpenDocId, can, setResultsShown } = useStore()
+  const { records, setRecords, selectedRef, setSelectedRef, openDocId, setOpenDocId, can, setResultsShown, searchRequest } = useStore()
   const [sources, setSources] = useState<Source[]>([])
   const [status, setStatus] = useState<'loading' | 'live' | 'error'>('loading')
   const [failure, setFailure] = useState('')
@@ -71,7 +71,7 @@ export function Workspace() {
     if (!applied) { setRecords([]); setSummaries({}); setHasMore(false); setStatus(sources.length ? 'live' : 'loading'); return }
     let active = true
     setStatus('loading')
-    search(applied.sourceId, applied.c, applied.received, applied.updated, page).then((r) => {
+    search(applied.sourceId, applied.c, applied.received, applied.updated, page, { incompleteOnly: applied.incompleteOnly }).then((r) => {
       if (!active) return
       setRecords(r.records.map((x) => toSummary(x, applied.sourceId)))
       setSummaries(Object.fromEntries(r.records.map((x) => [x.recordRef, {
@@ -111,6 +111,7 @@ export function Workspace() {
   const removeChip = (key: string) => {
     if (!applied) return
     if (key === 'received' || key === 'updated') return runSearch({ ...applied, [key]: NO_RANGE })
+    if (key === 'incomplete') return runSearch({ ...applied, incompleteOnly: false })
     const c = { ...applied.c }
     delete c[key]
     runSearch({ ...applied, c })
@@ -131,6 +132,7 @@ export function Workspace() {
       const f = source?.fields.find((x) => x.key === key)
       return { key, text: f ? `${f.label} ${MODE_WORD[f.mode]} ${v.trim()}` : `${key} ${v.trim()}` }
     }),
+    ...(applied.incompleteOnly ? [{ key: 'incomplete', text: 'Missing documents' }] : []),
     ...(['received', 'updated'] as const).flatMap((key) => {
       const text = rangeLabel(key === 'received' ? 'Received' : 'Updated', applied[key])
       return text ? [{ key, text }] : []
@@ -138,6 +140,31 @@ export function Workspace() {
   ] : []
 
   const openRecord = (ref: string) => { setSelectedRef(ref); setPanelOpen(true) }
+
+  // Searches started elsewhere (Home): run them here once the sources are known; optionally select a record.
+  const handledRequest = useRef(0)
+  const [pendingSelect, setPendingSelect] = useState<string | null>(null)
+  useEffect(() => {
+    if (!searchRequest || handledRequest.current === searchRequest.id || !sources.length) return
+    handledRequest.current = searchRequest.id
+    const src = sources.find((s) => s.id === searchRequest.sourceId) ?? sources.find((s) => s.id === sourceId) ?? sources[0]
+    const base: Applied = { ...emptyApplied(src.id), incompleteOnly: !!searchRequest.incompleteOnly, received: searchRequest.receivedLast30Days ? quickRange('Last 30 days') : NO_RANGE }
+    setFiltersOpen(false)
+    if (searchRequest.box !== undefined) {
+      const route = routeBoxInput(searchRequest.box, src.fields.filter((f) => f.searchable))
+      if (route && !route.ok) { setBox(searchRequest.box); setBoxMessage(route.message) }
+      else if (route) { setBox(''); setBoxMessage(''); runSearch({ ...base, c: { [route.field.key]: route.value } }); setBoxSearch({ key: route.field.key, value: route.value }) }
+    } else if (searchRequest.criteria || searchRequest.incompleteOnly || searchRequest.receivedLast30Days) {
+      setBox(''); setBoxMessage(''); runSearch({ ...base, c: searchRequest.criteria ?? {} })
+    }
+    if (searchRequest.openFilters) setFiltersOpen(true)
+    setPendingSelect(searchRequest.selectRef ?? null)
+  }, [searchRequest, sources])
+  useEffect(() => {
+    if (!pendingSelect || status !== 'live' || !records.some((r) => r.ref === pendingSelect)) return
+    openRecord(pendingSelect)
+    setPendingSelect(null)
+  }, [pendingSelect, status, records])
   const openDoc = (r: RecordItem, docId: string) => {
     if (!can('VIEW_PDF')) return
     setFailure('')

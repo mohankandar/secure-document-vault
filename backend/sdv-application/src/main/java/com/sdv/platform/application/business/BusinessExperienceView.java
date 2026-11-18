@@ -67,6 +67,15 @@ public final class BusinessExperienceView {
         }
     }
 
+    /** A record the person opened themselves, with when they last opened one of its documents. */
+    public record RecentRecord(UUID sourceId, RecordSummary record, Instant lastOpenedAt) { }
+
+    public record RecentRecords(List<RecentRecord> records) {
+        public RecentRecords {
+            records = List.copyOf(records);
+        }
+    }
+
     public record RecordView(
             String recordRef,
             UUID sourceId,

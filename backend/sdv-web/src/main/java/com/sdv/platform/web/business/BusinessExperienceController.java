@@ -47,10 +47,18 @@ public class BusinessExperienceController {
                 request.dateTo(),
                 request.lastUpdatedFrom(),
                 request.lastUpdatedTo(),
+                Boolean.TRUE.equals(request.incompleteOnly()),
                 request.page(),
                 request.pageSize() == null ? request.limit() : request.pageSize(),
                 principal.subject(),
                 correlationId());
+    }
+
+    /** The signed-in person's own recently opened records (never another person's activity). */
+    @GetMapping("/me/recent-records")
+    public BusinessExperienceView.RecentRecords recentRecords(@RequestParam(required = false) Integer limit) {
+        SdvPrincipal principal = requireSearch();
+        return business.recentRecords(principal.tenantId(), principal.subject(), limit, correlationId());
     }
 
     @GetMapping("/records/{recordRef}")
@@ -80,6 +88,7 @@ public class BusinessExperienceController {
             Instant dateTo,
             Instant lastUpdatedFrom,
             Instant lastUpdatedTo,
+            Boolean incompleteOnly,
             Integer page,
             Integer pageSize,
             Integer limit) {

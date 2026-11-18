@@ -60,6 +60,55 @@ class JdbcBusinessRecordRepositorySearchSqlTest {
         assertFalse(sql.contains("lower("), "Exact matches must not be lower-cased: " + sql);
     }
 
+    @SuppressWarnings("unchecked")
+    private String incompleteSql(Instant createdFrom, Instant createdTo) {
+        when(jdbc.query(anyString(), any(SqlParameterSource.class), any(RowMapper.class))).thenReturn(List.of());
+        repository.findMatchingSubmissions(TENANT, SOURCE, List.of(), createdFrom, createdTo, null, null, true, 0, 26);
+        ArgumentCaptor<String> sql = ArgumentCaptor.forClass(String.class);
+        verify(jdbc).query(sql.capture(), any(SqlParameterSource.class), any(RowMapper.class));
+        return sql.getValue().replaceAll("\\s+", " ");
+    }
+
+    @Test
+    void incompleteOnlyAloneKeepsOnlySubmissionsThatAreNotComplete() {
+        String sql = incompleteSql(null, null);
+        assertTrue(sql.contains("s.status<>'COMPLETE'"), sql);
+        assertFalse(sql.contains("exists ("), sql);
+        assertFalse(sql.contains("created_at>="), sql);
+    }
+
+    @Test
+    void incompleteOnlyWithReceivedRangeAppliesBoth() {
+        String sql = incompleteSql(Instant.parse("2026-10-19T00:00:00Z"), Instant.parse("2026-11-18T23:59:59Z"));
+        assertTrue(sql.contains("s.status<>'COMPLETE'"), sql);
+        assertTrue(sql.contains("s.created_at>=:createdFrom") && sql.contains("s.created_at<=:createdTo"), sql);
+    }
+
+    @Test
+    void searchWithoutTheFlagDoesNotFilterOnStatus() {
+        String sql = sqlFor(new SearchCriterion("contractNumber", MetadataSearchMode.EXACT, List.of("1")), null, null);
+        assertFalse(sql.contains("s.status<>'COMPLETE'"), sql);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void recentlyViewedReadsOnlyTheActorsOwnSuccessfulOpensOfAvailableDocuments() {
+        when(jdbc.query(anyString(), any(SqlParameterSource.class), any(RowMapper.class))).thenReturn(List.of());
+        repository.findRecentlyViewedDocuments(TENANT, "maya.okafor", Instant.parse("2026-08-20T00:00:00Z"), 500);
+        ArgumentCaptor<String> sqlCaptor = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<SqlParameterSource> params = ArgumentCaptor.forClass(SqlParameterSource.class);
+        verify(jdbc).query(sqlCaptor.capture(), params.capture(), any(RowMapper.class));
+        String sql = sqlCaptor.getValue().replaceAll("\\s+", " ");
+        assertTrue(sql.contains("tenant_id=:tenantId"), sql);
+        assertTrue(sql.contains("action='DOCUMENT_VIEW_OPENED'"), sql);
+        assertTrue(sql.contains("actor_id=:actorId"), sql);
+        assertTrue(sql.contains("outcome='SUCCESS'"), sql);
+        assertTrue(sql.contains("d.status='AVAILABLE'"), "only documents still available (nothing past retention or deleted): " + sql);
+        assertEquals("maya.okafor", params.getValue().getValue("actorId"));
+        assertEquals(TENANT, params.getValue().getValue("tenantId"));
+        assertEquals(500, params.getValue().getValue("scanLimit"));
+    }
+
     @Test
     void receivedRangeAloneFiltersOnSubmissionCreatedAt() {
         String sql = sqlFor(null, Instant.parse("2026-11-01T00:00:00Z"), Instant.parse("2026-11-15T23:59:59Z"));

@@ -14,12 +14,18 @@ const dayEnd = (d: string) => (d ? new Date(d + 'T23:59:59.999').toISOString() :
  * received: when the submission arrived (server dateFrom/dateTo, which filter submissions.created_at).
  * updated: last activity on the submission (server lastUpdatedFrom/lastUpdatedTo, submissions.last_activity_at).
  */
-export const search = (sourceId: string, criteria: Record<string,string>, received: DayRange, updated: DayRange, page: number) =>
+/** incompleteOnly: only records with missing documents; counts as a criterion. pageSize defaults to SEARCH_PAGE_SIZE. */
+export type SearchOptions = { incompleteOnly?: boolean; pageSize?: number }
+export const search = (sourceId: string, criteria: Record<string,string>, received: DayRange, updated: DayRange, page: number, options: SearchOptions = {}) =>
   roleApi<SearchResponse>('/api/v1/business/search', 'business', { method: 'POST', body: JSON.stringify({
     sourceId, criteria: Object.fromEntries(Object.entries(criteria).map(([key,value]) => [key,value.trim()]).filter(([,value]) => value.length > 0)),
     dateFrom: dayStart(received.from), dateTo: dayEnd(received.to),
-    lastUpdatedFrom: dayStart(updated.from), lastUpdatedTo: dayEnd(updated.to), page, pageSize: SEARCH_PAGE_SIZE
+    lastUpdatedFrom: dayStart(updated.from), lastUpdatedTo: dayEnd(updated.to), incompleteOnly: options.incompleteOnly ? true : undefined,
+    page, pageSize: options.pageSize ?? SEARCH_PAGE_SIZE
   }) })
+/** The signed-in person's own recently opened records (server: own DOCUMENT_VIEW_OPENED events, still available). */
+export type RecentRecord = { sourceId: string; record: RecordSummary; lastOpenedAt: string }
+export const recentRecords = (limit = 8) => roleApi<{ records: RecentRecord[] }>('/api/v1/business/me/recent-records?limit=' + limit, 'business')
 export const record = (ref: string) => roleApi<BusinessRecord>('/api/v1/business/records/' + encodeURIComponent(ref), 'business')
 export function toSource(s: SearchSource): Source {
   return { id:s.sourceId, key:s.sourceKey, name:s.displayName, status:'ACTIVE', authType:'OAUTH2_CLIENT_CREDENTIALS', credentialRef:'', createdAt:'', updatedAt:'', submissions:0, documents:0, lastActivityAt:'', fields:s.fields.map(f=>({
