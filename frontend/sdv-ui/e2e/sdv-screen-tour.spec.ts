@@ -55,6 +55,17 @@ async function capture(page: Page, testInfo: TestInfo, name: string) {
   await testInfo.attach(name, { body: screenshot, contentType: 'image/png' })
 }
 
+/** Roles without SEARCH_RECORDS: no Records tab, and the Records address shows the access page. */
+async function expectNoRecordsAccess(page: Page, testInfo: TestInfo) {
+  await expect(page.getByRole('banner').getByRole('navigation', { name: 'Areas' }).getByRole('button', { name: 'Records', exact: true })).toHaveCount(0)
+  const back = await page.evaluate(() => window.location.hash)
+  await page.evaluate(() => { window.location.hash = '#/workspace/search' })
+  await expect(page.getByRole('heading', { name: /This area isn.t assigned to your role/ })).toBeVisible({ timeout: 15000 })
+  await expect(page.getByRole('searchbox', { name: 'Search records' })).toBeHidden()
+  await capture(page, testInfo, 'records-not-assigned')
+  await page.evaluate((h) => { window.location.hash = h }, back)
+}
+
 async function captureAccountMenu(page: Page, testInfo: TestInfo) {
   const menu = await openAccountMenu(page)
   await expect(menu.getByRole('button', { name: 'System', exact: true })).toBeVisible()
@@ -77,36 +88,77 @@ async function captureSectionTabs(page: Page, testInfo: TestInfo, sectionsLabel:
   }
 }
 
+/** A name part matching the Contains/Starts with field of the seeded demo data (Seed-SDV-Demo-Records.ps1 -FreshTestData). */
+const demoName = process.env.SDV_DEMO_NAME ?? 'Pat'
+
+const searchBox = (page: Page) => page.getByRole('searchbox', { name: 'Search records' })
+const resultRows = (page: Page) => page.getByRole('grid', { name: 'Records' }).locator('tbody tr')
+const chip = (page: Page, text: RegExp) => page.getByRole('search').locator('.ws-chip').filter({ hasText: text })
+
 async function waitForBusinessSearchReady(page: Page) {
-  const search = page.getByRole('region', { name: 'Search records' })
-  await expect(search.getByRole('button', { name: 'Search', exact: true })).toBeVisible({ timeout: 15000 })
-  await expect(search.getByLabel('Source')).toBeVisible()
-  return search
+  await expect(searchBox(page)).toBeVisible({ timeout: 15000 })
+  await expect(page.getByRole('button', { name: /^Filters/ })).toBeVisible()
+}
+
+async function searchFor(page: Page, value: string) {
+  await searchBox(page).fill(value)
+  await searchBox(page).press('Enter')
+  await expect(page.getByRole('region', { name: 'Search results' }).locator('[aria-busy="true"]')).toHaveCount(0, { timeout: 15000 })
 }
 
 async function tryBusinessRecordJourney(page: Page, testInfo: TestInfo) {
-  const search = await waitForBusinessSearchReady(page)
-  const contract = search.getByLabel(/Contract Number/i).first()
-  if (!(await contract.isVisible().catch(() => false))) {
+  await waitForBusinessSearchReady(page)
+  const placeholder = (await searchBox(page).getAttribute('placeholder')) ?? ''
+  if (!/Contract Number/i.test(placeholder)) {
     // No searchable source on this machine (e.g. an empty local database): record screens cannot be shown.
-    testInfo.annotations.push({ type: 'skipped-journey', description: 'No searchable "Contract Number" field; record, inspector and viewer screens not captured.' })
-    return
-  }
-  await contract.fill(demoRecord)
-  await search.getByRole('button', { name: 'Search', exact: true }).click()
-  const recordRow = page.locator('.ws-rec').filter({ hasText: demoRecord }).first()
-  await expect(page.getByRole('region', { name: 'Search results' })).toBeVisible()
-  await page.waitForTimeout(500)
-  await capture(page, testInfo, 'results')
-  if (!(await recordRow.isVisible().catch(() => false))) {
-    testInfo.annotations.push({ type: 'skipped-journey', description: `Record ${demoRecord} not found; inspector and viewer screens not captured.` })
+    testInfo.annotations.push({ type: 'skipped-journey', description: `Search box offers "${placeholder}"; no Contract Number field, so record screens were not captured.` })
     return
   }
 
+  // 1. Search by contract number: the box routes digits to the contract number field.
+  await searchFor(page, demoRecord)
+  await expect(chip(page, new RegExp(`Contract Number is ${demoRecord}`))).toBeVisible()
+  const recordRow = resultRows(page).filter({ hasText: demoRecord }).first()
+  await expect(recordRow).toBeVisible({ timeout: 15000 })
+  await capture(page, testInfo, 'results-contract')
+
+  // 2. Search by name: text goes to the source's Contains/Starts with field. Clear first, so only the name applies.
+  await page.getByRole('button', { name: 'Clear', exact: true }).click()
+  await searchFor(page, demoName)
+  await expect(chip(page, new RegExp(`contains ${demoName}|starts with ${demoName}`))).toBeVisible()
+  await expect(resultRows(page).first()).toBeVisible({ timeout: 15000 })
+  const nameRows = await resultRows(page).count()
+  await capture(page, testInfo, 'results-name')
+
+  // 3. Add a filter chip from the Filters panel, then remove it with ×.
+  const firstRowFirstName = await resultRows(page).first().locator('td[data-label="First Name"]').innerText().catch(() => '')
+  if (firstRowFirstName.trim()) {
+    await page.getByRole('button', { name: /^Filters/ }).click()
+    const filters = page.getByRole('dialog', { name: 'Filters' })
+    await expect(filters).toBeVisible()
+    await capture(page, testInfo, 'filters')
+    await filters.getByLabel(/^First Name/).fill(firstRowFirstName.trim().split(/\s/)[0])
+    await filters.getByRole('button', { name: 'Show results' }).click()
+    const added = chip(page, /^First Name is /)
+    await expect(added).toBeVisible()
+    await expect(page.getByRole('button', { name: /^Filters/ })).toContainText('2')
+    await expect(resultRows(page)).toHaveCount(1)
+    await capture(page, testInfo, 'results-filter-chip')
+    await added.getByRole('button', { name: /^Remove filter/ }).click()
+    await expect(added).toHaveCount(0)
+    await expect(resultRows(page)).toHaveCount(nameRows)
+  } else {
+    testInfo.annotations.push({ type: 'skipped-step', description: 'No First Name column in the name results; filter chip step not run.' })
+  }
+
+  // 4. Open the record panel for the demo contract.
+  await page.getByRole('button', { name: 'Clear', exact: true }).click()
+  await searchFor(page, demoRecord)
   await recordRow.click()
-  // Wide screens show the record in a side inspector; narrower ones (e.g. iPad portrait) in a drawer.
-  const inspector = page.getByRole('complementary', { name: 'Record inspector' }).or(page.getByRole('dialog', { name: demoRecord }))
+  // Wide screens show the record in a side panel; narrower ones (e.g. iPad portrait) in a drawer.
+  const inspector = page.getByRole('complementary', { name: 'Record inspector' }).or(page.getByRole('dialog').filter({ hasText: demoRecord }))
   await expect(inspector).toBeVisible({ timeout: 15000 })
+  await expect(recordRow).toHaveAttribute('aria-selected', 'true')
   await capture(page, testInfo, 'record-inspector')
 
   await inspector.getByRole('button', { name: /Open documents/ }).click()
@@ -148,6 +200,7 @@ test.describe('SDV role-based screen capture', () => {
 
   test('Business Administrator screens', async ({ page }, testInfo) => {
     await selectRole(page, 'Business Administrator')
+    await expectNoRecordsAccess(page, testInfo)
     await captureAccountMenu(page, testInfo)
     await captureSectionTabs(page, testInfo, 'Business administration sections', [
       'Users & access',
@@ -159,6 +212,7 @@ test.describe('SDV role-based screen capture', () => {
 
   test('Tenant IT Administrator screens', async ({ page }, testInfo) => {
     await selectRole(page, 'Tenant IT Administrator')
+    await expectNoRecordsAccess(page, testInfo)
     await captureAccountMenu(page, testInfo)
     await captureSectionTabs(page, testInfo, 'Tenant IT sections', [
       'Storage',
@@ -170,6 +224,7 @@ test.describe('SDV role-based screen capture', () => {
 
   test('Local Administrator with several roles sees every area', async ({ page }, testInfo) => {
     await selectRole(page, 'Local Administrator (Tenant IT + Business admin)')
+    await expectNoRecordsAccess(page, testInfo)
     const areas = page.getByRole('banner').getByRole('navigation', { name: 'Areas' })
     await expect(areas.getByRole('button')).toHaveText(['Business administration', 'Tenant IT'])
     await expect(page.getByRole('tablist', { name: 'Business administration sections' })).toBeVisible({ timeout: 15000 })
@@ -183,6 +238,7 @@ test.describe('SDV role-based screen capture', () => {
 
   test('Platform Operations Administrator screens', async ({ page }, testInfo) => {
     await selectRole(page, 'Platform Operations Administrator')
+    await expectNoRecordsAccess(page, testInfo)
     await captureAccountMenu(page, testInfo)
     await captureSectionTabs(page, testInfo, 'Platform operations sections', [
       'Overview',

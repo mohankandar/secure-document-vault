@@ -3,17 +3,19 @@ import type { Field, Source, RecordItem, Doc } from './data'
 
 export const session = () => roleApi<SessionInfo>('/api/v1/session', 'business')
 export const schema = () => roleApi<SearchSchema>('/api/v1/business/search-schema', 'business')
+/** Records per search page. The search request and the hints shown to people both use this value. */
+export const SEARCH_PAGE_SIZE = 25
 export const search = (sourceId: string, criteria: Record<string,string>, from: string, to: string, page: number) =>
   roleApi<SearchResponse>('/api/v1/business/search', 'business', { method: 'POST', body: JSON.stringify({
     sourceId, criteria: Object.fromEntries(Object.entries(criteria).map(([key,value]) => [key,value.trim()]).filter(([,value]) => value.length > 0)), lastUpdatedFrom: from ? new Date(from + 'T00:00:00Z').toISOString() : null,
-    lastUpdatedTo: to ? new Date(to + 'T23:59:59.999Z').toISOString() : null, page, pageSize: 25
+    lastUpdatedTo: to ? new Date(to + 'T23:59:59.999Z').toISOString() : null, page, pageSize: SEARCH_PAGE_SIZE
   }) })
 export const record = (ref: string) => roleApi<BusinessRecord>('/api/v1/business/records/' + encodeURIComponent(ref), 'business')
 export function toSource(s: SearchSource): Source {
   return { id:s.sourceId, key:s.sourceKey, name:s.displayName, status:'ACTIVE', authType:'OAUTH2_CLIENT_CREDENTIALS', credentialRef:'', createdAt:'', updatedAt:'', submissions:0, documents:0, lastActivityAt:'', fields:s.fields.map(f=>({
     key:f.fieldKey, label:f.displayLabel, type:f.fieldType === 'DATE' ? 'DATE':'STRING',
     identifier:f.businessIdentifier, searchable:true, mode:f.searchMode, normalization:
-    f.normalization === 'DIGITS_ONLY' || f.normalization === 'UPPERCASE' ? f.normalization : 'NONE', required:false
+    f.normalization === 'DIGITS_ONLY' || f.normalization === 'UPPERCASE' ? f.normalization : 'NONE', normalizationRaw:f.normalization, required:false
   } as Field)) }
 }
 const fields = (a: {displayLabel:string,value:string}[]) => a.map(f=>({ label:f.displayLabel,value:f.value }))
@@ -28,10 +30,12 @@ export function toRecord(r: BusinessRecord):RecordItem {
   const docs:Doc[]=r.documents.map(d=>({id:d.documentId,submissionId:d.submissionId,filename:d.originalFilename,kind:d.originalFilename,pages:0,
     ingestedAt:d.ingestedAt,availableAt:d.availableAt || d.ingestedAt,expiresAt:d.expiresAt || '',
     sizeKb:0,tags:[],comments:[],activity:[],redactions:[]}))
-  const incomplete=r.incompleteAttention?.submissions?.[0]
+  // A record can have several incomplete submissions: add up the counts and list every missing document.
+  const open=r.incompleteAttention?.submissions ?? []
+  const incomplete=open.length?{submissionId:open[0].submissionId,expectedCount:open.reduce((n,s)=>n+s.expectedCount,0),receivedCount:open.reduce((n,s)=>n+s.receivedCount,0),missing:open.flatMap(s=>s.missingSourceDocumentIds ?? [])}:null
   return {ref:r.recordRef,sourceId:r.sourceId,identifiers:ids,metadata:fields(r.metadata),
     title:ids.map(x=>x.value).join(' · ') || r.recordRef,updatedAt:r.latestSubmissionAt,submissions:r.submissionCount,
-    incomplete:incomplete?{submissionId:incomplete.submissionId,expected:incomplete.expectedCount,received:incomplete.receivedCount,since:r.latestSubmissionAt}:null,docs}
+    incomplete:incomplete?{submissionId:incomplete.submissionId,expected:incomplete.expectedCount,received:incomplete.receivedCount,since:r.latestSubmissionAt,missing:incomplete.missing}:null,docs}
 }
 
 export type ViewerMetadata = { documentId: string; originalFilename: string; pageCount: number }

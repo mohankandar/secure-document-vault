@@ -30,17 +30,17 @@ test('a document comment persists after leaving and reopening Viewer', async ({ 
     }
     await expect(account).toHaveAttribute('aria-label', steward, { timeout: 15000 })
 
-    const search = page.getByRole('region', { name: 'Search records' })
-    await expect(search.getByLabel(/Contract Number/i).first()).toBeVisible({ timeout: 15000 })
-    await search.getByLabel(/Contract Number/i).first().fill(contract)
-    await search.getByRole('button', { name: 'Search', exact: true }).click()
-    const row = page.locator('.ws-rec').filter({ hasText: contract }).first()
+    // The search box routes a number to the source's contract number field.
+    const box = page.getByRole('searchbox', { name: 'Search records' })
+    await expect(box).toBeVisible({ timeout: 15000 })
+    await box.fill(contract)
+    await box.press('Enter')
+    const row = page.getByRole('grid', { name: 'Records' }).locator('tbody tr').filter({ hasText: contract }).first()
     await expect(row).toBeVisible({ timeout: 15000 })
 
-    // Wide screens show the record in a side inspector; narrower ones in a drawer.
-    const inspector = page.getByRole('complementary', { name: 'Record inspector' }).or(page.getByRole('dialog', { name: contract }))
+    // Wide screens show the record in a side panel; narrower ones in a drawer.
+    const inspector = page.getByRole('complementary', { name: 'Record inspector' }).or(page.getByRole('dialog').filter({ hasText: contract }))
     const openViewer = async () => {
-      // The record stays selected after returning from the viewer; clicking it again would close the inspector.
       if (!(await inspector.isVisible().catch(() => false))) await row.click()
       await inspector.getByRole('button', { name: /Open documents/ }).click()
       await expect(page.getByRole('img', { name: /Document page 1/ })).toBeVisible({ timeout: 15000 })

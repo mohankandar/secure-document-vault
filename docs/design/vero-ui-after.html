@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en"><head><meta charset="utf-8"><title>Vero UI after (approved 2026-11-17)</title>
+<html lang="en"><head><meta charset="utf-8"><title>Vero UI after</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:'IBM Plex Sans',sans-serif;color:#14191c;background:#d9dddc;padding:40px;display:flex;flex-direction:column;gap:60px}
@@ -123,12 +123,15 @@ h3{font-size:14px;font-weight:600}
 .seg span{flex:1;text-align:center;font-size:13px;padding:6px 0;color:#4a5459}
 .seg span.on{background:#e2efe9;color:#105a42;font-weight:500}
 .hr{height:1px;background:#dce1e2}
+.role{display:inline-flex;align-items:center;gap:6px;padding:3px 10px 3px 8px;border:1px dashed #3b6fd4;background:#e8f0ff;border-radius:4px;font-size:12px;color:#1f3f80;font-weight:500;white-space:nowrap}
+.role b{font-size:11px;color:#3b6fd4;font-weight:600;letter-spacing:.04em}
+.tagpos{position:absolute;z-index:5}
 </style></head><body>
 
 <!-- ============ 1. HOME ============ -->
 <div class="board">
 <div class="screen">
-  <div class="top">
+  <span class="role tagpos" style="right:20px;top:60px"><b>SEEN BY</b> Business user · Document steward</span><div class="top">
     <div class="brand">vero<i></i></div>
     <div class="nav"><a class="on">Home</a><a>Records</a></div>
     <div class="grow"></div>
@@ -179,7 +182,7 @@ h3{font-size:14px;font-weight:600}
 <!-- ============ 2. RESULTS ============ -->
 <div class="board">
 <div class="screen">
-  <div class="top">
+  <span class="role tagpos" style="right:420px;top:60px"><b>SEEN BY</b> Business user · Document steward</span><div class="top">
     <div class="brand">vero<i></i></div>
     <div class="nav"><a>Home</a><a class="on">Records</a></div>
     <div class="grow"></div>
@@ -237,7 +240,7 @@ h3{font-size:14px;font-weight:600}
 <!-- ============ 3. FILTERS ============ -->
 <div class="board">
 <div class="screen">
-  <div class="top">
+  <span class="role tagpos" style="right:20px;top:60px"><b>SEEN BY</b> Business user · Document steward</span><div class="top">
     <div class="brand">vero<i></i></div>
     <div class="nav"><a>Home</a><a class="on">Records</a></div>
     <div class="grow"></div>
@@ -286,7 +289,7 @@ h3{font-size:14px;font-weight:600}
 <!-- ============ 4. VIEWER ============ -->
 <div class="board">
 <div class="screen">
-  <div class="top">
+  <span class="role tagpos" style="left:268px;top:122px"><b>SEEN BY</b> Download, Print, Redact: Document steward; Business user only if the Business admin allows it</span><span class="role tagpos" style="right:16px;bottom:78px"><b>SEEN BY</b> Ask and Key terms (later): everyone who can open the document</span><div class="top">
     <div class="brand">vero<i></i></div>
     <div class="nav"><a>Home</a><a class="on">Records</a></div>
     <div class="grow"></div>
@@ -369,7 +372,7 @@ h3{font-size:14px;font-weight:600}
 <!-- ============ 5. ACCOUNT MENU ============ -->
 <div class="board">
 <div class="screen" style="width:1440px;height:560px">
-  <div class="top">
+  <span class="role tagpos" style="left:20px;top:60px"><b>SEEN BY</b> Everyone. Entity list: people with two or more entities. Test role switch: development only</span><div class="top">
     <div class="brand">vero<i></i></div>
     <div class="nav"><a class="on">Home</a><a>Records</a></div>
     <div class="grow"></div>

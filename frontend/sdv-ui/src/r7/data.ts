@@ -44,7 +44,7 @@ export const DEFAULT_ROLE_CAPS: Record<'BUSINESS_USER' | 'DOCUMENT_STEWARD', Cap
 }
 
 export type SearchMode = 'EXACT' | 'PREFIX' | 'PARTIAL'
-export type Field = { key: string; label: string; type: 'STRING' | 'DATE'; identifier: boolean; searchable: boolean; mode: SearchMode; normalization: 'NONE' | 'DIGITS_ONLY' | 'UPPERCASE'; required: boolean }
+export type Field = { key: string; label: string; type: 'STRING' | 'DATE'; identifier: boolean; searchable: boolean; mode: SearchMode; normalization: 'NONE' | 'DIGITS_ONLY' | 'UPPERCASE'; required: boolean; /** The server's normalization as configured (e.g. TRIM, LOWERCASE); used to route search-box input. */ normalizationRaw?: string }
 export type Source = { id: string; key: string; name: string; status: 'ACTIVE' | 'DISABLED'; authType: 'OAUTH2_CLIENT_CREDENTIALS' | 'JWT_BEARER' | 'MTLS'; credentialRef: string; createdAt: string; updatedAt: string; submissions: number; documents: number; lastActivityAt: string; fields: Field[] }
 
 const contractFields: Field[] = [
@@ -78,7 +78,7 @@ export type Comment = { id: string; text: string; by: string; at: string }
 export type Activity = { id: string; action: string; actor: string; at: string; outcome: 'SUCCESS' | 'DENIED' | 'FAILED'; simulated?: boolean }
 export type Redaction = { page: number; x: number; y: number; w: number; h: number }
 export type Doc = { id: string; filename: string; kind: string; pages: number; ingestedAt: string; availableAt: string; expiresAt: string; submissionId: string; sizeKb: number; tags: Tag[]; comments: Comment[]; activity: Activity[]; redactions: Redaction[] }
-export type RecordItem = { ref: string; sourceId: string; identifiers: { label: string; value: string }[]; metadata: { label: string; value: string }[]; title: string; updatedAt: string; submissions: number; incomplete: null | { submissionId: string; expected: number; received: number; since: string }; docs: Doc[] }
+export type RecordItem = { ref: string; sourceId: string; identifiers: { label: string; value: string }[]; metadata: { label: string; value: string }[]; title: string; updatedAt: string; submissions: number; incomplete: null | { submissionId: string; expected: number; received: number; since: string; /** Source document IDs still expected (record details only). */ missing?: string[] }; docs: Doc[] }
 
 const KINDS = ['Member Agreement', 'Enrollment Form', 'Coverage Amendment', 'Premium Notice', 'Consent to Release', 'Claim Form', 'Explanation of Benefits', 'Credentialing Packet']
 let docSeq = 0
