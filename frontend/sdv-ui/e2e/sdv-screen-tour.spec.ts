@@ -152,6 +152,7 @@ async function homeSteps(page: Page, testInfo: TestInfo) {
   await expect(chip(page, /^Missing documents$/)).toBeVisible()
   await expect(chip(page, /^Received /)).toBeVisible()
   await expect(resultRows(page).filter({ hasText: demoIncomplete })).toBeVisible({ timeout: 15000 })
+  await expect(resultRows(page).filter({ hasText: demoIncomplete })).toContainText('1 of 2 received')
   await capture(page, testInfo, 'records-needs-attention')
 
   await areaTab(page, 'Home').click()

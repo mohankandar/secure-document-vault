@@ -174,3 +174,39 @@ Screenshots refreshed in `.runtime/ui-checks/0005/` (Home now shows "1 of 2 docu
 1. Set a default Liquibase context outside local mode (one line in `application.yml`) so the demo tenants are never inserted outside local mode?
 2. Show "1 of 2 received" in the Records table row as well?
 3. Should document view events also be routine (hidden by default) in the Audit screen?
+
+## Second follow-up (2026-11-18)
+
+The owner's answers: 1 yes, 2 yes, 3 no.
+
+**1. Local seed runs only with the local profile**
+- `application.yml` now sets `spring.liquibase.contexts: ${SDV_LIQUIBASE_CONTEXTS:production}`:
+  - a start without the local profile uses the `production` context, so `context: local` changesets are skipped;
+  - changesets without a context (every schema change, including 018) run in every context;
+  - the local profile still sets `local` (`application-local.yml`);
+  - an installation can override the context with `SDV_LIQUIBASE_CONTEXTS`.
+- New test `LiquibaseSeedContextTest` (5 tests). It uses the pieces the app uses at startup: Spring's YAML loader resolves `spring.liquibase.contexts` from `application.yml` (plus `application-local.yml` for the local profile), and Liquibase's own parser and context filter decide which changesets of the real master changelog run. It proves:
+  - without the local profile the context is `production`, and with it `local`;
+  - a non-local start runs **no** local-only changeset, so `002-local-foundation-seed`, which inserts the demo tenants, does not run;
+  - the local profile still runs the seed;
+  - every changeset without a context runs in both;
+  - with no context at all, Liquibase would run the seed (the old behaviour this guards against).
+- **The test bites:** with the new line removed it fails 2 of 5 (context `null` instead of `production`, and "the local seed must not run outside the local profile").
+- Not done: starting the app without the local profile against an empty database. That needs a scratch database, and the only Postgres here is the development container, which holds real development data.
+- Local start after the change works: 19 changesets recorded, nothing new applied, and `002` recorded with context `local` as before.
+
+**2. Records rows show "1 of 2 received"** (design screen 2). The row badge uses the new summary counts, for example "Omar · 1 of 2 received". Without counts it falls back to "Missing documents". The tour checks the 300000000090 row after "Show all". Screenshot: `.runtime/ui-checks/0005/records-row-1-of-2-received.png`.
+
+**3. Document view events stay visible in Audit.** No change; only `AUDIT_VIEWED` and `BUSINESS_RECENT_RECORDS_LISTED` are routine there.
+
+**`Start-SDV-Local.ps1`: not my work, left untouched.** Its uncommitted change (73 lines added, 17 removed, including the Vault token-file handling) was already in the working copy when this session started on 2026-11-17, as `CLAUDE.md` notes. My only edit to that file was the two health-check lines (`localhost` → `127.0.0.1`), committed on its own in `f904987`; they are not part of the remaining uncommitted diff. I did not stage, commit or change the rest.
+
+**Checks**
+
+| Command | Result |
+|---|---|
+| `mvn test -Dtest=LiquibaseSeedContextTest` | 5/5 PASS; 2/5 FAIL with the fix removed (as intended), then restored |
+| `.\Build-SDV-All.ps1` | **PASS**: BUILD SUCCESS, 66 tests, 0 failures |
+| `npm run typecheck` | PASS |
+| `.\stop-local.cmd`, `.\start-local.cmd` | Both work; local start applies nothing new |
+| `npm run ui:capture` | **PASS 14/14**, including "1 of 2 received" in the Records row |

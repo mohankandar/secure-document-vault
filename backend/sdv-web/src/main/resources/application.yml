@@ -10,6 +10,10 @@ spring:
       minimum-idle: ${SDV_DB_POOL_MIN:1}
   liquibase:
     change-log: classpath:db/changelog/db.changelog-master.yaml
+    # Without a context Liquibase runs every changeset, including "context: local" seed data. Outside the local
+    # profile the context is "production" (override with SDV_LIQUIBASE_CONTEXTS), so local seed data never runs;
+    # changesets without a context run in every context. The local profile sets "local" (application-local.yml).
+    contexts: ${SDV_LIQUIBASE_CONTEXTS:production}
 
 server:
   port: ${SDV_SERVER_PORT:8280}

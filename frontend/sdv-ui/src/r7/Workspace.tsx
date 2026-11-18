@@ -14,7 +14,7 @@ const NO_RANGE: Range = { from: '', to: '' }
 const emptyApplied = (sourceId: string): Applied => ({ sourceId, c: {}, received: NO_RANGE, updated: NO_RANGE })
 type FieldValue = { label: string; value: string }
 /** What the search result said about a record; kept apart so loading the full record does not change the row. */
-type Summary = { identifiers: FieldValue[]; preview: FieldValue[]; docs: number; incomplete: boolean }
+type Summary = { identifiers: FieldValue[]; preview: FieldValue[]; docs: number; incomplete: boolean; expected: number; received: number }
 
 function useMediaQuery(q: string) {
   const [m, setM] = useState(() => window.matchMedia(q).matches)
@@ -78,6 +78,7 @@ export function Workspace() {
         identifiers: x.identifiers.map((f) => ({ label: f.displayLabel, value: f.value })),
         preview: x.metadataPreview.map((f) => ({ label: f.displayLabel, value: f.value })),
         docs: x.availableDocumentCount, incomplete: x.incomplete,
+        expected: x.incompleteExpectedCount ?? 0, received: x.incompleteReceivedCount ?? 0,
       }])))
       setHasMore(r.hasMore)
       setStatus('live')
@@ -355,7 +356,8 @@ function ResultsTable({ results, summaries, selectedRef, onOpen }: { results: Re
   const selectedIdx = results.findIndex((r) => r.ref === selectedRef)
   const focusIdx = selectedIdx >= 0 ? selectedIdx : 0
   const move = (to: number) => rows.current[Math.max(0, Math.min(results.length - 1, to))]?.focus()
-  const missing = <Badge tone="warn">Missing documents</Badge>
+  // Design screen 2: "1 of 2 received" in the row; without counts, a plain "Missing documents".
+  const missing = (s?: Summary) => <Badge tone="warn">{s && s.expected > 0 ? `${s.received} of ${s.expected} received` : 'Missing documents'}</Badge>
   return (
     <table className="v-table ws-table" role="grid" aria-label="Records">
       <thead><tr>
@@ -378,12 +380,12 @@ function ResultsTable({ results, summaries, selectedRef, onOpen }: { results: Re
               }}>
               {idCols.map((l, i) => (
                 <td key={`i-${l}`} className={`mono${i === 0 ? ' lead' : ''}`} data-label={l}>
-                  <span className="ws-cell">{valueOf(s?.identifiers, l) || '—'}{i === 0 && previewCols.length === 0 && s?.incomplete && missing}</span>
+                  <span className="ws-cell">{valueOf(s?.identifiers, l) || '—'}{i === 0 && previewCols.length === 0 && s?.incomplete && missing(s)}</span>
                 </td>
               ))}
               {previewCols.map((l, i) => (
                 <td key={`p-${l}`} className={i === 0 ? 'ws-name' : undefined} data-label={l}>
-                  <span className="ws-cell">{valueOf(s?.preview, l) || '—'}{i === 0 && s?.incomplete && missing}</span>
+                  <span className="ws-cell">{valueOf(s?.preview, l) || '—'}{i === 0 && s?.incomplete && missing(s)}</span>
                 </td>
               ))}
               <td className="num" data-label="Documents">{s?.docs ?? r.docs.length}</td>
