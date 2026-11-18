@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { FailureNotice, loadFailed, type Failure } from './CardError'
 import { Drawer, Seg, Status, fmtDateTime } from './ui'
-import { opsAudit, type OpsAuditEvent } from './liveApi'
+import { opsAudit, opsAuditExport, type OpsAuditEvent } from './liveApi'
+import { ApiRequestError } from '../api'
 import { ACTIVITY_GROUPS, RESULT_WORDS, actorName, auditSentence } from './auditWords'
 
 // Task 0011 Part B (finding 17): the audit as sentences, everyday filters, and codes only under Technical details.
@@ -73,6 +74,26 @@ export function AuditLog() {
   useEffect(() => { if (group?.actions && shown.length === 0 && cursor && !loading && lookBack < 4) { setLookBack((n) => n + 1); void more() } }, [group, shown.length, cursor, loading, lookBack]) // eslint-disable-line react-hooks/exhaustive-deps
   const badDates = period === 'custom' && !!customFrom && !!customTo && customFrom > customTo
 
+  // Export: the server builds the file from these same filters over the whole period, and records the export.
+  const [exporting, setExporting] = useState(false)
+  const [exportNote, setExportNote] = useState<{ ok: boolean; text: string } | null>(null)
+  const exportCsv = async () => {
+    setExporting(true); setExportNote(null)
+    try {
+      const hidden = includeRoutine ? [] : [...ROUTINE].filter((a) => a !== advanced.action)
+      const blob = await opsAuditExport(filters, group?.actions, hidden)
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url; link.download = `vero-audit-${new Date().toISOString().slice(0, 10)}.csv`
+      document.body.appendChild(link); link.click(); link.remove()
+      setTimeout(() => URL.revokeObjectURL(url), 1000)
+      setExportNote({ ok: true, text: 'The file is saved. The export is recorded in the audit.' })
+    } catch (e) {
+      const message = e instanceof ApiRequestError && e.status === 422 ? e.message : 'The export didn’t work. Try again; if it keeps failing, ask your IT team.'
+      setExportNote({ ok: false, text: message })
+    } finally { setExporting(false) }
+  }
+
   return <>
     {error && <FailureNotice failure={error} loadTitle="The audit didn't load" onRetry={() => setQuery((x) => x + 1)} />}
     <section className="v-panel" aria-label="Audit filters"><div className="v-panel-body au-filters">
@@ -95,7 +116,9 @@ export function AuditLog() {
     <div className="au-toolbar">
       <button type="button" className="v-btn quiet sm" aria-expanded={moreOpen} onClick={() => setMoreOpen((v) => !v)}>{moreOpen ? 'Fewer filters' : 'More filters'}{Object.values(advanced).some(Boolean) ? ' · set' : ''}</button>
       <label className="row" style={{ gap: 8 }}><input type="checkbox" checked={includeRoutine} onChange={(e) => setIncludeRoutine(e.target.checked)} />Include view events</label>
+      <button type="button" className="v-btn sm" disabled={exporting || badDates} onClick={() => void exportCsv()}>{exporting ? 'Exporting…' : 'Export CSV'}</button>
     </div>
+    {exportNote && <p className={exportNote.ok ? 'muted au-export-note' : 'au-export-note bad'} role={exportNote.ok ? 'status' : 'alert'}>{exportNote.text}</p>}
     {moreOpen && <div className="au-advanced">
       {([['action', 'Action code'], ['actorType', 'Actor type'], ['actorId', 'Actor ID'], ['targetType', 'Target type'], ['targetId', 'Target ID'], ['correlationId', 'Correlation ID']] as [keyof Advanced, string][]).map(([k, label]) =>
         <label key={k} className="v-field"><span>{label}</span><input className="v-input mono" value={advanced[k]} onChange={(e) => setAdvanced((a) => ({ ...a, [k]: e.target.value.trim() }))} /></label>)}

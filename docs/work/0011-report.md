@@ -1,6 +1,6 @@
 # Report 0011: Problems and Audit in plain words
 
-Branch `feature/admin-4`, taken from `feature/admin-3`. Part C's backend additions and migration 020 were approved with the task. No other schema change and no new dependency. **The CSV export (Part B.6) is not built: it needs a backend change the task doesn't name. See the question at the end.**
+Branch `feature/admin-4`, taken from `feature/admin-3`. Part C's backend additions and migration 020 were approved with the task. No other schema change and no new dependency. **The CSV export (Part B.6) was first stopped for a question. The owner chose option (a), and it is now built: see Follow-up at the end.**
 
 ## What changed
 
@@ -160,9 +160,95 @@ The server writes only these three processing error codes (`DocumentFinalization
 
 ## Commits
 
-One commit on `feature/admin-4`. Not pushed or merged. `Start-SDV-Local.ps1` is untouched.
+- `e73de74`: the task.
+- A second commit holds the follow-up below.
 
-## Question for the owner
+Both are on `feature/admin-4`, not pushed or merged. `Start-SDV-Local.ps1` is untouched.
+
+## Follow-up (owner's answers, 2026-11-18)
+
+**Owner's answer:** export option (a). A server endpoint builds the CSV from the list's filters, up to 10,000 rows (a plain message if there are more), and records the export with the filters and the row count. Also:
+- make the Keeping-documents save step in the tour opt-in;
+- in 0012, a volume Tenant IT took offline on purpose shows "Offline (set by Tenant IT)" and doesn't count as needing attention;
+- delete `ConnectedIntegrationsView.tsx` (approved);
+- give the local test sign-ins display names, in local mode only;
+- leave the test system and test volume in the database.
+
+**1. Audited export (Part B.6)**
+- **Endpoint:** `GET /api/v1/operations/audit-events/export` in `OperationsController`.
+  - Same permission as the list (`VIEW_TECHNICAL_FAILURES`) and the same filters.
+  - It also takes two lists of action codes: `actions` (the chosen activity group) and `excludeActions` (the routine events the screen hides).
+  - It always covers the whole period, not only the pages loaded on screen.
+- **Service:** `AuditQueryService.export` shares the list's checks.
+  - Each action code must look like one; anything unclear is refused before anything is read.
+  - **More than 10,000 rows:** refused with "This list has more than 10,000 events, so it can't be exported in one file. Choose a shorter period or more filters, then export again." (HTTP 422). Nothing is exported or recorded.
+  - **Up to 10,000 rows:** the CSV is built, then an `AUDIT_EXPORTED` event is written with `rowCount`, `format` and the `filters` that were applied. Only then is the file handed back. If that event can't be written, nothing is exported.
+- **The file** (`AuditCsv`):
+  - Columns: When (UTC), What happened, Person, Record, Result, Action code.
+  - UTF-8 with a byte-order mark, so spreadsheets read names correctly.
+  - Every cell is quoted. A cell a spreadsheet would run as a formula gets a leading apostrophe.
+- **Sentences:** `AuditSentences.java` is the server copy of `auditWords.ts`.
+  - The tour compares the exported sentences with the screen's, row by row, so a difference between the two fails the tour.
+  - New sentence: "{who} exported the audit (N events)".
+- **Screen:** an **Export CSV** button on the Audit filters, and a note once the file is saved.
+  - The activity group is now "Downloads, prints and exports".
+- **List endpoint:** unchanged. The include/exclude action filter exists only on the export.
+
+**2. Keeping-documents save step is opt-in.** The tour now opens the New rule panel, checks it and cancels it. Saving a rule (two permanent rows under Earlier rules) runs only with `SDV_KEEPING_RULE_REGRESSION=1`.
+
+**3. Local display names** (`LocalHeaderAuthenticationFilter`)
+- This filter exists only with the `local` profile and local-header sign-in.
+- The fixed test subjects get a name from a fixed list:
+
+| Subject | Name |
+|---|---|
+| `local-document-steward` | Dana Steward |
+| `local-business-user` | Ben Business |
+| `local-business-admin` | Bea Business Admin |
+| `local-tenant-it-admin`, `local-tenant-it` | Tom Tenant IT |
+| `local-platform-operations-admin`, `local-platform-operations` | Pat Platform Ops |
+| `local-administrator` | Ari Admin |
+
+- Any other subject stays unnamed, and a name is never taken from a request header.
+- New audit events are named locally ("Dana Steward downloaded …"), and the account button shows the name.
+- Older events still show the subject.
+
+**4. Deleted:** `frontend/sdv-ui/src/r7/ConnectedIntegrationsView.tsx`. Nothing imported it.
+
+**5. Offline volume:** done in 0012.
+
+**Tests added:**
+- `AuditExportTest` (8):
+  - file content and the recorded filters and row count;
+  - more than 10,000 rows is refused with nothing recorded, and exactly 10,000 exports;
+  - unclear requests are refused before anything is read;
+  - nothing is exported if the export can't be recorded;
+  - CSV quoting and formula guarding;
+  - sentence fallbacks;
+  - the Spring constructor.
+- `JdbcAuditActionFilterSqlTest` (2): the include and exclude codes are bound parameters inside the tenant; an empty include list matches nothing.
+- `LocalHeaderTestNamesTest` (3): the names; no name for other subjects or from a header; the filter is local-profile only.
+- **Tour:**
+  - Export downloads a CSV with the right header, only the filtered record's rows, and the screen's sentences in order.
+  - The export then appears as "Pat Platform Ops exported the audit (N events)".
+  - The steward's download reads "Dana Steward downloaded …".
+  - The account button checks now expect the display names.
+
+**Checks:**
+
+| Command | Result |
+|---|---|
+| `.\stop-local.cmd`, `.\Build-SDV-All.ps1` | **PASS**: BUILD SUCCESS, 0 failures (sdv-web 81), frontend built |
+| `npm run typecheck` | PASS |
+| `.\start-local.cmd`, then `curl` | Export 200 `text/csv` with 37 rows for 300000000076, recorded as 37. A business user gets 403 |
+| `npm run ui:capture` | **PASS**: 16 passed, 2 skipped (the opt-in comment and redaction tests) |
+| Screenshots | `audit-exported-1440.png` and `audit-exported-ipad.png` added to `.runtime/ui-checks/0011/` |
+
+**What failed along the way:**
+- **Startup:** the first restart failed. `AuditQueryService` gained a second constructor (with a clock, for tests) without `@Autowired`, which is the same mistake as in 0011. I fixed it and added a test for it.
+- **Tour:** the account-button checks failed once because the names now show. I updated the expected labels.
+
+## Question for the owner (answered, see Follow-up)
 
 **The audited CSV export (Part B.6).** "Exporting is itself audited" needs the server to record the export, and nothing in the backend does that today. Part C doesn't name such a change, and the task's rules say "no other backend change", so I stopped there rather than guess. Choose one:
 - **(a) Recommended:** `GET /api/v1/operations/audit-events/export` takes the same filters as the list. The server builds the CSV (sentence, time, person, record, result, action code), caps the number of rows and records an `AUDIT_EXPORTED` event. The browser only saves the file, so the audit always matches what was exported.

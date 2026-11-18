@@ -7,14 +7,14 @@ import path from 'node:path'
 
 const demoRecord = process.env.SDV_DEMO_CONTRACT ?? '100000000001' // created by Seed-SDV-Demo-Records.ps1
 
-/** Readable names the account button shows for each local test role (never the technical subject). */
+/** The account button shows each local test sign-in's display name (local mode only), never the technical subject. */
 const ACCOUNT_BY_ROLE: Record<string, string> = {
-  'Business User': 'Account: Local business user, Business user',
-  'Document Steward': 'Account: Local document steward, Document steward',
-  'Business Administrator': 'Account: Local business administrator, Business administrator',
-  'Tenant IT Administrator': 'Account: Local Tenant IT administrator, Tenant IT administrator',
-  'Platform Operations Administrator': 'Account: Local platform operations administrator, Platform operations administrator',
-  'Local Administrator (Tenant IT + Business admin)': 'Account: Local administrator, Business administrator, Tenant IT administrator',
+  'Business User': 'Account: Ben Business, Business user',
+  'Document Steward': 'Account: Dana Steward, Document steward',
+  'Business Administrator': 'Account: Bea Business Admin, Business administrator',
+  'Tenant IT Administrator': 'Account: Tom Tenant IT, Tenant IT administrator',
+  'Platform Operations Administrator': 'Account: Pat Platform Ops, Platform operations administrator',
+  'Local Administrator (Tenant IT + Business admin)': 'Account: Ari Admin, Business administrator, Tenant IT administrator',
 }
 const AREA_TAB_BY_ROLE: Record<string, string> = {
   'Business User': 'Home',
@@ -143,7 +143,10 @@ async function startKeepingRule(page: Page, amount: string, unit: 'years' | 'mon
   return panel
 }
 
-/** A new rule in years saves and is listed under Earlier rules; the earlier rule is then put back. */
+/** Saving a keeping rule adds permanent rows to Earlier rules, so that step only runs with SDV_KEEPING_RULE_REGRESSION=1. */
+const keepingRegression = process.env.SDV_KEEPING_RULE_REGRESSION === '1'
+
+/** The rule in use reads in words and the New rule panel explains itself. Opt-in: a new rule in years saves and is listed under Earlier rules; the earlier rule is then put back. */
 async function keepingDocumentsChecks(page: Page, testInfo: TestInfo) {
   await sectionTab(page, 'Keeping documents').click()
   const current = page.getByRole('region', { name: 'Rule in use' }).locator('.keep-rule')
@@ -155,6 +158,13 @@ async function keepingDocumentsChecks(page: Page, testInfo: TestInfo) {
   const panel = await startKeepingRule(page, '7', 'years', 'e2e tour: seven years')
   await expect(panel).toContainText('2,555 days. Or choose “Forever”.')
   await capture(page, testInfo, 'keeping-documents-new-rule')
+  // Saving adds two rows to Earlier rules that can never be removed, so it only runs on request (owner, 2026-11-18).
+  if (!keepingRegression) {
+    await panel.getByRole('button', { name: 'Cancel' }).click()
+    await expect(panel).toHaveCount(0)
+    await expect(current).toHaveText(before)
+    return
+  }
   await panel.getByRole('button', { name: 'Start using this rule' }).click()
   await expect(page.getByRole('status').filter({ hasText: 'New rule in use' }).last()).toBeVisible({ timeout: 15000 })
   await expect(current).toHaveText('Keep for 7 years')
@@ -508,7 +518,7 @@ async function auditChecks(page: Page, testInfo: TestInfo) {
   const activity = page.getByLabel('Activity')
   const sentences: [string, RegExp][] = [
     ['Opening and reading', /opened .+\.pdf/],
-    ['Downloads and prints', /downloaded .+\.pdf/],
+    ['Downloads, prints and exports', /downloaded .+\.pdf/],
     ['Refused', /tried to .+ without permission/],
     ['Settings changes', /changed /],
     ['Deliveries', /delivered \d+ documents?|sent .+\.pdf/],
@@ -528,7 +538,8 @@ async function auditChecks(page: Page, testInfo: TestInfo) {
     }
     await expect(row, `a "${group}" sentence`).toBeVisible({ timeout: 15000 })
     if (group === 'Refused') await expect(row).toContainText('Refused')
-    if (group === 'Downloads and prints') await expect(row).toContainText(/\d{12}/)
+    // The fresh download was made by the local steward, who has a display name in local mode.
+    if (group === 'Downloads, prints and exports') { await expect(row).toContainText(/\d{12}/); await expect(list.locator('tbody tr').filter({ hasText: /Dana Steward downloaded / }).first()).toBeVisible() }
     await capture(page, testInfo, `audit-${group.toLowerCase().replace(/[^a-z]+/g, '-')}`)
   }
   await expect(visible(page, /^DOCUMENT_[A-Z_]+$|^AUTHORIZATION_DENIED$/)).toHaveCount(0)
@@ -548,6 +559,39 @@ async function auditChecks(page: Page, testInfo: TestInfo) {
   await capture(page, testInfo, 'audit-detail')
   await detail.getByRole('button', { name: 'Close' }).click()
   expect((await page.request.get(`/api/v1/operations/audit-events?limit=5&recordNumber=${titleRecord}`, { headers: OPS_HEADERS })).ok()).toBeTruthy()
+
+  // Export: the server's file has the screen's sentences, in the same order, and the export is itself in the audit.
+  const onScreen = (await list.locator('td[data-label="What happened"]').allInnerTexts()).map((s) => s.trim())
+  const [download] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Export CSV' }).click()])
+  await expect(page.getByRole('status').filter({ hasText: 'The export is recorded in the audit.' })).toBeVisible({ timeout: 15000 })
+  const csv = parseCsv(fs.readFileSync(await download.path()).toString('utf8').replace(/^﻿/, ''))
+  expect(csv[0]).toEqual(['When (UTC)', 'What happened', 'Person', 'Record', 'Result', 'Action code'])
+  const rows = csv.slice(1)
+  expect(rows.length, 'exported rows').toBeGreaterThanOrEqual(onScreen.length)
+  expect(rows.every((r) => r[3] === titleRecord), 'every exported row is about the filtered record').toBeTruthy()
+  expect(rows.slice(0, onScreen.length).map((r) => r[1]), 'exported sentences match the screen').toEqual(onScreen)
+  await activity.selectOption({ label: 'Downloads, prints and exports' })
+  await page.getByLabel('Record number').fill('')
+  await page.getByRole('button', { name: 'Show', exact: true }).click()
+  await expect(list.locator('tbody tr').first()).toContainText(new RegExp(`exported the audit \\(${rows.length} events?\\)`), { timeout: 15000 })
+  await capture(page, testInfo, 'audit-exported')
+}
+
+/** A small CSV reader for the export check: quoted cells, doubled quotes, CRLF rows. */
+function parseCsv(text: string): string[][] {
+  const out: string[][] = []
+  let row: string[] = [], cell = '', quoted = false
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i]
+    if (quoted) {
+      if (c === '"' && text[i + 1] === '"') { cell += '"'; i++ } else if (c === '"') quoted = false; else cell += c
+    } else if (c === '"') quoted = true
+    else if (c === ',') { row.push(cell); cell = '' }
+    else if (c === '\n') { row.push(cell); out.push(row); row = []; cell = '' }
+    else if (c !== '\r') cell += c
+  }
+  if (cell || row.length) { row.push(cell); out.push(row) }
+  return out
 }
 
 async function captureAccountMenu(page: Page, testInfo: TestInfo) {

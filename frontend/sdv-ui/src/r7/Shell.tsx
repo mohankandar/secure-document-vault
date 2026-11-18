@@ -35,7 +35,7 @@ const ROLE_LABEL: Record<RoleId, string> = {
   tenantIt: 'Tenant IT administrator',
   platform: 'Platform operations administrator',
 }
-/** Readable names for the local test sign-in (keyed by local test persona), which has no name claim. */
+/** Fallback names for a local test sign-in without a display name (the fixed local subjects have one, local mode only). */
 const LOCAL_NAME: Record<LocalPersona, string> = {
   business: 'Local business user',
   steward: 'Local document steward',

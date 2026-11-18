@@ -17,6 +17,7 @@ import java.io.IOException;
 import java.util.Arrays;
 import java.util.EnumSet;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @Component
@@ -27,6 +28,21 @@ public class LocalHeaderAuthenticationFilter extends OncePerRequestFilter {
     public static final String SUBJECT_HEADER = "X-SDV-Subject";
     public static final String ROLES_HEADER = "X-SDV-Roles";
     public static final String SOURCE_HEADER = "X-SDV-Source-Id";
+
+    /**
+     * Owner, 2026-11-18 (after task 0011): display names for the fixed local test sign-ins, so audit sentences can be
+     * checked on a developer machine. This filter exists only in the local profile with local-header sign-in; any other
+     * subject stays unnamed, and the name is never taken from a request header.
+     */
+    static final Map<String, String> LOCAL_TEST_NAMES = Map.of(
+            "local-document-steward", "Dana Steward",
+            "local-business-user", "Ben Business",
+            "local-business-admin", "Bea Business Admin",
+            "local-tenant-it-admin", "Tom Tenant IT",
+            "local-tenant-it", "Tom Tenant IT",
+            "local-platform-operations-admin", "Pat Platform Ops",
+            "local-platform-operations", "Pat Platform Ops",
+            "local-administrator", "Ari Admin");
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
@@ -65,7 +81,8 @@ public class LocalHeaderAuthenticationFilter extends OncePerRequestFilter {
                             .forEach(roles::add);
                     if (roles.isEmpty()) throw new IllegalArgumentException("At least one SDV role is required.");
 
-                    SdvPrincipal principal = new SdvPrincipal(tenantId, subject.trim(), roles);
+                    SdvPrincipal principal = new SdvPrincipal(tenantId, subject.trim(), roles,
+                            LOCAL_TEST_NAMES.get(subject.trim()), null);
                     List<SimpleGrantedAuthority> authorities = roles.stream()
                             .map(role -> new SimpleGrantedAuthority("ROLE_" + role.name()))
                             .toList();

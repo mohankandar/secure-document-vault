@@ -46,6 +46,7 @@ export const AUDIT_SENTENCES: Record<string, Sentence> = {
   BUSINESS_SEARCH: (w, _f, d) => (n(d.resultCount) != null ? `${w} searched records and found ${n(d.resultCount)}` : `${w} searched records`),
   BUSINESS_RECENT_RECORDS_LISTED: (w) => `${w} looked at Recently viewed`,
   AUDIT_VIEWED: (w) => `${w} looked at the audit`,
+  AUDIT_EXPORTED: (w, _f, d) => (n(d.rowCount) != null ? `${w} exported the audit (${n(d.rowCount)} event${n(d.rowCount) === 1 ? '' : 's'})` : `${w} exported the audit`),
   AUTHORIZATION_DENIED: (w, _f, d) => `${w} tried to ${CAPABILITY_WORDS[String(d.capability)] ?? 'do something'} without permission`,
   SUBMISSION_CREATED: (w, _f, d) => `${w} delivered ${docs(n(d.expectedDocumentCount))}`,
   DOCUMENT_RECEIVED: (w, f) => `${w} sent ${f}`,
@@ -85,7 +86,7 @@ export const RESULT_WORDS: Record<string, string> = { SUCCESS: 'Done', DENIED: '
 /** Everyday activity groups. Refused is every event the server refused, whatever its action. */
 export const ACTIVITY_GROUPS: { id: string; label: string; actions?: string[]; outcome?: string }[] = [
   { id: 'reading', label: 'Opening and reading', actions: ['DOCUMENT_VIEW_OPENED', 'DOCUMENT_PAGE_VIEWED', 'BUSINESS_RECORD_OPENED', 'BUSINESS_SEARCH', 'BUSINESS_RECENT_RECORDS_LISTED', 'AUDIT_VIEWED'] },
-  { id: 'downloads', label: 'Downloads and prints', actions: ['DOCUMENT_DOWNLOADED', 'DOCUMENT_DOWNLOAD_FAILED', 'DOCUMENT_PRINTED'] },
+  { id: 'downloads', label: 'Downloads, prints and exports', actions: ['DOCUMENT_DOWNLOADED', 'DOCUMENT_DOWNLOAD_FAILED', 'DOCUMENT_PRINTED', 'AUDIT_EXPORTED'] },
   { id: 'changes', label: 'Changes to documents', actions: ['DOCUMENT_TAG_ADDED', 'DOCUMENT_COMMENT_ADDED', 'DOCUMENT_PERMANENTLY_REDACTED', 'DOCUMENT_REDACTION_FAILED', 'DOCUMENT_RETENTION_DELETED', 'DOCUMENT_RETENTION_DELETE_FAILED'] },
   { id: 'settings', label: 'Settings changes', actions: ['ROLE_CAPABILITIES_UPDATED', 'RETENTION_POLICY_UPDATED', 'METADATA_BEHAVIOR_REVISED', 'METADATA_DISPLAY_ORDER_UPDATED', 'RECORD_TITLE_FIELDS_UPDATED', 'METADATA_FIELD_CREATED', 'METADATA_FIELD_REVISED', 'SOURCE_FIELD_DEFINED', 'SOURCE_FIELD_REVISED', 'INGESTION_SOURCE_CREATED', 'INGESTION_SOURCE_UPDATED', 'STORAGE_VOLUME_CREATED', 'STORAGE_VOLUME_UPDATED', 'STORAGE_FOLDER_CHECKED', 'ENTERPRISE_IDENTITY_DRAFT_SAVED', 'ENTERPRISE_IDENTITY_CONNECTION_TESTED', 'ENTERPRISE_IDENTITY_CONNECTION_ACTIVATED', 'ENTERPRISE_IDENTITY_CONNECTION_ACTIVATION_FAILED', 'ENTERPRISE_IDENTITY_CONNECTION_ROLLED_BACK', 'ENTERPRISE_IDENTITY_CONNECTION_ROLLBACK_FAILED'] },
   { id: 'deliveries', label: 'Deliveries', actions: ['SUBMISSION_CREATED', 'DOCUMENT_RECEIVED', 'DOCUMENT_AVAILABLE', 'DOCUMENT_PROCESSING_FAILED'] },

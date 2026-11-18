@@ -61,6 +61,15 @@ public class JdbcOperationalRepository implements AuditQueryPort, OperationalRep
             p.addValue("beforeTime", Timestamp.from(filter.beforeOccurredAt()));
             p.addValue("beforeId", filter.beforeEventId());
         }
+        if (filter.actions() != null) {
+            if (filter.actions().isEmpty()) return List.of(); // An empty set matches nothing (fail closed).
+            sql.append(" and action in (:actions)");
+            p.addValue("actions", filter.actions());
+        }
+        if (filter.excludeActions() != null) {
+            sql.append(" and action not in (:excludeActions)");
+            p.addValue("excludeActions", filter.excludeActions());
+        }
         if (filter.recordNumber() != null) {
             // Document events of records with this identifier value (as typed, or as stored after normalization).
             sql.append("""

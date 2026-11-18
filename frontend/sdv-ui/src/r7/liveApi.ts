@@ -136,6 +136,8 @@ export type OpsAuditEvent={auditEventId:string;occurredAt:string;action:string;o
   /** Null for events before migration 020 (show actorId). */ actorDisplayName?:string|null;
   /** Document events: looked up when the list is read. */ recordNumber?:string|null;filename?:string|null}
 export const opsAudit=(cursor?:string,filters?:{action?:string;outcome?:string;actorId?:string;actorType?:string;targetType?:string;targetId?:string;correlationId?:string;from?:string;to?:string;recordNumber?:string})=>{const p=new URLSearchParams({limit:'50'});if(cursor)p.set('cursor',cursor);for(const [k,v] of Object.entries(filters??{}))if(v)p.set(k,v);return roleApi<{events:OpsAuditEvent[];nextCursor:string|null;hasMore:boolean}>('/api/v1/operations/audit-events?'+p.toString(),'platform')}
+/** Task 0011 export: the server builds the CSV from the list's filters (plus the activity group and hidden routine codes) and records the export. */
+export const opsAuditExport=(filters:Record<string,string|undefined>,actions?:string[],excludeActions?:string[])=>{const p=new URLSearchParams();for(const [k,v] of Object.entries(filters))if(v)p.set(k,v);if(actions?.length)p.set('actions',actions.join(','));if(excludeActions?.length)p.set('excludeActions',excludeActions.join(','));return contentBinary('/api/v1/operations/audit-events/export?'+p.toString(),'platform')}
 export const opsRetention=()=>roleApi<Record<string,unknown>>('/api/v1/operations/retention-status','platform')
 
 /** Thresholds left out use the tenant's standard warning and stop levels. */

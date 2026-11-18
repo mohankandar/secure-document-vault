@@ -627,3 +627,5 @@ small.bad { color: var(--danger); }
 .au-record label { font-size: 14px; font-weight: 500; }
 .au-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 8px 16px; border-top: 1px solid var(--line); flex-wrap: wrap; }
 .au-advanced { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; padding: 12px 16px 16px; border-top: 1px solid var(--line); }
+.au-export-note { margin: 0; padding: 0 16px 10px; font-size: 14px; }
+.au-export-note.bad { color: var(--danger); }

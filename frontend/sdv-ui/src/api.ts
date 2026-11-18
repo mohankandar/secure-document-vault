@@ -69,7 +69,7 @@ export const api = <T>(path: string, init?: RequestInit) => request<T>(path, 'ad
 export const businessApi = <T>(path: string, init?: RequestInit) => request<T>(path, 'business', init)
 export const contentApi = <T>(path: string, persona: 'business' | 'steward', init?: RequestInit) => request<T>(path, persona, init)
 
-export async function contentBinary(path: string, persona: 'business' | 'steward'): Promise<Blob> {
+export async function contentBinary(path: string, persona: LocalPersona): Promise<Blob> {
   const enterpriseHeaders = await bearerHeaders()
   const response = await fetch(path, {
     method: 'GET',
