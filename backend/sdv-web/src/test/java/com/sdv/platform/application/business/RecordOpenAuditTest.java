@@ -119,4 +119,33 @@ class RecordOpenAuditTest {
         assertTrue(s.contains("where tenant_id=:tenantId"), s);
         assertEquals(TENANT, params.getValue().getValue("tenantId"));
     }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void theRecordNumberFilterAlsoFindsRecordOpensBySubmissionWithinTheTenant() {
+        NamedParameterJdbcTemplate jdbc = mock(NamedParameterJdbcTemplate.class);
+        new JdbcOperationalRepository(jdbc).findRows(TENANT, new AuditQueryPort.Filter(
+                null, null, null, null, null, null, null, null, null, null, null, NUMBER, null, null), 51);
+        ArgumentCaptor<String> sql = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<SqlParameterSource> params = ArgumentCaptor.forClass(SqlParameterSource.class);
+        verify(jdbc).query(sql.capture(), params.capture(), any(RowMapper.class));
+        String s = sql.getValue().replaceAll("\\s+", " ");
+
+        // Document events are still found through their document, within the tenant.
+        assertTrue(s.contains("(target_type='DOCUMENT' and target_id in ( select d.document_id::text"), s);
+        assertTrue(s.contains("where d.tenant_id=:tenantId and (v.normalized_value=:recordNumber or v.stored_value=:recordNumber)"), s);
+        // Record opens are found through the submission named in their safe details, in the event's own tenant,
+        // with the same UUID guard as the list, matching the typed or the normalized identifier value.
+        assertTrue(s.contains("or (target_type='BUSINESS_RECORD' and exists ( select 1 from business_metadata_values v"
+                + " join metadata_field_definitions f on f.definition_id=v.definition_id and f.business_identifier"
+                + " where v.tenant_id=audit_events.tenant_id"
+                + " and v.submission_id = (case when audit_events.safe_details->>'submissionId' ~ :uuidPattern"
+                + " then (audit_events.safe_details->>'submissionId')::uuid end)"
+                + " and (v.normalized_value=:recordNumber or v.stored_value=:recordNumber))))"), s);
+        // The outer query is still limited to the caller's tenant.
+        assertTrue(s.contains("from audit_events where tenant_id=:tenantId"), s);
+        assertEquals(TENANT, params.getValue().getValue("tenantId"));
+        assertEquals(NUMBER, params.getValue().getValue("recordNumber"));
+        assertNotNull(params.getValue().getValue("uuidPattern"));
+    }
 }

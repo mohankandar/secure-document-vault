@@ -616,6 +616,15 @@ async function auditChecks(page: Page, testInfo: TestInfo) {
   await expect(list.locator('tbody tr').first()).toContainText(titleRecord, { timeout: 15000 })
   const records = await list.locator('td[data-label="Record"]').allInnerTexts()
   expect(records.every((r) => r.trim() === titleRecord), `only ${titleRecord}: ${records.join(', ')}`).toBeTruthy()
+  // Task 0020 item 1 follow-up: the filter also finds record opens (by their submission, within the tenant).
+  await activity.selectOption({ label: 'Opening and reading' })
+  const openedByFilter = list.locator('tbody tr').filter({ hasText: /Daniel Reyes opened a record/ }).first()
+  await expect(openedByFilter, 'the record open, found by the Record number filter').toBeVisible({ timeout: 15000 })
+  await expect(openedByFilter.locator('td[data-label="Record"]')).toHaveText(titleRecord)
+  const openedRecords = await list.locator('td[data-label="Record"]').allInnerTexts()
+  expect(openedRecords.every((r) => r.trim() === titleRecord), `only ${titleRecord}: ${openedRecords.join(', ')}`).toBeTruthy()
+  await activity.selectOption({ label: 'All activity' })
+  await expect(list.locator('tbody tr').first()).toContainText(titleRecord, { timeout: 15000 })
 
   // Detail: the sentence first, codes under Technical details.
   await list.locator('tbody tr').first().click()

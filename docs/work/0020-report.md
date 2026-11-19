@@ -131,3 +131,27 @@ My first run of the full build stopped partway through the `sdv-web` tests. I ha
 ### Commit (follow-up)
 
 See `git log` on `fix/ui-polish-1`: "fix(audit): record opens show their record number (task 0020, item 1)". Not pushed or merged.
+
+### Follow-up 2 (2026-11-19): the Record number filter finds record opens
+
+The owner asked for this after the first follow-up. Backend change, no schema change.
+
+- **What changed.** The Audit "Record number" filter (`JdbcOperationalRepository.findRows`) now also matches `BUSINESS_RECORD` events. It reads `submissionId` from the safe details, casts it only when it looks like a UUID (the same guard the list uses), and matches when that submission has a business identifier with the typed value (as typed or as normalized, the same test document events use). The lookup is limited to the event's own tenant (`v.tenant_id = audit_events.tenant_id`), and the whole query is still limited to the caller's tenant.
+- Document events are matched exactly as before. Record opens written before the first follow-up hold only the hash, so the filter can't find them.
+- The Audit export uses the same query, so a filtered export includes these record opens too.
+
+| Command | Result |
+|---|---|
+| `.\Build-SDV-All.ps1` | BUILD SUCCESS. Backend tests: 161 run, 0 failures, 0 errors (sdv-web 122). Frontend build passed. The first run stopped at `clean` because the running app held `sdv-web-0.1.0-SNAPSHOT.jar`; the app was stopped and the build rerun. |
+| `npm run typecheck` | passed |
+| `npm run build` | passed |
+| `npm run ui:capture` (app restarted on the new build) | 17 passed, 3 skipped (the same skips as before) |
+| `npm run ui:compare` | 19 passed |
+
+Tests added:
+- **Backend:** `RecordOpenAuditTest.theRecordNumberFilterAlsoFindsRecordOpensBySubmissionWithinTheTenant`. The filter keeps the document branch, adds the record-open branch with the UUID guard and the event's tenant, and the outer query stays limited to the caller's tenant.
+- **Tour:** in `auditChecks`, with the Record number filter set and "Opening and reading" chosen, the steward's fresh record open is listed, and every row shows that record number.
+
+Files changed: `JdbcOperationalRepository.java`, `AuditQueryPort.java` (comment only), `RecordOpenAuditTest.java`, `e2e/sdv-screen-tour.spec.ts`, `docs/work/0020-report.md`. `Start-SDV-Local.ps1` was left as it was and not committed.
+
+Commit: "fix(audit): the Record number filter finds record opens (task 0020, item 1)" on `fix/ui-polish-1`.

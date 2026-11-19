@@ -33,7 +33,8 @@ public interface AuditQueryPort {
             Instant to,
             Instant beforeOccurredAt,
             UUID beforeEventId,
-            /* Task 0011 Part C.4: only document events whose record has this identifier value. */
+            /* Task 0011 Part C.4: only document events whose record has this identifier value, and (task 0020
+               item 1) record opens whose submission has it. */
             String recordNumber,
             /* Task 0011 export: only these action codes (null: any; empty: nothing), and never these (null: none). */
             Set<String> actions,

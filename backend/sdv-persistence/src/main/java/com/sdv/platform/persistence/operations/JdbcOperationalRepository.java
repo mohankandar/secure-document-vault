@@ -72,14 +72,24 @@ public class JdbcOperationalRepository implements AuditQueryPort, OperationalRep
             p.addValue("excludeActions", filter.excludeActions());
         }
         if (filter.recordNumber() != null) {
-            // Document events of records with this identifier value (as typed, or as stored after normalization).
+            // Document events of records with this identifier value (as typed, or as stored after normalization),
+            // and record opens whose safe details name a submission with that value (task 0020 item 1), both
+            // within the event's own tenant. Only a UUID-shaped submission ID is ever cast.
             sql.append("""
-                     and target_type='DOCUMENT' and target_id in (
+                     and ((target_type='DOCUMENT' and target_id in (
                        select d.document_id::text
                          from documents d
                          join business_metadata_values v on v.tenant_id=d.tenant_id and v.submission_id=d.submission_id
                          join metadata_field_definitions f on f.definition_id=v.definition_id and f.business_identifier
-                        where d.tenant_id=:tenantId and (v.normalized_value=:recordNumber or v.stored_value=:recordNumber))
+                        where d.tenant_id=:tenantId and (v.normalized_value=:recordNumber or v.stored_value=:recordNumber)))
+                      or (target_type='BUSINESS_RECORD' and exists (
+                       select 1
+                         from business_metadata_values v
+                         join metadata_field_definitions f on f.definition_id=v.definition_id and f.business_identifier
+                        where v.tenant_id=audit_events.tenant_id
+                          and v.submission_id = (case when audit_events.safe_details->>'submissionId' ~ :uuidPattern
+                                                      then (audit_events.safe_details->>'submissionId')::uuid end)
+                          and (v.normalized_value=:recordNumber or v.stored_value=:recordNumber))))
                     """);
             p.addValue("recordNumber", filter.recordNumber());
         }
