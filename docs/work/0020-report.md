@@ -68,7 +68,7 @@ No failures. Item 1 has no check, because it was not fixed.
 
 ## Commits (hash and message), or "not committed"
 
-See `git log fix/ui-polish-1`. One commit: "fix(ui): polish after the canvas review (task 0020, items 2-6)". Not pushed or merged.
+`958eef9` "fix(ui): polish after the canvas review (task 0020, items 2-6)". Not pushed or merged.
 
 ## Not done, and why
 
