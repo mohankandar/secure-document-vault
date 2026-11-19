@@ -1,5 +1,5 @@
 import { useEffect, useId, type ReactNode } from 'react'
-import { AlertTriangle, CheckCircle2, FlaskConical, Info, X, XCircle, Inbox, RefreshCw } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, ChevronRight, FlaskConical, Info, X, XCircle, Inbox, RefreshCw } from 'lucide-react'
 import { useStore } from './store'
 
 /** Fixed English short months: the browser's en-GB says "Sept", the canvas says "Sep". */
@@ -169,13 +169,22 @@ function useEscape(onClose: () => void) {
   }, [onClose])
 }
 
-export function Drawer({ title, eyebrow, onClose, children, footer }: { title: string; eyebrow?: string; onClose: () => void; children: ReactNode; footer?: ReactNode }) {
+/**
+ * A side panel. On wide screens it sits beside the page, which moves aside for it (canvas: the page stays readable);
+ * on phones it is a sheet from the bottom. wide: the canvas's wider panel (Add a sending system).
+ */
+export function Drawer({ title, eyebrow, onClose, children, footer, wide }: { title: string; eyebrow?: string; onClose: () => void; children: ReactNode; footer?: ReactNode; wide?: boolean }) {
   useEscape(onClose)
   const id = useId()
+  useEffect(() => {
+    const cls = wide ? 'r7-side-wide' : 'r7-side-open'
+    document.documentElement.classList.add(cls)
+    return () => document.documentElement.classList.remove(cls)
+  }, [wide])
   return (
     <>
       <div className="v-scrim" onClick={onClose} aria-hidden />
-      <aside className="v-drawer" role="dialog" aria-modal="true" aria-labelledby={id}>
+      <aside className={`v-drawer${wide ? ' wide' : ''}`} role="dialog" aria-modal="true" aria-labelledby={id}>
         <header className="v-drawer-head">
           <div className="grow">{eyebrow && <div className="eyebrow">{eyebrow}</div>}<h2 id={id}>{title}</h2></div>
           <button type="button" className="v-btn quiet icon sm" onClick={onClose} aria-label="Close"><X size={18} /></button>
@@ -246,3 +255,21 @@ export function PageHead({ crumbs, title, lede, actions }: { crumbs: string[]; t
 
 /** Who did something, in words, from an audit actor type: the technical sign-in ID is never shown (task 0018). */
 export const actorWords = (actorType: string) => (actorType === 'SOURCE' ? 'Sending system' : actorType === 'SYSTEM' ? 'Vero' : 'A person')
+
+/**
+ * "Technical details" (canvas): a folded row that names what is inside ("folder paths, thresholds, …").
+ * On a page it is its own card; inside a panel or card (flat) it is a strip with a line above it.
+ */
+export function TechDetails({ hint, flat, children }: { hint?: string; flat?: boolean; children: ReactNode }) {
+  return (
+    <details className={`v-tech${flat ? ' flat' : ''}`}>
+      <summary><ChevronRight size={16} aria-hidden className="v-tech-chev" /><b>Technical details</b>{hint && <span className="faint">{hint}</span>}</summary>
+      <div className="v-tech-body">{children}</div>
+    </details>
+  )
+}
+
+/** A canvas banner: bold words first, then the sentence, on one line where it fits ("**What to do:** …"). */
+export function Banner({ tone = 'warn', lead, children }: { tone?: 'warn' | 'bad' | 'ok' | 'info'; lead: ReactNode; children?: ReactNode }) {
+  return <div className={`v-banner ${tone}`} role={tone === 'bad' ? 'alert' : undefined}><b>{lead}</b>{children && <> {children}</>}</div>
+}

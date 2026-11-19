@@ -1,14 +1,12 @@
 import { useCallback, useEffect, useState } from 'react'
-import { ArrowRight, RefreshCw } from 'lucide-react'
 import { opsAudit, opsDetail, opsRetention, systemInfo, type OpsAuditEvent, type OpsDetail, type OpsRetention, type SystemInfo } from './liveApi'
 import { AREA_TABS, useStore } from './store'
 import { AreaFrame } from './Governance'
 import { FailureNotice, loadFailed, type Failure } from './CardError'
 import { Problems } from './Problems'
-import { AuditLog } from './AuditLog'
+import { AuditLog, AuditWords } from './AuditLog'
 import { About } from './About'
-import { auditSentence } from './auditWords'
-import { Callout, Meter, Panel, fmtDateTime } from './ui'
+import { Banner, Callout, Panel, TechDetails, fmtDateTime } from './ui'
 import {
   SERVICE_KEYS, SERVICE_STATE_WORDS, SERVICE_WORDS, ago, asLiveVolume, canStoreWords, cleanupWords, fmtWhen, overviewSentence,
   problemKinds, problemTotal, serviceSentence, serviceState, servicesDown, storageRoleWord, storageWhatToDo, volumeNeedsAttention,
@@ -19,10 +17,10 @@ import {
 
 const LEDE: Record<string, string> = {
   overview: 'How Vero is doing right now.',
-  problems: 'Documents Vero could not store, documents that are stuck, and deliveries with documents missing.',
+  problems: 'Documents that could not be stored, and deliveries still missing documents.',
   storage: 'How full each storage volume is. Tenant IT adds and changes volumes.',
   health: 'The services Vero depends on, and its automatic cleanup.',
-  audit: 'Who did what, and when. Document content is never shown here.',
+  audit: 'Everything people and systems did in Vero. Document content is never shown here.',
   about: 'The facts support will ask for.',
 }
 
@@ -30,7 +28,7 @@ export function Operations() {
   const { route } = useStore()
   const tab = AREA_TABS.operations.find((t) => t.id === route.tab)!
   return (
-    <AreaFrame crumbs={['Platform operations', tab.label]} title={tab.label} lede={LEDE[route.tab]}>
+    <AreaFrame crumbs={['Platform operations', tab.label]} title={route.tab === 'about' ? 'About this installation' : tab.label} lede={LEDE[route.tab]}>
       {route.tab === 'overview' && <Overview />}
       {route.tab === 'problems' && <Problems role="platform" />}
       {route.tab === 'storage' && <OpsStorage />}
@@ -110,7 +108,7 @@ function Overview() {
   const sweep = cleanupWords(cleanup)
   const partial = data.dataObservations?.some((x) => x.status === 'DEGRADED')
 
-  const tiles: { id: string; label: string; value: string; detail: string; tab: string; bad: boolean }[] = [
+  const tiles: { id: string; label: string; value: string; detail: string; tab: string; bad: boolean; tone?: string }[] = [
     { id: 'problems', label: 'Problems', tab: 'problems', bad: !!total,
       value: total == null ? 'Couldn’t count' : total === 0 ? 'None' : total.toLocaleString(),
       detail: total ? problemKinds(data) : total === 0 ? 'Every delivery arrived properly' : 'Open Problems to see what is listed' },
@@ -124,24 +122,28 @@ function Overview() {
       value: sweep.tone === 'bad' ? 'Last run failed' : deletedToday === undefined ? 'Counting…' : deletedToday === null ? 'Couldn’t count' : deletedToday.n === 0 ? 'Nothing deleted today' : `${deletedToday.more ? 'More than ' : ''}${deletedToday.n.toLocaleString()} deleted today`,
       detail: cleanup?.completedAt ? `Documents past their keep date · last ran ${ago(cleanup.completedAt)}` : 'Documents past their keep date' },
   ]
+  // Canvas: the value's colour says how it is (problems red, storage amber when it needs attention, services green).
+  for (const t of tiles) t.tone = t.id === 'problems' ? (t.bad ? 'bad' : '') : t.id === 'storage' ? (t.bad ? 'warn' : '') : t.id === 'services' ? (t.bad ? 'bad' : 'ok') : t.bad ? 'bad' : ''
 
   return <>
-    <section className={`ov-lead ${lead.attention ? 'warn' : 'ok'}`} aria-label="How Vero is doing"><p>{lead.text}</p>
-      {partial && <p className="muted">Some counts couldn’t be read just now, so this may not be complete.</p>}</section>
-    <div className="v-signals ov-tiles" role="list" aria-label="Overview tiles">
+    <section className={`v-banner ${lead.attention ? 'warn' : 'ok'}`} aria-label="How Vero is doing">
+      {(() => { const m = lead.text.match(/^(.*?[.!?])\s+(.*)$/); return m ? <><b>{m[1]}</b> {m[2]}</> : <b>{lead.text}</b> })()}
+      {partial && <span className="muted"> Some counts couldn’t be read just now, so this may not be complete.</span>}</section>
+    <div className="ov-tiles" role="list" aria-label="Overview tiles">
       {tiles.map((t) => (
-        <button key={t.id} type="button" role="listitem" className="v-signal" aria-label={`${t.label}: ${t.value}. ${t.detail}. Open`} onClick={() => navigate('operations', t.tab)}>
-          <span className="k"><span className={`ov-dot ${t.bad ? 'bad' : 'ok'}`} aria-hidden />{t.label}<span className="ov-open">Open <ArrowRight size={13} aria-hidden /></span></span>
+        <button key={t.id} type="button" role="listitem" className={`ov-tile ${t.tone}`} aria-label={`${t.label}: ${t.value}. ${t.detail}. Open`} onClick={() => navigate('operations', t.tab)}>
+          <span className="k">{t.label}</span>
           <span className="v">{t.value}</span>
           <span className="d">{t.detail}</span>
+          <span className="ov-open">Open →</span>
         </button>
       ))}
     </div>
-    <Panel flush title="Latest activity" actions={<button type="button" className="v-btn quiet sm" onClick={() => navigate('operations', 'audit')}>All activity <ArrowRight size={14} aria-hidden /></button>}>
+    <Panel flush title="Latest activity" actions={<button type="button" className="v-link" onClick={() => navigate('operations', 'audit')}>All activity →</button>}>
       {latest === undefined ? <p className="muted" style={{ padding: 16 }}>Loading…</p>
         : latest === null ? <p className="muted" style={{ padding: 16 }}>The latest activity didn’t load. Open Audit to see it.</p>
         : latest.length === 0 ? <p className="muted" style={{ padding: 16 }}>Nothing lately besides routine views. All activity shows everything.</p>
-        : <ul className="ov-activity" aria-label="Latest activity">{latest.map((e) => <li key={e.auditEventId}><span className="faint">{fmtWhen(e.occurredAt)}</span><span>{auditSentence(e)}</span></li>)}</ul>}
+        : <ul className="ov-activity" aria-label="Latest activity">{latest.map((e) => <li key={e.auditEventId}><span className="faint">{fmtWhen(e.occurredAt)}</span><span><AuditWords e={e} /></span></li>)}</ul>}
     </Panel>
   </>
 }
@@ -153,7 +155,7 @@ function OpsStorage() {
   const volumes = data.storageVolumes.map(asLiveVolume)
   const todo = storageWhatToDo(volumes)
   return <>
-    <Panel flush title="Storage volumes" meta={volumes.length}>
+    <section className="v-panel">
       {volumes.length === 0 ? <p className="muted" style={{ padding: 16 }}>No storage volume is set up. The customer’s Tenant IT adds one.</p> :
       <table className="v-table" aria-label="Storage volumes">
         <thead><tr><th>Volume</th><th>Role</th><th style={{ width: '26%' }}>How full</th><th>Can store new documents</th></tr></thead>
@@ -161,15 +163,14 @@ function OpsStorage() {
           <tr key={v.volume.volumeId}>
             <td className="lead" data-label="Volume"><strong style={{ fontWeight: 500 }}>{v.volume.displayName}</strong></td>
             <td data-label="Role">{storageRoleWord(volumes, v)}</td>
-            <td data-label="How full">{pct == null ? <span className="faint">Not known</span> : <div className="row" style={{ gap: 10 }}><div className="grow" style={{ maxWidth: 180 }}><Meter pct={pct} warn={v.volume.warningPercent} stop={v.volume.stopWritePercent} label={`${v.volume.displayName} how full`} /></div><span>{pct}%</span></div>}</td>
-            <td data-label="Can store new documents"><span className={`ov-can ${can.tone}`}>{can.text}</span></td>
+            <td data-label="How full">{pct == null ? <span className="faint">Not known</span> : <div className="row" style={{ gap: 10 }}><span className="v-bar2" role="img" aria-label={`${v.volume.displayName} is ${pct}% full`}><i className={pct >= (v.volume.stopWritePercent ?? 95) ? 'r' : pct >= (v.volume.warningPercent ?? 80) ? 'y' : ''} style={{ width: `${Math.min(pct, 100)}%` }} /></span><span>{pct}%</span></div>}</td>
+            <td data-label="Can store new documents"><span className={`v-dot ${can.tone === 'ok' ? 'g' : can.tone === 'warn' ? 'y' : can.tone === 'bad' ? 'r' : ''}`} aria-hidden />{can.text}</td>
           </tr>) })}</tbody>
       </table>}
-    </Panel>
-    <Callout tone={todo.length ? 'warn' : ''} title="What to do">
-      {todo.length ? todo.map((t) => <p key={t} style={{ margin: '0 0 6px' }}>{t}</p>) : 'Nothing right now. The customer’s Tenant IT adds and changes volumes; this page only shows them.'}
-    </Callout>
-    <details className="st-tech"><summary>Technical details</summary>
+    </section>
+    {todo.length ? <Banner lead="What to do:">{todo.join(' ')}</Banner>
+      : <Banner tone="info" lead="What to do:">Nothing right now. The customer’s Tenant IT adds and changes volumes; this page only shows them.</Banner>}
+    <TechDetails hint="folder paths, thresholds, last check, write test result">
       <table className="v-table" aria-label="Storage technical details"><thead><tr><th>Volume</th><th>Folder</th><th>Warns at · stops at</th><th>Order</th><th>Last check</th><th>Write test</th></tr></thead>
         <tbody>{data.storageVolumes.map((v) => <tr key={v.volumeId}>
           <td data-label="Volume">{v.displayName}<div className="mono faint">{v.volumeId}</div></td>
@@ -179,7 +180,7 @@ function OpsStorage() {
           <td data-label="Last check">{v.observedAt ? fmtDateTime(v.observedAt) : '—'}</td>
           <td data-label="Write test">{v.state === 'OFFLINE' ? 'Not tested (offline)' : v.writable ? 'Passed' : 'Failed'}{v.observationError && v.state !== 'OFFLINE' && <div className="faint">{v.observationError}</div>}</td>
         </tr>)}</tbody></table>
-    </details>
+    </TechDetails>
   </>
 }
 
@@ -198,9 +199,9 @@ function Health() {
   }, [loading])
   const schemaOff = schema != null && schema.state !== 'CURRENT'
   return <>
-    <div className="row ov-checked" style={{ justifyContent: 'flex-end', gap: 12 }}>
-      <span className="muted" role="status">{checkedAt ? `Checked ${ago(checkedAt)}` : loading ? 'Checking…' : ''}</span>
-      <button type="button" className="v-btn sm" disabled={loading} onClick={() => void load()}><RefreshCw size={14} aria-hidden />{loading ? 'Checking…' : 'Check now'}</button>
+    <div className="row ov-checked" style={{ justifyContent: 'space-between', gap: 12 }}>
+      <span className="faint" role="status">{checkedAt ? `Checked ${ago(checkedAt)}` : loading ? 'Checking…' : ''}</span>
+      <button type="button" className="v-btn sm" disabled={loading} onClick={() => void load()}>{loading ? 'Checking…' : 'Check now'}</button>
     </div>
     {schemaOff && <Callout tone="bad" title="The database doesn’t match this Vero version">{schema.message}
       <span className="muted" style={{ display: 'block', marginTop: 6 }}>Vero checks this when it starts. After the schema step, start Vero again.</span></Callout>}
@@ -208,30 +209,30 @@ function Health() {
     {data && <>
       {SERVICE_KEYS.map((k) => { const s = serviceSentence(k, data[k]?.status); return s && serviceState(data[k]?.status) !== 'notConfigured'
         ? <Callout key={k} tone="bad" title={`${SERVICE_WORDS[k].name} isn’t working`}>{s}</Callout> : null })}
-      <Panel flush title="Services">
+      <section className="v-panel">
         <table className="v-table" aria-label="Services"><thead><tr><th>Service</th><th>What it does</th><th>Status</th></tr></thead>
           <tbody>{SERVICE_KEYS.map((k) => { const st = serviceState(data[k]?.status); return (
             <tr key={k}><td className="lead" data-label="Service"><strong style={{ fontWeight: 500 }}>{SERVICE_WORDS[k].name}</strong></td>
               <td data-label="What it does">{SERVICE_WORDS[k].does}</td>
-              <td data-label="Status"><span className={`v-status ${st === 'working' ? 'ok' : st === 'notConfigured' ? 'warn' : 'bad'}`}>{SERVICE_STATE_WORDS[st]}</span>
+              <td data-label="Status"><span className={`v-dot ${st === 'working' ? 'g' : st === 'notConfigured' ? 'y' : 'r'}`} aria-hidden />{SERVICE_STATE_WORDS[st]}
                 {st === 'notConfigured' && <div className="faint">{serviceSentence(k, data[k]?.status)}</div>}</td></tr>) })}</tbody></table>
-      </Panel>
+      </section>
     </>}
     {!schemaOff && <section className={`v-panel ov-cleanup ${sweep.tone}`} aria-label="Automatic cleanup"><div className="v-panel-body">
-      <h2 className="ov-h">Automatic cleanup</h2>
+      <h2 className="v-sec">Automatic cleanup</h2>
       {cleanupError ? <p>Vero couldn’t say how automatic cleanup is doing. Check now again.</p> : <>
-        <p>{sweep.sentence}</p>
+        <p className="ov-sweep"><span className={`v-dot ${sweep.tone === 'bad' ? 'r' : 'g'}`} aria-hidden />{sweep.sentence}</p>
         {sweep.whatToDo && <p><strong>What to do:</strong> {sweep.whatToDo}</p>}
-        <p className="muted">It runs by itself. If a run fails, it shows here in red with what to do.</p>
+        <p className="faint">It runs by itself. If a run fails, it shows here in red with what to do, and in Problems.</p>
       </>}
     </div></section>}
-    {data && <details className="st-tech"><summary>Technical details</summary>
+    {data && <TechDetails hint="component names, response times, raw cleanup fields">
       <dl className="v-kv">
         {SERVICE_KEYS.map((k) => <div key={k}><dt>{SERVICE_WORDS[k].name}</dt><dd><span className="mono">{data[k]?.component} · {data[k]?.status}</span><div className="faint">{data[k]?.message} · checked {fmtDateTime(data[k]?.observedAt)}</div></dd></div>)}
         <div><dt>Response time</dt><dd>{tookMs == null ? '—' : `${tookMs} ms for the whole check (the server reports no time per service)`}</dd></div>
         {cleanup && <div><dt>Cleanup, last run</dt><dd className="mono">outcome {cleanup.outcome} · started {cleanup.startedAt ? fmtDateTime(cleanup.startedAt) : '—'} · finished {cleanup.completedAt ? fmtDateTime(cleanup.completedAt) : '—'} · candidates {cleanup.candidates} · deleted {cleanup.deleted} · failed {cleanup.failed}{cleanup.reasonCode ? ` · ${cleanup.reasonCode}` : ''}</dd></div>}
         <div><dt>Overall</dt><dd className="mono">{data.overallStatus}</dd></div>
       </dl>
-    </details>}
+    </TechDetails>}
   </>
 }

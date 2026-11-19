@@ -245,9 +245,10 @@ function AccessBoundary() {
   const { heldRoles, areas, navigate } = useStore()
   const roles = heldRoles.map((r) => ROLE_LABEL[r.id]).join(', ')
   return (
-    <div className="v-body" style={{ maxWidth: 600, margin: '10vh auto' }}>
-      <div className="v-panel"><div className="v-panel-body stack">
-        <h1>This page isn&apos;t part of your role</h1>
+    // Canvas: the card at the top left of the page, the same card as a load error.
+    <div className="v-body access-page">
+      <div className="v-panel access-card"><div className="v-panel-body stack">
+        <h1 className="card-title">This page isn&apos;t part of your role</h1>
         <p className="muted">Your role is {roles}. If you need this page, ask your administrator to add the right role in your company&apos;s sign-in system.</p>
         <div className="row wrap" style={{ gap: 10 }}>
           <button type="button" className="v-btn primary" onClick={() => navigate(areas[0])}>Go to {AREA_META[areas[0]].tab}</button>

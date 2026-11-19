@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Pause, Pencil, Play, Plus, Trash2 } from 'lucide-react'
+import { Plus, Trash2 } from 'lucide-react'
 import { FailureNotice, actionFailed, loadFailed, type Failure } from './CardError'
-import { Callout, Dialog, Drawer, Panel, fmtDate, fmtRel } from './ui'
+import { Callout, Dialog, Drawer, TechDetails, fmtDate, fmtRel } from './ui'
 import {
   identityOverview, itCreateSource, itFields, itSourceSummary, itSources, itUpdateSource, itUpsertField,
   type ItField, type ItSource, type ItSourceSummary,
@@ -112,61 +112,59 @@ export function Integrations() {
     {error && <FailureNotice failure={error} loadTitle="Integrations didn't load" onRetry={() => setReload((x) => x + 1)} />}
     <div className="int-layout">
       <section className="v-panel int-list" aria-labelledby="int-list-h">
-        <header className="v-panel-head"><div className="grow"><h2 id="int-list-h">Sending systems</h2></div>
+        <header className="v-panel-head int-list-head"><h2 id="int-list-h">Sending systems{loaded ? ` · ${sources.length}` : ''}</h2>
           <button type="button" className="v-btn sm primary" onClick={() => setEditor('new')}><Plus size={14} aria-hidden />Add</button></header>
-        <div className="v-panel-body int-items">
+        <div className="int-items">
           {!loaded ? <p className="muted">Loading…</p> : sources.length === 0 ? <p className="muted">No sending systems yet. Add the first one.</p> : sources.map((s) => {
             const line = statusLine(s, summaries[s.sourceId])
             return <button key={s.sourceId} type="button" className="int-item" aria-pressed={s.sourceId === selectedId} onClick={() => setSelectedId(s.sourceId)}>
-              <strong>{s.displayName}</strong><span className={`int-status ${line.tone}`}>{line.text}</span>
+              <strong>{s.displayName}</strong><span className={`int-status ${line.tone}`}><span className={`v-dot ${line.tone === 'ok' ? 'g' : line.tone === 'warn' ? 'y' : ''}`} aria-hidden />{line.text}</span>
             </button>
           })}
         </div>
       </section>
 
-      {source && <div className="stack int-detail" style={{ gap: 16 }}>
-        <section className="v-panel" aria-label={source.displayName}><div className="v-panel-body stack" style={{ gap: 10 }}>
-          <div className="row between wrap" style={{ gap: 12 }}>
-            <div className="stack" style={{ gap: 4 }}>
-              <h2 className="int-name">{source.displayName}</h2>
-              <span className={`int-status ${statusLine(source, summary).tone}`}>{statusLine(source, summary).text}</span>
-            </div>
-            <div className="row" style={{ gap: 8 }}>
-              <button type="button" className="v-btn" onClick={() => setEditor('edit')}><Pencil size={14} aria-hidden />Edit</button>
-              {source.status === 'ACTIVE'
-                ? <button type="button" className="v-btn" disabled={busy} onClick={() => setPausing(true)}><Pause size={14} aria-hidden />Pause receiving</button>
-                : <button type="button" className="v-btn primary" disabled={busy} onClick={() => void setStatus('ACTIVE')}><Play size={14} aria-hidden />Start receiving</button>}
-            </div>
+      {/* Canvas: one card for the chosen system: name and sentence with Edit and Pause, what it sends, limits and
+          how it proves who it is side by side, and the technical details as a strip at the foot. */}
+      {source && <section className="v-panel int-detail int-card" aria-label={source.displayName}>
+        <header className="int-card-head">
+          <div className="stack" style={{ gap: 4, minWidth: 0 }}>
+            <h2 className="int-name">{source.displayName}</h2>
+            <p className="muted int-facts">
+              Sends documents to Vero through the API.
+              {summary && <> {summary.submissionCount.toLocaleString()} {summary.submissionCount === 1 ? 'delivery' : 'deliveries'}, {summary.documentCount.toLocaleString()} {summary.documentCount === 1 ? 'document' : 'documents'}.
+                {summary.lastProcessingFailureAt ? ` Last problem: ${fmtDate(summary.lastProcessingFailureAt)}.` : ' No problems so far.'}</>}
+            </p>
           </div>
-          <p className="muted int-facts">
-            Sends documents to Vero through the API.
-            {summary && <> {summary.submissionCount.toLocaleString()} {summary.submissionCount === 1 ? 'delivery' : 'deliveries'}, {summary.documentCount.toLocaleString()} {summary.documentCount === 1 ? 'document' : 'documents'}.
-              {summary.lastProcessingFailureAt ? ` Last problem: ${fmtDate(summary.lastProcessingFailureAt)}.` : ' No problems so far.'}</>}
-          </p>
-        </div></section>
+          <div className="row" style={{ gap: 8, flex: 'none' }}>
+            <button type="button" className="v-btn sm" onClick={() => setEditor('edit')}>Edit</button>
+            {source.status === 'ACTIVE'
+              ? <button type="button" className="v-btn sm int-pause" disabled={busy} onClick={() => setPausing(true)}>Pause receiving</button>
+              : <button type="button" className="v-btn sm primary" disabled={busy} onClick={() => void setStatus('ACTIVE')}>Start receiving</button>}
+          </div>
+        </header>
 
-        <Panel flush title="What it sends" meta={fields.length}>
-          {fields.length === 0 ? <p className="muted" style={{ padding: 16 }}>No fields yet. Edit the system to add what it sends.</p> :
-          <table className="v-table" aria-label="What it sends"><thead><tr><th>Field</th><th>Kind of value</th><th>Required</th><th>Used in search</th></tr></thead>
+        <div className="int-sec">
+          <h3 className="v-sec">What it sends</h3>
+          {fields.length === 0 ? <p className="muted">No fields yet. Edit the system to add what it sends.</p> :
+          <div className="int-table"><table className="v-table" aria-label="What it sends"><thead><tr><th>Field</th><th>Kind of value</th><th>Required</th><th>Used in search</th></tr></thead>
             <tbody>{fields.map((f) => <tr key={f.fieldKey}>
-              <td className="lead" data-label="Field"><strong>{f.displayLabel}</strong></td>
+              <td className="lead" data-label="Field">{f.displayLabel}</td>
               <td data-label="Kind of value">{kindWords(f.fieldType, f.normalization)}</td>
-              <td data-label="Required">{f.required ? 'Required' : 'Optional'}</td>
+              <td data-label="Required">{f.required ? 'Yes' : 'No'}</td>
               <td data-label="Used in search">{searchWords(f)}</td>
-            </tr>)}</tbody></table>}
-        </Panel>
-
-        <div className="int-facts-grid">
-          <Panel title="Limits per delivery"><dl className="v-kv">
-            {LIMIT_ROWS.map((r) => { const n = source.limits?.[r.key]; return <div key={r.key}><dt>{r.label}</dt><dd>{n != null ? r.words(n) : STANDARD}</dd></div> })}
-          </dl></Panel>
-          <Panel title="How it proves who it is">
-            <p>{AUTH[source.authType].sentence(idp)}</p>
-            <p className="faint" style={{ marginTop: 6 }}>{NEVER_SECRET}</p>
-          </Panel>
+            </tr>)}</tbody></table></div>}
         </div>
 
-        <details className="v-panel int-tech"><summary>Technical details</summary>
+        <div className="int-sec int-two">
+          <div className="stack" style={{ gap: 8 }}><h3 className="v-sec">Limits per delivery</h3>
+            <dl className="int-kv">{LIMIT_ROWS.map((r) => { const n = source.limits?.[r.key]; return <div key={r.key}><dt>{r.label}</dt><dd>{n != null ? r.words(n) : STANDARD}</dd></div> })}</dl></div>
+          <div className="stack" style={{ gap: 8 }}><h3 className="v-sec">How it proves who it is</h3>
+            <p>{AUTH[source.authType].sentence(idp)}</p>
+            <p className="faint">{NEVER_SECRET}</p></div>
+        </div>
+
+        <TechDetails flat hint="source key, credential reference, field keys and versions, authentication type">
           <dl className="v-kv cols">
             <div><dt>Source key</dt><dd className="mono">{source.sourceKey}</dd></div>
             <div><dt>Where the secret is kept</dt><dd className="mono">{source.credentialReference || '—'}</dd></div>
@@ -174,8 +172,8 @@ export function Integrations() {
             <div><dt>Total size of one delivery</dt><dd>{source.limits?.maxAggregateSubmissionBytes != null ? `${(source.limits.maxAggregateSubmissionBytes / MB).toLocaleString(undefined, { maximumFractionDigits: 1 })} MB` : STANDARD}</dd></div>
           </dl>
           <ul className="int-keys">{fields.map((f) => <li key={f.fieldKey}><span className="mono">{f.fieldKey}</span> · version {f.version} · <span className="mono">{f.fieldType} · {f.normalization}</span></li>)}</ul>
-        </details>
-      </div>}
+        </TechDetails>
+      </section>}
     </div>
 
     {pausing && source && <Dialog title={`Pause receiving from ${source.displayName}?`} onClose={() => { if (!busy) setPausing(false) }} footer={<>
@@ -253,15 +251,16 @@ function SourceEditor({ mode, source, fields, others, idp, onClose, onSaved }: {
   }
 
   const last = step === STEPS.length - 1
-  return <Drawer eyebrow={`Step ${step + 1} of ${STEPS.length} · ${STEPS[step]}`} title={mode === 'new' ? 'Add a sending system' : `Edit ${source?.displayName ?? ''}`} onClose={() => { if (!busy) onClose() }}
+  // Canvas: what is being done above, the step as the title.
+  return <Drawer wide eyebrow={mode === 'new' ? 'Add a sending system' : `Edit ${source?.displayName ?? ''}`} title={`Step ${step + 1} of ${STEPS.length} · ${STEPS[step]}`} onClose={() => { if (!busy) onClose() }}
     footer={<>
-      {step > 0 ? <button type="button" className="v-btn" disabled={busy} onClick={() => setStep((s) => s - 1)}>Back</button> : <button type="button" className="v-btn" disabled={busy} onClick={onClose}>Cancel</button>}
+      {step > 0 ? <button type="button" className="v-btn quiet int-back" disabled={busy} onClick={() => setStep((s) => s - 1)}>Back</button> : <button type="button" className="v-btn" disabled={busy} onClick={onClose}>Cancel</button>}
       {!last ? <button type="button" className="v-btn primary" disabled={!stepValid} onClick={() => setStep((s) => s + 1)}>Next</button> : <>
         {mode === 'new' && <button type="button" className="v-btn" disabled={busy || !stepValid} onClick={() => void save(true)}>Save as paused</button>}
         <button type="button" className="v-btn primary" disabled={busy || !stepValid} onClick={() => void save(false)}>{busy ? 'Saving…' : 'Save'}</button>
       </>}
     </>}>
-    <ol className="int-steps" aria-label="Steps">{STEPS.map((s, i) => <li key={s} aria-current={i === step ? 'step' : undefined} className={i < step ? 'done' : undefined}>{s}</li>)}</ol>
+    <ol className="int-steps" aria-label="Steps">{STEPS.map((s, i) => <li key={s} aria-current={i === step ? 'step' : undefined} className={i < step ? 'done' : undefined}>{i + 1} {s}{i < step && ' ✓'}</li>)}</ol>
     {saveError && <FailureNotice failure={saveError} loadTitle="" actionTitle="The sending system wasn't saved" onRetry={() => undefined} />}
 
     {step === 0 && <>
@@ -274,8 +273,9 @@ function SourceEditor({ mode, source, fields, others, idp, onClose, onSaved }: {
     </>}
 
     {step === 1 && <>
-      <p className="muted">Changing a field later affects new deliveries only. Documents already stored keep the values they arrived with.</p>
-      <div className="stack" style={{ gap: 10 }}>
+      <p>The fields this system sends with every delivery. Business admin later decides how each is searched.</p>
+      <div className="int-fields">
+        <div className="int-field-head" aria-hidden><span>Field</span><span>Key it sends</span><span>Kind of value</span><span>Required</span></div>
         {draft.map((f, i) => <fieldset key={i} className="int-field">
           <legend className="sr-only">Field {i + 1}</legend>
           <div className="int-field-row">
@@ -292,7 +292,8 @@ function SourceEditor({ mode, source, fields, others, idp, onClose, onSaved }: {
           {fieldProblems[i] && (f.key || f.label) && <small className="bad">{fieldProblems[i]}</small>}
         </fieldset>)}
       </div>
-      <button type="button" className="v-btn" onClick={() => setDraft((d) => [...d, { key: '', label: '', kind: kindKey('TEXT', 'NONE'), required: false }])}><Plus size={14} aria-hidden />Add a field</button>
+      <button type="button" className="v-btn sm" style={{ alignSelf: 'flex-start' }} onClick={() => setDraft((d) => [...d, { key: '', label: '', kind: kindKey('TEXT', 'NONE'), required: false }])}><Plus size={14} aria-hidden />Add a field</button>
+      <div className="v-banner warn">Changing a field later affects new deliveries only. Documents already stored keep the values they arrived with.</div>
       <small className="faint">Which field identifies a record is set by the Business admin under Search fields.</small>
     </>}
 

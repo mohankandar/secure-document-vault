@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { FailureNotice, loadFailed, type Failure } from './CardError'
-import { Drawer, Seg, Status, fmtDateTime } from './ui'
+import { Drawer, TechDetails, fmtDateTime } from './ui'
+import { fmtWhen } from './opsWords'
 import { opsAudit, opsAuditExport, type OpsAuditEvent } from './liveApi'
 import { ApiRequestError } from '../api'
 import { ACTIVITY_GROUPS, RESULT_WORDS, actorName, auditSentence } from './auditWords'
@@ -97,58 +98,57 @@ export function AuditLog() {
     } finally { setExporting(false) }
   }
 
+  // Canvas: the filters on one line without labels (their names are their accessible labels), Export on the right;
+  // the list with the person's name in bold and times as "Today 09:12"; a note on what a row holds.
   return <>
     {error && <FailureNotice failure={error} loadTitle="The audit didn't load" onRetry={() => setQuery((x) => x + 1)} />}
-    <section className="v-panel" aria-label="Audit filters"><div className="v-panel-body au-filters">
-      <label className="v-field"><span>Activity</span><select className="v-select" value={activity} onChange={(e) => setActivity(e.target.value)}>
-        <option value="">All activity</option>{ACTIVITY_GROUPS.map((g) => <option key={g.id} value={g.id}>{g.label}</option>)}</select></label>
-      <label className="v-field"><span>Person</span><select className="v-select" value={person} onChange={(e) => setPerson(e.target.value)}>
-        <option value="">Everyone</option>{Object.entries(people).sort((a, b) => a[1].localeCompare(b[1])).map(([id, name]) => <option key={id} value={id}>{name === id ? id : `${name} (${id})`}</option>)}</select></label>
-      <div className="v-field"><span className="v-label">Period</span>
-        <Seg label="Period" value={period} onChange={setPeriod} options={[{ value: 'today', label: 'Today' }, { value: '7', label: 'Last 7 days' }, { value: '30', label: 'Last 30 days' }, { value: 'custom', label: 'Dates' }]} /></div>
-      {period === 'custom' && <div className="row" style={{ gap: 8 }}>
-        <label className="v-field"><span>From</span><input className="v-input" type="date" value={customFrom} max={customTo || undefined} onChange={(e) => setCustomFrom(e.target.value)} /></label>
-        <label className="v-field"><span>To</span><input className="v-input" type="date" value={customTo} min={customFrom || undefined} onChange={(e) => setCustomTo(e.target.value)} /></label>
-      </div>}
-      <form className="v-field au-record" onSubmit={(e) => { e.preventDefault(); setQuery((x) => x + 1) }}>
-        <label htmlFor="au-record">Record number</label>
-        <div className="row" style={{ gap: 6 }}><input id="au-record" className="v-input mono" inputMode="numeric" value={recordNumber} onChange={(e) => setRecordNumber(e.target.value)} placeholder="300000000090" />
-          <button type="submit" className="v-btn" disabled={badDates}>Show</button></div>
+    <section aria-label="Audit filters" className="au-bar">
+      <select className="v-select au-activity" aria-label="Activity" value={activity} onChange={(e) => setActivity(e.target.value)}>
+        <option value="">All activity</option>{ACTIVITY_GROUPS.map((g) => <option key={g.id} value={g.id}>{g.label}</option>)}</select>
+      <select className="v-select au-person" aria-label="Person" value={person} onChange={(e) => setPerson(e.target.value)}>
+        <option value="">Person</option>{Object.entries(people).sort((a, b) => a[1].localeCompare(b[1])).map(([id, name]) => <option key={id} value={id}>{name === id ? id : `${name} (${id})`}</option>)}</select>
+      <select className="v-select au-period" aria-label="Period" value={period} onChange={(e) => setPeriod(e.target.value as typeof period)}>
+        <option value="today">Today</option><option value="7">Last 7 days</option><option value="30">Last 30 days</option><option value="custom">Dates…</option></select>
+      <form className="au-record" onSubmit={(e) => { e.preventDefault(); setQuery((x) => x + 1) }}>
+        <input id="au-record" className="v-input mono" aria-label="Record number" inputMode="numeric" value={recordNumber} onChange={(e) => setRecordNumber(e.target.value)} placeholder="Record number" />
       </form>
-    </div>
-    <div className="au-toolbar">
-      <button type="button" className="v-btn quiet sm" aria-expanded={moreOpen} onClick={() => setMoreOpen((v) => !v)}>{moreOpen ? 'Fewer filters' : 'More filters'}{Object.values(advanced).some(Boolean) ? ' · set' : ''}</button>
-      <label className="row" style={{ gap: 8 }}><input type="checkbox" checked={includeRoutine} onChange={(e) => setIncludeRoutine(e.target.checked)} />Include view events</label>
-      <button type="button" className="v-btn sm" disabled={exporting || badDates} onClick={() => void exportCsv()}>{exporting ? 'Exporting…' : 'Export CSV'}</button>
-    </div>
-    {exportNote && <p className={exportNote.ok ? 'muted au-export-note' : 'au-export-note bad'} role={exportNote.ok ? 'status' : 'alert'}>{exportNote.text}</p>}
-    {moreOpen && <div className="au-advanced">
+      <button type="button" className="v-btn quiet sm" aria-expanded={moreOpen} onClick={() => setMoreOpen((v) => !v)}>{moreOpen ? 'Fewer filters' : 'More filters'}{Object.values(advanced).some(Boolean) || includeRoutine ? ' · set' : ''}</button>
+      <span className="grow" />
+      <button type="button" className="v-btn sm" disabled={exporting || badDates} onClick={() => void exportCsv()}>{exporting ? 'Exporting…' : 'Export'}</button>
+    </section>
+    {period === 'custom' && <div className="row" style={{ gap: 8 }}>
+      <label className="v-field"><span>From</span><input className="v-input" type="date" value={customFrom} max={customTo || undefined} onChange={(e) => setCustomFrom(e.target.value)} /></label>
+      <label className="v-field"><span>To</span><input className="v-input" type="date" value={customTo} min={customFrom || undefined} onChange={(e) => setCustomTo(e.target.value)} /></label>
+    </div>}
+    {moreOpen && <section className="v-panel au-advanced" aria-label="More filters">
+      <label className="row" style={{ gap: 8, gridColumn: '1 / -1' }}><input type="checkbox" checked={includeRoutine} onChange={(e) => setIncludeRoutine(e.target.checked)} />Include view events</label>
       {([['action', 'Action code'], ['actorType', 'Actor type'], ['actorId', 'Actor ID'], ['targetType', 'Target type'], ['targetId', 'Target ID'], ['correlationId', 'Correlation ID']] as [keyof Advanced, string][]).map(([k, label]) =>
         <label key={k} className="v-field"><span>{label}</span><input className="v-input mono" value={advanced[k]} onChange={(e) => setAdvanced((a) => ({ ...a, [k]: e.target.value.trim() }))} /></label>)}
       <label className="v-field"><span>Result</span><select className="v-select" value={advanced.outcome} onChange={(e) => setAdvanced((a) => ({ ...a, outcome: e.target.value }))}>
         <option value="">Any</option><option value="SUCCESS">Done</option><option value="DENIED">Refused</option><option value="FAILED">Failed</option></select></label>
-    </div>}
-    </section>
+    </section>}
+    {exportNote && <p className={exportNote.ok ? 'muted au-export-note' : 'au-export-note bad'} role={exportNote.ok ? 'status' : 'alert'}>{exportNote.text}</p>}
 
     <section className="v-panel flush" aria-label="Audit events">
       {loading && events.length === 0 ? <p className="muted" style={{ padding: 16 }}>Loading…</p> : shown.length === 0 ? <p className="muted" style={{ padding: 16 }}>Nothing matches in the events loaded so far.{cursor ? ' Load older events to look further back.' : ''}</p> :
-      <table className="v-table" aria-label="Audit list"><thead><tr><th>When</th><th>What happened</th><th>Record</th><th>Result</th></tr></thead>
+      <table className="v-table au-table" aria-label="Audit list"><thead><tr><th>When</th><th>What happened</th><th>Record</th><th>Result</th></tr></thead>
         <tbody>{shown.map((e) => <tr key={e.auditEventId} className="clickable" tabIndex={0} onClick={() => setSelected(e)} onKeyDown={(k) => { if (k.key === 'Enter' || k.key === ' ') { k.preventDefault(); setSelected(e) } }}>
-          <td data-label="When" className="faint">{fmtDateTime(e.occurredAt)}</td>
-          <td data-label="What happened" className="lead">{auditSentence(e)}</td>
+          <td data-label="When" className="faint">{fmtWhen(e.occurredAt)}</td>
+          <td data-label="What happened" className="lead"><AuditWords e={e} /></td>
           <td data-label="Record" className="mono">{e.recordNumber ?? '—'}</td>
-          <td data-label="Result"><Status value={e.outcome} label={RESULT_WORDS[e.outcome] ?? e.outcome} /></td>
+          <td data-label="Result"><span className={`v-dot ${e.outcome === 'SUCCESS' ? 'g' : 'r'}`} aria-hidden />{RESULT_WORDS[e.outcome] ?? e.outcome}</td>
         </tr>)}</tbody></table>}
       {cursor && <div style={{ padding: 12 }}><button type="button" className="v-btn" disabled={loading} onClick={() => void more()}>{loading ? 'Loading…' : 'Load older events'}</button></div>}
     </section>
+    <p className="faint au-note">Click a row to see the full entry; its codes and IDs are under Technical details.</p>
 
     {selected && <Drawer eyebrow="Audit" title={auditSentence(selected)} onClose={() => setSelected(null)}>
       <dl className="v-kv">
         <div><dt>When</dt><dd>{fmtDateTime(selected.occurredAt)}</dd></div>
-        <div><dt>Result</dt><dd><Status value={selected.outcome} label={RESULT_WORDS[selected.outcome] ?? selected.outcome} /></dd></div>
+        <div><dt>Result</dt><dd><span className={`v-dot ${selected.outcome === 'SUCCESS' ? 'g' : 'r'}`} aria-hidden />{RESULT_WORDS[selected.outcome] ?? selected.outcome}</dd></div>
         {selected.recordNumber && <div><dt>Record</dt><dd className="mono">{selected.recordNumber}</dd></div>}
       </dl>
-      <details className="st-tech"><summary>Technical details</summary>
+      <TechDetails flat hint="action code, actor, target, IDs">
         <dl className="v-kv">
           <div><dt>Action code</dt><dd className="mono">{selected.action}</dd></div>
           <div><dt>Actor</dt><dd className="mono">{selected.actorType} · {selected.actorId}</dd></div>
@@ -157,7 +157,13 @@ export function AuditLog() {
           <div><dt>Correlation ID</dt><dd className="mono">{selected.correlationId ?? '—'}</dd></div>
         </dl>
         <pre className="mono op-audit-details">{selected.safeDetailsJson ?? '—'}</pre>
-      </details>
+      </TechDetails>
     </Drawer>}
   </>
+}
+
+/** An audit sentence with the person's (or system's) name in bold, as on the canvas. */
+export function AuditWords({ e }: { e: OpsAuditEvent }) {
+  const sentence = auditSentence(e), name = actorName(e)
+  return name && sentence.startsWith(name) ? <><b>{name}</b>{sentence.slice(name.length)}</> : <>{sentence}</>
 }

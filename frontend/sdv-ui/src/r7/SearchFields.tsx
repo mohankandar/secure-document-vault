@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react'
-import { GripVertical, Pencil } from 'lucide-react'
+import { GripVertical } from 'lucide-react'
 import { useStore } from './store'
 import { BUSINESS_LIMITS, type SearchMode } from './data'
 import { FailureNotice, actionFailed, loadFailed, type Failure } from './CardError'
-import { Callout, Drawer, Panel, Switch } from './ui'
+import { Callout, Drawer, Switch, TechDetails } from './ui'
 import {
   adminMetadataFields, adminMetadataSources, getMetadataDisplayOrder, getRecordTitleFields, saveMetadataDisplayOrder, saveRecordTitleFields,
   updateBusinessMetadata, type AdminMetadataField, type AdminMetadataSource,
@@ -172,11 +172,11 @@ export function SearchFields() {
           : 'Default: the first field after the identifiers, A to Z. An identifier is never the title; it shows beside it.'}</p>
       </div></section>
 
-      <Panel flush title="Fields" meta={fields.length}>
+      <section className="v-panel" aria-label="Fields">
         <table className="v-table sf-table" aria-label="Search fields">
           <thead><tr><th className="sf-grip"><span className="sr-only">Order</span></th><th>Field</th><th>Searchable</th><th>How it matches</th><th className="act"><span className="sr-only">Edit</span></th></tr></thead>
           <tbody>{fields.map((f, i) => (
-            <tr key={f.fieldKey} ref={(el) => { if (el) rows.current.set(f.fieldKey, el); else rows.current.delete(f.fieldKey) }} className={dragKey === f.fieldKey ? 'sf-dragging' : undefined}>
+            <tr key={f.fieldKey} ref={(el) => { if (el) rows.current.set(f.fieldKey, el); else rows.current.delete(f.fieldKey) }} className={dragKey === f.fieldKey ? 'sf-dragging' : draft?.fieldKey === f.fieldKey ? 'sf-editing' : undefined}>
               <td className="sf-grip">
                 <button type="button" className="v-btn quiet icon sm sf-handle" aria-label={`Move ${f.displayLabel}. Use the arrow keys or drag.`} disabled={!allowed || busy}
                   onPointerDown={(e) => onDragStart(e, f.fieldKey)} onPointerMove={onDragMove} onPointerUp={onDragEnd} onPointerCancel={onDragEnd}
@@ -186,19 +186,20 @@ export function SearchFields() {
               <td data-label="Searchable">{f.businessIdentifier ? <span className="muted">Always</span>
                 : <Switch label={`${f.displayLabel} searchable`} checked={f.searchable} disabled={!allowed || busy} onChange={(v) => void saveField({ ...f, searchable: v })} />}</td>
               <td data-label="How it matches">{f.searchable ? MATCH_WORDS[f.searchMode] : <span className="faint">—</span>}</td>
-              <td className="act"><button type="button" className="v-btn sm" aria-label={`Edit ${f.displayLabel}`} disabled={!allowed || busy} onClick={() => setDraft({ ...f })}><Pencil size={14} aria-hidden />Edit</button></td>
+              <td className="act"><button type="button" className="v-btn sm" aria-label={`Edit ${f.displayLabel}`} disabled={!allowed || busy} onClick={() => setDraft({ ...f })}>Edit</button></td>
             </tr>
           ))}</tbody>
         </table>
         <p className="faint sf-hint">Drag <GripVertical size={13} aria-hidden style={{ verticalAlign: '-2px' }} /> to set the order fields appear in Filters and in results.</p>
-      </Panel>
+      </section>
     </>}
 
-    <Panel title="Limits"><ul className="sf-limits">
-      <li>Records per page: {BUSINESS_LIMITS.pageSize} (most {MAX_PAGE_SIZE})</li>
-      <li>Comment length: {BUSINESS_LIMITS.maxCommentLength.toLocaleString()} characters</li>
-      <li>Tag length: {BUSINESS_LIMITS.maxTagLength} characters</li>
-    </ul></Panel>
+    {/* Canvas: the limits on one line in a small card. */}
+    <section className="v-panel sf-limits-card" aria-label="Limits"><span className="v-sec">Limits</span><ul className="sf-limits">
+      <li>Records per page: <b>{BUSINESS_LIMITS.pageSize} (most {MAX_PAGE_SIZE})</b></li>
+      <li>Comment length: <b>{BUSINESS_LIMITS.maxCommentLength.toLocaleString()} characters</b></li>
+      <li>Tag length: <b>{BUSINESS_LIMITS.maxTagLength} characters</b></li>
+    </ul></section>
 
     {draft && <Drawer eyebrow="Search field" title={fields.find((f) => f.fieldKey === draft.fieldKey)?.displayLabel ?? draft.displayLabel} onClose={() => { if (!busy) setDraft(null) }}
       footer={<><button type="button" className="v-btn" disabled={busy} onClick={() => setDraft(null)}>Cancel</button>
@@ -217,10 +218,10 @@ export function SearchFields() {
         ))}
         <small className="muted">{caseNote(draft)}</small>
       </fieldset>
-      <details className="sf-tech"><summary>Technical details</summary>
+      <TechDetails flat hint="field key, type, normalization, version">
         <dl className="v-kv"><div><dt>Field key</dt><dd className="mono">{draft.fieldKey}</dd></div><div><dt>Type</dt><dd className="mono">{draft.fieldType}</dd></div>
           <div><dt>Normalization</dt><dd className="mono">{draft.normalization}</dd></div><div><dt>Version</dt><dd>{draft.version}</dd></div></dl>
-      </details>
+      </TechDetails>
     </Drawer>}
   </>
 }

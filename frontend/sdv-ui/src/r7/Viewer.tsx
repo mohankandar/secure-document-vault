@@ -1,10 +1,10 @@
-import { useEffect, useRef, useState, type PointerEvent as RPointerEvent, type ReactNode } from 'react'
-import { ArrowLeft, ChevronLeft, ChevronRight, Download, Eraser, Info, Maximize2, Minus, PanelLeftClose, PanelLeftOpen, PanelRight, Plus, Printer, Search, ShieldAlert, Sparkles, Trash2, X } from 'lucide-react'
+import { useEffect, useRef, useState, type PointerEvent as RPointerEvent } from 'react'
+import { ArrowLeft, ChevronLeft, ChevronRight, Download, Eraser, Maximize2, Minus, PanelLeftClose, PanelLeftOpen, PanelRight, Plus, Printer, Search, ShieldAlert, Sparkles, X } from 'lucide-react'
 import { useStore } from './store'
 import { BUSINESS_LIMITS, PAGE_TEXT, RETENTION, type Doc, type RecordItem, type Redaction } from './data'
 import { ApiRequestError } from '../api'
 import { failureText } from './CardError'
-import { Badge, Callout, Dialog, Drawer, Tabs, actorWords, auditEventLabel, fmtDate, fmtDateTime, fmtRel, fmtShortDate, humanize } from './ui'
+import { Badge, Callout, Dialog, Drawer, Tabs, TechDetails, actorWords, auditEventLabel, fmtDate, fmtDateTime, fmtRel, fmtShortDate, humanize } from './ui'
 import { viewerMetadata, viewerPage, viewerSearch, record as fetchRecord, toRecord, documentActivity, type LiveDocumentActivity, type ViewerSearch, documentTags, documentComments, createDocumentTag, createDocumentComment, type LiveTag, type LiveComment, secureDownload, recordPrintEvent, permanentRedaction, viewerPreviews } from './liveApi'
 
 type Zoom = 'width' | 'page' | number
@@ -34,7 +34,7 @@ const PREVIEW_CHUNK = 12
 const SSN = /\d{3}-\d{2}-\d{4}/
 
 export function Viewer({ record, results, docId, onClose, recordTitle, backLabel = 'Results' }: { record: RecordItem; results: RecordItem[]; docId: string; onClose: () => void; /** Same title as the record panel. */ recordTitle?: string; backLabel?: string }) {
-  const { can, setOpenDocId, setSelectedRef, setRecords, updateDoc, addDocActivity, toast, liveSession } = useStore()
+  const { can, setOpenDocId, setSelectedRef, setRecords, addDocActivity, toast, liveSession } = useStore()
   const doc = record.docs.find((d) => d.id === docId) ?? record.docs[0]
   const [pageCount, setPageCount] = useState(0)
   // This opening's ID from the server; page requests send it so each page is recorded once per viewing (task 0007).
@@ -560,12 +560,12 @@ function DocInfo({ doc, tab, setTab, embedded }: { doc: Doc; tab: InfoTab; setTa
             {doc.redacted && <div><dt>Corrections</dt><dd>Redacted (permanent)</dd></div>}
             {!liveSession && doc.redactions.length > 0 && <div><dt>Corrections</dt><dd><Badge tone="warn">{doc.redactions.length} simulated redaction{doc.redactions.length === 1 ? '' : 's'}</Badge></dd></div>}
           </dl>
-          <details className="st-tech"><summary>Technical details</summary>
+          <TechDetails flat hint="document and submission IDs">
             <dl className="v-kv">
               <div><dt>Document ID</dt><dd className="mono">{doc.id}</dd></div>
               <div><dt>Submission</dt><dd className="mono">{doc.submissionId}</dd></div>
             </dl>
-          </details>
+          </TechDetails>
         </>
       )}
       {tab === 'comments' && (

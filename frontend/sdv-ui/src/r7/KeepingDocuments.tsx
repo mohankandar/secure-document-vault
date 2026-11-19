@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react'
-import { Plus } from 'lucide-react'
 import { useStore } from './store'
 import { FailureNotice, actionFailed, loadFailed, type Failure } from './CardError'
 import { Badge, Callout, Drawer, Panel, fmtDate } from './ui'
@@ -29,7 +28,8 @@ export function ruleWords(days: number | null, indefinite: boolean): string {
 }
 /** Rules written by the installation itself, not by a person. */
 const byInstallation = (createdBy: string) => createdBy === 'SYSTEM_MIGRATION'
-const setBy = (createdBy: string) => (byInstallation(createdBy) ? 'Set at installation' : createdBy)
+// The server keeps only the sign-in ID of whoever set a rule; a technical ID is never shown (task 0019: question for the owner).
+const setBy = (createdBy: string) => (byInstallation(createdBy) ? 'Set at installation' : 'A Business admin')
 
 export function KeepingDocuments() {
   const { can, toast } = useStore()
@@ -85,25 +85,23 @@ export function KeepingDocuments() {
     {policy && <>
       <section className="v-panel" aria-label="Rule in use"><div className="v-panel-body keep-now">
         <div className="stack" style={{ gap: 6 }}>
-          <span className="eyebrow">Rule in use since {fmtDate(policy.effectiveFrom)}</span>
+          <span className="v-sec">Rule in use since {fmtDate(policy.effectiveFrom)}</span>
           <span className="keep-rule">{ruleWords(policy.defaultRetentionDays, policy.indefinite)}</span>
           <span className="muted">
             Counted from the day each document arrives.{' '}
-            {byInstallation(policy.createdBy) ? 'Set at installation.' : <>Set by {policy.createdBy}{policy.description ? <>: &ldquo;{policy.description}&rdquo;</> : null}.</>}
+            {byInstallation(policy.createdBy) ? 'Set at installation.' : <>Set by a Business admin{policy.description ? <>: &ldquo;{policy.description}&rdquo;</> : null}.</>}
           </span>
         </div>
-        <button type="button" className="v-btn primary" disabled={!can('CONFIGURE_RETENTION')} onClick={startNew}><Plus size={16} aria-hidden />New rule</button>
+        <button type="button" className="v-btn primary" disabled={!can('CONFIGURE_RETENTION')} onClick={startNew}>New rule</button>
       </div></section>
       <div className="keep-facts">
-        <Panel title="When time is up">
-          {/* The last cleanup run is in Platform operations' retention status, which a Business admin cannot read. */}
-          <p>Vero deletes the document for good and records it in the audit. A daily cleanup does this.</p>
-        </Panel>
-        <Panel title="Changing the rule">
-          <p>A new rule applies to documents that arrive after it starts. Documents already stored keep the rule they arrived with.</p>
-        </Panel>
+        {/* The last cleanup run is in Platform operations' retention status, which a Business admin cannot read. */}
+        <section className="v-panel keep-fact" aria-label="When time is up"><h3 className="v-sec">When time is up</h3>
+          <p>Vero deletes the document for good and records it in the audit. A daily cleanup does this.</p></section>
+        <section className="v-panel keep-fact" aria-label="Changing the rule"><h3 className="v-sec">Changing the rule</h3>
+          <p>A new rule applies to documents that arrive after it starts. Documents already stored keep the rule they arrived with.</p></section>
       </div>
-      <Panel flush title="Earlier rules" meta={policy.history.length}>
+      <Panel flush title="Earlier rules">
         <table className="v-table"><thead><tr><th>Rule</th><th>In use</th><th>Set by</th><th>Why</th></tr></thead>
           <tbody>{policy.history.map((h) => <tr key={h.policyVersionId}>
             <td className="lead" data-label="Rule"><span className="row" style={{ gap: 8 }}><strong>{ruleWords(h.defaultRetentionDays, h.indefinite)}</strong>{!h.effectiveUntil && <Badge tone="ok">In use</Badge>}</span></td>
@@ -135,7 +133,7 @@ export function KeepingDocuments() {
         <label className="v-field"><span>Why this changed</span>
           <textarea className="v-textarea" value={why} maxLength={1000} required onChange={(e) => setWhy(e.target.value)} placeholder="For example: records schedule approved by Legal on 12 Nov" />
         </label>
-        <Callout title="Applies only to documents received from now on">Documents already stored keep the rule they arrived with.</Callout>
+        <div className="v-banner warn">Applies only to documents received from now on. Documents already stored keep the rule they arrived with.</div>
         <label className="v-check"><input type="checkbox" checked={approved} onChange={(e) => setApproved(e.target.checked)} /><span>This change has been approved</span></label>
       </Drawer>}
     </>}

@@ -3,7 +3,7 @@ import { KeepingDocuments } from './KeepingDocuments'
 import { AREA_TABS, useStore } from './store'
 import { type Capability } from './data'
 import { ActionError, LoadErrorCard, toFailure, type Failure } from './CardError'
-import { Badge, Callout, PageHead, Panel, Switch, Tabs } from './ui'
+import { Badge, Banner, Callout, PageHead, Panel, Switch, Tabs } from './ui'
 import { getRolePolicy, saveRolePolicy, type RolePolicy } from './liveApi'
 import { SearchFields } from './SearchFields'
 
@@ -11,7 +11,8 @@ export function AreaFrame({ crumbs, title, lede, actions, children, attention = 
   const { route, navigate } = useStore()
   return (
     <div className="v-page">
-      <PageHead crumbs={crumbs} title={title} lede={lede} actions={actions} />
+      {/* The canvas names the area only above the title; the tab is the title. */}
+      <PageHead crumbs={crumbs.slice(0, 1)} title={title} lede={lede} actions={actions} />
       <Tabs label={`${crumbs[0]} sections`} value={route.tab} onChange={(t) => navigate(route.area, t)} tabs={AREA_TABS[route.area].map((t) => ({ ...t, attention: attention.includes(t.id) }))} />
       <div className="v-body">{children}</div>
     </div>
@@ -58,7 +59,7 @@ function PeopleTab() {
         </tr>)}</tbody>
       </table>
     </Panel>
-    <Callout title="To give someone a role,">add them to the group with that name in your sign-in system (for example Okta). Vero never stores passwords and does not keep its own list of people, so there is nothing to add here.</Callout>
+    <Banner tone="info" lead="To give someone a role,">add them to the group with that name in your sign-in system (for example Okta). Vero never stores passwords and does not keep its own list of people, so there is nothing to add here.</Banner>
     <p className="faint" style={{ fontSize: 13 }}>Platform operations is your service provider’s role and is not listed here.</p>
   </>
 }
@@ -100,7 +101,7 @@ function RolesTab() {
     {policy && <section className="v-panel flush">
       <div className="v-panel-body">
         <table className="v-table"><thead><tr><th>Action</th>{cols.map(c=><th key={c.code}>{c.name}</th>)}</tr></thead>
-        <tbody>{ROLE_ACTIONS.map(a=><tr key={a.label}><td className="lead" data-label="Action"><span style={{fontWeight:500}}>{a.label}</span>{a.permanent&&<> <Badge tone="bad">Cannot be undone</Badge></>}</td>
+        <tbody>{ROLE_ACTIONS.map(a=><tr key={a.label}><td className="lead" data-label="Action"><span style={{fontWeight:400}}>{a.label}</span>{a.permanent&&<> <Badge tone="bad">Cannot be undone</Badge></>}</td>
         {cols.map(col=><td key={col.code} data-label={col.name}>{!a.capability?<span className="faint" style={{fontSize:13}}>Always on</span>:<Switch label={a.label+' for '+col.name} checked={!!draft[col.code]?.[a.capability]} onChange={on=>toggle(col.code,a.capability!,on)} disabled={!can('CONFIGURE_ROLE_PERMISSIONS') || saving || !policy.configurableCapabilities.includes(a.capability)}/>}</td>)}</tr>)}</tbody></table>
       </div>
       <footer className="roles-foot row wrap">

@@ -156,4 +156,30 @@ foreach ($line in ($rows -split "`n" | Where-Object { $_.Trim() })) {
     $index++
 }
 Ok "LexaVault: names on 100000000001-100000000003, a loan type on $index deliveries"
+
+# ---- Admin canvas (task 0019): two storage volumes and a second sending system ----
+$rawVolumes = Api 'GET' '/api/v1/admin/storage-volumes' $it
+$volumes = @($rawVolumes | ForEach-Object { $_ })
+$inUse = $volumes | Where-Object { $_.volume.displayName -in @('Local demo volume', 'primary-a') } | Select-Object -First 1
+if ($inUse -and $inUse.volume.displayName -ne 'primary-a') {
+    $v = $inUse.volume
+    $null = Api 'PUT' "/api/v1/admin/storage-volumes/$($v.volumeId)" $it @{ displayName = 'primary-a'; state = $v.state; priority = $v.priority; warningPercent = $v.warningPercent; stopWritePercent = $v.stopWritePercent }
+}
+Ok 'Volume in use: primary-a'
+if (-not ($volumes | Where-Object { $_.volume.displayName -eq 'primary-b' })) {
+    $folder = Join-Path $PSScriptRoot '.runtime\demo-storage-b'
+    New-Item -ItemType Directory -Force -Path $folder | Out-Null
+    $priority = if ($inUse) { [int]$inUse.volume.priority + 1 } else { 2 }
+    $null = Api 'POST' '/api/v1/admin/storage-volumes' $it @{ displayName = 'primary-b'; rootPath = $folder; state = 'ACTIVE'; priority = $priority; warningPercent = 80; stopWritePercent = 95 }
+}
+Ok 'Standby volume: primary-b'
+$tr = $sources | Where-Object { $_.sourceKey -eq 'titleRecords' } | Select-Object -First 1
+if (-not $tr) {
+    $tr = Api 'POST' '/api/v1/admin/ingestion-sources' $it @{ sourceKey = 'titleRecords'; displayName = 'Title Records'; authType = 'OAUTH2_CLIENT_CREDENTIALS'; credentialReference = 'vault/title-records-client' }
+}
+# The canvas shows Title Records paused.
+if ($tr.status -ne 'DISABLED') {
+    $null = Api 'PUT' "/api/v1/admin/ingestion-sources/$($tr.sourceId)" $it @{ displayName = $tr.displayName; status = 'DISABLED'; authType = $tr.authType; credentialReference = $tr.credentialReference }
+}
+Ok 'Sending system: Title Records (paused)'
 Write-Host 'Canvas demo data ready.' -ForegroundColor Green

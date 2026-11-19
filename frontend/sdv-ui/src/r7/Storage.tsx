@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
-import { AlertTriangle, CheckCircle2, Pencil, Plus, XCircle } from 'lucide-react'
+import { CheckCircle2, Plus, XCircle } from 'lucide-react'
 import { FailureNotice, actionFailed, loadFailed, type Failure } from './CardError'
-import { Callout, Drawer, Meter } from './ui'
+import { Callout, Drawer, TechDetails } from './ui'
 import { checkStorageFolder, createStorageVolume, liveStorage, updateStorageVolume, type FolderCheck, type LiveStorageVolume } from './liveApi'
 
 // Task 0010 Part B (finding 15): volumes by role in words, how full they are, and a three-step add with a write check.
@@ -59,32 +59,38 @@ export function Storage() {
   const done = () => { setAdding(false); setEditing(null); setReload((x) => x + 1) }
   const roles = storageRoles(items ?? [])
 
+  // Canvas: a banner per volume in trouble (first sentence bold), the volumes as a table in one card, a note on adding.
+  const boldFirst = (b: string) => { const m = b.match(/^(.*?[.!?])\s+(.*)$/); return m ? <><b>{m[1]}</b> {m[2]}</> : <b>{b}</b> }
   return <>
     {error && <FailureNotice failure={error} loadTitle="Storage didn't load" onRetry={() => setReload((x) => x + 1)} />}
-    {items && banners(items).map((b) => <div key={b} className="v-callout warn st-banner" role="alert"><AlertTriangle size={18} aria-hidden /><div><p>{b}</p></div></div>)}
+    {items && banners(items).map((b) => <div key={b} className="v-banner warn st-banner" role="alert">{boldFirst(b)}</div>)}
     <section className="v-panel" aria-labelledby="st-h">
-      <header className="v-panel-head"><div className="grow"><h2 id="st-h">Volumes</h2><p>Where Vero keeps the encrypted documents.</p></div>
-        <button type="button" className="v-btn sm primary" onClick={() => setAdding(true)}><Plus size={14} aria-hidden />Add a volume</button></header>
-      <div className="v-panel-body st-list">
-        {!items ? <p className="muted">Loading…</p> : items.length === 0 ? <p className="muted">No volumes yet. Add one so Vero can store documents.</p> : items.map((v) => {
+      <header className="v-panel-head st-head"><h2 id="st-h">Storage volumes{items ? ` · ${items.length}` : ''}</h2>
+        <button type="button" className="v-btn sm primary" onClick={() => setAdding(true)}><Plus size={14} aria-hidden />Add volume</button></header>
+      {!items ? <p className="muted" style={{ padding: 16 }}>Loading…</p> : items.length === 0 ? <p className="muted" style={{ padding: 16 }}>No volumes yet. Add one so Vero can store documents.</p> :
+      <table className="v-table st-table" aria-label="Storage volumes">
+        <thead><tr><th>Volume</th><th>Role</th><th>How full</th><th className="act"><span className="sr-only">Change</span></th></tr></thead>
+        <tbody>{items.map((v) => {
           const pct = v.capacity?.usedPercent
-          return <article key={v.volume.volumeId} className="st-volume" aria-label={v.volume.displayName}>
-            <div className="row between wrap" style={{ gap: 8 }}>
-              <div className="stack" style={{ gap: 2 }}><strong>{v.volume.displayName}</strong><span className="muted st-role">{roles.role(v)}</span></div>
-              <button type="button" className="v-btn sm" onClick={() => setEditing(v)}><Pencil size={14} aria-hidden />Edit</button>
-            </div>
-            {pct != null ? <>
-              <Meter pct={pct} warn={v.volume.warningPercent} stop={v.volume.stopWritePercent} label={`${v.volume.displayName}: ${pct}% full`} />
-              <div className="row between wrap st-numbers"><span>{pct}% full · {fmtBytes(v.capacity?.usableBytes)} free</span><span className="faint">Warns at {v.volume.warningPercent}% · stops at {v.volume.stopWritePercent}%</span></div>
-            </> : <p className="faint">How full it is can’t be read right now.</p>}
-            <details className="st-tech"><summary>Technical details</summary><dl className="v-kv cols">
-              <div><dt>Folder</dt><dd className="mono">{v.volume.rootPath}</dd></div><div><dt>Priority</dt><dd>{v.volume.priority}</dd></div>
-              <div><dt>State</dt><dd className="mono">{v.volume.state}</dd></div><div><dt>Size</dt><dd>{fmtBytes(v.capacity?.totalBytes)}</dd></div>
-            </dl></details>
-          </article>
-        })}
-      </div>
+          const role = roles.role(v)
+          // A volume Tenant IT set offline on purpose is grey, not red.
+          const tone = v.volume.state !== 'ACTIVE' ? '' : v.observationError || v.stopWriteThresholdReached ? 'r' : v.warningThresholdReached ? 'y' : role.startsWith('In use') ? 'g' : ''
+          return <tr key={v.volume.volumeId} aria-label={v.volume.displayName}>
+            <td className="lead" data-label="Volume"><strong>{v.volume.displayName}</strong><div className="mono faint st-folder">{v.volume.rootPath}</div></td>
+            <td data-label="Role"><span className={`v-dot ${tone}`} aria-hidden /><span className="st-role">{role}</span></td>
+            <td data-label="How full">{pct != null ? <>
+              <div className="row" style={{ gap: 10 }}><span className="v-bar2" role="img" aria-label={`${v.volume.displayName}: ${pct}% full`}><i className={v.stopWriteThresholdReached ? 'r' : v.warningThresholdReached ? 'y' : ''} style={{ width: `${Math.min(pct, 100)}%` }} /></span><span>{pct}%</span></div>
+              <div className="faint st-numbers">Warns at {v.volume.warningPercent}% · stops at {v.volume.stopWritePercent}%</div>
+            </> : <span className="faint">How full it is can’t be read right now.</span>}</td>
+            <td className="act"><button type="button" className="v-btn sm" onClick={() => setEditing(v)} aria-label={`Edit ${v.volume.displayName}`}>Edit</button></td>
+          </tr>
+        })}</tbody>
+      </table>}
     </section>
+    <p className="faint st-note">Adding a volume: name and folder, then Vero checks it can write there, then you choose In use or Standby. The folder cannot change later.</p>
+    {items && items.length > 0 && <TechDetails hint="size, free space, order and state of each volume">
+      <dl className="v-kv">{items.map((v) => <div key={v.volume.volumeId}><dt>{v.volume.displayName}</dt><dd>{fmtBytes(v.capacity?.totalBytes)} · {v.capacity?.usableBytes != null ? `${fmtBytes(v.capacity.usableBytes)} free` : 'free space not known'} · order {v.volume.priority} · <span className="mono">{v.volume.state}</span></dd></div>)}</dl>
+    </TechDetails>}
     {adding && items && <AddVolume items={items} onClose={() => setAdding(false)} onSaved={done} />}
     {editing && <EditVolume volume={editing} onClose={() => setEditing(null)} onSaved={done} />}
   </>
@@ -187,9 +193,9 @@ function EditVolume({ volume, onClose, onSaved }: { volume: LiveStorageVolume; o
       <label className="v-field grow"><span>Stops at (%)</span><input className="v-input" inputMode="numeric" value={stop} onChange={(e) => setStop(e.target.value)} /></label>
     </div>
     <Callout tone="warn" title="This can stop new documents">If no volume takes new documents, deliveries are refused until one does.</Callout>
-    <details className="st-tech" open={false}><summary>Technical details</summary>
+    <TechDetails flat hint="folder, order">
       <label className="v-field"><span>Folder</span><input className="v-input mono" readOnly value={v.rootPath} /><small className="faint">The folder cannot change.</small></label>
       <label className="v-field"><span>Priority (lower comes first)</span><input className="v-input" inputMode="numeric" value={priority} onChange={(e) => setPriority(e.target.value)} /></label>
-    </details>
+    </TechDetails>
   </Drawer>
 }

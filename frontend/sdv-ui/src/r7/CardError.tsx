@@ -1,4 +1,4 @@
-import { AlertTriangle, RefreshCw } from 'lucide-react'
+import { AlertTriangle } from 'lucide-react'
 import { ApiRequestError } from '../api'
 
 // Shared error pieces for the admin areas (task 0008, finding 24): plain words on screen, never the raw error.
@@ -35,12 +35,13 @@ export function FailureNotice({ failure, loadTitle, actionTitle = "The change wa
 export function LoadErrorCard({ title, failure, onRetry }: { title: string; failure: Failure; onRetry: () => void }) {
   return (
     <section className="v-panel card-error" role="alert" aria-label={title}>
+      {/* Canvas: the title, one sentence, then Try again and the reference. */}
       <div className="v-panel-body stack" style={{ gap: 10 }}>
-        <h3 className="row" style={{ gap: 8, fontSize: 17 }}><AlertTriangle size={18} aria-hidden className="card-error-icon" />{title}</h3>
-        <p className="muted">Vero couldn&apos;t reach this setting just now. The rest of the page still works.</p>
+        <h3 className="card-title">{title}</h3>
+        <p className="muted">Vero couldn&apos;t reach this setting just now. The rest of the page still works. If it keeps happening, give your IT team this reference.</p>
         <div className="row wrap" style={{ gap: 10, alignItems: 'center' }}>
-          <button type="button" className="v-btn primary sm" onClick={onRetry}><RefreshCw size={14} aria-hidden />Try again</button>
-          <span className="faint" style={{ fontSize: 13 }}>If it keeps happening, give your IT team this reference: <span className="mono">Ref {failure.ref}</span></span>
+          <button type="button" className="v-btn primary sm" onClick={onRetry}>Try again</button>
+          <span className="mono faint">Ref {failure.ref}</span>
         </div>
       </div>
     </section>

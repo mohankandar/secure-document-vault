@@ -333,7 +333,7 @@ async function integrationsChecks(page: Page, testInfo: TestInfo) {
   // Three-step add with two fields.
   const id = stamp()
   await list.getByRole('button', { name: 'Add', exact: true }).click()
-  const editor = page.getByRole('dialog', { name: 'Add a sending system' })
+  const editor = page.getByRole('dialog').filter({ hasText: 'Add a sending system' })
   await editor.getByLabel('Name', { exact: true }).fill(`Tour test system ${id}`)
   await editor.getByLabel('Source key').fill(`tour-${id}`)
   await expect(editor).toContainText('It can’t change later.')
@@ -369,9 +369,9 @@ async function integrationsChecks(page: Page, testInfo: TestInfo) {
 /** Storage: roles in words, banner wording, and the add steps with an unwritable and a writable folder. */
 async function storageChecks(page: Page, testInfo: TestInfo) {
   await tenantTab(page, 'Storage').click()
-  const demo = page.getByRole('article', { name: 'Local demo volume' })
+  const demo = page.getByRole('row', { name: 'primary-a' })
   await expect(demo).toContainText('In use, new documents go here', { timeout: 15000 })
-  await expect(demo).toContainText(/\d+% full · .+ free/)
+  await expect(demo).toContainText(/\d+%/)
   await expect(demo).toContainText(/Warns at \d+% · stops at \d+%/)
   await expect(visible(page, /^ACTIVE$|^STANDBY$|Priority/)).toHaveCount(0)
   await capture(page, testInfo, 'storage')
@@ -387,12 +387,12 @@ async function storageChecks(page: Page, testInfo: TestInfo) {
     })
     await tenantTab(page, 'Integrations').click()
     await tenantTab(page, 'Storage').click()
-    const banner = page.getByRole('alert').filter({ hasText: 'Local demo volume is 82% full.' })
+    const banner = page.getByRole('alert').filter({ hasText: 'primary-a is 82% full.' })
     await expect(banner).toBeVisible({ timeout: 15000 })
     await expect(banner).toHaveText(withStandby
-      ? 'Local demo volume is 82% full. At 95% it stops accepting documents and Vero switches to primary-b. Add space or a new volume before then.'
-      : 'Local demo volume is 82% full. At 95% Vero stops accepting new documents. Add space or a new volume before then.')
-    if (withStandby) await expect(page.getByRole('article', { name: 'primary-b' })).toContainText('Standby, used when Local demo volume fills up')
+      ? 'primary-a is 82% full. At 95% it stops accepting documents and Vero switches to primary-b. Add space or a new volume before then.'
+      : 'primary-a is 82% full. At 95% Vero stops accepting new documents. Add space or a new volume before then.')
+    if (withStandby) await expect(page.getByRole('row', { name: 'primary-b' })).toContainText('Standby, used when primary-a fills up')
     await capture(page, testInfo, withStandby ? 'storage-banner-standby' : 'storage-banner-no-standby')
     await page.unroute('**/api/v1/admin/storage-volumes')
   }
@@ -404,7 +404,7 @@ async function storageChecks(page: Page, testInfo: TestInfo) {
   const notAFolder = path.join(tourRuntime, 'not-a-folder.txt')
   fs.writeFileSync(notAFolder, 'Used by the screen tour as a folder Vero cannot write in.\n')
   const writable = path.join(tourRuntime, `volume-${stamp()}`)
-  await page.getByRole('button', { name: 'Add a volume' }).click()
+  await page.getByRole('button', { name: 'Add volume' }).click()
   const add = page.getByRole('dialog', { name: 'Add a volume' })
   await add.getByLabel('Name', { exact: true }).fill('tour-volume')
   await add.getByRole('textbox', { name: /^Folder/ }).fill(path.join(notAFolder, 'volume'))
@@ -433,14 +433,14 @@ async function storageChecks(page: Page, testInfo: TestInfo) {
   await add.getByRole('radio', { name: /^Standby/ }).check()
   await add.getByRole('button', { name: 'Add volume' }).click()
   await expect(add).toHaveCount(0, { timeout: 15000 })
-  const created = page.getByRole('article', { name: 'tour-volume' }).last()
-  await expect(created).toContainText('Standby, used when Local demo volume fills up')
+  const created = page.getByRole('row', { name: 'tour-volume' }).last()
+  await expect(created).toContainText('Standby, used when primary-a fills up')
   // Leave the test volume offline so it never receives documents.
-  await created.getByRole('button', { name: 'Edit' }).click()
+  await created.getByRole('button', { name: /^Edit/ }).click()
   const edit = page.getByRole('dialog', { name: 'Edit tour-volume' })
   await edit.getByLabel('Takes new documents').selectOption('OFFLINE')
   await edit.getByRole('button', { name: 'Save', exact: true }).click()
-  await expect(page.getByRole('article', { name: 'tour-volume' }).last()).toContainText('Offline', { timeout: 15000 })
+  await expect(page.getByRole('row', { name: 'tour-volume' }).last()).toContainText('Offline', { timeout: 15000 })
 }
 
 // ---- Problems and Audit (task 0011) ----
@@ -453,7 +453,7 @@ const OPS_HEADERS = { 'X-SDV-Tenant-Id': '11111111-1111-1111-1111-111111111111',
 async function problemsChecks(page: Page, testInfo: TestInfo, area: 'Platform operations' | 'Tenant IT') {
   await page.getByRole('tablist', { name: `${area} sections` }).getByRole('tab', { name: /^Problems/ }).click()
   const list = page.getByRole('table', { name: 'Problems list' })
-  const chip = (label: string) => page.getByRole('group', { name: 'Show' }).getByRole('button', { name: new RegExp(`^${label} \\d+$`) })
+  const chip = (label: string) => page.getByRole('group', { name: 'Show' }).getByRole('button', { name: new RegExp(`^${label} · \\d+$`) })
   if (!(await list.waitFor({ timeout: 15000 }).then(() => true, () => false))) return missingDemoData(testInfo, 'no problems listed. Run .\\Seed-SDV-Demo-Records.ps1 -SourceDisplayName LexaVault -ProblemDemo')
   await expect(visible(page, /producer API|retry finali[sz]ation|Retry/)).toHaveCount(0)
   const expectations: [string, string, RegExp][] = [
@@ -486,7 +486,7 @@ async function problemsChecks(page: Page, testInfo: TestInfo, area: 'Platform op
     await expect(visible(page, 'DOCUMENT_FINALIZATION_FAILED')).toHaveCount(0)
     if (isDesktop(testInfo)) {
       await page.context().grantPermissions(['clipboard-read', 'clipboard-write'])
-      await panel.getByRole('button', { name: 'Copy note' }).click()
+      await panel.getByRole('button', { name: /^Copy a note for the/ }).click()
       await expect(panel.getByRole('status').filter({ hasText: 'Copied' })).toBeVisible()
       expect(await page.evaluate(() => navigator.clipboard.readText())).toContain(`Contract Number ${problemDemo.store}`)
     }
@@ -527,7 +527,7 @@ async function auditChecks(page: Page, testInfo: TestInfo) {
     await activity.selectOption({ label: group })
     // Deliveries of the seeded record with missing documents, found by its number.
     await page.getByLabel('Record number').fill(group === 'Deliveries' ? problemDemo.missing : '')
-    await page.getByRole('button', { name: 'Show', exact: true }).click()
+    await page.getByLabel('Record number').press('Enter')
     let row = list.locator('tbody tr').filter({ hasText: sentence }).first()
     // Groups are applied to the loaded pages: look further back until one shows.
     for (let i = 0; i < 6 && !(await row.isVisible().catch(() => false)); i++) {
@@ -547,7 +547,7 @@ async function auditChecks(page: Page, testInfo: TestInfo) {
   // Record-number filter: every row is about that record.
   await activity.selectOption({ label: 'All activity' })
   await page.getByLabel('Record number').fill(titleRecord)
-  await page.getByRole('button', { name: 'Show', exact: true }).click()
+  await page.getByLabel('Record number').press('Enter')
   await expect(list.locator('tbody tr').first()).toContainText(titleRecord, { timeout: 15000 })
   const records = await list.locator('td[data-label="Record"]').allInnerTexts()
   expect(records.every((r) => r.trim() === titleRecord), `only ${titleRecord}: ${records.join(', ')}`).toBeTruthy()
@@ -562,7 +562,7 @@ async function auditChecks(page: Page, testInfo: TestInfo) {
 
   // Export: the server's file has the screen's sentences, in the same order, and the export is itself in the audit.
   const onScreen = (await list.locator('td[data-label="What happened"]').allInnerTexts()).map((s) => s.trim())
-  const [download] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Export CSV' }).click()])
+  const [download] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Export', exact: true }).click()])
   await expect(page.getByRole('status').filter({ hasText: 'The export is recorded in the audit.' })).toBeVisible({ timeout: 15000 })
   const csv = parseCsv(fs.readFileSync(await download.path()).toString('utf8').replace(/^﻿/, ''))
   expect(csv[0]).toEqual(['When (UTC)', 'What happened', 'Person', 'Record', 'Result', 'Action code'])
@@ -572,7 +572,7 @@ async function auditChecks(page: Page, testInfo: TestInfo) {
   expect(rows.slice(0, onScreen.length).map((r) => r[1]), 'exported sentences match the screen').toEqual(onScreen)
   await activity.selectOption({ label: 'Downloads, prints and exports' })
   await page.getByLabel('Record number').fill('')
-  await page.getByRole('button', { name: 'Show', exact: true }).click()
+  await page.getByLabel('Record number').press('Enter')
   await expect(list.locator('tbody tr').first()).toContainText(new RegExp(`exported the audit \\(${rows.length} events?\\)`), { timeout: 15000 })
   await capture(page, testInfo, 'audit-exported')
 }
@@ -635,15 +635,15 @@ async function opsStorageChecks(page: Page, testInfo: TestInfo) {
   const table = page.getByRole('table', { name: 'Storage volumes' })
   await expect(table).toBeVisible({ timeout: 15000 })
   await expect(table.locator('thead th')).toHaveText(['Volume', 'Role', 'How full', 'Can store new documents'])
-  await expect(table.locator('tbody tr').filter({ hasText: 'Local demo volume' })).toContainText(/In use/)
+  await expect(table.locator('tbody tr').filter({ hasText: 'primary-a' })).toContainText(/In use/)
   const offline = table.locator('tbody tr').filter({ hasText: 'tour-volume' })
   if (await offline.count()) {
     await expect(offline).toContainText('Offline (set by Tenant IT)')
     await expect(offline).toContainText('No: offline on purpose')
   }
   await expect(page.getByRole('button', { name: /Edit|Add volume|Save/ })).toHaveCount(0)
-  await expect(page.getByText('What to do', { exact: true })).toBeVisible()
-  await expect(page.locator('details.st-tech')).not.toHaveAttribute('open', '')
+  await expect(page.getByText('What to do:', { exact: true })).toBeVisible()
+  await expect(page.locator('details.v-tech')).not.toHaveAttribute('open', '')
   await expectNoRawWords(page)
   await capture(page, testInfo, 'ops-storage')
 }
@@ -714,7 +714,7 @@ async function aboutChecks(page: Page, testInfo: TestInfo, area: 'operations' | 
   await expect(facts).toContainText('Acme Lending')
   await expect(facts).toContainText('Local test sign-in')
   await expect(facts).toContainText(/Today \d{2}:\d{2}/)
-  await expect(page.locator('details.st-tech')).not.toHaveAttribute('open', '')
+  await expect(page.locator('details.v-tech')).not.toHaveAttribute('open', '')
   const note = await page.getByLabel('Details for support').textContent()
   expect(note).toContain('Organization: Acme Lending')
   expect(note).toContain('Active profiles: local')

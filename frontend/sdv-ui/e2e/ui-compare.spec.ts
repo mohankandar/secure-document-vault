@@ -61,7 +61,9 @@ export async function asRole(page: Page, role: string, width: number, height: nu
   await page.setViewportSize({ width, height })
   await page.goto('/')
   await expect(accountButton(page)).toBeVisible({ timeout: 15000 })
-  if (!((await accountButton(page).getAttribute('aria-label')) ?? '').endsWith(', ' + role.toLowerCase().replace(/^./, (c) => c.toUpperCase()))) {
+  // The account button names the role in words ("Tenant IT administrator"); switch only when it is another role.
+  const ROLE_WORDS: Record<string, string> = { 'Business User': 'Business user', 'Document Steward': 'Document steward', 'Business Administrator': 'Business administrator', 'Tenant IT Administrator': 'Tenant IT administrator', 'Platform Operations Administrator': 'Platform operations administrator' }
+  if (!((await accountButton(page).getAttribute('aria-label')) ?? '').endsWith(', ' + (ROLE_WORDS[role] ?? role))) {
     await accountButton(page).click()
     await Promise.all([page.waitForEvent('load'), page.getByLabel('Local test role').selectOption({ label: role })])
     await expect(accountButton(page)).toBeVisible({ timeout: 15000 })
@@ -131,8 +133,61 @@ export const MAIN_BOARDS: (Board & { setUp: (page: Page) => Promise<void> })[] =
   } },
 ]
 
+// ---- Admin boards (task 0019): docs/design/vero-admin-after.html ----
+
+const ADMIN_CANVAS = resolve(REPO, 'docs', 'design', 'vero-admin-after.html')
+/** Opens an admin page by its address, as the role that sees it on the canvas. */
+const adminPage = (role: string, hash: string, height: number, then?: (page: Page) => Promise<void>) => async (page: Page) => {
+  await asRole(page, role, 1440, height)
+  await page.evaluate((h) => { window.location.hash = h }, hash)
+  await page.waitForLoadState('networkidle')
+  await expect(page.getByRole('heading', { level: 1 })).toBeVisible({ timeout: 15000 })
+  if (then) await then(page)
+  await page.waitForLoadState('networkidle')
+}
+const BA = 'Business Administrator', IT = 'Tenant IT Administrator', OPS = 'Platform Operations Administrator'
+
+export const ADMIN_BOARDS: (Board & { setUp: (page: Page) => Promise<void> })[] = [
+  { name: 'admin-integrations', index: 1, height: 900, setUp: adminPage(IT, '#/tenant/integrations', 900, async (page) => {
+    await page.getByRole('region', { name: 'Sending systems' }).getByRole('button', { name: /Loan Origination System/ }).click()
+  }) },
+  { name: 'admin-problems', index: 2, height: 900, setUp: adminPage(OPS, '#/operations/problems', 900, async (page) => {
+    await page.getByRole('table', { name: 'Problems list' }).locator('tbody tr').first().click()
+    await expect(page.getByRole('dialog')).toBeVisible()
+  }) },
+  { name: 'admin-audit', index: 3, height: 860, setUp: adminPage(OPS, '#/operations/audit', 860) },
+  { name: 'admin-roles', index: 4, height: 900, setUp: adminPage(BA, '#/governance/roles', 900) },
+  { name: 'admin-tenant-storage', index: 5, height: 760, setUp: adminPage(IT, '#/tenant/storage', 760) },
+  { name: 'admin-no-access', index: 6, height: 560, setUp: adminPage('Business User', '#/governance/access', 560) },
+  { name: 'admin-people', index: 7, height: 760, setUp: adminPage(BA, '#/governance/access', 760) },
+  { name: 'admin-keeping', index: 8, height: 820, setUp: adminPage(BA, '#/governance/retention', 820) },
+  { name: 'admin-search-fields', index: 9, height: 900, setUp: adminPage(BA, '#/governance/metadata', 900, async (page) => {
+    await page.getByLabel('Sending system').selectOption({ label: CANVAS_SOURCE })
+    await page.getByRole('button', { name: 'Edit Borrower' }).click()
+    await expect(page.getByRole('dialog')).toBeVisible()
+  }) },
+  { name: 'admin-add-source', index: 10, height: 900, setUp: adminPage(IT, '#/tenant/integrations', 900, async (page) => {
+    await page.getByRole('region', { name: 'Sending systems' }).getByRole('button', { name: 'Add', exact: true }).click()
+    const editor = page.getByRole('dialog')
+    await editor.getByLabel('Name', { exact: true }).fill('Title Records 2')
+    await editor.getByLabel('Source key').fill('compare-only')
+    await editor.getByRole('button', { name: 'Next' }).click()
+    for (const [label, key, kind] of [['Contract number', 'contractNumber', 'Text, digits only'], ['Last name', 'lastName', 'Text, spaces trimmed']]) {
+      await editor.getByRole('button', { name: 'Add a field' }).click()
+      const field = editor.locator('fieldset.int-field').last()
+      await field.getByLabel('Label').fill(label)
+      await field.getByLabel('Key it sends').fill(key)
+      await field.getByLabel('Kind of value').selectOption({ label: kind })
+    }
+  }) },
+  { name: 'admin-about', index: 11, height: 700, setUp: adminPage(OPS, '#/operations/about', 700) },
+  { name: 'admin-ops-overview', index: 12, height: 820, setUp: adminPage(OPS, '#/operations/overview', 820) },
+  { name: 'admin-ops-storage', index: 13, height: 680, setUp: adminPage(OPS, '#/operations/storage', 680) },
+  { name: 'admin-ops-health', index: 14, height: 760, setUp: adminPage(OPS, '#/operations/health', 760) },
+].map((b) => ({ ...b, canvas: ADMIN_CANVAS, width: 1440 }))
+
 test.describe('Canvas comparison', () => {
-  for (const board of MAIN_BOARDS) {
+  for (const board of [...MAIN_BOARDS, ...ADMIN_BOARDS].filter((b) => !process.env.SDV_COMPARE_ONLY || b.name.includes(process.env.SDV_COMPARE_ONLY))) {
     test(board.name, async ({ page, browser }) => {
       test.setTimeout(90_000)
       const canvasPage = await browser.newPage()

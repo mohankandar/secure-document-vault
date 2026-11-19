@@ -4,7 +4,7 @@ import { signInSummary } from '../auth'
 import { identityOverview, type IdentityOverview, type OpsAuditEvent } from './liveApi'
 import { FailureNotice, loadFailed, type Failure } from './CardError'
 import { actorName } from './auditWords'
-import { Callout, Panel, fmtDate } from './ui'
+import { Banner, fmtDate } from './ui'
 
 // Task 0012 Part F (finding 16, owner 2026-11-18): sign-in is set by a script the installer runs, never on screens.
 // This tab only shows the sign-in in use. The backend draft/test/activate/rollback endpoints are left as they are.
@@ -35,17 +35,18 @@ export function SignIn() {
   if (!data) return <p className="muted">Loading…</p>
   const a = data.active
   const local = signInSummary().kind === 'local'
+  // Task 0019: no board for Sign-in; it uses About's card (small capital labels in columns) and the banner.
   return <>
-    <Panel title="Sign-in in use">
-      {a ? <dl className="v-kv cols" aria-label="Sign-in in use">
-        <div><dt>Provider</dt><dd>{a.displayName}{a.providerType ? ` (${a.providerType})` : ''}</dd></div>
-        <div><dt>Address</dt><dd className="mono">{a.issuerUri}</dd></div>
-        <div><dt>Client ID</dt><dd className="mono">{a.browserClientId}</dd></div>
-        <div><dt>Role groups</dt><dd>Set in the installer’s sign-in file; Vero doesn’t show them on screen yet.</dd></div>
-        <div><dt>Last changed</dt><dd>{a.updatedAt ? fmtDate(a.updatedAt) : 'Not known'}{change ? ` by ${actorName(change)}` : ''}</dd></div>
+    <section className="v-panel about-facts" aria-label="Sign-in in use">
+      {a ? <dl aria-label="Sign-in in use">
+        <div><dt className="v-sec">Provider</dt><dd>{a.displayName}{a.providerType ? ` (${a.providerType})` : ''}</dd></div>
+        <div><dt className="v-sec">Address</dt><dd className="mono">{a.issuerUri}</dd></div>
+        <div><dt className="v-sec">Client ID</dt><dd className="mono">{a.browserClientId}</dd></div>
+        <div><dt className="v-sec">Role groups</dt><dd>Set in the installer’s sign-in file; Vero doesn’t show them on screen yet.</dd></div>
+        <div><dt className="v-sec">Last changed</dt><dd>{a.updatedAt ? fmtDate(a.updatedAt) : 'Not known'}{change ? ` by ${actorName(change)}` : ''}</dd></div>
       </dl>
-      : <p>{local ? 'This computer uses the local test sign-in. No company sign-in is set up here.' : 'No company sign-in is in use yet.'}</p>}
-    </Panel>
-    <Callout title="Changing sign-in">{INSTALLER}</Callout>
+      : <p style={{ padding: '18px 16px', margin: 0 }}>{local ? 'This computer uses the local test sign-in. No company sign-in is set up here.' : 'No company sign-in is in use yet.'}</p>}
+    </section>
+    <Banner tone="info" lead="Changing sign-in:">{INSTALLER}</Banner>
   </>
 }

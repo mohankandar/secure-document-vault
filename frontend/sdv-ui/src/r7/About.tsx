@@ -1,11 +1,10 @@
 import { useEffect, useState } from 'react'
-import { Copy } from 'lucide-react'
 import { roleApi, type SessionInfo } from '../api'
 import { signInSummary } from '../auth'
 import { identityOverview, systemInfo, type IdentityOverview } from './liveApi'
 import { FailureNotice, loadFailed, type Failure } from './CardError'
 import { PRODUCT_NAME } from './brand'
-import { Panel, fmtDateTime } from './ui'
+import { TechDetails, fmtDateTime } from './ui'
 import { fmtWhen } from './opsWords'
 
 // Task 0012 Part D (change 10): one page for the facts support asks for, replacing Tenant IT › Environment and
@@ -64,20 +63,21 @@ export function About({ role }: { role: 'platform' | 'tenantIt' }) {
     window.setTimeout(() => setCopied(null), 3000)
   }
 
+  // Canvas: the facts in a three-column card (small capital labels), the copy button with its note on one line,
+  // and the technical details folded in their own row.
   return <>
-    <Panel title="About this installation">
-      <dl className="v-kv cols" aria-label="Installation facts">{facts.map(([k, v]) => <div key={k}><dt>{k}</dt><dd>{v}</dd></div>)}</dl>
-    </Panel>
-    <Panel title="Copy details for support" description="Copies these facts and the technical details below as plain text. No documents or personal data.">
-      <div className="row" style={{ gap: 12 }}>
-        <button type="button" className="v-btn" onClick={() => void copy()}><Copy size={14} aria-hidden />Copy details for support</button>
-        {copied === 'yes' && <span role="status" className="muted">Copied</span>}
-        {copied === 'no' && <span role="alert">This browser didn’t allow copying. Select the text under Technical details instead.</span>}
-      </div>
-    </Panel>
-    <details className="st-tech"><summary>Technical details</summary>
+    <section className="v-panel about-facts" aria-label="About this installation">
+      <dl aria-label="Installation facts">{facts.map(([k, v]) => <div key={k}><dt className="v-sec">{k}</dt><dd>{k === 'Status' && <span className={info.status === 'UP' ? 'v-dot g' : 'v-dot r'} aria-hidden />}{v}</dd></div>)}</dl>
+    </section>
+    <div className="about-copy">
+      <button type="button" className="v-btn sm" onClick={() => void copy()}>Copy details for support</button>
+      <span className="faint">Copies these facts and the technical details below as plain text. No documents or personal data.</span>
+      {copied === 'yes' && <span role="status" className="muted">Copied</span>}
+      {copied === 'no' && <span role="alert">This browser didn’t allow copying. Select the text under Technical details instead.</span>}
+    </div>
+    <TechDetails hint="active profiles, build, correlation ID">
       <dl className="v-kv">{technical.map(([k, v]) => <div key={k}><dt>{k}</dt><dd className="mono">{v}</dd></div>)}</dl>
       <pre className="pr-note" aria-label="Details for support">{text}</pre>
-    </details>
+    </TechDetails>
   </>
 }
