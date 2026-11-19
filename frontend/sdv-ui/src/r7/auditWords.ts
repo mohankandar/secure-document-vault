@@ -92,3 +92,14 @@ export const ACTIVITY_GROUPS: { id: string; label: string; actions?: string[]; o
   { id: 'deliveries', label: 'Deliveries', actions: ['SUBMISSION_CREATED', 'DOCUMENT_RECEIVED', 'DOCUMENT_AVAILABLE', 'DOCUMENT_PROCESSING_FAILED'] },
   { id: 'refused', label: 'Refused', outcome: 'DENIED' },
 ]
+
+/** Task 0020 (item 2): what Overview › Latest activity shows. Documents opened, downloaded, printed or redacted,
+ *  refusals, settings changes and deliveries. Searches, page loads and other routine reads stay in Audit only. */
+const MEANINGFUL_ACTIONS = new Set([
+  'DOCUMENT_VIEW_OPENED', 'DOCUMENT_DOWNLOADED', 'DOCUMENT_DOWNLOAD_FAILED', 'DOCUMENT_PRINTED',
+  'DOCUMENT_PERMANENTLY_REDACTED', 'DOCUMENT_REDACTION_FAILED',
+  // Checking a folder changes nothing, so it is not a settings change here.
+  ...(ACTIVITY_GROUPS.find((g) => g.id === 'settings')?.actions ?? []).filter((a) => a !== 'STORAGE_FOLDER_CHECKED'),
+  ...(ACTIVITY_GROUPS.find((g) => g.id === 'deliveries')?.actions ?? []),
+])
+export const isMeaningfulActivity = (e: OpsAuditEvent) => e.outcome === 'DENIED' || MEANINGFUL_ACTIONS.has(e.action)

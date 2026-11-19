@@ -176,10 +176,11 @@ function useEscape(onClose: () => void) {
 export function Drawer({ title, eyebrow, onClose, children, footer, wide }: { title: string; eyebrow?: string; onClose: () => void; children: ReactNode; footer?: ReactNode; wide?: boolean }) {
   useEscape(onClose)
   const id = useId()
+  // A narrow panel moves the page aside; the wide one lies over it without reflowing it (task 0020, item 3).
   useEffect(() => {
-    const cls = wide ? 'r7-side-wide' : 'r7-side-open'
-    document.documentElement.classList.add(cls)
-    return () => document.documentElement.classList.remove(cls)
+    if (wide) return
+    document.documentElement.classList.add('r7-side-open')
+    return () => document.documentElement.classList.remove('r7-side-open')
   }, [wide])
   return (
     <>

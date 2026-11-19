@@ -43,6 +43,20 @@ export const MODE_WORD = { EXACT: 'is', PREFIX: 'starts with', PARTIAL: 'contain
 export const MODE_HINT = { EXACT: 'Exact', PREFIX: 'Starts with', PARTIAL: 'Contains' } as const
 
 /**
+ * Task 0020 (item 6): the hint inside an empty Filters box, from the field's settings only (never its name).
+ * The settings hold no length, so a digits-only field says "Digits only", not a digit count. Dates show the
+ * browser's own date pattern.
+ */
+export function filterHint(f: Field): string | undefined {
+  if (f.type === 'DATE') return undefined
+  if (f.normalizationRaw === 'DIGITS_ONLY') return 'Digits only'
+  if (f.mode === 'EXACT') return 'Any'
+  if (f.mode === 'PREFIX') return 'The first letters'
+  if (f.mode === 'PARTIAL') return 'Any part'
+  return undefined
+}
+
+/**
  * Other identifier fields that accept the same typed number (DIGITS_ONLY, like the field the box used).
  * Offered as one-click suggestions when the box finds nothing; never searched automatically.
  */

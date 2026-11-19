@@ -211,6 +211,21 @@ async function searchFieldsChecks(page: Page, testInfo: TestInfo) {
   await expect(page.getByRole('button', { name: /Reorder/ })).toHaveCount(0)
   await expect(page.getByText(/current UI|Field key|DIGITS_ONLY|PARTIAL|PREFIX/)).toHaveCount(0)
   await expect(page.getByText(/^Records per page: \d+ \(most 50\)$/)).toBeVisible()
+  // Task 0020 (item 5): the sending-system picker is wide enough for every name (no name cut off).
+  const picker = page.getByLabel('Sending system')
+  if (await picker.count()) {
+    const fits = await picker.evaluate((el: HTMLSelectElement) => {
+      const probe = document.createElement('span')
+      probe.style.cssText = `position:absolute;visibility:hidden;white-space:nowrap;font:${getComputedStyle(el).font}`
+      document.body.append(probe)
+      const widest = Math.max(...[...el.options].map((o) => { probe.textContent = o.text; return probe.offsetWidth }))
+      probe.remove()
+      const cs = getComputedStyle(el)
+      const room = el.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight)
+      return room >= widest || el.clientWidth >= (el.closest('.v-page, main')?.clientWidth ?? Infinity) - 64
+    })
+    expect(fits, 'the sending-system picker shows the full name').toBeTruthy()
+  }
   await expect(table.locator('tbody tr').filter({ hasText: 'Contract Number' })).toContainText('Identifier · always searchable')
 
   // How it matches: change Last Name to Starts with, save, then put it back.
@@ -346,8 +361,18 @@ async function integrationsChecks(page: Page, testInfo: TestInfo) {
 
   // Three-step add with two fields.
   const id = stamp()
+  // Task 0020 (item 3): on a wide screen the panel lies over the page; the detail card behind it keeps its width.
+  const sendsTable = page.getByRole('table', { name: 'What it sends' })
+  const wideScreen = (page.viewportSize()?.width ?? 0) >= 1024
+  const before = wideScreen ? await sendsTable.boundingBox() : null
   await list.getByRole('button', { name: 'Add', exact: true }).click()
   const editor = page.getByRole('dialog').filter({ hasText: 'Add a sending system' })
+  if (before) {
+    await expect(editor).toBeVisible()
+    const after = await sendsTable.boundingBox()
+    expect(after?.width, 'the detail table keeps its width behind the panel').toBeCloseTo(before.width, 0)
+    expect(after?.x).toBeCloseTo(before.x, 0)
+  }
   await editor.getByLabel('Name', { exact: true }).fill(`Tour test system ${id}`)
   await editor.getByLabel('Source key').fill(`tour-${id}`)
   await expect(editor).toContainText('It can’t change later.')
@@ -410,6 +435,24 @@ async function storageChecks(page: Page, testInfo: TestInfo) {
     await capture(page, testInfo, withStandby ? 'storage-banner-standby' : 'storage-banner-no-standby')
     await page.unroute('**/api/v1/admin/storage-volumes')
   }
+
+  // Task 0020 (item 4): a volume Tenant IT set offline, which Vero doesn't measure, reads as Platform operations sees it, with no warning tone.
+  await page.route('**/api/v1/admin/storage-volumes', async (route) => {
+    if (route.request().method() !== 'GET') return route.continue()
+    const real = await (await route.fetch()).json() as { volume: Record<string, unknown> }[]
+    const offline = { ...real[0], volume: { ...real[0].volume, volumeId: '00000000-0000-0000-0000-0000000000c3', displayName: 'offline-x', state: 'OFFLINE' },
+      capacity: null, observationError: null, warningThresholdReached: false, stopWriteThresholdReached: false }
+    await route.fulfill({ json: [real[0], offline] })
+  })
+  await tenantTab(page, 'Integrations').click()
+  await tenantTab(page, 'Storage').click()
+  const offlineRow = page.getByRole('row', { name: 'offline-x' })
+  await expect(offlineRow.locator('td[data-label="How full"]')).toHaveText('Offline (set by Tenant IT)', { timeout: 15000 })
+  await expect(offlineRow).not.toContainText('can’t be read')
+  await expect(offlineRow.locator('.v-dot')).toHaveClass(/^v-dot\s*$/)
+  await expect(page.getByRole('alert').filter({ hasText: 'offline-x' })).toHaveCount(0)
+  await capture(page, testInfo, 'storage-offline-on-purpose')
+  await page.unroute('**/api/v1/admin/storage-volumes')
   await tenantTab(page, 'Integrations').click()
   await tenantTab(page, 'Storage').click()
 
@@ -558,6 +601,14 @@ async function auditChecks(page: Page, testInfo: TestInfo) {
   }
   await expect(visible(page, /^DOCUMENT_[A-Z_]+$|^AUTHORIZATION_DENIED$/)).toHaveCount(0)
 
+  // Task 0020 item 1: the record open made above names its record (looked up from its submission, within the tenant).
+  await activity.selectOption({ label: 'Opening and reading' })
+  await page.getByLabel('Record number').fill('')
+  await page.getByLabel('Record number').press('Enter')
+  const opened = list.locator('tbody tr').filter({ hasText: /Daniel Reyes opened a record/ }).first()
+  await expect(opened, 'the fresh record open').toBeVisible({ timeout: 15000 })
+  await expect(opened.locator('td[data-label="Record"]')).toHaveText(titleRecord)
+
   // Record-number filter: every row is about that record.
   await activity.selectOption({ label: 'All activity' })
   await page.getByLabel('Record number').fill(titleRecord)
@@ -565,6 +616,15 @@ async function auditChecks(page: Page, testInfo: TestInfo) {
   await expect(list.locator('tbody tr').first()).toContainText(titleRecord, { timeout: 15000 })
   const records = await list.locator('td[data-label="Record"]').allInnerTexts()
   expect(records.every((r) => r.trim() === titleRecord), `only ${titleRecord}: ${records.join(', ')}`).toBeTruthy()
+  // Task 0020 item 1 follow-up: the filter also finds record opens (by their submission, within the tenant).
+  await activity.selectOption({ label: 'Opening and reading' })
+  const openedByFilter = list.locator('tbody tr').filter({ hasText: /Daniel Reyes opened a record/ }).first()
+  await expect(openedByFilter, 'the record open, found by the Record number filter').toBeVisible({ timeout: 15000 })
+  await expect(openedByFilter.locator('td[data-label="Record"]')).toHaveText(titleRecord)
+  const openedRecords = await list.locator('td[data-label="Record"]').allInnerTexts()
+  expect(openedRecords.every((r) => r.trim() === titleRecord), `only ${titleRecord}: ${openedRecords.join(', ')}`).toBeTruthy()
+  await activity.selectOption({ label: 'All activity' })
+  await expect(list.locator('tbody tr').first()).toContainText(titleRecord, { timeout: 15000 })
 
   // Detail: the sentence first, codes under Technical details.
   await list.locator('tbody tr').first().click()
@@ -622,6 +682,8 @@ async function overviewChecks(page: Page, testInfo: TestInfo) {
   await expect(activity.first()).toBeVisible({ timeout: 15000 })
   expect(await activity.count()).toBeLessThanOrEqual(5)
   await expect(activity.first()).toContainText(/^(Today|Yesterday|\d+ \w+) \d{2}:\d{2}/)
+  // Task 0020 (item 2): no searches, page loads or other routine reads in Latest activity.
+  await expect(activity.filter({ hasText: /searched records|loaded (page \d+|a page) of|looked at (Recently viewed|the audit)|opened a record|checked a folder/ })).toHaveCount(0)
   await expectNoRawWords(page)
   await capture(page, testInfo, 'overview-with-problems')
   await tiles.nth(0).click()
@@ -1013,6 +1075,12 @@ async function tryBusinessRecordJourney(page: Page, testInfo: TestInfo, role: st
   await page.getByRole('button', { name: /^Filters/ }).click()
   let filters = page.getByRole('dialog', { name: 'Filters' })
   await expect(filters).toBeVisible()
+  // Task 0020 (item 6): hints from each field's settings inside the empty boxes (demo: Contract Number is digits only, First Name exact).
+  await expect(filters.getByLabel(/^Contract Number/)).toHaveAttribute('placeholder', 'Digits only')
+  await expect(filters.getByLabel(/^First Name/)).toHaveAttribute('placeholder', 'Any')
+  for (const box of await filters.locator('.ws-filter-fields input[type="text"]').all()) {
+    await expect(box).toHaveAttribute('placeholder', /^(Digits only|Any|The first letters|Any part)$/)
+  }
   await capture(page, testInfo, 'filters')
   await filters.getByLabel(/^First Name/).fill(firstRowFirstName.split(/\s/)[0])
   await filters.getByRole('button', { name: 'Show results' }).click()

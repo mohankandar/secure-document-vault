@@ -6,7 +6,7 @@ import { schema, search, record, toSource, toSummary, toRecord, documentActivity
 import { LoadErrorCard, failureText, loadFailed, type Failure } from './CardError'
 import { Badge, Callout, Drawer, Empty, Skeleton, actorWords, auditEventLabel, fmtDate, fmtRel, fmtShortDate, humanize } from './ui'
 import { Viewer } from './Viewer'
-import { MODE_HINT, MODE_WORD, QUICK_RANGES, alternativeFields, boxLabel, quickRange, rangeLabel, routeBoxInput, type Range } from './searchRouting'
+import { MODE_HINT, MODE_WORD, QUICK_RANGES, alternativeFields, filterHint, boxLabel, quickRange, rangeLabel, routeBoxInput, type Range } from './searchRouting'
 import { NOTHING_TO_SEARCH, defaultSource, rememberSourceChoice, searchableSources } from './sourceChoice'
 import { extraField, orderedPreview, titleLabel } from './recordColumns'
 
@@ -348,7 +348,7 @@ function FiltersPanel({ sources, initial, onApply, onClose }: { sources: Source[
             <label key={f.key} className="v-field">
               <span>{f.label}<span className="v-hint">{MODE_HINT[f.mode]}</span></span>
               <input className="v-input" type={f.type === 'DATE' ? 'date' : 'text'} value={draft[f.key] ?? ''} autoComplete="off" spellCheck={false}
-                inputMode={f.normalizationRaw === 'DIGITS_ONLY' ? 'numeric' : undefined}
+                inputMode={f.normalizationRaw === 'DIGITS_ONLY' ? 'numeric' : undefined} placeholder={filterHint(f)}
                 onChange={(e) => setDraft((d) => ({ ...d, [f.key]: e.target.value }))} />
             </label>
           ))}

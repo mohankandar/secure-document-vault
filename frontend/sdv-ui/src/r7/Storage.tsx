@@ -18,6 +18,14 @@ export function fmtBytes(n: number | null | undefined): string {
 const usable = (v: LiveStorageVolume) => v.volume.state === 'ACTIVE' && !!v.capacity?.writable && !v.stopWriteThresholdReached && !v.observationError
 const byPriority = (a: LiveStorageVolume, b: LiveStorageVolume) => a.volume.priority - b.volume.priority || (a.capacity?.usedPercent ?? 100) - (b.capacity?.usedPercent ?? 100)
 
+/** A state Tenant IT set on purpose, in the words both Platform operations and Tenant IT see (task 0020, item 4). */
+export function onPurposeWord(state: string): string | null {
+  if (state === 'OFFLINE') return 'Offline (set by Tenant IT)'
+  if (state === 'READ_ONLY') return 'Read only (set by Tenant IT)'
+  if (state === 'DRAINING') return 'Being emptied (set by Tenant IT)'
+  return null
+}
+
 export function storageRoles(items: LiveStorageVolume[]) {
   const ready = items.filter(usable).sort(byPriority)
   const inUse = ready[0]
@@ -81,7 +89,7 @@ export function Storage() {
             <td data-label="How full">{pct != null ? <>
               <div className="row" style={{ gap: 10 }}><span className="v-bar2" role="img" aria-label={`${v.volume.displayName}: ${pct}% full`}><i className={v.stopWriteThresholdReached ? 'r' : v.warningThresholdReached ? 'y' : ''} style={{ width: `${Math.min(pct, 100)}%` }} /></span><span>{pct}%</span></div>
               <div className="faint st-numbers">Warns at {v.volume.warningPercent}% · stops at {v.volume.stopWritePercent}%</div>
-            </> : <span className="faint">How full it is can’t be read right now.</span>}</td>
+            </> : <span className="faint">{onPurposeWord(v.volume.state) ?? 'How full it is can’t be read right now.'}</span>}</td>
             <td className="act"><button type="button" className="v-btn sm" onClick={() => setEditing(v)} aria-label={`Edit ${v.volume.displayName}`}>Edit</button></td>
           </tr>
         })}</tbody>

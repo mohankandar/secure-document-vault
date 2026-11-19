@@ -1,7 +1,7 @@
 // Task 0012 (change 9): the words for Platform operations Overview, Storage and Health, in one file.
 // Services, automatic cleanup and storage say what they do, what stops working, and what to check.
 import type { LiveStorageVolume, OpsDetail, OpsRetention, OpSummary } from './liveApi'
-import { storageRoles } from './Storage'
+import { onPurposeWord, storageRoles } from './Storage'
 
 export type ServiceKey = 'application' | 'database' | 'keyService'
 type ServiceWords = { name: string; does: string; down: string; notConfigured?: string }
@@ -121,9 +121,8 @@ export const volumeNeedsAttention = (v: LiveStorageVolume) => v.volume.state ===
 
 export function storageRoleWord(items: LiveStorageVolume[], v: LiveStorageVolume): string {
   const { inUse, ready } = storageRoles(items)
-  if (v.volume.state === 'OFFLINE') return 'Offline (set by Tenant IT)'
-  if (v.volume.state === 'READ_ONLY') return 'Read only (set by Tenant IT)'
-  if (v.volume.state === 'DRAINING') return 'Being emptied (set by Tenant IT)'
+  const onPurpose = onPurposeWord(v.volume.state)
+  if (onPurpose) return onPurpose
   if (v === inUse) return 'In use'
   if (ready.includes(v)) return 'Standby'
   return 'Not usable right now'

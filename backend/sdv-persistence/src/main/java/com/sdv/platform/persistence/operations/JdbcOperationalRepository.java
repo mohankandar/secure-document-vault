@@ -33,7 +33,8 @@ public class JdbcOperationalRepository implements AuditQueryPort, OperationalRep
     public List<AuditQueryPort.Row> findRows(UUID tenantId, AuditQueryPort.Filter filter, int limitPlusOne) {
         StringBuilder sql = new StringBuilder("""
                 select audit_event_id, tenant_id, actor_type, actor_id, action, target_type, target_id,
-                       occurred_at, correlation_id, outcome, safe_details::text as safe_details_json, actor_display_name
+                       occurred_at, correlation_id, outcome, safe_details::text as safe_details_json, actor_display_name,
+                       case when target_type='BUSINESS_RECORD' then safe_details->>'submissionId' end as record_submission_id
                   from audit_events
                  where tenant_id=:tenantId
                 """);
@@ -71,18 +72,30 @@ public class JdbcOperationalRepository implements AuditQueryPort, OperationalRep
             p.addValue("excludeActions", filter.excludeActions());
         }
         if (filter.recordNumber() != null) {
-            // Document events of records with this identifier value (as typed, or as stored after normalization).
+            // Document events of records with this identifier value (as typed, or as stored after normalization),
+            // and record opens whose safe details name a submission with that value (task 0020 item 1), both
+            // within the event's own tenant. Only a UUID-shaped submission ID is ever cast.
             sql.append("""
-                     and target_type='DOCUMENT' and target_id in (
+                     and ((target_type='DOCUMENT' and target_id in (
                        select d.document_id::text
                          from documents d
                          join business_metadata_values v on v.tenant_id=d.tenant_id and v.submission_id=d.submission_id
                          join metadata_field_definitions f on f.definition_id=v.definition_id and f.business_identifier
-                        where d.tenant_id=:tenantId and (v.normalized_value=:recordNumber or v.stored_value=:recordNumber))
+                        where d.tenant_id=:tenantId and (v.normalized_value=:recordNumber or v.stored_value=:recordNumber)))
+                      or (target_type='BUSINESS_RECORD' and exists (
+                       select 1
+                         from business_metadata_values v
+                         join metadata_field_definitions f on f.definition_id=v.definition_id and f.business_identifier
+                        where v.tenant_id=audit_events.tenant_id
+                          and v.submission_id = (case when audit_events.safe_details->>'submissionId' ~ :uuidPattern
+                                                      then (audit_events.safe_details->>'submissionId')::uuid end)
+                          and (v.normalized_value=:recordNumber or v.stored_value=:recordNumber))))
                     """);
             p.addValue("recordNumber", filter.recordNumber());
         }
-        // The page first, then the record and file name of its document events, all within this tenant.
+        // The page first, then the record of its document events and record opens, and the file name of its
+        // document events, all within this tenant. A record open names its submission in the safe details
+        // (task 0020 item 1); opens written before that hold only a hash and get no record number.
         String paged = sql + " order by occurred_at desc, audit_event_id desc limit :limit";
         p.addValue("uuidPattern", UUID_PATTERN);
         String withRecords = """
@@ -92,7 +105,9 @@ public class JdbcOperationalRepository implements AuditQueryPort, OperationalRep
                           join metadata_field_definitions f on f.definition_id=v.definition_id and f.business_identifier
                           left join metadata_field_display_order o
                             on o.tenant_id=v.tenant_id and o.source_id=f.source_id and o.field_key=v.field_key
-                         where v.tenant_id=d.tenant_id and v.submission_id=d.submission_id
+                         where v.tenant_id=a.tenant_id
+                           and v.submission_id = coalesce(d.submission_id,
+                               case when a.record_submission_id ~ :uuidPattern then a.record_submission_id::uuid end)
                          order by o.display_position nulls last, v.field_key
                          limit 1) as record_number
                   from (%s) a

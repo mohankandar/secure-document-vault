@@ -5,6 +5,7 @@ import { AreaFrame } from './Governance'
 import { FailureNotice, loadFailed, type Failure } from './CardError'
 import { Problems } from './Problems'
 import { AuditLog, AuditWords } from './AuditLog'
+import { isMeaningfulActivity } from './auditWords'
 import { About } from './About'
 import { Banner, Callout, Panel, TechDetails, fmtDateTime } from './ui'
 import {
@@ -68,7 +69,6 @@ function useTick() {
   useEffect(() => { const t = window.setInterval(() => setN((n) => n + 1), 30_000); return () => window.clearInterval(t) }, [])
 }
 
-const ROUTINE = new Set(['AUDIT_VIEWED', 'BUSINESS_RECENT_RECORDS_LISTED', 'DOCUMENT_PAGE_VIEWED'])
 const startOfToday = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d.toISOString() }
 
 function Overview() {
@@ -78,13 +78,13 @@ function Overview() {
   const [deletedToday, setDeletedToday] = useState<{ n: number; more: boolean } | null | undefined>(undefined)
   useEffect(() => {
     let live = true
-    // Routine views (each look at the audit writes one) can fill the newest events, so read up to 3 pages back.
+    // Task 0020 (item 2): meaningful events only. Searches and routine reads can fill the newest events, so read up to 5 pages back.
     ;(async () => {
       const found: OpsAuditEvent[] = []
       let cursor: string | undefined
-      for (let i = 0; i < 3 && found.length < 5; i++) {
+      for (let i = 0; i < 5 && found.length < 5; i++) {
         const r = await opsAudit(cursor, {}, 100)
-        found.push(...r.events.filter((e) => !ROUTINE.has(e.action)))
+        found.push(...r.events.filter(isMeaningfulActivity))
         if (!r.nextCursor) break
         cursor = r.nextCursor
       }
@@ -142,7 +142,7 @@ function Overview() {
     <Panel flush title="Latest activity" actions={<button type="button" className="v-link" onClick={() => navigate('operations', 'audit')}>All activity →</button>}>
       {latest === undefined ? <p className="muted" style={{ padding: 16 }}>Loading…</p>
         : latest === null ? <p className="muted" style={{ padding: 16 }}>The latest activity didn’t load. Open Audit to see it.</p>
-        : latest.length === 0 ? <p className="muted" style={{ padding: 16 }}>Nothing lately besides routine views. All activity shows everything.</p>
+        : latest.length === 0 ? <p className="muted" style={{ padding: 16 }}>Nothing lately besides searches and routine views. All activity shows everything.</p>
         : <ul className="ov-activity" aria-label="Latest activity">{latest.map((e) => <li key={e.auditEventId}><span className="faint">{fmtWhen(e.occurredAt)}</span><span><AuditWords e={e} /></span></li>)}</ul>}
     </Panel>
   </>
