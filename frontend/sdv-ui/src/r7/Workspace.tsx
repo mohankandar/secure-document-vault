@@ -1,13 +1,14 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
-import { AlertTriangle, ArrowRight, ChevronDown, ChevronUp, FileText, Search, SlidersHorizontal, X } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
+import { AlertTriangle, ArrowRight, ChevronDown, ChevronUp, Search, SlidersHorizontal, X } from 'lucide-react'
 import { useStore } from './store'
 import type { RecordItem, Source } from './data'
 import { schema, search, record, toSource, toSummary, toRecord, documentActivity, SEARCH_PAGE_SIZE, type LiveDocumentActivity } from './liveApi'
 import { LoadErrorCard, failureText, loadFailed, type Failure } from './CardError'
-import { Badge, Callout, Drawer, Empty, Skeleton, auditEventLabel, fmtDate, fmtRel, humanize } from './ui'
+import { Badge, Callout, Drawer, Empty, Skeleton, auditEventLabel, fmtDate, fmtRel, fmtShortDate, humanize } from './ui'
 import { Viewer } from './Viewer'
 import { MODE_HINT, MODE_WORD, QUICK_RANGES, alternativeFields, boxLabel, quickRange, rangeLabel, routeBoxInput, type Range } from './searchRouting'
 import { NOTHING_TO_SEARCH, defaultSource, rememberSourceChoice, searchableSources } from './sourceChoice'
+import { extraField, orderedPreview, titleLabel } from './recordColumns'
 
 type Criteria = Record<string, string>
 /** received: when the submission arrived (server dateFrom/dateTo); updated: last activity (lastUpdatedFrom/To). */
@@ -16,7 +17,7 @@ const NO_RANGE: Range = { from: '', to: '' }
 const emptyApplied = (sourceId: string): Applied => ({ sourceId, c: {}, received: NO_RANGE, updated: NO_RANGE })
 type FieldValue = { label: string; value: string }
 /** What the search result said about a record; kept apart so loading the full record does not change the row. */
-type Summary = { identifiers: FieldValue[]; preview: FieldValue[]; docs: number; incomplete: boolean; expected: number; received: number }
+type Summary = { /** the server's record title, null when it has none */ title: string | null; identifiers: FieldValue[]; preview: FieldValue[]; docs: number; incomplete: boolean; expected: number; received: number }
 
 function useMediaQuery(q: string) {
   const [m, setM] = useState(() => window.matchMedia(q).matches)
@@ -31,7 +32,6 @@ function useMediaQuery(q: string) {
 
 // A date range alone is enough: the server lists every record in it, page by page.
 const hasCriteria = (a: Pick<Applied, 'c' | 'received' | 'updated' | 'incompleteOnly'>) => Object.values(a.c).some((v) => v.trim()) || !!a.incompleteOnly || [a.received, a.updated].some((r) => !!r.from || !!r.to)
-const uniqueLabels = (rows: FieldValue[][]) => [...new Set(rows.flat().map((f) => f.label))]
 const valueOf = (list: FieldValue[] | undefined, label: string) => list?.find((f) => f.label === label)?.value ?? ''
 
 export function Workspace() {
@@ -74,6 +74,8 @@ export function Workspace() {
   const source = sources.find((s) => s.id === activeSourceId) ?? defaultSource(sources)
   const fields = useMemo(() => source?.fields.filter((f) => f.searchable) ?? [], [source])
   const label = boxLabel(fields)
+  // "Contract number or borrower", from the system's own labels (as on Home).
+  const boxPlaceholder = label ? label.split(' or ').map((p, i) => (i ? p.charAt(0).toLowerCase() + p.slice(1) : p)).join(' or ') : 'Use Filters to search this source'
 
   useEffect(() => {
     if (!applied) { setRecords([]); setSummaries({}); setHasMore(false); setStatus(sources.length ? 'live' : 'loading'); return }
@@ -83,6 +85,7 @@ export function Workspace() {
       if (!active) return
       setRecords(r.records.map((x) => toSummary(x, applied.sourceId)))
       setSummaries(Object.fromEntries(r.records.map((x) => [x.recordRef, {
+        title: x.title ?? null,
         identifiers: x.identifiers.map((f) => ({ label: f.displayLabel, value: f.value })),
         preview: x.metadataPreview.map((f) => ({ label: f.displayLabel, value: f.value })),
         docs: x.availableDocumentCount, incomplete: x.incomplete,
@@ -141,16 +144,26 @@ export function Workspace() {
   }
   const clearAll = () => { setBox(''); setBoxMessage(''); runSearch(null) }
 
-  const chips = applied ? [
+  const appliedSourceName = (applied ? sources.find((s) => s.id === applied.sourceId) : source)?.name
+  // Canvas board 2: each chip is "<b>What</b> value"; a quick range reads as its name ("Updated last 30 days").
+  // With more than one sending system, a Source chip says which one is searched (it can't be removed: change it in Filters).
+  type Chip = { key: string; label: string; value: string; text: string; removable: boolean }
+  const chip = (key: string, label: string, value: string, removable = true): Chip => ({ key, label, value, text: value ? `${label} ${value}` : label, removable })
+  const rangeWords = (r: Range, name: string) => {
+    const quick = QUICK_RANGES.find((q) => { const x = quickRange(q); return x.from === r.from && x.to === r.to })
+    return quick ? quick.charAt(0).toLowerCase() + quick.slice(1) : (rangeLabel(name, r) ?? '').slice(name.length + 1)
+  }
+  const chips: Chip[] = applied ? [
     ...Object.entries(applied.c).filter(([, v]) => v.trim()).map(([key, v]) => {
       const f = source?.fields.find((x) => x.key === key)
-      return { key, text: f ? `${f.label} ${MODE_WORD[f.mode]} ${v.trim()}` : `${key} ${v.trim()}` }
+      return f ? chip(key, f.label, `${MODE_WORD[f.mode]} ${v.trim()}`) : chip(key, key, v.trim())
     }),
-    ...(applied.incompleteOnly ? [{ key: 'incomplete', text: 'Missing documents' }] : []),
+    ...(applied.incompleteOnly ? [chip('incomplete', 'Missing documents', '')] : []),
     ...(['received', 'updated'] as const).flatMap((key) => {
-      const text = rangeLabel(key === 'received' ? 'Received' : 'Updated', applied[key])
-      return text ? [{ key, text }] : []
+      const name = key === 'received' ? 'Received' : 'Updated'
+      return rangeLabel(name, applied[key]) ? [chip(key, name, rangeWords(applied[key], name))] : []
     }),
+    ...(candidates.length > 1 && appliedSourceName ? [chip('source', 'Source', appliedSourceName, false)] : []),
   ] : []
 
   const openRecord = (ref: string) => { setSelectedRef(ref); setPanelOpen(true) }
@@ -206,24 +219,25 @@ export function Workspace() {
 
   return (
     <div className={`ws${showPanel && wide ? ' has-insp' : ''}`}>
-      <div className="ws-main">
+      <div className={`ws-main${filtersOpen ? ' filtering' : ''}`}>
+        {/* Canvas board 2: one bordered bar holding the chips, the box, Filters and Clear. */}
         <section className="ws-bar" aria-label="Record search">
           <form className="ws-searchbar" role="search" onSubmit={submitBox}>
-            <Search size={18} aria-hidden className="faint" />
+            <Search size={18} aria-hidden />
             {chips.map((c) => (
-              <span key={c.key} className="ws-chip">{c.text}
-                <button type="button" onClick={() => removeChip(c.key)} aria-label={`Remove filter: ${c.text}`}><X size={13} /></button>
+              <span key={c.key} className="ws-chip"><b>{c.label}</b>{c.value && ` ${c.value}`}
+                {c.removable && <button type="button" onClick={() => removeChip(c.key)} aria-label={`Remove filter: ${c.text}`}><X size={14} /></button>}
               </span>
             ))}
             <input type="search" className="ws-searchinput" aria-label="Search records" value={box} autoComplete="off" spellCheck={false}
-              placeholder={nothingToSearch ? 'Nothing to search yet' : label ?? 'Use Filters to search this source'} aria-describedby={boxMessage ? 'ws-box-message' : undefined}
+              placeholder={nothingToSearch ? 'Nothing to search yet' : chips.length ? '' : boxPlaceholder} aria-describedby={boxMessage ? 'ws-box-message' : undefined}
               onChange={(e) => { setBox(e.target.value); setBoxMessage('') }}
               onKeyDown={(e) => { if (e.key === 'Escape') { e.preventDefault(); setBox(''); setBoxMessage('') } }} />
           </form>
-          <button ref={filtersButton} type="button" className="v-btn" aria-expanded={filtersOpen} aria-controls="ws-filters" disabled={nothingToSearch} onClick={() => setFiltersOpen((o) => !o)}>
-            <SlidersHorizontal size={16} aria-hidden />Filters{chips.length > 0 && <span className="ws-count" aria-label={`${chips.length} active`}>{chips.length}</span>}
+          <button ref={filtersButton} type="button" className="v-btn quiet sm" aria-expanded={filtersOpen} aria-controls="ws-filters" disabled={nothingToSearch} onClick={() => setFiltersOpen((o) => !o)}>
+            <SlidersHorizontal size={16} aria-hidden /><span>Filters{chips.length > 0 && <span aria-label={`${chips.length} active`}> · {chips.length}</span>}</span>
           </button>
-          <button type="button" className="v-btn quiet" onClick={clearAll} disabled={!applied && !box}>Clear</button>
+          <button type="button" className="v-btn sm" onClick={clearAll} disabled={!applied && !box}>Clear</button>
           {filtersOpen && candidates.length > 0 && (
             <FiltersPanel sources={candidates} initial={applied ?? emptyApplied(activeSourceId)}
               onApply={(next) => { setFiltersOpen(false); setBox(''); setBoxMessage(''); rememberSourceChoice(next.sourceId); setSourceId(next.sourceId); runSearch(next); filtersButton.current?.focus() }}
@@ -254,17 +268,22 @@ export function Workspace() {
             )
           ) : (
             <>
+              {/* Canvas board 2: the count line above the card, the table in the card, "Showing …" below it. */}
               <div className="ws-results-head">
                 <h2>{results.length}{hasMore ? '+' : ''} record{results.length === 1 && !hasMore ? '' : 's'} <span className="faint">· {appliedSource?.name ?? 'SDV'}</span></h2>
                 <span className="faint">Sorted by last updated</span>
               </div>
-              <ResultsTable results={results} summaries={summaries} selectedRef={selectedRef} onOpen={openRecord} />
+              <div className="ws-card">
+                <ResultsTable results={results} summaries={summaries} selectedRef={selectedRef} onOpen={openRecord} source={appliedSource} />
+              </div>
               <div className="ws-pager">
-                <span>Showing {(page - 1) * SEARCH_PAGE_SIZE + 1}–{(page - 1) * SEARCH_PAGE_SIZE + results.length}{hasMore ? ' · more on the next page' : ''} · up to {SEARCH_PAGE_SIZE} per page</span>
-                <span className="row" style={{ gap: 6 }}>
-                  <button className="v-btn sm" type="button" disabled={page === 1} onClick={() => { setPage((p) => p - 1); setSelectedRef(null); setPanelOpen(false) }}>Previous</button>
-                  <button className="v-btn sm" type="button" disabled={!hasMore} onClick={() => { setPage((p) => p + 1); setSelectedRef(null); setPanelOpen(false) }}>Next</button>
-                </span>
+                <span>Showing {page === 1 && !hasMore ? `${results.length} of ${results.length}` : `${(page - 1) * SEARCH_PAGE_SIZE + 1}–${(page - 1) * SEARCH_PAGE_SIZE + results.length}`}{hasMore ? ' · more on the next page' : ''} · up to {SEARCH_PAGE_SIZE} per page</span>
+                {(page > 1 || hasMore) && (
+                  <span className="row" style={{ gap: 6 }}>
+                    <button className="v-btn sm" type="button" disabled={page === 1} onClick={() => { setPage((p) => p - 1); setSelectedRef(null); setPanelOpen(false) }}>Previous</button>
+                    <button className="v-btn sm" type="button" disabled={!hasMore} onClick={() => { setPage((p) => p + 1); setSelectedRef(null); setPanelOpen(false) }}>Next</button>
+                  </span>
+                )}
               </div>
             </>
           )}
@@ -278,15 +297,15 @@ export function Workspace() {
             <button type="button" className="v-btn quiet icon sm" onClick={() => setPanelOpen(false)} aria-label="Close record"><X size={18} /></button>
           </header>
           <div className="ws-insp-body">
-            <RecordPanelBody record={selected} summary={summary} onOpen={(id) => openDoc(selected, id)} />
-            {can('VIEW_PDF') && selected.docs[0] && <button type="button" className="v-btn primary block" onClick={() => openDoc(selected, selected.docs[0].id)}>Open documents<ArrowRight size={16} aria-hidden /></button>}
+            <RecordPanelBody record={selected} summary={summary} source={appliedSource} onOpen={(id) => openDoc(selected, id)}
+              action={can('VIEW_PDF') && selected.docs[0] ? <button type="button" className="v-btn primary block ws-open" onClick={() => openDoc(selected, selected.docs[0].id)}>Open documents<ArrowRight size={16} aria-hidden /></button> : undefined} />
           </div>
         </aside>
       )}
       {showPanel && selected && !wide && !openDocId && (
         <Drawer eyebrow="Record" title={panelTitle} onClose={() => setPanelOpen(false)}
           footer={can('VIEW_PDF') && selected.docs[0] ? <button type="button" className="v-btn primary" onClick={() => openDoc(selected, selected.docs[0].id)}>Open documents<ArrowRight size={16} aria-hidden /></button> : undefined}>
-          <RecordPanelBody record={selected} summary={summary} onOpen={(id) => openDoc(selected, id)} />
+          <RecordPanelBody record={selected} summary={summary} source={appliedSource} onOpen={(id) => openDoc(selected, id)} />
         </Drawer>
       )}
       {selected && openDocId && can('VIEW_PDF') && <Viewer record={selected} results={results} docId={openDocId} onClose={() => setOpenDocId(null)} recordTitle={panelTitle} />}
@@ -364,27 +383,34 @@ function DateRangeField({ legend, hint, value, onChange }: { legend: string; hin
   )
 }
 
-function ResultsTable({ results, summaries, selectedRef, onOpen }: { results: RecordItem[]; summaries: Record<string, Summary>; selectedRef: string | null; onOpen: (ref: string) => void }) {
+/**
+ * Canvas board 2: the number once, the record's title, one more field (recordColumns.ts), Documents, Updated.
+ * The other identifiers and fields are in the record panel.
+ */
+function ResultsTable({ results, summaries, selectedRef, onOpen, source }: { results: RecordItem[]; summaries: Record<string, Summary>; selectedRef: string | null; onOpen: (ref: string) => void; source?: Source }) {
   const rows = useRef<(HTMLTableRowElement | null)[]>([])
   const rowSummaries = results.map((r) => summaries[r.ref])
-  // Each identifier once, then the preview fields the server sends, in the order it sends them.
-  const idCols = uniqueLabels(rowSummaries.map((s) => s?.identifiers ?? []))
-  const previewCols = uniqueLabels(rowSummaries.map((s) => s?.preview ?? [])).filter((l) => !idCols.includes(l))
+  const numberLabel = rowSummaries.find((s) => s?.identifiers[0])?.identifiers[0].label ?? 'Number'
+  const titled = rowSummaries.map((s) => ({ title: s?.title ?? null, preview: s?.preview ?? [] }))
+  const titleHead = titleLabel(titled)
+  const extraLabel = titled.map((t) => extraField(t.title, t.preview, source)?.label).find(Boolean)
   const selectedIdx = results.findIndex((r) => r.ref === selectedRef)
   const focusIdx = selectedIdx >= 0 ? selectedIdx : 0
   const move = (to: number) => rows.current[Math.max(0, Math.min(results.length - 1, to))]?.focus()
-  // Design screen 2: "1 of 2 received" in the row; without counts, a plain "Missing documents".
+  // Design screen 2: "2 of 4 received" in the row; without counts, a plain "Missing documents".
   const missing = (s?: Summary) => <Badge tone="warn">{s && s.expected > 0 ? `${s.received} of ${s.expected} received` : 'Missing documents'}</Badge>
   return (
     <table className="v-table ws-table" role="grid" aria-label="Records">
       <thead><tr>
-        {idCols.map((l) => <th key={`i-${l}`}>{l}</th>)}
-        {previewCols.map((l) => <th key={`p-${l}`}>{l}</th>)}
-        <th className="num">Documents</th><th>Updated</th>
+        <th className="ws-col-num">{numberLabel}</th>
+        <th>{titleHead}</th>
+        {extraLabel && <th className="ws-col-extra">{extraLabel}</th>}
+        <th className="ws-col-docs">Documents</th><th className="ws-col-when">Updated</th>
       </tr></thead>
       <tbody>
         {results.map((r, idx) => {
           const s = rowSummaries[idx]
+          const number = s?.identifiers[0]?.value || r.ref
           return (
             <tr key={r.ref} ref={(el) => { rows.current[idx] = el }} className="clickable" tabIndex={idx === focusIdx ? 0 : -1} aria-selected={r.ref === selectedRef}
               onClick={() => onOpen(r.ref)}
@@ -395,17 +421,12 @@ function ResultsTable({ results, summaries, selectedRef, onOpen }: { results: Re
                 else if (e.key === 'End') { e.preventDefault(); move(results.length - 1) }
                 else if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen(r.ref) }
               }}>
-              {idCols.map((l, i) => (
-                <td key={`i-${l}`} className={`mono${i === 0 ? ' lead' : ''}`} data-label={l}>
-                  <span className="ws-cell">{valueOf(s?.identifiers, l) || '—'}{i === 0 && previewCols.length === 0 && s?.incomplete && missing(s)}</span>
-                </td>
-              ))}
-              {previewCols.map((l, i) => (
-                <td key={`p-${l}`} className={i === 0 ? 'ws-name' : undefined} data-label={l}>
-                  <span className="ws-cell">{valueOf(s?.preview, l) || '—'}{i === 0 && s?.incomplete && missing(s)}</span>
-                </td>
-              ))}
-              <td className="num" data-label="Documents">{s?.docs ?? r.docs.length}</td>
+              <td className="mono lead" data-label={numberLabel}>{number}</td>
+              <td className="ws-name" data-label={titleHead}>
+                <span className="ws-cell">{s?.title || '—'}{s?.incomplete && missing(s)}</span>
+              </td>
+              {extraLabel && <td data-label={extraLabel}>{valueOf(s?.preview, extraLabel) || '—'}</td>}
+              <td data-label="Documents">{s?.docs ?? r.docs.length}</td>
               <td className="faint" data-label="Updated">{fmtRel(r.updatedAt)}</td>
             </tr>
           )
@@ -415,8 +436,12 @@ function ResultsTable({ results, summaries, selectedRef, onOpen }: { results: Re
   )
 }
 
-function RecordPanelBody({ record, summary, onOpen }: { record: RecordItem; summary?: Summary; onOpen: (id: string) => void }) {
+function RecordPanelBody({ record, summary, onOpen, source, action }: { record: RecordItem; summary?: Summary; onOpen: (id: string) => void; source?: Source; /** Shown after Details (the wide panel's Open documents) */ action?: ReactNode }) {
   const { can, liveSession } = useStore()
+  // Details: the record's fields in the sending system's own order, without its identifiers; dates as "30 Sep 2026".
+  const idLabels = new Set(record.identifiers.map((i) => i.label))
+  const details = orderedPreview(record.metadata.filter((m) => !idLabels.has(m.label)), source)
+    .map((m) => (source?.fields.find((f) => f.label === m.label)?.type === 'DATE' ? { ...m, value: fmtDate(m.value) } : m))
   const [more, setMore] = useState(false)
   const [includeViews, setIncludeViews] = useState(false)
   const [liveEvents, setLiveEvents] = useState<(LiveDocumentActivity & { filename: string })[]>([])
@@ -443,8 +468,8 @@ function RecordPanelBody({ record, summary, onOpen }: { record: RecordItem; summ
           </Callout>
         ) : <Callout tone="warn" title="Missing documents">Some expected documents have not arrived yet.</Callout>
       )}
-      <div className="stack" style={{ gap: 10 }}>
-        <div className="row between"><h3>Documents</h3><span className="faint" style={{ fontSize: 13 }}>{record.docs.length || summary?.docs || 0}</span></div>
+      <div className="stack" style={{ gap: 8 }}>
+        <h3>Documents · {record.docs.length || summary?.docs || 0}</h3>
         {loadingDocs ? <p className="faint">Loading documents…</p> : (
           <ul className="ws-docs">
             {record.docs.map((d) => (
@@ -453,20 +478,23 @@ function RecordPanelBody({ record, summary, onOpen }: { record: RecordItem; summ
                   <span className="sheet" aria-hidden />
                   <span className="grow" style={{ minWidth: 0 }}>
                     <strong className="truncate">{d.kind}</strong>
-                    <span>{d.pages > 0 ? `${d.pages} page${d.pages === 1 ? '' : 's'} · ` : ''}received {fmtDate(d.ingestedAt)}{d.redactions.length > 0 && ' · redacted'}</span>
+                    <span>{d.pages > 0 ? `${d.pages} page${d.pages === 1 ? '' : 's'} · ` : ''}received {fmtShortDate(d.ingestedAt)}{d.redactions.length > 0 && ' · redacted'}</span>
                   </span>
                   {d.tags.length > 0 && <Badge>{d.tags.length} tag{d.tags.length === 1 ? '' : 's'}</Badge>}
-                  <FileText size={16} aria-hidden className="faint" />
                 </button>
               </li>
             ))}
           </ul>
         )}
       </div>
-      <div className="stack" style={{ gap: 4 }}>
-        <h3>Details</h3>
-        <dl className="v-kv">{record.metadata.map((m) => <div key={m.label}><dt>{m.label}</dt><dd>{m.value}</dd></div>)}</dl>
-      </div>
+      {details.length > 0 && (
+        <div className="stack" style={{ gap: 10 }}>
+          <h3>Details</h3>
+          {/* Canvas board 2: label beside value; the number is in the box above, so it isn't repeated. */}
+          <dl className="ws-kv">{details.map((m) => <div key={m.label}><dt>{m.label}</dt><dd>{m.value}</dd></div>)}</dl>
+        </div>
+      )}
+      {action}
       <div className="stack" style={{ gap: 10 }}>
         <h3>Recent activity</h3>
         {liveSession && <label className="v-check"><input type="checkbox" checked={includeViews} onChange={(e) => setIncludeViews(e.target.checked)} />Include document view activity</label>}

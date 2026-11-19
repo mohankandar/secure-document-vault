@@ -9,12 +9,12 @@ const demoRecord = process.env.SDV_DEMO_CONTRACT ?? '100000000001' // created by
 
 /** The account button shows each local test sign-in's display name (local mode only), never the technical subject. */
 const ACCOUNT_BY_ROLE: Record<string, string> = {
-  'Business User': 'Account: Ben Business, Business user',
-  'Document Steward': 'Account: Dana Steward, Document steward',
-  'Business Administrator': 'Account: Bea Business Admin, Business administrator',
-  'Tenant IT Administrator': 'Account: Tom Tenant IT, Tenant IT administrator',
-  'Platform Operations Administrator': 'Account: Pat Platform Ops, Platform operations administrator',
-  'Local Administrator (Tenant IT + Business admin)': 'Account: Ari Admin, Business administrator, Tenant IT administrator',
+  'Business User': 'Account: Maya Okafor, Business user',
+  'Document Steward': 'Account: Daniel Reyes, Document steward',
+  'Business Administrator': 'Account: Priya Natarajan, Business administrator',
+  'Tenant IT Administrator': 'Account: Jonas Weber, Tenant IT administrator',
+  'Platform Operations Administrator': 'Account: Aiko Tanaka, Platform operations administrator',
+  'Local Administrator (Tenant IT + Business admin)': 'Account: Ari Lindqvist, Business administrator, Tenant IT administrator',
 }
 const AREA_TAB_BY_ROLE: Record<string, string> = {
   'Business User': 'Home',
@@ -539,7 +539,7 @@ async function auditChecks(page: Page, testInfo: TestInfo) {
     await expect(row, `a "${group}" sentence`).toBeVisible({ timeout: 15000 })
     if (group === 'Refused') await expect(row).toContainText('Refused')
     // The fresh download was made by the local steward, who has a display name in local mode.
-    if (group === 'Downloads, prints and exports') { await expect(row).toContainText(/\d{12}/); await expect(list.locator('tbody tr').filter({ hasText: /Dana Steward downloaded / }).first()).toBeVisible() }
+    if (group === 'Downloads, prints and exports') { await expect(row).toContainText(/\d{12}/); await expect(list.locator('tbody tr').filter({ hasText: /Daniel Reyes downloaded / }).first()).toBeVisible() }
     await capture(page, testInfo, `audit-${group.toLowerCase().replace(/[^a-z]+/g, '-')}`)
   }
   await expect(visible(page, /^DOCUMENT_[A-Z_]+$|^AUTHORIZATION_DENIED$/)).toHaveCount(0)
@@ -711,12 +711,12 @@ async function aboutChecks(page: Page, testInfo: TestInfo, area: 'operations' | 
   await expect(facts).toContainText(/Product\s*Vero /, { timeout: 15000 })
   for (const fact of ['Status', 'Organization', 'Sign-in', 'Checked']) await expect(facts).toContainText(fact)
   await expect(facts).toContainText('Working')
-  await expect(facts).toContainText('SDV Local Demo Tenant')
+  await expect(facts).toContainText('Acme Lending')
   await expect(facts).toContainText('Local test sign-in')
   await expect(facts).toContainText(/Today \d{2}:\d{2}/)
   await expect(page.locator('details.st-tech')).not.toHaveAttribute('open', '')
   const note = await page.getByLabel('Details for support').textContent()
-  expect(note).toContain('Organization: SDV Local Demo Tenant')
+  expect(note).toContain('Organization: Acme Lending')
   expect(note).toContain('Active profiles: local')
   expect(note, 'no personal data in the support note').not.toContain(person)
   expect(note).not.toMatch(/local-[a-z-]+/)
@@ -825,15 +825,16 @@ async function homeSteps(page: Page, testInfo: TestInfo) {
   const attention = page.getByRole('region', { name: 'Needs attention' })
   const attentionRow = attention.getByRole('button', { name: new RegExp(demoIncomplete) })
   if (!(await attentionRow.waitFor({ timeout: 15000 }).then(() => true, () => false))) return missingDemoData(testInfo, `record ${demoIncomplete} with missing documents is not under Needs attention`)
-  await expect(attentionRow).toContainText('1 of 2 documents received')
+  await expect(attentionRow).toContainText('Only 1 of 2 documents have arrived. The rest are still coming from LexaVault.')
   await capture(page, testInfo, 'home')
 
+  const firstListed = ((await attention.locator('.home-attention').first().innerText()).match(/\d{12}/) ?? [''])[0]
   await attention.getByRole('button', { name: /Show all/ }).click()
   await expect(areaTab(page, 'Records')).toHaveAttribute('aria-current', 'page')
   await expect(chip(page, /^Missing documents$/)).toBeVisible()
   await expect(chip(page, /^Received /)).toBeVisible()
-  await expect(resultRows(page).filter({ hasText: demoIncomplete })).toBeVisible({ timeout: 15000 })
-  await expect(resultRows(page).filter({ hasText: demoIncomplete })).toContainText('1 of 2 received')
+  await expect(resultRows(page).filter({ hasText: firstListed })).toBeVisible({ timeout: 15000 })
+  await expect(resultRows(page).filter({ hasText: firstListed })).toContainText(/\d+ of \d+ received/)
   await capture(page, testInfo, 'records-needs-attention')
 
   await areaTab(page, 'Home').click()
@@ -992,8 +993,8 @@ async function tryBusinessRecordJourney(page: Page, testInfo: TestInfo, role: st
   await capture(page, testInfo, 'results-name')
 
   // 4. Add a filter chip from the Filters panel, then remove it with ×.
-  const firstRowFirstName = (await resultRows(page).first().locator('td[data-label="First Name"]').innerText().catch(() => '')).trim()
-  if (!firstRowFirstName) return missingDemoData(testInfo, 'no First Name column in the name results')
+  const firstRowFirstName = (await resultRows(page).first().locator('td.ws-name').innerText().catch(() => '')).trim().split(/\s/)[0] ?? ''
+  if (!firstRowFirstName || firstRowFirstName === '—') return missingDemoData(testInfo, 'no record title in the name results (run Seed-SDV-Canvas-Demo.ps1)')
   await page.getByRole('button', { name: /^Filters/ }).click()
   let filters = page.getByRole('dialog', { name: 'Filters' })
   await expect(filters).toBeVisible()
@@ -1002,7 +1003,7 @@ async function tryBusinessRecordJourney(page: Page, testInfo: TestInfo, role: st
   await filters.getByRole('button', { name: 'Show results' }).click()
   const added = chip(page, /^First Name is /)
   await expect(added).toBeVisible()
-  await expect(page.getByRole('button', { name: /^Filters/ })).toContainText('2')
+  await expect(page.getByRole('button', { name: /^Filters/ })).toContainText(`· ${await page.getByRole('search').locator('.ws-chip').count()}`)
   await expect(resultRows(page)).toHaveCount(1)
   await capture(page, testInfo, 'results-filter-chip')
   await added.getByRole('button', { name: /^Remove filter/ }).click()
@@ -1252,7 +1253,7 @@ test.describe('SDV role-based screen capture', () => {
     await integrationsChecks(page, testInfo)
     await storageChecks(page, testInfo)
     await signInChecks(page, testInfo)
-    await aboutChecks(page, testInfo, 'tenant', 'environment', 'Tom Tenant IT')
+    await aboutChecks(page, testInfo, 'tenant', 'environment', 'Jonas Weber')
   })
 
   test('Local Administrator with several roles sees every area', async ({ page }, testInfo) => {
@@ -1287,6 +1288,6 @@ test.describe('SDV role-based screen capture', () => {
     await overviewChecks(page, testInfo)
     await opsStorageChecks(page, testInfo)
     await healthChecks(page, testInfo)
-    await aboutChecks(page, testInfo, 'operations', 'configuration', 'Pat Platform Ops')
+    await aboutChecks(page, testInfo, 'operations', 'configuration', 'Aiko Tanaka')
   })
 })

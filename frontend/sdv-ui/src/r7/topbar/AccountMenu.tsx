@@ -102,7 +102,6 @@ export function AccountMenu({ person, theme, onThemeChange, entities, currentEnt
               <strong>{person.name}</strong>
               {person.email && person.email !== person.name && <span>{person.email}</span>}
               <span>{person.roleLabel}</span>
-              <span>{subtitle}</span>
             </div>
           </div>
 

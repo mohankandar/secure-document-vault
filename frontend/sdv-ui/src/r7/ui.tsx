@@ -2,7 +2,17 @@ import { useEffect, useId, type ReactNode } from 'react'
 import { AlertTriangle, CheckCircle2, FlaskConical, Info, X, XCircle, Inbox, RefreshCw } from 'lucide-react'
 import { useStore } from './store'
 
-export const fmtDate = (v?: string | null) => (v ? new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }).format(new Date(v)) : '—')
+/** Fixed English short months: the browser's en-GB says "Sept", the canvas says "Sep". */
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+/** A yyyy-mm-dd value is a calendar day (no time zone); anything else is a moment. */
+const toDate = (v: string) => (/^\d{4}-\d{2}-\d{2}$/.test(v) ? new Date(v + 'T00:00:00') : new Date(v))
+/** "30 Sep 2026". */
+export const fmtDate = (v?: string | null) => {
+  if (!v) return '—'
+  const d = toDate(v)
+  return Number.isNaN(d.getTime()) ? '—' : `${d.getDate()} ${MONTHS[d.getMonth()]} ${d.getFullYear()}`
+}
 export const fmtDateTime = (v?: string | null) => (v ? new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }).format(new Date(v)) : '—')
 /** Allowed browser clock lag behind the server before a future time is shown as a date instead of "just now". */
 const CLOCK_SKEW_MS = 5 * 60 * 1000
@@ -12,12 +22,25 @@ export const fmtRel = (v: string, now: number = Date.now()) => {
   const diff = now - t
   // Slightly in the future (server clock ahead of the browser) reads as "just now"; further ahead shows the date.
   if (diff < -CLOCK_SKEW_MS) return fmtDate(v)
+  // The canvas's wording (task 0018): "12 minutes ago", "2 hours ago", "Yesterday", "Mon 16 Nov", "2 Nov".
   const s = Math.max(0, diff / 1000)
-  if (s < 90) return 'just now'
-  if (s < 3600) return `${Math.round(s / 60)} min ago`
-  if (s < 86400) return `${Math.round(s / 3600)} h ago`
-  if (s < 86400 * 45) return `${Math.round(s / 86400)} d ago`
-  return fmtDate(v)
+  if (s < 60) return 'just now'
+  const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'} ago`
+  if (s < 3600) return plural(Math.floor(s / 60), 'minute')
+  const day = (x: number) => { const d = new Date(x); d.setHours(0, 0, 0, 0); return d.getTime() }
+  const days = Math.round((day(now) - day(t)) / 86400000)
+  if (days <= 0) return plural(Math.floor(s / 3600), 'hour')
+  if (days === 1) return 'Yesterday'
+  if (days < 7) { const d = new Date(t); return `${WEEKDAYS[d.getDay()]} ${d.getDate()} ${MONTHS[d.getMonth()]}` }
+  return fmtShortDate(v)
+}
+/** "17 Oct" this year, "17 Oct 2025" another year (the canvas's dates). */
+export const fmtShortDate = (v?: string | null, now: number = Date.now()) => {
+  if (!v) return '—'
+  const d = toDate(v)
+  if (Number.isNaN(d.getTime())) return '—'
+  const sameYear = d.getFullYear() === new Date(now).getFullYear()
+  return `${d.getDate()} ${MONTHS[d.getMonth()]}${sameYear ? '' : ' ' + d.getFullYear()}`
 }
 export const humanize = (code: string) => code.toLowerCase().replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase())
 

@@ -4,7 +4,7 @@ import { useStore } from './store'
 import { BUSINESS_LIMITS, PAGE_TEXT, RETENTION, type Doc, type RecordItem, type Redaction } from './data'
 import { ApiRequestError } from '../api'
 import { failureText } from './CardError'
-import { Badge, Callout, Dialog, Drawer, Tabs, auditEventLabel, fmtDate, fmtDateTime, fmtRel, humanize } from './ui'
+import { Badge, Callout, Dialog, Drawer, Tabs, auditEventLabel, fmtDate, fmtDateTime, fmtRel, fmtShortDate, humanize } from './ui'
 import { viewerMetadata, viewerPage, viewerSearch, record as fetchRecord, toRecord, documentActivity, type LiveDocumentActivity, type ViewerSearch, documentTags, documentComments, createDocumentTag, createDocumentComment, type LiveTag, type LiveComment, secureDownload, recordPrintEvent, permanentRedaction, viewerPreviews } from './liveApi'
 
 type Zoom = 'width' | 'page' | number
@@ -42,7 +42,8 @@ export function Viewer({ record, results, docId, onClose, recordTitle, backLabel
   const docIndex = record.docs.indexOf(doc)
   const recIndex = results.findIndex((r) => r.ref === record.ref)
 
-  const [zoom, setZoom] = useState<Zoom>('width')
+  // Canvas board 4: the whole page height, about 600px wide at 1440 × 900.
+  const [zoom, setZoom] = useState<Zoom>('page')
   const [page, setPage] = useState(1)
   const [findOpen, setFindOpen] = useState(false)
   const [query, setQuery] = useState('')
@@ -119,7 +120,7 @@ export function Viewer({ record, results, docId, onClose, recordTitle, backLabel
     return () => window.removeEventListener('keydown', k)
   }, [onClose, redacting, review, infoOpen, docsOpen])
 
-  const sheetWidth = zoom === 'width' ? Math.min(canvasSize.w - 24, 980) : zoom === 'page' ? Math.min((canvasSize.h - 96) * (8.5 / 11), canvasSize.w - 24) : 816 * zoom
+  const sheetWidth = zoom === 'width' ? Math.min(canvasSize.w - 24, 980) : zoom === 'page' ? Math.min((canvasSize.h + 120) * (8.5 / 11), canvasSize.w - 24) /* the stage's height less its 24px top margin; the page bar floats over the page's foot, as on the canvas */ : 816 * zoom
   const zoomPct = Math.round((sheetWidth / 816) * 100)
   const stepZoom = (dir: 1 | -1) => setZoom(Math.min(2.5, Math.max(0.5, Math.round((sheetWidth / 816 + dir * 0.25) * 4) / 4)))
   const goPage = (p: number) => { const n = Math.min(pageTotal, Math.max(1, p)); sheetRefs.current[n - 1]?.scrollIntoView({ behavior: 'smooth', block: 'start' }); setPage(n) }
@@ -272,19 +273,18 @@ export function Viewer({ record, results, docId, onClose, recordTitle, backLabel
             {!inDrawer && <button type="button" className="v-btn quiet icon sm" onClick={() => setFold(true)} aria-label="Hide document list" title="Hide document list"><PanelLeftClose size={16} /></button>}
           </span>
         </div>
-        <strong style={{ fontSize: 14 }}>{title}</strong>
-        <div className="ws-ids stacked">{record.identifiers.map((i) => <div key={i.label}><span>{i.label}</span><strong style={{ fontSize: 13 }} title={i.value}>{i.value}</strong></div>)}</div>
+        <div className="ws-ids stacked">{record.identifiers.map((i) => <div key={i.label}><span>{i.label}</span><strong title={i.value}>{i.value}</strong></div>)}</div>
       </div>
-      <div className="stack" style={{ gap: 6 }}>
+      <div className="stack" style={{ gap: 8 }}>
         <span className="eyebrow">Documents · {record.docs.length}</span>
         {record.docs.map((d) => (
           <button key={d.id} type="button" className="vw-thumb" aria-current={d.id === doc.id} onClick={() => switchDoc(d.id)}>
-            <i aria-hidden /><span className="grow" style={{ minWidth: 0 }}><strong className="truncate" style={{ display: 'block', fontWeight: 500, fontSize: 13 }}>{docKind(d.filename)}</strong>{d.id === doc.id && pageTotal ? `${pageTotal} page${pageTotal === 1 ? '' : 's'} · ` : ''}{fmtDate(d.ingestedAt)}</span>
+            <span className="grow" style={{ minWidth: 0 }}><strong className="truncate">{docKind(d.filename)}</strong>{d.id === doc.id && pageTotal ? `${pageTotal} page${pageTotal === 1 ? '' : 's'}` : `received ${fmtShortDate(d.ingestedAt)}`}</span>
           </button>
         ))}
       </div>
       {pageTotal > 1 && (
-        <div className="stack" style={{ gap: 6 }}>
+        <div className="stack" style={{ gap: 8 }}>
           <span className="eyebrow">Pages</span>
           <div className="vw-pages">
             {Array.from({ length: pageTotal }, (_, i) => (
@@ -304,10 +304,10 @@ export function Viewer({ record, results, docId, onClose, recordTitle, backLabel
         <span className="vw-sep vw-hide-sm" aria-hidden />
         <button type="button" className="vw-title grow" style={{ border: 0, background: 'none', textAlign: 'left', cursor: 'pointer' }} onClick={() => setDocsOpen(true)} aria-label={`${kind} · ${title}. Switch document`}>
           <strong className="truncate">{kind} · {title}</strong>
-          <span className="truncate mono-ish">{record.identifiers[0].value} · {doc.filename} · {docIndex + 1} of {record.docs.length} document{record.docs.length === 1 ? '' : 's'}</span>
+          <span className="truncate mono">{record.identifiers[0].value} · {doc.filename} · {docIndex + 1} of {record.docs.length} document{record.docs.length === 1 ? '' : 's'}</span>
         </button>
         <div className="vw-group">
-          <button type="button" className="v-btn quiet sm" aria-pressed={findOpen} onClick={() => setFindOpen((f) => !f)} aria-label="Find in document"><Search size={16} aria-hidden /><span className="vw-label">Find</span></button>
+          <button type="button" className="v-btn sm" aria-pressed={findOpen} onClick={() => setFindOpen((f) => !f)} aria-label="Find in document"><Search size={16} aria-hidden /><span className="vw-label">Find</span></button>
           {can('DOWNLOAD_CURRENT_PDF') && <button type="button" className="v-btn sm vw-hide-sm" disabled={actionBusy} onClick={download}><Download size={16} aria-hidden />Download</button>}
           {can('PRINT_DOCUMENT') && <button type="button" className="v-btn sm vw-hide-sm" disabled={actionBusy} onClick={print}><Printer size={16} aria-hidden />Print</button>}
           {can('PERMANENT_REDACTION') && <button type="button" className="v-btn sm vw-redact" disabled={actionBusy} aria-pressed={redacting} onClick={startRedact} aria-label="Redact"><Eraser size={16} aria-hidden /><span className="vw-label">Redact</span></button>}
@@ -622,7 +622,6 @@ function DocInfo({ doc, tab, setTab, embedded }: { doc: Doc; tab: InfoTab; setTa
     <>
       <Tabs label="Document information" value={tab} onChange={(t) => setTab(t as InfoTab)} tabs={[...(showDevelopmentUtilities ? [{ id: 'ask', label: 'Ask' }] : []), { id: 'details', label: 'Details' }, { id: 'comments', label: `Comments${(liveSession?liveComments.length:doc.comments.length) ? ` ${liveSession?liveComments.length:doc.comments.length}` : ''}` }, { id: 'tags', label: 'Tags' }, { id: 'activity', label: 'Activity' }]} />
       {embedded ? <div className="stack-lg">{body}</div> : <div className="vw-panel-body">{body}</div>}
-      {!embedded && <div style={{ padding: 12, borderTop: '1px solid var(--line)' }} className="faint"><Info size={13} aria-hidden style={{ verticalAlign: '-2px', marginRight: 6 }} /><small>Every view, download, print and correction is audited.</small></div>}
     </>
   )
 }

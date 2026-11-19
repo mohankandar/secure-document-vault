@@ -187,6 +187,7 @@ function ShellInner() {
           currentTabId={route.area}
           onSelectTab={(id) => navigate(id as AreaId)}
           onOpenCommand={() => setPalette(true)}
+          commandLabel="Go to a record or page"
           commandShortcut={isMac ? '⌘K' : 'Ctrl K'}
           extra={showDevelopmentUtilities && <span className="v-sim-chip" title="Business search uses SDV backend; other workflows pending"><FlaskConical size={13} aria-hidden /><span className="long">R7 · business integration</span><span className="short">Simulated</span></span>}
           account={
