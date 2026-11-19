@@ -28,8 +28,10 @@ export function ruleWords(days: number | null, indefinite: boolean): string {
 }
 /** Rules written by the installation itself, not by a person. */
 const byInstallation = (createdBy: string) => createdBy === 'SYSTEM_MIGRATION'
-// The server keeps only the sign-in ID of whoever set a rule; a technical ID is never shown (task 0019: question for the owner).
-const setBy = (createdBy: string) => (byInstallation(createdBy) ? 'Set at installation' : 'A Business admin')
+// The person's name is kept with each rule from task 0019's follow-up (migration 022). Older rules have none and say
+// "A Business admin"; the technical sign-in ID is never shown.
+const setBy = (r: { createdBy: string; createdByDisplayName?: string | null }) =>
+  byInstallation(r.createdBy) ? 'Set at installation' : r.createdByDisplayName?.trim() || 'A Business admin'
 
 export function KeepingDocuments() {
   const { can, toast } = useStore()
@@ -89,7 +91,7 @@ export function KeepingDocuments() {
           <span className="keep-rule">{ruleWords(policy.defaultRetentionDays, policy.indefinite)}</span>
           <span className="muted">
             Counted from the day each document arrives.{' '}
-            {byInstallation(policy.createdBy) ? 'Set at installation.' : <>Set by a Business admin{policy.description ? <>: &ldquo;{policy.description}&rdquo;</> : null}.</>}
+            {byInstallation(policy.createdBy) ? 'Set at installation.' : <>Set by {policy.createdByDisplayName?.trim() || 'a Business admin'}{policy.description ? <>: &ldquo;{policy.description}&rdquo;</> : null}.</>}
           </span>
         </div>
         <button type="button" className="v-btn primary" disabled={!can('CONFIGURE_RETENTION')} onClick={startNew}>New rule</button>
@@ -106,7 +108,7 @@ export function KeepingDocuments() {
           <tbody>{policy.history.map((h) => <tr key={h.policyVersionId}>
             <td className="lead" data-label="Rule"><span className="row" style={{ gap: 8 }}><strong>{ruleWords(h.defaultRetentionDays, h.indefinite)}</strong>{!h.effectiveUntil && <Badge tone="ok">In use</Badge>}</span></td>
             <td data-label="In use">{h.effectiveUntil ? `${fmtDate(h.effectiveFrom)} – ${fmtDate(h.effectiveUntil)}` : `Since ${fmtDate(h.effectiveFrom)}`}</td>
-            <td data-label="Set by">{setBy(h.createdBy)}</td>
+            <td data-label="Set by">{setBy(h)}</td>
             <td data-label="Why">{byInstallation(h.createdBy) || !h.description ? <span className="faint">—</span> : h.description}</td>
           </tr>)}</tbody>
         </table>

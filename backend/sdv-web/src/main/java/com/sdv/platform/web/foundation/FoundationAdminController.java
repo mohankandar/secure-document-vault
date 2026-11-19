@@ -79,6 +79,13 @@ public class FoundationAdminController {
         return sources.create(principal.tenantId(), request.toCommand(), principal.subject(), correlationId());
     }
 
+    /** The standard limits that apply when a sending system sets none of its own (task 0019 follow-up). */
+    @GetMapping("/ingestion-sources/standard-limits")
+    public Object standardLimits() {
+        SdvPrincipal principal = require(Capability.CONFIGURE_INGESTION_SOURCES);
+        return sources.standardLimits(principal.tenantId());
+    }
+
     @GetMapping("/ingestion-sources/{sourceId}")
     public Object getSource(@PathVariable UUID sourceId) {
         SdvPrincipal principal = require(Capability.CONFIGURE_INGESTION_SOURCES);

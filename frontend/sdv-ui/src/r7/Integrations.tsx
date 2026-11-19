@@ -3,7 +3,7 @@ import { Plus, Trash2 } from 'lucide-react'
 import { FailureNotice, actionFailed, loadFailed, type Failure } from './CardError'
 import { Callout, Dialog, Drawer, TechDetails, fmtDate, fmtRel } from './ui'
 import {
-  identityOverview, itCreateSource, itFields, itSourceSummary, itSources, itUpdateSource, itUpsertField,
+  identityOverview, itCreateSource, itFields, itSourceSummary, itSources, itStandardLimits, itUpdateSource, itUpsertField,
   type ItField, type ItSource, type ItSourceSummary,
 } from './liveApi'
 
@@ -56,12 +56,23 @@ const NEVER_SECRET = 'Vero stores only where the secret is kept, never the secre
 type Limits = NonNullable<ItSource['limits']>
 const MB = 1024 * 1024
 const LIMIT_ROWS: { key: keyof Limits; label: string; words: (n: number) => string }[] = [
-  { key: 'maxPdfBytes', label: 'Largest PDF', words: (n) => `${(n / MB).toLocaleString(undefined, { maximumFractionDigits: 1 })} MB` },
+  { key: 'maxPdfBytes', label: 'Largest PDF', words: (n) => mb(n) },
   { key: 'maxPagesPerPdf', label: 'Most pages in one PDF', words: (n) => `${n.toLocaleString()} pages` },
   { key: 'maxDocumentsPerSubmission', label: 'Most documents', words: (n) => `${n.toLocaleString()} documents` },
   { key: 'incompleteAttentionHours', label: 'Wait for missing documents', words: (n) => `${n.toLocaleString()} hours` },
 ]
 const STANDARD = "Vero's standard limit"
+const mb = (n: number) => `${(n / MB).toLocaleString(undefined, { maximumFractionDigits: 1 })} MB`
+/**
+ * The limit that applies (task 0019 follow-up): the system's own, never above the standard, because intake always
+ * uses the smaller of the two. With no standard values (they did not load), the system's own value or the words.
+ */
+export function limitInUse(key: keyof Limits, own: Limits | undefined, standard: Limits | null): number | null {
+  const mine = own?.[key] ?? null
+  const std = standard?.[key] ?? null
+  if (mine != null && std != null) return Math.min(mine, std)
+  return mine ?? std
+}
 
 export function Integrations() {
   const [sources, setSources] = useState<ItSource[]>([])
@@ -75,9 +86,11 @@ export function Integrations() {
   const [pausing, setPausing] = useState(false)
   const [busy, setBusy] = useState(false)
   const [editor, setEditor] = useState<'new' | 'edit' | null>(null)
+  const [standard, setStandard] = useState<Limits | null>(null)
 
   useEffect(() => {
     let live = true
+    itStandardLimits().then((l) => { if (live) setStandard(l) }, () => { if (live) setStandard(null) })
     itSources().then((rows) => {
       if (!live) return
       setSources(rows); setLoaded(true); setError(null)
@@ -158,7 +171,7 @@ export function Integrations() {
 
         <div className="int-sec int-two">
           <div className="stack" style={{ gap: 8 }}><h3 className="v-sec">Limits per delivery</h3>
-            <dl className="int-kv">{LIMIT_ROWS.map((r) => { const n = source.limits?.[r.key]; return <div key={r.key}><dt>{r.label}</dt><dd>{n != null ? r.words(n) : STANDARD}</dd></div> })}</dl></div>
+            <dl className="int-kv">{LIMIT_ROWS.map((r) => { const n = limitInUse(r.key, source.limits, standard); return <div key={r.key}><dt>{r.label}</dt><dd>{n != null ? r.words(n) : STANDARD}</dd></div> })}</dl></div>
           <div className="stack" style={{ gap: 8 }}><h3 className="v-sec">How it proves who it is</h3>
             <p>{AUTH[source.authType].sentence(idp)}</p>
             <p className="faint">{NEVER_SECRET}</p></div>
@@ -169,7 +182,7 @@ export function Integrations() {
             <div><dt>Source key</dt><dd className="mono">{source.sourceKey}</dd></div>
             <div><dt>Where the secret is kept</dt><dd className="mono">{source.credentialReference || '—'}</dd></div>
             <div><dt>Sign-in type</dt><dd className="mono">{source.authType}</dd></div>
-            <div><dt>Total size of one delivery</dt><dd>{source.limits?.maxAggregateSubmissionBytes != null ? `${(source.limits.maxAggregateSubmissionBytes / MB).toLocaleString(undefined, { maximumFractionDigits: 1 })} MB` : STANDARD}</dd></div>
+            <div><dt>Total size of one delivery</dt><dd>{(() => { const n = limitInUse('maxAggregateSubmissionBytes', source.limits, standard); return n != null ? mb(n) : STANDARD })()}</dd></div>
           </dl>
           <ul className="int-keys">{fields.map((f) => <li key={f.fieldKey}><span className="mono">{f.fieldKey}</span> · version {f.version} · <span className="mono">{f.fieldType} · {f.normalization}</span></li>)}</ul>
         </TechDetails>
@@ -183,7 +196,7 @@ export function Integrations() {
       <p>While paused, Vero refuses deliveries from this system. It will need to send them again.</p>
     </Dialog>}
 
-    {editor && <SourceEditor mode={editor} source={editor === 'edit' ? source : undefined} fields={editor === 'edit' ? fields : []} others={sources} idp={idp}
+    {editor && <SourceEditor mode={editor} source={editor === 'edit' ? source : undefined} fields={editor === 'edit' ? fields : []} others={sources} idp={idp} standard={standard}
       onClose={() => setEditor(null)} onSaved={(id) => { setEditor(null); setSelectedId(id); setReload((x) => x + 1) }} />}
   </>
 }
@@ -199,8 +212,13 @@ const LIMIT_INPUTS: { key: keyof Limits; label: string; unit: string; factor: nu
   { key: 'maxAggregateSubmissionBytes', label: 'Total size of one delivery', unit: 'MB', factor: MB },
   { key: 'incompleteAttentionHours', label: 'Wait for missing documents', unit: 'hours', factor: 1 },
 ]
+/** Placeholder for an empty limit box: the standard value in the box's unit, for example "Standard: 250". */
+const standardHint = (l: (typeof LIMIT_INPUTS)[number], standard: Limits | null) => {
+  const n = standard?.[l.key]
+  return n != null ? `Standard: ${(Math.round((n / l.factor) * 10) / 10).toLocaleString()}` : STANDARD
+}
 
-function SourceEditor({ mode, source, fields, others, idp, onClose, onSaved }: { mode: 'new' | 'edit'; source?: ItSource; fields: ItField[]; others: ItSource[]; idp?: string; onClose: () => void; onSaved: (sourceId: string) => void }) {
+function SourceEditor({ mode, source, fields, others, idp, standard, onClose, onSaved }: { mode: 'new' | 'edit'; source?: ItSource; fields: ItField[]; others: ItSource[]; idp?: string; standard: Limits | null; onClose: () => void; onSaved: (sourceId: string) => void }) {
   const [step, setStep] = useState(0)
   const [name, setName] = useState(source?.displayName ?? '')
   const [key, setKey] = useState(source?.sourceKey ?? '')
@@ -307,9 +325,9 @@ function SourceEditor({ mode, source, fields, others, idp, onClose, onSaved }: {
       <label className="v-field"><span>Where the secret is kept</span><input className="v-input mono" value={credential} maxLength={300} onChange={(e) => setCredential(e.target.value)} placeholder="For example: okta/loan-origination-client" />
         <small className="faint">The name of the entry in your secrets store, never the secret itself. {NEVER_SECRET}</small></label>
       <details className="int-advanced"><summary>Advanced (usually leave as is)</summary>
-        <p className="faint">Leave a box empty to use {STANDARD}.</p>
+        <p className="faint">Leave a box empty to use {standard ? "Vero's standard limit, shown in the box" : STANDARD}. A system's own limit counts only when it is lower than the standard.</p>
         {LIMIT_INPUTS.map((l) => <label key={l.key} className="v-field"><span>{l.label} ({l.unit})</span>
-          <input className="v-input" inputMode="decimal" value={limits[l.key]} placeholder={STANDARD} onChange={(e) => setLimits((x) => ({ ...x, [l.key]: e.target.value }))} /></label>)}
+          <input className="v-input" inputMode="decimal" value={limits[l.key]} placeholder={standardHint(l, standard)} onChange={(e) => setLimits((x) => ({ ...x, [l.key]: e.target.value }))} /></label>)}
         {!limitsValid && <small className="bad">Use a number above zero, or leave the box empty.</small>}
       </details>
     </>}

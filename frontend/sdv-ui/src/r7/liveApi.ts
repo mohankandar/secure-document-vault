@@ -91,7 +91,7 @@ export type RolePolicy = {roles:Record<string,Record<string,boolean>>;configurab
 export const getRolePolicy = () => roleApi<RolePolicy>('/api/v1/admin/role-capabilities','businessAdmin')
 export const saveRolePolicy = (roles:RolePolicy['roles']) => roleApi<RolePolicy>('/api/v1/admin/role-capabilities','businessAdmin',{method:'PUT',body:JSON.stringify({roles})})
 
-export type RetentionPolicyOverview={defaultRetentionDays:number|null;indefinite:boolean;policyVersionId:string;version:number;policyName:string;description:string|null;effectiveFrom:string;createdBy:string;history:{policyVersionId:string;version:number;policyName:string;description:string|null;defaultRetentionDays:number|null;indefinite:boolean;effectiveFrom:string;effectiveUntil:string|null;createdBy:string;createdAt:string}[]}
+export type RetentionPolicyOverview={defaultRetentionDays:number|null;indefinite:boolean;policyVersionId:string;version:number;policyName:string;description:string|null;effectiveFrom:string;createdBy:string;createdByDisplayName?:string|null;history:{policyVersionId:string;version:number;policyName:string;description:string|null;defaultRetentionDays:number|null;indefinite:boolean;effectiveFrom:string;effectiveUntil:string|null;createdBy:string;createdByDisplayName?:string|null;createdAt:string}[]}
 export const getRetentionPolicy=()=>roleApi<RetentionPolicyOverview>('/api/v1/admin/retention-policy','businessAdmin')
 export const activateRetentionPolicy=(policyName:string,description:string,days:number|null)=>roleApi<RetentionPolicyOverview>('/api/v1/admin/retention-policy','businessAdmin',{method:'PUT',body:JSON.stringify({policyName,description,defaultRetentionDays:days})})
 
@@ -111,6 +111,9 @@ export type ItSource={sourceId:string;sourceKey:string;displayName:string;status
 /** Business search settings come with each field; Tenant IT reads them but cannot change them. */
 export type ItField={fieldKey:string;displayLabel:string;fieldType:string;required:boolean;normalization:string;version:number;businessIdentifier?:boolean;searchable?:boolean;searchMode?:'EXACT'|'PREFIX'|'PARTIAL'}
 export const itSources=()=>roleApi<ItSource[]>('/api/v1/admin/ingestion-sources','tenantIt')
+/** The standard limits: what applies when a sending system sets none of its own (task 0019 follow-up). */
+export type ItLimits=NonNullable<ItSource['limits']>
+export const itStandardLimits=()=>roleApi<ItLimits>('/api/v1/admin/ingestion-sources/standard-limits','tenantIt')
 export const itFields=(sourceId:string)=>roleApi<ItField[]>('/api/v1/admin/ingestion-sources/'+encodeURIComponent(sourceId)+'/source-fields','tenantIt')
 export const itUpsertField=(sourceId:string,key:string,body:{displayLabel:string;fieldType:string;required:boolean;normalization:string;validationRules:Record<string,never>})=>roleApi<ItField>('/api/v1/admin/ingestion-sources/'+encodeURIComponent(sourceId)+'/source-fields/'+encodeURIComponent(key),'tenantIt',{method:'PUT',body:JSON.stringify(body)})
 type OpsComponent={component:string;status:string;message:string;observedAt?:string|null}

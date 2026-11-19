@@ -29,7 +29,8 @@ export function AuditLog() {
   const [activity, setActivity] = useState('')
   const [person, setPerson] = useState('')
   const [people, setPeople] = useState<Record<string, string>>({})
-  const [period, setPeriod] = useState<Period>('30')
+  // Last 7 days by default, as on the canvas (owner, task 0019 follow-up).
+  const [period, setPeriod] = useState<Period>('7')
   const [customFrom, setCustomFrom] = useState('')
   const [customTo, setCustomTo] = useState('')
   const [recordNumber, setRecordNumber] = useState('')

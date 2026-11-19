@@ -51,6 +51,21 @@ public class IngestionSourceAdminService {
         return sources.findAll(tenantId);
     }
 
+    /**
+     * The tenant's standard limits (its guardrails): what applies to a sending system that sets none of its own.
+     * A sending system's own limit can only lower it; intake always uses the smaller of the two.
+     */
+    public SourceLimits standardLimits(UUID tenantId) {
+        var tenant = tenants.findById(tenantId)
+                .orElseThrow(() -> new NoSuchElementException("Tenant not found."));
+        if (tenant.status() != TenantStatus.ACTIVE) {
+            throw new IllegalStateException("Tenant is not active.");
+        }
+        var g = tenant.guardrails();
+        return new SourceLimits(g.maxPdfBytes(), g.maxPagesPerPdf(), g.maxDocumentsPerSubmission(),
+                g.maxAggregateSubmissionBytes(), g.incompleteAttentionHours());
+    }
+
     public IngestionSource get(UUID tenantId, UUID sourceId) {
         requireActiveTenant(tenantId);
         return sources.findById(tenantId, sourceId)

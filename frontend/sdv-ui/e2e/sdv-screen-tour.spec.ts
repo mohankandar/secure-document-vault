@@ -172,6 +172,9 @@ async function keepingDocumentsChecks(page: Page, testInfo: TestInfo) {
   await expect(earlier.locator('tbody tr').first()).toContainText('Keep for 7 years')
   await expect(earlier.locator('tbody tr').first()).toContainText('In use')
   await expect(earlier.locator('tbody tr').first()).toContainText('e2e tour: seven years')
+  // The person's name is kept with each new rule (task 0019 follow-up); never the sign-in ID.
+  await expect(earlier.locator('tbody tr').first()).toContainText('Priya Natarajan')
+  await expect(page.getByRole('region', { name: 'Rule in use' })).toContainText('Set by Priya Natarajan')
   await expect(earlier.locator('tbody tr').nth(1)).toContainText(before)
   await capture(page, testInfo, 'keeping-documents-earlier-rules')
 
@@ -307,7 +310,18 @@ async function integrationsChecks(page: Page, testInfo: TestInfo) {
   await expect(sends).toContainText('Yes · exact match')
   await expect(visible(page, /Not exposed|OAUTH2_CLIENT_CREDENTIALS|DIGITS_ONLY|Monitoring/)).toHaveCount(0)
   await expect(page.getByText('Vero stores only where the secret is kept, never the secret.')).toBeVisible()
-  await expect(visible(page, "Vero's standard limit")).toHaveCount(4)
+  // Limits are numbers (task 0019 follow-up): the system's own, never above the standard the server sends.
+  const standard = await (await page.request.get('/api/v1/admin/ingestion-sources/standard-limits', { headers: IT_HEADERS })).json() as Record<string, number>
+  const lexaLimits = ((await (await page.request.get('/api/v1/admin/ingestion-sources', { headers: IT_HEADERS })).json()) as { displayName: string; limits?: Record<string, number | null> | null }[])
+    .find((s) => s.displayName === 'LexaVault')?.limits ?? {}
+  const inUse = (key: string) => Math.min(lexaLimits[key] ?? standard[key], standard[key])
+  expect(standard.maxPagesPerPdf, 'standard limits from the server').toBeGreaterThan(0)
+  await expect(visible(page, "Vero's standard limit")).toHaveCount(0)
+  const limitsCard = detail.locator('.int-kv')
+  await expect(limitsCard).toContainText(`Most pages in one PDF${inUse('maxPagesPerPdf').toLocaleString('en-US')} pages`)
+  await expect(limitsCard).toContainText(`Most documents${inUse('maxDocumentsPerSubmission').toLocaleString('en-US')} documents`)
+  await expect(limitsCard).toContainText(`Wait for missing documents${inUse('incompleteAttentionHours').toLocaleString('en-US')} hours`)
+  await expect(limitsCard).toContainText(/Largest PDF[\d,.]+ MB/)
   await capture(page, testInfo, 'integrations')
 
   // Pause asks first, then shows "Paused since…"; start again afterwards (and always put the status back).

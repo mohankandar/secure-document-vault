@@ -57,3 +57,6 @@ databaseChangeLog:
 
   - include:
       file: db/changelog/021-document-page-count.yaml
+
+  - include:
+      file: db/changelog/022-retention-policy-creator-name.yaml

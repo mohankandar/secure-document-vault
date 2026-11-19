@@ -92,3 +92,62 @@ Run from `frontend/sdv-ui` with the local app running and the canvas seed applie
 ## Commits
 
 See `git log fix/match-canvas-admin`. Not pushed, not merged.
+
+## Follow-up (2026-11-18)
+
+The owner answered the five questions. Done on `fix/match-canvas-admin`.
+
+1. **Keeping documents, "Set by": the person's name is kept with each new rule.**
+   - **Schema change, approved by the owner's answer:** migration 022 (`022-retention-policy-creator-name.sql/.yaml`) adds `retention_policy_versions.created_by_display_name`. It is nullable with no default, and existing rows are not changed.
+   - The name comes from the signed-in session, the same way audit names do (migration 020). A blank name or one over 300 characters is not stored.
+   - **API:** `GET/PUT /api/v1/admin/retention-policy` carry `createdByDisplayName` for the rule in use and for each earlier rule.
+   - **Screen:** "Set by Priya Natarajan" and the name in the Earlier rules table. Older rules (all of today's rules) still say "a Business admin", and installation rules say "Set at installation". The sign-in ID is never shown.
+2. **Integration limits are numbers.**
+   - **New endpoint, Tenant IT only:** `GET /api/v1/admin/ingestion-sources/standard-limits` returns the tenant's standard limits (its guardrails), for example 250 MB, 2,000 pages, 100 documents, 24 hours. A Business admin is refused (403, checked live).
+   - **The card shows the limit in use:** the system's own limit, never above the standard, because intake always uses the smaller of the two. If the standard values don't load, the card falls back to "Vero's standard limit".
+   - **The editor's empty limit boxes show the standard,** for example "Standard: 250".
+3. **"Identifies the record"** stays in Search fields for the Business admin. No change.
+4. **Audit** opens on "Last 7 days" ([AuditLog.tsx](../../frontend/sdv-ui/src/r7/AuditLog.tsx)).
+5. **`frontend/sdv-ui/src/r7/integrations.css` deleted.** Nothing imported it (checked again before deleting).
+
+**Viewer fixes asked for after 0018:** all four were already in from the 0018 follow-up, and the `ui:compare` viewer image confirms them. No change was needed.
+- Redact is red as on the canvas.
+- "Borrower ID", not "Borrower id".
+- Document ID and Submission are under a folded "Technical details".
+- "Keeping: Kept until …", or "Kept forever", in Keeping documents' wording.
+
+**Tests added:**
+- `RetentionPolicyCreatorNameTest` (4): the name is stored trimmed; a blank or over-long name is not stored; the overview carries it, with null for older rules.
+- `JdbcRetentionRepositoryCreatorNameSqlTest` (2): the insert and both reads use the new column.
+- `StandardLimitsTest` (2): the standard is the tenant's guardrails; an inactive or unknown tenant is refused.
+
+**Tour changes:**
+- Integrations: no "Vero's standard limit" text, and the card's numbers match the server's standard limits.
+- The opt-in keeping-rule step (`SDV_KEEPING_RULE_REGRESSION=1`) now expects "Priya Natarajan". It was not run because it adds permanent rules (owner, 2026-11-18). The name was proven by the unit tests and by the live API returning the new field: null for all 16 existing rules.
+
+**Checks:**
+
+| Command | Result |
+|---|---|
+| `.\stop-local.cmd`, `.\Build-SDV-All.ps1`, `.\start-local.cmd` | BUILD SUCCESS, 0 failures (sdv-web 119 tests, 8 new); frontend build passed; migration 022 applied in local mode at start |
+| `npm run typecheck` | passed |
+| `npm run build` | passed |
+| `npm run ui:capture` | 17 passed, 3 skipped (same skips as before), desktop and iPad |
+| `npm run ui:compare` | 19 passed |
+
+**Files:**
+- **New:**
+  - `022-retention-policy-creator-name.sql/.yaml` (added to the master changelog)
+  - the three test files above
+- **Changed:**
+  - backend: `RetentionRepository`, `JdbcRetentionRepository`, `RetentionPolicyService`, `RetentionPolicyController`, `IngestionSourceAdminService`, `FoundationAdminController`
+  - frontend: `liveApi.ts`, `KeepingDocuments.tsx`, `Integrations.tsx`, `AuditLog.tsx`
+  - the tour
+- **Deleted:** `src/r7/integrations.css`.
+
+**Remaining differences now closed:**
+- "Set by" shows a name for new rules.
+- Limits show numbers.
+- Audit opens on the last 7 days.
+
+Not pushed, not merged.

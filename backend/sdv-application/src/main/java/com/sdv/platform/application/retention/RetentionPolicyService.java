@@ -51,6 +51,7 @@ public class RetentionPolicyService {
             String description,
             Integer defaultRetentionDays,
             String actorId,
+            String actorDisplayName,
             String correlationId) {
         String normalizedName = policyName == null || policyName.isBlank() ? "Retention policy update" : policyName.trim();
         String normalizedDescription = description == null || description.isBlank() ? null : description.trim();
@@ -74,7 +75,7 @@ public class RetentionPolicyService {
             retention.closeCurrentPolicy(tenantId, now);
             retention.insertPolicyVersion(new RetentionRepository.PolicyVersion(
                     UUID.randomUUID(), tenantId, nextVersion, normalizedName, normalizedDescription,
-                    defaultRetentionDays, now, null, actorId, now));
+                    defaultRetentionDays, now, null, actorId, displayName(actorDisplayName), now));
             retention.updateDefaultRetentionDays(tenantId, defaultRetentionDays, now);
             audit.append(new AuditEvent(
                     UUID.randomUUID(), tenantId, "USER", actorId,
@@ -94,14 +95,24 @@ public class RetentionPolicyService {
         return new RetentionPolicyOverview(
                 current.retentionDays(), current.retentionDays() == null,
                 current.policyVersionId(), current.version(), current.policyName(), current.description(),
-                current.effectiveFrom(), current.createdBy(), history);
+                current.effectiveFrom(), current.createdBy(), current.createdByDisplayName(), history);
     }
 
     private static PolicyVersion toView(RetentionRepository.PolicyVersion policy) {
         return new PolicyVersion(
                 policy.policyVersionId(), policy.version(), policy.policyName(), policy.description(),
                 policy.retentionDays(), policy.retentionDays() == null,
-                policy.effectiveFrom(), policy.effectiveUntil(), policy.createdBy(), policy.createdAt());
+                policy.effectiveFrom(), policy.effectiveUntil(), policy.createdBy(), policy.createdByDisplayName(), policy.createdAt());
+    }
+
+    /**
+     * The name shown as "Set by" (task 0019 follow-up, migration 022), from the signed-in session. A blank or
+     * over-long name is not stored; the screen then says "a Business admin", as it does for older rules.
+     */
+    static String displayName(String value) {
+        if (value == null) return null;
+        String trimmed = value.trim();
+        return trimmed.isEmpty() || trimmed.length() > 300 ? null : trimmed;
     }
 
     private String details(Integer previous, Integer current, String policyName, int version) {
@@ -127,6 +138,7 @@ public class RetentionPolicyService {
             String description,
             Instant effectiveFrom,
             String createdBy,
+            String createdByDisplayName,
             List<PolicyVersion> history) { }
 
     public record PolicyVersion(
@@ -139,5 +151,6 @@ public class RetentionPolicyService {
             Instant effectiveFrom,
             Instant effectiveUntil,
             String createdBy,
+            String createdByDisplayName,
             Instant createdAt) { }
 }
