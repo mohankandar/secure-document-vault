@@ -1,4 +1,4 @@
-import type { Field } from './data'
+import type { Field } from './model'
 
 // The server has no free-text search. The search box routes what the person types to ONE configured field:
 //  1. Input that looks like a number (digits, optionally with spaces, dashes, dots or slashes) goes to the

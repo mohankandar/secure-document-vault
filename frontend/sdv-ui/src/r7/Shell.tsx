@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Building2, FileSearch, House, FlaskConical, Layers, Search, ServerCog, ShieldCheck, CornerDownLeft, UserRound } from 'lucide-react'
+import { Building2, FileSearch, House, Layers, Search, ServerCog, ShieldCheck, CornerDownLeft, UserRound } from 'lucide-react'
 import { AREA_TABS, StoreProvider, useStore } from './store'
-import { type AreaId, type RoleId } from './data'
+import { type AreaId, type RoleId } from './model'
 import { opSummary } from './liveApi'
 import { Toasts } from './ui'
 import { getLocalTestPersona, localRoleSwitchEnabled, setLocalTestPersona, type LocalPersona, type SessionInfo } from '../api'
@@ -189,7 +189,6 @@ function ShellInner() {
           onOpenCommand={() => setPalette(true)}
           commandLabel="Go to a record or page"
           commandShortcut={isMac ? '⌘K' : 'Ctrl K'}
-          extra={showDevelopmentUtilities && <span className="v-sim-chip" title="Business search uses SDV backend; other workflows pending"><FlaskConical size={13} aria-hidden /><span className="long">R7 · business integration</span><span className="short">Simulated</span></span>}
           account={
             <AccountMenu
               person={person}

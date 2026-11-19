@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { KeepingDocuments } from './KeepingDocuments'
 import { AREA_TABS, useStore } from './store'
-import { type Capability } from './data'
+import { type Capability } from './model'
 import { ActionError, LoadErrorCard, toFailure, type Failure } from './CardError'
 import { Badge, Banner, Callout, PageHead, Panel, Switch, Tabs } from './ui'
 import { getRolePolicy, saveRolePolicy, type RolePolicy } from './liveApi'

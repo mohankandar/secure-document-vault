@@ -1323,6 +1323,19 @@ test.describe('SDV role-based screen capture', () => {
     await expect(areaTab(page, 'Home')).toHaveAttribute('aria-current', 'page')
   })
 
+  test('Without a session the app shows the error page, never sample data (task 0021)', async ({ page }) => {
+    // The server refuses the session (simulated in the browser only).
+    await page.route('**/api/v1/session', (route) => route.fulfill({ status: 401, json: { message: 'Not signed in' } }))
+    await page.goto('/')
+    await expect(page.getByRole('alert')).toContainText(/Your session didn.t start/, { timeout: 15000 })
+    await expect(page.getByRole('main')).not.toContainText(/Records|Recently viewed|Needs attention|Simulated|simulated/)
+    await expect(page.getByRole('banner')).not.toContainText(/Simulated|R7 · business integration/)
+    // The old R5 address now opens Vero too: the old app is gone.
+    await page.goto('/?app=r5')
+    await expect(page.getByRole('alert')).toContainText(/Your session didn.t start/, { timeout: 15000 })
+    await expect(page.locator('.auth-shell, .auth-card')).toHaveCount(0)
+  })
+
   test('Tenant IT Administrator screens', async ({ page }, testInfo) => {
     test.setTimeout(240_000)
     await selectRole(page, 'Tenant IT Administrator')

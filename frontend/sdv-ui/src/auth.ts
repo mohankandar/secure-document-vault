@@ -17,12 +17,12 @@ export function isOidcSecurityMode(): boolean {
   return !isLocalSecurityMode()
 }
 
-export function getAccessToken(): string | null {
+function getAccessToken(): string | null {
   if (!isOidcSecurityMode()) return null
   return sessionStorage.getItem(TOKEN_KEY)
 }
 
-export function clearOidcSession(): void {
+function clearOidcSession(): void {
   sessionStorage.removeItem(TOKEN_KEY)
   sessionStorage.removeItem(ID_TOKEN_KEY)
   sessionStorage.removeItem(STATE_KEY)
@@ -42,6 +42,7 @@ export async function bearerHeaders(): Promise<Record<string, string>> {
   return { Authorization: `Bearer ${token.trim()}` }
 }
 
+// OIDC sign-in: only the old R5 app called these. R7 has no sign-in screen yet (task 0021 report); kept for it.
 export async function handleOidcCallback(): Promise<boolean> {
   if (!isOidcSecurityMode()) return false
 

@@ -1,5 +1,5 @@
 import { roleApi, contentBinary, type SessionInfo, type SearchSchema, type SearchResponse, type BusinessRecord, type RecordSummary, type SearchSource } from '../api'
-import type { Field, Source, RecordItem, Doc } from './data'
+import type { Field, Source, RecordItem, Doc } from './model'
 
 export const session = () => roleApi<SessionInfo>('/api/v1/session', 'business')
 export const schema = () => roleApi<SearchSchema>('/api/v1/business/search-schema', 'business')
@@ -28,10 +28,10 @@ export type RecentRecord = { sourceId: string; record: RecordSummary; lastOpened
 export const recentRecords = (limit = 8) => roleApi<{ records: RecentRecord[] }>('/api/v1/business/me/recent-records?limit=' + limit, 'business')
 export const record = (ref: string) => roleApi<BusinessRecord>('/api/v1/business/records/' + encodeURIComponent(ref), 'business')
 export function toSource(s: SearchSource): Source {
-  return { id:s.sourceId, key:s.sourceKey, name:s.displayName, status:'ACTIVE', authType:'OAUTH2_CLIENT_CREDENTIALS', credentialRef:'', createdAt:'', updatedAt:'', submissions:0, documents:0, lastActivityAt:'', fields:s.fields.map(f=>({
+  return { id:s.sourceId, key:s.sourceKey, name:s.displayName, status:'ACTIVE', fields:s.fields.map(f=>({
     key:f.fieldKey, label:f.displayLabel, type:f.fieldType === 'DATE' ? 'DATE':'STRING',
     identifier:f.businessIdentifier, searchable:true, mode:f.searchMode, normalization:
-    f.normalization === 'DIGITS_ONLY' || f.normalization === 'UPPERCASE' ? f.normalization : 'NONE', normalizationRaw:f.normalization, required:false
+    f.normalization === 'DIGITS_ONLY' || f.normalization === 'UPPERCASE' ? f.normalization : 'NONE', normalizationRaw:f.normalization
   } as Field)) }
 }
 const fields = (a: {displayLabel:string,value:string}[]) => a.map(f=>({ label:f.displayLabel,value:f.value }))
@@ -40,20 +40,19 @@ export const recordName = (title: string | null | undefined, ids: {value:string}
 export function toSummary(r: RecordSummary, sourceId:string):RecordItem {
   const ids=fields(r.identifiers), metadata=fields(r.metadataPreview)
   return { ref:r.recordRef,sourceId,identifiers:ids,metadata,title:recordName(r.title,ids,r.recordRef),
-    updatedAt:r.latestSubmissionAt,submissions:r.submissionCount,incomplete:r.incomplete?{submissionId:'',expected:0,received:0,since:r.latestSubmissionAt}:null,
+    updatedAt:r.latestSubmissionAt,incomplete:r.incomplete?{expected:0,received:0}:null,
     docs:[] }
 }
 export function toRecord(r: BusinessRecord):RecordItem {
   const ids=fields(r.identifiers)
   const docs:Doc[]=r.documents.map(d=>({id:d.documentId,submissionId:d.submissionId,filename:d.originalFilename,kind:d.originalFilename,pages:d.pageCount ?? 0,redacted:!!d.redacted,
-    ingestedAt:d.ingestedAt,availableAt:d.availableAt || d.ingestedAt,expiresAt:d.expiresAt || '',
-    sizeKb:0,tags:[],comments:[],activity:[],redactions:[]}))
+    ingestedAt:d.ingestedAt,expiresAt:d.expiresAt || ''}))
   // A record can have several incomplete submissions: add up the counts and list every missing document.
   const open=r.incompleteAttention?.submissions ?? []
-  const incomplete=open.length?{submissionId:open[0].submissionId,expectedCount:open.reduce((n,s)=>n+s.expectedCount,0),receivedCount:open.reduce((n,s)=>n+s.receivedCount,0),missing:open.flatMap(s=>s.missingSourceDocumentIds ?? [])}:null
+  const incomplete=open.length?{expectedCount:open.reduce((n,s)=>n+s.expectedCount,0),receivedCount:open.reduce((n,s)=>n+s.receivedCount,0),missing:open.flatMap(s=>s.missingSourceDocumentIds ?? [])}:null
   return {ref:r.recordRef,sourceId:r.sourceId,identifiers:ids,metadata:fields(r.metadata),
-    title:recordName(r.title,ids,r.recordRef),updatedAt:r.latestSubmissionAt,submissions:r.submissionCount,
-    incomplete:incomplete?{submissionId:incomplete.submissionId,expected:incomplete.expectedCount,received:incomplete.receivedCount,since:r.latestSubmissionAt,missing:incomplete.missing}:null,docs}
+    title:recordName(r.title,ids,r.recordRef),updatedAt:r.latestSubmissionAt,
+    incomplete:incomplete?{expected:incomplete.expectedCount,received:incomplete.receivedCount,missing:incomplete.missing}:null,docs}
 }
 
 /** viewingId: this opening's ID; page requests send it back so each page is recorded once per viewing. */

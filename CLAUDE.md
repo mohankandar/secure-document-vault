@@ -4,7 +4,7 @@ These instructions apply to every session in this repository. The owner (Kr) mak
 
 ## What this repository is
 
-Secure Document Vault (product name currently **Vero**, may change) stores redacted documents from producer systems and lets authorized people search, view, and, for stewards, permanently correct them. Java backend under `backend/`; React, TypeScript and Vite frontend under `frontend/sdv-ui/`. The current UI is the R7 design in `frontend/sdv-ui/src/r7/`; the older R5 app is still reachable at `?app=r5`.
+Secure Document Vault (product name currently **Vero**, may change) stores redacted documents from producer systems and lets authorized people search, view, and, for stewards, permanently correct them. Java backend under `backend/`; React, TypeScript and Vite frontend under `frontend/sdv-ui/`. The UI is the R7 design in `frontend/sdv-ui/src/r7/`.
 
 Related repositories on this machine:
 
