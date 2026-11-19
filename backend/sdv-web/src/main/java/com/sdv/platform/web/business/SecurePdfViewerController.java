@@ -48,13 +48,15 @@ public class SecurePdfViewerController {
     public ResponseEntity<byte[]> page(
             @PathVariable UUID documentId,
             @PathVariable int pageNumber,
-            @RequestParam(defaultValue = "1.0") double scale) {
+            @RequestParam(defaultValue = "1.0") double scale,
+            @RequestParam(required = false) String viewingId) {
         SdvPrincipal principal = requireView();
         DocumentViewerService.PageImage page = viewer.renderPage(
                 principal.tenantId(),
                 documentId,
                 pageNumber,
                 scale,
+                parseViewingId(viewingId),
                 principal.subject(),
                 correlationId());
 
@@ -67,6 +69,18 @@ public class SecurePdfViewerController {
         headers.set("X-SDV-Viewer-Page", Integer.toString(page.pageNumber()));
         headers.set("X-SDV-Viewer-Page-Count", Integer.toString(page.pageCount()));
         return ResponseEntity.ok().headers(headers).body(page.pngBytes());
+    }
+
+    /** Small page previews (JSON, a PNG data URL per page). No audit event per preview. */
+    @GetMapping("/previews")
+    public ResponseEntity<DocumentViewerService.PagePreviews> previews(
+            @PathVariable UUID documentId,
+            @RequestParam(defaultValue = "1") int first,
+            @RequestParam(defaultValue = "12") int count) {
+        SdvPrincipal principal = requireView();
+        return ResponseEntity.ok()
+                .headers(viewerHeaders())
+                .body(viewer.previews(principal.tenantId(), documentId, first, count));
     }
 
     @GetMapping("/search")
@@ -82,6 +96,16 @@ public class SecurePdfViewerController {
                         query,
                         principal.subject(),
                         correlationId()));
+    }
+
+    /** A missing or malformed viewing ID is treated as none: the page is then recorded as before. */
+    private static UUID parseViewingId(String value) {
+        if (value == null || value.isBlank()) return null;
+        try {
+            return UUID.fromString(value.trim());
+        } catch (IllegalArgumentException ex) {
+            return null;
+        }
     }
 
     private SdvPrincipal requireView() {

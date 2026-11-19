@@ -6,6 +6,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 @SpringBootApplication(scanBasePackages = "com.sdv.platform")
 public class SdvApplication {
     public static void main(String[] args) {
+        UsageReporting.switchOff();
         SpringApplication.run(SdvApplication.class, args);
     }
 }

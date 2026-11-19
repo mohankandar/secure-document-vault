@@ -79,6 +79,13 @@ public class FoundationAdminController {
         return sources.create(principal.tenantId(), request.toCommand(), principal.subject(), correlationId());
     }
 
+    /** The standard limits that apply when a sending system sets none of its own (task 0019 follow-up). */
+    @GetMapping("/ingestion-sources/standard-limits")
+    public Object standardLimits() {
+        SdvPrincipal principal = require(Capability.CONFIGURE_INGESTION_SOURCES);
+        return sources.standardLimits(principal.tenantId());
+    }
+
     @GetMapping("/ingestion-sources/{sourceId}")
     public Object getSource(@PathVariable UUID sourceId) {
         SdvPrincipal principal = require(Capability.CONFIGURE_INGESTION_SOURCES);
@@ -113,6 +120,20 @@ public class FoundationAdminController {
     }
 
     public record MetadataDisplayOrderRequest(java.util.List<String> fieldKeys) { }
+
+    @GetMapping("/metadata-sources/{sourceId}/record-title")
+    public Object getRecordTitleFields(@PathVariable UUID sourceId) {
+        SdvPrincipal principal = require(Capability.CONFIGURE_METADATA_SEARCH);
+        return metadata.recordTitleFields(principal.tenantId(), sourceId);
+    }
+
+    @PutMapping("/metadata-sources/{sourceId}/record-title")
+    public Object updateRecordTitleFields(@PathVariable UUID sourceId,
+                                          @RequestBody MetadataDisplayOrderRequest request) {
+        SdvPrincipal principal = require(Capability.CONFIGURE_METADATA_SEARCH);
+        return metadata.updateRecordTitleFields(principal.tenantId(), sourceId,
+                request == null ? null : request.fieldKeys(), principal.subject(), correlationId());
+    }
 
     @GetMapping("/ingestion-sources/{sourceId}/metadata-fields")
     public Object listMetadataFields(@PathVariable UUID sourceId) {

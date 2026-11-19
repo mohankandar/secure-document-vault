@@ -6,7 +6,7 @@ export const ago = (days: number) => new Date(NOW - days * 86400000).toISOString
 export const ahead = (days: number) => new Date(NOW + days * 86400000).toISOString()
 
 export type RoleId = 'business' | 'steward' | 'businessAdmin' | 'tenantIt' | 'platform'
-export type AreaId = 'workspace' | 'governance' | 'tenant' | 'operations' | 'system'
+export type AreaId = 'home' | 'workspace' | 'governance' | 'tenant' | 'operations' | 'system'
 
 export type Capability =
   | 'SEARCH_RECORDS' | 'VIEW_PDF' | 'PERMANENT_REDACTION' | 'DOWNLOAD_CURRENT_PDF' | 'PRINT_DOCUMENT'
@@ -31,8 +31,8 @@ export const CONFIGURABLE: Capability[] = ['DOWNLOAD_CURRENT_PDF', 'PRINT_DOCUME
 
 export type RoleDef = { id: RoleId; code: string; name: string; short: string; person: string; initials: string; areas: AreaId[]; responsibility: string }
 export const ROLES: RoleDef[] = [
-  { id: 'business', code: 'BUSINESS_USER', name: 'Business User', short: 'Business', person: 'Maya Okafor', initials: 'MO', areas: ['workspace'], responsibility: 'Search and view authorized documents.' },
-  { id: 'steward', code: 'DOCUMENT_STEWARD', name: 'Document Steward', short: 'Steward', person: 'Daniel Reyes', initials: 'DR', areas: ['workspace'], responsibility: 'Controlled download and permanent corrective redaction.' },
+  { id: 'business', code: 'BUSINESS_USER', name: 'Business User', short: 'Business', person: 'Maya Okafor', initials: 'MO', areas: ['home', 'workspace'], responsibility: 'Search and view authorized documents.' },
+  { id: 'steward', code: 'DOCUMENT_STEWARD', name: 'Document Steward', short: 'Steward', person: 'Daniel Reyes', initials: 'DR', areas: ['home', 'workspace'], responsibility: 'Controlled download and permanent corrective redaction.' },
   { id: 'businessAdmin', code: 'BUSINESS_ADMIN', name: 'Business Administrator', short: 'Business admin', person: 'Priya Natarajan', initials: 'PN', areas: ['governance'], responsibility: 'Business policy and metadata administration.' },
   { id: 'tenantIt', code: 'TENANT_IT_ADMIN', name: 'Tenant IT Administrator', short: 'Tenant IT', person: 'Jonas Weber', initials: 'JW', areas: ['tenant'], responsibility: 'Storage, identity, integrations and environment.' },
   { id: 'platform', code: 'PLATFORM_OPERATIONS_ADMIN', name: 'Platform Operations', short: 'Platform ops', person: 'Aiko Tanaka', initials: 'AT', areas: ['operations'], responsibility: 'Health, incidents, intake, audit and configuration.' },
@@ -44,7 +44,7 @@ export const DEFAULT_ROLE_CAPS: Record<'BUSINESS_USER' | 'DOCUMENT_STEWARD', Cap
 }
 
 export type SearchMode = 'EXACT' | 'PREFIX' | 'PARTIAL'
-export type Field = { key: string; label: string; type: 'STRING' | 'DATE'; identifier: boolean; searchable: boolean; mode: SearchMode; normalization: 'NONE' | 'DIGITS_ONLY' | 'UPPERCASE'; required: boolean }
+export type Field = { key: string; label: string; type: 'STRING' | 'DATE'; identifier: boolean; searchable: boolean; mode: SearchMode; normalization: 'NONE' | 'DIGITS_ONLY' | 'UPPERCASE'; required: boolean; /** The server's normalization as configured (e.g. TRIM, LOWERCASE); used to route search-box input. */ normalizationRaw?: string }
 export type Source = { id: string; key: string; name: string; status: 'ACTIVE' | 'DISABLED'; authType: 'OAUTH2_CLIENT_CREDENTIALS' | 'JWT_BEARER' | 'MTLS'; credentialRef: string; createdAt: string; updatedAt: string; submissions: number; documents: number; lastActivityAt: string; fields: Field[] }
 
 const contractFields: Field[] = [
@@ -77,8 +77,8 @@ export type Tag = { id: string; tag: string; by: string; at: string }
 export type Comment = { id: string; text: string; by: string; at: string }
 export type Activity = { id: string; action: string; actor: string; at: string; outcome: 'SUCCESS' | 'DENIED' | 'FAILED'; simulated?: boolean }
 export type Redaction = { page: number; x: number; y: number; w: number; h: number }
-export type Doc = { id: string; filename: string; kind: string; pages: number; ingestedAt: string; availableAt: string; expiresAt: string; submissionId: string; sizeKb: number; tags: Tag[]; comments: Comment[]; activity: Activity[]; redactions: Redaction[] }
-export type RecordItem = { ref: string; sourceId: string; identifiers: { label: string; value: string }[]; metadata: { label: string; value: string }[]; title: string; updatedAt: string; submissions: number; incomplete: null | { submissionId: string; expected: number; received: number; since: string }; docs: Doc[] }
+export type Doc = { id: string; filename: string; kind: string; pages: number; ingestedAt: string; availableAt: string; expiresAt: string; submissionId: string; sizeKb: number; tags: Tag[]; comments: Comment[]; activity: Activity[]; redactions: Redaction[]; /** the server says a correction was applied */ redacted?: boolean }
+export type RecordItem = { ref: string; sourceId: string; identifiers: { label: string; value: string }[]; metadata: { label: string; value: string }[]; title: string; updatedAt: string; submissions: number; incomplete: null | { submissionId: string; expected: number; received: number; since: string; /** Source document IDs still expected (record details only). */ missing?: string[] }; docs: Doc[] }
 
 const KINDS = ['Member Agreement', 'Enrollment Form', 'Coverage Amendment', 'Premium Notice', 'Consent to Release', 'Claim Form', 'Explanation of Benefits', 'Credentialing Packet']
 let docSeq = 0

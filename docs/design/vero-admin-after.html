@@ -1,0 +1,580 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>Vero admin after</title><style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'IBM Plex Sans',sans-serif;color:#14191c;background:#d9dddc;padding:40px;display:flex;flex-direction:column;gap:60px}
+.mono{font-family:'IBM Plex Mono',monospace}
+.board{display:flex;gap:32px;align-items:flex-start;background:#d9dddc;padding:0}
+.label{width:360px;display:flex;flex-direction:column;gap:14px;padding-top:4px}
+.label h2{font-size:28px;font-weight:600;line-height:1.2}
+.label .tag{align-self:flex-start;font-size:13px;font-weight:600;background:#14191c;color:#fff;border-radius:999px;padding:4px 12px}
+.label p{font-size:15px;line-height:1.5;color:#2c3438}
+.label ul{list-style:none;display:flex;flex-direction:column;gap:10px}
+.label li{font-size:14px;line-height:1.45;background:#fff;border-radius:8px;padding:10px 12px;border-left:4px solid #166a4f}
+.label li b{font-weight:600}
+.screen{width:1440px;height:900px;background:#f3f5f4;border-radius:10px;overflow:hidden;display:flex;flex-direction:column;position:relative;box-shadow:0 2px 12px rgba(0,0,0,.08)}
+/* top bar */
+.top{height:56px;background:#fff;border-bottom:1px solid #dce1e2;display:flex;align-items:center;padding:0 20px;gap:28px;flex:none}
+.brand{font-size:21px;font-weight:700;color:#166a4f;letter-spacing:-.5px;display:flex;align-items:flex-end;gap:3px}
+.brand i{width:7px;height:7px;border-radius:50%;background:#166a4f;margin-bottom:6px;display:block}
+.nav{display:flex;gap:4px}
+.nav a{font-size:15px;color:#4a5459;padding:7px 12px;border-radius:8px;text-decoration:none;display:flex;gap:8px;align-items:center}
+.nav a.on{background:#e2efe9;color:#105a42;font-weight:500}
+.nav .n{font-size:12px;font-weight:600;background:#fdf0d5;color:#8a5300;border-radius:999px;padding:1px 7px}
+.grow{flex:1}
+.cmd{width:340px;height:38px;border:1px solid #dce1e2;border-radius:9px;display:flex;align-items:center;gap:10px;padding:0 12px;color:#737d82;font-size:14px;background:#fff}
+.kbd{margin-left:auto;font-size:11px;border:1px solid #dce1e2;border-radius:4px;padding:1px 5px;color:#737d82}
+.iconbtn{width:36px;height:36px;border-radius:8px;display:flex;align-items:center;justify-content:center;color:#4a5459}
+.acct{display:flex;align-items:center;gap:10px;padding:4px 10px 4px 4px;border:1px solid #dce1e2;border-radius:10px;background:#fff}
+.av{width:30px;height:30px;border-radius:50%;background:#166a4f;color:#fff;font-size:12px;font-weight:600;display:flex;align-items:center;justify-content:center;flex:none}
+.acct .who{display:flex;flex-direction:column;line-height:1.2}
+.acct .who b{font-size:13px;font-weight:600}
+.acct .who span{font-size:12px;color:#737d82}
+svg{flex:none}
+/* common */
+.body{flex:1;display:flex;min-height:0}
+.main{flex:1;padding:28px 32px;display:flex;flex-direction:column;gap:22px;min-width:0}
+h1{font-size:26px;font-weight:600;letter-spacing:-.3px}
+.sub{font-size:15px;color:#4a5459}
+.card{background:#fff;border:1px solid #dce1e2;border-radius:12px}
+.btn{height:38px;border-radius:9px;border:1px solid #c3cacc;background:#fff;font-size:14px;font-weight:500;display:flex;align-items:center;gap:8px;padding:0 14px;color:#14191c;white-space:nowrap}
+.btn.primary{background:#166a4f;border-color:#166a4f;color:#fff}
+.btn.sm{height:32px;font-size:13px;padding:0 11px}
+.btn.quiet{border-color:transparent;background:transparent;color:#4a5459}
+.badge{font-size:12px;font-weight:500;border-radius:999px;padding:2px 9px;white-space:nowrap}
+.warn{background:#fdf0d5;color:#8a5300}
+.ok{background:#e2efe9;color:#105a42}
+.muted{color:#737d82}
+.searchbar{display:flex;align-items:center;gap:12px;height:52px;border:1.5px solid #c3cacc;border-radius:12px;background:#fff;padding:0 8px 0 16px}
+.searchbar .ph{font-size:16px;color:#737d82;flex:1}
+.chip{display:flex;align-items:center;gap:6px;font-size:13px;background:#eceff0;border-radius:999px;padding:4px 6px 4px 11px;white-space:nowrap}
+.chip b{font-weight:500;color:#4a5459}
+/* table */
+.rows{display:flex;flex-direction:column}
+.rh,.r{display:grid;grid-template-columns:170px 1fr 120px 100px 140px;align-items:center;gap:16px;padding:0 18px}
+.rh{height:40px;font-size:12px;font-weight:500;color:#737d82;border-bottom:1px solid #dce1e2;text-transform:uppercase;letter-spacing:.4px}
+.r{height:58px;border-bottom:1px solid #eceff0;font-size:14px}
+.r:last-child{border-bottom:0}
+.r .num{font-family:'IBM Plex Mono',monospace;font-size:14px;font-weight:500}
+.r .nm{font-weight:500;white-space:nowrap;display:flex;gap:10px;align-items:center}
+.r.sel{background:#e2efe9;box-shadow:inset 3px 0 0 #166a4f}
+/* record panel */
+.panel{width:400px;background:#fff;border-left:1px solid #dce1e2;display:flex;flex-direction:column;flex:none}
+.ph{padding:18px 20px;border-bottom:1px solid #dce1e2;display:flex;align-items:flex-start;gap:10px}
+.eyebrow{font-size:11px;font-weight:600;letter-spacing:.6px;color:#737d82;text-transform:uppercase}
+.pb{padding:18px 20px;display:flex;flex-direction:column;gap:18px;overflow:hidden}
+.idbox{border:1px solid #dce1e2;border-radius:9px;padding:10px 14px;display:flex;flex-direction:column;gap:2px}
+.idbox span{font-size:12px;color:#737d82}
+.idbox b{font-family:'IBM Plex Mono',monospace;font-size:16px;font-weight:500;white-space:nowrap}
+.callout{border-radius:9px;padding:12px 14px;font-size:13px;line-height:1.45;display:flex;gap:10px}
+.callout.w{background:#fdf6e8;border:1px solid #f2d9a6;color:#5a3b00}
+.doc{display:flex;align-items:center;gap:12px;border:1px solid #dce1e2;border-radius:9px;padding:9px 12px}
+.sheet{width:28px;height:36px;border:1px solid #c3cacc;border-radius:3px;background:#fff;display:flex;flex-direction:column;gap:3px;padding:6px 5px;flex:none}
+.sheet i{display:block;height:2px;background:#cdd3d5;border-radius:1px}
+.doc .t{display:flex;flex-direction:column;flex:1;gap:1px}
+.doc .t b{font-size:14px;font-weight:500}
+.doc .t span{font-size:12px;color:#737d82}
+.kv{display:grid;grid-template-columns:120px 1fr;gap:10px 12px;font-size:14px}
+.kv dt{color:#737d82}
+h3{font-size:14px;font-weight:600}
+/* viewer */
+.vbar{height:56px;background:#fff;border-bottom:1px solid #dce1e2;display:flex;align-items:center;gap:14px;padding:0 16px;flex:none}
+.vt{display:flex;flex-direction:column;line-height:1.25}
+.vt b{font-size:15px;font-weight:600}
+.vt span{font-size:13px;color:#737d82}
+.sep{width:1px;height:24px;background:#dce1e2}
+.vleft{width:250px;background:#fff;border-right:1px solid #dce1e2;padding:16px;display:flex;flex-direction:column;gap:16px;flex:none}
+.stage{flex:1;background:#e6eaea;display:flex;justify-content:center;padding:24px;position:relative;overflow:hidden}
+.page{width:600px;height:776px;background:#fff;box-shadow:0 2px 10px rgba(0,0,0,.1);padding:48px 52px;display:flex;flex-direction:column;gap:12px;font-size:13px;color:#222;position:relative}
+.page h4{font-size:20px;font-weight:700;margin-bottom:8px;font-family:Georgia,serif}
+.page .ln{height:7px;background:#e3e6e7;border-radius:2px}
+.hl{background:rgba(255,213,47,.55);outline:2px solid #e2b100;border-radius:2px;padding:1px 3px;margin:-1px -3px}
+.redbox{display:inline-block;width:82px;height:13px;background:#14191c;vertical-align:-2px}
+.thumbs{display:flex;gap:10px}
+.thumb{width:62px;display:flex;flex-direction:column;align-items:center;gap:5px;font-size:12px;color:#4a5459}
+.thumb .mini{width:62px;height:80px;background:#fff;border:1px solid #c3cacc;border-radius:3px;padding:8px 7px;display:flex;flex-direction:column;gap:3px}
+.thumb .mini i{display:block;height:2px;background:#cdd3d5}
+.thumb .mini i.h{height:4px;width:60%;background:#8b9496;margin-bottom:3px}
+.thumb.on .mini{border:2px solid #166a4f}
+.vright{width:380px;background:#fff;border-left:1px solid #dce1e2;display:flex;flex-direction:column;flex:none}
+.tabs{display:flex;gap:2px;padding:0 12px;border-bottom:1px solid #dce1e2;height:48px;align-items:flex-end}
+.tabs a{font-size:14px;color:#4a5459;padding:0 10px 12px;text-decoration:none;display:flex;gap:6px;align-items:center;border-bottom:2px solid transparent}
+.tabs a.on{color:#14191c;font-weight:600;border-bottom-color:#166a4f}
+.q{align-self:flex-end;background:#166a4f;color:#fff;border-radius:14px 14px 4px 14px;padding:10px 14px;font-size:14px;max-width:85%}
+.a{background:#f3f5f4;border-radius:14px 14px 14px 4px;padding:12px 14px;font-size:14px;line-height:1.5;display:flex;flex-direction:column;gap:10px}
+.src{display:flex;gap:6px;flex-wrap:wrap}
+.src span{font-size:12px;background:#fff;border:1px solid #dce1e2;border-radius:999px;padding:3px 9px;color:#105a42;font-weight:500}
+.calc{font-size:13px;background:#fff;border:1px solid #dce1e2;border-radius:8px;padding:8px 10px;font-family:'IBM Plex Mono',monospace;line-height:1.6}
+.ask{margin:auto 16px 16px;border:1.5px solid #c3cacc;border-radius:12px;padding:12px 14px;display:flex;align-items:center;gap:10px;font-size:14px;color:#737d82}
+.terms{display:flex;flex-direction:column;border:1px solid #dce1e2;border-radius:10px}
+.term{display:flex;justify-content:space-between;align-items:center;padding:9px 12px;border-bottom:1px solid #eceff0;font-size:14px}
+.term:last-child{border-bottom:0}
+.term .pg{font-size:12px;color:#166a4f;font-weight:500}
+.pop{position:absolute;background:#fff;border:1px solid #dce1e2;border-radius:12px;box-shadow:0 12px 32px rgba(0,0,0,.14);display:flex;flex-direction:column}
+.field{display:flex;flex-direction:column;gap:6px}
+.field .lh{display:flex;justify-content:space-between;font-size:13px;font-weight:500}
+.field .lh span{font-size:12px;font-weight:400;color:#737d82;background:#eceff0;border-radius:4px;padding:0 6px}
+.inp{height:38px;border:1px solid #c3cacc;border-radius:8px;padding:0 12px;display:flex;align-items:center;font-size:14px;color:#737d82}
+.inp.v{color:#14191c}
+.menuitem{display:flex;align-items:center;gap:10px;padding:9px 16px;font-size:14px}
+.radio{width:16px;height:16px;border-radius:50%;border:1.5px solid #c3cacc;flex:none}
+.radio.on{border:5px solid #166a4f}
+.seg{display:flex;border:1px solid #dce1e2;border-radius:8px;overflow:hidden;margin:0 16px}
+.seg span{flex:1;text-align:center;font-size:13px;padding:6px 0;color:#4a5459}
+.seg span.on{background:#e2efe9;color:#105a42;font-weight:500}
+.hr{height:1px;background:#dce1e2}
+
+.role{display:inline-flex;align-items:center;gap:6px;padding:3px 10px 3px 8px;border:1px dashed #3b6fd4;background:#e8f0ff;border-radius:4px;font-size:12px;color:#1f3f80;font-weight:500;white-space:nowrap}
+.role b{font-size:11px;color:#3b6fd4;font-weight:600;letter-spacing:.04em}
+.tabs2{display:flex;gap:4px;border-bottom:1px solid #dce1e2;padding:0 32px;background:#f3f5f4}
+.tabs2 a{font-size:15px;padding:10px 12px;color:#4a5459;text-decoration:none}
+.tabs2 a.on{color:#14191c;font-weight:500;box-shadow:inset 0 -2px 0 #166a4f}
+.crumb{font-size:13px;color:#737d82}
+.tech{white-space:nowrap;border-top:1px solid #dce1e2;padding:12px 18px;font-size:13px;color:#4a5459;display:flex;gap:8px;align-items:center}
+.tbl{width:100%;border-collapse:collapse;font-size:14px}
+.tbl th{font-size:12px;font-weight:500;color:#737d82;text-align:left;padding:10px 16px;border-bottom:1px solid #dce1e2}
+.tbl td{padding:12px 16px;border-bottom:1px solid #eceff0;vertical-align:middle}
+.tbl tr:last-child td{border-bottom:0}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px}
+.g{background:#1d7a4e}.y{background:#d39a00}.r{background:#c43d30}.gr{background:#9aa3a6}
+.bad{background:#fbe9e7;color:#9b2c22}
+.sec{font-size:11px;font-weight:600;letter-spacing:.06em;color:#737d82;text-transform:uppercase}
+.switch{width:38px;height:22px;border-radius:11px;background:#166a4f;position:relative;display:inline-block}
+.switch i{position:absolute;right:3px;top:3px;width:16px;height:16px;border-radius:50%;background:#fff}
+.switch.off{background:#c3cacc}.switch.off i{right:auto;left:3px}
+.bar2{height:8px;border-radius:4px;background:#eceff0;position:relative;width:220px}
+.bar2 i{position:absolute;left:0;top:0;bottom:0;border-radius:4px}
+.who td.c,.who th.c{text-align:center}
+.tbl td .btn{display:inline-flex}
+</style></head><body><div class="board" style="flex-direction:column;align-items:flex-start"><h2 style="font-size:24px;margin:0 0 12px">Who sees what</h2><div class="screen" style="height:720px;background:#fff;padding:36px 40px;gap:18px">
+<div style="display:flex;justify-content:space-between;align-items:flex-end"><div><h1>Who sees what in Vero</h1><div class="sub">From the server's security rules (<span class="mono" style="font-size:13px">RoleCapabilities.java</span>). Every design carries a blue "Seen by" tag taken from this table.</div></div><span class="role"><b>SEEN BY</b> example tag</span></div>
+<table class="tbl who" style="border:1px solid #dce1e2;border-radius:10px">
+<thead><tr><th style="width:42%">What</th><th class="c">Business user</th><th class="c">Document steward</th><th class="c">Business admin</th><th class="c">Tenant IT</th><th class="c">Platform operations</th></tr></thead>
+<tbody><tr><td>Home, Records search, open documents</td><td class="c"><span style="font-size:18px;color:#166a4f">●</span></td><td class="c"><span style="font-size:18px;color:#166a4f">●</span></td><td class="c"></td><td class="c"></td><td class="c"></td></tr><tr><td>Download, print, tag, comment</td><td class="c"><span style="font-size:13px;color:#737d82">if allowed</span></td><td class="c"><span style="font-size:18px;color:#166a4f">●</span></td><td class="c"></td><td class="c"></td><td class="c"></td></tr><tr><td>Permanent corrective redaction</td><td class="c"><span style="font-size:13px;color:#737d82">if allowed</span></td><td class="c"><span style="font-size:18px;color:#166a4f">●</span></td><td class="c"></td><td class="c"></td><td class="c"></td></tr><tr><td>Business administration: users and roles, retention, search fields</td><td class="c"></td><td class="c"></td><td class="c"><span style="font-size:18px;color:#166a4f">●</span></td><td class="c"></td><td class="c"></td></tr><tr><td>Tenant IT: storage, sign-in, integrations</td><td class="c"></td><td class="c"></td><td class="c"></td><td class="c"><span style="font-size:18px;color:#166a4f">●</span></td><td class="c"></td></tr><tr><td>Problems (failed and stuck documents, incomplete deliveries)</td><td class="c"></td><td class="c"></td><td class="c"></td><td class="c"><span style="font-size:13px;color:#8a5300;font-weight:500">decide</span></td><td class="c"><span style="font-size:18px;color:#166a4f">●</span></td></tr><tr><td>Platform operations: overview, health, storage health, audit</td><td class="c"></td><td class="c"></td><td class="c"></td><td class="c"></td><td class="c"><span style="font-size:18px;color:#166a4f">●</span></td></tr><tr><td>About this installation (version, status)</td><td class="c"></td><td class="c"></td><td class="c"></td><td class="c"><span style="font-size:18px;color:#166a4f">●</span></td><td class="c"><span style="font-size:18px;color:#166a4f">●</span></td></tr></tbody></table>
+<div style="display:flex;gap:16px">
+<div class="callout w" style="flex:1"><div><b>"if allowed"</b>: a business user gets these only when the Business admin turns them on in Roles &amp; permissions. Out of the box only the Document steward has them.</div></div>
+<div class="callout w" style="flex:1"><div><b>"decide"</b>: Tenant IT already holds the right to see technical failures, but today nothing in its menu leads there; it only opens by typing the address. Choose: give Tenant IT a read-only Problems tab, or remove the right.</div></div>
+</div></div><pre style="white-space:pre-wrap;font-family:inherit;font-size:14px;max-width:1440px;background:#fff;padding:16px;border-radius:8px">Who sees what
+• Taken from the server's security rules, not from the screens.
+• The five approved screens now carry "Seen by" tags too.
+• Finding 12: Tenant IT holds the right to see technical failures but no menu leads there. Decide: read-only Problems tab for Tenant IT (like LexaVault's IT Administrator, who sees Support), or remove the right.
+• Finding 13: the server has a "platform configuration" right that nothing uses; development removes it or wires it up.</pre></div><div class="board" style="flex-direction:column;align-items:flex-start"><h2 style="font-size:24px;margin:0 0 12px">Tenant IT · Integrations</h2><div class="screen"><div class="top"><div class="brand">vero<i></i></div><div class="nav"><a class="on">Tenant IT</a></div><div class="grow"></div>
+<div class="cmd"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#737d82" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>Go to a record or page<span class="kbd">Ctrl K</span></div>
+<div class="acct"><div class="av" style="background:#4a5459">JW</div><div class="who"><b>Jonas Weber</b><span>Acme Lending · Tenant IT</span></div><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#737d82" stroke-width="2" stroke-linecap="round"><path d="m6 9 6 6 6-6"/></svg></div></div>
+<div style="padding:22px 32px 0;display:flex;flex-direction:column;gap:6px;background:#f3f5f4">
+<div style="display:flex;justify-content:space-between;align-items:center"><span class="crumb">Tenant IT</span><span class="role"><b>SEEN BY</b> Tenant IT</span></div>
+<h1>Integrations</h1><div class="sub">The systems that send documents to Vero, and what they send.</div></div><div class="tabs2" style="margin-top:14px"><a class="">Storage</a><a class="">Sign-in</a><a class="on">Integrations</a><a class="">Problems</a><a class="">About</a></div>
+<div style="display:flex;gap:20px;padding:22px 32px;flex:1;min-height:0">
+<div class="card" style="width:330px;flex:none;align-self:flex-start">
+ <div style="padding:14px 16px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #dce1e2"><h3 style="font-size:15px">Sending systems · 2</h3><div class="btn primary sm">+ Add</div></div>
+ <div style="padding:12px 16px;background:#e2efe9;box-shadow:inset 3px 0 0 #166a4f;display:flex;flex-direction:column;gap:3px"><b style="font-size:14px;font-weight:600">Loan Origination System</b><span style="font-size:13px;color:#4a5459"><span class="dot g"></span>Working · last delivery 4 min ago</span></div>
+ <div style="padding:12px 16px;display:flex;flex-direction:column;gap:3px"><b style="font-size:14px;font-weight:600">Title Records</b><span style="font-size:13px;color:#4a5459"><span class="dot gr"></span>Paused since 7 Oct</span></div>
+</div>
+<div class="card" style="flex:1;display:flex;flex-direction:column">
+ <div style="padding:18px 20px;display:flex;align-items:flex-start;gap:12px;border-bottom:1px solid #dce1e2"><div style="flex:1;display:flex;flex-direction:column;gap:4px"><span style="font-size:20px;font-weight:600">Loan Origination System</span><span class="sub" style="font-size:14px">Sends loan documents to Vero through the API. 1,240 deliveries, 4,810 documents. Last problem: 15 Nov (a password-protected PDF).</span></div><div class="btn sm">Edit</div><div class="btn sm" style="color:#9b2c22;border-color:#e8b7b2">Pause receiving</div></div>
+ <div style="padding:16px 20px;display:flex;flex-direction:column;gap:10px">
+  <div class="sec">What it sends</div>
+  <table class="tbl" style="border:1px solid #dce1e2;border-radius:8px"><thead><tr><th>Field</th><th>Kind of value</th><th>Required</th><th>Used in search</th></tr></thead><tbody>
+  <tr><td><b style="font-weight:500">Contract number</b></td><td>Text, digits only</td><td>Yes</td><td>Yes · exact match</td></tr>
+  <tr><td><b style="font-weight:500">Borrower name</b></td><td>Text</td><td>Yes</td><td>Yes · contains</td></tr>
+  <tr><td><b style="font-weight:500">Loan type</b></td><td>Text, capital letters</td><td>No</td><td>Yes · exact match</td></tr>
+  <tr><td><b style="font-weight:500">Closing date</b></td><td>Date</td><td>No</td><td>Yes · exact match</td></tr></tbody></table>
+  <div style="display:flex;gap:24px;margin-top:6px">
+   <div style="flex:1;display:flex;flex-direction:column;gap:8px"><div class="sec">Limits per delivery</div><dl class="kv" style="grid-template-columns:200px 1fr"><dt>Largest PDF</dt><dd>50 MB</dd><dt>Most pages in one PDF</dt><dd>500</dd><dt>Most documents</dt><dd>50</dd><dt>Wait for missing documents</dt><dd>24 hours, then flag it</dd></dl></div>
+   <div style="flex:1;display:flex;flex-direction:column;gap:8px"><div class="sec">How it proves who it is</div><div style="font-size:14px">A client ID and secret kept in your sign-in system (Okta)</div><div class="muted" style="font-size:13px">Vero stores only where the secret is kept, never the secret.</div></div>
+  </div>
+ </div>
+ <div class="tech" style="margin-top:auto"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#4a5459" stroke-width="2" stroke-linecap="round"><path d="m9 6 6 6-6 6"/></svg><b style="font-weight:500">Technical details</b><span class="muted">source key, credential reference, field keys and versions, authentication type</span></div>
+</div></div></div><pre style="white-space:pre-wrap;font-family:inherit;font-size:14px;max-width:1440px;background:#fff;padding:16px;border-radius:8px">Integrations (finding 14, same pattern as LexaVault finding 24)
+• Each sending system says how it is doing in one line ("Working · last delivery 4 min ago").
+• "Metadata contract" becomes "What it sends", with kinds of value in words ("Text, digits only", not STRING · DIGITS_ONLY). The "Not exposed by API" columns go.
+• Limits in plain words; "Platform default" shows the actual number once the server reports it.
+• Source key, credential reference, field keys and versions move under a folded Technical details.
+• "Disable" becomes "Pause receiving", with a confirmation that says senders will be refused.
+• The tab "Environment" goes: its facts move to About this installation (change 10).</pre></div><div class="board" style="flex-direction:column;align-items:flex-start"><h2 style="font-size:24px;margin:0 0 12px">Platform operations · Problems</h2><div class="screen"><div class="top"><div class="brand">vero<i></i></div><div class="nav"><a class="on">Platform operations</a></div><div class="grow"></div>
+<div class="cmd"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#737d82" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>Go to a record or page<span class="kbd">Ctrl K</span></div>
+<div class="acct"><div class="av" style="background:#4a5459">AT</div><div class="who"><b>Aiko Tanaka</b><span>Acme Lending · Platform operations</span></div><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#737d82" stroke-width="2" stroke-linecap="round"><path d="m6 9 6 6 6-6"/></svg></div></div>
+<div style="padding:22px 32px 0;display:flex;flex-direction:column;gap:6px;background:#f3f5f4">
+<div style="display:flex;justify-content:space-between;align-items:center"><span class="crumb">Platform operations</span><span class="role"><b>SEEN BY</b> Platform operations</span></div>
+<h1>Problems</h1><div class="sub">Documents that could not be stored, and deliveries still missing documents.</div></div><div class="tabs2" style="margin-top:14px"><a class="">Overview</a><a class="on">Problems</a><a class="">Storage</a><a class="">Health</a><a class="">Audit</a><a class="">About</a></div>
+<div class="body"><div class="main" style="gap:14px">
+ <div style="display:flex;gap:8px"><span class="chip" style="background:#14191c;color:#fff;padding:5px 12px">All · 4</span><span class="chip" style="padding:5px 12px">Could not store · 2</span><span class="chip" style="padding:5px 12px">Stuck · 1</span><span class="chip" style="padding:5px 12px">Missing documents · 1</span></div>
+ <div class="card"><table class="tbl"><thead><tr><th>Record</th><th>What happened</th><th>From</th><th>Since</th><th></th></tr></thead><tbody>
+ <tr style="background:#e2efe9"><td><span class="num mono">300000000007</span><br><span class="muted" style="font-size:13px">Fatima Noor</span></td><td><span class="badge bad">Could not store</span> The PDF is password-protected</td><td>Loan Origination System</td><td>2 days ago</td><td style="text-align:right"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#4a5459" stroke-width="2" stroke-linecap="round"><path d="m9 6 6 6-6 6"/></svg></td></tr>
+ <tr><td><span class="num mono">300000000005</span><br><span class="muted" style="font-size:13px">Wei Chen</span></td><td><span class="badge bad">Could not store</span> The PDF has more than 500 pages</td><td>Loan Origination System</td><td>3 days ago</td><td style="text-align:right"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#4a5459" stroke-width="2" stroke-linecap="round"><path d="m9 6 6 6-6 6"/></svg></td></tr>
+ <tr><td><span class="num mono">300000000006</span><br><span class="muted" style="font-size:13px">Sam Turner</span></td><td><span class="badge warn">Stuck</span> Still being stored after 2 days</td><td>Loan Origination System</td><td>2 days ago</td><td style="text-align:right"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#4a5459" stroke-width="2" stroke-linecap="round"><path d="m9 6 6 6-6 6"/></svg></td></tr>
+ <tr><td><span class="num mono">300000000003</span><br><span class="muted" style="font-size:13px">Marcus Lee</span></td><td><span class="badge warn">Missing documents</span> 2 of 4 received</td><td>Loan Origination System</td><td>3 days ago</td><td style="text-align:right"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#4a5459" stroke-width="2" stroke-linecap="round"><path d="m9 6 6 6-6 6"/></svg></td></tr>
+ </tbody></table></div>
+</div>
+<div class="panel" style="width:440px">
+ <div class="ph"><div style="flex:1;display:flex;flex-direction:column;gap:2px"><span class="eyebrow">Problem</span><span style="font-size:18px;font-weight:600">The PDF is password-protected</span><span class="muted mono" style="font-size:13px">300000000007 · Fatima Noor</span></div><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#4a5459" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></div>
+ <div class="pb" style="gap:16px">
+  <div style="display:flex;flex-direction:column;gap:4px"><span class="sec">What happened</span><span style="font-size:14px;line-height:1.5">Vero received <b style="font-weight:500">appraisal.pdf</b> from the Loan Origination System on 15 Nov and tried 3 times. The file is locked with a password, so Vero cannot read or protect it.</span></div>
+  <div style="display:flex;flex-direction:column;gap:4px"><span class="sec">What it means</span><span style="font-size:14px;line-height:1.5">The record shows 2 of its documents. This one is not stored and nobody can open it in Vero.</span></div>
+  <div style="display:flex;flex-direction:column;gap:6px"><span class="sec">What you can do</span><span style="font-size:14px;line-height:1.5">Ask the loan team to send an unlocked copy. It arrives as a new delivery; nothing to retry here.</span><div class="btn sm" style="align-self:flex-start">Copy a note for the loan team</div></div>
+ </div>
+ <div class="tech" style="margin-top:auto"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#4a5459" stroke-width="2" stroke-linecap="round"><path d="m9 6 6 6-6 6"/></svg><b style="font-weight:500">Technical details</b><span class="muted">error code, document and submission IDs, attempts</span></div>
+</div></div></div><pre style="white-space:pre-wrap;font-family:inherit;font-size:14px;max-width:1440px;background:#fff;padding:16px;border-radius:8px">Problems (findings 9 and 18, same pattern as LexaVault findings 10 and 30)
+• "Incidents" becomes "Problems"; Intake and Incidents merge into one list with filters, because both are documents that did not arrive properly.
+• Rows name the record and borrower, not doc-x1; the reason is a sentence, not PDF_ENCRYPTED.
+• The detail panel has three plain blocks: what happened, what it means, what you can do. Codes and IDs go under Technical details.
+• "Configuration" becomes "About" (version, status), shared with Tenant IT (change 10).
+• Needs the server to return the record number with each problem; development checks that.</pre></div><div class="board" style="flex-direction:column;align-items:flex-start"><h2 style="font-size:24px;margin:0 0 12px">Platform operations · Audit</h2><div class="screen" style="height:860px"><div class="top"><div class="brand">vero<i></i></div><div class="nav"><a class="on">Platform operations</a></div><div class="grow"></div>
+<div class="cmd"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#737d82" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>Go to a record or page<span class="kbd">Ctrl K</span></div>
+<div class="acct"><div class="av" style="background:#4a5459">AT</div><div class="who"><b>Aiko Tanaka</b><span>Acme Lending · Platform operations</span></div><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#737d82" stroke-width="2" stroke-linecap="round"><path d="m6 9 6 6 6-6"/></svg></div></div>
+<div style="padding:22px 32px 0;display:flex;flex-direction:column;gap:6px;background:#f3f5f4">
+<div style="display:flex;justify-content:space-between;align-items:center"><span class="crumb">Platform operations</span><span class="role"><b>SEEN BY</b> Platform operations</span></div>
+<h1>Audit</h1><div class="sub">Everything people and systems did in Vero. Document content is never shown here.</div></div><div class="tabs2" style="margin-top:14px"><a class="">Overview</a><a class="">Problems</a><a class="">Storage</a><a class="">Health</a><a class="on">Audit</a><a class="">About</a></div>
+<div class="main" style="gap:14px">
+ <div style="display:flex;gap:10px;align-items:center">
+  <div class="inp v" style="width:200px;justify-content:space-between">All activity <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#737d82" stroke-width="2" stroke-linecap="round"><path d="m6 9 6 6 6-6"/></svg></div>
+  <div class="inp" style="width:220px">Person</div>
+  <div class="inp v" style="width:170px;justify-content:space-between">Last 7 days <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#737d82" stroke-width="2" stroke-linecap="round"><path d="m6 9 6 6 6-6"/></svg></div>
+  <div class="inp" style="width:200px">Record number</div>
+  <div class="btn quiet sm">More filters</div><div class="grow"></div><div class="btn sm">Export</div></div>
+ <div class="card"><table class="tbl"><thead><tr><th style="width:150px">When</th><th>What happened</th><th style="width:170px">Record</th><th style="width:110px">Result</th></tr></thead><tbody>
+ <tr><td class="muted">Today 09:12</td><td><b style="font-weight:500">Maya Okafor</b> opened <i>loan-agreement.pdf</i></td><td><span class="mono">300000000001</span></td><td style="white-space:nowrap"><span class="dot g"></span>Done</td></tr>
+ <tr><td class="muted">Today 08:40</td><td><b style="font-weight:500">Daniel Reyes</b> downloaded <i>title-deed.pdf</i></td><td><span class="mono">300000000004</span></td><td style="white-space:nowrap"><span class="dot g"></span>Done</td></tr>
+ <tr><td class="muted">Today 08:02</td><td><b style="font-weight:500">Daniel Reyes</b> permanently redacted 1 area on page 1 of <i>loan-agreement.pdf</i></td><td><span class="mono">300000000001</span></td><td style="white-space:nowrap"><span class="dot g"></span>Done</td></tr>
+ <tr><td class="muted">Yesterday 17:20</td><td><b style="font-weight:500">Maya Okafor</b> tried to download <i>title-deed.pdf</i> without permission</td><td><span class="mono">300000000004</span></td><td style="white-space:nowrap"><span class="dot r"></span>Refused</td></tr>
+ <tr><td class="muted">Yesterday 15:05</td><td><b style="font-weight:500">Priya Natarajan</b> changed retention to 7 years for new documents</td><td><span class="mono">—</span></td><td style="white-space:nowrap"><span class="dot g"></span>Done</td></tr>
+ <tr><td class="muted">Yesterday 11:48</td><td><b style="font-weight:500">Loan Origination System</b> delivered 3 documents</td><td><span class="mono">300000000007</span></td><td style="white-space:nowrap"><span class="dot g"></span>Done</td></tr>
+ <tr><td class="muted">Mon 16 Nov</td><td><b style="font-weight:500">Priya Natarajan</b> allowed Business users to print</td><td><span class="mono">—</span></td><td style="white-space:nowrap"><span class="dot g"></span>Done</td></tr>
+ </tbody></table></div>
+ <div class="muted" style="font-size:13px">Click a row to see the full entry; its codes and IDs are under Technical details.</div>
+</div></div><pre style="white-space:pre-wrap;font-family:inherit;font-size:14px;max-width:1440px;background:#fff;padding:16px;border-radius:8px">Audit (finding 17, same pattern as LexaVault finding 29)
+• Each row reads as a sentence with the person's name and the record number, not DOCUMENT_VIEWED, local-business-user and doc-1-a.
+• Everyday filters up front: activity, person, period, record number. Action code, actor type, actor ID and correlation ID move under More filters.
+• Date pickers without the time box; Export gives CSV.
+• The detail panel keeps the codes and the raw details, folded under Technical details.</pre></div><div class="board" style="flex-direction:column;align-items:flex-start"><h2 style="font-size:24px;margin:0 0 12px">Business administration · Roles and retention</h2><div class="screen"><div class="top"><div class="brand">vero<i></i></div><div class="nav"><a class="on">Business administration</a></div><div class="grow"></div>
+<div class="cmd"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#737d82" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>Go to a record or page<span class="kbd">Ctrl K</span></div>
+<div class="acct"><div class="av" style="background:#4a5459">PN</div><div class="who"><b>Priya Natarajan</b><span>Acme Lending · Business admin</span></div><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#737d82" stroke-width="2" stroke-linecap="round"><path d="m6 9 6 6 6-6"/></svg></div></div>
+<div style="padding:22px 32px 0;display:flex;flex-direction:column;gap:6px;background:#f3f5f4">
+<div style="display:flex;justify-content:space-between;align-items:center"><span class="crumb">Business administration</span><span class="role"><b>SEEN BY</b> Business admin</span></div>
+<h1>Roles &amp; permissions</h1><div class="sub">Choose what each business role may do with documents.</div></div><div class="tabs2" style="margin-top:14px"><a class="">People &amp; roles</a><a class="on">Roles &amp; permissions</a><a class="">Keeping documents</a><a class="">Search fields</a></div>
+<div class="body"><div class="main" style="gap:16px">
+ <div class="card"><table class="tbl"><thead><tr><th>Action</th><th>Business user</th><th>Document steward</th></tr></thead><tbody>
+ <tr><td>Search records and open documents</td><td class="muted">Always on</td><td class="muted">Always on</td></tr>
+ <tr><td>Download the PDF</td><td><span class="switch off"><i></i></span></td><td><span class="switch"><i></i></span></td></tr>
+ <tr><td>Print</td><td><span class="switch"><i></i></span></td><td><span class="switch"><i></i></span></td></tr>
+ <tr><td>Add tags</td><td><span class="switch"><i></i></span></td><td><span class="switch"><i></i></span></td></tr>
+ <tr><td>Add comments</td><td><span class="switch"><i></i></span></td><td><span class="switch"><i></i></span></td></tr>
+ <tr><td>Permanently redact <span class="badge bad" style="margin-left:6px">Cannot be undone</span></td><td><span class="switch off"><i></i></span></td><td><span class="switch"><i></i></span></td></tr>
+ </tbody></table>
+ <div style="padding:12px 18px;border-top:1px solid #dce1e2;display:flex;align-items:center;gap:10px"><span class="muted" style="font-size:13px;flex:1">Changes apply the next time each person does something. Every change is recorded in the audit.</span><div class="btn sm">Undo changes</div><div class="btn primary sm">Save</div></div></div>
+</div>
+<div class="panel" style="width:440px">
+ <div class="ph"><div style="flex:1;display:flex;flex-direction:column;gap:2px"><span class="eyebrow">Keeping documents</span><span style="font-size:18px;font-weight:600">New rule for how long to keep</span></div><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#4a5459" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></div>
+ <div class="pb" style="gap:16px">
+  <div class="field"><div class="lh">Keep new documents for</div><div style="display:flex;gap:10px"><div class="inp v" style="width:90px">7</div><div class="inp v" style="flex:1;justify-content:space-between">years <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#737d82" stroke-width="2" stroke-linecap="round"><path d="m6 9 6 6 6-6"/></svg></div></div><span class="muted" style="font-size:12px">2,555 days. Or choose "Forever".</span></div>
+  <div class="field"><div class="lh">Why this changed</div><div class="inp" style="height:70px;align-items:flex-start;padding-top:9px">For example: records schedule approved by Legal on 12 Nov</div></div>
+  <div class="callout w"><div>Applies only to documents received from now on. Documents already stored keep the rule they arrived with.</div></div>
+  <div style="display:flex;gap:10px;align-items:center;font-size:14px"><span style="width:16px;height:16px;border:1.5px solid #c3cacc;border-radius:3px"></span>This change has been approved</div>
+ </div>
+ <div style="margin-top:auto;padding:14px 20px;border-top:1px solid #dce1e2;display:flex;gap:10px;justify-content:flex-end"><div class="btn">Cancel</div><div class="btn primary">Start using this rule</div></div>
+</div></div></div><pre style="white-space:pre-wrap;font-family:inherit;font-size:14px;max-width:1440px;background:#fff;padding:16px;border-radius:8px">Business administration (findings 19 to 22)
+• Codes under each action (SEARCH_RECORDS, PERMANENT_REDACTION) go; "Baseline" becomes "Always on".
+• Tab names: "Users & access" → "People & roles" (its "Claim value" column becomes "Name in your sign-in system"), "Retention policies" → "Keeping documents", "Metadata configuration" → "Search fields".
+• Keeping documents: enter years, months or days ("7 years"), not 2,555 days; "Indefinite" becomes "Forever".
+• Search fields: field key and STRING · DIGITS_ONLY move under Technical details; "Results per page (current UI)" loses "(current UI)".</pre></div><div class="board" style="flex-direction:column;align-items:flex-start"><h2 style="font-size:24px;margin:0 0 12px">Tenant IT · Storage</h2><div class="screen" style="height:760px"><div class="top"><div class="brand">vero<i></i></div><div class="nav"><a class="on">Tenant IT</a></div><div class="grow"></div>
+<div class="cmd"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#737d82" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>Go to a record or page<span class="kbd">Ctrl K</span></div>
+<div class="acct"><div class="av" style="background:#4a5459">JW</div><div class="who"><b>Jonas Weber</b><span>Acme Lending · Tenant IT</span></div><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#737d82" stroke-width="2" stroke-linecap="round"><path d="m6 9 6 6 6-6"/></svg></div></div>
+<div style="padding:22px 32px 0;display:flex;flex-direction:column;gap:6px;background:#f3f5f4">
+<div style="display:flex;justify-content:space-between;align-items:center"><span class="crumb">Tenant IT</span><span class="role"><b>SEEN BY</b> Tenant IT</span></div>
+<h1>Storage</h1><div class="sub">Where Vero keeps your encrypted documents.</div></div><div class="tabs2" style="margin-top:14px"><a class="on">Storage</a><a class="">Sign-in</a><a class="">Integrations</a><a class="">Problems</a><a class="">About</a></div>
+<div class="main" style="gap:16px">
+ <div class="callout w"><div><b>primary-a is 82% full.</b> At 95% it stops accepting documents and Vero switches to primary-b. Add space or a new volume before then.</div></div>
+ <div class="card"><div style="padding:14px 18px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #dce1e2"><h3 style="font-size:15px">Storage volumes · 2</h3><div class="btn primary sm">+ Add volume</div></div>
+ <table class="tbl"><thead><tr><th>Volume</th><th>Role</th><th>How full</th><th></th></tr></thead><tbody>
+ <tr><td><b style="font-weight:500">primary-a</b><br><span class="muted mono" style="font-size:12px">/data/sdv/primary-a</span></td><td><span class="dot g"></span>In use, new documents go here</td><td><div style="display:flex;align-items:center;gap:10px"><div class="bar2"><i style="width:82%;background:#d39a00"></i></div>82%</div><span class="muted" style="font-size:12px">Warns at 80% · stops at 95%</span></td><td style="text-align:right"><div class="btn sm">Edit</div></td></tr>
+ <tr><td><b style="font-weight:500">primary-b</b><br><span class="muted mono" style="font-size:12px">/data/sdv/primary-b</span></td><td><span class="dot gr"></span>Standby, used when primary-a fills up</td><td><div style="display:flex;align-items:center;gap:10px"><div class="bar2"><i style="width:12%;background:#166a4f"></i></div>12%</div><span class="muted" style="font-size:12px">Warns at 80% · stops at 95%</span></td><td style="text-align:right"><div class="btn sm">Edit</div></td></tr>
+ </tbody></table></div>
+ <div class="muted" style="font-size:13px">Adding a volume: name and folder, then Vero checks it can write there, then you choose In use or Standby. The folder cannot change later.</div>
+</div></div><pre style="white-space:pre-wrap;font-family:inherit;font-size:14px;max-width:1440px;background:#fff;padding:16px;border-radius:8px">Storage (finding 15, same pattern as LexaVault finding 26)
+• Plain roles instead of ACTIVE / STANDBY and "priority": "In use" and "Standby, used when the other fills up".
+• The warning says what happens and what to do ("At 95% it stops accepting documents").
+• Adding a volume in three steps: name and folder, Vero checks it can write, choose its role. The "I have verified…" checkbox goes: the check does that job.</pre></div><div class="board" style="flex-direction:column;align-items:flex-start"><h2 style="font-size:24px;margin:0 0 12px">No access and load errors</h2><div class="screen" style="height:560px"><div class="top"><div class="brand">vero<i></i></div><div class="nav"><a class="on">Records</a></div><div class="grow"></div>
+<div class="cmd"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#737d82" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>Go to a record or page<span class="kbd">Ctrl K</span></div>
+<div class="acct"><div class="av" style="background:#166a4f">MO</div><div class="who"><b>Maya Okafor</b><span>Acme Lending · Business user</span></div><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#737d82" stroke-width="2" stroke-linecap="round"><path d="m6 9 6 6 6-6"/></svg></div></div>
+<div style="display:flex;gap:28px;padding:36px 40px;flex:1">
+ <div class="card" style="flex:1;padding:24px;display:flex;flex-direction:column;gap:12px;align-self:flex-start">
+  <span class="role" style="align-self:flex-start"><b>SEEN BY</b> anyone who opens a page their role does not include</span>
+  <h3 style="font-size:20px">This page isn't part of your role</h3>
+  <p class="sub" style="font-size:15px;line-height:1.5">Your role is Business user. If you need this page, ask your administrator to add the right role in your company's sign-in system.</p>
+  <div style="display:flex;gap:10px"><div class="btn primary">Go to Records</div><div class="btn">Sign out</div></div>
+ </div>
+ <div class="card" style="flex:1;padding:24px;display:flex;flex-direction:column;gap:12px;align-self:flex-start">
+  <span class="role" style="align-self:flex-start"><b>SEEN BY</b> everyone, on any card that fails to load</span>
+  <h3 style="font-size:20px">Sign-in settings didn't load</h3>
+  <p class="sub" style="font-size:15px;line-height:1.5">Vero couldn't reach this setting just now. The rest of the page still works. If it keeps happening, give your IT team this reference.</p>
+  <div style="display:flex;gap:10px;align-items:center"><div class="btn primary">Try again</div><span class="muted mono" style="font-size:13px">Ref c0ffee42</span></div>
+ </div>
+</div></div><pre style="white-space:pre-wrap;font-family:inherit;font-size:14px;max-width:1440px;background:#fff;padding:16px;border-radius:8px">No access and load errors (findings 23 and 24, same as LexaVault 21 and 22)
+• "Access is decided by roles in your identity provider and enforced by the server; the interface only reflects it" becomes plain words, plus Sign out.
+• Today a failed card shows the raw error ("ApiRequestError: not mocked"). Instead: a plain sentence, Try again, and a reference for IT. The rest of the page keeps working.
+• Sign-in (Authentication) is not redrawn: like LexaVault finding 15, development first decides whether per-customer sign-in settings stay now that the login hub exists. If they stay, the same plain-words rules apply.</pre></div><div class="board" style="flex-direction:column;align-items:flex-start"><h2 style="font-size:24px;margin:0 0 12px">Business administration · People & roles</h2><div class="screen" style="height:760px"><div class="top"><div class="brand">vero<i></i></div><div class="nav"><a class="on">Business administration</a></div><div class="grow"></div>
+<div class="cmd"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#737d82" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>Go to a record or page<span class="kbd">Ctrl K</span></div>
+<div class="acct"><div class="av" style="background:#4a5459">PN</div><div class="who"><b>Priya Natarajan</b><span>Acme Lending · Business admin</span></div><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#737d82" stroke-width="2" stroke-linecap="round"><path d="m6 9 6 6 6-6"/></svg></div></div>
+<div style="padding:22px 32px 0;display:flex;flex-direction:column;gap:6px;background:#f3f5f4">
+<div style="display:flex;justify-content:space-between;align-items:center"><span class="crumb">Business administration</span><span class="role"><b>SEEN BY</b> Business admin</span></div>
+<h1>People &amp; roles</h1><div class="sub">The roles Vero knows, and what each one is for. People get a role in your company's sign-in system.</div></div><div class="tabs2" style="margin-top:14px"><a class="on">People &amp; roles</a><a class="">Roles &amp; permissions</a><a class="">Keeping documents</a><a class="">Search fields</a></div>
+<div class="main" style="gap:16px">
+ <div class="card"><table class="tbl"><thead><tr><th>Role</th><th>What it is for</th><th>Name in your sign-in system</th><th>Can change in Vero</th></tr></thead><tbody>
+ <tr><td><b style="font-weight:500">Business user</b></td><td>Find records and read their documents</td><td><span class="mono">BUSINESS_USER</span></td><td>Yes, in Roles &amp; permissions</td></tr>
+ <tr><td><b style="font-weight:500">Document steward</b></td><td>Everything a business user does, plus download and permanent redaction</td><td><span class="mono">DOCUMENT_STEWARD</span></td><td>Yes, in Roles &amp; permissions</td></tr>
+ <tr><td><b style="font-weight:500">Business admin</b></td><td>Rules for roles, keeping documents and search fields</td><td><span class="mono">BUSINESS_ADMIN</span></td><td class="muted">Fixed</td></tr>
+ <tr><td><b style="font-weight:500">Tenant IT</b></td><td>Storage, sign-in and the systems that send documents</td><td><span class="mono">TENANT_IT_ADMIN</span></td><td class="muted">Fixed</td></tr>
+ </tbody></table></div>
+ <div class="callout w" style="background:#eef4ff;border-color:#c9d8f5;color:#1f3f80"><div><b>To give someone a role,</b> add them to the group with that name in your sign-in system (for example Okta). Vero never stores passwords and does not keep its own list of people, so there is nothing to add here.</div></div>
+ <div class="muted" style="font-size:13px">Platform operations is your service provider's role and is not listed here.</div>
+</div></div><pre style="white-space:pre-wrap;font-family:inherit;font-size:14px;max-width:1440px;background:#fff;padding:16px;border-radius:8px">People & roles (finding 20)
+• "Users & access" becomes "People & roles"; "Claim value" becomes "Name in your sign-in system".
+• Each role says what it is for in a sentence; "Configurable: Yes/Fixed" becomes "Can change in Vero".
+• The note says plainly how to give someone a role (a group in Okta) and why there is no user list here.
+• Platform operations is the provider's role, so customers don't see it listed.</pre></div><div class="board" style="flex-direction:column;align-items:flex-start"><h2 style="font-size:24px;margin:0 0 12px">Business administration · Keeping documents</h2><div class="screen" style="height:820px"><div class="top"><div class="brand">vero<i></i></div><div class="nav"><a class="on">Business administration</a></div><div class="grow"></div>
+<div class="cmd"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#737d82" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>Go to a record or page<span class="kbd">Ctrl K</span></div>
+<div class="acct"><div class="av" style="background:#4a5459">PN</div><div class="who"><b>Priya Natarajan</b><span>Acme Lending · Business admin</span></div><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#737d82" stroke-width="2" stroke-linecap="round"><path d="m6 9 6 6 6-6"/></svg></div></div>
+<div style="padding:22px 32px 0;display:flex;flex-direction:column;gap:6px;background:#f3f5f4">
+<div style="display:flex;justify-content:space-between;align-items:center"><span class="crumb">Business administration</span><span class="role"><b>SEEN BY</b> Business admin</span></div>
+<h1>Keeping documents</h1><div class="sub">How long Vero keeps documents before deleting them for good.</div></div><div class="tabs2" style="margin-top:14px"><a class="">People &amp; roles</a><a class="">Roles &amp; permissions</a><a class="on">Keeping documents</a><a class="">Search fields</a></div>
+<div class="main" style="gap:16px">
+ <div class="card" style="padding:20px 22px;display:flex;align-items:center;gap:20px">
+  <div style="flex:1;display:flex;flex-direction:column;gap:6px"><span class="sec">Rule in use since 17 Sep 2026</span><span style="font-size:30px;font-weight:600">Keep for 7 years</span><span class="sub" style="font-size:14px">Counted from the day each document arrives. Set by Priya Natarajan: "Federal lending record keeping".</span></div>
+  <div class="btn primary">New rule</div></div>
+ <div style="display:flex;gap:16px">
+  <div class="card" style="flex:1;padding:16px 18px;display:flex;flex-direction:column;gap:6px"><span class="sec">When time is up</span><span style="font-size:14px;line-height:1.5">Vero deletes the document for good and records it in the audit. A daily cleanup does this; it last ran today at 07:00 and removed 3 documents.</span></div>
+  <div class="card" style="flex:1;padding:16px 18px;display:flex;flex-direction:column;gap:6px"><span class="sec">Changing the rule</span><span style="font-size:14px;line-height:1.5">A new rule applies to documents that arrive after it starts. Documents already stored keep the rule they arrived with.</span></div>
+ </div>
+ <div class="card"><div style="padding:14px 18px;border-bottom:1px solid #dce1e2"><h3 style="font-size:15px">Earlier rules</h3></div>
+ <table class="tbl"><thead><tr><th>Rule</th><th>In use</th><th>Set by</th><th>Why</th></tr></thead><tbody>
+ <tr><td><b style="font-weight:500">Keep for 7 years</b> <span class="badge ok" style="margin-left:6px">In use</span></td><td>Since 17 Sep 2026</td><td>Priya Natarajan</td><td>Federal lending record keeping</td></tr>
+ <tr><td><b style="font-weight:500">Keep forever</b></td><td>30 Apr – 17 Sep 2026</td><td>Set at installation</td><td class="muted">—</td></tr>
+ </tbody></table></div>
+</div></div><pre style="white-space:pre-wrap;font-family:inherit;font-size:14px;max-width:1440px;background:#fff;padding:16px;border-radius:8px">Keeping documents (finding 21)
+• "Retention policies" becomes "Keeping documents". The current rule reads as a sentence: "Keep for 7 years", counted from arrival.
+• "When time is up" says what the daily cleanup does and when it last ran (today this sits, as raw fields, in Platform operations › Health).
+• Version history becomes "Earlier rules" with dates and reasons, not v1 / v2 and "Superseded".
+• New rule opens the approved panel (years, months or days; "Forever").</pre></div><div class="board" style="flex-direction:column;align-items:flex-start"><h2 style="font-size:24px;margin:0 0 12px">Business administration · Search fields</h2><div class="screen"><div class="top"><div class="brand">vero<i></i></div><div class="nav"><a class="on">Business administration</a></div><div class="grow"></div>
+<div class="cmd"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#737d82" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>Go to a record or page<span class="kbd">Ctrl K</span></div>
+<div class="acct"><div class="av" style="background:#4a5459">PN</div><div class="who"><b>Priya Natarajan</b><span>Acme Lending · Business admin</span></div><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#737d82" stroke-width="2" stroke-linecap="round"><path d="m6 9 6 6 6-6"/></svg></div></div>
+<div style="padding:22px 32px 0;display:flex;flex-direction:column;gap:6px;background:#f3f5f4">
+<div style="display:flex;justify-content:space-between;align-items:center"><span class="crumb">Business administration</span><span class="role"><b>SEEN BY</b> Business admin</span></div>
+<h1>Search fields</h1><div class="sub">Which fields people can search, how they match, and what a record is called.</div></div><div class="tabs2" style="margin-top:14px"><a class="">People &amp; roles</a><a class="">Roles &amp; permissions</a><a class="">Keeping documents</a><a class="on">Search fields</a></div>
+<div class="body"><div class="main" style="gap:16px">
+ <div style="display:flex;gap:10px;align-items:center"><span class="muted" style="font-size:14px">Sending system</span><div class="inp v" style="width:280px;justify-content:space-between">Loan Origination System <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#737d82" stroke-width="2" stroke-linecap="round"><path d="m6 9 6 6 6-6"/></svg></div></div>
+ <div class="card" style="padding:16px 18px;display:flex;align-items:center;gap:14px"><div style="flex:1;display:flex;flex-direction:column;gap:3px"><b style="font-weight:600;font-size:15px">Record title</b><span class="muted" style="font-size:13px">What each record is called in results, the record panel and the viewer.</span></div><div class="inp v" style="width:300px;justify-content:space-between">First name + Last name <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#737d82" stroke-width="2" stroke-linecap="round"><path d="m6 9 6 6 6-6"/></svg></div><span class="muted" style="font-size:13px">e.g. "Mia Patel"</span></div>
+ <div class="card"><table class="tbl"><thead><tr><th style="width:28px"></th><th>Field</th><th>Searchable</th><th>How it matches</th><th></th></tr></thead><tbody>
+ <tr><td class="muted">⋮⋮</td><td><b style="font-weight:500">Contract number</b><br><span class="muted" style="font-size:12px">Identifier · always searchable</span></td><td class="muted">Always</td><td>Exact</td><td style="text-align:right"><div class="btn sm">Edit</div></td></tr>
+ <tr style="background:#e2efe9"><td class="muted">⋮⋮</td><td><b style="font-weight:500">Last name</b></td><td><span class="switch"><i></i></span></td><td>Contains, any case</td><td style="text-align:right"><div class="btn sm">Edit</div></td></tr>
+ <tr><td class="muted">⋮⋮</td><td><b style="font-weight:500">First name</b></td><td><span class="switch"><i></i></span></td><td>Starts with, any case</td><td style="text-align:right"><div class="btn sm">Edit</div></td></tr>
+ <tr><td class="muted">⋮⋮</td><td><b style="font-weight:500">Loan type</b></td><td><span class="switch"><i></i></span></td><td>Exact</td><td style="text-align:right"><div class="btn sm">Edit</div></td></tr>
+ <tr><td class="muted">⋮⋮</td><td><b style="font-weight:500">Closing date</b></td><td><span class="switch off"><i></i></span></td><td class="muted">—</td><td style="text-align:right"><div class="btn sm">Edit</div></td></tr>
+ </tbody></table>
+ <div style="padding:10px 18px;border-top:1px solid #dce1e2" class="muted"><span style="font-size:13px">Drag ⋮⋮ to set the order fields appear in Filters and in results.</span></div></div>
+ <div class="card" style="padding:14px 18px;display:flex;gap:30px;font-size:14px"><span class="sec" style="align-self:center">Limits</span><span>Records per page: <b style="font-weight:500">25</b> (most 50)</span><span>Comment length: <b style="font-weight:500">2,000 characters</b></span><span>Tag length: <b style="font-weight:500">80 characters</b></span></div>
+</div>
+<div class="panel" style="width:420px">
+ <div class="ph"><div style="flex:1;display:flex;flex-direction:column;gap:2px"><span class="eyebrow">Search field</span><span style="font-size:18px;font-weight:600">Last name</span></div><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#4a5459" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></div>
+ <div class="pb" style="gap:16px">
+  <div class="field"><div class="lh">Label people see</div><div class="inp v">Last name</div></div>
+  <div style="display:flex;justify-content:space-between;align-items:center;font-size:14px"><span>People can search by it</span><span class="switch"><i></i></span></div>
+  <div class="field"><div class="lh">How it matches</div>
+   <div style="display:flex;flex-direction:column;gap:8px;font-size:14px">
+    <div style="display:flex;gap:10px"><span class="radio"></span><span><b style="font-weight:500">Exact</b><br><span class="muted" style="font-size:13px">Must match all of it</span></span></div>
+    <div style="display:flex;gap:10px"><span class="radio"></span><span><b style="font-weight:500">Starts with</b><br><span class="muted" style="font-size:13px">"Pat" finds Patel</span></span></div>
+    <div style="display:flex;gap:10px"><span class="radio on"></span><span><b style="font-weight:500">Contains</b><br><span class="muted" style="font-size:13px">"tel" finds Patel</span></span></div>
+   </div><span class="muted" style="font-size:12px">Upper and lower case never matter for names.</span></div>
+ </div>
+ <div class="tech"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#4a5459" stroke-width="2" stroke-linecap="round"><path d="m9 6 6 6-6 6"/></svg><b style="font-weight:500">Technical details</b><span class="muted">field key, type, normalization, version</span></div>
+ <div style="padding:14px 20px;border-top:1px solid #dce1e2;display:flex;gap:10px;justify-content:flex-end"><div class="btn">Cancel</div><div class="btn primary">Save</div></div>
+</div></div></div><pre style="white-space:pre-wrap;font-family:inherit;font-size:14px;max-width:1440px;background:#fff;padding:16px;border-radius:8px">Search fields (finding 22 and the record-title decision)
+• New "Record title" setting: which fields name a record ("First name + Last name"). Results, the record panel and the viewer use it. Needs a small server setting.
+• One row per field: searchable switch, match in words ("Contains, any case"); drag to reorder (replaces the separate Reorder fields dialog).
+• The edit panel explains each match with an example; field key, type and normalization go under Technical details.
+• Limits in plain words; "(current UI)" goes.</pre></div><div class="board" style="flex-direction:column;align-items:flex-start"><h2 style="font-size:24px;margin:0 0 12px">Tenant IT · Add or edit a sending system</h2><div class="screen"><div class="top"><div class="brand">vero<i></i></div><div class="nav"><a class="on">Tenant IT</a></div><div class="grow"></div>
+<div class="cmd"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#737d82" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>Go to a record or page<span class="kbd">Ctrl K</span></div>
+<div class="acct"><div class="av" style="background:#4a5459">JW</div><div class="who"><b>Jonas Weber</b><span>Acme Lending · Tenant IT</span></div><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#737d82" stroke-width="2" stroke-linecap="round"><path d="m6 9 6 6 6-6"/></svg></div></div>
+<div style="padding:22px 32px 0;display:flex;flex-direction:column;gap:6px;background:#f3f5f4">
+<div style="display:flex;justify-content:space-between;align-items:center"><span class="crumb">Tenant IT</span><span class="role"><b>SEEN BY</b> Tenant IT</span></div>
+<h1>Integrations</h1><div class="sub">The systems that send documents to Vero, and what they send.</div></div><div class="tabs2" style="margin-top:14px"><a class="">Storage</a><a class="">Sign-in</a><a class="on">Integrations</a><a class="">Problems</a><a class="">About</a></div>
+<div class="body"><div class="main" style="opacity:.45"><div class="card" style="height:520px"></div></div>
+<div class="panel" style="width:640px">
+ <div class="ph"><div style="flex:1;display:flex;flex-direction:column;gap:4px"><span class="eyebrow">Add a sending system</span><span style="font-size:18px;font-weight:600">Step 2 of 3 · What it sends</span>
+  <div style="display:flex;gap:6px;margin-top:6px"><span class="chip" style="background:#e2efe9;color:#105a42">1 About it ✓</span><span class="chip" style="background:#14191c;color:#fff">2 What it sends</span><span class="chip">3 How it signs in</span></div></div><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#4a5459" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></div>
+ <div class="pb" style="gap:14px">
+  <span class="sub" style="font-size:14px">The fields this system sends with every delivery. Mark which one identifies a record. Business admin later decides how each is searched.</span>
+  <table class="tbl" style="border:1px solid #dce1e2;border-radius:8px"><thead><tr><th>Field</th><th>Kind of value</th><th>Required</th><th>Identifies the record</th></tr></thead><tbody>
+  <tr><td>Contract number</td><td>Text, digits only</td><td>Yes</td><td><span class="radio on" style="display:inline-block"></span></td></tr>
+  <tr><td>Last name</td><td>Text</td><td>Yes</td><td><span class="radio" style="display:inline-block"></span></td></tr>
+  <tr><td>Closing date</td><td>Date</td><td>No</td><td><span class="radio" style="display:inline-block"></span></td></tr>
+  <tr style="background:#f3f5f4"><td><div class="inp" style="height:32px">New field name</div></td><td><div class="inp v" style="height:32px;justify-content:space-between">Text <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#737d82" stroke-width="2" stroke-linecap="round"><path d="m6 9 6 6 6-6"/></svg></div></td><td><span class="switch off"><i></i></span></td><td><div class="btn sm">Add</div></td></tr>
+  </tbody></table>
+  <div class="callout w"><div>Changing a field later affects new deliveries only. Documents already stored keep the values they arrived with.</div></div>
+  <div style="font-size:13px;color:#4a5459;line-height:1.5"><b style="font-weight:500">Step 1</b> asked for the name and what it sends ("loan documents"). <b style="font-weight:500">Step 3</b> asks how it proves who it is, as cards with one line each ("A client ID and secret in your sign-in system", "A certificate"), and where the secret is kept, never the secret.</div>
+ </div>
+ <div class="tech" style="white-space:normal"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#4a5459" stroke-width="2" stroke-linecap="round"><path d="m9 6 6 6-6 6"/></svg><b style="font-weight:500;white-space:nowrap">Advanced (usually leave as is)</b><span class="muted">largest PDF 50 MB · 500 pages · 50 documents · wait 24 h for missing documents</span></div>
+ <div style="padding:14px 20px;border-top:1px solid #dce1e2;display:flex;gap:10px;align-items:center"><span class="muted" style="font-size:14px;margin-right:auto">Back</span><div class="btn">Save as paused</div><div class="btn primary">Next</div></div>
+</div></div></div><pre style="white-space:pre-wrap;font-family:inherit;font-size:14px;max-width:1440px;background:#fff;padding:16px;border-radius:8px">Add or edit a sending system (Integrations editor; LexaVault finding 25 pattern)
+• Three steps: About it, What it sends, How it signs in. Today it is one long form, and fields are added separately afterwards.
+• "What it sends" lets IT add fields with a kind of value in words and mark the identifier, in the same flow.
+• Limits go under "Advanced (usually leave as is)".
+• "Save as paused" lets IT set it up before the sending system is ready. Unlike LexaVault, Vero cannot test the connection itself because the other system calls Vero; the status line shows "Waiting for the first delivery" until it arrives.
+• The Monitoring sub-tab goes: its numbers are in the one-line status and Problems.</pre></div><div class="board" style="flex-direction:column;align-items:flex-start"><h2 style="font-size:24px;margin:0 0 12px">About this installation (Tenant IT and Platform operations)</h2><div class="screen" style="height:700px"><div class="top"><div class="brand">vero<i></i></div><div class="nav"><a class="on">Platform operations</a></div><div class="grow"></div>
+<div class="cmd"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#737d82" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>Go to a record or page<span class="kbd">Ctrl K</span></div>
+<div class="acct"><div class="av" style="background:#4a5459">AT</div><div class="who"><b>Aiko Tanaka</b><span>Acme Lending · Platform operations</span></div><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#737d82" stroke-width="2" stroke-linecap="round"><path d="m6 9 6 6 6-6"/></svg></div></div>
+<div style="padding:22px 32px 0;display:flex;flex-direction:column;gap:6px;background:#f3f5f4">
+<div style="display:flex;justify-content:space-between;align-items:center"><span class="crumb">Platform operations</span><span class="role"><b>SEEN BY</b> Platform operations · Tenant IT (same page under its own tabs)</span></div>
+<h1>About this installation</h1><div class="sub">The facts support will ask for.</div></div><div class="tabs2" style="margin-top:14px"><a class="">Overview</a><a class="">Problems</a><a class="">Storage</a><a class="">Health</a><a class="">Audit</a><a class="on">About</a></div>
+<div class="main" style="gap:16px">
+ <div class="card" style="padding:20px 22px;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px 30px">
+  <div><span class="sec">Product</span><div style="font-size:16px;margin-top:4px">Vero 1.0.0</div></div>
+  <div><span class="sec">Status</span><div style="font-size:16px;margin-top:4px"><span class="dot g"></span>Working</div></div>
+  <div><span class="sec">Installed</span><div style="font-size:16px;margin-top:4px">On your own servers</div></div>
+  <div><span class="sec">Organization</span><div style="font-size:16px;margin-top:4px">Acme Lending, Inc.</div></div>
+  <div><span class="sec">Sign-in</span><div style="font-size:16px;margin-top:4px">Okta</div></div>
+  <div><span class="sec">Checked</span><div style="font-size:16px;margin-top:4px">Today 09:14</div></div>
+ </div>
+ <div style="display:flex;gap:10px;align-items:center"><div class="btn">Copy details for support</div><span class="muted" style="font-size:13px">Copies these facts and the technical details below as plain text. No documents or personal data.</span></div>
+ <div class="card"><div class="tech" style="border-top:0"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#4a5459" stroke-width="2" stroke-linecap="round"><path d="m9 6 6 6-6 6"/></svg><b style="font-weight:500">Technical details</b><span class="muted">active profiles, build, correlation ID</span></div></div>
+</div></div><pre style="white-space:pre-wrap;font-family:inherit;font-size:14px;max-width:1440px;background:#fff;padding:16px;border-radius:8px">About this installation (change 10)
+• Replaces Tenant IT › Environment and Platform operations › Configuration, which showed the same facts.
+• Plain facts: product and version, status, how it is installed, organization, sign-in, when checked.
+• "Copy details for support" gives a plain-text summary without documents or personal data.
+• Seen by Tenant IT and Platform operations, under each one's tabs.</pre></div><div class="board" style="flex-direction:column;align-items:flex-start"><h2 style="font-size:24px;margin:0 0 12px">Platform operations · Overview</h2><div class="screen" style="height:820px"><div class="top"><div class="brand">vero<i></i></div><div class="nav"><a class="on">Platform operations</a></div><div class="grow"></div>
+<div class="cmd"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#737d82" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>Go to a record or page<span class="kbd">Ctrl K</span></div>
+<div class="acct"><div class="av" style="background:#4a5459">AT</div><div class="who"><b>Aiko Tanaka</b><span>Acme Lending · Platform operations</span></div><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#737d82" stroke-width="2" stroke-linecap="round"><path d="m6 9 6 6 6-6"/></svg></div></div>
+<div style="padding:22px 32px 0;display:flex;flex-direction:column;gap:6px;background:#f3f5f4">
+<div style="display:flex;justify-content:space-between;align-items:center"><span class="crumb">Platform operations</span><span class="role"><b>SEEN BY</b> Platform operations</span></div>
+<h1>Overview</h1><div class="sub">How Vero is doing right now.</div></div><div class="tabs2" style="margin-top:14px"><a class="on">Overview</a><a class="">Problems</a><a class="">Storage</a><a class="">Health</a><a class="">Audit</a><a class="">About</a></div>
+<div class="main" style="gap:16px">
+ <div class="callout w"><div><b>2 things need attention.</b> 4 documents did not arrive properly, and storage primary-a is 82% full.</div></div>
+ <div style="display:flex;gap:14px">
+  <div class="card" style="flex:1;padding:16px 18px;display:flex;flex-direction:column;gap:4px"><span class="muted" style="font-size:13px">Problems</span><span style="font-size:24px;font-weight:600;color:#9b2c22">4</span><span style="font-size:13px;color:#4a5459">2 could not be stored · 1 stuck · 1 missing documents</span><span style="font-size:13px;color:#166a4f;font-weight:500;margin-top:4px">Open →</span></div>
+  <div class="card" style="flex:1;padding:16px 18px;display:flex;flex-direction:column;gap:4px"><span class="muted" style="font-size:13px">Storage</span><span style="font-size:24px;font-weight:600;color:#8a5300">82% full</span><span style="font-size:13px;color:#4a5459">primary-a · warns at 80%, stops at 95%</span><span style="font-size:13px;color:#166a4f;font-weight:500;margin-top:4px">Open →</span></div>
+  <div class="card" style="flex:1;padding:16px 18px;display:flex;flex-direction:column;gap:4px"><span class="muted" style="font-size:13px">Services</span><span style="font-size:24px;font-weight:600;color:#105a42">All working</span><span style="font-size:13px;color:#4a5459">Vero, database and key service</span><span style="font-size:13px;color:#166a4f;font-weight:500;margin-top:4px">Open →</span></div>
+  <div class="card" style="flex:1;padding:16px 18px;display:flex;flex-direction:column;gap:4px"><span class="muted" style="font-size:13px">Cleanup</span><span style="font-size:24px;font-weight:600;color:#14191c">3 deleted today</span><span style="font-size:13px;color:#4a5459">Documents past their keep date · next run tomorrow 07:00</span><span style="font-size:13px;color:#166a4f;font-weight:500;margin-top:4px">Open →</span></div>
+ </div>
+ <div class="card"><div style="padding:14px 18px;border-bottom:1px solid #dce1e2;display:flex;justify-content:space-between"><h3 style="font-size:15px">Latest activity</h3><span style="font-size:13px;color:#166a4f;font-weight:500">All activity →</span></div>
+ <table class="tbl"><tbody>
+ <tr><td class="muted" style="width:140px">Today 09:12</td><td><b style="font-weight:500">Maya Okafor</b> opened <i>loan-agreement.pdf</i></td></tr>
+ <tr><td class="muted">Today 08:02</td><td><b style="font-weight:500">Daniel Reyes</b> permanently redacted 1 area in <i>loan-agreement.pdf</i></td></tr>
+ <tr><td class="muted">Yesterday 11:48</td><td><b style="font-weight:500">Loan Origination System</b> delivered 3 documents</td></tr>
+ </tbody></table></div>
+</div></div><pre style="white-space:pre-wrap;font-family:inherit;font-size:14px;max-width:1440px;background:#fff;padding:16px;border-radius:8px">Platform operations Overview (finding 9)
+• Opens with one sentence: how many things need attention and what they are.
+• Four tiles in plain words, each opening its tab: Problems, Storage, Services, Cleanup. "Attention submissions" and similar terms go.
+• Latest activity reads as sentences, linking to Audit.</pre></div><div class="board" style="flex-direction:column;align-items:flex-start"><h2 style="font-size:24px;margin:0 0 12px">Platform operations · Storage</h2><div class="screen" style="height:680px"><div class="top"><div class="brand">vero<i></i></div><div class="nav"><a class="on">Platform operations</a></div><div class="grow"></div>
+<div class="cmd"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#737d82" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>Go to a record or page<span class="kbd">Ctrl K</span></div>
+<div class="acct"><div class="av" style="background:#4a5459">AT</div><div class="who"><b>Aiko Tanaka</b><span>Acme Lending · Platform operations</span></div><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#737d82" stroke-width="2" stroke-linecap="round"><path d="m6 9 6 6 6-6"/></svg></div></div>
+<div style="padding:22px 32px 0;display:flex;flex-direction:column;gap:6px;background:#f3f5f4">
+<div style="display:flex;justify-content:space-between;align-items:center"><span class="crumb">Platform operations</span><span class="role"><b>SEEN BY</b> Platform operations</span></div>
+<h1>Storage</h1><div class="sub">How full each storage volume is. Tenant IT adds and changes volumes.</div></div><div class="tabs2" style="margin-top:14px"><a class="">Overview</a><a class="">Problems</a><a class="on">Storage</a><a class="">Health</a><a class="">Audit</a><a class="">About</a></div>
+<div class="main" style="gap:16px">
+ <div class="card"><table class="tbl"><thead><tr><th>Volume</th><th>Role</th><th>How full</th><th>Can store new documents</th></tr></thead><tbody>
+ <tr><td><b style="font-weight:500">primary-a</b></td><td>In use</td><td><div style="display:flex;align-items:center;gap:10px"><div class="bar2"><i style="width:82%;background:#d39a00"></i></div>82%</div></td><td><span class="dot y"></span>Yes, but nearly full</td></tr>
+ <tr><td><b style="font-weight:500">primary-b</b></td><td>Standby</td><td><div style="display:flex;align-items:center;gap:10px"><div class="bar2"><i style="width:12%;background:#166a4f"></i></div>12%</div></td><td><span class="dot g"></span>Yes</td></tr>
+ </tbody></table></div>
+ <div class="callout w"><div><b>What to do:</b> ask the customer's Tenant IT to add space to primary-a or add a volume. At 95% Vero switches new documents to primary-b by itself.</div></div>
+ <div class="card"><div class="tech" style="border-top:0"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#4a5459" stroke-width="2" stroke-linecap="round"><path d="m9 6 6 6-6 6"/></svg><b style="font-weight:500">Technical details</b><span class="muted">folder paths, thresholds, last check, write test result</span></div></div>
+</div></div><pre style="white-space:pre-wrap;font-family:inherit;font-size:14px;max-width:1440px;background:#fff;padding:16px;border-radius:8px">Platform operations Storage (finding 9)
+• Read-only view for operations: how full each volume is and whether it can store new documents, in words.
+• Says what to do and who does it (Tenant IT changes volumes).
+• Paths, thresholds and check results under Technical details.</pre></div><div class="board" style="flex-direction:column;align-items:flex-start"><h2 style="font-size:24px;margin:0 0 12px">Platform operations · Health</h2><div class="screen" style="height:760px"><div class="top"><div class="brand">vero<i></i></div><div class="nav"><a class="on">Platform operations</a></div><div class="grow"></div>
+<div class="cmd"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#737d82" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>Go to a record or page<span class="kbd">Ctrl K</span></div>
+<div class="acct"><div class="av" style="background:#4a5459">AT</div><div class="who"><b>Aiko Tanaka</b><span>Acme Lending · Platform operations</span></div><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#737d82" stroke-width="2" stroke-linecap="round"><path d="m6 9 6 6 6-6"/></svg></div></div>
+<div style="padding:22px 32px 0;display:flex;flex-direction:column;gap:6px;background:#f3f5f4">
+<div style="display:flex;justify-content:space-between;align-items:center"><span class="crumb">Platform operations</span><span class="role"><b>SEEN BY</b> Platform operations</span></div>
+<h1>Health</h1><div class="sub">The services Vero depends on, and its automatic cleanup.</div></div><div class="tabs2" style="margin-top:14px"><a class="">Overview</a><a class="">Problems</a><a class="">Storage</a><a class="on">Health</a><a class="">Audit</a><a class="">About</a></div>
+<div class="main" style="gap:16px">
+ <div style="display:flex;justify-content:space-between;align-items:center"><span class="muted" style="font-size:14px">Checked 2 minutes ago</span><div class="btn sm">Check now</div></div>
+ <div class="card"><table class="tbl"><thead><tr><th>Service</th><th>What it does</th><th>Status</th></tr></thead><tbody>
+ <tr><td><b style="font-weight:500">Vero</b></td><td>The application itself</td><td><span class="dot g"></span>Working</td></tr>
+ <tr><td><b style="font-weight:500">Database</b></td><td>Keeps records, settings and the audit</td><td><span class="dot g"></span>Working</td></tr>
+ <tr><td><b style="font-weight:500">Key service</b></td><td>Locks and unlocks stored documents (Vault)</td><td><span class="dot g"></span>Working</td></tr>
+ </tbody></table></div>
+ <div class="card" style="padding:18px 20px;display:flex;flex-direction:column;gap:8px"><span class="sec">Automatic cleanup</span><span style="font-size:15px;line-height:1.5"><span class="dot g"></span>Last ran <b style="font-weight:500">today at 07:00</b> and deleted <b style="font-weight:500">3 documents</b> that had passed their keep date. Next run: tomorrow at 07:00.</span><span class="muted" style="font-size:13px">If a run fails, it shows here in red with what to do, and in Problems.</span></div>
+ <div class="callout w" style="background:#fbe9e7;border-color:#efc2bc;color:#7a2018"><div><b>When a service is down</b> (example): "Key service isn't answering. Nobody can open documents and new deliveries wait. Check that Vault is running and unsealed; see the install guide, section 6."</div></div>
+ <div class="card"><div class="tech" style="border-top:0"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#4a5459" stroke-width="2" stroke-linecap="round"><path d="m9 6 6 6-6 6"/></svg><b style="font-weight:500">Technical details</b><span class="muted">component names, response times, raw cleanup fields</span></div></div>
+</div></div><pre style="white-space:pre-wrap;font-family:inherit;font-size:14px;max-width:1440px;background:#fff;padding:16px;border-radius:8px">Health (finding 9)
+• Each service says what it does, so a reader knows why it matters ("Key service: locks and unlocks stored documents").
+• The retention sweep becomes "Automatic cleanup" in a sentence: when it ran, what it deleted, the next run. Today it shows raw fields such as lastSweepAt with ISO dates.
+• A failing service says what stops working and what to check (example shown), instead of "DOWN".
+• "Check now" replaces Refresh; raw fields under Technical details.</pre></div><div class="board" style="flex-direction:column;align-items:flex-start"><h2 style="font-size:24px;margin:0 0 12px">Tenant IT · Setup checklist (new installation)</h2><div class="screen"><div class="top"><div class="brand">vero<i></i></div><div class="nav"><a class="on">Tenant IT</a></div><div class="grow"></div>
+<div class="cmd"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#737d82" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>Go to a record or page<span class="kbd">Ctrl K</span></div>
+<div class="acct"><div class="av" style="background:#4a5459">JW</div><div class="who"><b>Jonas Weber</b><span>Acme Lending · Tenant IT</span></div><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#737d82" stroke-width="2" stroke-linecap="round"><path d="m6 9 6 6 6-6"/></svg></div></div>
+<div style="padding:22px 32px 0;display:flex;flex-direction:column;gap:6px;background:#f3f5f4">
+<div style="display:flex;justify-content:space-between;align-items:center"><span class="crumb">Tenant IT</span><span class="role"><b>SEEN BY</b> Tenant IT (full list) · Platform operations (read-only, in Overview)</span></div>
+<h1>Set up Vero</h1><div class="sub">Eight steps before people can use Vero. You can leave and come back; progress is saved.</div></div><div class="tabs2" style="margin-top:14px"><a class="on">Setup</a><a class="">Storage</a><a class="">Sign-in</a><a class="">Integrations</a><a class="">Problems</a><a class="">About</a></div>
+<div class="main" style="gap:14px">
+ <div style="display:flex;align-items:center;gap:14px"><div class="bar2" style="width:420px;height:10px"><i style="width:62.5%;background:#166a4f;border-radius:5px"></i></div><span style="font-size:15px"><b style="font-weight:600">5 of 8 done</b></span><span class="muted" style="font-size:14px">About 15 minutes left. The business decisions came from the setup worksheet.</span></div>
+ <div class="card"><div style="display:flex;gap:14px;align-items:flex-start;padding:14px 18px;border-bottom:1px solid #eceff0;"><span style="width:24px;height:24px;border-radius:50%;background:#166a4f;color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:13px;flex:none">✓</span>
+<div style="flex:1;display:flex;flex-direction:column;gap:3px"><b style="font-weight:600;font-size:15px;color:#737d82;">Sign-in works</b><span style="font-size:13px;color:#4a5459;line-height:1.45">People sign in with your company account (Okta). Set up during installation.</span></div>
+<span class="role" style="align-self:center"><b>BY</b> Installer</span>
+<span style="font-size:13px;color:#4a5459;width:150px;align-self:center">Done · 17 Nov</span><div style="width:150px;display:flex;justify-content:flex-end;align-self:center"></div></div><div style="display:flex;gap:14px;align-items:flex-start;padding:14px 18px;border-bottom:1px solid #eceff0;"><span style="width:24px;height:24px;border-radius:50%;background:#166a4f;color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:13px;flex:none">✓</span>
+<div style="flex:1;display:flex;flex-direction:column;gap:3px"><b style="font-weight:600;font-size:15px;color:#737d82;">Key service is running</b><span style="font-size:13px;color:#4a5459;line-height:1.45">The service that locks and unlocks stored documents answers.</span></div>
+<span class="role" style="align-self:center"><b>BY</b> Installer</span>
+<span style="font-size:13px;color:#4a5459;width:150px;align-self:center">Done · checked 2 min ago</span><div style="width:150px;display:flex;justify-content:flex-end;align-self:center"></div></div><div style="display:flex;gap:14px;align-items:flex-start;padding:14px 18px;border-bottom:1px solid #eceff0;"><span style="width:24px;height:24px;border-radius:50%;background:#166a4f;color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:13px;flex:none">✓</span>
+<div style="flex:1;display:flex;flex-direction:column;gap:3px"><b style="font-weight:600;font-size:15px;color:#737d82;">Storage added</b><span style="font-size:13px;color:#4a5459;line-height:1.45">A folder where Vero keeps encrypted documents, with a write check.</span></div>
+<span class="role" style="align-self:center"><b>BY</b> Tenant IT</span>
+<span style="font-size:13px;color:#4a5459;width:150px;align-self:center">Done · primary-a</span><div style="width:150px;display:flex;justify-content:flex-end;align-self:center"></div></div><div style="display:flex;gap:14px;align-items:flex-start;padding:14px 18px;border-bottom:1px solid #eceff0;background:#e2efe9;"><span style="width:24px;height:24px;border-radius:50%;background:#14191c;color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;flex:none">4</span>
+<div style="flex:1;display:flex;flex-direction:column;gap:3px"><b style="font-weight:600;font-size:15px;">Add a sending system</b><span style="font-size:13px;color:#4a5459;line-height:1.45">The system that delivers documents, for example LexaVault. You name the fields it sends.</span></div>
+<span class="role" style="align-self:center"><b>BY</b> Tenant IT</span>
+<span style="font-size:13px;color:#4a5459;width:150px;align-self:center">Next step</span><div style="width:150px;display:flex;justify-content:flex-end;align-self:center"><div class="btn primary sm">Add sending system</div></div></div><div style="display:flex;gap:14px;align-items:flex-start;padding:14px 18px;border-bottom:1px solid #eceff0;"><span style="width:24px;height:24px;border-radius:50%;background:#166a4f;color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:13px;flex:none">✓</span>
+<div style="flex:1;display:flex;flex-direction:column;gap:3px"><b style="font-weight:600;font-size:15px;color:#737d82;">How long to keep documents</b><span style="font-size:13px;color:#4a5459;line-height:1.45">Keep for 7 years, from the setup worksheet. The Business admin can change it any time.</span></div>
+<span class="role" style="align-self:center"><b>BY</b> Worksheet</span>
+<span style="font-size:13px;color:#4a5459;width:150px;align-self:center">Done · at installation</span><div style="width:150px;display:flex;justify-content:flex-end;align-self:center"></div></div><div style="display:flex;gap:14px;align-items:flex-start;padding:14px 18px;border-bottom:1px solid #eceff0;"><span style="width:24px;height:24px;border-radius:50%;background:#166a4f;color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:13px;flex:none">✓</span>
+<div style="flex:1;display:flex;flex-direction:column;gap:3px"><b style="font-weight:600;font-size:15px;color:#737d82;">Search fields and record title</b><span style="font-size:13px;color:#4a5459;line-height:1.45">Contract number and last name; records called "First name + Last name", from the worksheet.</span></div>
+<span class="role" style="align-self:center"><b>BY</b> Worksheet</span>
+<span style="font-size:13px;color:#4a5459;width:150px;align-self:center">Done · at installation</span><div style="width:150px;display:flex;justify-content:flex-end;align-self:center"></div></div><div style="display:flex;gap:14px;align-items:flex-start;padding:14px 18px;border-bottom:1px solid #eceff0;"><span style="width:24px;height:24px;border-radius:50%;border:1.5px solid #c3cacc;color:#4a5459;display:inline-flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;flex:none">7</span>
+<div style="flex:1;display:flex;flex-direction:column;gap:3px"><b style="font-weight:600;font-size:15px;">Give people their roles</b><span style="font-size:13px;color:#4a5459;line-height:1.45">Add people to the Vero groups in Okta. Then each role signs in once to check.</span></div>
+<span class="role" style="align-self:center"><b>BY</b> Tenant IT</span>
+<span style="font-size:13px;color:#4a5459;width:150px;align-self:center">Not started</span><div style="width:150px;display:flex;justify-content:flex-end;align-self:center"><div class="btn  sm">Show the groups</div></div></div><div style="display:flex;gap:14px;align-items:flex-start;padding:14px 18px;border-bottom:1px solid #eceff0;"><span style="width:24px;height:24px;border-radius:50%;border:1.5px solid #c3cacc;color:#4a5459;display:inline-flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;flex:none">8</span>
+<div style="flex:1;display:flex;flex-direction:column;gap:3px"><b style="font-weight:600;font-size:15px;">First delivery arrives</b><span style="font-size:13px;color:#4a5459;line-height:1.45">Vero shows it as soon as the sending system delivers its first documents.</span></div>
+<span class="role" style="align-self:center"><b>BY</b> Automatic</span>
+<span style="font-size:13px;color:#4a5459;width:150px;align-self:center">Waiting for step 4</span><div style="width:150px;display:flex;justify-content:flex-end;align-self:center"></div></div></div>
+ <div class="muted" style="font-size:13px">When all steps are done this tab disappears. It stays available under About › Setup history.</div>
+</div></div><pre style="white-space:pre-wrap;font-family:inherit;font-size:14px;max-width:1440px;background:#fff;padding:16px;border-radius:8px">Setup checklist (new; neither product has one today)
+• On a fresh installation Tenant IT lands on a Setup tab: eight steps in order, each saying why it matters, who does it, and its state.
+• Steps done during installation (sign-in, key service) are already ticked by the install; Vero checks them itself.
+• Business decisions (how long to keep documents, search fields, record title) come from the setup worksheet the customer's business fills in before install day. The setup command applies them and the audit records "set at installation from the customer's worksheet". If the worksheet is not ready, these two steps do not block go-live: safe defaults apply and the Business admin is reminded.
+• "Give people their roles" lists the exact group names to create in Okta, then asks each role to sign in once; Vero ticks a role when someone with it signs in.
+• The tab disappears when all steps are done; a record stays under About.
+• Fits the assisted install: your team works through it with the customer's IT, and it doubles as the install checklist.
+• LexaVault would benefit from the same pattern (its own steps: intake sources, policy, delivery to Vero).</pre></div><div class="board" style="flex-direction:column;align-items:flex-start"><h2 style="font-size:24px;margin:0 0 12px">Setup: what Business admin and Platform operations see</h2><div class="screen" style="height:640px;flex-direction:row;gap:0">
+<div style="flex:1;display:flex;flex-direction:column;border-right:1px solid #dce1e2;min-width:0"><div class="top"><div class="brand">vero<i></i></div><div class="nav"><a class="on">Business administration</a></div><div class="grow"></div><div class="acct"><div class="av" style="background:#4a5459">PN</div><div class="who"><b>Priya Natarajan</b><span>Business admin</span></div><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#737d82" stroke-width="2" stroke-linecap="round"><path d="m6 9 6 6 6-6"/></svg></div></div>
+ <div style="padding:22px 28px;display:flex;flex-direction:column;gap:14px">
+  <div style="display:flex;justify-content:space-between;align-items:center"><span class="crumb">Business administration</span><span class="role"><b>SEEN BY</b> Business admin</span></div>
+  <div class="card" style="padding:18px 20px;display:flex;flex-direction:column;gap:12px;border-color:#9fcbb5;background:#f4faf7">
+   <b style="font-size:17px;font-weight:600">Set for you during installation</b>
+   <span style="font-size:14px;line-height:1.5">Your IT team gave us these answers from the setup worksheet. Please check them; you can change either any time.</span>
+   <div style="display:flex;gap:12px;align-items:center"><span style="width:24px;height:24px;border-radius:50%;background:#166a4f;color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:13px;flex:none">✓</span><span style="flex:1;font-size:14px"><b style="font-weight:500">Keep documents for 7 years</b> · "Federal lending record keeping"</span><div class="btn sm">Review</div></div>
+   <div style="display:flex;gap:12px;align-items:center"><span style="width:24px;height:24px;border-radius:50%;background:#166a4f;color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:13px;flex:none">✓</span><span style="flex:1;font-size:14px"><b style="font-weight:500">Search by contract number and last name;</b> records called First name + Last name</span><div class="btn sm">Review</div></div>
+   <div style="display:flex;gap:10px"><div class="btn primary sm">Looks right</div></div>
+   <span class="muted" style="font-size:13px">Shown the first time you sign in, until you choose Looks right.</span>
+  </div>
+  <div class="muted" style="font-size:13px">If the worksheet was not ready at installation, the banner instead lists the two decisions as open, with safe defaults in use meanwhile (keep forever; search by identifier and name).</div>
+ </div></div>
+<div style="flex:1;display:flex;flex-direction:column;min-width:0"><div class="top"><div class="brand">vero<i></i></div><div class="nav"><a class="on">Platform operations</a></div><div class="grow"></div><div class="acct"><div class="av" style="background:#4a5459">AT</div><div class="who"><b>Aiko Tanaka</b><span>Platform operations</span></div><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#737d82" stroke-width="2" stroke-linecap="round"><path d="m6 9 6 6 6-6"/></svg></div></div>
+ <div style="padding:22px 28px;display:flex;flex-direction:column;gap:14px">
+  <div style="display:flex;justify-content:space-between;align-items:center"><span class="crumb">Platform operations › Overview</span><span class="role"><b>SEEN BY</b> Platform operations</span></div>
+  <div class="card" style="padding:18px 20px;display:flex;flex-direction:column;gap:10px">
+   <div style="display:flex;justify-content:space-between;align-items:center"><b style="font-size:17px;font-weight:600">Setup: 5 of 8 done</b><span style="font-size:13px;color:#166a4f;font-weight:500">See the checklist →</span></div>
+   <div class="bar2" style="width:100%;height:10px"><i style="width:62.5%;background:#166a4f;border-radius:5px"></i></div>
+   <span style="font-size:14px;line-height:1.5">Next: <b style="font-weight:500">Tenant IT adds a sending system.</b> Business decisions came from the worksheet.</span>
+   <div class="btn sm" style="align-self:flex-start">Copy setup status for the install notes</div>
+  </div>
+  <div class="muted" style="font-size:13px;line-height:1.5">Your install team sees exactly where the customer is, without needing the customer's admin roles. Read-only: each step is done by the role named on it.</div>
+ </div></div>
+</div><pre style="white-space:pre-wrap;font-family:inherit;font-size:14px;max-width:1440px;background:#fff;padding:16px;border-radius:8px">What the other roles see during setup
+• Business admin: on first sign-in, a banner shows what was set for them from the worksheet, with Review and "Looks right". The Business admin does not need to attend installation.
+• Platform operations (your install team): a read-only card on Overview with progress, the next step and who is waiting on whom, plus "Copy setup status" for the install notes.
+• Business users and stewards see nothing of setup. Before the first delivery, Home says "No records yet. Documents appear here once your company's systems start sending them."</pre></div><div class="board" style="flex-direction:column;align-items:flex-start"><h2 style="font-size:24px;margin:0 0 12px">Before setup: the server is running but no customer is set up</h2><div class="screen" style="height:560px;align-items:center;justify-content:center;background:#f3f5f4">
+ <span class="role" style="position:absolute;top:20px;right:20px"><b>SEEN BY</b> anyone who opens Vero before the setup command has run</span>
+ <div class="brand" style="font-size:28px;margin-bottom:18px">vero<i></i></div>
+ <div class="card" style="width:620px;padding:28px 30px;display:flex;flex-direction:column;gap:12px">
+  <h2 style="font-size:22px;font-weight:600">This installation isn't set up yet</h2>
+  <p class="sub" style="font-size:15px;line-height:1.55">Vero is running, but no organization has been set up on it. Your installer finishes this with the setup command; see the install guide, "Set up the customer".</p>
+  <p class="sub" style="font-size:15px;line-height:1.55">Nobody can sign in or set anything up from this page. That is on purpose: it stops anyone on the network from claiming the installation.</p>
+  <div style="display:flex;gap:10px;align-items:center"><div class="btn">Check again</div><span class="muted mono" style="font-size:13px">Vero 1.0.0</span></div>
+ </div></div><pre style="white-space:pre-wrap;font-family:inherit;font-size:14px;max-width:1440px;background:#fff;padding:16px;border-radius:8px">Before setup
+• If the server starts before the setup command has run, every page shows this, with no sign-in and no way to create anything.
+• Only the setup command creates the customer and tenant, with the tenant ID and licence you provide (decided earlier), so nobody on the customer's network can claim the installation from a browser.
+• Shows the version and a Check again button for the installer.</pre></div></body></html>

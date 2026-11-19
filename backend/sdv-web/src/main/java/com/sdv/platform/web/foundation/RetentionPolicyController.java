@@ -46,7 +46,7 @@ public class RetentionPolicyController {
                 .cacheControl(CacheControl.noStore().cachePrivate().mustRevalidate())
                 .body(retention.update(
                         principal.tenantId(), request.policyName(), request.description(), request.defaultRetentionDays(),
-                        principal.subject(), MDC.get("correlationId")));
+                        principal.subject(), principal.displayName(), MDC.get("correlationId")));
     }
 
     private SdvPrincipal requireRetentionAdmin() {

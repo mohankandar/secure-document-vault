@@ -27,7 +27,7 @@ public class SecurityConfiguration {
                         .authenticationEntryPoint((request, response, exception) -> response.sendError(401, "Authentication is required."))
                         .accessDeniedHandler((request, response, exception) -> response.sendError(403, "Access is denied.")))
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/actuator/health", "/actuator/info", "/api/v1/system/info", "/error").permitAll()
+                        .requestMatchers("/actuator/health", "/actuator/health/liveness", "/actuator/health/readiness", "/actuator/info", "/api/v1/system/info", "/error").permitAll()
                         .anyRequest().authenticated())
                 .httpBasic(httpBasic -> httpBasic.disable())
                 .formLogin(form -> form.disable())

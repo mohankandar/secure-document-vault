@@ -1,0 +1,142 @@
+package com.sdv.platform.application.audit;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
+import java.util.Locale;
+import java.util.Map;
+
+/**
+ * Task 0011 export: each audit event as the same sentence the Audit screen shows. This is the server copy of
+ * {@code frontend/sdv-ui/src/r7/auditWords.ts}; the two must say the same thing (the screen tour compares the
+ * exported sentences with the screen's). A code not listed here reads "who · Humanized code".
+ */
+public final class AuditSentences {
+    private static final ObjectMapper JSON = new ObjectMapper();
+
+    /** What a refused permission would have allowed, in words. */
+    private static final Map<String, String> CAPABILITY_WORDS = Map.ofEntries(
+            Map.entry("SEARCH_RECORDS", "search records"),
+            Map.entry("VIEW_PDF", "open a document"),
+            Map.entry("DOWNLOAD_PDF", "download a document"),
+            Map.entry("PRINT_DOCUMENT", "print a document"),
+            Map.entry("ADD_DOCUMENT_TAG", "tag a document"),
+            Map.entry("ADD_DOCUMENT_COMMENT", "comment on a document"),
+            Map.entry("PERMANENT_REDACTION", "permanently redact a document"),
+            Map.entry("CONFIGURE_ROLE_PERMISSIONS", "change roles & permissions"),
+            Map.entry("CONFIGURE_RETENTION", "change how long documents are kept"),
+            Map.entry("CONFIGURE_METADATA_SEARCH", "change search fields"),
+            Map.entry("CONFIGURE_INGESTION_SOURCES", "change sending systems"),
+            Map.entry("CONFIGURE_STORAGE_KEY_PROVIDER", "change storage"),
+            Map.entry("VIEW_TECHNICAL_FAILURES", "see problems and the audit"));
+
+    private AuditSentences() { }
+
+    /** The name from the event; older events and background work show the subject ID ("Vero" for system work). */
+    public static String actorName(AuditQueryService.AuditEntry e) {
+        if (e.actorDisplayName() != null && !e.actorDisplayName().isEmpty()) return e.actorDisplayName();
+        return "SYSTEM".equals(e.actorType()) ? "Vero" : e.actorId();
+    }
+
+    public static String resultWords(String outcome) {
+        return switch (outcome) {
+            case "SUCCESS" -> "Done";
+            case "DENIED" -> "Refused";
+            case "FAILED" -> "Failed";
+            default -> outcome;
+        };
+    }
+
+    public static String sentence(AuditQueryService.AuditEntry e) {
+        String w = actorName(e);
+        String f = e.filename() == null || e.filename().isEmpty() ? "a document" : e.filename();
+        JsonNode d = details(e.safeDetailsJson());
+        return switch (e.action()) {
+            case "DOCUMENT_VIEW_OPENED" -> w + " opened " + f;
+            case "DOCUMENT_PAGE_VIEWED" -> number(d, "page") != null ? w + " loaded page " + number(d, "page") + " of " + f : w + " loaded a page of " + f;
+            case "DOCUMENT_DOWNLOADED" -> w + " downloaded " + f;
+            case "DOCUMENT_DOWNLOAD_FAILED" -> w + " tried to download " + f + ", but it failed";
+            case "DOCUMENT_PRINTED" -> w + " printed " + f;
+            case "DOCUMENT_TAG_ADDED" -> w + " tagged " + f;
+            case "DOCUMENT_COMMENT_ADDED" -> w + " commented on " + f;
+            case "DOCUMENT_PERMANENTLY_REDACTED" -> w + " permanently redacted part of " + f;
+            case "DOCUMENT_REDACTION_FAILED" -> w + " tried to redact part of " + f + ", but it failed";
+            case "DOCUMENT_RETENTION_DELETED" -> "Vero deleted " + f + " for good, as the keeping rule says";
+            case "DOCUMENT_RETENTION_DELETE_FAILED" -> "Vero couldn't delete " + f + " when its time was up";
+            case "BUSINESS_RECORD_OPENED" -> w + " opened a record";
+            case "BUSINESS_SEARCH" -> number(d, "resultCount") != null ? w + " searched records and found " + number(d, "resultCount") : w + " searched records";
+            case "BUSINESS_RECENT_RECORDS_LISTED" -> w + " looked at Recently viewed";
+            case "AUDIT_VIEWED" -> w + " looked at the audit";
+            case "AUDIT_EXPORTED" -> number(d, "rowCount") != null ? w + " exported the audit (" + events(number(d, "rowCount")) + ")" : w + " exported the audit";
+            case "AUTHORIZATION_DENIED" -> w + " tried to " + CAPABILITY_WORDS.getOrDefault(text(d, "capability"), "do something") + " without permission";
+            case "SUBMISSION_CREATED" -> w + " delivered " + docs(number(d, "expectedDocumentCount"));
+            case "DOCUMENT_RECEIVED" -> w + " sent " + f;
+            case "DOCUMENT_AVAILABLE" -> f + " is stored and ready to open";
+            case "DOCUMENT_PROCESSING_FAILED" -> "Vero couldn't store " + f;
+            case "ROLE_CAPABILITIES_UPDATED" -> w + " changed what business roles may do";
+            case "RETENTION_POLICY_UPDATED" -> d.path("indefinite").asBoolean(false) && d.path("indefinite").isBoolean()
+                    ? w + " changed how long to keep new documents: keep them forever"
+                    : w + " changed how long to keep new documents to " + ruleWords(d);
+            case "METADATA_BEHAVIOR_REVISED" -> w + " changed how a search field works";
+            case "METADATA_DISPLAY_ORDER_UPDATED" -> w + " changed the order of the search fields";
+            case "RECORD_TITLE_FIELDS_UPDATED" -> w + " changed what records are called";
+            case "METADATA_FIELD_CREATED", "SOURCE_FIELD_DEFINED" -> w + " added a field a sending system sends";
+            case "METADATA_FIELD_REVISED", "SOURCE_FIELD_REVISED" -> w + " changed a field a sending system sends";
+            case "INGESTION_SOURCE_CREATED" -> w + " added a sending system";
+            case "INGESTION_SOURCE_UPDATED" -> w + " changed a sending system";
+            case "STORAGE_VOLUME_CREATED" -> w + " added a storage volume";
+            case "STORAGE_VOLUME_UPDATED" -> w + " changed a storage volume";
+            case "STORAGE_FOLDER_CHECKED" -> d.path("writable").isBoolean() && !d.path("writable").asBoolean()
+                    ? w + " checked a folder for a new volume; Vero couldn't write there"
+                    : w + " checked a folder for a new volume";
+            case "ENTERPRISE_IDENTITY_DRAFT_SAVED" -> w + " saved a draft of the sign-in settings";
+            case "ENTERPRISE_IDENTITY_CONNECTION_TESTED" -> w + " tested the sign-in settings";
+            case "ENTERPRISE_IDENTITY_CONNECTION_ACTIVATED" -> w + " switched on new sign-in settings";
+            case "ENTERPRISE_IDENTITY_CONNECTION_ACTIVATION_FAILED" -> w + " tried to switch on new sign-in settings, but it failed";
+            case "ENTERPRISE_IDENTITY_CONNECTION_ROLLED_BACK" -> w + " went back to earlier sign-in settings";
+            case "ENTERPRISE_IDENTITY_CONNECTION_ROLLBACK_FAILED" -> w + " tried to go back to earlier sign-in settings, but it failed";
+            default -> w + " · " + humanize(e.action());
+        };
+    }
+
+    static String humanize(String code) {
+        String lower = code.toLowerCase(Locale.ROOT).replace('_', ' ');
+        return lower.isEmpty() ? lower : Character.toUpperCase(lower.charAt(0)) + lower.substring(1);
+    }
+
+    private static JsonNode details(String json) {
+        if (json == null || json.isBlank()) return JSON.createObjectNode();
+        try {
+            JsonNode node = JSON.readTree(json);
+            return node != null && node.isObject() ? node : JSON.createObjectNode();
+        } catch (Exception ex) {
+            return JSON.createObjectNode();
+        }
+    }
+
+    private static Long number(JsonNode d, String key) {
+        JsonNode v = d.get(key);
+        return v != null && v.isNumber() ? v.asLong() : null;
+    }
+
+    private static String text(JsonNode d, String key) {
+        JsonNode v = d.get(key);
+        return v == null || v.isNull() ? "null" : v.asText();
+    }
+
+    private static String docs(Long k) {
+        return k == null ? "documents" : k + " document" + (k == 1 ? "" : "s");
+    }
+
+    private static String events(Long k) {
+        return k + " event" + (k == 1 ? "" : "s");
+    }
+
+    private static String ruleWords(JsonNode d) {
+        Long days = number(d, "defaultRetentionDays");
+        if (days == null) return "a new rule";
+        if (days % 365 == 0) return days / 365 + " year" + (days == 365 ? "" : "s");
+        if (days % 30 == 0) return days / 30 + " month" + (days == 30 ? "" : "s");
+        return String.format(Locale.US, "%,d", days) + " days";
+    }
+}

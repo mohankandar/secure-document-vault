@@ -7,6 +7,7 @@ import com.sdv.platform.application.port.BusinessRecordRepository.DocumentCount;
 import com.sdv.platform.application.port.BusinessRecordRepository.ExpectedDocumentSnapshot;
 import com.sdv.platform.application.port.BusinessRecordRepository.IdentifierCriterion;
 import com.sdv.platform.application.port.BusinessRecordRepository.MetadataSnapshot;
+import com.sdv.platform.application.port.BusinessRecordRepository.RecentDocumentView;
 import com.sdv.platform.application.port.BusinessRecordRepository.SearchCriterion;
 import com.sdv.platform.application.port.IngestionSourceRepository;
 import com.sdv.platform.application.port.MetadataFieldDefinitionRepository;
@@ -37,6 +38,11 @@ public class BusinessExperienceService {
     private static final int MAX_PAGE = 10_000;
     private static final int MAX_CRITERIA = 10;
     private static final int MAX_QUERY_VALUE_LENGTH = 500;
+    static final int RECENT_DEFAULT_LIMIT = 8;
+    static final int RECENT_MAX_LIMIT = 20;
+    /** At most this many of the person's newest view events are read for Recently viewed. */
+    static final int RECENT_EVENT_SCAN = 500;
+    static final java.time.Duration RECENT_WINDOW = java.time.Duration.ofDays(90);
 
     private final TenantRepository tenants;
     private final IngestionSourceRepository sources;
@@ -136,6 +142,27 @@ public class BusinessExperienceService {
             Integer requestedPageSize,
             String actorId,
             String correlationId) {
+        return search(tenantId, sourceId, requestedCriteria, createdFrom, createdTo, updatedFrom, updatedTo,
+                false, requestedPage, requestedPageSize, actorId, correlationId);
+    }
+
+    /**
+     * incompleteOnly: only records with an incomplete submission (missing documents). It counts as a criterion,
+     * like a date range, so it may be used alone.
+     */
+    public BusinessExperienceView.SearchResponse search(
+            UUID tenantId,
+            UUID sourceId,
+            Map<String, String> requestedCriteria,
+            Instant createdFrom,
+            Instant createdTo,
+            Instant updatedFrom,
+            Instant updatedTo,
+            boolean incompleteOnly,
+            Integer requestedPage,
+            Integer requestedPageSize,
+            String actorId,
+            String correlationId) {
         requireActiveTenant(tenantId);
         IngestionSource source = requireSource(tenantId, sourceId);
 
@@ -149,9 +176,9 @@ public class BusinessExperienceService {
         }
 
         Map<String, String> safeCriteria = requestedCriteria == null ? Map.of() : requestedCriteria;
-        if (safeCriteria.isEmpty()
+        if (safeCriteria.isEmpty() && !incompleteOnly
                 && createdFrom == null && createdTo == null && updatedFrom == null && updatedTo == null) {
-            throw new IllegalArgumentException("At least one configured metadata field or common date filter is required.");
+            throw new IllegalArgumentException("At least one configured metadata field, common date filter or incompleteOnly is required.");
         }
         if (createdFrom != null && createdTo != null && createdFrom.isAfter(createdTo)) {
             throw new IllegalArgumentException("dateFrom cannot be after dateTo.");
@@ -182,7 +209,7 @@ public class BusinessExperienceService {
             List<Submission> matching = records.findMatchingSubmissions(
                     tenantId, sourceId, criteria,
                     createdFrom, createdTo, updatedFrom, updatedTo,
-                    scanOffset, scanBatchSize);
+                    incompleteOnly, scanOffset, scanBatchSize);
 
             if (matching.isEmpty()) {
                 exhausted = true;
@@ -213,11 +240,12 @@ public class BusinessExperienceService {
         }
 
         int pageEndExclusive = Math.min(firstIndex + pageSize, ordered.size());
+        List<String> titleFields = definitions.findRecordTitleFields(tenantId, sourceId);
         List<BusinessExperienceView.RecordSummary> results = new ArrayList<>();
         for (BusinessRecordRefCodec.RecordIdentity identity : ordered.subList(firstIndex, pageEndExclusive)) {
             RecordAggregate aggregate = aggregate(tenantId, source, identity);
             if (!aggregate.submissions().isEmpty()) {
-                results.add(summary(aggregate));
+                results.add(summary(aggregate, titleFields));
             }
         }
 
@@ -225,6 +253,74 @@ public class BusinessExperienceService {
         appendSearchAudit(tenantId, actorId, sourceId, criteria.size(), results.size(), correlationId);
         return new BusinessExperienceView.SearchResponse(
                 sourceId, results, page, pageSize, hasMore, hasMore);
+    }
+
+    /**
+     * Records the person opened in the viewer themselves, newest first, one entry per record. Built only from the
+     * person's own DOCUMENT_VIEW_OPENED events in this tenant (last {@link #RECENT_WINDOW}); a record is returned
+     * only while the same checks as search and record detail still find it with at least one AVAILABLE document,
+     * so nothing past retention or deleted appears.
+     */
+    public BusinessExperienceView.RecentRecords recentRecords(
+            UUID tenantId,
+            String actorId,
+            Integer requestedLimit,
+            String correlationId) {
+        requireActiveTenant(tenantId);
+        if (actorId == null || actorId.isBlank()) {
+            throw new IllegalArgumentException("An authenticated person is required.");
+        }
+        int limit = requestedLimit == null ? RECENT_DEFAULT_LIMIT : requestedLimit;
+        if (limit < 1 || limit > RECENT_MAX_LIMIT) {
+            throw new IllegalArgumentException("limit must be between 1 and " + RECENT_MAX_LIMIT + ".");
+        }
+
+        List<RecentDocumentView> views = records.findRecentlyViewedDocuments(
+                tenantId, actorId, clock.instant().minus(RECENT_WINDOW), RECENT_EVENT_SCAN);
+
+        Map<UUID, List<MetadataSnapshot>> metadataBySubmission = new HashMap<>();
+        views.stream()
+                .collect(Collectors.groupingBy(RecentDocumentView::sourceId, LinkedHashMap::new,
+                        Collectors.mapping(RecentDocumentView::submissionId, Collectors.toCollection(LinkedHashSet::new))))
+                .forEach((sourceId, submissionIds) -> metadataBySubmission.putAll(groupMetadata(
+                        records.findMetadataSnapshots(tenantId, sourceId, List.copyOf(submissionIds)))));
+
+        // One entry per record, keeping the newest open (views are already newest first).
+        LinkedHashMap<String, BusinessExperienceView.RecentRecord> byRecord = new LinkedHashMap<>();
+        LinkedHashMap<String, Instant> openedByRecord = new LinkedHashMap<>();
+        LinkedHashMap<String, BusinessRecordRefCodec.RecordIdentity> identities = new LinkedHashMap<>();
+        for (RecentDocumentView view : views) {
+            BusinessRecordRefCodec.RecordIdentity identity = identityFor(
+                    view.sourceId(), view.submissionId(),
+                    metadataBySubmission.getOrDefault(view.submissionId(), List.of()));
+            if (identities.putIfAbsent(identity.canonicalKey(), identity) == null) {
+                openedByRecord.put(identity.canonicalKey(), view.lastOpenedAt());
+            }
+        }
+
+        Map<UUID, Optional<IngestionSource>> sourceCache = new HashMap<>();
+        Map<UUID, List<String>> titleFieldsBySource = new HashMap<>();
+        for (Map.Entry<String, BusinessRecordRefCodec.RecordIdentity> entry : identities.entrySet()) {
+            if (byRecord.size() >= limit) break;
+            BusinessRecordRefCodec.RecordIdentity identity = entry.getValue();
+            Optional<IngestionSource> source = sourceCache.computeIfAbsent(
+                    identity.sourceId(), id -> sources.findById(tenantId, id));
+            if (source.isEmpty()) continue;
+            RecordAggregate aggregate = aggregate(tenantId, source.get(), identity);
+            if (aggregate.submissions().isEmpty() || aggregate.documents().isEmpty()) continue;
+            byRecord.put(entry.getKey(), new BusinessExperienceView.RecentRecord(
+                    identity.sourceId(),
+                    summary(aggregate, titleFieldsBySource.computeIfAbsent(identity.sourceId(),
+                            id -> definitions.findRecordTitleFields(tenantId, id))),
+                    openedByRecord.get(entry.getKey())));
+        }
+
+        audit.append(new AuditEvent(
+                UUID.randomUUID(), tenantId, "USER", actorId,
+                "BUSINESS_RECENT_RECORDS_LISTED", "USER", actorId,
+                clock.instant(), correlationId, AuditOutcome.SUCCESS,
+                "{\"resultCount\":" + byRecord.size() + "}"));
+        return new BusinessExperienceView.RecentRecords(List.copyOf(byRecord.values()));
     }
 
     public BusinessExperienceView.RecordView record(
@@ -241,7 +337,8 @@ public class BusinessExperienceService {
             throw new NoSuchElementException("Business record not found.");
         }
 
-        BusinessExperienceView.RecordView view = recordView(aggregate);
+        BusinessExperienceView.RecordView view = recordView(aggregate,
+                definitions.findRecordTitleFields(tenantId, source.sourceId()));
         audit.append(new AuditEvent(
                 UUID.randomUUID(), tenantId, "USER", actorId,
                 "BUSINESS_RECORD_OPENED", "BUSINESS_RECORD", sha256(recordRef),
@@ -322,33 +419,43 @@ public class BusinessExperienceService {
         return new RecordAggregate(source, identity, submissions, metadata, documents, expected, documentCounts);
     }
 
-    private BusinessExperienceView.RecordSummary summary(RecordAggregate aggregate) {
+    private BusinessExperienceView.RecordSummary summary(RecordAggregate aggregate, List<String> titleFields) {
         List<BusinessExperienceView.FieldValue> latestMetadata = latestMetadata(aggregate);
         List<BusinessExperienceView.FieldValue> identifiers = displayIdentifiers(aggregate, latestMetadata);
         List<BusinessExperienceView.FieldValue> preview = latestMetadata.stream()
                 .filter(value -> !value.businessIdentifier())
                 .limit(4)
                 .toList();
-        boolean incomplete = aggregate.submissions().stream()
-                .anyMatch(submission -> submission.status() != SubmissionStatus.COMPLETE);
+        List<Submission> open = aggregate.submissions().stream()
+                .filter(submission -> submission.status() != SubmissionStatus.COMPLETE)
+                .toList();
+        // Same counts as record detail's incomplete attention, added up over the incomplete submissions.
+        int expected = open.stream().mapToInt(Submission::expectedDocumentCount).sum();
+        int received = open.stream()
+                .mapToInt(submission -> aggregate.documentCounts().getOrDefault(submission.submissionId(), 0))
+                .sum();
 
         return new BusinessExperienceView.RecordSummary(
                 refs.encode(aggregate.identity()),
+                recordTitle(latestMetadata, titleFields),
                 identifiers,
                 preview,
                 aggregate.submissions().size(),
                 aggregate.documents().size(),
                 aggregate.submissions().getFirst().createdAt(),
-                incomplete);
+                !open.isEmpty(),
+                expected,
+                received);
     }
 
-    private BusinessExperienceView.RecordView recordView(RecordAggregate aggregate) {
+    private BusinessExperienceView.RecordView recordView(RecordAggregate aggregate, List<String> titleFields) {
         List<BusinessExperienceView.FieldValue> metadata = latestMetadata(aggregate);
         List<BusinessExperienceView.FieldValue> identifiers = displayIdentifiers(aggregate, metadata);
         List<BusinessExperienceView.DocumentSummary> documents = aggregate.documents().stream()
                 .map(document -> new BusinessExperienceView.DocumentSummary(
                         document.documentId(), document.submissionId(), document.sourceDocumentId(),
-                        document.originalFilename(), document.ingestedAt(), document.availableAt(), document.expiresAt()))
+                        document.originalFilename(), document.ingestedAt(), document.availableAt(), document.expiresAt(),
+                        document.pageCount(), document.redacted()))
                 .toList();
 
         Map<UUID, List<ExpectedDocumentSnapshot>> expectedBySubmission = aggregate.expected().stream()
@@ -376,6 +483,7 @@ public class BusinessExperienceService {
 
         return new BusinessExperienceView.RecordView(
                 refs.encode(aggregate.identity()),
+                recordTitle(metadata, titleFields),
                 aggregate.source().sourceId(),
                 aggregate.source().sourceKey(),
                 aggregate.source().displayName(),
@@ -385,6 +493,34 @@ public class BusinessExperienceService {
                 aggregate.submissions().getFirst().createdAt(),
                 documents,
                 attention);
+    }
+
+    /**
+     * The record's name. With a Record title setting: the chosen fields' values joined by a space, as long as every
+     * chosen field has a value on this record. Otherwise (no setting, or a chosen field missing): the first preview
+     * field, as before. Never an identifier; null when the record has no other field with a value.
+     */
+    public static String recordTitle(List<BusinessExperienceView.FieldValue> latestMetadata, List<String> titleFields) {
+        if (titleFields != null && !titleFields.isEmpty()) {
+            Map<String, BusinessExperienceView.FieldValue> byKey = latestMetadata.stream()
+                    .collect(Collectors.toMap(BusinessExperienceView.FieldValue::fieldKey, Function.identity(), (a, b) -> a));
+            List<String> parts = new ArrayList<>();
+            for (String key : titleFields) {
+                BusinessExperienceView.FieldValue value = byKey.get(key);
+                if (value == null || value.businessIdentifier() || value.value() == null || value.value().isBlank()) {
+                    parts = null;
+                    break;
+                }
+                parts.add(value.value().trim());
+            }
+            if (parts != null) return String.join(" ", parts);
+        }
+        return latestMetadata.stream()
+                .filter(value -> !value.businessIdentifier())
+                .map(BusinessExperienceView.FieldValue::value)
+                .filter(value -> value != null && !value.isBlank())
+                .findFirst()
+                .orElse(null);
     }
 
     private static List<BusinessExperienceView.FieldValue> latestMetadata(RecordAggregate aggregate) {

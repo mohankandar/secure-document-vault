@@ -1,5 +1,6 @@
 package com.sdv.platform.web.foundation;
 
+import com.sdv.platform.application.audit.AuditQueryService;
 import com.sdv.platform.application.document.InvalidPdfException;
 import com.sdv.platform.application.document.PdfTooLargeException;
 import com.sdv.platform.application.download.DocumentDownloadUnavailableException;
@@ -46,6 +47,12 @@ public class FoundationExceptionHandler {
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     Map<String, Object> invalidPdf(InvalidPdfException ex) {
         return error("INVALID_PDF", ex.getMessage());
+    }
+
+    @ExceptionHandler(AuditQueryService.ExportTooLargeException.class)
+    @ResponseStatus(HttpStatus.UNPROCESSABLE_ENTITY)
+    Map<String, Object> exportTooLarge(AuditQueryService.ExportTooLargeException ex) {
+        return error("EXPORT_TOO_LARGE", ex.getMessage());
     }
 
     @ExceptionHandler(IllegalArgumentException.class)

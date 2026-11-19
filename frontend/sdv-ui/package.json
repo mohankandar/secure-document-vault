@@ -10,7 +10,8 @@
     "test:e2e": "playwright test",
     "ui:capture": "playwright test e2e/sdv-screen-tour.spec.ts",
     "ui:capture:headed": "playwright test e2e/sdv-screen-tour.spec.ts --headed",
-    "ui:report": "playwright show-report"
+    "ui:report": "playwright show-report",
+    "ui:compare": "playwright test e2e/ui-compare.spec.ts --project=desktop-chromium"
   },
   "dependencies": {
     "lucide-react": "^1.57.0",
@@ -18,6 +19,7 @@
     "react-dom": "18.3.1"
   },
   "devDependencies": {
+    "@playwright/test": "1.56.1",
     "@types/react": "18.3.18",
     "@types/react-dom": "18.3.5",
     "@vitejs/plugin-react": "4.3.4",

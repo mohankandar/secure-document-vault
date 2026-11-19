@@ -9,9 +9,17 @@ import com.sdv.platform.security.auth.SdvPrincipal;
 import com.sdv.platform.security.auth.SecurityContextFacade;
 import com.sdv.platform.web.retention.RetentionSweepMonitor;
 import org.slf4j.MDC;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
+import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
+import java.util.List;
 
 @RestController
 @RequestMapping("/api/v1/operations")
@@ -64,11 +72,45 @@ public class OperationsController {
             @RequestParam(required = false) Instant from,
             @RequestParam(required = false) Instant to,
             @RequestParam(required = false) Integer limit,
-            @RequestParam(required = false) String cursor) {
+            @RequestParam(required = false) String cursor,
+            @RequestParam(required = false) String recordNumber) {
         SdvPrincipal principal = requireTechnicalView();
         return audit.search(principal.tenantId(), principal.subject(),
                 new AuditQueryService.SearchRequest(action, outcome, actorType, actorId, targetType, targetId,
-                        correlationId, from, to, limit, cursor), correlationId());
+                        correlationId, from, to, limit, cursor, recordNumber), correlationId());
+    }
+
+    /**
+     * Task 0011 Part B.6: the filtered audit as a CSV file, built here so the AUDIT_EXPORTED record matches exactly
+     * what left the system. Same permission and filters as the list, plus the screen's activity group
+     * ({@code actions}) and hidden routine events ({@code excludeActions}).
+     */
+    @GetMapping("/audit-events/export")
+    public ResponseEntity<byte[]> exportAuditEvents(
+            @RequestParam(required = false) String action,
+            @RequestParam(required = false) AuditOutcome outcome,
+            @RequestParam(required = false) String actorType,
+            @RequestParam(required = false) String actorId,
+            @RequestParam(required = false) String targetType,
+            @RequestParam(required = false) String targetId,
+            @RequestParam(required = false) String correlationId,
+            @RequestParam(required = false) Instant from,
+            @RequestParam(required = false) Instant to,
+            @RequestParam(required = false) String recordNumber,
+            @RequestParam(required = false) List<String> actions,
+            @RequestParam(required = false) List<String> excludeActions) {
+        SdvPrincipal principal = requireTechnicalView();
+        AuditQueryService.AuditExport export = audit.export(principal.tenantId(), principal.subject(),
+                new AuditQueryService.ExportRequest(new AuditQueryService.SearchRequest(action, outcome, actorType, actorId,
+                        targetType, targetId, correlationId, from, to, null, null, recordNumber), actions, excludeActions),
+                correlationId());
+        String filename = "vero-audit-" + DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss").withZone(ZoneOffset.UTC).format(Instant.now()) + ".csv";
+        return ResponseEntity.ok()
+                .contentType(new MediaType("text", "csv", StandardCharsets.UTF_8))
+                .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.attachment().filename(filename).build().toString())
+                .header(HttpHeaders.CACHE_CONTROL, "no-store")
+                .header("X-SDV-Export-Rows", Integer.toString(export.rowCount()))
+                .body(export.csv());
     }
 
     private SdvPrincipal requireTechnicalView() {

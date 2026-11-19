@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>Vero UI after</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'IBM Plex Sans',sans-serif;color:#14191c;background:#d9dddc;padding:40px;display:flex;flex-direction:column;gap:60px}
+.mono{font-family:'IBM Plex Mono',monospace}
+.board{display:flex;gap:32px;align-items:flex-start;background:#d9dddc;padding:0}
+.label{width:360px;display:flex;flex-direction:column;gap:14px;padding-top:4px}
+.label h2{font-size:28px;font-weight:600;line-height:1.2}
+.label .tag{align-self:flex-start;font-size:13px;font-weight:600;background:#14191c;color:#fff;border-radius:999px;padding:4px 12px}
+.label p{font-size:15px;line-height:1.5;color:#2c3438}
+.label ul{list-style:none;display:flex;flex-direction:column;gap:10px}
+.label li{font-size:14px;line-height:1.45;background:#fff;border-radius:8px;padding:10px 12px;border-left:4px solid #166a4f}
+.label li b{font-weight:600}
+.screen{width:1440px;height:900px;background:#f3f5f4;border-radius:10px;overflow:hidden;display:flex;flex-direction:column;position:relative;box-shadow:0 2px 12px rgba(0,0,0,.08)}
+/* top bar */
+.top{height:56px;background:#fff;border-bottom:1px solid #dce1e2;display:flex;align-items:center;padding:0 20px;gap:28px;flex:none}
+.brand{font-size:21px;font-weight:700;color:#166a4f;letter-spacing:-.5px;display:flex;align-items:flex-end;gap:3px}
+.brand i{width:7px;height:7px;border-radius:50%;background:#166a4f;margin-bottom:6px;display:block}
+.nav{display:flex;gap:4px}
+.nav a{font-size:15px;color:#4a5459;padding:7px 12px;border-radius:8px;text-decoration:none;display:flex;gap:8px;align-items:center}
+.nav a.on{background:#e2efe9;color:#105a42;font-weight:500}
+.nav .n{font-size:12px;font-weight:600;background:#fdf0d5;color:#8a5300;border-radius:999px;padding:1px 7px}
+.grow{flex:1}
+.cmd{width:340px;height:38px;border:1px solid #dce1e2;border-radius:9px;display:flex;align-items:center;gap:10px;padding:0 12px;color:#737d82;font-size:14px;background:#fff}
+.kbd{margin-left:auto;font-size:11px;border:1px solid #dce1e2;border-radius:4px;padding:1px 5px;color:#737d82}
+.iconbtn{width:36px;height:36px;border-radius:8px;display:flex;align-items:center;justify-content:center;color:#4a5459}
+.acct{display:flex;align-items:center;gap:10px;padding:4px 10px 4px 4px;border:1px solid #dce1e2;border-radius:10px;background:#fff}
+.av{width:30px;height:30px;border-radius:50%;background:#166a4f;color:#fff;font-size:12px;font-weight:600;display:flex;align-items:center;justify-content:center;flex:none}
+.acct .who{display:flex;flex-direction:column;line-height:1.2}
+.acct .who b{font-size:13px;font-weight:600}
+.acct .who span{font-size:12px;color:#737d82}
+svg{flex:none}
+/* common */
+.body{flex:1;display:flex;min-height:0}
+.main{flex:1;padding:28px 32px;display:flex;flex-direction:column;gap:22px;min-width:0}
+h1{font-size:26px;font-weight:600;letter-spacing:-.3px}
+.sub{font-size:15px;color:#4a5459}
+.card{background:#fff;border:1px solid #dce1e2;border-radius:12px}
+.btn{height:38px;border-radius:9px;border:1px solid #c3cacc;background:#fff;font-size:14px;font-weight:500;display:flex;align-items:center;gap:8px;padding:0 14px;color:#14191c;white-space:nowrap}
+.btn.primary{background:#166a4f;border-color:#166a4f;color:#fff}
+.btn.sm{height:32px;font-size:13px;padding:0 11px}
+.btn.quiet{border-color:transparent;background:transparent;color:#4a5459}
+.badge{font-size:12px;font-weight:500;border-radius:999px;padding:2px 9px;white-space:nowrap}
+.warn{background:#fdf0d5;color:#8a5300}
+.ok{background:#e2efe9;color:#105a42}
+.muted{color:#737d82}
+.searchbar{display:flex;align-items:center;gap:12px;height:52px;border:1.5px solid #c3cacc;border-radius:12px;background:#fff;padding:0 8px 0 16px}
+.searchbar .ph{font-size:16px;color:#737d82;flex:1}
+.chip{display:flex;align-items:center;gap:6px;font-size:13px;background:#eceff0;border-radius:999px;padding:4px 6px 4px 11px;white-space:nowrap}
+.chip b{font-weight:500;color:#4a5459}
+/* table */
+.rows{display:flex;flex-direction:column}
+.rh,.r{display:grid;grid-template-columns:170px 1fr 120px 100px 140px;align-items:center;gap:16px;padding:0 18px}
+.rh{height:40px;font-size:12px;font-weight:500;color:#737d82;border-bottom:1px solid #dce1e2;text-transform:uppercase;letter-spacing:.4px}
+.r{height:58px;border-bottom:1px solid #eceff0;font-size:14px}
+.r:last-child{border-bottom:0}
+.r .num{font-family:'IBM Plex Mono',monospace;font-size:14px;font-weight:500}
+.r .nm{font-weight:500;white-space:nowrap;display:flex;gap:10px;align-items:center}
+.r.sel{background:#e2efe9;box-shadow:inset 3px 0 0 #166a4f}
+/* record panel */
+.panel{width:400px;background:#fff;border-left:1px solid #dce1e2;display:flex;flex-direction:column;flex:none}
+.ph{padding:18px 20px;border-bottom:1px solid #dce1e2;display:flex;align-items:flex-start;gap:10px}
+.eyebrow{font-size:11px;font-weight:600;letter-spacing:.6px;color:#737d82;text-transform:uppercase}
+.pb{padding:18px 20px;display:flex;flex-direction:column;gap:18px;overflow:hidden}
+.idbox{border:1px solid #dce1e2;border-radius:9px;padding:10px 14px;display:flex;flex-direction:column;gap:2px}
+.idbox span{font-size:12px;color:#737d82}
+.idbox b{font-family:'IBM Plex Mono',monospace;font-size:16px;font-weight:500;white-space:nowrap}
+.callout{border-radius:9px;padding:12px 14px;font-size:13px;line-height:1.45;display:flex;gap:10px}
+.callout.w{background:#fdf6e8;border:1px solid #f2d9a6;color:#5a3b00}
+.doc{display:flex;align-items:center;gap:12px;border:1px solid #dce1e2;border-radius:9px;padding:9px 12px}
+.sheet{width:28px;height:36px;border:1px solid #c3cacc;border-radius:3px;background:#fff;display:flex;flex-direction:column;gap:3px;padding:6px 5px;flex:none}
+.sheet i{display:block;height:2px;background:#cdd3d5;border-radius:1px}
+.doc .t{display:flex;flex-direction:column;flex:1;gap:1px}
+.doc .t b{font-size:14px;font-weight:500}
+.doc .t span{font-size:12px;color:#737d82}
+.kv{display:grid;grid-template-columns:120px 1fr;gap:10px 12px;font-size:14px}
+.kv dt{color:#737d82}
+h3{font-size:14px;font-weight:600}
+/* viewer */
+.vbar{height:56px;background:#fff;border-bottom:1px solid #dce1e2;display:flex;align-items:center;gap:14px;padding:0 16px;flex:none}
+.vt{display:flex;flex-direction:column;line-height:1.25}
+.vt b{font-size:15px;font-weight:600}
+.vt span{font-size:13px;color:#737d82}
+.sep{width:1px;height:24px;background:#dce1e2}
+.vleft{width:250px;background:#fff;border-right:1px solid #dce1e2;padding:16px;display:flex;flex-direction:column;gap:16px;flex:none}
+.stage{flex:1;background:#e6eaea;display:flex;justify-content:center;padding:24px;position:relative;overflow:hidden}
+.page{width:600px;height:776px;background:#fff;box-shadow:0 2px 10px rgba(0,0,0,.1);padding:48px 52px;display:flex;flex-direction:column;gap:12px;font-size:13px;color:#222;position:relative}
+.page h4{font-size:20px;font-weight:700;margin-bottom:8px;font-family:Georgia,serif}
+.page .ln{height:7px;background:#e3e6e7;border-radius:2px}
+.hl{background:rgba(255,213,47,.55);outline:2px solid #e2b100;border-radius:2px;padding:1px 3px;margin:-1px -3px}
+.redbox{display:inline-block;width:82px;height:13px;background:#14191c;vertical-align:-2px}
+.thumbs{display:flex;gap:10px}
+.thumb{width:62px;display:flex;flex-direction:column;align-items:center;gap:5px;font-size:12px;color:#4a5459}
+.thumb .mini{width:62px;height:80px;background:#fff;border:1px solid #c3cacc;border-radius:3px;padding:8px 7px;display:flex;flex-direction:column;gap:3px}
+.thumb .mini i{display:block;height:2px;background:#cdd3d5}
+.thumb .mini i.h{height:4px;width:60%;background:#8b9496;margin-bottom:3px}
+.thumb.on .mini{border:2px solid #166a4f}
+.vright{width:380px;background:#fff;border-left:1px solid #dce1e2;display:flex;flex-direction:column;flex:none}
+.tabs{display:flex;gap:2px;padding:0 12px;border-bottom:1px solid #dce1e2;height:48px;align-items:flex-end}
+.tabs a{font-size:14px;color:#4a5459;padding:0 10px 12px;text-decoration:none;display:flex;gap:6px;align-items:center;border-bottom:2px solid transparent}
+.tabs a.on{color:#14191c;font-weight:600;border-bottom-color:#166a4f}
+.q{align-self:flex-end;background:#166a4f;color:#fff;border-radius:14px 14px 4px 14px;padding:10px 14px;font-size:14px;max-width:85%}
+.a{background:#f3f5f4;border-radius:14px 14px 14px 4px;padding:12px 14px;font-size:14px;line-height:1.5;display:flex;flex-direction:column;gap:10px}
+.src{display:flex;gap:6px;flex-wrap:wrap}
+.src span{font-size:12px;background:#fff;border:1px solid #dce1e2;border-radius:999px;padding:3px 9px;color:#105a42;font-weight:500}
+.calc{font-size:13px;background:#fff;border:1px solid #dce1e2;border-radius:8px;padding:8px 10px;font-family:'IBM Plex Mono',monospace;line-height:1.6}
+.ask{margin:auto 16px 16px;border:1.5px solid #c3cacc;border-radius:12px;padding:12px 14px;display:flex;align-items:center;gap:10px;font-size:14px;color:#737d82}
+.terms{display:flex;flex-direction:column;border:1px solid #dce1e2;border-radius:10px}
+.term{display:flex;justify-content:space-between;align-items:center;padding:9px 12px;border-bottom:1px solid #eceff0;font-size:14px}
+.term:last-child{border-bottom:0}
+.term .pg{font-size:12px;color:#166a4f;font-weight:500}
+.pop{position:absolute;background:#fff;border:1px solid #dce1e2;border-radius:12px;box-shadow:0 12px 32px rgba(0,0,0,.14);display:flex;flex-direction:column}
+.field{display:flex;flex-direction:column;gap:6px}
+.field .lh{display:flex;justify-content:space-between;font-size:13px;font-weight:500}
+.field .lh span{font-size:12px;font-weight:400;color:#737d82;background:#eceff0;border-radius:4px;padding:0 6px}
+.inp{height:38px;border:1px solid #c3cacc;border-radius:8px;padding:0 12px;display:flex;align-items:center;font-size:14px;color:#737d82}
+.inp.v{color:#14191c}
+.menuitem{display:flex;align-items:center;gap:10px;padding:9px 16px;font-size:14px}
+.radio{width:16px;height:16px;border-radius:50%;border:1.5px solid #c3cacc;flex:none}
+.radio.on{border:5px solid #166a4f}
+.seg{display:flex;border:1px solid #dce1e2;border-radius:8px;overflow:hidden;margin:0 16px}
+.seg span{flex:1;text-align:center;font-size:13px;padding:6px 0;color:#4a5459}
+.seg span.on{background:#e2efe9;color:#105a42;font-weight:500}
+.hr{height:1px;background:#dce1e2}
+.role{display:inline-flex;align-items:center;gap:6px;padding:3px 10px 3px 8px;border:1px dashed #3b6fd4;background:#e8f0ff;border-radius:4px;font-size:12px;color:#1f3f80;font-weight:500;white-space:nowrap}
+.role b{font-size:11px;color:#3b6fd4;font-weight:600;letter-spacing:.04em}
+.tagpos{position:absolute;z-index:5}
+</style></head><body>
+
+<!-- ============ 1. HOME ============ -->
+<div class="board">
+<div class="screen">
+  <span class="role tagpos" style="right:20px;top:60px"><b>SEEN BY</b> Business user · Document steward</span><div class="top">
+    <div class="brand">vero<i></i></div>
+    <div class="nav"><a class="on">Home</a><a>Records</a></div>
+    <div class="grow"></div>
+    <div class="cmd"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#737d82" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>Go to a record or page<span class="kbd">Ctrl K</span></div>
+    
+    <div class="acct"><div class="av">MO</div><div class="who"><b>Maya Okafor</b><span>Acme Lending · Mortgage</span></div><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#737d82" stroke-width="2" stroke-linecap="round"><path d="m6 9 6 6 6-6"/></svg></div>
+  </div>
+  <div class="body"><div class="main" style="padding:40px 120px;gap:28px">
+    <div style="display:flex;flex-direction:column;gap:6px"><h1>Good morning, Maya</h1><div class="sub">Find a contract, a borrower or a document.</div></div>
+    <div class="searchbar"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#4a5459" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><span class="ph">Contract number, borrower name, or anything else</span><div class="btn quiet"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#4a5459" stroke-width="2" stroke-linecap="round"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg>Filters</div><div class="btn primary">Search</div></div>
+    <div style="display:flex;gap:24px;align-items:flex-start">
+      <div class="card" style="flex:1">
+        <div style="padding:16px 18px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #dce1e2"><h3 style="font-size:16px">Recently viewed</h3><span class="muted" style="font-size:13px">Only you see this list</span></div>
+        <div class="rows">
+          <div class="r" style="grid-template-columns:150px 1fr 110px 120px"><span class="num">300000000001</span><span class="nm">Jordan Ellis</span><span class="muted">Mortgage</span><span class="muted" style="text-align:right">12 minutes ago</span></div>
+          <div class="r" style="grid-template-columns:150px 1fr 110px 120px"><span class="num">300000000004</span><span class="nm">Ana Gomez</span><span class="muted">Auto</span><span class="muted" style="text-align:right">Yesterday</span></div>
+          <div class="r" style="grid-template-columns:150px 1fr 110px 120px"><span class="num">300000000007</span><span class="nm">Sam Turner</span><span class="muted">Mortgage</span><span class="muted" style="text-align:right">Mon 16 Nov</span></div>
+          <div class="r" style="grid-template-columns:150px 1fr 110px 120px"><span class="num">300000000002</span><span class="nm">Priya Shah</span><span class="muted">Auto</span><span class="muted" style="text-align:right">Fri 13 Nov</span></div>
+        </div>
+      </div>
+      <div style="width:380px;display:flex;flex-direction:column;gap:16px">
+        <div class="card" style="padding:16px 18px;display:flex;flex-direction:column;gap:12px">
+          <h3 style="font-size:16px">Needs attention</h3>
+          <div class="callout w"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#8a5300" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0zM12 9v4M12 17h0"/></svg><div><b>300000000003 · Marcus Lee</b><br>Only 2 of 4 documents have arrived. The rest are still coming from the loan system.</div></div>
+        </div>
+        <div class="card" style="padding:16px 18px;display:flex;flex-direction:column;gap:8px;border-style:dashed">
+          <div style="display:flex;gap:8px;align-items:center"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#166a4f" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/></svg><h3 style="font-size:16px">Ask Vero</h3><span class="badge ok">Later release</span></div>
+          <div class="sub" style="font-size:14px;line-height:1.5">Ask across your records, for example "contracts with a cancellation deadline this month". The box appears here when the AI layer ships.</div>
+        </div>
+      </div>
+    </div>
+  </div></div>
+</div>
+<div class="label">
+  <span class="tag">1 · Home (new)</span>
+  <h2>Home</h2>
+  <p>A business user lands on a page that helps them start, instead of an empty "Search to begin" form.</p>
+  <ul>
+    <li><b>No left icon strip.</b> Navigation sits in the top bar, the same as LexaVault. A business user sees Home and Records only.</li>
+    <li><b>Account menu</b> on the right: the person's name, organization and entity. No login ID, no "Connected session", no prototype chip (changes 1 and 2).</li>
+    <li><b>One search box</b> for number, name or anything; Filters opens the exact field search.</li>
+    <li><b>Recently viewed</b> and <b>Needs attention</b> (incomplete submissions) use data the server already has.</li>
+    <li><b>Ask Vero</b> card marks where the AI layer will sit later.</li>
+  </ul>
+</div>
+</div>
+
+<!-- ============ 2. RESULTS ============ -->
+<div class="board">
+<div class="screen">
+  <span class="role tagpos" style="right:420px;top:60px"><b>SEEN BY</b> Business user · Document steward</span><div class="top">
+    <div class="brand">vero<i></i></div>
+    <div class="nav"><a>Home</a><a class="on">Records</a></div>
+    <div class="grow"></div>
+    <div class="cmd"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#737d82" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>Go to a record or page<span class="kbd">Ctrl K</span></div>
+    
+    <div class="acct"><div class="av">MO</div><div class="who"><b>Maya Okafor</b><span>Acme Lending · Mortgage</span></div><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#737d82" stroke-width="2" stroke-linecap="round"><path d="m6 9 6 6 6-6"/></svg></div>
+  </div>
+  <div class="body">
+    <div class="main">
+      <div class="searchbar" style="height:48px"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4a5459" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><span class="chip"><b>Updated</b> last 30 days <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#4a5459" stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></span><span class="chip"><b>Source</b> Loan Origination System <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#4a5459" stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></span><span class="ph"></span><div class="btn quiet sm"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#4a5459" stroke-width="2" stroke-linecap="round"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg>Filters · 2</div><div class="btn sm">Clear</div></div>
+      <div style="display:flex;justify-content:space-between;align-items:baseline"><div style="font-size:16px;font-weight:600">6 records <span class="muted" style="font-weight:400;font-size:14px">· Loan Origination System</span></div><span class="muted" style="font-size:13px">Sorted by last updated</span></div>
+      <div class="card">
+        <div class="rh"><span>Contract number</span><span>Borrower</span><span>Loan type</span><span>Documents</span><span>Updated</span></div>
+        <div class="rows">
+          <div class="r"><span class="num">300000000001</span><span class="nm">Jordan Ellis</span><span>Mortgage</span><span>3</span><span class="muted">12 minutes ago</span></div>
+          <div class="r sel"><span class="num">300000000003</span><span class="nm">Marcus Lee <span class="badge warn">2 of 4 received</span></span><span>Mortgage</span><span>2</span><span class="muted">2 hours ago</span></div>
+          <div class="r"><span class="num">300000000005</span><span class="nm">Wei Chen</span><span>Mortgage</span><span>4</span><span class="muted">Yesterday</span></div>
+          <div class="r"><span class="num">300000000006</span><span class="nm">Sam Turner</span><span>Auto</span><span>2</span><span class="muted">Mon 16 Nov</span></div>
+          <div class="r"><span class="num">300000000007</span><span class="nm">Fatima Noor</span><span>Mortgage</span><span>5</span><span class="muted">2 Nov</span></div>
+          <div class="r"><span class="num">300000000008</span><span class="nm">Liam Brooks</span><span>Auto</span><span>3</span><span class="muted">28 Oct</span></div>
+        </div>
+      </div>
+      <div class="muted" style="font-size:13px">Showing 6 of 6 · up to 25 per page</div>
+    </div>
+    <div class="panel">
+      <div class="ph"><div style="flex:1;display:flex;flex-direction:column;gap:2px"><span class="eyebrow">Record</span><span style="font-size:18px;font-weight:600">Marcus Lee</span></div><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#4a5459" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></div>
+      <div class="pb">
+        <div class="idbox"><span>Contract number</span><b>300000000003</b></div>
+        <div class="callout w"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#8a5300" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0zM12 9v4M12 17h0"/></svg><div><b>2 of 4 documents received</b><br>Still expected: Appraisal, Insurance. The ones below are ready to open.</div></div>
+        <div style="display:flex;flex-direction:column;gap:8px"><h3>Documents · 2</h3>
+          <div class="doc"><div class="sheet"><i></i><i></i><i></i><i></i></div><div class="t"><b>loan-agreement.pdf</b><span>12 pages · received 17 Oct</span></div></div>
+          <div class="doc"><div class="sheet"><i></i><i></i><i></i><i></i></div><div class="t"><b>title-deed.pdf</b><span>4 pages · received 17 Oct</span></div></div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:10px"><h3>Details</h3>
+          <dl class="kv"><dt>Borrower</dt><dd>Marcus Lee</dd><dt>Loan type</dt><dd>Mortgage</dd><dt>Closing date</dt><dd>30 Sep 2026</dd></dl></div>
+        <div class="btn primary" style="justify-content:center;height:42px">Open documents <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg></div>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="label">
+  <span class="tag">2 · Records</span>
+  <h2>Search results</h2>
+  <p>The search form moves from a left panel into the bar at the top, so results get the full width.</p>
+  <ul>
+    <li><b>Applied filters show as chips</b> in the search bar; click × to remove one.</li>
+    <li><b>Each row shows the borrower</b>, loan type and documents, and the number only once (change 3).</li>
+    <li><b>Real times</b>: "12 minutes ago", "Yesterday", not "just now" for everything (change 4).</li>
+    <li><b>Incomplete submissions</b> show as "2 of 4 received" right in the row.</li>
+    <li><b>Record panel</b>: the identifier box fills the width and the number stays on one line (change 5). The panel title is the borrower's name.</li>
+  </ul>
+</div>
+</div>
+
+<!-- ============ 3. FILTERS ============ -->
+<div class="board">
+<div class="screen">
+  <span class="role tagpos" style="right:20px;top:60px"><b>SEEN BY</b> Business user · Document steward</span><div class="top">
+    <div class="brand">vero<i></i></div>
+    <div class="nav"><a>Home</a><a class="on">Records</a></div>
+    <div class="grow"></div>
+    <div class="cmd"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#737d82" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>Go to a record or page<span class="kbd">Ctrl K</span></div>
+    
+    <div class="acct"><div class="av">MO</div><div class="who"><b>Maya Okafor</b><span>Acme Lending · Mortgage</span></div><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#737d82" stroke-width="2" stroke-linecap="round"><path d="m6 9 6 6 6-6"/></svg></div>
+  </div>
+  <div class="body" style="position:relative">
+    <div class="main" style="opacity:.45">
+      <div class="searchbar" style="height:48px"><span class="ph">Contract number, borrower name, or anything else</span></div>
+      <div class="card" style="height:420px"></div>
+    </div>
+    <div class="pop" style="left:32px;top:84px;width:560px">
+      <div style="padding:16px 20px;border-bottom:1px solid #dce1e2;display:flex;justify-content:space-between;align-items:center"><h3 style="font-size:16px">Filters</h3><span class="muted" style="font-size:13px">Each field shows how it matches</span></div>
+      <div style="padding:18px 20px;display:flex;flex-direction:column;gap:16px">
+        <div class="field"><div class="lh">Source</div><div class="inp v" style="justify-content:space-between">Loan Origination System <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#4a5459" stroke-width="2" stroke-linecap="round"><path d="m6 9 6 6 6-6"/></svg></div></div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+          <div class="field"><div class="lh">Contract number <span>Exact</span></div><div class="inp">12 digits</div></div>
+          <div class="field"><div class="lh">Borrower name <span>Contains</span></div><div class="inp v">lee</div></div>
+          <div class="field"><div class="lh">Loan type <span>Exact</span></div><div class="inp">Any</div></div>
+          <div class="field"><div class="lh">Closing date <span>Exact</span></div><div class="inp">mm/dd/yyyy</div></div>
+        </div>
+        <div class="field"><div class="lh">Last updated</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+            <div class="field"><span style="font-size:12px;color:#737d82">From</span><div class="inp">mm/dd/yyyy</div></div>
+            <div class="field"><span style="font-size:12px;color:#737d82">To</span><div class="inp">mm/dd/yyyy</div></div>
+          </div></div>
+      </div>
+      <div style="padding:14px 20px;border-top:1px solid #dce1e2;display:flex;align-items:center;gap:10px"><span class="muted" style="font-size:13px;flex:1">Up to 25 records per page. You only see records your role allows.</span><div class="btn">Clear</div><div class="btn primary">Show results</div></div>
+    </div>
+  </div>
+</div>
+<div class="label">
+  <span class="tag">3 · Records</span>
+  <h2>Filters</h2>
+  <p>The exact field-by-field search, opened from the Filters button. Lending staff still get exact contract-number matching.</p>
+  <ul>
+    <li><b>Match type</b> (Exact, Contains) stays next to each field, as today.</li>
+    <li><b>Last updated</b> has clear From and To labels (change 8).</li>
+    <li><b>The hint matches reality</b>: 25 per page (change 8).</li>
+    <li>Fields come from Metadata configuration, so each customer sees their own fields.</li>
+  </ul>
+</div>
+</div>
+
+<!-- ============ 4. VIEWER ============ -->
+<div class="board">
+<div class="screen">
+  <span class="role tagpos" style="left:268px;top:122px"><b>SEEN BY</b> Download, Print, Redact: Document steward; Business user only if the Business admin allows it</span><span class="role tagpos" style="right:16px;bottom:78px"><b>SEEN BY</b> Ask and Key terms (later): everyone who can open the document</span><div class="top">
+    <div class="brand">vero<i></i></div>
+    <div class="nav"><a>Home</a><a class="on">Records</a></div>
+    <div class="grow"></div>
+    <div class="cmd"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#737d82" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>Go to a record or page<span class="kbd">Ctrl K</span></div>
+    
+    <div class="acct"><div class="av" style="background:#4a5459">DR</div><div class="who"><b>Daniel Reyes</b><span>Acme Lending · Mortgage</span></div><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#737d82" stroke-width="2" stroke-linecap="round"><path d="m6 9 6 6 6-6"/></svg></div>
+  </div>
+  <div class="vbar">
+    <div class="btn quiet sm"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#4a5459" stroke-width="2" stroke-linecap="round"><path d="M19 12H5M11 6l-6 6 6 6"/></svg>Results</div>
+    <div class="sep"></div>
+    <div class="vt"><b>Loan agreement · Jordan Ellis</b><span class="mono" style="font-size:12px">300000000001 · loan-agreement.pdf · 1 of 3 documents</span></div>
+    <div class="grow"></div>
+    <div class="btn sm"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#4a5459" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>Find</div>
+    <div class="btn sm"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#4a5459" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg>Download</div>
+    <div class="btn sm"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#4a5459" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9V3h12v6M6 18H4v-7h16v7h-2M8 14h8v7H8z"/></svg>Print</div>
+    <div class="btn sm" style="color:#a3261e;border-color:#e8b7b2"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#a3261e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m7 21-4-4L15 5l4 4L7 21zM14 21h7"/></svg>Redact</div>
+  </div>
+  <div class="body">
+    <div class="vleft">
+      <div style="display:flex;justify-content:space-between;align-items:center"><span class="eyebrow">Record 1 of 6</span><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#737d82" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16M15 10l-2 2 2 2"/></svg></div>
+      <div class="idbox"><span>Contract number</span><b>300000000001</b></div>
+      <div style="display:flex;flex-direction:column;gap:8px"><span class="eyebrow">Documents · 3</span>
+        <div class="doc" style="border-color:#166a4f;background:#e2efe9;padding:7px 10px"><div class="t"><b style="font-size:13px">Loan agreement</b><span>2 pages</span></div></div>
+        <div class="doc" style="padding:7px 10px"><div class="t"><b style="font-size:13px">Title deed</b><span>4 pages</span></div></div>
+        <div class="doc" style="padding:7px 10px"><div class="t"><b style="font-size:13px">Borrower ID</b><span>1 page · redacted</span></div></div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:8px"><span class="eyebrow">Pages</span>
+        <div class="thumbs"><div class="thumb on"><div class="mini"><i class="h"></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>1</div><div class="thumb"><div class="mini"><i class="h"></i><i></i><i></i><i></i><i></i><i></i></div>2</div></div>
+      </div>
+    </div>
+    <div class="stage">
+      <div class="page">
+        <h4>LOAN AGREEMENT</h4>
+        <div>Contract number: 300000000001</div>
+        <div>Borrower: Jordan A. Ellis</div>
+        <div>SSN: <span class="redbox"></span> 4417</div>
+        <div class="ln" style="width:92%"></div><div class="ln" style="width:85%"></div>
+        <div style="font-weight:600;margin-top:6px">2. Purchase price</div>
+        <div>The purchase price is <span class="hl">$412,500.00</span>, payable at closing on 13 February 2026.</div>
+        <div class="ln" style="width:88%"></div><div class="ln" style="width:70%"></div>
+        <div style="font-weight:600;margin-top:6px">4. Cancellation</div>
+        <div>The borrower may cancel this agreement <span class="hl">within 30 days of the purchase date</span> by written notice.</div>
+        <div class="ln" style="width:90%"></div><div class="ln" style="width:80%"></div><div class="ln" style="width:86%"></div><div class="ln" style="width:60%"></div>
+      </div>
+      <div style="position:absolute;bottom:18px;left:50%;transform:translateX(-50%);background:#fff;border:1px solid #dce1e2;border-radius:10px;display:flex;align-items:center;gap:8px;padding:6px 10px;font-size:13px;box-shadow:0 2px 8px rgba(0,0,0,.08)">Page 1 of 2<span class="sep" style="height:18px"></span>− 84% +<span class="sep" style="height:18px"></span>Fit width</div>
+    </div>
+    <div class="vright">
+      <div class="tabs"><a class="on"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#166a4f" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/></svg>Ask</a><a>Details</a><a>Comments 1</a><a>Tags</a><a>Activity</a></div>
+      <div style="padding:16px;display:flex;flex-direction:column;gap:14px">
+        <div class="terms">
+          <div class="term" style="background:#f3f5f4"><span class="eyebrow">Key terms</span><span class="badge ok">Later release</span></div>
+          <div class="term"><span><span class="muted">Purchase price</span><br><b>$412,500.00</b></span><span class="pg">Page 1</span></div>
+          <div class="term"><span><span class="muted">Purchase date</span><br><b>13 Feb 2026</b></span><span class="pg">Page 1</span></div>
+          <div class="term"><span><span class="muted">Cancellation period</span><br><b>30 days</b></span><span class="pg">Page 1</span></div>
+        </div>
+        <div class="q">What is the last day to cancel?</div>
+        <div class="a"><div><b>15 March 2026.</b> The agreement allows cancellation within 30 days of the purchase date.</div>
+          <div class="calc">13 Feb 2026 (purchase date)<br>+ 30 days (cancellation period)<br>= 15 Mar 2026</div>
+          <div class="src"><span>Page 1 · Section 2</span><span>Page 1 · Section 4</span></div></div>
+      </div>
+      <div class="ask"><span style="flex:1">Ask about this document</span><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#166a4f" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13M22 2l-7 20-4-9-9-4z"/></svg></div>
+    </div>
+  </div>
+</div>
+<div class="label">
+  <span class="tag">4 · Viewer</span>
+  <h2>Document viewer</h2>
+  <p>Same three columns as today, with clearer actions and room for the AI layer.</p>
+  <ul>
+    <li><b>Actions have words</b>: Find, Download, Print, Redact. Actions the role may not use are hidden, not greyed out (change 6). Redact is shown in red because it is permanent.</li>
+    <li><b>Left column folds away</b> with the button at its top. Page previews look like the pages (change 7).</li>
+    <li><b>Title is the document and the borrower</b>, not just a file name.</li>
+    <li><b>Ask tab (later release)</b>: every answer shows its working and its source; clicking a source jumps to the highlighted text on the page.</li>
+    <li><b>Key terms (later release)</b>: pulled from the document, each linked to its page.</li>
+    <li>The AI only reads the redacted version, so it can never reveal what is under a black box.</li>
+  </ul>
+</div>
+</div>
+
+<!-- ============ 5. ACCOUNT MENU ============ -->
+<div class="board">
+<div class="screen" style="width:1440px;height:560px">
+  <span class="role tagpos" style="left:20px;top:60px"><b>SEEN BY</b> Everyone. Entity list: people with two or more entities. Test role switch: development only</span><div class="top">
+    <div class="brand">vero<i></i></div>
+    <div class="nav"><a class="on">Home</a><a>Records</a></div>
+    <div class="grow"></div>
+    <div class="cmd"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#737d82" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>Go to a record or page<span class="kbd">Ctrl K</span></div>
+    
+    <div class="acct" style="border-color:#166a4f"><div class="av">MO</div><div class="who"><b>Maya Okafor</b><span>Acme Lending · Mortgage</span></div><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#737d82" stroke-width="2" stroke-linecap="round"><path d="m18 15-6-6-6 6"/></svg></div>
+  </div>
+  <div class="body" style="position:relative">
+    <div class="main" style="opacity:.4;padding:40px 120px"><h1>Good morning, Maya</h1></div>
+    <div class="pop" style="right:20px;top:8px;width:320px;padding:8px 0">
+      <div style="padding:10px 16px;display:flex;gap:12px;align-items:center"><div class="av" style="width:38px;height:38px;font-size:14px">MO</div><div style="display:flex;flex-direction:column"><b style="font-size:15px;font-weight:600">Maya Okafor</b><span class="muted" style="font-size:13px">maya.okafor@acmelending.com</span><span class="muted" style="font-size:13px">Business user</span></div></div>
+      <div class="hr" style="margin:6px 0"></div>
+      <div style="padding:6px 16px 4px" class="eyebrow">Acme Lending · Entity</div>
+      <div class="menuitem"><span class="radio on"></span>Mortgage</div>
+      <div class="menuitem"><span class="radio"></span>Auto Finance</div>
+      <div style="padding:0 16px 6px;font-size:12px;color:#737d82">Switching shows only that entity's records.</div>
+      <div class="hr" style="margin:6px 0"></div>
+      <div style="padding:6px 16px 8px" class="eyebrow">Theme</div>
+      <div class="seg"><span class="on">Light</span><span>Dark</span><span>System</span></div>
+      <div class="hr" style="margin:12px 0 6px"></div>
+      <div class="menuitem"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#4a5459" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg>Sign out</div>
+    </div>
+  </div>
+</div>
+<div class="label">
+  <span class="tag">5 · Top bar</span>
+  <h2>Account menu</h2>
+  <p>One menu for the person, the same pattern as LexaVault change 1.</p>
+  <ul>
+    <li><b>Name, email and role</b>, never the technical login ID.</li>
+    <li><b>Entity switch</b> for people with two or more entities; one entity shows as plain text.</li>
+    <li><b>Theme</b> and <b>Sign out</b> live here, so the top bar stays clean.</li>
+    <li>Admins see their own areas as top-bar tabs (for example Business administration), with their sections as tabs underneath, as today.</li>
+  </ul>
+</div>
+</div>
+
+</body></html>

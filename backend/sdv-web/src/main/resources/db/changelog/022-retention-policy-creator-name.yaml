@@ -1,0 +1,8 @@
+databaseChangeLog:
+  - changeSet:
+      id: 022-retention-policy-creator-name
+      author: sdv
+      changes:
+        - sqlFile:
+            path: db/changelog/022-retention-policy-creator-name.sql
+            relativeToChangelogFile: false

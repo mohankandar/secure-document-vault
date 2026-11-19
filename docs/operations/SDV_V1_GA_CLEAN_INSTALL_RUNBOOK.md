@@ -164,3 +164,103 @@ Once the clean-machine acceptance passes:
 - retain the evidence JSON with release evidence;
 - use that exact archive/hash for pilot deployment;
 - do not rebuild a different archive without repeating checksum + clean-install validation.
+
+## Update the database
+
+From task 0013 on, **starting Vero never changes the database**. The customer's database team applies Vero's
+database changes themselves with the **schema step**, using their own database owner account. Vero's team never
+needs that password. Only local mode on a developer computer (`start-local.cmd`) still updates the database at
+start-up.
+
+When the database doesn't match the Vero version, Vero starts but serves only its health and system information.
+The startup log and Platform operations › Health say one of:
+
+- "The database is older than this Vero version. Ask your database team to run the schema step (install guide, "Update the database")."
+- "The database is newer than this Vero version. …" (an older Vero was started against a database that a newer one updated).
+
+In that state Vero is up but **not ready**. Point load balancers and orchestrators at these addresses (no sign-in needed):
+
+| Address | Database matches | Database doesn't match |
+|---|---|---|
+| `/actuator/health/readiness` | 200 `UP` | 503 `OUT_OF_SERVICE`: send no traffic |
+| `/actuator/health/liveness` | 200 `UP` | 200 `UP`: don't restart it; it keeps showing why |
+| `/actuator/health` | 200 `UP` | 503 `OUT_OF_SERVICE` |
+
+Vero checks the database once, when it starts. After the schema step, start Vero again.
+
+Vero sends no usage data anywhere. Liquibase's anonymous usage analytics are switched off in every mode (the
+running app, local mode and the schema step).
+
+### Two database users
+
+| User | Used by | Rights |
+|---|---|---|
+| Owner, for example `vero_owner` | The schema step only | Owns the database (or at least schema `public`): creates and changes tables and indexes |
+| App, for example `vero_app` | The running Vero (`SDV_DB_USERNAME`, `SDV_DB_PASSWORD`) | Connect, and `SELECT`, `INSERT`, `UPDATE`, `DELETE` on the tables. No create, no alter |
+
+Once, when the database is created (as a PostgreSQL superuser or the owner):
+
+```sql
+create role vero_owner login password '...';
+create role vero_app login password '...';
+create database vero owner vero_owner;
+revoke all on database vero from public;
+grant connect on database vero to vero_app;
+\c vero
+revoke create on schema public from public;
+grant usage on schema public to vero_app;
+-- Tables the owner creates later (first install and every upgrade) are readable and writable by the app user:
+alter default privileges for role vero_owner in schema public
+  grant select, insert, update, delete on tables to vero_app;
+```
+
+Vero has no sequences, functions or triggers of its own, so these table rights are all the app user needs.
+`Test-SDV-CleanInstall.ps1` checks that Vero runs with such a user.
+
+### The schema step
+
+It is in the Vero application package: `Update-SDV-Schema.ps1` (Windows) or `update-sdv-schema.sh` (Linux), next
+to the application jar (`sdv-web-<version>.jar`; use `-Jar` / `--jar` if it is elsewhere). It needs Java 21 and
+runs the Liquibase bundled in the jar. It always uses the `production` context, so local test data can never be
+added, and it can't be changed.
+
+The connection comes from parameters or environment variables:
+
+| | Windows | Linux | Environment variable |
+|---|---|---|---|
+| Address | `-Url jdbc:postgresql://db01:5432/vero` | `--url …` | `SDV_SCHEMA_DB_URL` |
+| Owner user | `-Username vero_owner` | `--username …` | `SDV_SCHEMA_DB_USERNAME` |
+| Password | typed when asked | typed when asked | `SDV_SCHEMA_DB_PASSWORD` |
+
+The password is never a parameter, and Vero never stores any of these.
+
+| Step | What it does |
+|---|---|
+| `status` | Lists the changesets that would run. Changes nothing. |
+| `sql` | Writes the SQL that `update` would run to a file (`-Output` / `--output`), for teams that review and run SQL themselves. Changes nothing. It won't overwrite an existing file. |
+| `update` | Applies the changesets, then checks that the database matches. |
+
+Exit codes: 0 done, 2 wrong use (nothing was tried), 3 the database is newer than this version, 1 anything else.
+
+### First install and every upgrade
+
+1. **Stop Vero** (upgrades only).
+2. **Status:** `.\Update-SDV-Schema.ps1 status -Url jdbc:postgresql://db01:5432/vero -Username vero_owner`
+   (Linux: `./update-sdv-schema.sh status --url … --username vero_owner`). A first install lists every changeset.
+3. **Review** (if your team reviews SQL first): `.\Update-SDV-Schema.ps1 sql -Output .\vero-<version>.sql`.
+   Read it, then either run it yourselves as the owner, or go on to step 4. If you run it yourselves:
+   - don't wrap the whole file in one transaction (for example, no `psql -1`): changeset 018 builds indexes with
+     `CREATE INDEX CONCURRENTLY`, which can't run inside a transaction;
+   - the file also records each changeset in `databasechangelog`; that table is how Vero checks the version.
+4. **Update:** `.\Update-SDV-Schema.ps1 update`. It ends with "Done: N changesets applied. You can start Vero now."
+5. **Start Vero** with the app user. The log says "Database schema check: the database matches this Vero version".
+   Health shows no database notice.
+
+Running `status` or `update` again is safe: when nothing is left it says "Up to date".
+
+### Checking it on a test computer
+
+`Test-SDV-CleanInstall.ps1` repeats the whole path against a scratch database `sdv_install_test` inside the local
+`sdv-postgres` server (it never touches the `sdv` database and drops everything it creates): an empty database is
+refused with the "older" message, `status`, `sql` and `update` run, Vero then starts as the read/write user with an
+empty `tenants` table, and a further start applies nothing.

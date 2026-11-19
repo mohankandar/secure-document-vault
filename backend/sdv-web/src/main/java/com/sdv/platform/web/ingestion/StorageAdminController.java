@@ -43,6 +43,16 @@ public class StorageAdminController {
         return storage.create(principal.tenantId(), request.toCommand(), principal.subject(), correlationId());
     }
 
+    /** Checks a folder before a volume is added: writable, and how much space is free. Same permission as adding. */
+    @PostMapping("/check")
+    public Object checkFolder(@RequestBody FolderCheckRequest request) {
+        SdvPrincipal principal = requireAdmin();
+        if (request == null) throw new IllegalArgumentException("rootPath is required.");
+        return storage.checkFolder(principal.tenantId(), request.rootPath(), principal.subject(), correlationId());
+    }
+
+    public record FolderCheckRequest(String rootPath) { }
+
     @GetMapping("/{volumeId}")
     public Object get(@PathVariable UUID volumeId) {
         SdvPrincipal principal = requireAdmin();

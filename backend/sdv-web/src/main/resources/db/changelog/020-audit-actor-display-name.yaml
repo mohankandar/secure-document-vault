@@ -1,0 +1,8 @@
+databaseChangeLog:
+  - changeSet:
+      id: 020-audit-actor-display-name
+      author: sdv
+      changes:
+        - sqlFile:
+            path: db/changelog/020-audit-actor-display-name.sql
+            relativeToChangelogFile: false

@@ -22,7 +22,8 @@ public interface OperationalRepository {
             UUID sourceId,
             String errorCode,
             int processingAttemptCount,
-            Instant ingestedAt) { }
+            Instant ingestedAt,
+            String originalFilename) { }
 
     record StuckDocument(
             UUID documentId,
@@ -30,7 +31,8 @@ public interface OperationalRepository {
             UUID sourceId,
             String status,
             Instant stateSince,
-            String processingErrorCode) { }
+            String processingErrorCode,
+            String originalFilename) { }
 
     record AttentionSubmission(
             UUID submissionId,

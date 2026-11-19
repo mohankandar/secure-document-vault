@@ -393,7 +393,7 @@ public class SubmissionService {
         @Override public void markExpectedDocumentReceived(UUID tenantId, UUID submissionId, String sourceDocumentId, UUID documentId, Instant receivedAt) { }
         @Override public void updateSubmissionAfterReceipt(UUID tenantId, UUID sourceId, UUID submissionId, int expectedDocumentCount, Instant activityAt) { }
         @Override public boolean transitionDocumentToProcessing(UUID tenantId, UUID sourceId, UUID submissionId, UUID documentId, Instant processingAt) { return false; }
-        @Override public void markDocumentAvailable(UUID tenantId, UUID sourceId, UUID submissionId, UUID documentId, Instant availableAt) { }
+        @Override public void markDocumentAvailable(UUID tenantId, UUID sourceId, UUID submissionId, UUID documentId, Instant availableAt, Integer pageCount) { }
         @Override public void markDocumentProcessingFailed(UUID tenantId, UUID sourceId, UUID submissionId, UUID documentId, String errorCode) { }
         @Override public void markSubmissionIncompleteIfDue(UUID tenantId, UUID sourceId, UUID submissionId, Instant cutoff) { }
     }

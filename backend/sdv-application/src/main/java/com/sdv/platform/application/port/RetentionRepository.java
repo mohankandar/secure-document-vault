@@ -34,6 +34,7 @@ public interface RetentionRepository {
             Instant effectiveFrom,
             Instant effectiveUntil,
             String createdBy,
+            String createdByDisplayName,
             Instant createdAt) { }
 
     record DueDocument(UUID tenantId, UUID documentId) { }

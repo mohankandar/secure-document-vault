@@ -1,14 +1,14 @@
 import { expect, test } from '@playwright/test'
 
 /**
- * Opt-in, non-destructive comment persistence diagnostic.
+ * Opt-in, non-destructive comment persistence diagnostic for the R7 UI.
  * Run only with SDV_COMMENT_REGRESSION=1; this creates one clearly tagged
  * test comment on an existing disposable local demo document.
  */
 test('a document comment persists after leaving and reopening Viewer', async ({ page }) => {
   test.skip(process.env.SDV_COMMENT_REGRESSION !== '1', 'Opt-in test: creates a persistent diagnostic comment')
-  const contract = process.env.SDV_DEMO_CONTRACT ?? '300000000076'
-  const marker = `R5-comment-persistence-${Date.now()}`
+  const contract = process.env.SDV_DEMO_CONTRACT ?? '100000000001' // created by Seed-SDV-Demo-Records.ps1
+  const marker = `R7-comment-persistence-${Date.now()}`
   const responses: Array<{ status: number; url: string; body?: string }> = []
 
   page.on('response', async (response) => {
@@ -18,33 +18,44 @@ test('a document comment persists after leaving and reopening Viewer', async ({ 
   })
 
   try {
-  await page.goto('/')
-  const role = page.getByLabel('Demo role')
-  await expect(role).toBeVisible()
-  await role.selectOption({ label: 'Document Steward' })
-  await expect(page.locator('.sidebar-identity strong')).toHaveText('local-document-steward', { timeout: 15000 })
-  await expect(page.getByLabel('Search source')).toBeVisible({ timeout: 15000 })
-  await expect(page.getByLabel(/Contract Number/i).first()).toBeVisible({ timeout: 15000 })
+    await page.goto('/')
+    // Switch to the Document Steward test role from the account menu (development builds, LOCAL mode only).
+    const account = page.getByRole('banner').getByRole('button', { name: /^Account: / })
+    const steward = 'Account: Local document steward, Document steward'
+    await expect(account).toBeVisible({ timeout: 15000 })
+    if ((await account.getAttribute('aria-label')) !== steward) {
+      await account.click()
+      const roleSelect = page.getByRole('dialog', { name: 'Account menu' }).getByLabel('Local test role')
+      await Promise.all([page.waitForEvent('load'), roleSelect.selectOption({ label: 'Document Steward' })])
+    }
+    await expect(account).toHaveAttribute('aria-label', steward, { timeout: 15000 })
 
-  await page.getByLabel(/Contract Number/i).first().fill(contract)
-  await page.getByRole('button', { name: 'Search records', exact: true }).click()
-  const row = page.locator('.business-result-table tbody tr').filter({ hasText: contract }).first()
-  await expect(row).toBeVisible({ timeout: 15000 })
-  await row.getByRole('button', { name: /View PDF for record/i }).click()
-  await expect(page.locator('.viewer-page-stage img').first()).toBeVisible({ timeout: 15000 })
+    // The search box routes a number to the source's contract number field.
+    const box = page.getByRole('searchbox', { name: 'Search records' })
+    await expect(box).toBeVisible({ timeout: 15000 })
+    await box.fill(contract)
+    await box.press('Enter')
+    const row = page.getByRole('grid', { name: 'Records' }).locator('tbody tr').filter({ hasText: contract }).first()
+    await expect(row).toBeVisible({ timeout: 15000 })
 
-  await page.getByRole('button', { name: /^Comments/ }).click()
-  await expect(page.getByLabel('Document information')).toBeVisible()
-  await page.getByLabel('New comment').fill(marker)
-  await page.getByRole('button', { name: 'Add comment', exact: true }).click()
-  await expect(page.getByText(marker)).toBeVisible({ timeout: 15000 })
+    // Wide screens show the record in a side panel; narrower ones in a drawer.
+    const inspector = page.getByRole('complementary', { name: 'Record inspector' }).or(page.getByRole('dialog').filter({ hasText: contract }))
+    const openViewer = async () => {
+      if (!(await inspector.isVisible().catch(() => false))) await row.click()
+      await inspector.getByRole('button', { name: /Open documents/ }).click()
+      await expect(page.getByRole('img', { name: /Document page 1/ })).toBeVisible({ timeout: 15000 })
+      await page.getByRole('tablist', { name: 'Document information' }).getByRole('tab', { name: /^Comments/ }).click()
+    }
 
-  await page.getByLabel('Business document workflow').getByRole('button', { name: 'Results', exact: false }).click()
-  await expect(page.getByLabel('Selected record inspector')).toHaveCount(0)
-  await row.getByRole('button', { name: /View PDF for record/i }).click()
-  await expect(page.locator('.viewer-page-stage img').first()).toBeVisible({ timeout: 15000 })
-  await page.getByRole('button', { name: /^Comments/ }).click()
-  await expect(page.getByText(marker)).toBeVisible({ timeout: 15000 })
+    await openViewer()
+    await page.getByLabel('New comment').fill(marker)
+    await page.getByRole('button', { name: 'Add comment', exact: true }).click()
+    await expect(page.getByText(marker)).toBeVisible({ timeout: 15000 })
+
+    await page.getByRole('button', { name: 'Back to results' }).click()
+    await expect(row).toBeVisible()
+    await openViewer()
+    await expect(page.getByText(marker)).toBeVisible({ timeout: 15000 })
   } finally {
     await test.info().attach('comments-network.json', {
       body: JSON.stringify({ contract, marker, responses }, null, 2),

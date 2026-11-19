@@ -9,7 +9,13 @@ spring:
       maximum-pool-size: ${SDV_DB_POOL_MAX:10}
       minimum-idle: ${SDV_DB_POOL_MIN:1}
   liquibase:
+    # Starting Vero changes nothing in the database: outside the local profile Liquibase does not run at startup.
+    # The customer's database team applies changesets with the schema step (Update-SDV-Schema.ps1 /
+    # update-sdv-schema.sh, always context "production"), and DatabaseSchemaCheck refuses to serve until the
+    # database matches. Only the local profile migrates at startup (application-local.yml, context "local").
+    enabled: false
     change-log: classpath:db/changelog/db.changelog-master.yaml
+    contexts: production
 
 server:
   port: ${SDV_SERVER_PORT:8280}
@@ -23,6 +29,13 @@ management:
   endpoint:
     health:
       show-details: never
+      # /actuator/health/liveness: the process is alive. /actuator/health/readiness: Vero can take work. While the
+      # database doesn't match this version Vero stays up (liveness UP) but is not ready (readiness OUT_OF_SERVICE).
+      probes:
+        enabled: true
+      group:
+        readiness:
+          include: readinessState,databaseSchema
   health:
     defaults:
       enabled: true

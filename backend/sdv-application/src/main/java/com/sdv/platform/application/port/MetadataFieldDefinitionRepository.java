@@ -15,4 +15,7 @@ public interface MetadataFieldDefinitionRepository {
     void insert(MetadataFieldDefinition definition);
     default List<String> findDisplayOrder(UUID tenantId, UUID sourceId) { return List.of(); }
     default void replaceDisplayOrder(UUID tenantId, UUID sourceId, List<String> fieldKeys) { throw new UnsupportedOperationException("Field order persistence unavailable"); }
+    /** The one or two fields that name a record, in title order; empty means the default title. */
+    default List<String> findRecordTitleFields(UUID tenantId, UUID sourceId) { return List.of(); }
+    default void replaceRecordTitleFields(UUID tenantId, UUID sourceId, List<String> fieldKeys) { throw new UnsupportedOperationException("Record title persistence unavailable"); }
 }

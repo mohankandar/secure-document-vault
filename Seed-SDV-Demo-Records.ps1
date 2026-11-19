@@ -6,7 +6,9 @@ param(
     [switch]$FreshTestData,
     [ValidatePattern('^[0-9]{12}$')][string]$ContractNumber = '300000000076',
     [ValidatePattern('^([0-9]{11})?$')][string]$MemberNumber = '',
-    [ValidateRange(1,100)][int]$Count = 1
+    [ValidateRange(1,100)][int]$Count = 1,
+    # Task 0011: one record whose document could not be stored and one whose document is stuck (local only).
+    [switch]$ProblemDemo
 )
 
 $ErrorActionPreference = 'Stop'
@@ -63,6 +65,54 @@ $SourceId=DbScalar "select source_id from ingestion_sources where tenant_id='$Te
 if ([string]::IsNullOrWhiteSpace($SourceId)) { throw "Ingestion source '$SourceDisplayName' / sourceKey 'lexaVault' was not found." }
 $ResolvedName=DbScalar "select display_name from ingestion_sources where tenant_id='$Tenant' and source_id='$SourceId';"
 Ok "Using source: $ResolvedName ($SourceId)"
+
+if ($ProblemDemo) {
+    # Two records sent through the API like any other, then one document set to each problem state directly in
+    # the local development database. Never run this against anything but the local stack.
+    if ($Base -notmatch '^http://(localhost|127\.0\.0\.1)[:/]') { throw '-ProblemDemo only runs against the local stack.' }
+    EnsureField $SourceId 'contractNumber' 'Contract Number' $true $true 'DIGITS_ONLY' 'EXACT'
+    EnsureField $SourceId 'memberNumber' 'Member Number' $true $true 'DIGITS_ONLY' 'EXACT'
+    EnsureField $SourceId 'serviceEntity' 'Service Entity' $true $true 'TRIM' 'EXACT'
+    $problems = @(
+        @{ contract='300000000094'; member='20000000094'; firstName='Olivia'; lastName='Brown'; file='appraisal.pdf'; kind='could-not-store' },
+        @{ contract='300000000095'; member='20000000095'; firstName='Arjun'; lastName='Singh'; file='title-deed.pdf'; kind='stuck' },
+        @{ contract='300000000096'; member='20000000096'; firstName='Sofia'; lastName='Garcia'; file='loan-agreement.pdf'; kind='missing' }
+    )
+    foreach ($p in $problems) {
+        $sourceSubmissionId = "problem-demo-$($p.contract)"
+        $submissionId = DbScalar "select submission_id from submissions where tenant_id='$Tenant' and source_id='$SourceId' and source_submission_id='$sourceSubmissionId' limit 1;"
+        $sourceDocumentId = "problem-demo-doc-$($p.contract)"
+        if ([string]::IsNullOrWhiteSpace($submissionId)) {
+            $submission = InvokeJson 'POST' "$Base/api/v1/ingestion/submissions" (SourceHeaders $SourceId 'local-demo-producer') @{
+                sourceSubmissionId=$sourceSubmissionId; expectedDocumentCount=$(if ($p.kind -eq 'missing') { 2 } else { 1 }); expectedDocuments=$(if ($p.kind -eq 'missing') { @(@{ sourceDocumentId=$sourceDocumentId }, @{ sourceDocumentId="$sourceDocumentId-2" }) } else { @(@{ sourceDocumentId=$sourceDocumentId }) })
+                metadata=@{ contractNumber=$p.contract; memberNumber=$p.member; serviceEntity='001'; firstName=$p.firstName; lastName=$p.lastName }
+            }
+            $submissionId = [string]$submission.submissionId
+            Ok "Created problem record $($p.contract)"
+        }
+        $documentId = DbScalar "select document_id from documents where tenant_id='$Tenant' and submission_id='$submissionId' and source_document_id='$sourceDocumentId' limit 1;"
+        if ([string]::IsNullOrWhiteSpace($documentId)) {
+            $headers = SourceHeaders $SourceId 'local-demo-producer'
+            $headers['X-SDV-Source-Document-Id'] = $sourceDocumentId
+            $headers['X-SDV-Filename'] = $p.file
+            $null = Invoke-WebRequest -Uri "$Base/api/v1/ingestion/submissions/$submissionId/documents" -Method Post -Headers $headers -ContentType 'application/pdf' -InFile $PdfPath -UseBasicParsing -TimeoutSec 30
+            $documentId = DbScalar "select document_id from documents where tenant_id='$Tenant' and submission_id='$submissionId' and source_document_id='$sourceDocumentId' limit 1;"
+        }
+        if ($p.kind -eq 'missing') {
+            # 1 of 2 received, last activity a week ago: past any attention time, so it is listed under Missing documents.
+            $null = DbScalar "update submissions set last_activity_at=now() - interval '7 days' where tenant_id='$Tenant' and submission_id='$submissionId';"
+            Ok "$($p.contract): 1 of 2 documents received a week ago"
+        } elseif ($p.kind -eq 'could-not-store') {
+            $null = DbScalar "update documents set status='PROCESSING_FAILED', processing_error_code='DOCUMENT_FINALIZATION_FAILED', processing_attempt_count=3 where tenant_id='$Tenant' and document_id='$documentId';"
+            Ok "$($p.contract): $($p.file) could not be stored"
+        } else {
+            $null = DbScalar "update documents set status='PROCESSING', processing_error_code=null, ingested_at=now() - interval '2 days' where tenant_id='$Tenant' and document_id='$documentId';"
+            Ok "$($p.contract): $($p.file) is stuck (still being stored after 2 days)"
+        }
+    }
+    Write-Host 'Problem demo complete.' -ForegroundColor Green
+    return
+}
 
 # Fresh mode preflights the complete batch before any API writes.
 if ($FreshTestData) {

@@ -1,19 +1,44 @@
-import { useEffect, useRef, useState, type PointerEvent as RPointerEvent, type ReactNode } from 'react'
-import { ArrowLeft, ChevronLeft, ChevronRight, Download, Eraser, Info, Lock, Maximize2, Minus, PanelRight, Plus, Printer, Search, ShieldAlert, Trash2, X } from 'lucide-react'
+import { useEffect, useRef, useState, type PointerEvent as RPointerEvent } from 'react'
+import { ArrowLeft, ChevronLeft, ChevronRight, Download, Eraser, Maximize2, Minus, PanelLeftClose, PanelLeftOpen, PanelRight, Plus, Printer, Search, ShieldAlert, Sparkles, X } from 'lucide-react'
 import { useStore } from './store'
-import { BUSINESS_LIMITS, CAPABILITY_LABELS, PAGE_TEXT, RETENTION, type Capability, type Doc, type RecordItem, type Redaction } from './data'
-import { Badge, Callout, Dialog, Drawer, Tabs, fmtDate, fmtDateTime, fmtRel, humanize } from './ui'
-import { viewerMetadata, viewerPage, viewerSearch, record as fetchRecord, toRecord, documentActivity, type LiveDocumentActivity, type ViewerSearch, documentTags, documentComments, createDocumentTag, createDocumentComment, type LiveTag, type LiveComment, secureDownload, recordPrintEvent, permanentRedaction } from './liveApi'
+import { BUSINESS_LIMITS, PAGE_TEXT, RETENTION, type Doc, type RecordItem, type Redaction } from './data'
+import { ApiRequestError } from '../api'
+import { failureText } from './CardError'
+import { Badge, Callout, Dialog, Drawer, Tabs, TechDetails, actorWords, auditEventLabel, fmtDate, fmtDateTime, fmtRel, fmtShortDate, humanize } from './ui'
+import { viewerMetadata, viewerPage, viewerSearch, record as fetchRecord, toRecord, documentActivity, type LiveDocumentActivity, type ViewerSearch, documentTags, documentComments, createDocumentTag, createDocumentComment, type LiveTag, type LiveComment, secureDownload, recordPrintEvent, permanentRedaction, viewerPreviews } from './liveApi'
 
 type Zoom = 'width' | 'page' | number
-type InfoTab = 'details' | 'comments' | 'tags' | 'activity'
+type InfoTab = 'ask' | 'details' | 'comments' | 'tags' | 'activity'
+
+const showDevelopmentUtilities = import.meta.env.DEV
+
+/** The server refused an action (e.g. permissions changed mid-session). Plain words, no codes. */
+export const REFUSED = { title: "You can't do this", detail: "Your role doesn't allow it. Ask your Business admin if you need it." }
+export const isRefused = (e: unknown) => e instanceof ApiRequestError && e.status === 403
+const errorText = (e: unknown) => (isRefused(e) ? `${REFUSED.title}. ${REFUSED.detail}` : failureText('Viewer action failed', e))
+
+/** Short words written in capitals in a document's kind ("borrower-id.pdf" -> "Borrower ID"). */
+const ACRONYMS = new Set(['id', 'ssn', 'vin', 'kyc', 'w2', 'w9', 'irs', 'llc', 'usa', 'uk', 'eu'])
+/** A readable document kind from its file name: "loan-agreement.pdf" -> "Loan agreement", "borrower-id.pdf" -> "Borrower ID". */
+export const docKind = (filename: string) => {
+  const base = filename.replace(/\.[a-z0-9]{1,5}$/i, '').replace(/[-_]+/g, ' ').replace(/\s+/g, ' ').trim()
+  if (!base) return filename
+  const name = base.split(' ').map((w) => (ACRONYMS.has(w.toLowerCase()) ? w.toUpperCase() : w)).join(' ')
+  return name.charAt(0).toUpperCase() + name.slice(1)
+}
+
+const DOCS_FOLDED_KEY = 'sdv.r7.viewer.docsFolded'
+const readFolded = () => { try { return window.localStorage.getItem(DOCS_FOLDED_KEY) === 'true' } catch { return false } }
+const PREVIEW_CHUNK = 12
 
 const SSN = /\d{3}-\d{2}-\d{4}/
 
-export function Viewer({ record, results, docId, onClose }: { record: RecordItem; results: RecordItem[]; docId: string; onClose: () => void }) {
-  const { can, role, setOpenDocId, setSelectedRef, setRecords, updateDoc, addDocActivity, toast, liveSession } = useStore()
+export function Viewer({ record, results, docId, onClose, recordTitle, backLabel = 'Results' }: { record: RecordItem; results: RecordItem[]; docId: string; onClose: () => void; /** Same title as the record panel. */ recordTitle?: string; backLabel?: string }) {
+  const { can, setOpenDocId, setSelectedRef, setRecords, addDocActivity, toast, liveSession } = useStore()
   const doc = record.docs.find((d) => d.id === docId) ?? record.docs[0]
   const [pageCount, setPageCount] = useState(0)
+  // This opening's ID from the server; page requests send it so each page is recorded once per viewing (task 0007).
+  const [viewingId, setViewingId] = useState('')
   const [viewerFailure, setViewerFailure] = useState('')
   const [viewerLoading, setViewerLoading] = useState(true)
   const [searchResults, setSearchResults] = useState<ViewerSearch | null>(null)
@@ -21,7 +46,8 @@ export function Viewer({ record, results, docId, onClose }: { record: RecordItem
   const docIndex = record.docs.indexOf(doc)
   const recIndex = results.findIndex((r) => r.ref === record.ref)
 
-  const [zoom, setZoom] = useState<Zoom>('width')
+  // Canvas board 4: the whole page height, about 600px wide at 1440 × 900.
+  const [zoom, setZoom] = useState<Zoom>('page')
   const [page, setPage] = useState(1)
   const [findOpen, setFindOpen] = useState(false)
   const [query, setQuery] = useState('')
@@ -42,8 +68,9 @@ export function Viewer({ record, results, docId, onClose }: { record: RecordItem
     let active = true
     setPage(1); setPageCount(0); setSearchResults(null); setQuery(''); setViewerFailure(''); setViewerLoading(true)
     canvasRef.current?.scrollTo({ top: 0 })
-    viewerMetadata(doc.id).then(m => { if(active)setPageCount(m.pageCount) })
-      .catch(e => {if(active)setViewerFailure(e instanceof Error ? e.message : 'Document unavailable')})
+    setViewingId('')
+    viewerMetadata(doc.id).then(m => { if(active){setViewingId(m.viewingId ?? '');setPageCount(m.pageCount)} })
+      .catch(e => {if(active)setViewerFailure(failureText('Viewer: document did not open', e))})
       .finally(() => {if(active)setViewerLoading(false)})
     return () => {active=false}
   }, [doc.id])
@@ -53,7 +80,7 @@ export function Viewer({ record, results, docId, onClose }: { record: RecordItem
     if(term.length>100){setSearchError('Search is limited to 100 characters');return}
     let active=true
     viewerSearch(doc.id,term).then(r=>{if(active){setSearchResults(r);setSearchError('')}})
-      .catch(e=>{if(active){setSearchResults(null);setSearchError(e instanceof Error?e.message:'Search failed')}})
+      .catch(e=>{if(active){setSearchResults(null);setSearchError(failureText('Viewer: find in document failed', e))}})
     return ()=>{active=false}
   },[doc.id,query])
 
@@ -97,7 +124,7 @@ export function Viewer({ record, results, docId, onClose }: { record: RecordItem
     return () => window.removeEventListener('keydown', k)
   }, [onClose, redacting, review, infoOpen, docsOpen])
 
-  const sheetWidth = zoom === 'width' ? Math.min(canvasSize.w - 24, 980) : zoom === 'page' ? Math.min((canvasSize.h - 96) * (8.5 / 11), canvasSize.w - 24) : 816 * zoom
+  const sheetWidth = zoom === 'width' ? Math.min(canvasSize.w - 24, 980) : zoom === 'page' ? Math.min((canvasSize.h + 120) * (8.5 / 11), canvasSize.w - 24) /* the stage's height less its 24px top margin; the page bar floats over the page's foot, as on the canvas */ : 816 * zoom
   const zoomPct = Math.round((sheetWidth / 816) * 100)
   const stepZoom = (dir: 1 | -1) => setZoom(Math.min(2.5, Math.max(0.5, Math.round((sheetWidth / 816 + dir * 0.25) * 4) / 4)))
   const goPage = (p: number) => { const n = Math.min(pageTotal, Math.max(1, p)); sheetRefs.current[n - 1]?.scrollIntoView({ behavior: 'smooth', block: 'start' }); setPage(n) }
@@ -112,13 +139,13 @@ export function Viewer({ record, results, docId, onClose }: { record: RecordItem
     if (item.top < navBox.top || item.bottom > navBox.bottom) nav.scrollTop += item.top - navBox.top - nav.clientHeight / 2
   }, [page])
 
-  const deny = (c: Capability) => toast({ tone: 'bad', title: 'Not permitted for your role', detail: `${role.name} doesn't include "${CAPABILITY_LABELS[c]}". In production the server enforces this and records a DENIED audit event.` })
-  const gated = (c: Capability, run: () => void) => () => (can(c) ? run() : deny(c))
+  // Actions are only shown to roles that have them; the server still decides. A refusal reads in plain words.
+  const failed = (title: string, e: unknown) => toast(isRefused(e) ? { tone: 'bad', ...REFUSED } : { tone: 'bad', title, detail: errorText(e) })
 
   const [actionBusy,setActionBusy] = useState(false)
   const [redactionFailure,setRedactionFailure] = useState('')
   const [renderRevision,setRenderRevision] = useState(0)
-  const download = gated('DOWNLOAD_CURRENT_PDF', async () => {
+  const download = async () => {
     if(actionBusy)return
     setActionBusy(true)
     try {
@@ -128,15 +155,15 @@ export function Viewer({ record, results, docId, onClose }: { record: RecordItem
       a.href=url;a.download=doc.filename;a.click()
       window.setTimeout(()=>URL.revokeObjectURL(url),30000)
       toast({title:'Document downloaded'})
-    } catch(e){toast({tone:'bad',title:'Download failed',detail:String(e)})}
+    } catch(e){failed('Download failed',e)}
     finally{setActionBusy(false)}
-  })
-  const print = gated('PRINT_DOCUMENT', async () => {
+  }
+  const print = async () => {
     if(actionBusy)return
     setActionBusy(true)
     try {
       // Print the authorized rendered pages, without requesting the raw PDF download.
-      const images=await Promise.all(Array.from({length:pageTotal},(_,i)=>viewerPage(doc.id,i+1,1)))
+      const images=await Promise.all(Array.from({length:pageTotal},(_,i)=>viewerPage(doc.id,i+1,1,viewingId||undefined)))
       const urls=images.map(b=>URL.createObjectURL(b))
       const frame=document.createElement('iframe')
       frame.setAttribute('title','Print document')
@@ -151,13 +178,13 @@ export function Viewer({ record, results, docId, onClose }: { record: RecordItem
       await recordPrintEvent(doc.id)
       win.focus();win.print()
       window.setTimeout(()=>{frame.remove();urls.forEach(u=>URL.revokeObjectURL(u))},60000)
-    }catch(e){toast({tone:'bad',title:'Print failed',detail:String(e)})}
+    }catch(e){failed('Print failed',e)}
     finally{setActionBusy(false)}
-  })
-  const startRedact = gated('PERMANENT_REDACTION', () => {
+  }
+  const startRedact = () => {
     if(actionBusy)return
     setMarks([]);setRedactionFailure('');setRedacting(true);setInfoOpen(false)
-  })
+  }
 
   const toPct = (e: RPointerEvent, el: HTMLDivElement) => { const r = el.getBoundingClientRect(); return { x: ((e.clientX - r.left) / r.width) * 100, y: ((e.clientY - r.top) / r.height) * 100 } }
   const onDown = (p: number) => (e: RPointerEvent<HTMLDivElement>) => {
@@ -190,9 +217,9 @@ export function Viewer({ record, results, docId, onClose }: { record: RecordItem
       setMarks([]);setRedacting(false);setReview(false);setQuery('');setSearchResults(null)
       setRenderRevision(n=>n+1)
       setPageCount(0)
-      viewerMetadata(doc.id).then(m=>setPageCount(m.pageCount)).catch(e=>setViewerFailure(String(e)))
+      viewerMetadata(doc.id).then(m=>{setViewingId(m.viewingId ?? '');setPageCount(m.pageCount)}).catch(e=>setViewerFailure(failureText('Viewer: document did not reopen', e)))
       toast({title:'Permanent corrective redaction completed'})
-    }catch(e){setRedactionFailure(String(e))}
+    }catch(e){setRedactionFailure(errorText(e)); if(isRefused(e))failed('Redaction failed',e)}
     finally{setActionBusy(false)}
     return
 
@@ -210,12 +237,36 @@ export function Viewer({ record, results, docId, onClose }: { record: RecordItem
       setRecords(prev => prev.map(r => r.ref === loaded.ref ? loaded : r))
       setSelectedRef(loaded.ref)
       setOpenDocId(loaded.docs[0].id)
-    } catch (e) { toast({ tone: 'bad', title: 'Unable to open next record', detail: String(e) }) }
+    } catch (e) { toast({ tone: 'bad', title: "The next record didn't open", detail: failureText('Viewer: next record did not open', e) }) }
     finally { setRecordLoading(false) }
   }
   const switchDoc = (id: string) => { setOpenDocId(id); if(!liveSession)addDocActivity(id, 'DOCUMENT_VIEWED'); setDocsOpen(false) }
 
-  const docsNav = (
+  // Real page previews, loaded in chunks of PREVIEW_CHUNK only for pages whose thumbnail is on screen
+  // (so only while the column or the phone drawer is open). On failure the list falls back to plain boxes.
+  const [previews, setPreviews] = useState<Record<number, string>>({})
+  const [previewsFailed, setPreviewsFailed] = useState(false)
+  const requestedChunks = useRef(new Set<number>())
+  useEffect(() => { setPreviews({}); setPreviewsFailed(false); requestedChunks.current = new Set() }, [doc.id, renderRevision])
+  const needPreview = (p: number) => {
+    if (previewsFailed || !pageTotal) return
+    const first = Math.floor((p - 1) / PREVIEW_CHUNK) * PREVIEW_CHUNK + 1
+    if (requestedChunks.current.has(first)) return
+    requestedChunks.current.add(first)
+    const forDoc = doc.id
+    viewerPreviews(forDoc, first, Math.min(PREVIEW_CHUNK, pageTotal - first + 1))
+      .then((r) => { if (forDoc === doc.id) setPreviews((prev) => ({ ...prev, ...Object.fromEntries(r.previews.map((x) => [x.pageNumber, x.dataUrl])) })) })
+      .catch(() => setPreviewsFailed(true))
+  }
+
+  // The left column folds away on wide screens; the choice is remembered in this browser.
+  const [folded, setFolded] = useState(readFolded)
+  const setFold = (next: boolean) => { setFolded(next); try { window.localStorage.setItem(DOCS_FOLDED_KEY, String(next)) } catch { /* storage unavailable */ } }
+
+  const title = recordTitle || record.title
+  const kind = docKind(doc.filename)
+
+  const docsNav = (inDrawer: boolean) => (
     <>
       <div className="stack" style={{ gap: 8 }}>
         <div className="row between">
@@ -223,25 +274,26 @@ export function Viewer({ record, results, docId, onClose }: { record: RecordItem
           <span className="row" style={{ gap: 2 }}>
             <button type="button" className="v-btn quiet icon sm" disabled={recordLoading || recIndex <= 0} onClick={() => switchRecord(-1)} aria-label="Previous record"><ChevronLeft size={16} /></button>
             <button type="button" className="v-btn quiet icon sm" disabled={recordLoading || recIndex < 0 || recIndex >= results.length - 1} onClick={() => switchRecord(1)} aria-label="Next record"><ChevronRight size={16} /></button>
+            {!inDrawer && <button type="button" className="v-btn quiet icon sm" onClick={() => setFold(true)} aria-label="Hide document list" title="Hide document list"><PanelLeftClose size={16} /></button>}
           </span>
         </div>
-        <strong style={{ fontSize: 14 }}>{record.title}</strong>
-        <div className="ws-ids">{record.identifiers.map((i) => <div key={i.label}><span>{i.label}</span><strong style={{ fontSize: 13 }}>{i.value}</strong></div>)}</div>
+        <div className="ws-ids stacked">{record.identifiers.map((i) => <div key={i.label}><span>{i.label}</span><strong title={i.value}>{i.value}</strong></div>)}</div>
       </div>
-      <div className="stack" style={{ gap: 6 }}>
+      <div className="stack" style={{ gap: 8 }}>
         <span className="eyebrow">Documents · {record.docs.length}</span>
         {record.docs.map((d) => (
           <button key={d.id} type="button" className="vw-thumb" aria-current={d.id === doc.id} onClick={() => switchDoc(d.id)}>
-            <i aria-hidden /><span className="grow" style={{ minWidth: 0 }}><strong className="truncate" style={{ display: 'block', fontWeight: 500, fontSize: 13 }}>{d.kind}</strong>{d.id === doc.id ? pageTotal + ' pp · ' : ''}{fmtDate(d.ingestedAt)}</span>
+            <span className="grow" style={{ minWidth: 0 }}><strong className="truncate">{docKind(d.filename)}</strong>{(() => { const pages = d.id === doc.id && pageTotal ? pageTotal : d.pages; return [pages > 0 ? `${pages} page${pages === 1 ? '' : 's'}` : `received ${fmtShortDate(d.ingestedAt)}`, d.redacted || d.redactions.length > 0 ? 'redacted' : ''].filter(Boolean).join(' · ') })()}</span>
           </button>
         ))}
       </div>
       {pageTotal > 1 && (
-        <div className="stack" style={{ gap: 6 }}>
+        <div className="stack" style={{ gap: 8 }}>
           <span className="eyebrow">Pages</span>
-          <div className="vw-thumbs">
+          <div className="vw-pages">
             {Array.from({ length: pageTotal }, (_, i) => (
-              <button key={i} type="button" className="vw-thumb" aria-current={page === i + 1} onClick={() => { goPage(i + 1); setDocsOpen(false) }}><i aria-hidden />Page {i + 1}</button>
+              <PageThumb key={doc.id + ':' + renderRevision + ':' + (i + 1)} page={i + 1} current={page === i + 1} src={previews[i + 1]} failed={previewsFailed}
+                onVisible={needPreview} onOpen={() => { goPage(i + 1); setDocsOpen(false) }} />
             ))}
           </div>
         </div>
@@ -250,19 +302,19 @@ export function Viewer({ record, results, docId, onClose }: { record: RecordItem
   )
 
   return (
-    <div className="vw" role="dialog" aria-modal="true" aria-label={`${doc.kind}, ${record.identifiers[0].value}`}>
+    <div className="vw" role="dialog" aria-modal="true" aria-label={`${kind}, ${record.identifiers[0].value}`}>
       <div className="vw-bar">
-        <button type="button" className="v-btn quiet icon" onClick={onClose} aria-label="Back to results"><ArrowLeft size={20} /></button>
-        <button type="button" className="vw-title grow" style={{ border: 0, background: 'none', textAlign: 'left', cursor: 'pointer' }} onClick={() => setDocsOpen(true)} aria-label="Switch document">
-          <strong className="truncate">{doc.kind}</strong>
-          <span className="truncate">{record.identifiers[0].value} · Doc {docIndex + 1}/{record.docs.length} · {pageTotal} pp</span>
+        <button type="button" className="v-btn quiet sm vw-back" onClick={onClose} aria-label={`Back to ${backLabel.toLowerCase()}`}><ArrowLeft size={18} aria-hidden /><span className="vw-label">{backLabel}</span></button>
+        <span className="vw-sep vw-hide-sm" aria-hidden />
+        <button type="button" className="vw-title grow" style={{ border: 0, background: 'none', textAlign: 'left', cursor: 'pointer' }} onClick={() => setDocsOpen(true)} aria-label={`${kind} · ${title}. Switch document`}>
+          <strong className="truncate">{kind} · {title}</strong>
+          <span className="truncate mono">{record.identifiers[0].value} · {doc.filename} · {docIndex + 1} of {record.docs.length} document{record.docs.length === 1 ? '' : 's'}</span>
         </button>
         <div className="vw-group">
-          <button type="button" className="v-btn quiet icon" aria-pressed={findOpen} onClick={() => setFindOpen((f) => !f)} aria-label="Find in document"><Search size={18} /></button>
-          <span className="vw-sep vw-hide-sm" aria-hidden />
-          <ActionButton label="Download" icon={<Download size={18} />} allowed={can('DOWNLOAD_CURRENT_PDF') && !actionBusy} onClick={download} className="vw-hide-sm" />
-          <ActionButton label="Print" icon={<Printer size={18} />} allowed={can('PRINT_DOCUMENT') && !actionBusy} onClick={print} className="vw-hide-sm" />
-          <ActionButton label="Redact" icon={<Eraser size={18} />} allowed={can('PERMANENT_REDACTION') && !actionBusy} onClick={startRedact} pressed={redacting} />
+          <button type="button" className="v-btn sm" aria-pressed={findOpen} onClick={() => setFindOpen((f) => !f)} aria-label="Find in document"><Search size={16} aria-hidden /><span className="vw-label">Find</span></button>
+          {can('DOWNLOAD_CURRENT_PDF') && <button type="button" className="v-btn sm vw-hide-sm" disabled={actionBusy} onClick={download}><Download size={16} aria-hidden />Download</button>}
+          {can('PRINT_DOCUMENT') && <button type="button" className="v-btn sm vw-hide-sm" disabled={actionBusy} onClick={print}><Printer size={16} aria-hidden />Print</button>}
+          {can('PERMANENT_REDACTION') && <button type="button" className="v-btn sm vw-redact" disabled={actionBusy} aria-pressed={redacting} onClick={startRedact} aria-label="Redact"><Eraser size={16} aria-hidden /><span className="vw-label">Redact</span></button>}
           <button type="button" className="v-btn quiet icon vw-panel-toggle" aria-pressed={infoOpen} onClick={() => setInfoOpen(true)} aria-label="Document information"><PanelRight size={18} /></button>
         </div>
       </div>
@@ -282,7 +334,9 @@ export function Viewer({ record, results, docId, onClose }: { record: RecordItem
       )}
 
       <div className="vw-body">
-        <nav className="vw-docs" aria-label="Record documents">{docsNav}</nav>
+        {folded
+          ? <div className="vw-docs-rail"><button type="button" className="v-btn quiet icon sm" onClick={() => setFold(false)} aria-label="Show document list" title="Show document list"><PanelLeftOpen size={16} /></button></div>
+          : <nav className="vw-docs" aria-label="Record documents">{docsNav(false)}</nav>}
         <div className="vw-stage">
         <div className="vw-canvas" ref={canvasRef} style={{ position: 'relative' }}>
           {viewerFailure && <div className="v-callout" role="alert">{viewerFailure}</div>}
@@ -292,7 +346,7 @@ export function Viewer({ record, results, docId, onClose }: { record: RecordItem
             return <div key={p} data-page={p} ref={el => {sheetRefs.current[i]=el}} className="vw-sheet"
               style={{width:sheetWidth,maxWidth:'none',position:'relative',minHeight:Math.round(sheetWidth*1.25)}}
               aria-label={`Page ${p} of ${pageTotal}`}>
-              <SecurePage key={doc.id+':'+renderRevision+':'+p} documentId={doc.id} page={p} scale={Math.min(2.5,Math.max(.5,sheetWidth/816))}
+              <SecurePage key={doc.id+':'+renderRevision+':'+p} documentId={doc.id} viewingId={viewingId} page={p} scale={Math.min(2.5,Math.max(.5,sheetWidth/816))}
                 scrollRoot={canvasRef} matches={searchResults?.pages.find(x=>x.pageNumber===p)?.matchCount ?? 0}
                 highlights={searchResults?.highlights?.filter(h=>h.pageNumber===p) ?? []}
                 redacting={redacting} marks={marks.filter(m=>m.page===p)} drawing={drawing?.page===p?drawing:null}
@@ -325,21 +379,23 @@ export function Viewer({ record, results, docId, onClose }: { record: RecordItem
 
       {infoOpen && (
         <Drawer eyebrow={doc.kind} title="Document information" onClose={() => setInfoOpen(false)}>
-          <div className="row wrap vw-actions-sm" style={{ gap: 8 }}>
-            <ActionButton label="Download" icon={<Download size={16} />} allowed={can('DOWNLOAD_CURRENT_PDF') && !actionBusy} onClick={download} text />
-            <ActionButton label="Print" icon={<Printer size={16} />} allowed={can('PRINT_DOCUMENT') && !actionBusy} onClick={print} text />
-          </div>
+          {(can('DOWNLOAD_CURRENT_PDF') || can('PRINT_DOCUMENT')) && (
+            <div className="row wrap vw-actions-sm" style={{ gap: 8 }}>
+              {can('DOWNLOAD_CURRENT_PDF') && <button type="button" className="v-btn sm" disabled={actionBusy} onClick={download}><Download size={16} aria-hidden />Download</button>}
+              {can('PRINT_DOCUMENT') && <button type="button" className="v-btn sm" disabled={actionBusy} onClick={print}><Printer size={16} aria-hidden />Print</button>}
+            </div>
+          )}
           <DocInfo doc={{...doc,pages:pageTotal}} tab={infoTab} setTab={setInfoTab} embedded />
         </Drawer>
       )}
-      {docsOpen && <Drawer eyebrow="Record documents" title={record.identifiers[0].value} onClose={() => setDocsOpen(false)}>{docsNav}</Drawer>}
+      {docsOpen && <Drawer eyebrow="Record documents" title={record.identifiers[0].value} onClose={() => setDocsOpen(false)}>{docsNav(true)}</Drawer>}
       {review && <RedactionReview doc={doc} marks={marks} onCancel={() => setReview(false)} onApply={applyRedaction} busy={actionBusy} failure={redactionFailure} />}
     </div>
   )
 }
 
-function SecurePage({documentId,page,scale,scrollRoot,matches,highlights,redacting,marks,drawing,onPointerDown,onPointerMove,onPointerUp,onPointerCancel}:{
-  documentId:string;page:number;scale:number;scrollRoot:React.RefObject<HTMLDivElement>;
+function SecurePage({documentId,viewingId,page,scale,scrollRoot,matches,highlights,redacting,marks,drawing,onPointerDown,onPointerMove,onPointerUp,onPointerCancel}:{
+  documentId:string;viewingId:string;page:number;scale:number;scrollRoot:React.RefObject<HTMLDivElement>;
   matches:number;highlights:{pageNumber:number;x:number;y:number;width:number;height:number}[];
   redacting:boolean;marks:Redaction[];drawing:Redaction|null;
   onPointerDown:(e:RPointerEvent<HTMLDivElement>)=>void;onPointerMove:(e:RPointerEvent<HTMLDivElement>)=>void;
@@ -362,13 +418,13 @@ function SecurePage({documentId,page,scale,scrollRoot,matches,highlights,redacti
   useEffect(()=>{
     if(!visible)return
     let active=true
-    viewerPage(documentId,page,Number(scale.toFixed(2))).then(blob=>{
+    viewerPage(documentId,page,Number(scale.toFixed(2)),viewingId||undefined).then(blob=>{
       const objectUrl=URL.createObjectURL(blob)
       if(active)setUrl(objectUrl)
       else URL.revokeObjectURL(objectUrl)
-    }).catch(e=>{if(active)setError(e instanceof Error?e.message:'Page failed to load')})
+    }).catch(e=>{if(active)setError(failureText('Viewer: page did not load', e))})
     return ()=>{active=false}
-  },[visible,documentId,page,scale])
+  },[visible,documentId,page,scale,viewingId])
   useEffect(()=>()=>{if(url)URL.revokeObjectURL(url)},[url])
   return <div ref={container} style={{width:'100%',minHeight:'inherit'}}>
     {url ? <div style={{position:'relative',width:'100%',lineHeight:0,touchAction:redacting?'none':'auto',cursor:redacting?'crosshair':'auto'}}
@@ -383,12 +439,19 @@ function SecurePage({documentId,page,scale,scrollRoot,matches,highlights,redacti
   </div>
 }
 
-function ActionButton({ label, icon, allowed, onClick, pressed, className = '', text }: { label: string; icon: ReactNode; allowed: boolean; onClick: () => void; pressed?: boolean; className?: string; text?: boolean }) {
+function PageThumb({ page, current, src, failed, onVisible, onOpen }: { page: number; current: boolean; src?: string; failed: boolean; onVisible: (p: number) => void; onOpen: () => void }) {
+  const ref = useRef<HTMLButtonElement>(null)
+  useEffect(() => {
+    const el = ref.current
+    if (!el || src || failed) return
+    const obs = new IntersectionObserver((entries) => { if (entries.some((e) => e.isIntersecting)) onVisible(page) }, { rootMargin: '120px 0px' })
+    obs.observe(el)
+    return () => obs.disconnect()
+  }, [page, src, failed])
   return (
-    <button type="button" className={`v-btn ${text ? 'sm' : 'quiet icon'} ${className}`} aria-disabled={!allowed} aria-pressed={pressed} onClick={onClick}
-      aria-label={allowed ? label : `${label} (not permitted for your role)`} title={allowed ? label : `${label} — not permitted for your role`} style={{ position: 'relative' }}>
-      {icon}{text && label}
-      {!allowed && <Lock size={10} aria-hidden style={{ position: text ? 'static' : 'absolute', right: 6, bottom: 6 }} />}
+    <button ref={ref} type="button" className="vw-pagethumb" aria-current={current} aria-label={`Page ${page}`} onClick={onOpen}>
+      {src ? <img src={src} alt="" /> : <span className="vw-pagebox" aria-hidden>{failed ? `Page ${page}` : ''}</span>}
+      <span className="vw-pagenum" aria-hidden>{page}</span>
     </button>
   )
 }
@@ -402,7 +465,7 @@ function RedactionReview({ doc, marks, onCancel, onApply, busy, failure }: { doc
     <Dialog title="Apply permanent redaction" onClose={onCancel}
       footer={<><button type="button" className="v-btn" onClick={onCancel}>Back to marking</button><button type="button" className="v-btn danger" disabled={!ready || busy} onClick={() => onApply(reason.trim())}>{busy?'Applying…':'Apply permanent redaction'}</button></>}>
       <Callout tone="bad" title="This permanently replaces the current PDF">
-        In production, marked regions are irreversibly removed for every user and the original is not retained. Use only for corrective removal of content that should never have been stored.
+        Marked areas are removed for every user and the original is not kept. Use this only to remove content that should never have been stored.
       </Callout>
       <dl className="v-kv">
         <div><dt>Document</dt><dd>{doc.kind} · <span className="mono">{doc.id}</span></dd></div>
@@ -429,7 +492,7 @@ function DocInfo({ doc, tab, setTab, embedded }: { doc: Doc; tab: InfoTab; setTa
   const [liveEvents,setLiveEvents] = useState<LiveDocumentActivity[]>([])
   const [includeViews,setIncludeViews] = useState(false)
   const [activityError,setActivityError] = useState('')
-  useEffect(()=>{if(!liveSession || tab!=='activity')return;let active=true;setActivityError('');documentActivity(doc.id,includeViews).then(rows=>{if(active)setLiveEvents(rows)}).catch(e=>{if(active){setLiveEvents([]);setActivityError(String(e))}});return()=>{active=false}},[liveSession,tab,doc.id,includeViews])
+  useEffect(()=>{if(!liveSession || tab!=='activity')return;let active=true;setActivityError('');documentActivity(doc.id,includeViews).then(rows=>{if(active)setLiveEvents(rows)}).catch(e=>{if(active){setLiveEvents([]);setActivityError(failureText('Viewer: activity did not load', e))}});return()=>{active=false}},[liveSession,tab,doc.id,includeViews])
   const [liveTags,setLiveTags] = useState<LiveTag[]>([])
   const [liveComments,setLiveComments] = useState<LiveComment[]>([])
   const [metadataLoading,setMetadataLoading] = useState(false)
@@ -441,10 +504,17 @@ function DocInfo({ doc, tab, setTab, embedded }: { doc: Doc; tab: InfoTab; setTa
     setMetadataLoading(true);setMetadataError('')
     const task=tab==='comments'?documentComments(doc.id):documentTags(doc.id)
     task.then(items=>{if(!active)return;if(tab==='comments')setLiveComments(items as LiveComment[]);else setLiveTags(items as LiveTag[])})
-      .catch(e=>{if(active)setMetadataError(e instanceof Error?e.message:'Unable to load document data')})
+      .catch(e=>{if(active)setMetadataError(failureText('Viewer: comments or tags did not load', e))})
       .finally(()=>{if(active)setMetadataLoading(false)})
     return()=>{active=false}
   },[liveSession,tab,doc.id])
+  // Load comments when a document opens so the Comments tab shows its count (reading comments is not audited).
+  useEffect(()=>{
+    if(!liveSession)return
+    let active=true
+    documentComments(doc.id).then(items=>{if(active)setLiveComments(items)}).catch(()=>{})
+    return()=>{active=false}
+  },[liveSession,doc.id])
   const submitLiveComment=async()=>{
     const value=comment.trim()
     if(!value || saving)return
@@ -453,7 +523,7 @@ function DocInfo({ doc, tab, setTab, embedded }: { doc: Doc; tab: InfoTab; setTa
       const saved=await createDocumentComment(doc.id,value)
       setLiveComments(items=>[...items,saved]);setComment('')
       toast({title:'Comment added'})
-    }catch(e){setMetadataError(e instanceof Error?e.message:'Unable to add comment')}
+    }catch(e){setMetadataError(errorText(e))}
     finally{setSaving(false)}
   }
   const submitLiveTag=async()=>{
@@ -465,31 +535,43 @@ function DocInfo({ doc, tab, setTab, embedded }: { doc: Doc; tab: InfoTab; setTa
       const saved=await createDocumentTag(doc.id,value)
       setLiveTags(items=>[...items,saved]);setTag('')
       toast({title:'Tag added'})
-    }catch(e){setMetadataError(e instanceof Error?e.message:'Unable to add tag')}
+    }catch(e){setMetadataError(errorText(e))}
     finally{setSaving(false)}
   }
   const suggestsSsn = !liveSession && (PAGE_TEXT[doc.kind] ?? []).some((t) => SSN.test(t)) && doc.redactions.length === 0
   const body = (
     <>
+      {tab === 'ask' && showDevelopmentUtilities && (
+        <section className="home-card home-ask">
+          <h2><Sparkles size={16} aria-hidden />Ask and Key terms <Badge tone="ok">Later release</Badge></h2>
+          <p className="muted">Development marker: questions about this document and its key terms will sit here.</p>
+        </section>
+      )}
       {tab === 'details' && (
         <>
           {suggestsSsn && can('PERMANENT_REDACTION') && <Callout tone="warn" title="Possible sensitive identifier on page 1">Sample content includes a full SSN. Stewards can correct this with permanent redaction.</Callout>}
           <dl className="v-kv">
             <div><dt>File name</dt><dd className="mono">{doc.filename}</dd></div>
-            <div><dt>Document ID</dt><dd className="mono">{doc.id}</dd></div>
-            <div><dt>Submission</dt><dd className="mono">{doc.submissionId}</dd></div>
             <div><dt>Pages</dt><dd>{doc.pages || 'Not available'}</dd></div>
-            <div><dt>Ingested</dt><dd>{fmtDateTime(doc.ingestedAt)}</dd></div>
-            <div><dt>Retained until</dt><dd>{doc.expiresAt ? fmtDate(doc.expiresAt) : 'Not specified'}{!liveSession && <span className="faint"> · policy v{RETENTION.active.version} at ingestion</span>}</dd></div>
+            <div><dt>Received</dt><dd>{fmtDateTime(doc.ingestedAt)}</dd></div>
+            {/* Keeping documents' own words: no end date means the rule keeps it forever. */}
+            <div><dt>Keeping</dt><dd>{doc.expiresAt ? `Kept until ${fmtDate(doc.expiresAt)}` : 'Kept forever'}{!liveSession && <span className="faint"> · policy v{RETENTION.active.version} at ingestion</span>}</dd></div>
             <div><dt>Protection</dt><dd>Encrypted at rest · served page-by-page to authorized sessions</dd></div>
-            {doc.redactions.length > 0 && <div><dt>Corrections</dt><dd><Badge tone="warn">{doc.redactions.length} simulated redaction{doc.redactions.length === 1 ? '' : 's'}</Badge></dd></div>}
+            {doc.redacted && <div><dt>Corrections</dt><dd>Redacted (permanent)</dd></div>}
+            {!liveSession && doc.redactions.length > 0 && <div><dt>Corrections</dt><dd><Badge tone="warn">{doc.redactions.length} simulated redaction{doc.redactions.length === 1 ? '' : 's'}</Badge></dd></div>}
           </dl>
+          <TechDetails flat hint="document and submission IDs">
+            <dl className="v-kv">
+              <div><dt>Document ID</dt><dd className="mono">{doc.id}</dd></div>
+              <div><dt>Submission</dt><dd className="mono">{doc.submissionId}</dd></div>
+            </dl>
+          </TechDetails>
         </>
       )}
       {tab === 'comments' && (
         <>
           {liveSession && metadataLoading && <p className="faint">Loading comments…</p>}
-          {liveSession && metadataError && <Callout tone="warn" title="Comments unavailable">{metadataError}</Callout>}
+          {liveSession && metadataError && <Callout tone="warn" title={metadataError.startsWith(REFUSED.title) ? REFUSED.title : 'Comments unavailable'}>{metadataError.startsWith(REFUSED.title) ? REFUSED.detail : metadataError}</Callout>}
           {liveSession && !metadataLoading && !metadataError && liveComments.length === 0 && <p className="faint">No comments yet.</p>}
           {liveSession && liveComments.map(c=><article key={c.commentId} className="v-comment"><header><strong>{c.createdBy}</strong><span>{fmtRel(c.createdAt)}</span></header><p>{c.comment}</p></article>)}
           {liveSession && can('ADD_DOCUMENT_COMMENT') && <form className="stack" style={{gap:8}} onSubmit={e=>{e.preventDefault();void submitLiveComment()}}>
@@ -506,14 +588,13 @@ function DocInfo({ doc, tab, setTab, embedded }: { doc: Doc; tab: InfoTab; setTa
               <textarea className="v-textarea" aria-label="New comment" value={comment} maxLength={BUSINESS_LIMITS.maxCommentLength} onChange={(e) => setComment(e.target.value)} placeholder="Add a comment for other authorized users" />
               <button type="submit" className="v-btn sm" style={{ alignSelf: 'flex-end' }} disabled={!comment.trim()}>Add comment</button>
             </form>
-          ) : !liveSession && <Callout title="Commenting isn't assigned to your role" />}
-          {liveSession && !can('ADD_DOCUMENT_COMMENT') && <Callout title="Commenting isn't assigned to your role" />}
+          ) : null}
         </>
       )}
       {tab === 'tags' && (
         <>
           {liveSession && metadataLoading && <p className="faint">Loading tags…</p>}
-          {liveSession && metadataError && <Callout tone="warn" title="Tags unavailable">{metadataError}</Callout>}
+          {liveSession && metadataError && <Callout tone="warn" title={metadataError.startsWith(REFUSED.title) ? REFUSED.title : 'Tags unavailable'}>{metadataError.startsWith(REFUSED.title) ? REFUSED.detail : metadataError}</Callout>}
           <div className="v-tagrow">{liveSession ? (liveTags.length===0 ? <span className="faint">No tags yet.</span> : liveTags.map(t=><Badge key={t.tagId} tone="outline">{t.tag}</Badge>)) : doc.tags.length === 0 ? <span className="faint">No tags yet.</span> : doc.tags.map((t) => <Badge key={t.id} tone="outline">{t.tag}</Badge>)}</div>
           {liveSession && can('ADD_DOCUMENT_TAG') && <form className="row" onSubmit={e=>{e.preventDefault();void submitLiveTag()}}>
             <input className="v-input grow" aria-label="New tag" value={tag} maxLength={BUSINESS_LIMITS.maxTagLength} onChange={e=>setTag(e.target.value)} placeholder="Add tag"/>
@@ -529,8 +610,7 @@ function DocInfo({ doc, tab, setTab, embedded }: { doc: Doc; tab: InfoTab; setTa
               <input className="v-input grow" aria-label="New tag" value={tag} maxLength={BUSINESS_LIMITS.maxTagLength} onChange={(e) => setTag(e.target.value)} placeholder="Add tag" />
               <button type="submit" className="v-btn" disabled={!tag.trim()}>Add</button>
             </form>
-          ) : !liveSession && <Callout title="Tagging isn't assigned to your role" />}
-          {liveSession && !can('ADD_DOCUMENT_TAG') && <Callout title="Tagging isn't assigned to your role" />}
+          ) : null}
         </>
       )}
       {tab === 'activity' && (<>
@@ -538,7 +618,7 @@ function DocInfo({ doc, tab, setTab, embedded }: { doc: Doc; tab: InfoTab; setTa
         {activityError && <Callout tone="warn" title="Activity unavailable">{activityError}</Callout>}
         {liveSession && !activityError && liveEvents.length===0 && <p className="faint">No matching activity.</p>}
         <ol className="v-timeline">
-          {liveSession && liveEvents.map(a=><li key={a.auditEventId}><span className={`pt ${a.outcome==='SUCCESS'?'ok':'bad'}`} aria-hidden/><div className="stack" style={{gap:0}}><strong>{humanize(a.action.replace('DOCUMENT_',''))}</strong><span>{a.actorId} · {fmtDateTime(a.occurredAt)}</span></div></li>)}
+          {liveSession && liveEvents.map(a=><li key={a.auditEventId}><span className={`pt ${a.outcome==='SUCCESS'?'ok':'bad'}`} aria-hidden/><div className="stack" style={{gap:0}}><strong>{auditEventLabel(a.action,a.safeDetailsJson,doc.filename,true)}</strong><span>{actorWords(a.actorType)} · {fmtDateTime(a.occurredAt)}</span></div></li>)}
           {!liveSession && doc.activity.map((a) => (
             <li key={a.id}><span className={`pt ${a.simulated ? 'sim' : a.outcome === 'SUCCESS' ? 'ok' : 'bad'}`} aria-hidden />
               <div className="stack" style={{ gap: 0 }}><strong>{humanize(a.action.replace('DOCUMENT_', ''))}</strong><span>{a.actor} · {fmtDateTime(a.at)}{a.simulated ? ' · simulated' : ''}</span></div>
@@ -550,9 +630,8 @@ function DocInfo({ doc, tab, setTab, embedded }: { doc: Doc; tab: InfoTab; setTa
   )
   return (
     <>
-      <Tabs label="Document information" value={tab} onChange={(t) => setTab(t as InfoTab)} tabs={[{ id: 'details', label: 'Details' }, { id: 'comments', label: `Comments${(liveSession?liveComments.length:doc.comments.length) ? ` ${liveSession?liveComments.length:doc.comments.length}` : ''}` }, { id: 'tags', label: 'Tags' }, { id: 'activity', label: 'Activity' }]} />
+      <Tabs label="Document information" value={tab} onChange={(t) => setTab(t as InfoTab)} tabs={[...(showDevelopmentUtilities ? [{ id: 'ask', label: 'Ask' }] : []), { id: 'details', label: 'Details' }, { id: 'comments', label: `Comments${(liveSession?liveComments.length:doc.comments.length) ? ` ${liveSession?liveComments.length:doc.comments.length}` : ''}` }, { id: 'tags', label: 'Tags' }, { id: 'activity', label: 'Activity' }]} />
       {embedded ? <div className="stack-lg">{body}</div> : <div className="vw-panel-body">{body}</div>}
-      {!embedded && <div style={{ padding: 12, borderTop: '1px solid var(--line)' }} className="faint"><Info size={13} aria-hidden style={{ verticalAlign: '-2px', marginRight: 6 }} /><small>Every view, download, print and correction is audited.</small></div>}
     </>
   )
 }

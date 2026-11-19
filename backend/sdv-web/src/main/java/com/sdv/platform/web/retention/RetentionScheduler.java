@@ -1,6 +1,7 @@
 package com.sdv.platform.web.retention;
 
 import com.sdv.platform.application.retention.RetentionDeletionService;
+import com.sdv.platform.web.schema.DatabaseSchemaCheck;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -13,16 +14,19 @@ public class RetentionScheduler {
     private static final Logger log = LoggerFactory.getLogger(RetentionScheduler.class);
     private final RetentionDeletionService retention;
     private final RetentionSweepMonitor monitor;
+    private final DatabaseSchemaCheck schema;
 
-    public RetentionScheduler(RetentionDeletionService retention, RetentionSweepMonitor monitor) {
+    public RetentionScheduler(RetentionDeletionService retention, RetentionSweepMonitor monitor, DatabaseSchemaCheck schema) {
         this.retention = retention;
         this.monitor = monitor;
+        this.schema = schema;
     }
 
     @Scheduled(
             initialDelayString = "${sdv.retention.initial-delay-ms:15000}",
             fixedDelayString = "${sdv.retention.sweep-delay-ms:60000}")
     public void sweep() {
+        if (!schema.current()) return; // the database doesn't match this version (DatabaseSchemaCheck)
         Instant startedAt = Instant.now();
         try {
             RetentionDeletionService.SweepResult result = retention.sweep(100);

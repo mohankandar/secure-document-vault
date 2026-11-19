@@ -23,9 +23,17 @@ public class JdbcOperationalRepository implements AuditQueryPort, OperationalRep
 
     @Override
     public List<AuditEvent> find(UUID tenantId, AuditQueryPort.Filter filter, int limitPlusOne) {
+        return findRows(tenantId, filter, limitPlusOne).stream().map(AuditQueryPort.Row::event).toList();
+    }
+
+    /** A UUID-shaped target, so the document join never casts other target IDs. */
+    private static final String UUID_PATTERN = "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$";
+
+    @Override
+    public List<AuditQueryPort.Row> findRows(UUID tenantId, AuditQueryPort.Filter filter, int limitPlusOne) {
         StringBuilder sql = new StringBuilder("""
                 select audit_event_id, tenant_id, actor_type, actor_id, action, target_type, target_id,
-                       occurred_at, correlation_id, outcome, safe_details::text as safe_details_json
+                       occurred_at, correlation_id, outcome, safe_details::text as safe_details_json, actor_display_name
                   from audit_events
                  where tenant_id=:tenantId
                 """);
@@ -53,13 +61,54 @@ public class JdbcOperationalRepository implements AuditQueryPort, OperationalRep
             p.addValue("beforeTime", Timestamp.from(filter.beforeOccurredAt()));
             p.addValue("beforeId", filter.beforeEventId());
         }
-        sql.append(" order by occurred_at desc, audit_event_id desc limit :limit");
-        return jdbc.query(sql.toString(), p, (rs, row) -> new AuditEvent(
+        if (filter.actions() != null) {
+            if (filter.actions().isEmpty()) return List.of(); // An empty set matches nothing (fail closed).
+            sql.append(" and action in (:actions)");
+            p.addValue("actions", filter.actions());
+        }
+        if (filter.excludeActions() != null) {
+            sql.append(" and action not in (:excludeActions)");
+            p.addValue("excludeActions", filter.excludeActions());
+        }
+        if (filter.recordNumber() != null) {
+            // Document events of records with this identifier value (as typed, or as stored after normalization).
+            sql.append("""
+                     and target_type='DOCUMENT' and target_id in (
+                       select d.document_id::text
+                         from documents d
+                         join business_metadata_values v on v.tenant_id=d.tenant_id and v.submission_id=d.submission_id
+                         join metadata_field_definitions f on f.definition_id=v.definition_id and f.business_identifier
+                        where d.tenant_id=:tenantId and (v.normalized_value=:recordNumber or v.stored_value=:recordNumber))
+                    """);
+            p.addValue("recordNumber", filter.recordNumber());
+        }
+        // The page first, then the record and file name of its document events, all within this tenant.
+        String paged = sql + " order by occurred_at desc, audit_event_id desc limit :limit";
+        p.addValue("uuidPattern", UUID_PATTERN);
+        String withRecords = """
+                select a.*, d.original_filename,
+                       (select v.stored_value
+                          from business_metadata_values v
+                          join metadata_field_definitions f on f.definition_id=v.definition_id and f.business_identifier
+                          left join metadata_field_display_order o
+                            on o.tenant_id=v.tenant_id and o.source_id=f.source_id and o.field_key=v.field_key
+                         where v.tenant_id=d.tenant_id and v.submission_id=d.submission_id
+                         order by o.display_position nulls last, v.field_key
+                         limit 1) as record_number
+                  from (%s) a
+                  left join documents d
+                    on a.target_type='DOCUMENT' and a.target_id ~ :uuidPattern
+                   and d.tenant_id=a.tenant_id
+                   and d.document_id = (case when a.target_id ~ :uuidPattern then a.target_id::uuid end)
+                 order by a.occurred_at desc, a.audit_event_id desc
+                """.formatted(paged);
+        return jdbc.query(withRecords, p, (rs, row) -> new AuditQueryPort.Row(new AuditEvent(
                 rs.getObject("audit_event_id", UUID.class), rs.getObject("tenant_id", UUID.class),
                 rs.getString("actor_type"), rs.getString("actor_id"), rs.getString("action"),
                 rs.getString("target_type"), rs.getString("target_id"), rs.getTimestamp("occurred_at").toInstant(),
                 rs.getString("correlation_id"), AuditOutcome.valueOf(rs.getString("outcome")),
-                rs.getString("safe_details_json")));
+                rs.getString("safe_details_json"), rs.getString("actor_display_name")),
+                rs.getString("record_number"), rs.getString("original_filename")));
     }
 
     @Override
@@ -77,7 +126,7 @@ public class JdbcOperationalRepository implements AuditQueryPort, OperationalRep
     public List<ProcessingFailure> findProcessingFailures(UUID tenantId, int limit) {
         return jdbc.query("""
                 select document_id, submission_id, source_id, processing_error_code,
-                       processing_attempt_count, ingested_at
+                       processing_attempt_count, ingested_at, original_filename
                   from documents
                  where tenant_id=:tenantId and status='PROCESSING_FAILED'
                  order by ingested_at desc, document_id
@@ -85,7 +134,8 @@ public class JdbcOperationalRepository implements AuditQueryPort, OperationalRep
                 """, params(tenantId, limit), (rs, row) -> new ProcessingFailure(
                 rs.getObject("document_id", UUID.class), rs.getObject("submission_id", UUID.class),
                 rs.getObject("source_id", UUID.class), rs.getString("processing_error_code"),
-                rs.getInt("processing_attempt_count"), rs.getTimestamp("ingested_at").toInstant()));
+                rs.getInt("processing_attempt_count"), rs.getTimestamp("ingested_at").toInstant(),
+                rs.getString("original_filename")));
     }
 
     @Override
@@ -112,7 +162,7 @@ public class JdbcOperationalRepository implements AuditQueryPort, OperationalRep
 
     private List<StuckDocument> queryStuck(UUID tenantId, Instant processingCutoff, Instant transitionCutoff, int limit) {
         String sql = """
-                select d.document_id, d.submission_id, d.source_id, d.status, d.processing_error_code,
+                select d.document_id, d.submission_id, d.source_id, d.status, d.processing_error_code, d.original_filename,
                        case
                          when d.status='REDACTION_PROCESSING' then coalesce(r.created_at, d.ingested_at)
                          when d.status='RETENTION_DELETING' then coalesce(d.retention_delete_started_at, d.ingested_at)
@@ -134,7 +184,8 @@ public class JdbcOperationalRepository implements AuditQueryPort, OperationalRep
         return jdbc.query(sql, p, (rs, row) -> new StuckDocument(
                 rs.getObject("document_id", UUID.class), rs.getObject("submission_id", UUID.class),
                 rs.getObject("source_id", UUID.class), rs.getString("status"),
-                rs.getTimestamp("state_since").toInstant(), rs.getString("processing_error_code")));
+                rs.getTimestamp("state_since").toInstant(), rs.getString("processing_error_code"),
+                rs.getString("original_filename")));
     }
 
     @Override

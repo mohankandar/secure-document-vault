@@ -21,7 +21,7 @@ public final class RoleCapabilities {
                 Capability.CONFIGURE_INGESTION_SOURCES, Capability.CONFIGURE_TENANT_AUTH,
                 Capability.CONFIGURE_STORAGE_KEY_PROVIDER, Capability.VIEW_TECHNICAL_FAILURES));
         MAPPING.put(SdvRole.PLATFORM_OPERATIONS_ADMIN, EnumSet.of(
-                Capability.PLATFORM_CONFIGURATION, Capability.VIEW_TECHNICAL_FAILURES));
+                Capability.VIEW_TECHNICAL_FAILURES));
     }
 
     private RoleCapabilities() { }

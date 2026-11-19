@@ -37,7 +37,7 @@ public class JdbcRetentionRepository implements RetentionRepository {
     public java.util.Optional<PolicyVersion> findCurrentPolicy(UUID tenantId) {
         return jdbc.query("""
                 select policy_version_id, tenant_id, version, policy_name, description,
-                       retention_days, effective_from, effective_until, created_by, created_at
+                       retention_days, effective_from, effective_until, created_by, created_by_display_name, created_at
                   from retention_policy_versions
                  where tenant_id=:tenantId and effective_until is null
                  order by version desc
@@ -52,6 +52,7 @@ public class JdbcRetentionRepository implements RetentionRepository {
                 rs.getTimestamp("effective_from").toInstant(),
                 rs.getTimestamp("effective_until") == null ? null : rs.getTimestamp("effective_until").toInstant(),
                 rs.getString("created_by"),
+                rs.getString("created_by_display_name"),
                 rs.getTimestamp("created_at").toInstant())).stream().findFirst();
     }
 
@@ -59,7 +60,7 @@ public class JdbcRetentionRepository implements RetentionRepository {
     public List<PolicyVersion> findPolicyHistory(UUID tenantId, int limit) {
         return jdbc.query("""
                 select policy_version_id, tenant_id, version, policy_name, description,
-                       retention_days, effective_from, effective_until, created_by, created_at
+                       retention_days, effective_from, effective_until, created_by, created_by_display_name, created_at
                   from retention_policy_versions
                  where tenant_id=:tenantId
                  order by effective_from desc, version desc
@@ -76,6 +77,7 @@ public class JdbcRetentionRepository implements RetentionRepository {
                 rs.getTimestamp("effective_from").toInstant(),
                 rs.getTimestamp("effective_until") == null ? null : rs.getTimestamp("effective_until").toInstant(),
                 rs.getString("created_by"),
+                rs.getString("created_by_display_name"),
                 rs.getTimestamp("created_at").toInstant()));
     }
 
@@ -106,10 +108,10 @@ public class JdbcRetentionRepository implements RetentionRepository {
         jdbc.update("""
                 insert into retention_policy_versions(
                     policy_version_id, tenant_id, version, policy_name, description,
-                    retention_days, effective_from, effective_until, created_by, created_at)
+                    retention_days, effective_from, effective_until, created_by, created_by_display_name, created_at)
                 values (
                     :policyVersionId, :tenantId, :version, :policyName, :description,
-                    :retentionDays, :effectiveFrom, :effectiveUntil, :createdBy, :createdAt)
+                    :retentionDays, :effectiveFrom, :effectiveUntil, :createdBy, :createdByDisplayName, :createdAt)
                 """, new MapSqlParameterSource()
                 .addValue("policyVersionId", policy.policyVersionId())
                 .addValue("tenantId", policy.tenantId())
@@ -120,6 +122,7 @@ public class JdbcRetentionRepository implements RetentionRepository {
                 .addValue("effectiveFrom", Timestamp.from(policy.effectiveFrom()))
                 .addValue("effectiveUntil", policy.effectiveUntil() == null ? null : Timestamp.from(policy.effectiveUntil()))
                 .addValue("createdBy", policy.createdBy())
+                .addValue("createdByDisplayName", policy.createdByDisplayName())
                 .addValue("createdAt", Timestamp.from(policy.createdAt())));
     }
 

@@ -34,6 +34,7 @@ public class JdbcBusinessRecordRepository implements BusinessRecordRepository {
             Instant createdTo,
             Instant updatedFrom,
             Instant updatedTo,
+            boolean incompleteOnly,
             int offset,
             int limit) {
         StringBuilder sql = new StringBuilder(submissionSelect())
@@ -48,6 +49,8 @@ public class JdbcBusinessRecordRepository implements BusinessRecordRepository {
         if (createdTo != null) { sql.append(" and s.created_at<=:createdTo"); params.addValue("createdTo", Timestamp.from(createdTo)); }
         if (updatedFrom != null) { sql.append(" and s.last_activity_at>=:updatedFrom"); params.addValue("updatedFrom", Timestamp.from(updatedFrom)); }
         if (updatedTo != null) { sql.append(" and s.last_activity_at<=:updatedTo"); params.addValue("updatedTo", Timestamp.from(updatedTo)); }
+        // Same meaning as RecordSummary.incomplete: a submission that is not COMPLETE still misses documents.
+        if (incompleteOnly) sql.append(" and s.status<>'COMPLETE'");
 
         for (int i = 0; i < criteria.size(); i++) {
             SearchCriterion criterion = criteria.get(i);
@@ -69,12 +72,15 @@ public class JdbcBusinessRecordRepository implements BusinessRecordRepository {
                 if (v > 0) sql.append(" or ");
                 String valueParam = prefix + "Value" + v;
                 params.addValue(valueParam, variants.get(v));
+                // Exact keeps the field's configured normalization. Starts with and Contains ignore case:
+                // "pat" finds "Patel". The row is already found through the unique
+                // (tenant_id, submission_id, field_key) index, so lower() does not change index use.
                 if (criterion.searchMode() == MetadataSearchMode.EXACT) {
                     sql.append("v.normalized_value=:").append(valueParam);
                 } else if (criterion.searchMode() == MetadataSearchMode.PREFIX) {
-                    sql.append("position(:").append(valueParam).append(" in v.normalized_value)=1");
+                    sql.append("position(lower(:").append(valueParam).append(") in lower(v.normalized_value))=1");
                 } else {
-                    sql.append("position(:").append(valueParam).append(" in v.normalized_value)>0");
+                    sql.append("position(lower(:").append(valueParam).append(") in lower(v.normalized_value))>0");
                 }
             }
             sql.append("))");
@@ -82,6 +88,46 @@ public class JdbcBusinessRecordRepository implements BusinessRecordRepository {
 
         sql.append(" order by s.created_at desc, s.submission_id offset :offset limit :limit");
         return jdbc.query(sql.toString(), params, submissionMapper());
+    }
+
+    @Override
+    public List<RecentDocumentView> findRecentlyViewedDocuments(
+            UUID tenantId,
+            String actorId,
+            Instant since,
+            int eventScanLimit) {
+        // Only this actor's own successful viewer opens in this tenant; only documents still AVAILABLE.
+        return jdbc.query("""
+                select d.document_id, d.submission_id, d.source_id, r.last_opened_at
+                  from (select e.target_id, max(e.occurred_at) as last_opened_at
+                          from (select target_id, occurred_at
+                                  from audit_events
+                                 where tenant_id=:tenantId
+                                   and action='DOCUMENT_VIEW_OPENED'
+                                   and actor_type='USER'
+                                   and actor_id=:actorId
+                                   and target_type='DOCUMENT'
+                                   and outcome='SUCCESS'
+                                   and occurred_at>=:since
+                                 order by occurred_at desc
+                                 limit :scanLimit) e
+                         where e.target_id ~ '^[0-9a-fA-F-]{36}$'
+                         group by e.target_id) r
+                  join documents d
+                    on d.tenant_id=:tenantId
+                   and d.document_id=cast(r.target_id as uuid)
+                   and d.status='AVAILABLE'
+                 order by r.last_opened_at desc, d.document_id
+                """, new MapSqlParameterSource()
+                .addValue("tenantId", tenantId)
+                .addValue("actorId", actorId)
+                .addValue("since", Timestamp.from(since))
+                .addValue("scanLimit", eventScanLimit),
+                (rs, rowNum) -> new RecentDocumentView(
+                        rs.getObject("document_id", UUID.class),
+                        rs.getObject("submission_id", UUID.class),
+                        rs.getObject("source_id", UUID.class),
+                        instant(rs, "last_opened_at")));
     }
 
     @Override
@@ -205,14 +251,18 @@ public class JdbcBusinessRecordRepository implements BusinessRecordRepository {
             List<UUID> submissionIds) {
         if (submissionIds.isEmpty()) return List.of();
         return jdbc.query("""
-                select document_id, submission_id, source_document_id, original_filename,
-                       ingested_at, available_at, expires_at
-                  from documents
-                 where tenant_id=:tenantId
-                   and source_id=:sourceId
-                   and submission_id in (:submissionIds)
-                   and status='AVAILABLE'
-                 order by available_at desc nulls last, document_id
+                select d.document_id, d.submission_id, d.source_document_id, d.original_filename,
+                       d.ingested_at, d.available_at, d.expires_at, d.page_count,
+                       -- Redacted: the current content is the result of a finished correction.
+                       exists (select 1 from document_redaction_operations r
+                                where r.tenant_id=d.tenant_id and r.document_id=d.document_id
+                                  and r.new_content_sha256=d.content_sha256) as redacted
+                  from documents d
+                 where d.tenant_id=:tenantId
+                   and d.source_id=:sourceId
+                   and d.submission_id in (:submissionIds)
+                   and d.status='AVAILABLE'
+                 order by d.available_at desc nulls last, d.document_id
                 """, new MapSqlParameterSource()
                 .addValue("tenantId", tenantId)
                 .addValue("sourceId", sourceId)
@@ -224,7 +274,9 @@ public class JdbcBusinessRecordRepository implements BusinessRecordRepository {
                         rs.getString("original_filename"),
                         instant(rs, "ingested_at"),
                         instant(rs, "available_at"),
-                        instant(rs, "expires_at")));
+                        instant(rs, "expires_at"),
+                        (Integer) rs.getObject("page_count"),
+                        rs.getBoolean("redacted")));
     }
 
     @Override

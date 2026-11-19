@@ -1,19 +1,62 @@
 import { useEffect, useId, type ReactNode } from 'react'
-import { AlertTriangle, CheckCircle2, FlaskConical, Info, X, XCircle, Inbox, RefreshCw } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, ChevronRight, FlaskConical, Info, X, XCircle, Inbox, RefreshCw } from 'lucide-react'
 import { useStore } from './store'
-import { NOW } from './data'
 
-export const fmtDate = (v?: string | null) => (v ? new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }).format(new Date(v)) : '—')
+/** Fixed English short months: the browser's en-GB says "Sept", the canvas says "Sep". */
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+/** A yyyy-mm-dd value is a calendar day (no time zone); anything else is a moment. */
+const toDate = (v: string) => (/^\d{4}-\d{2}-\d{2}$/.test(v) ? new Date(v + 'T00:00:00') : new Date(v))
+/** "30 Sep 2026". */
+export const fmtDate = (v?: string | null) => {
+  if (!v) return '—'
+  const d = toDate(v)
+  return Number.isNaN(d.getTime()) ? '—' : `${d.getDate()} ${MONTHS[d.getMonth()]} ${d.getFullYear()}`
+}
 export const fmtDateTime = (v?: string | null) => (v ? new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }).format(new Date(v)) : '—')
-export const fmtRel = (v: string) => {
-  const s = Math.max(0, (NOW - new Date(v).getTime()) / 1000)
-  if (s < 90) return 'just now'
-  if (s < 3600) return `${Math.round(s / 60)} min ago`
-  if (s < 86400) return `${Math.round(s / 3600)} h ago`
-  if (s < 86400 * 45) return `${Math.round(s / 86400)} d ago`
-  return fmtDate(v)
+/** Allowed browser clock lag behind the server before a future time is shown as a date instead of "just now". */
+const CLOCK_SKEW_MS = 5 * 60 * 1000
+export const fmtRel = (v: string, now: number = Date.now()) => {
+  const t = new Date(v).getTime()
+  if (Number.isNaN(t)) return '—'
+  const diff = now - t
+  // Slightly in the future (server clock ahead of the browser) reads as "just now"; further ahead shows the date.
+  if (diff < -CLOCK_SKEW_MS) return fmtDate(v)
+  // The canvas's wording (task 0018): "12 minutes ago", "2 hours ago", "Yesterday", "Mon 16 Nov", "2 Nov".
+  const s = Math.max(0, diff / 1000)
+  if (s < 60) return 'just now'
+  const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'} ago`
+  if (s < 3600) return plural(Math.floor(s / 60), 'minute')
+  const day = (x: number) => { const d = new Date(x); d.setHours(0, 0, 0, 0); return d.getTime() }
+  const days = Math.round((day(now) - day(t)) / 86400000)
+  if (days <= 0) return plural(Math.floor(s / 3600), 'hour')
+  if (days === 1) return 'Yesterday'
+  if (days < 7) { const d = new Date(t); return `${WEEKDAYS[d.getDay()]} ${d.getDate()} ${MONTHS[d.getMonth()]}` }
+  return fmtShortDate(v)
+}
+/** "17 Oct" this year, "17 Oct 2025" another year (the canvas's dates). */
+export const fmtShortDate = (v?: string | null, now: number = Date.now()) => {
+  if (!v) return '—'
+  const d = toDate(v)
+  if (Number.isNaN(d.getTime())) return '—'
+  const sameYear = d.getFullYear() === new Date(now).getFullYear()
+  return `${d.getDate()} ${MONTHS[d.getMonth()]}${sameYear ? '' : ' ' + d.getFullYear()}`
 }
 export const humanize = (code: string) => code.toLowerCase().replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase())
+
+/**
+ * Plain-words label for an audit event. A page event says "loaded", not "viewed": a page fetched ahead of time may
+ * not have been looked at (the action code stays DOCUMENT_PAGE_VIEWED so earlier records still match).
+ */
+export function auditEventLabel(action: string, safeDetailsJson?: string | null, filename?: string, stripDocumentPrefix = false): string {
+  if (action === 'DOCUMENT_PAGE_VIEWED') {
+    let page: unknown
+    try { page = safeDetailsJson ? (JSON.parse(safeDetailsJson) as { page?: unknown }).page : undefined } catch { page = undefined }
+    if (typeof page === 'number') return filename ? `Loaded page ${page} of ${filename}` : `Loaded page ${page}`
+    return 'Page loaded'
+  }
+  return humanize(stripDocumentPrefix ? action.replace(/^DOCUMENT_/, '') : action)
+}
 export const toneFor = (v: string): 'ok' | 'warn' | 'bad' | '' => {
   if (['UP', 'ACTIVE', 'SUCCESS', 'COMPLETE', 'RECEIVED', 'PASSED'].includes(v)) return 'ok'
   if (['DEGRADED', 'READ_ONLY', 'RECEIVING', 'OPEN', 'DRAFT', 'INCOMPLETE', 'EXPECTED'].includes(v)) return 'warn'
@@ -78,7 +121,7 @@ export function ErrorState({ what }: { what: string }) {
   const { setScenario } = useStore()
   return (
     <Empty title={`Could not load ${what}`} icon={<XCircle size={20} />} action={<button type="button" className="v-btn sm" onClick={() => setScenario('live')}><RefreshCw size={14} aria-hidden />Retry</button>}>
-      The service returned an error. Nothing was changed. Correlation ID <span className="mono">sim-err-4f10</span>.
+      Vero couldn&apos;t load this just now. Nothing was changed.
     </Empty>
   )
 }
@@ -126,13 +169,22 @@ function useEscape(onClose: () => void) {
   }, [onClose])
 }
 
-export function Drawer({ title, eyebrow, onClose, children, footer }: { title: string; eyebrow?: string; onClose: () => void; children: ReactNode; footer?: ReactNode }) {
+/**
+ * A side panel. On wide screens it sits beside the page, which moves aside for it (canvas: the page stays readable);
+ * on phones it is a sheet from the bottom. wide: the canvas's wider panel (Add a sending system).
+ */
+export function Drawer({ title, eyebrow, onClose, children, footer, wide }: { title: string; eyebrow?: string; onClose: () => void; children: ReactNode; footer?: ReactNode; wide?: boolean }) {
   useEscape(onClose)
   const id = useId()
+  useEffect(() => {
+    const cls = wide ? 'r7-side-wide' : 'r7-side-open'
+    document.documentElement.classList.add(cls)
+    return () => document.documentElement.classList.remove(cls)
+  }, [wide])
   return (
     <>
       <div className="v-scrim" onClick={onClose} aria-hidden />
-      <aside className="v-drawer" role="dialog" aria-modal="true" aria-labelledby={id}>
+      <aside className={`v-drawer${wide ? ' wide' : ''}`} role="dialog" aria-modal="true" aria-labelledby={id}>
         <header className="v-drawer-head">
           <div className="grow">{eyebrow && <div className="eyebrow">{eyebrow}</div>}<h2 id={id}>{title}</h2></div>
           <button type="button" className="v-btn quiet icon sm" onClick={onClose} aria-label="Close"><X size={18} /></button>
@@ -199,4 +251,25 @@ export function PageHead({ crumbs, title, lede, actions }: { crumbs: string[]; t
       {actions && <div className="actions">{actions}</div>}
     </header>
   )
+}
+
+/** Who did something, in words, from an audit actor type: the technical sign-in ID is never shown (task 0018). */
+export const actorWords = (actorType: string) => (actorType === 'SOURCE' ? 'Sending system' : actorType === 'SYSTEM' ? 'Vero' : 'A person')
+
+/**
+ * "Technical details" (canvas): a folded row that names what is inside ("folder paths, thresholds, …").
+ * On a page it is its own card; inside a panel or card (flat) it is a strip with a line above it.
+ */
+export function TechDetails({ hint, flat, children }: { hint?: string; flat?: boolean; children: ReactNode }) {
+  return (
+    <details className={`v-tech${flat ? ' flat' : ''}`}>
+      <summary><ChevronRight size={16} aria-hidden className="v-tech-chev" /><b>Technical details</b>{hint && <span className="faint">{hint}</span>}</summary>
+      <div className="v-tech-body">{children}</div>
+    </details>
+  )
+}
+
+/** A canvas banner: bold words first, then the sentence, on one line where it fits ("**What to do:** …"). */
+export function Banner({ tone = 'warn', lead, children }: { tone?: 'warn' | 'bad' | 'ok' | 'info'; lead: ReactNode; children?: ReactNode }) {
+  return <div className={`v-banner ${tone}`} role={tone === 'bad' ? 'alert' : undefined}><b>{lead}</b>{children && <> {children}</>}</div>
 }

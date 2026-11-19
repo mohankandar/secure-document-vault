@@ -53,22 +53,37 @@ public final class BusinessExperienceView {
         }
     }
 
+    /** title: the record name from the source's Record title setting (or the default); null when there is none. */
     public record RecordSummary(
             String recordRef,
+            String title,
             List<FieldValue> identifiers,
             List<FieldValue> metadataPreview,
             int submissionCount,
             int availableDocumentCount,
             Instant latestSubmissionAt,
-            boolean incomplete) {
+            boolean incomplete,
+            /* Over the record's incomplete submissions (0 when complete), counted as in record detail. */
+            int incompleteExpectedCount,
+            int incompleteReceivedCount) {
         public RecordSummary {
             identifiers = List.copyOf(identifiers);
             metadataPreview = List.copyOf(metadataPreview);
         }
     }
 
+    /** A record the person opened themselves, with when they last opened one of its documents. */
+    public record RecentRecord(UUID sourceId, RecordSummary record, Instant lastOpenedAt) { }
+
+    public record RecentRecords(List<RecentRecord> records) {
+        public RecentRecords {
+            records = List.copyOf(records);
+        }
+    }
+
     public record RecordView(
             String recordRef,
+            String title,
             UUID sourceId,
             String sourceKey,
             String sourceDisplayName,
@@ -92,7 +107,10 @@ public final class BusinessExperienceView {
             String originalFilename,
             Instant ingestedAt,
             Instant availableAt,
-            Instant expiresAt) { }
+            Instant expiresAt,
+            /** null when the document was stored before page counts were kept. */
+            Integer pageCount,
+            boolean redacted) { }
 
     public record IncompleteAttention(List<IncompleteSubmission> submissions) {
         public IncompleteAttention {

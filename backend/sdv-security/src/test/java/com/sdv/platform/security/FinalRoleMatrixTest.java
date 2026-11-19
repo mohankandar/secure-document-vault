@@ -43,7 +43,6 @@ class FinalRoleMatrixTest {
 
         assertEquals(
                 Set.of(
-                        Capability.PLATFORM_CONFIGURATION,
                         Capability.VIEW_TECHNICAL_FAILURES),
                 RoleCapabilities.capabilities(EnumSet.of(SdvRole.PLATFORM_OPERATIONS_ADMIN)));
     }

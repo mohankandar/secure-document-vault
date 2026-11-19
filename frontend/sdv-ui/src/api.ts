@@ -9,7 +9,7 @@ export const localRoleSwitchEnabled = () => import.meta.env.DEV && window.locati
 export const getLocalTestPersona = (): LocalPersona | null => {
   if (!localRoleSwitchEnabled()) return null
   const value = window.sessionStorage.getItem(LOCAL_ROLE_KEY)
-  return value === 'business' || value === 'steward' || value === 'businessAdmin' || value === 'tenantIt' || value === 'platform' ? value : null
+  return value === 'business' || value === 'steward' || value === 'businessAdmin' || value === 'tenantIt' || value === 'platform' || value === 'admin' ? value : null
 }
 export const setLocalTestPersona = (persona: LocalPersona) => {
   if (!localRoleSwitchEnabled()) return
@@ -40,7 +40,8 @@ const localHeaders = (persona: LocalPersona): Record<string, string> => {
   }
 }
 
-export class ApiRequestError extends Error { constructor(message: string, public readonly status: number) { super(message); this.name = 'ApiRequestError' } }
+/** correlationId: the server's X-Correlation-Id for the failed request, when it sent one (shown to people as a reference for IT). */
+export class ApiRequestError extends Error { constructor(message: string, public readonly status: number, public readonly correlationId?: string) { super(message); this.name = 'ApiRequestError' } }
 
 async function request<T>(path: string, persona: LocalPersona, init?: RequestInit): Promise<T> {
   const enterpriseHeaders = await bearerHeaders()
@@ -57,7 +58,7 @@ async function request<T>(path: string, persona: LocalPersona, init?: RequestIni
   if (!response.ok) {
     if (response.status === 401 && isOidcSecurityMode()) expireOidcSession()
     const body = await response.json().catch(() => null) as { message?: string } | null
-    throw new ApiRequestError(body?.message ?? `HTTP ${response.status}`, response.status)
+    throw new ApiRequestError(body?.message ?? `HTTP ${response.status}`, response.status, response.headers.get('X-Correlation-Id') ?? undefined)
   }
   if (response.status === 204) return undefined as T
   return response.json() as Promise<T>
@@ -68,7 +69,7 @@ export const api = <T>(path: string, init?: RequestInit) => request<T>(path, 'ad
 export const businessApi = <T>(path: string, init?: RequestInit) => request<T>(path, 'business', init)
 export const contentApi = <T>(path: string, persona: 'business' | 'steward', init?: RequestInit) => request<T>(path, persona, init)
 
-export async function contentBinary(path: string, persona: 'business' | 'steward'): Promise<Blob> {
+export async function contentBinary(path: string, persona: LocalPersona): Promise<Blob> {
   const enterpriseHeaders = await bearerHeaders()
   const response = await fetch(path, {
     method: 'GET',
@@ -79,7 +80,7 @@ export async function contentBinary(path: string, persona: 'business' | 'steward
   if (!response.ok) {
     if (response.status === 401 && isOidcSecurityMode()) expireOidcSession()
     const body = await response.json().catch(() => null) as { message?: string } | null
-    throw new Error(body?.message ?? `HTTP ${response.status}`)
+    throw new ApiRequestError(body?.message ?? `HTTP ${response.status}`, response.status, response.headers.get('X-Correlation-Id') ?? undefined)
   }
   return response.blob()
 }
@@ -102,6 +103,9 @@ export type SessionInfo = {
   subject: string
   roles: string[]
   capabilities: string[]
+  /** From the sign-in token's name/email claims; absent or null when the token has none. Display only. */
+  displayName?: string | null
+  email?: string | null
 }
 
 export type IngestionSource = {
@@ -181,12 +185,17 @@ export type FieldValue = {
 
 export type RecordSummary = {
   recordRef: string
+  /** The record's name from the source's Record title setting (or the default); null when it has none. */
+  title?: string | null
   identifiers: FieldValue[]
   metadataPreview: FieldValue[]
   submissionCount: number
   availableDocumentCount: number
   latestSubmissionAt: string
   incomplete: boolean
+  /** Over the record's incomplete submissions; 0 when complete. */
+  incompleteExpectedCount?: number
+  incompleteReceivedCount?: number
 }
 
 export type SearchResponse = {
@@ -206,6 +215,10 @@ export type RecordDocument = {
   ingestedAt: string
   availableAt: string | null
   expiresAt: string | null
+  /** Worked out when the document was stored; absent or null for documents stored before that. */
+  pageCount?: number | null
+  /** A permanent correction (redaction) has been applied. */
+  redacted?: boolean
 }
 
 export type IncompleteSubmission = {
@@ -219,6 +232,7 @@ export type IncompleteSubmission = {
 
 export type BusinessRecord = {
   recordRef: string
+  title?: string | null
   sourceId: string
   sourceKey: string
   sourceDisplayName: string

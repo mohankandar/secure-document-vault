@@ -128,6 +128,28 @@ public class JdbcFoundationRepository implements TenantRepository, IngestionSour
     }
 
     @Override
+    public List<String> findRecordTitleFields(UUID tenantId, UUID sourceId) {
+        return jdbc.queryForList("""
+                select field_key from record_title_fields
+                where tenant_id=:tenantId and source_id=:sourceId
+                order by title_position
+                """, params("tenantId", tenantId).addValue("sourceId", sourceId), String.class);
+    }
+
+    @Override
+    public void replaceRecordTitleFields(UUID tenantId, UUID sourceId, List<String> fieldKeys) {
+        var scope = params("tenantId", tenantId).addValue("sourceId", sourceId);
+        jdbc.update("delete from record_title_fields where tenant_id=:tenantId and source_id=:sourceId", scope);
+        for (int i=0; i<fieldKeys.size(); i++) {
+            jdbc.update("""
+                    insert into record_title_fields (tenant_id, source_id, field_key, title_position)
+                    values (:tenantId, :sourceId, :fieldKey, :position)
+                    """, params("tenantId", tenantId).addValue("sourceId", sourceId)
+                         .addValue("fieldKey", fieldKeys.get(i)).addValue("position", i));
+        }
+    }
+
+    @Override
     public List<MetadataFieldDefinition> findCurrent(UUID tenantId, UUID sourceId) {
         var p = params("tenantId", tenantId).addValue("sourceId", sourceId);
         return jdbc.query(metadataSelect() + " where tenant_id=:tenantId and source_id=:sourceId and active=true order by field_key",
@@ -204,12 +226,14 @@ public class JdbcFoundationRepository implements TenantRepository, IngestionSour
                 .addValue("occurredAt", Timestamp.from(event.occurredAt()))
                 .addValue("correlationId", event.correlationId())
                 .addValue("outcome", event.outcome().name())
-                .addValue("safeDetails", event.safeDetailsJson());
+                .addValue("safeDetails", event.safeDetailsJson())
+                .addValue("actorDisplayName", event.actorDisplayName() == null || event.actorDisplayName().isBlank()
+                        ? null : event.actorDisplayName().strip().substring(0, Math.min(300, event.actorDisplayName().strip().length())));
         jdbc.update("""
                 insert into audit_events(audit_event_id, tenant_id, actor_type, actor_id, action, target_type,
-                                         target_id, occurred_at, correlation_id, outcome, safe_details)
+                                         target_id, occurred_at, correlation_id, outcome, safe_details, actor_display_name)
                 values (:id, :tenantId, :actorType, :actorId, :action, :targetType,
-                        :targetId, :occurredAt, :correlationId, :outcome, cast(:safeDetails as jsonb))
+                        :targetId, :occurredAt, :correlationId, :outcome, cast(:safeDetails as jsonb), :actorDisplayName)
                 """, p);
     }
 

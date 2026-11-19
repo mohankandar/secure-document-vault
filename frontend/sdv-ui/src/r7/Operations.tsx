@@ -1,350 +1,238 @@
-import { useEffect, useMemo, useState } from 'react'
-import { opSummary, opsDetail, opsAudit, opsRetention, systemInfo, type OpSummary, type OpsDetail, type OpsAuditEvent } from './liveApi'
-import { ArrowRight, CheckCircle2, ChevronRight, FileWarning, HardDrive, PackageOpen, Timer } from 'lucide-react'
+import { useCallback, useEffect, useState } from 'react'
+import { opsAudit, opsDetail, opsRetention, systemInfo, type OpsAuditEvent, type OpsDetail, type OpsRetention, type SystemInfo } from './liveApi'
 import { AREA_TABS, useStore } from './store'
-import { FAILURES, RETENTION_SWEEP, SERVICES, STUCK, SUBMISSIONS, type AuditEvent, type Submission } from './data'
 import { AreaFrame } from './Governance'
-import { EnvironmentPanel, StorageTab, volumeAttention } from './TenantAdmin'
-import { Badge, Callout, Drawer, Panel, Scenario, Seg, Status, fmtDateTime, fmtRel, humanize, toneFor } from './ui'
+import { FailureNotice, loadFailed, type Failure } from './CardError'
+import { Problems } from './Problems'
+import { AuditLog, AuditWords } from './AuditLog'
+import { About } from './About'
+import { Banner, Callout, Panel, TechDetails, fmtDateTime } from './ui'
+import {
+  SERVICE_KEYS, SERVICE_STATE_WORDS, SERVICE_WORDS, ago, asLiveVolume, canStoreWords, cleanupWords, fmtWhen, overviewSentence,
+  problemKinds, problemTotal, serviceSentence, serviceState, servicesDown, storageRoleWord, storageWhatToDo, volumeNeedsAttention,
+} from './opsWords'
+
+// Task 0012 (change 9): Platform operations Overview, Storage (read-only) and Health in plain words; About is shared
+// with Tenant IT. Codes, paths and raw fields are only under Technical details.
 
 const LEDE: Record<string, string> = {
-  overview: 'What needs attention across this deployment right now.',
-  intake: 'Submissions arriving from producer systems through the ingestion API, and where they are in processing.',
-  storage: 'Capacity and health of processing storage. Edit volumes in Tenant IT.',
-  health: 'Live status of the services SDV depends on.',
-  incidents: 'Processing failures, stuck transitions and incomplete submissions.',
-  audit: 'Append-only technical evidence. Document content is never shown here.',
-  configuration: 'Deployment facts for this customer environment.',
+  overview: 'How Vero is doing right now.',
+  problems: 'Documents that could not be stored, and deliveries still missing documents.',
+  storage: 'How full each storage volume is. Tenant IT adds and changes volumes.',
+  health: 'The services Vero depends on, and its automatic cleanup.',
+  audit: 'Everything people and systems did in Vero. Document content is never shown here.',
+  about: 'The facts support will ask for.',
 }
-
-const incomplete = SUBMISSIONS.filter((s) => s.status === 'INCOMPLETE')
 
 export function Operations() {
   const { route } = useStore()
   const tab = AREA_TABS.operations.find((t) => t.id === route.tab)!
-  const attention: string[] = [] // Never derive live operational badges from prototype fixtures.
   return (
-    <AreaFrame crumbs={['Platform operations', tab.label]} title={tab.label} lede={LEDE[route.tab]} attention={attention}>
-      {route.tab === 'overview' && <ConnectedOverview />}
-      {route.tab === 'intake' && <LiveOperationsSection section="intake" />}
-      {route.tab === 'storage' && <LiveOperationsSection section="storage" />}
-      {route.tab === 'health' && <LiveOperationsSection section="health" />}
-      {route.tab === 'incidents' && <LiveOperationsSection section="incidents" />}
-      {route.tab === 'audit' && <LiveOperationsSection section="audit" />}
-      {route.tab === 'configuration' && <LiveOperationsSection section="configuration" />}
+    <AreaFrame crumbs={['Platform operations', tab.label]} title={route.tab === 'about' ? 'About this installation' : tab.label} lede={LEDE[route.tab]}>
+      {route.tab === 'overview' && <Overview />}
+      {route.tab === 'problems' && <Problems role="platform" />}
+      {route.tab === 'storage' && <OpsStorage />}
+      {route.tab === 'health' && <Health />}
+      {route.tab === 'audit' && <AuditLog />}
+      {route.tab === 'about' && <About role="platform" />}
     </AreaFrame>
   )
 }
 
-function Overview() {
-  const { navigate, volumes, audit } = useStore()
-  const storageAttn = volumes.filter(volumeAttention).length
-  const degraded = SERVICES.filter((s) => s.status !== 'UP')
-  const signals = [
-    { k: 'Processing failures', v: FAILURES.length, d: `Oldest ${fmtRel(FAILURES[FAILURES.length - 1].at)}`, tab: 'incidents', Icon: FileWarning, bad: FAILURES.length > 0 },
-    { k: 'Stuck transitions', v: STUCK.length, d: STUCK.length ? `In ${STUCK[0].state.toLowerCase()} for ${fmtRel(STUCK[0].since).replace(' ago', '')}` : 'None', tab: 'incidents', Icon: Timer, bad: STUCK.length > 0 },
-    { k: 'Incomplete submissions', v: incomplete.length, d: 'Awaiting producer documents', tab: 'intake', Icon: PackageOpen, bad: incomplete.length > 0 },
-    { k: 'Storage attention', v: storageAttn, d: storageAttn ? 'Above warning threshold' : 'All volumes healthy', tab: 'storage', Icon: HardDrive, bad: storageAttn > 0 },
-  ]
-  return (
-    <Scenario what="operational overview" rows={8} empty={<Callout tone="ok" title="Nothing needs attention">All services are healthy and no submissions are waiting.</Callout>}>
-      {degraded.length > 0 && <Callout tone="warn" title={`${degraded.length} service degraded`}>{degraded.map((s) => `${s.name}: ${s.detail}.`).join(' ')}</Callout>}
-      <div className="v-signals" role="list">
-        {signals.map((s) => (
-          <button key={s.k} type="button" role="listitem" className="v-signal" onClick={() => navigate('operations', s.tab)}>
-            <span className="k"><s.Icon size={16} aria-hidden style={{ color: s.bad ? 'var(--attention)' : 'var(--ink-3)' }} />{s.k}<ChevronRight size={14} aria-hidden style={{ marginLeft: 'auto' }} /></span>
-            <span className="v">{s.v}</span>
-            <span className="d">{s.d}</span>
-          </button>
-        ))}
-      </div>
-      <div className="v-grid-2">
-        <Panel flush title="Core services" actions={<button type="button" className="v-btn quiet sm" onClick={() => navigate('operations', 'health')}>Details<ArrowRight size={14} aria-hidden /></button>}>
-          <ServiceTable />
-        </Panel>
-        <div className="stack-lg">
-          <Panel title="Retention sweep" actions={<Status value={RETENTION_SWEEP.outcome} label="Succeeded" />}>
-            <dl className="v-kv cols">
-              <div><dt>Last run</dt><dd>{fmtRel(RETENTION_SWEEP.completedAt)}</dd></div>
-              <div><dt>Expired · deleted</dt><dd>{RETENTION_SWEEP.candidates} · {RETENTION_SWEEP.deleted}</dd></div>
-            </dl>
-          </Panel>
-          <Panel flush title="Latest audit" actions={<button type="button" className="v-btn quiet sm" onClick={() => navigate('operations', 'audit')}>All<ArrowRight size={14} aria-hidden /></button>}>
-            <ul className="v-timeline" style={{ padding: 16 }}>
-              {audit.slice(0, 4).map((e) => <li key={e.id}><span className={`pt ${e.id.startsWith('sim') ? 'sim' : toneFor(e.outcome) === 'ok' ? 'ok' : 'bad'}`} aria-hidden /><div className="stack" style={{ gap: 0 }}><strong>{humanize(e.action)}</strong><span>{e.actor} · {fmtRel(e.at)}</span></div></li>)}
-            </ul>
-          </Panel>
-        </div>
-      </div>
-    </Scenario>
-  )
+/** The operations summary and the last cleanup run, with when they were read and how long the read took. */
+function useOps(withCleanup: boolean) {
+  const [data, setData] = useState<OpsDetail | null>(null)
+  const [cleanup, setCleanup] = useState<OpsRetention | null>(null)
+  const [cleanupError, setCleanupError] = useState(false)
+  const [error, setError] = useState<Failure | null>(null)
+  const [checkedAt, setCheckedAt] = useState<string | null>(null)
+  const [tookMs, setTookMs] = useState<number | null>(null)
+  const [loading, setLoading] = useState(false)
+  const load = useCallback(async () => {
+    setLoading(true); setError(null)
+    const started = performance.now()
+    const [summary, sweep] = await Promise.allSettled([opsDetail(), withCleanup ? opsRetention() : Promise.resolve(null)])
+    setTookMs(Math.round(performance.now() - started))
+    if (summary.status === 'fulfilled') { setData(summary.value); setCheckedAt(new Date().toISOString()) }
+    else setError(loadFailed('This page did not load', summary.reason))
+    if (sweep.status === 'fulfilled') { setCleanup(sweep.value); setCleanupError(false) } else setCleanupError(true)
+    setLoading(false)
+  }, [withCleanup])
+  useEffect(() => { void load() }, [load])
+  return { data, cleanup, cleanupError, error, checkedAt, tookMs, loading, load }
 }
 
-function ServiceTable() {
-  return (
-    <table className="v-table">
-      <thead><tr><th>Service</th><th>Status</th><th>Detail</th><th className="num">Latency</th></tr></thead>
-      <tbody>{SERVICES.map((s) => (
-        <tr key={s.name}><td className="lead" data-label="Service"><strong style={{ fontWeight: 500 }}>{s.name}</strong></td><td data-label="Status"><Status value={s.status} label={s.status === 'UP' ? 'Healthy' : humanize(s.status)} /></td><td data-label="Detail" className="muted">{s.detail}</td><td className="num" data-label="Latency">{s.latencyMs != null ? `${s.latencyMs} ms` : '—'}</td></tr>
-      ))}</tbody>
-    </table>
-  )
+/** Re-renders every 30 seconds so "Checked 2 minutes ago" stays true. */
+function useTick() {
+  const [, setN] = useState(0)
+  useEffect(() => { const t = window.setInterval(() => setN((n) => n + 1), 30_000); return () => window.clearInterval(t) }, [])
+}
+
+const ROUTINE = new Set(['AUDIT_VIEWED', 'BUSINESS_RECENT_RECORDS_LISTED', 'DOCUMENT_PAGE_VIEWED'])
+const startOfToday = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d.toISOString() }
+
+function Overview() {
+  const { navigate } = useStore()
+  const { data, cleanup, error, load } = useOps(true)
+  const [latest, setLatest] = useState<OpsAuditEvent[] | null | undefined>(undefined)
+  const [deletedToday, setDeletedToday] = useState<{ n: number; more: boolean } | null | undefined>(undefined)
+  useEffect(() => {
+    let live = true
+    // Routine views (each look at the audit writes one) can fill the newest events, so read up to 3 pages back.
+    ;(async () => {
+      const found: OpsAuditEvent[] = []
+      let cursor: string | undefined
+      for (let i = 0; i < 3 && found.length < 5; i++) {
+        const r = await opsAudit(cursor, {}, 100)
+        found.push(...r.events.filter((e) => !ROUTINE.has(e.action)))
+        if (!r.nextCursor) break
+        cursor = r.nextCursor
+      }
+      return found.slice(0, 5)
+    })().then((x) => { if (live) setLatest(x) }).catch(() => { if (live) setLatest(null) })
+    opsAudit(undefined, { action: 'DOCUMENT_RETENTION_DELETED', outcome: 'SUCCESS', from: startOfToday() }, 200)
+      .then((r) => { if (live) setDeletedToday({ n: r.events.length, more: r.hasMore }) }).catch(() => { if (live) setDeletedToday(null) })
+    return () => { live = false }
+  }, [])
+
+  if (error) return <FailureNotice failure={error} loadTitle="The overview didn't load" onRetry={() => void load()} />
+  if (!data) return <p className="muted">Loading…</p>
+  const volumes = data.storageVolumes.map(asLiveVolume)
+  const lead = overviewSentence(data, volumes, cleanup)
+  const total = problemTotal(data)
+  // The fullest volume that can take documents; one Tenant IT set offline or read only is left out on purpose.
+  const active = volumes.filter((v) => v.volume.state === 'ACTIVE')
+  const fullest = [...active].sort((a, b) => (b.capacity?.usedPercent ?? -1) - (a.capacity?.usedPercent ?? -1))[0]
+  const unreachable = active.find((v) => v.observationError)
+  const down = servicesDown(data)
+  const sweep = cleanupWords(cleanup)
+  const partial = data.dataObservations?.some((x) => x.status === 'DEGRADED')
+
+  const tiles: { id: string; label: string; value: string; detail: string; tab: string; bad: boolean; tone?: string }[] = [
+    { id: 'problems', label: 'Problems', tab: 'problems', bad: !!total,
+      value: total == null ? 'Couldn’t count' : total === 0 ? 'None' : total.toLocaleString(),
+      detail: total ? problemKinds(data) : total === 0 ? 'Every delivery arrived properly' : 'Open Problems to see what is listed' },
+    { id: 'storage', label: 'Storage', tab: 'storage', bad: active.some(volumeNeedsAttention),
+      value: unreachable ? 'Can’t reach' : fullest?.capacity?.usedPercent != null ? `${fullest.capacity.usedPercent}% full` : active.length ? 'Unknown' : 'No volume',
+      detail: unreachable ? `${unreachable.volume.displayName} · Tenant IT checks the folder` : fullest ? `${fullest.volume.displayName} · warns at ${fullest.volume.warningPercent}%, stops at ${fullest.volume.stopWritePercent}%` : 'No volume can take new documents' },
+    { id: 'services', label: 'Services', tab: 'health', bad: down.length > 0,
+      value: down.length === 0 ? 'All working' : `${down.map((k) => SERVICE_WORDS[k].name).join(', ')} not working`,
+      detail: 'Vero, database and key service' },
+    { id: 'cleanup', label: 'Cleanup', tab: 'health', bad: sweep.tone === 'bad',
+      value: sweep.tone === 'bad' ? 'Last run failed' : deletedToday === undefined ? 'Counting…' : deletedToday === null ? 'Couldn’t count' : deletedToday.n === 0 ? 'Nothing deleted today' : `${deletedToday.more ? 'More than ' : ''}${deletedToday.n.toLocaleString()} deleted today`,
+      detail: cleanup?.completedAt ? `Documents past their keep date · last ran ${ago(cleanup.completedAt)}` : 'Documents past their keep date' },
+  ]
+  // Canvas: the value's colour says how it is (problems red, storage amber when it needs attention, services green).
+  for (const t of tiles) t.tone = t.id === 'problems' ? (t.bad ? 'bad' : '') : t.id === 'storage' ? (t.bad ? 'warn' : '') : t.id === 'services' ? (t.bad ? 'bad' : 'ok') : t.bad ? 'bad' : ''
+
+  return <>
+    <section className={`v-banner ${lead.attention ? 'warn' : 'ok'}`} aria-label="How Vero is doing">
+      {(() => { const m = lead.text.match(/^(.*?[.!?])\s+(.*)$/); return m ? <><b>{m[1]}</b> {m[2]}</> : <b>{lead.text}</b> })()}
+      {partial && <span className="muted"> Some counts couldn’t be read just now, so this may not be complete.</span>}</section>
+    <div className="ov-tiles" role="list" aria-label="Overview tiles">
+      {tiles.map((t) => (
+        <button key={t.id} type="button" role="listitem" className={`ov-tile ${t.tone}`} aria-label={`${t.label}: ${t.value}. ${t.detail}. Open`} onClick={() => navigate('operations', t.tab)}>
+          <span className="k">{t.label}</span>
+          <span className="v">{t.value}</span>
+          <span className="d">{t.detail}</span>
+          <span className="ov-open">Open →</span>
+        </button>
+      ))}
+    </div>
+    <Panel flush title="Latest activity" actions={<button type="button" className="v-link" onClick={() => navigate('operations', 'audit')}>All activity →</button>}>
+      {latest === undefined ? <p className="muted" style={{ padding: 16 }}>Loading…</p>
+        : latest === null ? <p className="muted" style={{ padding: 16 }}>The latest activity didn’t load. Open Audit to see it.</p>
+        : latest.length === 0 ? <p className="muted" style={{ padding: 16 }}>Nothing lately besides routine views. All activity shows everything.</p>
+        : <ul className="ov-activity" aria-label="Latest activity">{latest.map((e) => <li key={e.auditEventId}><span className="faint">{fmtWhen(e.occurredAt)}</span><span><AuditWords e={e} /></span></li>)}</ul>}
+    </Panel>
+  </>
+}
+
+function OpsStorage() {
+  const { data, error, load } = useOps(false)
+  if (error) return <FailureNotice failure={error} loadTitle="Storage didn't load" onRetry={() => void load()} />
+  if (!data) return <p className="muted">Loading…</p>
+  const volumes = data.storageVolumes.map(asLiveVolume)
+  const todo = storageWhatToDo(volumes)
+  return <>
+    <section className="v-panel">
+      {volumes.length === 0 ? <p className="muted" style={{ padding: 16 }}>No storage volume is set up. The customer’s Tenant IT adds one.</p> :
+      <table className="v-table" aria-label="Storage volumes">
+        <thead><tr><th>Volume</th><th>Role</th><th style={{ width: '26%' }}>How full</th><th>Can store new documents</th></tr></thead>
+        <tbody>{volumes.map((v) => { const can = canStoreWords(v), pct = v.capacity?.usedPercent; return (
+          <tr key={v.volume.volumeId}>
+            <td className="lead" data-label="Volume"><strong style={{ fontWeight: 500 }}>{v.volume.displayName}</strong></td>
+            <td data-label="Role">{storageRoleWord(volumes, v)}</td>
+            <td data-label="How full">{pct == null ? <span className="faint">Not known</span> : <div className="row" style={{ gap: 10 }}><span className="v-bar2" role="img" aria-label={`${v.volume.displayName} is ${pct}% full`}><i className={pct >= (v.volume.stopWritePercent ?? 95) ? 'r' : pct >= (v.volume.warningPercent ?? 80) ? 'y' : ''} style={{ width: `${Math.min(pct, 100)}%` }} /></span><span>{pct}%</span></div>}</td>
+            <td data-label="Can store new documents"><span className={`v-dot ${can.tone === 'ok' ? 'g' : can.tone === 'warn' ? 'y' : can.tone === 'bad' ? 'r' : ''}`} aria-hidden />{can.text}</td>
+          </tr>) })}</tbody>
+      </table>}
+    </section>
+    {todo.length ? <Banner lead="What to do:">{todo.join(' ')}</Banner>
+      : <Banner tone="info" lead="What to do:">Nothing right now. The customer’s Tenant IT adds and changes volumes; this page only shows them.</Banner>}
+    <TechDetails hint="folder paths, thresholds, last check, write test result">
+      <table className="v-table" aria-label="Storage technical details"><thead><tr><th>Volume</th><th>Folder</th><th>Warns at · stops at</th><th>Order</th><th>Last check</th><th>Write test</th></tr></thead>
+        <tbody>{data.storageVolumes.map((v) => <tr key={v.volumeId}>
+          <td data-label="Volume">{v.displayName}<div className="mono faint">{v.volumeId}</div></td>
+          <td data-label="Folder" className="mono">{v.rootPath ?? '—'}</td>
+          <td data-label="Warns at · stops at">{v.warningPercent ?? '—'}% · {v.stopWritePercent ?? '—'}%</td>
+          <td data-label="Order">{v.priority ?? '—'}</td>
+          <td data-label="Last check">{v.observedAt ? fmtDateTime(v.observedAt) : '—'}</td>
+          <td data-label="Write test">{v.state === 'OFFLINE' ? 'Not tested (offline)' : v.writable ? 'Passed' : 'Failed'}{v.observationError && v.state !== 'OFFLINE' && <div className="faint">{v.observationError}</div>}</td>
+        </tr>)}</tbody></table>
+    </TechDetails>
+  </>
 }
 
 function Health() {
-  return <Panel flush title="Core services" description={`Observed ${fmtDateTime(new Date().toISOString())}`}><Scenario what="service health"><ServiceTable /></Scenario></Panel>
-}
-
-const STAGES = [
-  { id: 'OPEN', label: 'Submission created', d: 'Producer declares expected documents' },
-  { id: 'RECEIVING', label: 'Receiving documents', d: 'Each PDF uploaded independently' },
-  { id: 'FINALIZE', label: 'Finalization', d: 'Encrypt, store, index metadata' },
-  { id: 'COMPLETE', label: 'Available', d: 'Searchable by authorized users' },
-]
-
-function Intake() {
-  const { navigate, setSelectedRef } = useStore()
-  const [sel, setSel] = useState<Submission | null>(null)
-  const counts = { OPEN: SUBMISSIONS.filter((s) => s.status === 'OPEN').length, RECEIVING: SUBMISSIONS.filter((s) => s.status === 'RECEIVING').length, FINALIZE: STUCK.length + FAILURES.length, COMPLETE: 48211 }
-  return (
-    <>
-      <section className="v-panel" aria-label="Ingestion pipeline">
-        <div className="v-signals" style={{ border: 0, borderRadius: 0 }}>
-          {STAGES.map((s) => (
-            <div key={s.id} className="v-signal" style={{ cursor: 'default' }}>
-              <span className="k">{s.label}</span>
-              <span className="v">{counts[s.id as keyof typeof counts].toLocaleString()}</span>
-              <span className="d">{s.d}</span>
-            </div>
-          ))}
-        </div>
+  useTick()
+  const { data, cleanup, cleanupError, error, checkedAt, tookMs, loading, load } = useOps(true)
+  const sweep = cleanupWords(cleanup)
+  // Vero checks the database against its own version once, at start-up. While they don't match, every other
+  // request is refused, so the sentence from system information replaces the generic "couldn't check" notice.
+  const [schema, setSchema] = useState<SystemInfo['databaseSchema'] | null>(null)
+  useEffect(() => {
+    if (loading) return
+    let live = true
+    systemInfo('platform').then((i) => { if (live) setSchema(i.databaseSchema ?? null) }).catch(() => { if (live) setSchema(null) })
+    return () => { live = false }
+  }, [loading])
+  const schemaOff = schema != null && schema.state !== 'CURRENT'
+  return <>
+    <div className="row ov-checked" style={{ justifyContent: 'space-between', gap: 12 }}>
+      <span className="faint" role="status">{checkedAt ? `Checked ${ago(checkedAt)}` : loading ? 'Checking…' : ''}</span>
+      <button type="button" className="v-btn sm" disabled={loading} onClick={() => void load()}>{loading ? 'Checking…' : 'Check now'}</button>
+    </div>
+    {schemaOff && <Callout tone="bad" title="The database doesn’t match this Vero version">{schema.message}
+      <span className="muted" style={{ display: 'block', marginTop: 6 }}>Vero checks this when it starts. After the schema step, start Vero again.</span></Callout>}
+    {error && !schemaOff && <FailureNotice failure={error} loadTitle="Vero couldn't check its services" onRetry={() => void load()} />}
+    {data && <>
+      {SERVICE_KEYS.map((k) => { const s = serviceSentence(k, data[k]?.status); return s && serviceState(data[k]?.status) !== 'notConfigured'
+        ? <Callout key={k} tone="bad" title={`${SERVICE_WORDS[k].name} isn’t working`}>{s}</Callout> : null })}
+      <section className="v-panel">
+        <table className="v-table" aria-label="Services"><thead><tr><th>Service</th><th>What it does</th><th>Status</th></tr></thead>
+          <tbody>{SERVICE_KEYS.map((k) => { const st = serviceState(data[k]?.status); return (
+            <tr key={k}><td className="lead" data-label="Service"><strong style={{ fontWeight: 500 }}>{SERVICE_WORDS[k].name}</strong></td>
+              <td data-label="What it does">{SERVICE_WORDS[k].does}</td>
+              <td data-label="Status"><span className={`v-dot ${st === 'working' ? 'g' : st === 'notConfigured' ? 'y' : 'r'}`} aria-hidden />{SERVICE_STATE_WORDS[st]}
+                {st === 'notConfigured' && <div className="faint">{serviceSentence(k, data[k]?.status)}</div>}</td></tr>) })}</tbody></table>
       </section>
-      <Panel flush title="Submissions needing attention" meta={SUBMISSIONS.length}>
-        <Scenario what="submissions" empty={<p className="faint" style={{ padding: 16 }}>No open or incomplete submissions.</p>}>
-          <table className="v-table">
-            <thead><tr><th>Producer submission</th><th>Source</th><th>Status</th><th className="num">Documents</th><th>Created</th><th className="act"><span className="sr-only">Open</span></th></tr></thead>
-            <tbody>{SUBMISSIONS.map((s) => {
-              const got = s.expected.filter((e) => e.state === 'RECEIVED').length
-              return (
-                <tr key={s.id} className="clickable" onClick={() => setSel(s)}>
-                  <td className="lead" data-label="Submission"><div className="stack" style={{ gap: 0 }}><span className="mono" style={{ fontWeight: 500 }}>{s.sourceSubmissionId}</span><span className="mono faint" style={{ fontSize: 12 }}>{s.id}</span></div></td>
-                  <td data-label="Source">{s.source}</td>
-                  <td data-label="Status"><Status value={s.status} /></td>
-                  <td className="num" data-label="Documents">{got} / {s.expected.length}</td>
-                  <td data-label="Created">{fmtRel(s.createdAt)}</td>
-                  <td className="act"><button type="button" className="v-btn sm" onClick={(e) => { e.stopPropagation(); setSel(s) }}>Inspect</button></td>
-                </tr>
-              )
-            })}</tbody>
-          </table>
-        </Scenario>
-      </Panel>
-      <Callout title="Ingestion in SDV is API-driven">
-        Producer systems create a submission, upload each PDF, and SDV finalizes it. The current product has no operator upload, scanning, package-building or manual-review screens, so none are shown here. Recovery happens through the producer API (retry finalization) or by the producer re-sending.
-      </Callout>
-      {sel && (
-        <Drawer eyebrow={sel.source} title={sel.sourceSubmissionId} onClose={() => setSel(null)}
-          footer={sel.recordRef ? <button type="button" className="v-btn" onClick={() => { setSel(null); setSelectedRef(sel.recordRef); navigate('operations', 'incidents') }}>View related incidents</button> : undefined}>
-          <dl className="v-kv cols">
-            <div><dt>Submission ID</dt><dd className="mono">{sel.id}</dd></div><div><dt>Status</dt><dd><Status value={sel.status} /></dd></div>
-            <div><dt>Created</dt><dd>{fmtDateTime(sel.createdAt)}</dd></div><div><dt>Linked record</dt><dd className="mono">{sel.recordRef ?? 'Assigned on first document'}</dd></div>
-          </dl>
-          <div className="stack" style={{ gap: 8 }}>
-            <h3>Expected documents</h3>
-            <ol className="v-timeline">
-              {sel.expected.map((e) => <li key={e.name}><span className={`pt ${e.state === 'RECEIVED' ? 'ok' : ''}`} aria-hidden /><div className="row between grow"><strong>{e.name}</strong><Badge tone={e.state === 'RECEIVED' ? 'ok' : 'warn'}>{humanize(e.state)}</Badge></div></li>)}
-            </ol>
-          </div>
-          <Callout tone="sim" title="No operator action available">
-            Retry finalization exists only in the producer ingestion API (<span className="mono">POST …/documents/{'{id}'}/retry-finalization</span>). This screen shows state; it does not trigger recovery.
-          </Callout>
-        </Drawer>
-      )}
-    </>
-  )
-}
-
-function Incidents() {
-  return (
-    <>
-      <Panel flush title="Processing failures" meta={FAILURES.length}>
-        <Scenario what="processing failures" empty={<p className="faint" style={{ padding: 16 }}><CheckCircle2 size={14} aria-hidden /> No processing failures.</p>}>
-          <table className="v-table">
-            <thead><tr><th>Document</th><th>Source</th><th>Error</th><th className="num">Attempts</th><th>When</th></tr></thead>
-            <tbody>{FAILURES.map((f) => (
-              <tr key={f.id}><td className="lead" data-label="Document"><div className="stack" style={{ gap: 0 }}><span style={{ fontWeight: 500 }}>{f.filename}</span><span className="mono faint" style={{ fontSize: 12 }}>{f.id} · {f.submissionId}</span></div></td><td data-label="Source">{f.source}</td><td data-label="Error"><Badge tone="bad">{f.errorCode}</Badge></td><td className="num" data-label="Attempts">{f.attempts}</td><td data-label="When">{fmtRel(f.at)}</td></tr>
-            ))}</tbody>
-          </table>
-        </Scenario>
-      </Panel>
-      <Panel flush title="Stuck transitions" meta={STUCK.length}>
-        <Scenario what="stuck transitions">
-          <table className="v-table">
-            <thead><tr><th>Document</th><th>State</th><th>Since</th><th>Submission</th></tr></thead>
-            <tbody>{STUCK.map((s) => <tr key={s.id}><td className="lead" data-label="Document"><div className="stack" style={{ gap: 0 }}><span style={{ fontWeight: 500 }}>{s.filename}</span><span className="mono faint" style={{ fontSize: 12 }}>{s.id}</span></div></td><td data-label="State"><Badge tone="warn">{s.state}</Badge></td><td data-label="Since">{fmtRel(s.since)}</td><td data-label="Submission"><span className="mono">{s.submissionId}</span></td></tr>)}</tbody>
-          </table>
-        </Scenario>
-      </Panel>
-      <Panel flush title="Incomplete submissions" meta={incomplete.length}>
-        <Scenario what="incomplete submissions">
-          <table className="v-table">
-            <thead><tr><th>Submission</th><th>Source</th><th className="num">Received</th><th>Created</th></tr></thead>
-            <tbody>{incomplete.map((s) => <tr key={s.id}><td className="lead" data-label="Submission"><span className="mono">{s.sourceSubmissionId}</span></td><td data-label="Source">{s.source}</td><td className="num" data-label="Received">{s.expected.filter((e) => e.state === 'RECEIVED').length} of {s.expected.length}</td><td data-label="Created">{fmtRel(s.createdAt)}</td></tr>)}</tbody>
-          </table>
-        </Scenario>
-      </Panel>
-    </>
-  )
-}
-
-function Audit() {
-  const { audit } = useStore()
-  const [outcome, setOutcome] = useState<'ALL' | 'SUCCESS' | 'DENIED' | 'FAILED'>('ALL')
-  const [q, setQ] = useState('')
-  const [sel, setSel] = useState<AuditEvent | null>(null)
-  const [shown, setShown] = useState(8)
-  const rows = useMemo(() => audit.filter((e) => (outcome === 'ALL' || e.outcome === outcome) && (!q || `${e.action} ${e.actor} ${e.target} ${e.correlationId}`.toLowerCase().includes(q.toLowerCase()))), [audit, outcome, q])
-  return (
-    <>
-      <div className="row wrap" style={{ gap: 12 }}>
-        <input className="v-input" style={{ flex: '1 1 240px' }} aria-label="Filter audit events" placeholder="Filter by action, actor, target or correlation ID" value={q} onChange={(e) => setQ(e.target.value)} />
-        <Seg label="Outcome" value={outcome} onChange={setOutcome} options={[{ value: 'ALL', label: 'All' }, { value: 'SUCCESS', label: 'Success' }, { value: 'DENIED', label: 'Denied' }, { value: 'FAILED', label: 'Failed' }]} />
-      </div>
-      <Panel flush title="Audit events" meta={rows.length}>
-        <Scenario what="audit events" rows={8}>
-          {rows.length === 0 ? <p className="faint" style={{ padding: 16 }}>No events match these filters.</p> : (
-            <table className="v-table">
-              <thead><tr><th>When</th><th>Action</th><th>Actor</th><th>Target</th><th>Outcome</th></tr></thead>
-              <tbody>{rows.slice(0, shown).map((e) => (
-                <tr key={e.id} className="clickable" tabIndex={0} onClick={() => setSel(e)} onKeyDown={(k) => { if (k.key === 'Enter') setSel(e) }}>
-                  <td className="lead" data-label="When"><span className="row between"><span style={{ fontWeight: 500 }}>{humanize(e.action)}</span><span className="faint" style={{ fontSize: 13 }}>{fmtDateTime(e.at)}</span></span></td>
-                  <td data-label="Action" className="mono" style={{ fontSize: 12 }}>{e.action}</td>
-                  <td data-label="Actor">{e.actor} <span className="faint">· {e.actorType.toLowerCase()}</span></td>
-                  <td data-label="Target" className="mono" style={{ fontSize: 12 }}>{e.target}</td>
-                  <td data-label="Outcome"><Status value={e.outcome} />{e.id.startsWith('sim') && <> <Badge tone="warn">simulated</Badge></>}</td>
-                </tr>
-              ))}</tbody>
-            </table>
-          )}
-        </Scenario>
-      </Panel>
-      {shown < rows.length && <button type="button" className="v-btn" style={{ alignSelf: 'center' }} onClick={() => setShown((n) => n + 8)}>Load older events</button>}
-      {sel && (
-        <Drawer eyebrow="Audit evidence" title={humanize(sel.action)} onClose={() => setSel(null)}>
-          <dl className="v-kv">
-            <div><dt>Outcome</dt><dd><Status value={sel.outcome} /></dd></div>
-            <div><dt>Occurred</dt><dd>{fmtDateTime(sel.at)}</dd></div>
-            <div><dt>Actor</dt><dd>{sel.actor} · {sel.actorType}</dd></div>
-            <div><dt>Target</dt><dd className="mono">{sel.targetType} · {sel.target}</dd></div>
-            <div><dt>Correlation ID</dt><dd className="mono">{sel.correlationId ?? '—'}</dd></div>
-            <div><dt>Event ID</dt><dd className="mono">{sel.id}</dd></div>
-          </dl>
-          <div className="stack" style={{ gap: 6 }}>
-            <h3>Safe details</h3>
-            <pre className="mono" style={{ margin: 0, padding: 12, borderRadius: 7, background: 'var(--surface-2)', fontSize: 13, overflowX: 'auto' }}>{JSON.stringify(sel.details, null, 2)}</pre>
-            <small className="faint">Audit details never include document content or personal data.</small>
-          </div>
-        </Drawer>
-      )}
-    </>
-  )
-}
-
-
-function ConnectedOverview(){
- const {navigate}=useStore()
- const [data,setData]=useState<OpSummary|null>(null)
- const [details,setDetails]=useState<OpsDetail|null>(null)
- const [error,setError]=useState('')
- useEffect(()=>{let live=true;opSummary().then(d=>{if(live)setData(d)}).catch(e=>{if(live)setError(String(e))});opsDetail().then(d=>{if(live)setDetails(d)}).catch(()=>{});return()=>{live=false}},[])
- const signals=data?[
-  {label:'Processing failures',count:data.processingFailureCount,description:'Documents requiring investigation',tab:'incidents',Icon:FileWarning},
-  {label:'Stuck documents',count:data.stuckDocumentCount,description:'Documents stalled in processing',tab:'incidents',Icon:Timer},
-  {label:'Attention submissions',count:data.attentionSubmissionCount,description:'Incomplete or attention-required intake',tab:'intake',Icon:PackageOpen},
-  {label:'Storage attention',count:details?details.storageVolumes.filter(v=>v.warningThresholdReached||v.stopWriteThresholdReached||!!v.observationError).length:null,description:'Volumes requiring attention',tab:'storage',Icon:HardDrive}
- ] as const:[]
- return <>{error&&<Callout tone="warn" title="Operations unavailable">{error}</Callout>}
- {!data&&!error&&<Callout title="Loading operations">Reading operational summary…</Callout>}
- {data&&<>
- <Panel title="Platform status" actions={<Status value={data.overallStatus}/>} description="Live operational counts and core service health reported by SDV.">
-  <div className="v-signals" role="list">{signals.map(x=><button key={x.label} type="button" role="listitem" className="v-signal" onClick={()=>navigate('operations',x.tab)}>
-   <span className="k"><x.Icon size={16} aria-hidden style={{color:x.count!=null&&x.count>0?'var(--attention)':'var(--ink-3)'}}/>{x.label}<ChevronRight size={14} aria-hidden style={{marginLeft:'auto'}}/></span>
-   <span className="v">{x.count==null?'—':x.count.toLocaleString()}</span><span className="d">{x.count==null?'Not available from backend':x.description}</span>
-  </button>)}</div>
- </Panel>
- <div className="v-grid-2"><Panel flush title="Core services" actions={<button type="button" className="v-btn quiet sm" onClick={()=>navigate('operations','health')}>Details <ArrowRight size={14} aria-hidden/></button>}><table className="v-table"><thead><tr><th>Service</th><th>Status</th><th>Details</th></tr></thead><tbody>{[data.application,data.database,data.keyService].map(x=><tr key={x.component}><td className="lead">{x.component}</td><td><Status value={x.status}/></td><td>{x.message}</td></tr>)}</tbody></table></Panel><div className="stack-lg"><Panel title="Retention sweep" description="Open Platform Health for the backend retention status."><button type="button" className="v-btn sm" onClick={()=>navigate('operations','health')}>View retention status <ArrowRight size={14} aria-hidden/></button></Panel><Panel title="Latest audit" description="Review the server's recorded operational events."><button type="button" className="v-btn sm" onClick={()=>navigate('operations','audit')}>View audit events <ArrowRight size={14} aria-hidden/></button></Panel></div></div>
- {data.dataObservations.some(x=>x.status==='DEGRADED')&&<Callout tone="warn" title="Incomplete operational data">Some sections are degraded; do not interpret missing counts as zero.</Callout>}
- </>}
- </>
-}
-
-
-const AUDIT_ACTION_OPTIONS: [string,string][]=[['','All actions'],['DOCUMENT_DOWNLOADED','Document downloaded'],['DOCUMENT_PRINTED','Document printed'],['DOCUMENT_VIEW_OPENED','Document opened'],['DOCUMENT_PAGE_VIEWED','Page viewed'],['BUSINESS_RECORD_OPENED','Business record opened'],['DOCUMENT_COMMENT_ADDED','Comment added'],['DOCUMENT_TAG_ADDED','Tag added'],['DOCUMENT_PERMANENTLY_REDACTED','Permanent redaction']]
-function LiveOperationsSection({section}:{section:string}){
- const [data,setData]=useState<OpsDetail|null>(null)
- const [events,setEvents]=useState<OpsAuditEvent[]>([])
- const [selected,setSelected]=useState<OpsAuditEvent|null>(null)
- const [moreFilters,setMoreFilters]=useState(false)
- const [includeViewEvents,setIncludeViewEvents]=useState(false)
- const [moreLoading,setMoreLoading]=useState(false)
- const [cursor,setCursor]=useState<string|null>(null)
- const [filters,setFilters]=useState({action:'',outcome:'',actorId:'',actorType:'',targetType:'',targetId:'',correlationId:'',from:'',to:''})
- const [applied,setApplied]=useState({action:'',outcome:'',actorId:'',actorType:'',targetType:'',targetId:'',correlationId:'',from:'',to:''})
- const [error,setError]=useState('')
- const [loading,setLoading]=useState(false)
- const [retention,setRetention]=useState<Record<string,unknown>|null>(null)
- const [configuration,setConfiguration]=useState('')
- const [refreshedAt,setRefreshedAt]=useState<string|null>(null)
- const [incident,setIncident]=useState<{title:string;details:[string,string][]}|null>(null)
- const load=async(f=applied)=>{setLoading(true);setError('');try{
- if(section==='audit'){const r=await opsAudit(undefined,f);setEvents(r.events);setCursor(r.nextCursor)}
- else if(section==='configuration'){const x=await systemInfo('platform');setConfiguration([x.productName,x.version,x.status,x.activeProfiles.join(', ')].join(' · '))}
- else if(section==='health'){const results=await Promise.allSettled([opsDetail(),opsRetention()]);if(results[0].status==='fulfilled')setData(results[0].value);else throw results[0].reason;if(results[1].status==='fulfilled')setRetention(results[1].value);else setError('Retention status unavailable: '+String(results[1].reason))}
- else setData(await opsDetail())
- setRefreshedAt(new Date().toISOString())
- }catch(e){setError(String(e))}finally{setLoading(false)}}
- useEffect(()=>{void load()},[section])
- const renderRecords=(heading:string,columns:string[],rows:(string|number|null|undefined)[][])=> <Panel flush title={heading} meta={rows.length}><table className="v-table"><thead><tr>{columns.map(c=><th key={c}>{c}</th>)}</tr></thead><tbody>{rows.map((r,i)=><tr key={i}>{r.map((v,j)=><td key={j} className={j===0?'lead':undefined}>{v??'Unavailable'}</td>)}</tr>)}</tbody></table>{rows.length===0&&<Callout title="No records returned">No records returned by the backend for this view.</Callout>}</Panel>
- return <div className="stack-lg">
- <div className="row" style={{justifyContent:'flex-end',gap:12,alignItems:'center'}}>{refreshedAt&&<span className="muted">Refreshed {fmtDateTime(refreshedAt)}</span>}<button type="button" className="v-btn sm" disabled={loading} onClick={()=>void load()}>{loading?'Refreshing…':'Refresh'}</button></div>
- {error&&<Callout tone="warn" title="Operational data unavailable">{error}</Callout>}
- {section==='audit'?<>
- <Panel title="Audit filters" description="Filter server-recorded audit evidence. Routine audit-view activity is hidden by default.">
- <div className="op-audit-filters">
-  <label className="v-field"><span>Action</span><select className="v-select" value={AUDIT_ACTION_OPTIONS.some(x=>x[0]===filters.action)?filters.action:'__custom'} onChange={e=>{if(e.target.value==='__custom')setMoreFilters(true);else setFilters(x=>({...x,action:e.target.value}))}}>{AUDIT_ACTION_OPTIONS.map(([value,label])=><option key={value} value={value}>{label}</option>)}{!AUDIT_ACTION_OPTIONS.some(x=>x[0]===filters.action)&&<option value="__custom">Custom action</option>}</select></label>
-  <label className="v-field"><span>Outcome</span><select className="v-select" value={filters.outcome} onChange={e=>setFilters(x=>({...x,outcome:e.target.value}))}><option value="">All outcomes</option><option value="SUCCESS">Success</option><option value="DENIED">Denied</option><option value="FAILED">Failed</option></select></label>
-  <label className="v-field"><span>From</span><input className="v-input" type="datetime-local" value={filters.from} onChange={e=>setFilters(x=>({...x,from:e.target.value}))}/></label>
-  <label className="v-field"><span>To</span><input className="v-input" type="datetime-local" value={filters.to} onChange={e=>setFilters(x=>({...x,to:e.target.value}))}/></label>
-  <button type="button" className="v-btn primary" disabled={loading||(!!filters.from&&!!filters.to&&filters.from>filters.to)} onClick={()=>{const f={...filters,from:filters.from?new Date(filters.from).toISOString():'',to:filters.to?new Date(filters.to).toISOString():''};setApplied(f);void load(f)}}>{loading?'Loading…':'Apply filters'}</button>
- </div>
- <div className="op-audit-toolbar"><button type="button" className="v-btn quiet sm" aria-expanded={moreFilters} aria-controls="op-audit-advanced" onClick={()=>setMoreFilters(v=>!v)}>{moreFilters?'Fewer filters':'More filters'}{[filters.actorId,filters.actorType,filters.targetType,filters.targetId,filters.correlationId].filter(Boolean).length>0?' · additional filters set':''}</button><label className="row" style={{gap:8}}><input type="checkbox" checked={includeViewEvents} onChange={e=>setIncludeViewEvents(e.target.checked)}/>Include view events</label></div>
- {moreFilters&&<div className="op-audit-advanced" id="op-audit-advanced">
-  <label className="v-field"><span>Exact action code</span><input className="v-input" placeholder="e.g. DOCUMENT_DOWNLOADED" value={filters.action} onChange={e=>setFilters(x=>({...x,action:e.target.value}))}/></label>
-  <label className="v-field"><span>Resource type</span><input className="v-input" value={filters.targetType} onChange={e=>setFilters(x=>({...x,targetType:e.target.value}))}/></label>
-  <label className="v-field"><span>Resource ID</span><input className="v-input" value={filters.targetId} onChange={e=>setFilters(x=>({...x,targetId:e.target.value}))}/></label>
-  <label className="v-field"><span>Actor type</span><input className="v-input" value={filters.actorType} onChange={e=>setFilters(x=>({...x,actorType:e.target.value}))}/></label>
-  <label className="v-field"><span>Actor ID</span><input className="v-input" value={filters.actorId} onChange={e=>setFilters(x=>({...x,actorId:e.target.value}))}/></label>
-  <label className="v-field"><span>Correlation ID</span><input className="v-input" value={filters.correlationId} onChange={e=>setFilters(x=>({...x,correlationId:e.target.value}))}/></label>
- </div>}
- </Panel>
- <Panel flush title="Audit events" meta={events.filter(e=>includeViewEvents||e.action!=='AUDIT_VIEWED').length}>
- <table className="v-table"><thead><tr><th>When</th><th>Event</th><th>Actor</th><th>Target</th><th>Outcome</th><th className="act">Details</th></tr></thead><tbody>{events.filter(e=>includeViewEvents||e.action!=='AUDIT_VIEWED').map(e=><tr key={e.auditEventId}><td data-label="When">{fmtDateTime(e.occurredAt)}</td><td data-label="Event" className="lead"><strong>{humanize(e.action)}</strong><div className="mono faint">{e.action}</div></td><td data-label="Actor">{e.actorId}<div className="faint">{e.actorType}</div></td><td data-label="Target" className="mono">{e.targetId}</td><td data-label="Outcome"><Status value={e.outcome}/></td><td className="act"><button type="button" className="v-btn sm" aria-label={'View details for '+humanize(e.action)} onClick={()=>setSelected(e)}>View details</button></td></tr>)}</tbody></table>
- {events.filter(e=>includeViewEvents||e.action!=='AUDIT_VIEWED').length===0&&<p className="muted" style={{padding:16}}>No events to display in this page. Try changing the filters or loading older events.</p>}
- {cursor&&<div style={{padding:12}}><button type="button" disabled={loading||moreLoading} className="v-btn" onClick={async()=>{setMoreLoading(true);try{const r=await opsAudit(cursor,applied);setEvents(x=>[...x,...r.events]);setCursor(r.nextCursor)}catch(e){setError(String(e))}finally{setMoreLoading(false)}}}>{moreLoading?'Loading…':'Load older events'}</button></div>}
- </Panel>
- {selected&&<Drawer eyebrow="Audit evidence" title={humanize(selected.action)} onClose={()=>setSelected(null)}><dl className="v-kv"><div><dt>Outcome</dt><dd><Status value={selected.outcome}/></dd></div><div><dt>Time</dt><dd>{fmtDateTime(selected.occurredAt)}</dd></div><div><dt>Action code</dt><dd className="mono">{selected.action}</dd></div><div><dt>Event ID</dt><dd className="mono">{selected.auditEventId}</dd></div><div><dt>Target</dt><dd className="mono">{selected.targetType} · {selected.targetId}</dd></div><div><dt>Correlation ID</dt><dd className="mono">{selected.correlationId??'—'}</dd></div><div><dt>Actor</dt><dd>{selected.actorType} · {selected.actorId}</dd></div></dl><h3>Safe audit details</h3><pre className="mono op-audit-details">{selected.safeDetailsJson??'—'}</pre></Drawer>}
- </>:section==='configuration'?<Panel title="Deployment configuration"><p>{configuration||'Unavailable'}</p></Panel>:
- <>
- {data&&section==='health'&&<><Panel title="Core services"><dl className="v-kv cols">{[data.application,data.database,data.keyService].map(x=><div key={x.component}><dt>{x.component}</dt><dd>{x.status} · {x.message}</dd></div>)}</dl></Panel><Panel title="Retention sweep"><dl className="v-kv">{Object.entries(retention??{}).map(([k,v])=><div key={k}><dt>{k}</dt><dd>{v==null?'Unavailable':String(v)}</dd></div>)}</dl>{!retention&&<p className="muted">Retention status unavailable.</p>}</Panel></>}
- {data&&section==='storage'&&<>
- {data.storageVolumes.some(v=>v.warningThresholdReached||v.stopWriteThresholdReached||v.observationError)&&<Callout tone="warn" title="Storage needs attention">{data.storageVolumes.filter(v=>v.warningThresholdReached||v.stopWriteThresholdReached||v.observationError).length} volume(s) have capacity or health warnings. Review the live measurements below.</Callout>}
- <Panel flush title="Storage volumes" meta={data.storageVolumes.length}><table className="v-table"><thead><tr><th>Volume</th><th>State</th><th>Health</th><th>Capacity</th><th className="num">Used</th></tr></thead><tbody>{data.storageVolumes.map(v=><tr key={v.volumeId}><td className="lead"><strong>{v.displayName}</strong><div className="mono faint">{v.volumeId}</div></td><td><Badge tone={v.state==='ACTIVE'?'ok':'warn'}>{v.state}</Badge></td><td><Status value={v.observationError?'DEGRADED':v.health}/>{v.observationError&&<span className="muted"> · Probe unavailable</span>}</td><td style={{minWidth:220}}>{v.usedPercent==null?<span className="faint">Capacity unavailable</span>:<div className="op-capacity"><div className="op-capacity-fill" style={{width:Math.min(100,Math.max(0,v.usedPercent))+'%',background:v.stopWriteThresholdReached?'var(--danger)':v.warningThresholdReached?'var(--attention)':'var(--primary)'}}/></div>}</td><td className="num"><strong>{v.usedPercent==null?'—':v.usedPercent+'%'}</strong><div className="faint">{v.stopWriteThresholdReached?'Stop-write':v.warningThresholdReached?'Warning':v.writable?'Writable':'Not writable'}</div></td></tr>)}</tbody></table>{data.storageVolumes.length===0&&<Callout title="No volumes reported">The backend returned no storage volume observations.</Callout>}<p className="muted" style={{padding:'0 16px'}}>Warning and stop-write indications come from the backend; thresholds are not exposed by this operations response.</p></Panel>
- </>}
- {data&&section==='incidents'&&<>{renderRecords('Processing failures',['Document','Error','Attempts','Ingested'],data.processingFailures.map(v=>[v.documentId,v.errorCode,v.processingAttemptCount,fmtDateTime(v.ingestedAt)]))}{renderRecords('Stuck transitions',['Document','Status','Since','Error'],data.stuckDocuments.map(v=>[v.documentId,v.status,fmtDateTime(v.stateSince),v.processingErrorCode]))}</>}
- {data&&section==='intake'&&renderRecords('Incomplete submissions',['Submission','Status','Documents','Last activity'],data.attentionSubmissions.map(v=>[v.sourceSubmissionId||v.submissionId,v.status,v.receivedDocumentCount+' / '+v.expectedDocumentCount,fmtDateTime(v.lastActivityAt)]))}
- {data&&section==='incidents'&&<Panel title="Inspect incident details" description="Select an incident to view its backend identifiers and diagnostic fields."><div className="row wrap" style={{gap:8}}>{data.processingFailures.map(v=><button type="button" className="v-btn sm" key={v.documentId} onClick={()=>setIncident({title:'Processing failure',details:[['Document',v.documentId],['Submission',v.submissionId],['Source',v.sourceId],['Error',v.errorCode],['Attempts',String(v.processingAttemptCount)],['Ingested',fmtDateTime(v.ingestedAt)]]})}>Failure · {v.documentId.slice(0,8)}</button>)}{data.stuckDocuments.map(v=><button type="button" className="v-btn sm" key={v.documentId} onClick={()=>setIncident({title:'Stuck transition',details:[['Document',v.documentId],['Submission',v.submissionId],['Status',v.status],['Since',fmtDateTime(v.stateSince)],['Error',v.processingErrorCode??'None']]})}>Stuck · {v.documentId.slice(0,8)}</button>)}</div></Panel>}
- {incident&&<Drawer eyebrow="Platform operations · incident" title={incident.title} onClose={()=>setIncident(null)}><dl className="v-kv">{incident.details.map(([k,v])=><div key={k}><dt>{k}</dt><dd className="mono">{v}</dd></div>)}</dl></Drawer>}
- {data&&data.dataObservations?.some(x=>x.status==='DEGRADED')&&<Callout tone="warn" title="Partial backend observations">Some operational queries are degraded. Missing records do not indicate zero incidents.</Callout>}
- </>}
- </div>
+    </>}
+    {!schemaOff && <section className={`v-panel ov-cleanup ${sweep.tone}`} aria-label="Automatic cleanup"><div className="v-panel-body">
+      <h2 className="v-sec">Automatic cleanup</h2>
+      {cleanupError ? <p>Vero couldn’t say how automatic cleanup is doing. Check now again.</p> : <>
+        <p className="ov-sweep"><span className={`v-dot ${sweep.tone === 'bad' ? 'r' : 'g'}`} aria-hidden />{sweep.sentence}</p>
+        {sweep.whatToDo && <p><strong>What to do:</strong> {sweep.whatToDo}</p>}
+        <p className="faint">It runs by itself. If a run fails, it shows here in red with what to do, and in Problems.</p>
+      </>}
+    </div></section>}
+    {data && <TechDetails hint="component names, response times, raw cleanup fields">
+      <dl className="v-kv">
+        {SERVICE_KEYS.map((k) => <div key={k}><dt>{SERVICE_WORDS[k].name}</dt><dd><span className="mono">{data[k]?.component} · {data[k]?.status}</span><div className="faint">{data[k]?.message} · checked {fmtDateTime(data[k]?.observedAt)}</div></dd></div>)}
+        <div><dt>Response time</dt><dd>{tookMs == null ? '—' : `${tookMs} ms for the whole check (the server reports no time per service)`}</dd></div>
+        {cleanup && <div><dt>Cleanup, last run</dt><dd className="mono">outcome {cleanup.outcome} · started {cleanup.startedAt ? fmtDateTime(cleanup.startedAt) : '—'} · finished {cleanup.completedAt ? fmtDateTime(cleanup.completedAt) : '—'} · candidates {cleanup.candidates} · deleted {cleanup.deleted} · failed {cleanup.failed}{cleanup.reasonCode ? ` · ${cleanup.reasonCode}` : ''}</dd></div>}
+        <div><dt>Overall</dt><dd className="mono">{data.overallStatus}</dd></div>
+      </dl>
+    </TechDetails>}
+  </>
 }

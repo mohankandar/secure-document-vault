@@ -85,10 +85,11 @@ public class DocumentFinalizationService {
         if (!claimed) return requireDocument(tenantId, sourceId, submissionId, documentId);
 
         try {
-            verifyDurableObject(tenantId, documentId);
+            // The check decrypts the whole stored document once; its page count is worked out from the same bytes.
+            Integer pageCount = verifyDurableObject(tenantId, documentId);
             Instant availableAt = clock.instant();
             transactions.executeWithoutResult(status ->
-                    documents.markDocumentAvailable(tenantId, sourceId, submissionId, documentId, availableAt));
+                    documents.markDocumentAvailable(tenantId, sourceId, submissionId, documentId, availableAt, pageCount));
             audit.append(new AuditEvent(
                     UUID.randomUUID(), tenantId, "SOURCE", sourceSubject,
                     "DOCUMENT_AVAILABLE", "DOCUMENT", documentId.toString(), availableAt, correlationId,
@@ -108,7 +109,8 @@ public class DocumentFinalizationService {
         return requireDocument(tenantId, sourceId, submissionId, documentId);
     }
 
-    private void verifyDurableObject(UUID tenantId, UUID documentId) throws IOException {
+    /** Checks the stored object end to end and returns the document's page count (null when the PDF can't be read). */
+    private Integer verifyDurableObject(UUID tenantId, UUID documentId) throws IOException {
         Document document = documents.findDocumentByIdForTenant(tenantId, documentId)
                 .orElseThrow(() -> new NoSuchElementException("Document not found."));
         DocumentStorageRef storageRef = documents.findStorageRef(tenantId, documentId)
@@ -125,7 +127,7 @@ public class DocumentFinalizationService {
 
         try (InputStream raw = provider.open(tenantId, volume, storageRef.objectKey());
              DigestingCountingInputStream encrypted = new DigestingCountingInputStream(raw)) {
-            PlaintextVerifier plaintext = new PlaintextVerifier();
+            PlaintextVerifier plaintext = new PlaintextVerifier(document.contentSizeBytes());
             StreamingCryptoPort.CryptoEnvelope envelope = new StreamingCryptoPort.CryptoEnvelope(
                     cryptoMetadata.cryptoProfile(),
                     cryptoMetadata.cryptoVersion(),
@@ -150,6 +152,7 @@ public class DocumentFinalizationService {
             if (!plaintext.sha256().equals(document.contentSha256())) {
                 throw new IOException("Decrypted document fingerprint does not match committed receipt metadata.");
             }
+            return PdfPageCount.of(plaintext.bytes());
         }
     }
 
@@ -214,8 +217,13 @@ public class DocumentFinalizationService {
         private final byte[] prefix = new byte[PDF_MAGIC.length];
         private int prefixLength;
         private long count;
+        /** The decrypted document, kept for the page count; bounded by its committed size (itself within the PDF limit). */
+        private final java.io.ByteArrayOutputStream kept;
+        private final long expectedSize;
 
-        PlaintextVerifier() throws IOException {
+        PlaintextVerifier(Long expectedSize) throws IOException {
+            this.expectedSize = expectedSize == null ? 0 : expectedSize;
+            this.kept = new java.io.ByteArrayOutputStream((int) Math.min(Math.max(this.expectedSize, 0), Integer.MAX_VALUE - 8));
             try {
                 digest = MessageDigest.getInstance("SHA-256");
             } catch (NoSuchAlgorithmException ex) {
@@ -228,6 +236,7 @@ public class DocumentFinalizationService {
             byte value = (byte) b;
             if (prefixLength < prefix.length) prefix[prefixLength++] = value;
             digest.update(value);
+            if (count < expectedSize) kept.write(value);
             count++;
         }
 
@@ -239,8 +248,12 @@ public class DocumentFinalizationService {
                 prefixLength += copy;
             }
             digest.update(b, off, len);
+            long room = expectedSize - count;
+            if (room > 0) kept.write(b, off, (int) Math.min(len, room));
             count += len;
         }
+
+        byte[] bytes() { return kept.toByteArray(); }
 
         void finish() throws IOException {
             if (count == 0 || prefixLength != PDF_MAGIC.length) {
