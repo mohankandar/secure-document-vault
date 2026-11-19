@@ -632,9 +632,10 @@ html.r7-html, html.r7-html body { margin: 0; background: var(--bg); color: var(-
 small.bad { color: var(--danger); }
 
 /* Search fields (task 0009) */
-.sf-source { flex-direction: row; align-items: center; gap: 10px; max-width: 360px; }
+.sf-source { flex-direction: row; align-items: center; gap: 10px; max-width: 100%; }
 .sf-source > span { font-size: var(--fs-small); font-weight: 400; color: var(--ink-3); white-space: nowrap; }
-.sf-source .v-select { width: 190px; }
+/* As wide as the longest name, up to the panel width (task 0020, item 5). */
+.sf-source .v-select { width: auto; min-width: 190px; max-width: 100%; }
 .sf-title .v-panel-body { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 16px; }
 .sf-title-h { font-size: var(--fs-body); font-weight: 600; margin: 0; }
 .sf-title .muted { font-size: var(--fs-meta); }
@@ -814,11 +815,12 @@ small.bad { color: var(--danger); }
 .access-page { align-items: flex-start; }
 .access-card { width: min(666px, 100%); }
 .card-error { border-color: var(--line); }
-/* Side panels beside the page on wide screens (canvas): the page content moves aside instead of being covered. */
+/* Side panels beside the page on wide screens (canvas): the page content moves aside instead of being covered.
+   The wide panel (Add or edit a sending system) lies over the page instead, as on the canvas, so the page behind
+   keeps its layout (task 0020, item 3). */
 @media (min-width: 1024px) {
-  .r7 .v-drawer.wide { width: min(640px, 92vw); }
+  .r7 .v-drawer.wide { width: min(640px, 92vw); box-shadow: var(--shadow-2); }
   html.r7-side-open .v-main .v-body { margin-right: 440px; }
-  html.r7-side-wide .v-main .v-body { margin-right: 640px; }
 }
 /* One line per field in Add or edit a sending system: the column heads name the boxes. */
 @media (min-width: 640px) {
