@@ -54,3 +54,6 @@ databaseChangeLog:
 
   - include:
       file: db/changelog/020-audit-actor-display-name.yaml
+
+  - include:
+      file: db/changelog/021-document-page-count.yaml

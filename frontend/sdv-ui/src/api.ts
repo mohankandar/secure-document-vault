@@ -215,6 +215,10 @@ export type RecordDocument = {
   ingestedAt: string
   availableAt: string | null
   expiresAt: string | null
+  /** Worked out when the document was stored; absent or null for documents stored before that. */
+  pageCount?: number | null
+  /** A permanent correction (redaction) has been applied. */
+  redacted?: boolean
 }
 
 export type IncompleteSubmission = {

@@ -179,6 +179,58 @@ One commit on `fix/match-canvas-main` (hash in the commit log). Not pushed or me
 
    All are kept for now.
 
+## Owner's answers and follow-up (2026-11-18)
+
+0018 is approved.
+
+1. **Entities:** they wait for the shared install work. The account shows the organization only, as built.
+2. **Page count and "redacted" in the record's document list:** done.
+   - **Migration 021** (`021-document-page-count.sql/.yaml`): `documents.page_count`, nullable, `> 0`.
+   - **Counted once, when the document is stored:** `DocumentFinalizationService` already decrypts the whole stored file to check it before marking it available. It now keeps those bytes and counts the pages with PDFBox (`PdfPageCount`), so no document is ever opened just to count. A PDF that can't be read gets no count and is still made available. `markDocumentAvailable` stores the count.
+   - **Redacted:** a document is redacted when its current content is the result of a finished correction (`document_redaction_operations.new_content_sha256` = the document's content). This is worked out in the same query that lists the documents.
+   - **API:** the record's documents carry `pageCount` (null for documents stored before this) and `redacted`.
+   - **Screen:** the record panel and the viewer's document list show "2 pages · received 18 Nov" or "· redacted". A document without a count shows only its date.
+   - **Checked:**
+     - A new demo record, 300000000009 (Noah Kim, added to `Seed-SDV-Canvas-Demo.ps1`), has `pageCount` 2 on both documents; older documents have none.
+     - No redaction has been completed in this database, so the flag was not seen live. The opt-in end-to-end redaction test now checks that the document list says "redacted" afterwards.
+     - New test: `PdfPageCountTest` (2).
+3. **"Borrower" as the heading:** kept.
+4. **Show all, Recent activity, the Received range with its quick buttons, and the viewer's record arrows and page box:** kept, and styled with the canvas tokens.
+   - Recent activity (record panel and viewer Activity tab) now names who did it in words ("Sending system", "Vero", "A person"), never the technical sign-in ID.
+
+**Viewer fixes:**
+- **Redact is red** as on the canvas (`#a3261e`, border `#e8b7b2`).
+  - **Cause:** the base rule `.r7 button { font: inherit; color: inherit }` outweighed component styles. It is now `:where(.r7) button`, with no weight, so every component's own colour and size apply.
+  - This also fixed the Needs attention callouts (13 px, as drawn) and the document cards.
+- **"Borrower ID", not "Borrower id":** document kinds write short words such as ID, SSN and VIN in capitals.
+- **Details tab:**
+  - Document ID and Submission are under a folded "Technical details".
+  - "Received" replaces "Ingested".
+  - "Keeping: Kept until 17 Nov 2033", or "Kept forever" when there is no end date (Keeping documents' wording).
+  - "Corrections: Redacted (permanent)" when it applies.
+
+**Also fixed (task 0011 code):** on iPad the Audit "Record number" filter showed two rows from the previous filter. An "older events" answer that arrived after the filter changed was merged in. Answers for older filters are now dropped (`AuditLog.tsx`). The server's answer was right throughout.
+
+**Checks for the follow-up:**
+
+| Check | Result |
+|---|---|
+| `.\Build-SDV-All.ps1` | PASS: BUILD SUCCESS, 0 failures; sdv-web 111 tests; migration 021 applied in local mode |
+| `npm run typecheck`, `npm run build` | PASS |
+| `npm run ui:capture` | 1st run: 16 passed, 1 failed (the audit filter on iPad, above), twice in a row. After the fix: **17 passed, 3 skipped**, twice |
+| `npm run ui:compare` | PASS |
+
+**Follow-up files:**
+- **New:**
+  - `021-document-page-count.sql/.yaml` (added to the master changelog)
+  - `PdfPageCount.java`, `PdfPageCountTest.java`
+- **Changed:**
+  - `DocumentFinalizationService`, `DocumentIntakeRepository`, `SubmissionService`
+  - `JdbcSecureIngestionRepository`, `BusinessRecordRepository`, `JdbcBusinessRecordRepository`
+  - `BusinessExperienceView`, `BusinessExperienceService`, two tests
+  - `api.ts`, `data.ts`, `liveApi.ts`, `Workspace.tsx`, `Viewer.tsx`, `AuditLog.tsx`, `ui.tsx`, `r7.css`
+  - the tour, `Seed-SDV-Canvas-Demo.ps1`
+
 ## Suggested next step
 
-Answer the questions, then task 0019 (admin screens) on `fix/match-canvas-admin`, using the same tool and tokens.
+Task 0019 (admin screens) on `fix/match-canvas-admin`, using the same tool and tokens.

@@ -93,7 +93,9 @@ $records = @(
     @{ n = '300000000005'; who = 'Wei Chen'; type = 'Mortgage'; closing = '2026-08-28'; files = @('loan-agreement.pdf', 'title-deed.pdf', 'appraisal.pdf', 'insurance.pdf') },
     @{ n = '300000000006'; who = 'Sam Turner'; type = 'Auto'; closing = '2026-11-06'; files = @('loan-agreement.pdf', 'vehicle-title.pdf') },
     @{ n = '300000000007'; who = 'Fatima Noor'; type = 'Mortgage'; closing = '2026-07-31'; files = @('loan-agreement.pdf', 'title-deed.pdf', 'appraisal.pdf', 'insurance.pdf', 'borrower-id.pdf') },
-    @{ n = '300000000008'; who = 'Liam Brooks'; type = 'Auto'; closing = '2026-10-09'; files = @('loan-agreement.pdf', 'vehicle-title.pdf', 'borrower-id.pdf') }
+    @{ n = '300000000008'; who = 'Liam Brooks'; type = 'Auto'; closing = '2026-10-09'; files = @('loan-agreement.pdf', 'vehicle-title.pdf', 'borrower-id.pdf') },
+    # Delivered after page counts were kept (task 0018 follow-up): its documents show "2 pages" in the lists.
+    @{ n = '300000000009'; who = 'Noah Kim'; type = 'Auto'; closing = '2026-12-04'; files = @('loan-agreement.pdf', 'borrower-id.pdf') }
 )
 foreach ($r in $records) {
     $files = @($r.files)

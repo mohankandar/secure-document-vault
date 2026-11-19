@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { FailureNotice, loadFailed, type Failure } from './CardError'
 import { Drawer, Seg, Status, fmtDateTime } from './ui'
 import { opsAudit, opsAuditExport, type OpsAuditEvent } from './liveApi'
@@ -51,20 +51,23 @@ export function AuditLog() {
   }, [advanced, group, person, recordNumber, period, customFrom, customTo, query]) // eslint-disable-line react-hooks/exhaustive-deps
   const remember = (rows: OpsAuditEvent[]) => setPeople((all) => { const next = { ...all }; for (const e of rows) if (e.actorType === 'USER' && !next[e.actorId]) next[e.actorId] = actorName(e); return next })
 
+  // Each filter change starts a new generation; an answer for an older generation (a first page or "older events"
+  // still on its way when the filters changed) is dropped, so rows from the previous filters never mix in.
+  const generation = useRef(0)
   useEffect(() => {
-    let live = true
+    const mine = ++generation.current
     setLoading(true); setError(null)
-    opsAudit(undefined, filters).then((r) => { if (live) { setEvents(r.events); setCursor(r.nextCursor); remember(r.events) } })
-      .catch((e) => { if (live) setError(loadFailed('The audit did not load', e)) })
-      .finally(() => { if (live) setLoading(false) })
-    return () => { live = false }
+    opsAudit(undefined, filters).then((r) => { if (generation.current === mine) { setEvents(r.events); setCursor(r.nextCursor); remember(r.events) } })
+      .catch((e) => { if (generation.current === mine) setError(loadFailed('The audit did not load', e)) })
+      .finally(() => { if (generation.current === mine) setLoading(false) })
   }, [filters]) // eslint-disable-line react-hooks/exhaustive-deps
   const more = async () => {
     if (!cursor) return
+    const mine = generation.current
     setLoading(true)
-    try { const r = await opsAudit(cursor, filters); setEvents((x) => [...x, ...r.events]); setCursor(r.nextCursor); remember(r.events) }
-    catch (e) { setError(loadFailed('Older audit events did not load', e, "Older events didn't load")) }
-    finally { setLoading(false) }
+    try { const r = await opsAudit(cursor, filters); if (generation.current === mine) { setEvents((x) => [...x, ...r.events]); setCursor(r.nextCursor); remember(r.events) } }
+    catch (e) { if (generation.current === mine) setError(loadFailed('Older audit events did not load', e, "Older events didn't load")) }
+    finally { if (generation.current === mine) setLoading(false) }
   }
   // Activity groups with several actions are applied to the loaded events, as routine events always were.
   const shown = events.filter((e) => (includeRoutine || !ROUTINE.has(e.action) || advanced.action === e.action) && (!group?.actions || group.actions.includes(e.action)))

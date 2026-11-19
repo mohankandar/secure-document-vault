@@ -49,11 +49,13 @@ public interface DocumentIntakeRepository {
                                            UUID documentId,
                                            Instant processingAt);
 
+    /** pageCount: worked out once when the document is stored; null when the PDF couldn't be read. */
     void markDocumentAvailable(UUID tenantId,
                                UUID sourceId,
                                UUID submissionId,
                                UUID documentId,
-                               Instant availableAt);
+                               Instant availableAt,
+                               Integer pageCount);
 
     void markDocumentProcessingFailed(UUID tenantId,
                                       UUID sourceId,

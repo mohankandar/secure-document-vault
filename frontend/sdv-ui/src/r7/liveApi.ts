@@ -45,7 +45,7 @@ export function toSummary(r: RecordSummary, sourceId:string):RecordItem {
 }
 export function toRecord(r: BusinessRecord):RecordItem {
   const ids=fields(r.identifiers)
-  const docs:Doc[]=r.documents.map(d=>({id:d.documentId,submissionId:d.submissionId,filename:d.originalFilename,kind:d.originalFilename,pages:0,
+  const docs:Doc[]=r.documents.map(d=>({id:d.documentId,submissionId:d.submissionId,filename:d.originalFilename,kind:d.originalFilename,pages:d.pageCount ?? 0,redacted:!!d.redacted,
     ingestedAt:d.ingestedAt,availableAt:d.availableAt || d.ingestedAt,expiresAt:d.expiresAt || '',
     sizeKb:0,tags:[],comments:[],activity:[],redactions:[]}))
   // A record can have several incomplete submissions: add up the counts and list every missing document.

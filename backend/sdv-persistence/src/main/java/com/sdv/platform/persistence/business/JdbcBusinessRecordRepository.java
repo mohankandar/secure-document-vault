@@ -251,14 +251,18 @@ public class JdbcBusinessRecordRepository implements BusinessRecordRepository {
             List<UUID> submissionIds) {
         if (submissionIds.isEmpty()) return List.of();
         return jdbc.query("""
-                select document_id, submission_id, source_document_id, original_filename,
-                       ingested_at, available_at, expires_at
-                  from documents
-                 where tenant_id=:tenantId
-                   and source_id=:sourceId
-                   and submission_id in (:submissionIds)
-                   and status='AVAILABLE'
-                 order by available_at desc nulls last, document_id
+                select d.document_id, d.submission_id, d.source_document_id, d.original_filename,
+                       d.ingested_at, d.available_at, d.expires_at, d.page_count,
+                       -- Redacted: the current content is the result of a finished correction.
+                       exists (select 1 from document_redaction_operations r
+                                where r.tenant_id=d.tenant_id and r.document_id=d.document_id
+                                  and r.new_content_sha256=d.content_sha256) as redacted
+                  from documents d
+                 where d.tenant_id=:tenantId
+                   and d.source_id=:sourceId
+                   and d.submission_id in (:submissionIds)
+                   and d.status='AVAILABLE'
+                 order by d.available_at desc nulls last, d.document_id
                 """, new MapSqlParameterSource()
                 .addValue("tenantId", tenantId)
                 .addValue("sourceId", sourceId)
@@ -270,7 +274,9 @@ public class JdbcBusinessRecordRepository implements BusinessRecordRepository {
                         rs.getString("original_filename"),
                         instant(rs, "ingested_at"),
                         instant(rs, "available_at"),
-                        instant(rs, "expires_at")));
+                        instant(rs, "expires_at"),
+                        (Integer) rs.getObject("page_count"),
+                        rs.getBoolean("redacted")));
     }
 
     @Override

@@ -1,0 +1,8 @@
+databaseChangeLog:
+  - changeSet:
+      id: 021-document-page-count
+      author: sdv
+      changes:
+        - sqlFile:
+            path: db/changelog/021-document-page-count.sql
+            relativeToChangelogFile: false

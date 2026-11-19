@@ -472,10 +472,12 @@ public class JdbcSecureIngestionRepository implements SubmissionRepository, Stor
                                       UUID sourceId,
                                       UUID submissionId,
                                       UUID documentId,
-                                      Instant availableAt) {
+                                      Instant availableAt,
+                                      Integer pageCount) {
         int updated = jdbc.update("""
                 update documents
-                   set status='AVAILABLE', available_at=:availableAt, processing_error_code=null
+                   set status='AVAILABLE', available_at=:availableAt, processing_error_code=null,
+                       page_count=coalesce(:pageCount, page_count)
                  where tenant_id=:tenantId
                    and source_id=:sourceId
                    and submission_id=:submissionId
@@ -483,6 +485,7 @@ public class JdbcSecureIngestionRepository implements SubmissionRepository, Stor
                    and status='PROCESSING'
                 """, new MapSqlParameterSource()
                 .addValue("availableAt", Timestamp.from(availableAt))
+                .addValue("pageCount", pageCount, java.sql.Types.INTEGER)
                 .addValue("tenantId", tenantId)
                 .addValue("sourceId", sourceId)
                 .addValue("submissionId", submissionId)

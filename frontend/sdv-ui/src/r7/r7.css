@@ -102,7 +102,8 @@ html.r7-html, html.r7-html body { margin: 0; background: var(--bg); color: var(-
 .r7 h1 { font-size: var(--fs-page); line-height: 1.25; font-weight: 600; letter-spacing: -0.3px; text-wrap: balance; }
 .r7 h2 { font-size: var(--fs-card); line-height: 1.35; font-weight: 600; letter-spacing: -0.005em; }
 .r7 h3 { font-size: var(--fs-body); line-height: 1.4; font-weight: 600; }
-.r7 button { font: inherit; color: inherit; }
+/* :where() keeps this base at zero weight, so a component's own font size and colour (a 13px callout, a red button) apply. */
+:where(.r7) button { font: inherit; color: inherit; }
 .r7 a { color: var(--primary); }
 .r7 :focus-visible { outline: none; box-shadow: var(--focus); border-radius: var(--radius-sm); }
 .r7 .mono { font-family: var(--font-mono); font-size: 0.92em; letter-spacing: -0.01em; }
@@ -542,9 +543,11 @@ html.r7-html, html.r7-html body { margin: 0; background: var(--bg); color: var(-
 /* Worded actions; on narrow screens Find, Redact and Back keep only their icon (the accessible name stays). */
 .vw-label { display: none; }
 .vw-back { flex: none; }
-.vw-redact { color: var(--danger); border-color: var(--danger-line); }
-.vw-redact:hover { background: var(--danger-soft); }
-.vw-redact[aria-pressed='true'] { background: var(--danger); border-color: var(--danger); color: #fff; }
+/* Canvas board 4: Redact in red because it is permanent (.r7 .v-btn raises it above ".r7 button { color: inherit }"). */
+.r7 .v-btn.vw-redact { color: var(--danger); border-color: var(--danger-line); }
+.r7 .v-btn.vw-redact svg { color: var(--danger); }
+.r7 .v-btn.vw-redact:hover { background: var(--danger-soft); }
+.r7 .v-btn.vw-redact[aria-pressed='true'], .r7 .v-btn.vw-redact[aria-pressed='true'] svg { background: var(--danger); border-color: var(--danger); color: #fff; }
 /* Page previews (canvas board 4): 62px pages in a row, the current one outlined. */
 .vw-pages { display: flex; flex-wrap: wrap; gap: 10px; }
 .vw-pagethumb { display: flex; flex-direction: column; align-items: center; gap: 5px; width: 62px; padding: 0; border: 0; background: none; cursor: pointer; color: var(--ink-2); font-size: var(--fs-meta); }

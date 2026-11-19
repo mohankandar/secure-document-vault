@@ -104,7 +104,7 @@ class RecordTitleTest {
         when(records.findSubmissionsByIds(eq(TENANT), eq(SOURCE), anyList())).thenReturn(List.of(
                 new Submission(SUB, TENANT, SOURCE, "src-1", 1, "sha", SubmissionStatus.COMPLETE, NOW.minusSeconds(60), NOW, null)));
         when(records.findAvailableDocuments(eq(TENANT), eq(SOURCE), anyList())).thenReturn(List.of(
-                new AvailableDocumentSnapshot(UUID.randomUUID(), SUB, "d1", "a.pdf", NOW, NOW, null)));
+                new AvailableDocumentSnapshot(UUID.randomUUID(), SUB, "d1", "a.pdf", NOW, NOW, null, null, false)));
         when(records.findMatchingSubmissions(eq(TENANT), eq(SOURCE), anyList(), any(), any(), any(), any(), anyBoolean(), eq(0), anyInt()))
                 .thenReturn(List.of(new Submission(SUB, TENANT, SOURCE, "src-1", 1, "sha", SubmissionStatus.COMPLETE, NOW.minusSeconds(60), NOW, null)));
     }

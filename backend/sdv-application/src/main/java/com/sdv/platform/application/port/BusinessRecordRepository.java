@@ -101,7 +101,11 @@ public interface BusinessRecordRepository {
             String originalFilename,
             Instant ingestedAt,
             Instant availableAt,
-            Instant expiresAt) { }
+            Instant expiresAt,
+            /** Worked out when the document was stored; null for documents stored before that (task 0018). */
+            Integer pageCount,
+            /** A permanent correction (redaction) has been applied to the current version. */
+            boolean redacted) { }
 
     record ExpectedDocumentSnapshot(
             UUID submissionId,

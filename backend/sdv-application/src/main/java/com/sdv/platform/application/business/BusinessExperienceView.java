@@ -107,7 +107,10 @@ public final class BusinessExperienceView {
             String originalFilename,
             Instant ingestedAt,
             Instant availableAt,
-            Instant expiresAt) { }
+            Instant expiresAt,
+            /** null when the document was stored before page counts were kept. */
+            Integer pageCount,
+            boolean redacted) { }
 
     public record IncompleteAttention(List<IncompleteSubmission> submissions) {
         public IncompleteAttention {

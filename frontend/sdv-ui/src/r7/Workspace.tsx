@@ -4,7 +4,7 @@ import { useStore } from './store'
 import type { RecordItem, Source } from './data'
 import { schema, search, record, toSource, toSummary, toRecord, documentActivity, SEARCH_PAGE_SIZE, type LiveDocumentActivity } from './liveApi'
 import { LoadErrorCard, failureText, loadFailed, type Failure } from './CardError'
-import { Badge, Callout, Drawer, Empty, Skeleton, auditEventLabel, fmtDate, fmtRel, fmtShortDate, humanize } from './ui'
+import { Badge, Callout, Drawer, Empty, Skeleton, actorWords, auditEventLabel, fmtDate, fmtRel, fmtShortDate, humanize } from './ui'
 import { Viewer } from './Viewer'
 import { MODE_HINT, MODE_WORD, QUICK_RANGES, alternativeFields, boxLabel, quickRange, rangeLabel, routeBoxInput, type Range } from './searchRouting'
 import { NOTHING_TO_SEARCH, defaultSource, rememberSourceChoice, searchableSources } from './sourceChoice'
@@ -478,7 +478,7 @@ function RecordPanelBody({ record, summary, onOpen, source, action }: { record: 
                   <span className="sheet" aria-hidden />
                   <span className="grow" style={{ minWidth: 0 }}>
                     <strong className="truncate">{d.kind}</strong>
-                    <span>{d.pages > 0 ? `${d.pages} page${d.pages === 1 ? '' : 's'} · ` : ''}received {fmtShortDate(d.ingestedAt)}{d.redactions.length > 0 && ' · redacted'}</span>
+                    <span>{d.pages > 0 ? `${d.pages} page${d.pages === 1 ? '' : 's'} · ` : ''}received {fmtShortDate(d.ingestedAt)}{(d.redacted || d.redactions.length > 0) && ' · redacted'}</span>
                   </span>
                   {d.tags.length > 0 && <Badge>{d.tags.length} tag{d.tags.length === 1 ? '' : 's'}</Badge>}
                 </button>
@@ -500,7 +500,7 @@ function RecordPanelBody({ record, summary, onOpen, source, action }: { record: 
         {liveSession && <label className="v-check"><input type="checkbox" checked={includeViews} onChange={(e) => setIncludeViews(e.target.checked)} />Include document view activity</label>}
         {activityFailure && <Callout tone="warn" title="Activity unavailable">{activityFailure}</Callout>}
         <ol className="v-timeline">
-          {liveSession ? liveEvents.slice(0, more ? 100 : 3).map((a) => <li key={a.auditEventId}><span className={`pt ${a.outcome === 'SUCCESS' ? 'ok' : 'bad'}`} aria-hidden /><div className="stack" style={{ gap: 0 }}><strong>{auditEventLabel(a.action, a.safeDetailsJson, a.filename, true)}</strong><span>{a.actorId} · {fmtRel(a.occurredAt)}</span></div></li>) :
+          {liveSession ? liveEvents.slice(0, more ? 100 : 3).map((a) => <li key={a.auditEventId}><span className={`pt ${a.outcome === 'SUCCESS' ? 'ok' : 'bad'}`} aria-hidden /><div className="stack" style={{ gap: 0 }}><strong>{auditEventLabel(a.action, a.safeDetailsJson, a.filename, true)}</strong><span>{actorWords(a.actorType)} · {fmtRel(a.occurredAt)}</span></div></li>) :
             recent.map((a) => <li key={a.id}><span className={`pt ${a.simulated ? 'sim' : a.outcome === 'SUCCESS' ? 'ok' : 'bad'}`} aria-hidden /><div className="stack" style={{ gap: 0 }}><strong>{humanize(a.action.replace('DOCUMENT_', ''))} · {a.doc}</strong><span>{a.actor} · {fmtRel(a.at)}{a.simulated && ' · simulated'}</span></div></li>)}
         </ol>
         {liveSession && !activityFailure && liveEvents.length === 0 && <p className="faint">No matching activity.</p>}

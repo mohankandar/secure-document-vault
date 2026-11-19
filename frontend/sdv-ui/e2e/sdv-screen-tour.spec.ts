@@ -885,7 +885,8 @@ async function openViewerFor(page: Page, contract: string) {
 
 /** The open document's ID, from the Details tab (wide screens). */
 async function openDocumentId(page: Page) {
-  return (await page.locator('.vw-panel dt', { hasText: 'Document ID' }).locator('xpath=following-sibling::dd[1]').innerText()).trim()
+  // Under the folded Technical details: read the text, which is there even while the section is closed.
+  return ((await page.locator('.vw-panel dt', { hasText: 'Document ID' }).locator('xpath=following-sibling::dd[1]').textContent()) ?? '').trim()
 }
 
 /** Make sure the open document has a tag, so a read-only role can show it reads tags. Adds one as the steward if needed. */
@@ -1176,6 +1177,10 @@ test.describe('SDV role-based screen capture', () => {
     await expect(page.getByRole('status').filter({ hasText: 'Permanent corrective redaction completed' })).toBeVisible({ timeout: 30000 })
     await expect(page.getByRole('img', { name: /Document page 1/ })).toBeVisible({ timeout: 20000 })
     await capture(page, testInfo, 'redaction-applied')
+    // Task 0018 follow-up: the record's document list now says the document was redacted.
+    await page.reload()
+    await openViewerFor(page, redactionRecord)
+    await expect(page.getByRole('navigation', { name: 'Record documents' })).toContainText('redacted', { timeout: 15000 })
   })
 
   test('Home empty states', async ({ page }, testInfo) => {

@@ -90,7 +90,7 @@ class BusinessExperienceServiceHomeTest {
         when(records.findAvailableDocuments(eq(TENANT), eq(SOURCE), anyList())).thenAnswer(inv -> {
             List<UUID> ids = inv.getArgument(2);
             return ids.contains(SUB_A)
-                    ? List.of(new AvailableDocumentSnapshot(DOC_A1, SUB_A, "d1", "a.pdf", NOW, NOW, null))
+                    ? List.of(new AvailableDocumentSnapshot(DOC_A1, SUB_A, "d1", "a.pdf", NOW, NOW, null, 3, false))
                     : List.of();
         });
     }

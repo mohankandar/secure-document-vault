@@ -77,7 +77,7 @@ export type Tag = { id: string; tag: string; by: string; at: string }
 export type Comment = { id: string; text: string; by: string; at: string }
 export type Activity = { id: string; action: string; actor: string; at: string; outcome: 'SUCCESS' | 'DENIED' | 'FAILED'; simulated?: boolean }
 export type Redaction = { page: number; x: number; y: number; w: number; h: number }
-export type Doc = { id: string; filename: string; kind: string; pages: number; ingestedAt: string; availableAt: string; expiresAt: string; submissionId: string; sizeKb: number; tags: Tag[]; comments: Comment[]; activity: Activity[]; redactions: Redaction[] }
+export type Doc = { id: string; filename: string; kind: string; pages: number; ingestedAt: string; availableAt: string; expiresAt: string; submissionId: string; sizeKb: number; tags: Tag[]; comments: Comment[]; activity: Activity[]; redactions: Redaction[]; /** the server says a correction was applied */ redacted?: boolean }
 export type RecordItem = { ref: string; sourceId: string; identifiers: { label: string; value: string }[]; metadata: { label: string; value: string }[]; title: string; updatedAt: string; submissions: number; incomplete: null | { submissionId: string; expected: number; received: number; since: string; /** Source document IDs still expected (record details only). */ missing?: string[] }; docs: Doc[] }
 
 const KINDS = ['Member Agreement', 'Enrollment Form', 'Coverage Amendment', 'Premium Notice', 'Consent to Release', 'Claim Form', 'Explanation of Benefits', 'Credentialing Packet']

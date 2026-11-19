@@ -243,3 +243,6 @@ export function PageHead({ crumbs, title, lede, actions }: { crumbs: string[]; t
     </header>
   )
 }
+
+/** Who did something, in words, from an audit actor type: the technical sign-in ID is never shown (task 0018). */
+export const actorWords = (actorType: string) => (actorType === 'SOURCE' ? 'Sending system' : actorType === 'SYSTEM' ? 'Vero' : 'A person')

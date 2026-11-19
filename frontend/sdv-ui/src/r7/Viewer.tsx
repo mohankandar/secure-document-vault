@@ -4,7 +4,7 @@ import { useStore } from './store'
 import { BUSINESS_LIMITS, PAGE_TEXT, RETENTION, type Doc, type RecordItem, type Redaction } from './data'
 import { ApiRequestError } from '../api'
 import { failureText } from './CardError'
-import { Badge, Callout, Dialog, Drawer, Tabs, auditEventLabel, fmtDate, fmtDateTime, fmtRel, fmtShortDate, humanize } from './ui'
+import { Badge, Callout, Dialog, Drawer, Tabs, actorWords, auditEventLabel, fmtDate, fmtDateTime, fmtRel, fmtShortDate, humanize } from './ui'
 import { viewerMetadata, viewerPage, viewerSearch, record as fetchRecord, toRecord, documentActivity, type LiveDocumentActivity, type ViewerSearch, documentTags, documentComments, createDocumentTag, createDocumentComment, type LiveTag, type LiveComment, secureDownload, recordPrintEvent, permanentRedaction, viewerPreviews } from './liveApi'
 
 type Zoom = 'width' | 'page' | number
@@ -17,10 +17,14 @@ export const REFUSED = { title: "You can't do this", detail: "Your role doesn't 
 export const isRefused = (e: unknown) => e instanceof ApiRequestError && e.status === 403
 const errorText = (e: unknown) => (isRefused(e) ? `${REFUSED.title}. ${REFUSED.detail}` : failureText('Viewer action failed', e))
 
-/** A readable document kind from its file name: "loan-agreement.pdf" -> "Loan agreement". */
+/** Short words written in capitals in a document's kind ("borrower-id.pdf" -> "Borrower ID"). */
+const ACRONYMS = new Set(['id', 'ssn', 'vin', 'kyc', 'w2', 'w9', 'irs', 'llc', 'usa', 'uk', 'eu'])
+/** A readable document kind from its file name: "loan-agreement.pdf" -> "Loan agreement", "borrower-id.pdf" -> "Borrower ID". */
 export const docKind = (filename: string) => {
   const base = filename.replace(/\.[a-z0-9]{1,5}$/i, '').replace(/[-_]+/g, ' ').replace(/\s+/g, ' ').trim()
-  return base ? base.charAt(0).toUpperCase() + base.slice(1) : filename
+  if (!base) return filename
+  const name = base.split(' ').map((w) => (ACRONYMS.has(w.toLowerCase()) ? w.toUpperCase() : w)).join(' ')
+  return name.charAt(0).toUpperCase() + name.slice(1)
 }
 
 const DOCS_FOLDED_KEY = 'sdv.r7.viewer.docsFolded'
@@ -279,7 +283,7 @@ export function Viewer({ record, results, docId, onClose, recordTitle, backLabel
         <span className="eyebrow">Documents · {record.docs.length}</span>
         {record.docs.map((d) => (
           <button key={d.id} type="button" className="vw-thumb" aria-current={d.id === doc.id} onClick={() => switchDoc(d.id)}>
-            <span className="grow" style={{ minWidth: 0 }}><strong className="truncate">{docKind(d.filename)}</strong>{d.id === doc.id && pageTotal ? `${pageTotal} page${pageTotal === 1 ? '' : 's'}` : `received ${fmtShortDate(d.ingestedAt)}`}</span>
+            <span className="grow" style={{ minWidth: 0 }}><strong className="truncate">{docKind(d.filename)}</strong>{(() => { const pages = d.id === doc.id && pageTotal ? pageTotal : d.pages; return [pages > 0 ? `${pages} page${pages === 1 ? '' : 's'}` : `received ${fmtShortDate(d.ingestedAt)}`, d.redacted || d.redactions.length > 0 ? 'redacted' : ''].filter(Boolean).join(' · ') })()}</span>
           </button>
         ))}
       </div>
@@ -548,14 +552,20 @@ function DocInfo({ doc, tab, setTab, embedded }: { doc: Doc; tab: InfoTab; setTa
           {suggestsSsn && can('PERMANENT_REDACTION') && <Callout tone="warn" title="Possible sensitive identifier on page 1">Sample content includes a full SSN. Stewards can correct this with permanent redaction.</Callout>}
           <dl className="v-kv">
             <div><dt>File name</dt><dd className="mono">{doc.filename}</dd></div>
-            <div><dt>Document ID</dt><dd className="mono">{doc.id}</dd></div>
-            <div><dt>Submission</dt><dd className="mono">{doc.submissionId}</dd></div>
             <div><dt>Pages</dt><dd>{doc.pages || 'Not available'}</dd></div>
-            <div><dt>Ingested</dt><dd>{fmtDateTime(doc.ingestedAt)}</dd></div>
-            <div><dt>Retained until</dt><dd>{doc.expiresAt ? fmtDate(doc.expiresAt) : 'Not specified'}{!liveSession && <span className="faint"> · policy v{RETENTION.active.version} at ingestion</span>}</dd></div>
+            <div><dt>Received</dt><dd>{fmtDateTime(doc.ingestedAt)}</dd></div>
+            {/* Keeping documents' own words: no end date means the rule keeps it forever. */}
+            <div><dt>Keeping</dt><dd>{doc.expiresAt ? `Kept until ${fmtDate(doc.expiresAt)}` : 'Kept forever'}{!liveSession && <span className="faint"> · policy v{RETENTION.active.version} at ingestion</span>}</dd></div>
             <div><dt>Protection</dt><dd>Encrypted at rest · served page-by-page to authorized sessions</dd></div>
-            {doc.redactions.length > 0 && <div><dt>Corrections</dt><dd><Badge tone="warn">{doc.redactions.length} simulated redaction{doc.redactions.length === 1 ? '' : 's'}</Badge></dd></div>}
+            {doc.redacted && <div><dt>Corrections</dt><dd>Redacted (permanent)</dd></div>}
+            {!liveSession && doc.redactions.length > 0 && <div><dt>Corrections</dt><dd><Badge tone="warn">{doc.redactions.length} simulated redaction{doc.redactions.length === 1 ? '' : 's'}</Badge></dd></div>}
           </dl>
+          <details className="st-tech"><summary>Technical details</summary>
+            <dl className="v-kv">
+              <div><dt>Document ID</dt><dd className="mono">{doc.id}</dd></div>
+              <div><dt>Submission</dt><dd className="mono">{doc.submissionId}</dd></div>
+            </dl>
+          </details>
         </>
       )}
       {tab === 'comments' && (
@@ -608,7 +618,7 @@ function DocInfo({ doc, tab, setTab, embedded }: { doc: Doc; tab: InfoTab; setTa
         {activityError && <Callout tone="warn" title="Activity unavailable">{activityError}</Callout>}
         {liveSession && !activityError && liveEvents.length===0 && <p className="faint">No matching activity.</p>}
         <ol className="v-timeline">
-          {liveSession && liveEvents.map(a=><li key={a.auditEventId}><span className={`pt ${a.outcome==='SUCCESS'?'ok':'bad'}`} aria-hidden/><div className="stack" style={{gap:0}}><strong>{auditEventLabel(a.action,a.safeDetailsJson,doc.filename,true)}</strong><span>{a.actorId} · {fmtDateTime(a.occurredAt)}</span></div></li>)}
+          {liveSession && liveEvents.map(a=><li key={a.auditEventId}><span className={`pt ${a.outcome==='SUCCESS'?'ok':'bad'}`} aria-hidden/><div className="stack" style={{gap:0}}><strong>{auditEventLabel(a.action,a.safeDetailsJson,doc.filename,true)}</strong><span>{actorWords(a.actorType)} · {fmtDateTime(a.occurredAt)}</span></div></li>)}
           {!liveSession && doc.activity.map((a) => (
             <li key={a.id}><span className={`pt ${a.simulated ? 'sim' : a.outcome === 'SUCCESS' ? 'ok' : 'bad'}`} aria-hidden />
               <div className="stack" style={{ gap: 0 }}><strong>{humanize(a.action.replace('DOCUMENT_', ''))}</strong><span>{a.actor} · {fmtDateTime(a.at)}{a.simulated ? ' · simulated' : ''}</span></div>
