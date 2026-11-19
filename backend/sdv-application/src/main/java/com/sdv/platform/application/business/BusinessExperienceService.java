@@ -339,11 +339,15 @@ public class BusinessExperienceService {
 
         BusinessExperienceView.RecordView view = recordView(aggregate,
                 definitions.findRecordTitleFields(tenantId, source.sourceId()));
+        // submissionId is an internal reference (a UUID, never a readable value); the audit list
+        // looks up the record number from it within the tenant (task 0020 item 1).
         audit.append(new AuditEvent(
                 UUID.randomUUID(), tenantId, "USER", actorId,
                 "BUSINESS_RECORD_OPENED", "BUSINESS_RECORD", sha256(recordRef),
                 clock.instant(), correlationId, AuditOutcome.SUCCESS,
-                "{\"sourceId\":\"" + source.sourceId() + "\",\"submissionCount\":"
+                "{\"sourceId\":\"" + source.sourceId()
+                        + "\",\"submissionId\":\"" + aggregate.submissions().getFirst().submissionId()
+                        + "\",\"submissionCount\":"
                         + view.submissionCount() + ",\"availableDocumentCount\":" + view.documents().size() + "}"));
         return view;
     }

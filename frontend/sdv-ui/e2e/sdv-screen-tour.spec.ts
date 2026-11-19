@@ -601,6 +601,14 @@ async function auditChecks(page: Page, testInfo: TestInfo) {
   }
   await expect(visible(page, /^DOCUMENT_[A-Z_]+$|^AUTHORIZATION_DENIED$/)).toHaveCount(0)
 
+  // Task 0020 item 1: the record open made above names its record (looked up from its submission, within the tenant).
+  await activity.selectOption({ label: 'Opening and reading' })
+  await page.getByLabel('Record number').fill('')
+  await page.getByLabel('Record number').press('Enter')
+  const opened = list.locator('tbody tr').filter({ hasText: /Daniel Reyes opened a record/ }).first()
+  await expect(opened, 'the fresh record open').toBeVisible({ timeout: 15000 })
+  await expect(opened.locator('td[data-label="Record"]')).toHaveText(titleRecord)
+
   // Record-number filter: every row is about that record.
   await activity.selectOption({ label: 'All activity' })
   await page.getByLabel('Record number').fill(titleRecord)

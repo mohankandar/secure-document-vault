@@ -88,3 +88,46 @@ No failures. Item 1 has no check, because it was not fixed.
 ## Suggested next step
 
 Owner review of `fix/ui-polish-1`, then a decision on Question 1 for a follow-up task for item 1.
+
+## Follow-up (2026-11-19): item 1, and the owner's answers
+
+The owner's answers: **Question 1: option (a).** **Question 2:** "Digits only" is fine, no change. **Question 3:** keep record opens out of Overview, no change.
+
+**Item 1, Record "—" for "opened a record": DONE for new events** (backend change, approved for this follow-up; no schema change).
+- **What is stored.** `BusinessExperienceService.record(...)` now also stores `submissionId` in the safe details of `BUSINESS_RECORD_OPENED`. It is the ID of the record's first submission, an internal UUID, not the record number or any other readable value. The target ID is still the one-way hash.
+- **What the Audit list does.** `JdbcOperationalRepository.findRows` reads `submissionId` from the safe details, only for `BUSINESS_RECORD` targets and only when it looks like a UUID. It then looks up the record number with the same identifier lookup that document events use. The lookup is limited to the event's own tenant (`v.tenant_id = a.tenant_id`). The Audit export uses the same query, so its Record column shows the number too.
+- **Old events** hold only the hash, so they keep showing "—", as agreed.
+- **Not changed:** the Audit "Record number" filter still matches document events only. A record open shows its number in the list but is not found by that filter. If you want it found, that is a separate small follow-up.
+
+### Commands run and results (follow-up)
+
+| Command | Result |
+|---|---|
+| `.\Build-SDV-All.ps1` | BUILD SUCCESS. Backend tests: 160 run, 0 failures, 0 errors (sdv-web 121). Frontend build passed. |
+| `npm run typecheck` | passed |
+| `npm run build` | passed |
+| `npm run ui:capture` (app restarted on the new build) | 17 passed, 3 skipped (the same skips as before) |
+| `npm run ui:compare` | 19 passed |
+
+My first run of the full build stopped partway through the `sdv-web` tests. I had redirected its output with PowerShell `*>`, which turned Mockito's warning on stderr into an error, and the script stops on errors. No test failed. The build was rerun with plain output redirection and passed as shown above.
+
+### Tests added (follow-up)
+
+- **Backend:** `backend/sdv-web/src/test/java/com/sdv/platform/application/business/RecordOpenAuditTest.java` (2 tests).
+  - A record open stores the record's `submissionId`, and the target is still the hash. The safe details hold no record number, no readable field value and no record reference.
+  - The Audit query reads `submissionId` only for record opens, casts it only when it is UUID-shaped, and looks it up within the event's tenant.
+- **Tour:** in `auditChecks`, the record open that the check makes as the steward appears under "Opening and reading" as "Daniel Reyes opened a record". Its Record cell is exactly the record's number.
+
+### Files changed (follow-up)
+
+- `backend/sdv-application/.../business/BusinessExperienceService.java`
+- `backend/sdv-persistence/.../operations/JdbcOperationalRepository.java`
+- `backend/sdv-web/src/test/.../business/RecordOpenAuditTest.java` (new)
+- `frontend/sdv-ui/e2e/sdv-screen-tour.spec.ts`
+- `docs/work/0020-report.md`
+
+`Start-SDV-Local.ps1` was left as it was and not committed.
+
+### Commit (follow-up)
+
+See `git log` on `fix/ui-polish-1`: "fix(audit): record opens show their record number (task 0020, item 1)". Not pushed or merged.
