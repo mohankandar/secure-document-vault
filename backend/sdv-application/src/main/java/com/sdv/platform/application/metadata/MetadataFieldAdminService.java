@@ -3,6 +3,7 @@ package com.sdv.platform.application.metadata;
 import com.sdv.platform.application.port.AuditEventPort;
 import com.sdv.platform.application.port.IngestionSourceRepository;
 import com.sdv.platform.application.port.MetadataFieldDefinitionRepository;
+import com.sdv.platform.application.port.RecordSensitivityRepository;
 import com.sdv.platform.application.port.TenantRepository;
 import com.sdv.platform.domain.audit.AuditEvent;
 import com.sdv.platform.domain.audit.AuditOutcome;
@@ -28,6 +29,7 @@ public class MetadataFieldAdminService {
     private final TenantRepository tenants;
     private final IngestionSourceRepository sources;
     private final MetadataFieldDefinitionRepository definitions;
+    private final RecordSensitivityRepository recordLevels;
     private final AuditEventPort audit;
     private final Clock clock;
 
@@ -35,20 +37,47 @@ public class MetadataFieldAdminService {
     public MetadataFieldAdminService(TenantRepository tenants,
                                      IngestionSourceRepository sources,
                                      MetadataFieldDefinitionRepository definitions,
+                                     RecordSensitivityRepository recordLevels,
                                      AuditEventPort audit) {
-        this(tenants, sources, definitions, audit, Clock.systemUTC());
+        this(tenants, sources, definitions, recordLevels, audit, Clock.systemUTC());
     }
 
     MetadataFieldAdminService(TenantRepository tenants,
                               IngestionSourceRepository sources,
                               MetadataFieldDefinitionRepository definitions,
+                              RecordSensitivityRepository recordLevels,
                               AuditEventPort audit,
                               Clock clock) {
         this.tenants = tenants;
         this.sources = sources;
         this.definitions = definitions;
+        this.recordLevels = recordLevels;
         this.audit = audit;
         this.clock = clock;
+    }
+
+    /**
+     * Task 0024, part 2: a record level is stored under the record's identifier values, normalized. Changing which
+     * fields are identifiers, or how an identifier is normalized, would put later deliveries in a different record
+     * without that level: a way to lower it. So while any record of the sending system has a level, such a change is
+     * refused. Labels, search settings, required, type and validation rules don't change the grouping and stay open.
+     */
+    private void refuseIfRecordIdentityChanges(UUID tenantId, UUID sourceId, String fieldKey,
+                                               java.util.Optional<MetadataFieldDefinition> previous,
+                                               boolean nextIdentifier, MetadataNormalization nextNormalization) {
+        boolean wasIdentifier = previous.map(MetadataFieldDefinition::businessIdentifier).orElse(false);
+        boolean changes = wasIdentifier != nextIdentifier
+                || (nextIdentifier && previous.get().normalization() != nextNormalization);
+        if (!changes) return;
+        long withLevel = recordLevels.countForSource(tenantId, sourceId);
+        if (withLevel > 0) {
+            throw new com.sdv.platform.domain.error.CodedRefusal.Conflict(
+                    com.sdv.platform.domain.error.SdvErrorCode.SEN_007,
+                    "Field '" + fieldKey + "' can't change: " + withLevel
+                    + (withLevel == 1 ? " record" : " records") + " of this sending system "
+                    + (withLevel == 1 ? "has" : "have") + " a sensitivity level, and changing which fields identify "
+                    + "a record, or how an identifier is normalized, would separate later documents from that level.");
+        }
     }
 
     public List<MetadataFieldDefinition> listCurrent(UUID tenantId, UUID sourceId) {
@@ -139,6 +168,8 @@ public class MetadataFieldAdminService {
         validate(command);
 
         var previous = definitions.findCurrent(tenantId, sourceId, fieldKey);
+        refuseIfRecordIdentityChanges(tenantId, sourceId, fieldKey, previous,
+                command.businessIdentifier(), command.normalization());
         int nextVersion = previous.map(d -> d.version() + 1).orElse(1);
         Instant now = clock.instant();
         previous.ifPresent(ignore -> definitions.retire(tenantId, sourceId, fieldKey, now));
@@ -178,6 +209,8 @@ public class MetadataFieldAdminService {
 
         MetadataFieldDefinition previous = definitions.findCurrent(tenantId, sourceId, fieldKey)
                 .orElseThrow(() -> new NoSuchElementException("Source field is not defined. Tenant IT must define it before Business Administration can configure search behavior."));
+        refuseIfRecordIdentityChanges(tenantId, sourceId, fieldKey, java.util.Optional.of(previous),
+                command.businessIdentifier(), command.normalization());
         Instant now = clock.instant();
         definitions.retire(tenantId, sourceId, fieldKey, now);
         MetadataFieldDefinition revised = new MetadataFieldDefinition(
@@ -207,6 +240,9 @@ public class MetadataFieldAdminService {
         if (command.normalization() == null) throw new IllegalArgumentException("normalization is required.");
 
         var previous = definitions.findCurrent(tenantId, sourceId, fieldKey);
+        // This path keeps the identifier flag as it was (a new field is not an identifier) but may change normalization.
+        refuseIfRecordIdentityChanges(tenantId, sourceId, fieldKey, previous,
+                previous.map(MetadataFieldDefinition::businessIdentifier).orElse(false), command.normalization());
         int nextVersion = previous.map(d -> d.version() + 1).orElse(1);
         Instant now = clock.instant();
         previous.ifPresent(ignore -> definitions.retire(tenantId, sourceId, fieldKey, now));

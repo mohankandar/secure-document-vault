@@ -284,6 +284,23 @@ public class JdbcBusinessRecordRepository implements BusinessRecordRepository {
     }
 
     @Override
+    public java.util.Optional<SensitivityLevel> findRecordSensitivityLevel(
+            UUID tenantId,
+            UUID sourceId,
+            String recordKey) {
+        return jdbc.query("""
+                select sensitivity_level
+                  from record_sensitivity_levels
+                 where tenant_id=:tenantId and source_id=:sourceId and record_key_sha256=:sha
+                """, new MapSqlParameterSource()
+                .addValue("tenantId", tenantId)
+                .addValue("sourceId", sourceId)
+                .addValue("sha", com.sdv.platform.application.business.RecordKey.sha256(recordKey)),
+                (rs, rowNum) -> SensitivityLevel.valueOf(rs.getString("sensitivity_level")))
+                .stream().findFirst();
+    }
+
+    @Override
     public List<MetadataSnapshot> findMetadataSnapshots(
             UUID tenantId,
             UUID sourceId,

@@ -64,16 +64,23 @@ public class SubmissionController {
             int expectedDocumentCount,
             List<ExpectedDocumentRequest> expectedDocuments,
             Map<String, JsonNode> metadata,
-            /* Task 0024: named only so they can be refused instead of being silently ignored. */
+            /* Task 0024: named only so it can be refused instead of being silently ignored. */
             JsonNode sensitivityLevel,
+            /* Task 0024, part 2: the level of the whole record; optional, exact names only. */
             JsonNode recordSensitivityLevel) {
 
         CreateSubmissionCommand toCommand() {
             if (sensitivityLevel != null) {
-                throw new IllegalArgumentException("sensitivityLevel is set on each document upload, with the "
+                throw new com.sdv.platform.domain.error.CodedRefusal.BadRequest(
+                        com.sdv.platform.domain.error.SdvErrorCode.SEN_006,
+                        "sensitivityLevel is set on each document upload, with the "
                         + DocumentIntakeService.SENSITIVITY_FIELD + " header, not on the submission.");
             }
-            RecordSensitivityGuard.refuseIfPresent(recordSensitivityLevel);
+            // Not a JSON string (a number, null, an object): passed on as written, so it is refused like any
+            // unknown value. The service checks the value before anything is stored.
+            String recordLevel = recordSensitivityLevel == null ? null
+                    : recordSensitivityLevel.isTextual() ? recordSensitivityLevel.textValue()
+                    : recordSensitivityLevel.toString();
             List<String> manifest = expectedDocuments == null ? List.of() : expectedDocuments.stream()
                     .map(ExpectedDocumentRequest::sourceDocumentId)
                     .toList();
@@ -86,7 +93,7 @@ public class SubmissionController {
                     values.put(key, value.isTextual() ? value.textValue() : value.asText());
                 });
             }
-            return new CreateSubmissionCommand(sourceSubmissionId, expectedDocumentCount, manifest, values);
+            return new CreateSubmissionCommand(sourceSubmissionId, expectedDocumentCount, manifest, values, recordLevel);
         }
     }
 

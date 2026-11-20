@@ -162,7 +162,7 @@ class DocumentSensitivityIntakeTest {
     void unknownWronglyCasedOrBlankLevelsAreRefusedWith400BeforeAnythingIsStored() throws Exception {
         for (String bad : List.of("confidential", "Confidential", "SECRET", "HIGHLY CONFIDENTIAL", " CONFIDENTIAL", "", "1")) {
             upload(bad).andExpect(status().isBadRequest())
-                    .andExpect(jsonPath("$.code").value("BAD_REQUEST"))
+                    .andExpect(jsonPath("$.code").value("SDV-SEN-001"))
                     .andExpect(jsonPath("$.message").value(
                             "X-SDV-Sensitivity-Level must be one of STANDARD, CONFIDENTIAL, HIGHLY_CONFIDENTIAL "
                                     + "(exactly, in capitals); leave it out for STANDARD."));
@@ -180,33 +180,54 @@ class DocumentSensitivityIntakeTest {
 
         upload("CONFIDENTIAL").andExpect(status().isOk()).andExpect(jsonPath("$.idempotentReplay").value(true))
                 .andExpect(jsonPath("$.sensitivityLevel").value("CONFIDENTIAL"));
-        upload(null).andExpect(status().isConflict());
-        upload("HIGHLY_CONFIDENTIAL").andExpect(status().isConflict());
+        upload(null).andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("SDV-SEN-003"));
+        upload("HIGHLY_CONFIDENTIAL").andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("SDV-SEN-003"));
         verify(documents, never()).insertDocument(any());
     }
 
     @Test
-    void aRecordLevelIsRefusedOnTheUploadUntilItCanBeStored() throws Exception {
+    void aRecordLevelIsRefusedOnTheUploadBecauseItBelongsOnTheSubmission() throws Exception {
         mvc.perform(post(URL).contentType("application/pdf").content(PDF)
                         .header("X-SDV-Source-Document-Id", "doc-1").header("X-SDV-Filename", "a.pdf")
                         .header("X-SDV-Record-Sensitivity-Level", "CONFIDENTIAL"))
                 .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("SDV-SEN-005"))
                 .andExpect(jsonPath("$.message").value(RecordSensitivityGuard.MESSAGE));
         verifyNoInteractions(storage, documents, audit);
     }
 
     @Test
-    void theSubmissionRefusesBothLevelsInsteadOfIgnoringThem() throws Exception {
+    void theSubmissionRefusesADocumentLevelInsteadOfIgnoringIt() throws Exception {
         String base = "{\"sourceSubmissionId\":\"s1\",\"expectedDocumentCount\":1,\"metadata\":{}";
         mvc.perform(post("/api/v1/ingestion/submissions").contentType("application/json")
                         .content(base + ",\"sensitivityLevel\":\"CONFIDENTIAL\"}"))
                 .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("SDV-SEN-006"))
                 .andExpect(jsonPath("$.message").value("sensitivityLevel is set on each document upload, with the "
                         + "X-SDV-Sensitivity-Level header, not on the submission."));
-        mvc.perform(post("/api/v1/ingestion/submissions").contentType("application/json")
-                        .content(base + ",\"recordSensitivityLevel\":\"CONFIDENTIAL\"}"))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.message").value(RecordSensitivityGuard.MESSAGE));
         verifyNoInteractions(submissionService);
+    }
+
+    /** Task 0024, part 2: the submission carries the record level; the service checks it before anything is stored. */
+    @Test
+    void theSubmissionPassesTheRecordLevelOnAsWritten() throws Exception {
+        String base = "{\"sourceSubmissionId\":\"s1\",\"expectedDocumentCount\":1,\"metadata\":{}";
+        ArgumentCaptor<com.sdv.platform.application.submission.CreateSubmissionCommand> command =
+                ArgumentCaptor.forClass(com.sdv.platform.application.submission.CreateSubmissionCommand.class);
+        when(submissionService.create(any(), any(), any(), any(), any())).thenThrow(new IllegalArgumentException("stub"));
+        for (String json : List.of("\"CONFIDENTIAL\"", "\"confidential\"", "1", "null", "{}")) {
+            clearInvocations(submissionService);
+            mvc.perform(post("/api/v1/ingestion/submissions").contentType("application/json")
+                    .content(base + ",\"recordSensitivityLevel\":" + json + "}"));
+            verify(submissionService).create(eq(TENANT), eq(SOURCE), command.capture(), eq("producer"), any());
+        }
+        // A JSON string is passed as its text; anything else as written, so the service refuses it like any unknown value.
+        assertEquals(List.of("CONFIDENTIAL", "confidential", "1", "null", "{}"), command.getAllValues().stream()
+                .map(com.sdv.platform.application.submission.CreateSubmissionCommand::recordSensitivityLevel).toList());
+
+        clearInvocations(submissionService);
+        mvc.perform(post("/api/v1/ingestion/submissions").contentType("application/json").content(base + "}"));
+        verify(submissionService).create(eq(TENANT), eq(SOURCE), command.capture(), eq("producer"), any());
+        assertNull(command.getValue().recordSensitivityLevel(), "left out: no record level");
     }
 }

@@ -105,7 +105,9 @@ public final class BusinessExperienceView {
             int submissionCount,
             Instant latestSubmissionAt,
             List<DocumentSummary> documents,
-            IncompleteAttention incompleteAttention) {
+            IncompleteAttention incompleteAttention,
+            /* Task 0024, part 2: the record's own level; null when the record has none. Information only. */
+            String recordSensitivityLevel) {
         public RecordView {
             identifiers = List.copyOf(identifiers);
             metadata = List.copyOf(metadata);
@@ -124,8 +126,10 @@ public final class BusinessExperienceView {
             /** null when the document was stored before page counts were kept. */
             Integer pageCount,
             boolean redacted,
-            /** Task 0024: the document's sensitivity level, sent as information only; nothing is filtered on it yet. */
-            String sensitivityLevel) { }
+            /** Task 0024: the document's own sensitivity level, sent as information only; nothing is filtered on it yet. */
+            String sensitivityLevel,
+            /** Task 0024, part 2: the higher of its own level and its record's level (SensitivityLevel.effective). */
+            String effectiveSensitivityLevel) { }
 
     public record IncompleteAttention(List<IncompleteSubmission> submissions) {
         public IncompleteAttention {

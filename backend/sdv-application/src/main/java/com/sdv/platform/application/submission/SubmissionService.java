@@ -1,15 +1,18 @@
 package com.sdv.platform.application.submission;
 
+import com.sdv.platform.application.business.RecordKey;
 import com.sdv.platform.application.port.AuditEventPort;
 import com.sdv.platform.application.port.DocumentIntakeRepository;
 import com.sdv.platform.application.port.IngestionSourceRepository;
 import com.sdv.platform.application.port.MetadataFieldDefinitionRepository;
+import com.sdv.platform.application.port.RecordSensitivityRepository;
 import com.sdv.platform.application.port.SubmissionRepository;
 import com.sdv.platform.application.port.TenantRepository;
 import com.sdv.platform.domain.audit.AuditEvent;
 import com.sdv.platform.domain.audit.AuditOutcome;
 import com.sdv.platform.domain.document.BusinessMetadataValue;
 import com.sdv.platform.domain.document.Document;
+import com.sdv.platform.domain.document.SensitivityLevel;
 import com.sdv.platform.domain.metadata.MetadataFieldDefinition;
 import com.sdv.platform.domain.source.IngestionSource;
 import com.sdv.platform.domain.source.IngestionSourceStatus;
@@ -47,8 +50,12 @@ public class SubmissionService {
     private final MetadataFieldDefinitionRepository definitions;
     private final SubmissionRepository submissions;
     private final DocumentIntakeRepository documents;
+    private final RecordSensitivityRepository recordLevels;
     private final AuditEventPort audit;
     private final Clock clock;
+
+    /** The submission JSON field that carries the record's level (task 0024, part 2). */
+    public static final String RECORD_SENSITIVITY_FIELD = "recordSensitivityLevel";
 
     @Autowired
     public SubmissionService(TenantRepository tenants,
@@ -56,8 +63,9 @@ public class SubmissionService {
                              MetadataFieldDefinitionRepository definitions,
                              SubmissionRepository submissions,
                              DocumentIntakeRepository documents,
+                             RecordSensitivityRepository recordLevels,
                              AuditEventPort audit) {
-        this(tenants, sources, definitions, submissions, documents, audit, Clock.systemUTC());
+        this(tenants, sources, definitions, submissions, documents, recordLevels, audit, Clock.systemUTC());
     }
 
     SubmissionService(TenantRepository tenants,
@@ -65,6 +73,7 @@ public class SubmissionService {
                       MetadataFieldDefinitionRepository definitions,
                       SubmissionRepository submissions,
                       DocumentIntakeRepository documents,
+                      RecordSensitivityRepository recordLevels,
                       AuditEventPort audit,
                       Clock clock) {
         this.tenants = tenants;
@@ -72,6 +81,7 @@ public class SubmissionService {
         this.definitions = definitions;
         this.submissions = submissions;
         this.documents = documents;
+        this.recordLevels = recordLevels;
         this.audit = audit;
         this.clock = clock;
     }
@@ -85,7 +95,8 @@ public class SubmissionService {
                       SubmissionRepository submissions,
                       AuditEventPort audit,
                       Clock clock) {
-        this(tenants, sources, definitions, submissions, new EmptyDocumentIntakeRepository(), audit, clock);
+        this(tenants, sources, definitions, submissions, new EmptyDocumentIntakeRepository(),
+                new NoRecordLevelRepository(), audit, clock);
     }
 
     @Transactional
@@ -100,7 +111,7 @@ public class SubmissionService {
 
         var existing = submissions.findBySourceIdentity(tenantId, sourceId, canonical.sourceSubmissionId());
         if (existing.isPresent()) {
-            ensureSameCreateRequest(existing.get(), canonical.requestSha256());
+            ensureSameCreateRequest(existing.get(), canonical);
             return details(existing.get(), true);
         }
 
@@ -124,7 +135,7 @@ public class SubmissionService {
 
         SubmissionRepository.InsertResult insertResult = submissions.insertIfAbsent(candidate);
         if (!insertResult.inserted()) {
-            ensureSameCreateRequest(insertResult.submission(), canonical.requestSha256());
+            ensureSameCreateRequest(insertResult.submission(), canonical);
             return details(insertResult.submission(), true);
         }
 
@@ -146,6 +157,11 @@ public class SubmissionService {
 
         submissions.insertExpectedDocuments(expectedDocuments);
         submissions.insertBusinessMetadata(boundMetadata);
+        if (canonical.recordSensitivityLevel() != null) {
+            applyRecordLevel(tenantId, sourceId, submissionId,
+                    recordKey(submissionId, currentDefinitions, boundMetadata),
+                    canonical.recordSensitivityLevel(), sourceSubject, correlationId, now);
+        }
         audit.append(new AuditEvent(
                 UUID.randomUUID(), tenantId, "SOURCE", sourceSubject,
                 "SUBMISSION_CREATED", "SUBMISSION", submissionId.toString(), now, correlationId,
@@ -270,8 +286,14 @@ public class SubmissionService {
             });
         }
 
-        String requestSha = requestFingerprint(sourceSubmissionId, command.expectedDocumentCount(), manifest, metadata);
-        return new CanonicalRequest(sourceSubmissionId, command.expectedDocumentCount(), List.copyOf(manifest), Map.copyOf(metadata), requestSha);
+        // Checked before anything is read or stored: an unknown or wrongly cased value is refused, never guessed.
+        SensitivityLevel recordLevel = SensitivityLevel.optionalFromRequest(
+                command.recordSensitivityLevel(), RECORD_SENSITIVITY_FIELD);
+
+        String requestSha = requestFingerprint(sourceSubmissionId, command.expectedDocumentCount(), manifest, metadata,
+                recordLevel);
+        return new CanonicalRequest(sourceSubmissionId, command.expectedDocumentCount(), List.copyOf(manifest),
+                Map.copyOf(metadata), recordLevel, requestSha);
     }
 
     private static List<BusinessMetadataValue> validateAndBuildMetadata(
@@ -310,19 +332,87 @@ public class SubmissionService {
         return List.copyOf(result);
     }
 
-    private static void ensureSameCreateRequest(Submission existing, String requestSha256) {
+    /**
+     * The record this submission belongs to, as record search and record detail group it: its identifier values
+     * (normalized, as stored), or the submission alone when it has none.
+     */
+    static String recordKey(UUID submissionId,
+                            List<MetadataFieldDefinition> definitionsUsed,
+                            List<BusinessMetadataValue> values) {
+        Map<String, MetadataFieldDefinition> byKey = new HashMap<>();
+        definitionsUsed.forEach(definition -> byKey.put(definition.fieldKey(), definition));
+        List<RecordKey.Part> identifiers = values.stream()
+                .filter(value -> byKey.containsKey(value.fieldKey()) && byKey.get(value.fieldKey()).businessIdentifier())
+                .filter(value -> value.normalizedValue() != null && !value.normalizedValue().isBlank())
+                .map(value -> new RecordKey.Part(value.fieldKey(), value.normalizedValue()))
+                .toList();
+        return identifiers.isEmpty() ? RecordKey.ofSubmission(submissionId) : RecordKey.ofIdentifiers(identifiers);
+    }
+
+    /**
+     * Task 0024, part 2: a delivery may set a record's first level or raise it, never lower it. A lower or equal
+     * value is ignored and audited ("record level kept at ..."), not an error. The row is locked, so two deliveries
+     * for one record can't both raise it from the same starting level.
+     */
+    private void applyRecordLevel(UUID tenantId, UUID sourceId, UUID submissionId, String recordKey,
+                                  SensitivityLevel requested, String sourceSubject, String correlationId, Instant now) {
+        String where = "{\"sourceId\":\"" + sourceId + "\",\"submissionId\":\"" + submissionId + "\"";
+        UUID newId = UUID.randomUUID();
+        if (recordLevels.insertIfAbsent(new RecordSensitivityRepository.NewRecordLevel(
+                newId, tenantId, sourceId, recordKey, requested, null, "SOURCE", now))) {
+            auditRecordLevel(tenantId, sourceSubject, "RECORD_SENSITIVITY_SET", newId, now, correlationId,
+                    where + ",\"level\":\"" + requested.name() + "\",\"setBy\":\"SOURCE\"}");
+            return;
+        }
+        RecordSensitivityRepository.StoredRecordLevel stored = recordLevels.lockByKey(tenantId, sourceId, recordKey)
+                .orElseThrow(() -> new IllegalStateException("The record's sensitivity level could not be read."));
+        if (requested.compareTo(stored.level()) > 0) {
+            recordLevels.raise(tenantId, stored.recordLevelId(), requested, "SOURCE", now);
+            auditRecordLevel(tenantId, sourceSubject, "RECORD_SENSITIVITY_RAISED", stored.recordLevelId(), now,
+                    correlationId, where + ",\"from\":\"" + stored.level().name() + "\",\"to\":\"" + requested.name()
+                            + "\",\"setBy\":\"SOURCE\"}");
+        } else {
+            auditRecordLevel(tenantId, sourceSubject, "RECORD_SENSITIVITY_KEPT", stored.recordLevelId(), now,
+                    correlationId, where + ",\"level\":\"" + stored.level().name() + "\",\"requested\":\""
+                            + requested.name() + "\",\"note\":\"record level kept at " + stored.level().name() + "\"}");
+        }
+    }
+
+    private void auditRecordLevel(UUID tenantId, String sourceSubject, String action, UUID recordLevelId,
+                                  Instant now, String correlationId, String details) {
+        audit.append(new AuditEvent(UUID.randomUUID(), tenantId, "SOURCE", sourceSubject, action,
+                "RECORD_SENSITIVITY", recordLevelId.toString(), now, correlationId, AuditOutcome.SUCCESS, details));
+    }
+
+    private static void ensureSameCreateRequest(Submission existing, CanonicalRequest request) {
         if (existing.createRequestSha256() == null) {
             throw new IllegalStateException("The source submission identity already exists without a comparable create fingerprint.");
         }
-        if (!existing.createRequestSha256().equals(requestSha256)) {
-            throw new IllegalStateException("sourceSubmissionId already exists with a different submission create request.");
+        if (existing.createRequestSha256().equals(request.requestSha256())) return;
+        // Task 0024, 4a: when the record level is the only difference, say so with its own code. The fingerprint is
+        // tried with each other possible level (or none); one matching means everything else is the same.
+        List<SensitivityLevel> others = new ArrayList<>(java.util.Arrays.asList(SensitivityLevel.values()));
+        others.add(null);
+        others.remove(request.recordSensitivityLevel());
+        for (SensitivityLevel first : others) {
+            if (existing.createRequestSha256().equals(requestFingerprint(request.sourceSubmissionId(),
+                    request.expectedDocumentCount(), request.expectedSourceDocumentIds(), request.metadata(), first))) {
+                throw new com.sdv.platform.domain.error.CodedRefusal.Conflict(
+                        com.sdv.platform.domain.error.SdvErrorCode.SEN_004,
+                        "sourceSubmissionId already exists with " + (first == null
+                                ? "no " + RECORD_SENSITIVITY_FIELD + "; leave it out"
+                                : RECORD_SENSITIVITY_FIELD + " " + first.name() + "; send the same value")
+                                + " when retrying.");
+            }
         }
+        throw new IllegalStateException("sourceSubmissionId already exists with a different submission create request.");
     }
 
     private static String requestFingerprint(String sourceSubmissionId,
                                              int expectedCount,
                                              List<String> manifest,
-                                             Map<String, String> metadata) {
+                                             Map<String, String> metadata,
+                                             SensitivityLevel recordLevel) {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
             update(digest, "sourceSubmissionId", sourceSubmissionId);
@@ -334,6 +424,9 @@ public class SubmissionService {
                         update(digest, "metadataKey", entry.getKey());
                         update(digest, "metadataValue", entry.getValue());
                     });
+            // Only when sent, so every submission created before task 0024 keeps its fingerprint. A retry with a
+            // different record level is then a different request (409), like a document retry with a different level.
+            if (recordLevel != null) update(digest, "recordSensitivityLevel", recordLevel.name());
             return HexFormat.of().formatHex(digest.digest());
         } catch (NoSuchAlgorithmException ex) {
             throw new IllegalStateException("SHA-256 is unavailable.", ex);
@@ -398,10 +491,26 @@ public class SubmissionService {
         @Override public void markSubmissionIncompleteIfDue(UUID tenantId, UUID sourceId, UUID submissionId, Instant cutoff) { }
     }
 
+    /** For the test-support constructors only: no record levels can be stored, so one sent fails (fail closed). */
+    private static final class NoRecordLevelRepository implements RecordSensitivityRepository {
+        private static UnsupportedOperationException unavailable() {
+            return new UnsupportedOperationException("Record sensitivity levels are not available here.");
+        }
+        @Override public boolean insertIfAbsent(NewRecordLevel level) { throw unavailable(); }
+        @Override public java.util.Optional<StoredRecordLevel> lockByKey(UUID tenantId, UUID sourceId, String recordKey) {
+            throw unavailable();
+        }
+        @Override public void raise(UUID tenantId, UUID recordLevelId, SensitivityLevel level, String setBy, Instant updatedAt) {
+            throw unavailable();
+        }
+        @Override public long countForSource(UUID tenantId, UUID sourceId) { throw unavailable(); }
+    }
+
     private record CanonicalRequest(
             String sourceSubmissionId,
             int expectedDocumentCount,
             List<String> expectedSourceDocumentIds,
             Map<String, String> metadata,
+            SensitivityLevel recordSensitivityLevel,
             String requestSha256) { }
 }

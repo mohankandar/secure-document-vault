@@ -46,7 +46,8 @@ class RecordTitleSettingTest {
     private final TenantRepository tenants = mock(TenantRepository.class);
     private final IngestionSourceRepository sourceRepository = mock(IngestionSourceRepository.class);
     private final MetadataFieldDefinitionRepository definitions = mock(MetadataFieldDefinitionRepository.class);
-    private final MetadataFieldAdminService metadata = new MetadataFieldAdminService(tenants, sourceRepository, definitions, audit);
+    private final MetadataFieldAdminService metadata = new MetadataFieldAdminService(tenants, sourceRepository, definitions,
+            mock(com.sdv.platform.application.port.RecordSensitivityRepository.class), audit);
     private final FoundationAdminController controller = new FoundationAdminController(
             new SecurityContextFacade(),
             new AuthorizationService(audit, new CapabilityPolicyService(overrides)),

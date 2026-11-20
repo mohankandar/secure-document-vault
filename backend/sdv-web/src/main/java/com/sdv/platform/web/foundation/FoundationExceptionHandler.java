@@ -58,7 +58,12 @@ public class FoundationExceptionHandler {
     @ExceptionHandler(IllegalArgumentException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     Map<String, Object> badRequest(IllegalArgumentException ex) {
-        return error("BAD_REQUEST", ex.getMessage());
+        return error(code(ex, "BAD_REQUEST"), ex.getMessage());
+    }
+
+    /** A refusal with a stable SDV-AREA-NNN code (docs/api/error-codes.md) sends it; others keep the generic code. */
+    private static String code(RuntimeException ex, String generic) {
+        return ex instanceof com.sdv.platform.domain.error.CodedRefusal coded ? coded.errorCode().code() : generic;
     }
 
     @ExceptionHandler(NoSuchElementException.class)
@@ -82,7 +87,7 @@ public class FoundationExceptionHandler {
     @ExceptionHandler(IllegalStateException.class)
     @ResponseStatus(HttpStatus.CONFLICT)
     Map<String, Object> conflict(IllegalStateException ex) {
-        return error("CONFLICT", ex.getMessage());
+        return error(code(ex, "CONFLICT"), ex.getMessage());
     }
 
     private static Map<String, Object> error(String code, String message) {

@@ -1,20 +1,20 @@
 package com.sdv.platform.web.ingestion;
 
 /**
- * Task 0024, part 1a/4a: a record-level sensitivity level is not stored yet, because SDV has no record table (a record
- * is the group of submissions that share their business-identifier values). Until the owner decides where it lives,
- * a delivery that sends one is refused, so the level is never silently dropped (fail closed).
- * See docs/work/0024-report.md, "Questions for the owner".
+ * Task 0024, part 2: a record's level has one place to be sent, the submission JSON ({@code recordSensitivityLevel}).
+ * The same value as an upload header is refused rather than ignored, so a level is never silently dropped.
  */
 final class RecordSensitivityGuard {
     static final String HEADER = "X-SDV-Record-Sensitivity-Level";
-    static final String JSON_FIELD = "recordSensitivityLevel";
-    static final String MESSAGE = "Record sensitivity levels are not accepted yet; leave out "
-            + JSON_FIELD + " and " + HEADER + ".";
+    static final String MESSAGE = HEADER + " is not accepted on a document upload; send recordSensitivityLevel "
+            + "on the submission instead.";
 
     private RecordSensitivityGuard() { }
 
     static void refuseIfPresent(Object value) {
-        if (value != null) throw new IllegalArgumentException(MESSAGE);
+        if (value != null) {
+            throw new com.sdv.platform.domain.error.CodedRefusal.BadRequest(
+                    com.sdv.platform.domain.error.SdvErrorCode.SEN_005, MESSAGE);
+        }
     }
 }

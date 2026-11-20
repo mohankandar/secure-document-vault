@@ -27,7 +27,13 @@
         "responses": {
           "201": {"description": "Submission created", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/SubmissionResponse"}}}},
           "200": {"description": "Exact idempotent create replay", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/SubmissionResponse"}}}},
-          "400": {"$ref": "#/components/responses/BadRequest"},
+          "400": {
+            "description": "Invalid producer request, including an unknown recordSensitivityLevel or a sensitivityLevel on the submission",
+            "content": {"application/json": {
+              "schema": {"$ref": "#/components/schemas/Error"},
+              "example": {"code": "SDV-SEN-002", "message": "recordSensitivityLevel must be one of STANDARD, CONFIDENTIAL, HIGHLY_CONFIDENTIAL (exactly, in capitals); leave it out for no record level.", "timestamp": "2026-11-20T10:00:00Z"}
+            }}
+          },
           "401": {"$ref": "#/components/responses/Unauthorized"},
           "403": {"$ref": "#/components/responses/Forbidden"},
           "409": {"$ref": "#/components/responses/Conflict"}
@@ -72,7 +78,7 @@
           {"name": "X-SDV-Source-Document-Id", "in": "header", "required": false, "schema": {"type": "string", "maxLength": 200}},
           {"name": "Idempotency-Key", "in": "header", "required": false, "schema": {"type": "string"}, "description": "Reuse after an ambiguous network or acknowledgement failure."},
           {"name": "X-SDV-Sensitivity-Level", "in": "header", "required": false, "schema": {"$ref": "#/components/schemas/SensitivityLevel"}, "description": "The document's sensitivity level (sensitivityLevel). Leave it out for STANDARD. Any other value, including a blank, lower-case or mixed-case one, is refused with 400 and nothing is stored. A retry must send the same level as the first upload, or it is refused with 409."},
-          {"name": "X-SDV-Record-Sensitivity-Level", "in": "header", "required": false, "schema": {"type": "string"}, "description": "Not accepted yet: any value is refused with 400 (recordSensitivityLevel; record levels are planned)."}
+          {"name": "X-SDV-Record-Sensitivity-Level", "in": "header", "required": false, "schema": {"type": "string"}, "description": "Not accepted on the upload: any value is refused with 400. Send the record level as recordSensitivityLevel on the submission."}
         ],
         "requestBody": {
           "required": true,
@@ -85,7 +91,7 @@
             "description": "Invalid producer request, including an unknown X-SDV-Sensitivity-Level or any X-SDV-Record-Sensitivity-Level",
             "content": {"application/json": {
               "schema": {"$ref": "#/components/schemas/Error"},
-              "example": {"code": "BAD_REQUEST", "message": "X-SDV-Sensitivity-Level must be one of STANDARD, CONFIDENTIAL, HIGHLY_CONFIDENTIAL (exactly, in capitals); leave it out for STANDARD.", "timestamp": "2026-11-20T10:00:00Z"}
+              "example": {"code": "SDV-SEN-001", "message": "X-SDV-Sensitivity-Level must be one of STANDARD, CONFIDENTIAL, HIGHLY_CONFIDENTIAL (exactly, in capitals); leave it out for STANDARD.", "timestamp": "2026-11-20T10:00:00Z"}
             }}
           },
           "401": {"$ref": "#/components/responses/Unauthorized"},
@@ -155,7 +161,8 @@
           "sourceSubmissionId": {"type": "string", "minLength": 1, "maxLength": 200},
           "expectedDocumentCount": {"type": "integer", "minimum": 1},
           "expectedDocuments": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/components/schemas/ExpectedDocumentRequest"}},
-          "metadata": {"type": "object", "additionalProperties": {"$ref": "#/components/schemas/ScalarMetadataValue"}}
+          "metadata": {"type": "object", "additionalProperties": {"$ref": "#/components/schemas/ScalarMetadataValue"}},
+          "recordSensitivityLevel": {"allOf": [{"$ref": "#/components/schemas/SensitivityLevel"}], "description": "Optional level for the whole record this submission belongs to (for example a contract): the submissions of this sending system with the same identifier values, or this submission alone when it has none. A delivery may set a record's first level or raise it; a lower or equal value is ignored and audited, not refused. Any other value than the exact names, including a blank, lower-case or non-string one, is refused with 400 and nothing is stored. A retry of the same sourceSubmissionId must send the same value (or none, if the first had none), or it is refused with 409. A document's effective level is the higher of its own level and its record's level."}
         }
       },
       "ExpectedDocument": {
@@ -230,7 +237,7 @@
       },
       "Error": {
         "type": "object",
-        "properties": {"code": {"type": "string"}, "message": {"type": "string"}, "timestamp": {"type": "string", "format": "date-time"}}
+        "properties": {"code": {"type": "string", "description": "A stable SDV-AREA-NNN code (see docs/api/error-codes.md), or a generic code such as BAD_REQUEST or CONFLICT for errors not yet coded. Read the code, not the message."}, "message": {"type": "string"}, "timestamp": {"type": "string", "format": "date-time"}}
       }
     },
     "responses": {

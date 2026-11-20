@@ -16,6 +16,7 @@ import com.sdv.platform.application.port.MetadataFieldDefinitionRepository;
 import com.sdv.platform.application.port.TenantRepository;
 import com.sdv.platform.domain.audit.AuditEvent;
 import com.sdv.platform.domain.audit.AuditOutcome;
+import com.sdv.platform.domain.document.SensitivityLevel;
 import com.sdv.platform.domain.metadata.MetadataFieldDefinition;
 import com.sdv.platform.domain.metadata.MetadataFieldType;
 import com.sdv.platform.domain.metadata.MetadataNormalization;
@@ -402,7 +403,10 @@ public class BusinessExperienceService {
             throw new NoSuchElementException("Business record not found.");
         }
 
-        BusinessExperienceView.RecordView view = recordView(aggregate,
+        // Task 0024, part 2: the record's own level, from the same grouping as the record itself.
+        SensitivityLevel recordLevel = records.findRecordSensitivityLevel(
+                tenantId, source.sourceId(), identity.recordKey()).orElse(null);
+        BusinessExperienceView.RecordView view = recordView(aggregate, recordLevel,
                 definitions.findRecordTitleFields(tenantId, source.sourceId()));
         // submissionId is an internal reference (a UUID, never a readable value); the audit list
         // looks up the record number from it within the tenant (task 0020 item 1).
@@ -610,14 +614,16 @@ public class BusinessExperienceService {
                 matchedFields);
     }
 
-    private BusinessExperienceView.RecordView recordView(RecordAggregate aggregate, List<String> titleFields) {
+    private BusinessExperienceView.RecordView recordView(RecordAggregate aggregate, SensitivityLevel recordLevel,
+                                                          List<String> titleFields) {
         List<BusinessExperienceView.FieldValue> metadata = latestMetadata(aggregate);
         List<BusinessExperienceView.FieldValue> identifiers = displayIdentifiers(aggregate, metadata);
         List<BusinessExperienceView.DocumentSummary> documents = aggregate.documents().stream()
                 .map(document -> new BusinessExperienceView.DocumentSummary(
                         document.documentId(), document.submissionId(), document.sourceDocumentId(),
                         document.originalFilename(), document.ingestedAt(), document.availableAt(), document.expiresAt(),
-                        document.pageCount(), document.redacted(), document.sensitivityLevel().name()))
+                        document.pageCount(), document.redacted(), document.sensitivityLevel().name(),
+                        SensitivityLevel.effective(document.sensitivityLevel(), recordLevel).name()))
                 .toList();
 
         Map<UUID, List<ExpectedDocumentSnapshot>> expectedBySubmission = aggregate.expected().stream()
@@ -654,7 +660,8 @@ public class BusinessExperienceService {
                 aggregate.submissions().size(),
                 aggregate.submissions().getFirst().createdAt(),
                 documents,
-                attention);
+                attention,
+                recordLevel == null ? null : recordLevel.name());
     }
 
     /**

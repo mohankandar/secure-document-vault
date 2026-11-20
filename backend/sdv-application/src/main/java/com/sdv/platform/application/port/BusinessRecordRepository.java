@@ -78,6 +78,12 @@ public interface BusinessRecordRepository {
             UUID sourceId,
             List<IdentifierCriterion> identifiers);
 
+    /** Task 0024, part 2: the record's own level (record_sensitivity_levels); empty when the record has none. */
+    java.util.Optional<SensitivityLevel> findRecordSensitivityLevel(
+            UUID tenantId,
+            UUID sourceId,
+            String recordKey);
+
     List<MetadataSnapshot> findMetadataSnapshots(
             UUID tenantId,
             UUID sourceId,

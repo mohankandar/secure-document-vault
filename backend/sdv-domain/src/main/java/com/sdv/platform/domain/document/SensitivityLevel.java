@@ -1,5 +1,8 @@
 package com.sdv.platform.domain.document;
 
+import com.sdv.platform.domain.error.CodedRefusal;
+import com.sdv.platform.domain.error.SdvErrorCode;
+
 import java.util.Arrays;
 import java.util.stream.Collectors;
 
@@ -20,12 +23,23 @@ public enum SensitivityLevel {
      * names exactly, in capitals: an unknown, blank or wrongly cased value is refused, never guessed or defaulted.
      */
     public static SensitivityLevel fromRequest(String value, String field) {
-        if (value == null) return STANDARD;
+        return value == null ? STANDARD : exact(value, field, "leave it out for STANDARD", SdvErrorCode.SEN_001);
+    }
+
+    /**
+     * A record level as a sending system wrote it (task 0024, part 2). Missing (null) means the record gets no level
+     * from this delivery; anything else must be one of the names exactly, as for {@link #fromRequest}.
+     */
+    public static SensitivityLevel optionalFromRequest(String value, String field) {
+        return value == null ? null : exact(value, field, "leave it out for no record level", SdvErrorCode.SEN_002);
+    }
+
+    private static SensitivityLevel exact(String value, String field, String whenMissing, SdvErrorCode code) {
         for (SensitivityLevel level : values()) {
             if (level.name().equals(value)) return level;
         }
-        throw new IllegalArgumentException(field + " must be one of " + ALLOWED
-                + " (exactly, in capitals); leave it out for STANDARD.");
+        throw new CodedRefusal.BadRequest(code, field + " must be one of " + ALLOWED
+                + " (exactly, in capitals); " + whenMissing + ".");
     }
 
     /**

@@ -21,6 +21,10 @@
     "metadata": {
       "type": "object",
       "additionalProperties": {"type": ["string", "number", "integer", "boolean"]}
+    },
+    "recordSensitivityLevel": {
+      "description": "Optional level for the whole record this submission belongs to. Exact names only. A delivery may raise a record's level, never lower it.",
+      "enum": ["STANDARD", "CONFIDENTIAL", "HIGHLY_CONFIDENTIAL"]
     }
   }
 }

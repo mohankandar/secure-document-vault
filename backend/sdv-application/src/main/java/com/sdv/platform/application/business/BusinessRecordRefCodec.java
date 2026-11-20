@@ -106,6 +106,14 @@ final class BusinessRecordRefCodec {
                     .reduce((left, right) -> left + "\u001e" + right)
                     .orElseThrow();
         }
+
+        /** The key of this record's row in record_sensitivity_levels (task 0024, part 2). */
+        String recordKey() {
+            if (fallbackSubmissionId != null) return RecordKey.ofSubmission(fallbackSubmissionId);
+            return RecordKey.ofIdentifiers(identifiers.stream()
+                    .map(part -> new RecordKey.Part(part.fieldKey(), part.normalizedValue()))
+                    .toList());
+        }
     }
 
     record IdentifierPart(String fieldKey, String normalizedValue) { }

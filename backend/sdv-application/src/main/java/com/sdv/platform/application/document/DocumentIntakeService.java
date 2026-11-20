@@ -348,7 +348,9 @@ public class DocumentIntakeService {
         }
         // A retry must repeat the level it was first sent with; the stored level is never changed by a retry.
         if (existing.sensitivityLevel() != sensitivityLevel) {
-            throw new IllegalStateException("The document retry identity already exists with sensitivity level "
+            throw new com.sdv.platform.domain.error.CodedRefusal.Conflict(
+                    com.sdv.platform.domain.error.SdvErrorCode.SEN_003,
+                    "The document retry identity already exists with sensitivity level "
                     + existing.sensitivityLevel().name() + "; send the same " + SENSITIVITY_FIELD + " when retrying.");
         }
     }

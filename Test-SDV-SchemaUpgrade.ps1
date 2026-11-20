@@ -1,7 +1,8 @@
 <#
 .SYNOPSIS
-  Repeatable upgrade check for task 0024: a database at the previous schema (up to changeset 022) moves to this
-  version's schema (023, the document sensitivity level) with every existing document STANDARD and nothing else changed.
+  Repeatable upgrade check for task 0024: a database at an earlier schema moves to this version's schema with its data
+  unchanged. -From 024 (the default) starts at 023 and checks changeset 024 (record sensitivity levels); -From 023
+  starts at 022 and checks 023 (the document sensitivity level) and then 024.
 
 .DESCRIPTION
   Uses a scratch database, sdv_schema_test, inside the existing sdv-postgres server, and one scratch role,
@@ -10,19 +11,28 @@
   Everything it creates is dropped at the end, also when a step fails.
 
   Steps:
-    1. Previous version: the schema step's own "sql" output for an empty database, cut just before changeset 023, is
-       applied with psql. Changesets 000-022 are the same files as on release/vero-r7, so this is the previous
-       version's schema and changelog. Checked: 022 is the last changeset and documents has no sensitivity_level.
-    2. Data at the previous version: a tenant, a sending system, a submission and documents in four states.
-    3. Schema step: status lists only 023; sql (the SQL the database team reviews) holds the 023 statements; update.
-    4. After: every document is STANDARD, the column is not null with default STANDARD, the check refuses unknown and
-       lower-case values, every other column of every row is unchanged, no other table changed, status is up to date.
+    1. Previous version: the schema step's own "sql" output for an empty database, cut just before changeset -From,
+       is applied with psql. The changesets before it are the same files as when they were released, so this is the
+       previous version's schema and changelog. Checked: the last changeset, and that the new objects don't exist yet.
+    2. Data at the previous version: a tenant, a sending system, a submission and documents in four states (with
+       different sensitivity levels when the column already exists).
+    3. Schema step: status lists exactly the new changesets; sql (the SQL the database team reviews) holds their
+       statements and changes nothing; update.
+    4. After, for 023: every document is STANDARD, the column is not null with default STANDARD, the check refuses
+       unknown and lower-case values. For 024: record_sensitivity_levels exists and is empty, its checks refuse an
+       unknown level, a key whose SHA-256 doesn't match, a second row for the same record and an unknown sending
+       system; "insert ... on conflict do nothing" (what intake runs) adds nothing for the same record; the database
+       computes the same SHA-256 as the application. Always: every other column of every row is unchanged, no other
+       table changed, status is up to date.
 
   Prerequisite: the application jar is built (.\Build-SDV-All.ps1).
 #>
 [CmdletBinding()]
 param(
     [string]$Jar,
+    # The first changeset the upgrade applies; the scratch database is built up to the one before it.
+    [ValidateSet('023', '024')]
+    [string]$From = '024',
     # Drop a scratch database and role left by an earlier run of this script that could not clean up.
     [switch]$DropLeftover
 )
@@ -33,8 +43,14 @@ $container = 'sdv-postgres'
 $db = 'sdv_schema_test'
 $owner = 'sdv_schema_owner'
 $hostUrl = 'jdbc:postgresql://localhost:5433/' + $db
-$newChangeset = '023-document-sensitivity-level'
-$lastPrevious = '022-retention-policy-creator-name'
+# In order. The upgrade applies every changeset from -From on.
+$checked = @('022-retention-policy-creator-name', '023-document-sensitivity-level', '024-record-sensitivity-levels')
+$start = [array]::IndexOf(($checked | ForEach-Object { $_.Substring(0, 3) }), $From)
+$newChangesets = @($checked[$start..($checked.Count - 1)])
+$newChangeset = $newChangesets[0]
+$lastPrevious = $checked[$start - 1]
+$has023 = $newChangesets -contains '023-document-sensitivity-level'
+$has024 = $newChangesets -contains '024-record-sensitivity-levels'
 $run = Join-Path $root ('.runtime\schema-upgrade\' + (Get-Date -Format 'yyyyMMdd-HHmmss'))
 New-Item -ItemType Directory -Force -Path $run | Out-Null
 
@@ -98,18 +114,22 @@ function Invoke-SchemaStep([string[]]$StepArgs) {
     $r
 }
 
-# Every row of every application table except documents, as one fingerprint per table; and documents without the new column.
+# Every row of every application table except documents and the new table, as one fingerprint per table; and documents
+# with the columns they had at the previous version (sensitivity_level too when it existed then).
 $otherTablesSql = @"
 select string_agg(t.relname || '=' || (xpath('/row/c/text()', query_to_xml(format('select count(*) || '':'' || coalesce(md5(string_agg(x::text, ''|'' order by x::text)), '''') as c from %I x', t.relname), false, true, '')))[1]::text, ',' order by t.relname)
   from pg_stat_user_tables t
- where t.relname not in ('documents', 'databasechangelog', 'databasechangeloglock');
+ where t.relname not in ('documents', 'record_sensitivity_levels', 'databasechangelog', 'databasechangeloglock');
 "@
+$levelColumn = if ($has023) { '' } else { ', sensitivity_level' }
 $documentsOldColumnsSql = @"
 select count(*) || ':' || md5(string_agg(row(document_id, tenant_id, submission_id, source_id, source_document_id, producer_idempotency_key,
        original_filename, media_type, content_sha256, content_size_bytes, status, retention_days_snapshot, ingested_at, expires_at,
-       available_at, processing_attempt_count, processing_error_code, deleted_at, deletion_reason, page_count)::text, '|' order by document_id))
+       available_at, processing_attempt_count, processing_error_code, deleted_at, deletion_reason, page_count$levelColumn)::text, '|' order by document_id))
   from documents;
 "@
+$hasColumnSql = "select count(*) from information_schema.columns where table_name = 'documents' and column_name = 'sensitivity_level';"
+$hasTableSql = "select count(*) from information_schema.tables where table_name = 'record_sensitivity_levels';"
 
 # ---------------------------------------------------------------- preconditions
 if ($Jar) { $jarPath = (Resolve-Path -LiteralPath $Jar).Path }
@@ -140,7 +160,7 @@ revoke all on database $db from public;
     Assert-That ($r.Code -eq 0) "could not create the scratch database: $($r.Err.Trim())"
     Write-Step "Create $db and its owner" $w.Elapsed.TotalSeconds 'scratch only'
 
-    # ------------------------------------------------------------ 1. previous version (up to 022)
+    # ------------------------------------------------------------ 1. previous version (up to the one before -From)
     $sqlFull = Join-Path $run 'all-changesets.sql'
     $sq = Invoke-SchemaStep @('sql', '-Output', $sqlFull)
     Assert-That ($sq.Code -eq 0 -and (Test-Path $sqlFull)) "sql on the empty database failed: $($sq.Err.Trim()) $($sq.Out.Trim())"
@@ -156,11 +176,13 @@ revoke all on database $db from public;
     # The cut leaves out the lock release at the end of the file; release it as Liquibase would.
     $null = Invoke-Sql -Database $db -AsOwner -Sql 'update databasechangeloglock set locked = false, lockgranted = null, lockedby = null where id = 1;'
     $last = Get-Value 'select id from databasechangelog order by orderexecuted desc limit 1;'
-    $hasColumn = Get-Value "select count(*) from information_schema.columns where table_name = 'documents' and column_name = 'sensitivity_level';"
     Assert-That ($last -eq $lastPrevious) "the previous version should end with $lastPrevious, ends with $last"
-    Assert-That ($hasColumn -eq '0') 'documents already has sensitivity_level at the previous version'
+    $hasColumn = Get-Value $hasColumnSql
+    Assert-That ($hasColumn -eq $(if ($has023) { '0' } else { '1' })) "documents.sensitivity_level should $(if ($has023) { 'not ' })exist at the previous version"
+    Assert-That ((Get-Value $hasTableSql) -eq '0') 'record_sensitivity_levels already exists at the previous version'
     $prevCount = Get-Value 'select count(*) from databasechangelog;'
-    Write-Step '1. Previous version (changesets up to 022)' $w.Elapsed.TotalSeconds "$prevCount changesets, last $last, no sensitivity_level"
+    $missing = @(); if ($has023) { $missing += 'no sensitivity_level' }; $missing += 'no record_sensitivity_levels'
+    Write-Step "1. Previous version (changesets up to $($lastPrevious.Substring(0, 3)))" $w.Elapsed.TotalSeconds "$prevCount changesets, last $last, $($missing -join ', ')"
 
     # ------------------------------------------------------------ 2. data at the previous version
     $w = [System.Diagnostics.Stopwatch]::StartNew()
@@ -177,29 +199,44 @@ values ('40000000-0000-0000-0000-000000000001', '10000000-0000-0000-0000-0000000
        ('40000000-0000-0000-0000-000000000003', '10000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', 'd3', 'c.pdf', 'application/pdf', repeat('c', 64), 300, 'PROCESSING_FAILED', null, null, null, null),
        ('40000000-0000-0000-0000-000000000004', '10000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', 'd4', 'd.pdf', 'application/pdf', repeat('d', 64), 400, 'EXPIRED_DELETED', null, null, now(), 'RETENTION_EXPIRED');
 "@
+    if (-not $has023) {
+        # The level column exists already: give the documents different levels, which 024 must leave alone.
+        $null = Invoke-Sql -Database $db -AsOwner -Sql "update documents set sensitivity_level = 'CONFIDENTIAL' where source_document_id = 'd1'; update documents set sensitivity_level = 'HIGHLY_CONFIDENTIAL' where source_document_id = 'd2';"
+    }
     $docsBefore = Get-Value $documentsOldColumnsSql
     $othersBefore = Get-Value $otherTablesSql
     # The fingerprints must really hold the rows, or "unchanged" below would prove nothing.
     Assert-That ($docsBefore -match '^4:[0-9a-f]{32}$') "documents fingerprint looks wrong: $docsBefore"
     Assert-That ($othersBefore -match '(^|,)tenants=1:[0-9a-f]{32}(,|$)' -and $othersBefore -match '(^|,)submissions=1:[0-9a-f]{32}(,|$)' -and $othersBefore -match '(^|,)ingestion_sources=1:[0-9a-f]{32}(,|$)') "table fingerprints look wrong: $othersBefore"
-    Write-Step '2. Data at the previous version' $w.Elapsed.TotalSeconds "4 documents (available, received, failed, deleted)"
+    $levelsNote = if ($has023) { '' } else { '; levels CONFIDENTIAL, HIGHLY_CONFIDENTIAL, STANDARD, STANDARD' }
+    Write-Step '2. Data at the previous version' $w.Elapsed.TotalSeconds "4 documents (available, received, failed, deleted)$levelsNote"
 
     # ------------------------------------------------------------ 3. schema step
     $st = Invoke-SchemaStep @('status')
     Assert-That ($st.Code -eq 0) "status failed: $($st.Err.Trim())"
     $wouldRun = ([regex]::Match($st.Out, '(\d+) changesets would run')).Groups[1].Value
-    Assert-That ($wouldRun -eq '1' -and $st.Out.Contains($newChangeset)) "status should list only $newChangeset, said: $($st.Out.Trim())"
-    Write-Step '3a. Schema step status' $st.Seconds "1 changeset would run: $newChangeset"
+    Assert-That ($wouldRun -eq [string]$newChangesets.Count) "status should list $($newChangesets.Count) changesets ($($newChangesets -join ', ')), said: $($st.Out.Trim())"
+    foreach ($c in $newChangesets) { Assert-That ($st.Out.Contains($c)) "status does not list $c" }
+    Write-Step '3a. Schema step status' $st.Seconds "$wouldRun would run: $($newChangesets -join ', ')"
 
     $sqlUpgrade = Join-Path $run 'schema-upgrade.sql'
     $sq = Invoke-SchemaStep @('sql', '-Output', $sqlUpgrade)
     Assert-That ($sq.Code -eq 0 -and (Test-Path $sqlUpgrade)) "sql failed: $($sq.Err.Trim())"
     $upgradeText = Get-Content -Raw $sqlUpgrade
-    Assert-That ($upgradeText -match "add column if not exists sensitivity_level text not null default 'STANDARD'") 'the reviewable SQL lacks the new column'
-    Assert-That ($upgradeText -match 'ck_documents_sensitivity_level') 'the reviewable SQL lacks the check constraint'
+    if ($has023) {
+        Assert-That ($upgradeText -match "add column if not exists sensitivity_level text not null default 'STANDARD'") 'the reviewable SQL lacks the new column'
+        Assert-That ($upgradeText -match 'ck_documents_sensitivity_level') 'the reviewable SQL lacks the check constraint'
+    }
+    if ($has024) {
+        Assert-That ($upgradeText -match 'create table if not exists record_sensitivity_levels') 'the reviewable SQL lacks record_sensitivity_levels'
+        foreach ($c in @('ck_record_sensitivity_levels_level', 'ck_record_sensitivity_levels_key_sha256', 'uq_record_sensitivity_levels_record', 'fk_record_sensitivity_levels_source')) {
+            Assert-That ($upgradeText.Contains($c)) "the reviewable SQL lacks $c"
+        }
+    }
     Assert-That (-not ($upgradeText -match "::$lastPrevious::")) 'the reviewable SQL repeats an already applied changeset'
-    Assert-That ((Get-Value "select count(*) from information_schema.columns where table_name = 'documents' and column_name = 'sensitivity_level';") -eq '0') 'sql changed the database'
-    Write-Step '3b. Schema step sql (the SQL to review)' $sq.Seconds 'only 023: the column and its check; database unchanged'
+    Assert-That ((Get-Value $hasColumnSql) -eq $hasColumn) 'sql changed the database (documents)'
+    Assert-That ((Get-Value $hasTableSql) -eq '0') 'sql changed the database (record_sensitivity_levels)'
+    Write-Step '3b. Schema step sql (the SQL to review)' $sq.Seconds "only $($newChangesets.ForEach({ $_.Substring(0, 3) }) -join ' and '); database unchanged"
 
     $up = Invoke-SchemaStep @('update')
     Assert-That ($up.Code -eq 0) "update failed: $($up.Err.Trim()) $($up.Out.Trim())"
@@ -207,25 +244,70 @@ values ('40000000-0000-0000-0000-000000000001', '10000000-0000-0000-0000-0000000
 
     # ------------------------------------------------------------ 4. after the upgrade
     $w = [System.Diagnostics.Stopwatch]::StartNew()
-    $levels = Get-Value "select string_agg(sensitivity_level, ',' order by document_id) from documents;"
-    Assert-That ($levels -eq 'STANDARD,STANDARD,STANDARD,STANDARD') "every existing document should be STANDARD, got $levels"
-    $column = Get-Value "select is_nullable || ' ' || data_type || ' ' || column_default from information_schema.columns where table_name = 'documents' and column_name = 'sensitivity_level';"
-    Assert-That ($column -eq "NO text 'STANDARD'::text") "the column should be text, not null, default STANDARD; is $column"
-    Assert-That ((Get-Value $documentsOldColumnsSql) -eq $docsBefore) 'a document column other than sensitivity_level changed'
-    Assert-That ((Get-Value $otherTablesSql) -eq $othersBefore) 'a table other than documents changed'
-    foreach ($bad in @('confidential', 'Confidential', 'SECRET', '')) {
-        $r = Invoke-Sql -Database $db -AsOwner -AllowFailure -Sql "update documents set sensitivity_level = '$bad' where source_document_id = 'd1';"
-        Assert-That ($r.Code -ne 0 -and $r.Err -match 'ck_documents_sensitivity_level') "the check should refuse '$bad'"
+    Assert-That ((Get-Value $documentsOldColumnsSql) -eq $docsBefore) 'a document column that existed before changed'
+    Assert-That ((Get-Value $otherTablesSql) -eq $othersBefore) 'a table other than documents and record_sensitivity_levels changed'
+    if ($has023) {
+        $levels = Get-Value "select string_agg(sensitivity_level, ',' order by document_id) from documents;"
+        Assert-That ($levels -eq 'STANDARD,STANDARD,STANDARD,STANDARD') "every existing document should be STANDARD, got $levels"
+        $column = Get-Value "select is_nullable || ' ' || data_type || ' ' || column_default from information_schema.columns where table_name = 'documents' and column_name = 'sensitivity_level';"
+        Assert-That ($column -eq "NO text 'STANDARD'::text") "the column should be text, not null, default STANDARD; is $column"
+        foreach ($bad in @('confidential', 'Confidential', 'SECRET', '')) {
+            $r = Invoke-Sql -Database $db -AsOwner -AllowFailure -Sql "update documents set sensitivity_level = '$bad' where source_document_id = 'd1';"
+            Assert-That ($r.Code -ne 0 -and $r.Err -match 'ck_documents_sensitivity_level') "the check should refuse '$bad'"
+        }
+        $r = Invoke-Sql -Database $db -AsOwner -AllowFailure -Sql "update documents set sensitivity_level = null where source_document_id = 'd1';"
+        Assert-That ($r.Code -ne 0 -and $r.Err -match 'not-null') 'the column should refuse null'
+        $null = Invoke-Sql -Database $db -AsOwner -Sql "begin; update documents set sensitivity_level = 'CONFIDENTIAL' where source_document_id = 'd1'; update documents set sensitivity_level = 'HIGHLY_CONFIDENTIAL' where source_document_id = 'd2'; rollback;"
+        Write-Step '4a. After 023: existing documents STANDARD' $w.Elapsed.TotalSeconds 'not null, default STANDARD; check refuses lower-case, unknown, blank and null'
+        $w = [System.Diagnostics.Stopwatch]::StartNew()
     }
-    $r = Invoke-Sql -Database $db -AsOwner -AllowFailure -Sql "update documents set sensitivity_level = null where source_document_id = 'd1';"
-    Assert-That ($r.Code -ne 0 -and $r.Err -match 'not-null') 'the column should refuse null'
-    $null = Invoke-Sql -Database $db -AsOwner -Sql "begin; update documents set sensitivity_level = 'CONFIDENTIAL' where source_document_id = 'd1'; update documents set sensitivity_level = 'HIGHLY_CONFIDENTIAL' where source_document_id = 'd2'; rollback;"
-    Write-Step '4. After: existing documents STANDARD, nothing else changed' $w.Elapsed.TotalSeconds 'not null, default STANDARD; check refuses lower-case, unknown, blank and null'
+    if ($has024) {
+        Assert-That ((Get-Value $hasTableSql) -eq '1') 'record_sensitivity_levels was not created'
+        Assert-That ((Get-Value 'select count(*) from record_sensitivity_levels;') -eq '0') 'record_sensitivity_levels should start empty'
+        if (-not $has023) {
+            $levels = Get-Value "select string_agg(sensitivity_level, ',' order by document_id) from documents;"
+            Assert-That ($levels -eq 'CONFIDENTIAL,HIGHLY_CONFIDENTIAL,STANDARD,STANDARD') "document levels should be unchanged, got $levels"
+        }
+        $nullable = Get-Value "select string_agg(column_name || ':' || is_nullable, ',' order by ordinal_position) from information_schema.columns where table_name = 'record_sensitivity_levels';"
+        Assert-That ($nullable -eq 'record_level_id:NO,tenant_id:NO,source_id:NO,record_key:NO,record_key_sha256:NO,sensitivity_level:NO,reason:YES,set_by:NO,set_at:NO,updated_at:NO') "unexpected columns: $nullable"
+
+        # The application computes the SHA-256 over the key's UTF-8 bytes (RecordKeyTest pins sha256('abc')); the
+        # database check must agree, also for a non-ASCII value. The value is built from code points on both sides so
+        # no console code page is involved.
+        Assert-That ((Get-Value "select encode(sha256(convert_to('abc', 'UTF8')), 'hex');") -eq 'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad') 'the database SHA-256 of abc is wrong'
+        $key = 'identifiers:[["name","Zo' + [char]0x00EB + '"]]'
+        $sha = -join ([System.Security.Cryptography.SHA256]::Create().ComputeHash([System.Text.Encoding]::UTF8.GetBytes($key)) | ForEach-Object { $_.ToString('x2') })
+        $dbSha = Get-Value "select encode(sha256(convert_to('identifiers:[[""name"",""Zo' || chr(235) || '""]]', 'UTF8')), 'hex');"
+        Assert-That ($dbSha -eq $sha) "the database and the application disagree on the SHA-256 of a non-ASCII key ($dbSha vs $sha)"
+
+        $t = "'10000000-0000-0000-0000-000000000001'"; $s = "'20000000-0000-0000-0000-000000000001'"
+        $k = "'identifiers:[[""contractNumber"",""300000000076""]]'"
+        $insert = { param($id, $key, $level, $source)
+            "insert into record_sensitivity_levels(record_level_id, tenant_id, source_id, record_key, record_key_sha256, sensitivity_level, reason, set_by, set_at, updated_at) " +
+            "values ('$id', $t, $source, $key, encode(sha256(convert_to($key, 'UTF8')), 'hex'), '$level', null, 'SOURCE', now(), now())" }
+        $first = & $insert '50000000-0000-0000-0000-000000000001' $k 'CONFIDENTIAL' $s
+        $null = Invoke-Sql -Database $db -AsOwner -Sql "begin; $first; $(& $insert '50000000-0000-0000-0000-000000000002' $k 'HIGHLY_CONFIDENTIAL' $s) on conflict (tenant_id, source_id, record_key_sha256) do nothing; select 1/(case when (select count(*) from record_sensitivity_levels) = 1 and (select sensitivity_level from record_sensitivity_levels) = 'CONFIDENTIAL' then 1 else 0 end); rollback;"
+        $refusals = [ordered]@{
+            'ck_record_sensitivity_levels_level'      = (& $insert '50000000-0000-0000-0000-000000000003' $k 'confidential' $s)
+            'ck_record_sensitivity_levels_key_sha256' = "insert into record_sensitivity_levels(record_level_id, tenant_id, source_id, record_key, record_key_sha256, sensitivity_level, set_by, set_at, updated_at) values ('50000000-0000-0000-0000-000000000004', $t, $s, $k, repeat('0', 64), 'STANDARD', 'SOURCE', now(), now())"
+            'uq_record_sensitivity_levels_record'     = "$first; $(& $insert '50000000-0000-0000-0000-000000000005' $k 'STANDARD' $s)"
+            'fk_record_sensitivity_levels_source'     = (& $insert '50000000-0000-0000-0000-000000000006' $k 'STANDARD' "'20000000-0000-0000-0000-000000000099'")
+            'ck_record_sensitivity_levels_key'        = (& $insert '50000000-0000-0000-0000-000000000007' "''" 'STANDARD' $s)
+        }
+        foreach ($name in $refusals.Keys) {
+            $r = Invoke-Sql -Database $db -AsOwner -AllowFailure -Sql "begin; $($refusals[$name]); rollback;"
+            Assert-That ($r.Code -ne 0 -and $r.Err -match $name) "$name should refuse the row; got exit $($r.Code): $($r.Err.Trim())"
+        }
+        Assert-That ((Get-Value 'select count(*) from record_sensitivity_levels;') -eq '0') 'a check row was left behind'
+        Write-Step '4b. After 024: record_sensitivity_levels' $w.Elapsed.TotalSeconds 'empty; checks refuse bad level, wrong SHA, duplicate, unknown source, blank key; SHA agrees'
+        $w = [System.Diagnostics.Stopwatch]::StartNew()
+    }
+    Write-Step '4. After: nothing else changed' $w.Elapsed.TotalSeconds 'other document columns and every other table unchanged'
 
     $st2 = Invoke-SchemaStep @('status')
     Assert-That ($st2.Code -eq 0 -and $st2.Out -match 'Up to date') "status after update should say up to date: $($st2.Out.Trim())"
     $after = Get-Value 'select count(*) from databasechangelog;'
-    Assert-That ([int]$after -eq [int]$prevCount + 1) "the changelog should have one more row ($prevCount -> $after)"
+    Assert-That ([int]$after -eq [int]$prevCount + $newChangesets.Count) "the changelog should have $($newChangesets.Count) more rows ($prevCount -> $after)"
     Write-Step '   Schema step status again' $st2.Seconds "up to date; $after changesets"
 }
 finally {
