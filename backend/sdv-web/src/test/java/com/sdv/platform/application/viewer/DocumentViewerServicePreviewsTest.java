@@ -8,6 +8,7 @@ import com.sdv.platform.application.port.StreamingCryptoPort;
 import com.sdv.platform.application.redaction.PdfSanitizingRedactor;
 import com.sdv.platform.application.redaction.RedactionRegion;
 import com.sdv.platform.domain.document.Document;
+import com.sdv.platform.domain.document.SensitivityLevel;
 import com.sdv.platform.domain.document.DocumentCryptoMetadata;
 import com.sdv.platform.domain.document.DocumentStatus;
 import com.sdv.platform.domain.document.DocumentStorageRef;
@@ -76,7 +77,7 @@ class DocumentViewerServicePreviewsTest {
         String sha = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(plaintext));
         String cipherSha = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(CIPHERTEXT));
         Document doc = new Document(DOC, TENANT, UUID.randomUUID(), UUID.randomUUID(), "src-doc", "idem", "a.pdf",
-                "application/pdf", sha, (long) plaintext.length, status, 30, Instant.now(), null, Instant.now(), 0, null, null);
+                "application/pdf", sha, (long) plaintext.length, status, 30, Instant.now(), null, Instant.now(), 0, null, null, SensitivityLevel.STANDARD);
         when(documents.findDocumentByIdForTenant(TENANT, DOC)).thenReturn(Optional.of(doc));
         when(documents.findDocumentByIdForTenant(eq(OTHER_TENANT), any())).thenReturn(Optional.empty());
         when(documents.findStorageRef(TENANT, DOC)).thenReturn(Optional.of(

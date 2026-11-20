@@ -14,6 +14,7 @@ import com.sdv.platform.domain.document.Document;
 import com.sdv.platform.domain.document.DocumentCryptoMetadata;
 import com.sdv.platform.domain.document.DocumentStatus;
 import com.sdv.platform.domain.document.DocumentStorageRef;
+import com.sdv.platform.domain.document.SensitivityLevel;
 import com.sdv.platform.domain.source.IngestionSource;
 import com.sdv.platform.domain.source.IngestionSourceStatus;
 import com.sdv.platform.domain.storage.StorageVolume;
@@ -39,6 +40,8 @@ import java.util.UUID;
 
 @Service
 public class DocumentIntakeService {
+    /** The upload header that carries the document's sensitivity level (task 0024). */
+    public static final String SENSITIVITY_FIELD = "X-SDV-Sensitivity-Level";
     private final TenantRepository tenants;
     private final IngestionSourceRepository sources;
     private final SubmissionRepository submissions;
@@ -97,10 +100,13 @@ public class DocumentIntakeService {
                                    String producerIdempotencyKey,
                                    String originalFilename,
                                    String mediaType,
+                                   String sensitivityLevel,
                                    long declaredContentLength,
                                    InputStream input,
                                    String sourceSubject,
                                    String correlationId) throws IOException {
+        // Task 0024: checked first, before anything is read or stored. Missing means STANDARD; anything unknown is 400.
+        SensitivityLevel level = SensitivityLevel.fromRequest(sensitivityLevel, SENSITIVITY_FIELD);
         Tenant tenant = requireActiveTenant(tenantId);
         IngestionSource source = requireActiveSource(tenantId, sourceId);
         Submission submission = submissions.findById(tenantId, sourceId, submissionId)
@@ -124,7 +130,7 @@ public class DocumentIntakeService {
         if (existing != null) {
             ValidatedPdfInputStream replayInput = new ValidatedPdfInputStream(input, maxPdfBytes);
             replayInput.finish();
-            ensureReplayMatches(existing, filename, replayInput.sizeBytes(), replayInput.sha256());
+            ensureReplayMatches(existing, filename, replayInput.sizeBytes(), replayInput.sha256(), level);
 
             Document finalized = existing.status() == DocumentStatus.AVAILABLE
                     ? existing
@@ -165,7 +171,7 @@ public class DocumentIntakeService {
         try {
             commitResult = transactions.execute(status -> commitReceipt(
                     tenant, source, submissionId, expected, normalizedSourceDocumentId, normalizedIdempotencyKey,
-                    filename, normalizedMediaType, contentSha256, contentSizeBytes, candidateDocumentId,
+                    filename, normalizedMediaType, level, contentSha256, contentSizeBytes, candidateDocumentId,
                     volume, stored, envelope, now, sourceSubject, correlationId));
         } catch (RuntimeException ex) {
             safeDelete(provider, tenantId, volume, stored.objectKey());
@@ -179,7 +185,7 @@ public class DocumentIntakeService {
         if (!commitResult.usedNewObject()) {
             safeDelete(provider, tenantId, volume, stored.objectKey());
             Document replay = commitResult.document();
-            ensureReplayMatches(replay, filename, contentSizeBytes, contentSha256);
+            ensureReplayMatches(replay, filename, contentSizeBytes, contentSha256, level);
             Document finalized = replay.status() == DocumentStatus.AVAILABLE
                     ? replay
                     : finalization.finalizeDocument(
@@ -231,6 +237,7 @@ public class DocumentIntakeService {
                                        String producerIdempotencyKey,
                                        String filename,
                                        String mediaType,
+                                       SensitivityLevel sensitivityLevel,
                                        String contentSha256,
                                        long contentSizeBytes,
                                        UUID documentId,
@@ -264,7 +271,7 @@ public class DocumentIntakeService {
                 documentId, tenant.tenantId(), submissionId, source.sourceId(),
                 sourceDocumentId, storedIdempotencyKey, filename, mediaType,
                 contentSha256, contentSizeBytes, DocumentStatus.RECEIVED,
-                retentionDays, now, expiresAt, null, 0, null, null);
+                retentionDays, now, expiresAt, null, 0, null, null, sensitivityLevel);
 
         documents.insertDocument(document);
         documents.insertStorageRef(new DocumentStorageRef(
@@ -286,7 +293,8 @@ public class DocumentIntakeService {
                 "DOCUMENT_RECEIVED", "DOCUMENT", documentId.toString(), now, correlationId,
                 AuditOutcome.SUCCESS,
                 "{\"submissionId\":\"" + submissionId + "\",\"sourceId\":\"" + source.sourceId()
-                        + "\",\"contentSizeBytes\":" + contentSizeBytes + "}"));
+                        + "\",\"contentSizeBytes\":" + contentSizeBytes
+                        + ",\"sensitivityLevel\":\"" + sensitivityLevel.name() + "\"}"));
 
         return new CommitResult(document, true);
     }
@@ -329,13 +337,19 @@ public class DocumentIntakeService {
     private static void ensureReplayMatches(Document existing,
                                             String filename,
                                             long contentSizeBytes,
-                                            String contentSha256) {
+                                            String contentSha256,
+                                            SensitivityLevel sensitivityLevel) {
         if (!existing.originalFilename().equals(filename)
                 || existing.contentSizeBytes() == null
                 || existing.contentSizeBytes() != contentSizeBytes
                 || !existing.contentSha256().equals(contentSha256)) {
             throw new IllegalStateException(
                     "The document retry identity already exists with different content or filename.");
+        }
+        // A retry must repeat the level it was first sent with; the stored level is never changed by a retry.
+        if (existing.sensitivityLevel() != sensitivityLevel) {
+            throw new IllegalStateException("The document retry identity already exists with sensitivity level "
+                    + existing.sensitivityLevel().name() + "; send the same " + SENSITIVITY_FIELD + " when retrying.");
         }
     }
 

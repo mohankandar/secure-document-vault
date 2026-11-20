@@ -70,7 +70,9 @@
           {"$ref": "#/components/parameters/SubmissionId"},
           {"name": "X-SDV-Filename", "in": "header", "required": true, "schema": {"type": "string", "minLength": 1}},
           {"name": "X-SDV-Source-Document-Id", "in": "header", "required": false, "schema": {"type": "string", "maxLength": 200}},
-          {"name": "Idempotency-Key", "in": "header", "required": false, "schema": {"type": "string"}, "description": "Reuse after an ambiguous network or acknowledgement failure."}
+          {"name": "Idempotency-Key", "in": "header", "required": false, "schema": {"type": "string"}, "description": "Reuse after an ambiguous network or acknowledgement failure."},
+          {"name": "X-SDV-Sensitivity-Level", "in": "header", "required": false, "schema": {"$ref": "#/components/schemas/SensitivityLevel"}, "description": "The document's sensitivity level (sensitivityLevel). Leave it out for STANDARD. Any other value, including a blank, lower-case or mixed-case one, is refused with 400 and nothing is stored. A retry must send the same level as the first upload, or it is refused with 409."},
+          {"name": "X-SDV-Record-Sensitivity-Level", "in": "header", "required": false, "schema": {"type": "string"}, "description": "Not accepted yet: any value is refused with 400 (recordSensitivityLevel; record levels are planned)."}
         ],
         "requestBody": {
           "required": true,
@@ -79,7 +81,13 @@
         "responses": {
           "201": {"description": "Document durably received", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/DocumentReceipt"}}}},
           "200": {"description": "Idempotent upload replay", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/DocumentReceipt"}}}},
-          "400": {"$ref": "#/components/responses/BadRequest"},
+          "400": {
+            "description": "Invalid producer request, including an unknown X-SDV-Sensitivity-Level or any X-SDV-Record-Sensitivity-Level",
+            "content": {"application/json": {
+              "schema": {"$ref": "#/components/schemas/Error"},
+              "example": {"code": "BAD_REQUEST", "message": "X-SDV-Sensitivity-Level must be one of STANDARD, CONFIDENTIAL, HIGHLY_CONFIDENTIAL (exactly, in capitals); leave it out for STANDARD.", "timestamp": "2026-11-20T10:00:00Z"}
+            }}
+          },
           "401": {"$ref": "#/components/responses/Unauthorized"},
           "404": {"$ref": "#/components/responses/NotFound"},
           "409": {"$ref": "#/components/responses/Conflict"},
@@ -197,8 +205,14 @@
           "contentSha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
           "contentSizeBytes": {"type": "integer", "minimum": 0},
           "idempotentReplay": {"type": "boolean"},
-          "exactDuplicateContent": {"type": "boolean"}
+          "exactDuplicateContent": {"type": "boolean"},
+          "sensitivityLevel": {"$ref": "#/components/schemas/SensitivityLevel"}
         }
+      },
+      "SensitivityLevel": {
+        "type": "string",
+        "enum": ["STANDARD", "CONFIDENTIAL", "HIGHLY_CONFIDENTIAL"],
+        "description": "How sensitive a document is, from lowest to highest. Set by the producer on the document upload; STANDARD when it sends none."
       },
       "DocumentSummary": {
         "type": "object",
@@ -210,7 +224,8 @@
           "contentSizeBytes": {"type": "integer"},
           "contentSha256": {"type": ["string", "null"]},
           "processingAttemptCount": {"type": "integer"},
-          "processingErrorCode": {"type": ["string", "null"]}
+          "processingErrorCode": {"type": ["string", "null"]},
+          "sensitivityLevel": {"$ref": "#/components/schemas/SensitivityLevel"}
         }
       },
       "Error": {

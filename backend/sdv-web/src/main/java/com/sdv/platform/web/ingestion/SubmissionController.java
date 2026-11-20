@@ -1,6 +1,7 @@
 package com.sdv.platform.web.ingestion;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.sdv.platform.application.document.DocumentIntakeService;
 import com.sdv.platform.application.submission.CreateSubmissionCommand;
 import com.sdv.platform.application.submission.SubmissionDetails;
 import com.sdv.platform.application.submission.SubmissionService;
@@ -62,9 +63,17 @@ public class SubmissionController {
             String sourceSubmissionId,
             int expectedDocumentCount,
             List<ExpectedDocumentRequest> expectedDocuments,
-            Map<String, JsonNode> metadata) {
+            Map<String, JsonNode> metadata,
+            /* Task 0024: named only so they can be refused instead of being silently ignored. */
+            JsonNode sensitivityLevel,
+            JsonNode recordSensitivityLevel) {
 
         CreateSubmissionCommand toCommand() {
+            if (sensitivityLevel != null) {
+                throw new IllegalArgumentException("sensitivityLevel is set on each document upload, with the "
+                        + DocumentIntakeService.SENSITIVITY_FIELD + " header, not on the submission.");
+            }
+            RecordSensitivityGuard.refuseIfPresent(recordSensitivityLevel);
             List<String> manifest = expectedDocuments == null ? List.of() : expectedDocuments.stream()
                     .map(ExpectedDocumentRequest::sourceDocumentId)
                     .toList();

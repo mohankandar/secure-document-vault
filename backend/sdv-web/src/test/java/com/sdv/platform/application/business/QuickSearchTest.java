@@ -1,5 +1,6 @@
 package com.sdv.platform.application.business;
 
+import com.sdv.platform.domain.document.SensitivityLevel;
 import com.sdv.platform.application.port.AuditEventPort;
 import com.sdv.platform.application.port.BusinessRecordRepository;
 import com.sdv.platform.application.port.BusinessRecordRepository.AnywhereCriterion;
@@ -96,7 +97,7 @@ class QuickSearchTest {
             return ids.stream().map(QuickSearchTest::submission).toList();
         });
         when(records.findAvailableDocuments(eq(TENANT), eq(SOURCE), anyList())).thenReturn(List.of(
-                new AvailableDocumentSnapshot(UUID.randomUUID(), SUB_OMAR, "d1", "loan-agreement.pdf", NOW, NOW, null, 9, false)));
+                new AvailableDocumentSnapshot(UUID.randomUUID(), SUB_OMAR, "d1", "loan-agreement.pdf", NOW, NOW, null, 9, false, SensitivityLevel.STANDARD)));
     }
 
     private static Submission submission(UUID id) {

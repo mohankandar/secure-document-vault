@@ -18,4 +18,15 @@ This directory is the producer-facing compatibility surface for SDV V1.
 8. Within V1, producers must ignore unknown response fields. SDV will not remove documented required fields or change their meaning without a versioned contract change.
 9. Producers must not depend on database tables, Java enum ordinals, storage paths, key names, or implementation-specific logs.
 
+## Sensitivity level
+
+Each document carries a sensitivity level: `STANDARD`, `CONFIDENTIAL` or `HIGHLY_CONFIDENTIAL` (lowest to highest).
+
+- Set it on the document upload with the header `X-SDV-Sensitivity-Level`. Leave it out and the document is `STANDARD`.
+- Any other value is refused with `400 BAD_REQUEST`, and nothing is stored. That includes a blank value and lower-case or mixed-case names (`confidential`, `Confidential`).
+- A retry of the same document must send the same level as the first upload. A different level, or a missing one where the first upload had one, is refused with `409 CONFLICT`; the stored level never changes.
+- The upload and document list responses return `sensitivityLevel`.
+- The submission request does not take a level: `sensitivityLevel` or `recordSensitivityLevel` in its JSON is refused with `400`.
+- Record levels (`recordSensitivityLevel`, header `X-SDV-Record-Sensitivity-Level`) are not accepted yet and are refused with `400`.
+
 The sample under `samples/third-party-producer/` demonstrates the contract with raw HTTP calls only.

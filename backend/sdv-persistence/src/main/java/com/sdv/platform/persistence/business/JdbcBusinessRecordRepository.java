@@ -1,5 +1,6 @@
 package com.sdv.platform.persistence.business;
 
+import com.sdv.platform.domain.document.SensitivityLevel;
 import com.sdv.platform.application.port.BusinessRecordRepository;
 import com.sdv.platform.domain.metadata.MetadataSearchMode;
 import com.sdv.platform.domain.submission.Submission;
@@ -323,7 +324,7 @@ public class JdbcBusinessRecordRepository implements BusinessRecordRepository {
         if (submissionIds.isEmpty()) return List.of();
         return jdbc.query("""
                 select d.document_id, d.submission_id, d.source_document_id, d.original_filename,
-                       d.ingested_at, d.available_at, d.expires_at, d.page_count,
+                       d.ingested_at, d.available_at, d.expires_at, d.page_count, d.sensitivity_level,
                        -- Redacted: the current content is the result of a finished correction.
                        exists (select 1 from document_redaction_operations r
                                 where r.tenant_id=d.tenant_id and r.document_id=d.document_id
@@ -347,7 +348,8 @@ public class JdbcBusinessRecordRepository implements BusinessRecordRepository {
                         instant(rs, "available_at"),
                         instant(rs, "expires_at"),
                         (Integer) rs.getObject("page_count"),
-                        rs.getBoolean("redacted")));
+                        rs.getBoolean("redacted"),
+                        SensitivityLevel.valueOf(rs.getString("sensitivity_level"))));
     }
 
     @Override

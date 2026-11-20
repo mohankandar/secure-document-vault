@@ -21,5 +21,10 @@ public record Document(
         Instant availableAt,
         int processingAttemptCount,
         String processingErrorCode,
-        Instant deletedAt) {
+        Instant deletedAt,
+        /* Task 0024: the document's own level, set by the sending system (STANDARD when it sent none). Never null. */
+        SensitivityLevel sensitivityLevel) {
+    public Document {
+        if (sensitivityLevel == null) throw new IllegalArgumentException("A document always has a sensitivity level.");
+    }
 }

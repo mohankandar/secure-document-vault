@@ -5,6 +5,7 @@ import com.sdv.platform.application.port.StorageVolumeRepository;
 import com.sdv.platform.application.port.SubmissionRepository;
 import com.sdv.platform.domain.document.BusinessMetadataValue;
 import com.sdv.platform.domain.document.Document;
+import com.sdv.platform.domain.document.SensitivityLevel;
 import com.sdv.platform.domain.document.DocumentCryptoMetadata;
 import com.sdv.platform.domain.document.DocumentStatus;
 import com.sdv.platform.domain.document.DocumentStorageRef;
@@ -300,12 +301,14 @@ public class JdbcSecureIngestionRepository implements SubmissionRepository, Stor
                     document_id, tenant_id, submission_id, source_id, source_document_id,
                     producer_idempotency_key, original_filename, media_type, content_sha256,
                     content_size_bytes, status, retention_days_snapshot, ingested_at, expires_at,
-                    available_at, processing_attempt_count, processing_error_code, deleted_at)
+                    available_at, processing_attempt_count, processing_error_code, deleted_at,
+                    sensitivity_level)
                 values (
                     :documentId, :tenantId, :submissionId, :sourceId, :sourceDocumentId,
                     :producerIdempotencyKey, :originalFilename, :mediaType, :contentSha256,
                     :contentSizeBytes, :status, :retentionDaysSnapshot, :ingestedAt, :expiresAt,
-                    :availableAt, :processingAttemptCount, :processingErrorCode, :deletedAt)
+                    :availableAt, :processingAttemptCount, :processingErrorCode, :deletedAt,
+                    :sensitivityLevel)
                 """, documentParams(document));
     }
 
@@ -553,7 +556,8 @@ public class JdbcSecureIngestionRepository implements SubmissionRepository, Stor
                 select document_id, tenant_id, submission_id, source_id, source_document_id,
                        producer_idempotency_key, original_filename, media_type, content_sha256,
                        content_size_bytes, status, retention_days_snapshot, ingested_at, expires_at,
-                       available_at, processing_attempt_count, processing_error_code, deleted_at
+                       available_at, processing_attempt_count, processing_error_code, deleted_at,
+                       sensitivity_level
                   from documents
                 """;
     }
@@ -600,7 +604,8 @@ public class JdbcSecureIngestionRepository implements SubmissionRepository, Stor
                 .addValue("availableAt", document.availableAt() == null ? null : Timestamp.from(document.availableAt()))
                 .addValue("processingAttemptCount", document.processingAttemptCount())
                 .addValue("processingErrorCode", document.processingErrorCode())
-                .addValue("deletedAt", document.deletedAt() == null ? null : Timestamp.from(document.deletedAt()));
+                .addValue("deletedAt", document.deletedAt() == null ? null : Timestamp.from(document.deletedAt()))
+                .addValue("sensitivityLevel", document.sensitivityLevel().name());
     }
 
     private static MapSqlParameterSource storageVolumeParams(StorageVolume volume) {
@@ -663,7 +668,8 @@ public class JdbcSecureIngestionRepository implements SubmissionRepository, Stor
                 instant(rs, "available_at"),
                 rs.getInt("processing_attempt_count"),
                 rs.getString("processing_error_code"),
-                instant(rs, "deleted_at"));
+                instant(rs, "deleted_at"),
+                SensitivityLevel.valueOf(rs.getString("sensitivity_level")));
     }
 
     private static RowMapper<StorageVolume> storageVolumeMapper() {

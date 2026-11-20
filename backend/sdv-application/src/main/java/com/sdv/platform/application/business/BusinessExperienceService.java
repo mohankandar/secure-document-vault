@@ -617,7 +617,7 @@ public class BusinessExperienceService {
                 .map(document -> new BusinessExperienceView.DocumentSummary(
                         document.documentId(), document.submissionId(), document.sourceDocumentId(),
                         document.originalFilename(), document.ingestedAt(), document.availableAt(), document.expiresAt(),
-                        document.pageCount(), document.redacted()))
+                        document.pageCount(), document.redacted(), document.sensitivityLevel().name()))
                 .toList();
 
         Map<UUID, List<ExpectedDocumentSnapshot>> expectedBySubmission = aggregate.expected().stream()

@@ -8,6 +8,7 @@ import com.sdv.platform.application.port.StorageVolumeRepository;
 import com.sdv.platform.application.port.StreamingCryptoPort;
 import com.sdv.platform.domain.audit.AuditEvent;
 import com.sdv.platform.domain.document.Document;
+import com.sdv.platform.domain.document.SensitivityLevel;
 import com.sdv.platform.domain.document.DocumentCryptoMetadata;
 import com.sdv.platform.domain.document.DocumentStatus;
 import com.sdv.platform.domain.document.DocumentStorageRef;
@@ -94,7 +95,7 @@ class DocumentViewerServicePageViewTest {
         for (UUID id : List.of(DOC, OTHER_DOC)) {
             when(documents.findDocumentByIdForTenant(TENANT, id)).thenReturn(Optional.of(new Document(id, TENANT, UUID.randomUUID(),
                     UUID.randomUUID(), "src", "idem", "a.pdf", "application/pdf", sha, (long) plaintext.length,
-                    DocumentStatus.AVAILABLE, 30, NOW, null, NOW, 0, null, null)));
+                    DocumentStatus.AVAILABLE, 30, NOW, null, NOW, 0, null, null, SensitivityLevel.STANDARD)));
             when(documents.findStorageRef(TENANT, id)).thenReturn(Optional.of(
                     new DocumentStorageRef(id, TENANT, "LOCAL_FILESYSTEM", VOLUME, "obj", CIPHERTEXT.length, cipherSha)));
             when(documents.findCryptoMetadata(TENANT, id)).thenReturn(Optional.of(

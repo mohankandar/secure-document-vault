@@ -60,3 +60,6 @@ databaseChangeLog:
 
   - include:
       file: db/changelog/022-retention-policy-creator-name.yaml
+
+  - include:
+      file: db/changelog/023-document-sensitivity-level.yaml

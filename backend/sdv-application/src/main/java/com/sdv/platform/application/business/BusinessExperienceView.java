@@ -123,7 +123,9 @@ public final class BusinessExperienceView {
             Instant expiresAt,
             /** null when the document was stored before page counts were kept. */
             Integer pageCount,
-            boolean redacted) { }
+            boolean redacted,
+            /** Task 0024: the document's sensitivity level, sent as information only; nothing is filtered on it yet. */
+            String sensitivityLevel) { }
 
     public record IncompleteAttention(List<IncompleteSubmission> submissions) {
         public IncompleteAttention {

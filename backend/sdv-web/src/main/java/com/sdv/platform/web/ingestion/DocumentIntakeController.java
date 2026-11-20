@@ -32,8 +32,11 @@ public class DocumentIntakeController {
             @RequestHeader(name = "X-SDV-Source-Document-Id", required = false) String sourceDocumentId,
             @RequestHeader(name = "Idempotency-Key", required = false) String idempotencyKey,
             @RequestHeader(name = "X-SDV-Filename") String filename,
+            @RequestHeader(name = DocumentIntakeService.SENSITIVITY_FIELD, required = false) String sensitivityLevel,
+            @RequestHeader(name = RecordSensitivityGuard.HEADER, required = false) String recordSensitivityLevel,
             HttpServletRequest request) throws IOException {
         IngestionSourcePrincipal principal = security.requireIngestionSourcePrincipal();
+        RecordSensitivityGuard.refuseIfPresent(recordSensitivityLevel);
         DocumentReceipt receipt = intake.receive(
                 principal.tenantId(),
                 principal.sourceId(),
@@ -42,6 +45,7 @@ public class DocumentIntakeController {
                 idempotencyKey,
                 filename,
                 request.getContentType(),
+                sensitivityLevel,
                 request.getContentLengthLong(),
                 request.getInputStream(),
                 principal.subject(),
@@ -81,7 +85,8 @@ public class DocumentIntakeController {
             String contentSha256,
             long contentSizeBytes,
             boolean idempotentReplay,
-            boolean exactDuplicateContent) {
+            boolean exactDuplicateContent,
+            String sensitivityLevel) {
         static DocumentReceiptResponse from(DocumentReceipt receipt) {
             Document document = receipt.document();
             return new DocumentReceiptResponse(
@@ -92,7 +97,8 @@ public class DocumentIntakeController {
                     document.contentSha256(),
                     document.contentSizeBytes() == null ? 0L : document.contentSizeBytes(),
                     receipt.idempotentReplay(),
-                    receipt.exactDuplicateContent());
+                    receipt.exactDuplicateContent(),
+                    document.sensitivityLevel().name());
         }
     }
 
@@ -104,7 +110,8 @@ public class DocumentIntakeController {
             long contentSizeBytes,
             String contentSha256,
             int processingAttemptCount,
-            String processingErrorCode) {
+            String processingErrorCode,
+            String sensitivityLevel) {
         static DocumentSummaryResponse from(Document document) {
             return new DocumentSummaryResponse(
                     document.documentId(),
@@ -114,7 +121,8 @@ public class DocumentIntakeController {
                     document.contentSizeBytes() == null ? 0L : document.contentSizeBytes(),
                     document.contentSha256(),
                     document.processingAttemptCount(),
-                    document.processingErrorCode());
+                    document.processingErrorCode(),
+                    document.sensitivityLevel().name());
         }
     }
 }

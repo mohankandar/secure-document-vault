@@ -1,5 +1,6 @@
 package com.sdv.platform.application.port;
 
+import com.sdv.platform.domain.document.SensitivityLevel;
 import com.sdv.platform.domain.metadata.MetadataSearchMode;
 import com.sdv.platform.domain.submission.Submission;
 
@@ -166,7 +167,9 @@ public interface BusinessRecordRepository {
             /** Worked out when the document was stored; null for documents stored before that (task 0018). */
             Integer pageCount,
             /** A permanent correction (redaction) has been applied to the current version. */
-            boolean redacted) { }
+            boolean redacted,
+            /** The document's own sensitivity level (task 0024). */
+            SensitivityLevel sensitivityLevel) { }
 
     record ExpectedDocumentSnapshot(
             UUID submissionId,
