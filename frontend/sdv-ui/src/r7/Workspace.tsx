@@ -6,18 +6,23 @@ import { schema, search, record, toSource, toSummary, toRecord, documentActivity
 import { LoadErrorCard, failureText, loadFailed, type Failure } from './CardError'
 import { Badge, Callout, Drawer, Empty, Skeleton, actorWords, auditEventLabel, fmtDate, fmtRel, fmtShortDate } from './ui'
 import { Viewer } from './Viewer'
-import { MODE_HINT, MODE_WORD, QUICK_RANGES, alternativeFields, filterHint, boxLabel, quickRange, rangeLabel, routeBoxInput, type Range } from './searchRouting'
+import { MODE_HINT, MODE_WORD, QUICK_RANGES, filterHint, boxLabel, quickRange, rangeLabel, type Range } from './searchRouting'
 import { NOTHING_TO_SEARCH, defaultSource, rememberSourceChoice, searchableSources } from './sourceChoice'
 import { extraField, orderedPreview, titleLabel } from './recordColumns'
+import { anywhereProblem, hiddenMatch, identifierCriteria, type MatchedField } from './quickSearchRules'
+import { Mark, useQuickSearch, type QuickPick } from './QuickSearch'
 
 type Criteria = Record<string, string>
-/** received: when the submission arrived (server dateFrom/dateTo); updated: last activity (lastUpdatedFrom/To). */
-type Applied = { sourceId: string; c: Criteria; received: Range; updated: Range; /** only records with missing documents */ incompleteOnly?: boolean }
+/**
+ * received: when the submission arrived (server dateFrom/dateTo); updated: last activity (lastUpdatedFrom/To).
+ * anywhere (task 0022): text searched in every searchable field.
+ */
+type Applied = { sourceId: string; c: Criteria; received: Range; updated: Range; /** only records with missing documents */ incompleteOnly?: boolean; anywhere?: string }
 const NO_RANGE: Range = { from: '', to: '' }
 const emptyApplied = (sourceId: string): Applied => ({ sourceId, c: {}, received: NO_RANGE, updated: NO_RANGE })
 type FieldValue = { label: string; value: string }
 /** What the search result said about a record; kept apart so loading the full record does not change the row. */
-type Summary = { /** the server's record title, null when it has none */ title: string | null; identifiers: FieldValue[]; preview: FieldValue[]; docs: number; incomplete: boolean; expected: number; received: number }
+type Summary = { /** the server's record title, null when it has none */ title: string | null; identifiers: FieldValue[]; preview: FieldValue[]; docs: number; incomplete: boolean; expected: number; received: number; /** an "anywhere" search only */ matched: MatchedField[] }
 
 function useMediaQuery(q: string) {
   const [m, setM] = useState(() => window.matchMedia(q).matches)
@@ -31,11 +36,11 @@ function useMediaQuery(q: string) {
 }
 
 // A date range alone is enough: the server lists every record in it, page by page.
-const hasCriteria = (a: Pick<Applied, 'c' | 'received' | 'updated' | 'incompleteOnly'>) => Object.values(a.c).some((v) => v.trim()) || !!a.incompleteOnly || [a.received, a.updated].some((r) => !!r.from || !!r.to)
+const hasCriteria = (a: Pick<Applied, 'c' | 'received' | 'updated' | 'incompleteOnly' | 'anywhere'>) => Object.values(a.c).some((v) => v.trim()) || !!a.anywhere?.trim() || !!a.incompleteOnly || [a.received, a.updated].some((r) => !!r.from || !!r.to)
 const valueOf = (list: FieldValue[] | undefined, label: string) => list?.find((f) => f.label === label)?.value ?? ''
 
 export function Workspace() {
-  const { records, setRecords, selectedRef, setSelectedRef, openDocId, setOpenDocId, can, setResultsShown, searchRequest, requestSearch } = useStore()
+  const { records, setRecords, selectedRef, setSelectedRef, openDocId, setOpenDocId, can, setResultsShown, searchRequest, requestSearch, recentRecords } = useStore()
   const [sources, setSources] = useState<Source[]>([])
   const [status, setStatus] = useState<'loading' | 'live' | 'error'>('loading')
   // A failed load shows the shared card (plain words + reference); Try again re-runs the loads.
@@ -48,8 +53,6 @@ export function Workspace() {
   const [applied, setApplied] = useState<Applied | null>(null)
   const [box, setBox] = useState('')
   const [boxMessage, setBoxMessage] = useState('')
-  // The field and value of the last search typed in the box; used for the no-results suggestion only.
-  const [boxSearch, setBoxSearch] = useState<{ key: string; value: string } | null>(null)
   const [filtersOpen, setFiltersOpen] = useState(false)
   const [panelOpen, setPanelOpen] = useState(false)
   const filtersButton = useRef<HTMLButtonElement>(null)
@@ -81,7 +84,7 @@ export function Workspace() {
     if (!applied) { setRecords([]); setSummaries({}); setHasMore(false); setStatus(sources.length ? 'live' : 'loading'); return }
     let active = true
     setStatus('loading')
-    search(applied.sourceId, applied.c, applied.received, applied.updated, page, { incompleteOnly: applied.incompleteOnly }).then((r) => {
+    search(applied.sourceId, applied.c, applied.received, applied.updated, page, { incompleteOnly: applied.incompleteOnly, anywhere: applied.anywhere }).then((r) => {
       if (!active) return
       setRecords(r.records.map((x) => toSummary(x, applied.sourceId)))
       setSummaries(Object.fromEntries(r.records.map((x) => [x.recordRef, {
@@ -90,6 +93,7 @@ export function Workspace() {
         preview: x.metadataPreview.map((f) => ({ label: f.displayLabel, value: f.value })),
         docs: x.availableDocumentCount, incomplete: x.incomplete,
         expected: x.incompleteExpectedCount ?? 0, received: x.incompleteReceivedCount ?? 0,
+        matched: x.matchedFields ?? [],
       }])))
       setHasMore(r.hasMore)
       setStatus('live')
@@ -107,40 +111,45 @@ export function Workspace() {
     setApplied(next && hasCriteria(next) ? next : null)
     setSelectedRef(null)
     setPanelOpen(false)
-    setBoxSearch(null)
   }
-  const submitBox = (e?: FormEvent) => {
-    e?.preventDefault()
-    if (!box.trim()) return
-    // Enter before the sending systems have loaded: hand the text to the request below, which routes it once
-    // they are known (before, it was routed against no fields and refused with "no field the search box can use").
-    if (!sources.length && status !== 'error') { requestSearch({ box }); return }
+  // Task 0022: Enter searches every searchable field ("anywhere"), alongside the filters already applied. The list
+  // under the box also offers one field (today's field search) or a recently opened record.
+  const searchEverywhere = () => {
+    const text = box.trim()
+    if (!text) return
+    // Enter before the sending systems have loaded: hand the text to the request below, which runs it once they are known.
+    if (!sources.length && status !== 'error') { requestSearch({ anywhere: text }); return }
     if (nothingToSearch) { setBoxMessage(NOTHING_TO_SEARCH); return }
-    const route = routeBoxInput(box, fields)
-    if (!route) return
-    if (!route.ok) { setBoxMessage(route.message); return }
+    const problem = anywhereProblem(text)
+    if (problem) { setBoxMessage(problem); return }
     setBoxMessage('')
-    const base = applied ?? emptyApplied(activeSourceId)
-    runSearch({ ...base, c: { ...base.c, [route.field.key]: route.value } })
-    setBoxSearch({ key: route.field.key, value: route.value })
+    runSearch({ ...(applied ?? emptyApplied(activeSourceId)), anywhere: text })
     setBox('')
   }
+  const onPick = (pick: QuickPick) => {
+    if (pick.kind === 'everywhere') return searchEverywhere()
+    if (pick.kind === 'recent') {
+      // As Home does: Records finds exactly that record and opens its panel.
+      const { sourceId: recentSource, record: r } = pick.recent
+      setBox(''); setBoxMessage('')
+      requestSearch({ sourceId: recentSource, criteria: identifierCriteria(r, sources.find((s) => s.id === recentSource)), selectRef: r.recordRef })
+      return
+    }
+    const base = applied ?? emptyApplied(activeSourceId)
+    setBoxMessage('')
+    runSearch({ ...base, c: { ...base.c, [pick.field.key]: box.trim() } })
+    setBox('')
+  }
+  const quick = useQuickSearch({ text: nothingToSearch ? '' : box, fields, recent: recentRecords, onPick })
+  const submitBox = (e?: FormEvent) => { e?.preventDefault(); searchEverywhere() }
   const removeChip = (key: string) => {
     if (!applied) return
     if (key === 'received' || key === 'updated') return runSearch({ ...applied, [key]: NO_RANGE })
     if (key === 'incomplete') return runSearch({ ...applied, incompleteOnly: false })
+    if (key === 'anywhere') return runSearch({ ...applied, anywhere: undefined })
     const c = { ...applied.c }
     delete c[key]
     runSearch({ ...applied, c })
-  }
-  // When a number typed in the box found nothing, offer each other identifier that takes the same input. One click, no automatic request.
-  const boxField = boxSearch && applied?.c[boxSearch.key] === boxSearch.value ? fields.find((f) => f.key === boxSearch.key) : undefined
-  const suggestions = boxField && boxSearch ? alternativeFields(boxField, boxSearch.value, fields) : []
-  const searchAs = (key: string) => {
-    if (!applied || !boxSearch) return
-    const c = { ...applied.c }
-    delete c[boxSearch.key]
-    runSearch({ ...applied, c: { ...c, [key]: boxSearch.value } })
   }
   const clearAll = () => { setBox(''); setBoxMessage(''); runSearch(null) }
 
@@ -154,6 +163,8 @@ export function Workspace() {
     return quick ? quick.charAt(0).toLowerCase() + quick.slice(1) : (rangeLabel(name, r) ?? '').slice(name.length + 1)
   }
   const chips: Chip[] = applied ? [
+    // Quick search board 2: "Anywhere patel".
+    ...(applied.anywhere ? [chip('anywhere', 'Anywhere', applied.anywhere)] : []),
     ...Object.entries(applied.c).filter(([, v]) => v.trim()).map(([key, v]) => {
       const f = source?.fields.find((x) => x.key === key)
       return f ? chip(key, f.label, `${MODE_WORD[f.mode]} ${v.trim()}`) : chip(key, key, v.trim())
@@ -176,13 +187,13 @@ export function Workspace() {
     handledRequest.current = searchRequest.id
     // A named system (a record opened from Home) is searched even if it can't be the default; otherwise the rule.
     const src = sources.find((s) => s.id === searchRequest.sourceId) ?? sources.find((s) => s.id === sourceId) ?? defaultSource(sources)
-    if (!src) { if (searchRequest.box !== undefined) { setBox(searchRequest.box); setBoxMessage(NOTHING_TO_SEARCH) } return }
+    if (!src) { if (searchRequest.anywhere !== undefined) { setBox(searchRequest.anywhere); setBoxMessage(NOTHING_TO_SEARCH) } return }
     const base: Applied = { ...emptyApplied(src.id), incompleteOnly: !!searchRequest.incompleteOnly, received: searchRequest.receivedLast30Days ? quickRange('Last 30 days') : NO_RANGE }
     setFiltersOpen(false)
-    if (searchRequest.box !== undefined) {
-      const route = routeBoxInput(searchRequest.box, src.fields.filter((f) => f.searchable))
-      if (route && !route.ok) { setBox(searchRequest.box); setBoxMessage(route.message) }
-      else if (route) { setBox(''); setBoxMessage(''); runSearch({ ...base, c: { [route.field.key]: route.value } }); setBoxSearch({ key: route.field.key, value: route.value }) }
+    if (searchRequest.anywhere !== undefined) {
+      const problem = anywhereProblem(searchRequest.anywhere)
+      if (problem) { setBox(searchRequest.anywhere); setBoxMessage(problem) }
+      else { setBox(''); setBoxMessage(''); runSearch({ ...base, anywhere: searchRequest.anywhere.trim() }) }
     } else if (searchRequest.criteria || searchRequest.incompleteOnly || searchRequest.receivedLast30Days) {
       setBox(''); setBoxMessage(''); runSearch({ ...base, c: searchRequest.criteria ?? {} })
     }
@@ -229,18 +240,20 @@ export function Workspace() {
                 {c.removable && <button type="button" onClick={() => removeChip(c.key)} aria-label={`Remove filter: ${c.text}`}><X size={14} /></button>}
               </span>
             ))}
-            <input type="search" className="ws-searchinput" aria-label="Search records" value={box} autoComplete="off" spellCheck={false}
+            <input type="search" className="ws-searchinput" aria-label="Search records" value={box} autoComplete="off" spellCheck={false} {...quick.inputProps}
               placeholder={nothingToSearch ? 'Nothing to search yet' : chips.length ? '' : boxPlaceholder} aria-describedby={boxMessage ? 'ws-box-message' : undefined}
-              onChange={(e) => { setBox(e.target.value); setBoxMessage('') }}
-              onKeyDown={(e) => { if (e.key === 'Escape') { e.preventDefault(); setBox(''); setBoxMessage('') } }} />
+              onChange={(e) => { setBox(e.target.value); setBoxMessage(''); quick.typing(e.target.value) }}
+              onKeyDown={(e) => { if (quick.onKeyDown(e)) return; if (e.key === 'Escape') { e.preventDefault(); setBox(''); setBoxMessage('') } }} />
           </form>
+          {quick.list}
           <button ref={filtersButton} type="button" className="v-btn quiet sm" aria-expanded={filtersOpen} aria-controls="ws-filters" disabled={nothingToSearch} onClick={() => setFiltersOpen((o) => !o)}>
             <SlidersHorizontal size={16} aria-hidden /><span>Filters{chips.length > 0 && <span aria-label={`${chips.length} active`}> · {chips.length}</span>}</span>
           </button>
           <button type="button" className="v-btn sm" onClick={clearAll} disabled={!applied && !box}>Clear</button>
           {filtersOpen && candidates.length > 0 && (
             <FiltersPanel sources={candidates} initial={applied ?? emptyApplied(activeSourceId)}
-              onApply={(next) => { setFiltersOpen(false); setBox(''); setBoxMessage(''); rememberSourceChoice(next.sourceId); setSourceId(next.sourceId); runSearch(next); filtersButton.current?.focus() }}
+              // An "anywhere" search stays when Filters are applied to the same sending system (task 0022).
+              onApply={(next) => { setFiltersOpen(false); setBox(''); setBoxMessage(''); rememberSourceChoice(next.sourceId); setSourceId(next.sourceId); runSearch({ ...next, anywhere: applied?.sourceId === next.sourceId ? applied.anywhere : undefined }); filtersButton.current?.focus() }}
               onClose={() => { setFiltersOpen(false); filtersButton.current?.focus() }} />
           )}
         </section>
@@ -254,30 +267,23 @@ export function Workspace() {
               Type in the search bar and press Enter, or open Filters to search by any field.
             </Empty>
           ) : results.length === 0 ? (
-            suggestions.length > 0 && boxField && boxSearch ? (
-              <Empty title={`No ${boxField.label} ${boxSearch.value}`} action={<div className="row wrap" style={{ justifyContent: 'center', gap: 8 }}>
-                {suggestions.map((f) => <button key={f.key} type="button" className="v-btn sm primary" onClick={() => searchAs(f.key)}>Search it as {f.label} instead</button>)}
-                <button type="button" className="v-btn sm" onClick={() => setFiltersOpen(true)}>Open Filters</button>
-              </div>}>
-                The search box read this number as a {boxField.label}. It may belong to another field.
-              </Empty>
-            ) : (
             <Empty title="No matching records" action={<button type="button" className="v-btn sm" onClick={() => setFiltersOpen(true)}>Open Filters</button>}>
-              Check the number for typos, remove a filter, or search a shorter part of a name. Exact fields must match in full.
+              {applied.anywhere
+                ? `Nothing matched “${applied.anywhere}” in any searchable field. Check for typos, remove a filter, or try a shorter part of a name.`
+                : 'Check the number for typos, remove a filter, or search a shorter part of a name. Exact fields must match in full.'}
             </Empty>
-            )
           ) : (
             <>
               {/* Canvas board 2: the count line above the card, the table in the card, "Showing …" below it. */}
               <div className="ws-results-head">
-                <h2>{results.length}{hasMore ? '+' : ''} record{results.length === 1 && !hasMore ? '' : 's'} <span className="faint">· {appliedSource?.name ?? 'SDV'}</span></h2>
-                <span className="faint">Sorted by last updated</span>
+                <h2>{results.length}{hasMore ? '+' : ''} record{results.length === 1 && !hasMore ? '' : 's'} <span className="faint">· {applied.anywhere ? `“${applied.anywhere}” in any searchable field · ` : ''}{appliedSource?.name ?? 'SDV'}</span></h2>
+                <span className="faint">{applied.anywhere ? 'Best match first' : 'Sorted by last updated'}</span>
               </div>
               <div className="ws-card">
-                <ResultsTable results={results} summaries={summaries} selectedRef={selectedRef} onOpen={openRecord} source={appliedSource} />
+                <ResultsTable results={results} summaries={summaries} selectedRef={selectedRef} onOpen={openRecord} source={appliedSource} needle={applied.anywhere} />
               </div>
               <div className="ws-pager">
-                <span>Showing {page === 1 && !hasMore ? `${results.length} of ${results.length}` : `${(page - 1) * SEARCH_PAGE_SIZE + 1}–${(page - 1) * SEARCH_PAGE_SIZE + results.length}`}{hasMore ? ' · more on the next page' : ''} · up to {SEARCH_PAGE_SIZE} per page</span>
+                <span>Showing {page === 1 && !hasMore ? `${results.length} of ${results.length}` : `${(page - 1) * SEARCH_PAGE_SIZE + 1}–${(page - 1) * SEARCH_PAGE_SIZE + results.length}`}{hasMore ? ' · more on the next page' : ''} · up to {SEARCH_PAGE_SIZE} per page{applied.anywhere ? ' · Narrow it with Filters, or pick one field from the search list.' : ''}</span>
                 {(page > 1 || hasMore) && (
                   <span className="row" style={{ gap: 6 }}>
                     <button className="v-btn sm" type="button" disabled={page === 1} onClick={() => { setPage((p) => p - 1); setSelectedRef(null); setPanelOpen(false) }}>Previous</button>
@@ -297,7 +303,7 @@ export function Workspace() {
             <button type="button" className="v-btn quiet icon sm" onClick={() => setPanelOpen(false)} aria-label="Close record"><X size={18} /></button>
           </header>
           <div className="ws-insp-body">
-            <RecordPanelBody record={selected} summary={summary} source={appliedSource} onOpen={(id) => openDoc(selected, id)}
+            <RecordPanelBody record={selected} summary={summary} source={appliedSource} needle={applied?.anywhere} onOpen={(id) => openDoc(selected, id)}
               action={can('VIEW_PDF') && selected.docs[0] ? <button type="button" className="v-btn primary block ws-open" onClick={() => openDoc(selected, selected.docs[0].id)}>Open documents<ArrowRight size={16} aria-hidden /></button> : undefined} />
           </div>
         </aside>
@@ -305,7 +311,7 @@ export function Workspace() {
       {showPanel && selected && !wide && !openDocId && (
         <Drawer eyebrow="Record" title={panelTitle} onClose={() => setPanelOpen(false)}
           footer={can('VIEW_PDF') && selected.docs[0] ? <button type="button" className="v-btn primary" onClick={() => openDoc(selected, selected.docs[0].id)}>Open documents<ArrowRight size={16} aria-hidden /></button> : undefined}>
-          <RecordPanelBody record={selected} summary={summary} source={appliedSource} onOpen={(id) => openDoc(selected, id)} />
+          <RecordPanelBody record={selected} summary={summary} source={appliedSource} needle={applied?.anywhere} onOpen={(id) => openDoc(selected, id)} />
         </Drawer>
       )}
       {selected && openDocId && can('VIEW_PDF') && <Viewer record={selected} results={results} docId={openDocId} onClose={() => setOpenDocId(null)} recordTitle={panelTitle} />}
@@ -387,7 +393,7 @@ function DateRangeField({ legend, hint, value, onChange }: { legend: string; hin
  * Canvas board 2: the number once, the record's title, one more field (recordColumns.ts), Documents, Updated.
  * The other identifiers and fields are in the record panel.
  */
-function ResultsTable({ results, summaries, selectedRef, onOpen, source }: { results: RecordItem[]; summaries: Record<string, Summary>; selectedRef: string | null; onOpen: (ref: string) => void; source?: Source }) {
+function ResultsTable({ results, summaries, selectedRef, onOpen, source, needle }: { results: RecordItem[]; summaries: Record<string, Summary>; selectedRef: string | null; onOpen: (ref: string) => void; source?: Source; /** "anywhere" text: marked in the row (task 0022) */ needle?: string }) {
   const rows = useRef<(HTMLTableRowElement | null)[]>([])
   const rowSummaries = results.map((r) => summaries[r.ref])
   const numberLabel = rowSummaries.find((s) => s?.identifiers[0])?.identifiers[0].label ?? 'Number'
@@ -411,6 +417,7 @@ function ResultsTable({ results, summaries, selectedRef, onOpen, source }: { res
         {results.map((r, idx) => {
           const s = rowSummaries[idx]
           const number = s?.identifiers[0]?.value || r.ref
+          const hidden = needle ? hiddenMatch(s?.matched, { numberLabel, extraLabel, title: s?.title }) : null
           return (
             <tr key={r.ref} ref={(el) => { rows.current[idx] = el }} className="clickable" tabIndex={idx === focusIdx ? 0 : -1} aria-selected={r.ref === selectedRef}
               onClick={() => onOpen(r.ref)}
@@ -421,11 +428,13 @@ function ResultsTable({ results, summaries, selectedRef, onOpen, source }: { res
                 else if (e.key === 'End') { e.preventDefault(); move(results.length - 1) }
                 else if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen(r.ref) }
               }}>
-              <td className="mono lead" data-label={numberLabel}>{number}</td>
+              <td className="mono lead" data-label={numberLabel}><Mark text={number} needle={needle} /></td>
               <td className="ws-name" data-label={titleHead}>
-                <span className="ws-cell">{s?.title || '—'}{s?.incomplete && missing(s)}</span>
+                <span className="ws-cell">{s?.title ? <Mark text={s.title} needle={needle} /> : "—"}{s?.incomplete && missing(s)}</span>
+                {/* Quick search board 2: a match in a field that is not a column, under the title. */}
+                {hidden && <span className="ws-matched">Matched <b>{hidden.displayLabel}</b>: <Mark text={hidden.value} needle={needle} /></span>}
               </td>
-              {extraLabel && <td data-label={extraLabel}>{valueOf(s?.preview, extraLabel) || '—'}</td>}
+              {extraLabel && <td data-label={extraLabel}>{valueOf(s?.preview, extraLabel) ? <Mark text={valueOf(s?.preview, extraLabel)} needle={needle} /> : "—"}</td>}
               <td data-label="Documents">{s?.docs ?? r.docs.length}</td>
               <td className="faint" data-label="Updated">{fmtRel(r.updatedAt)}</td>
             </tr>
@@ -436,7 +445,7 @@ function ResultsTable({ results, summaries, selectedRef, onOpen, source }: { res
   )
 }
 
-function RecordPanelBody({ record, summary, onOpen, source, action }: { record: RecordItem; summary?: Summary; onOpen: (id: string) => void; source?: Source; /** Shown after Details (the wide panel's Open documents) */ action?: ReactNode }) {
+function RecordPanelBody({ record, summary, onOpen, source, action, needle }: { record: RecordItem; summary?: Summary; onOpen: (id: string) => void; source?: Source; /** Shown after Details (the wide panel's Open documents) */ action?: ReactNode; /** "anywhere" text: marked in Details (task 0022) */ needle?: string }) {
   const { can } = useStore()
   // Details: the record's fields in the sending system's own order, without its identifiers; dates as "30 Sep 2026".
   const idLabels = new Set(record.identifiers.map((i) => i.label))
@@ -489,7 +498,7 @@ function RecordPanelBody({ record, summary, onOpen, source, action }: { record: 
         <div className="stack" style={{ gap: 10 }}>
           <h3>Details</h3>
           {/* Canvas board 2: label beside value; the number is in the box above, so it isn't repeated. */}
-          <dl className="ws-kv">{details.map((m) => <div key={m.label}><dt>{m.label}</dt><dd>{m.value}</dd></div>)}</dl>
+          <dl className="ws-kv">{details.map((m) => <div key={m.label}><dt>{m.label}</dt><dd><Mark text={m.value} needle={needle} /></dd></div>)}</dl>
         </div>
       )}
       {action}

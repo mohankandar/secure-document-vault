@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { KNOWN_CAPABILITIES, ROLES, type AreaId, type Capability, type RecordItem, type RoleId } from './model'
-import { session as loadSession } from './liveApi'
+import { session as loadSession, type RecentRecord } from './liveApi'
 import type { SessionInfo } from '../api'
 import { failureText } from './CardError'
 
@@ -14,7 +14,7 @@ const systemTheme = (): Theme => (window.matchMedia?.('(prefers-color-scheme: da
 export type Toast = { id: number; title: string; detail?: string; tone?: 'ok' | 'bad' }
 export type Route = { area: AreaId; tab: string }
 /** A search started outside Records (e.g. on Home), carried out by the Records page. */
-export type SearchRequest = { id: number; box?: string; openFilters?: boolean; incompleteOnly?: boolean; receivedLast30Days?: boolean; sourceId?: string; criteria?: Record<string, string>; selectRef?: string }
+export type SearchRequest = { id: number; /** Task 0022: text searched in every searchable field. */ anywhere?: string; openFilters?: boolean; incompleteOnly?: boolean; receivedLast30Days?: boolean; sourceId?: string; criteria?: Record<string, string>; selectRef?: string }
 let searchRequestSeq = 0
 
 export const AREA_TABS: Record<AreaId, { id: string; label: string }[]> = {
@@ -82,6 +82,9 @@ function useStoreValue() {
   const [selectedRef, setSelectedRef] = useState<string | null>(null)
   const [openDocId, setOpenDocId] = useState<string | null>(null)
   const [resultsShown,setResultsShown]=useState(false)
+  // The person's own Recently viewed list as Home last loaded it; the search list offers matching records from it
+  // (task 0022) without asking the server again.
+  const [recentRecords, setRecentRecords] = useState<RecentRecord[] | null>(null)
 
   useEffect(() => {
     let active = true
@@ -132,7 +135,7 @@ function useStoreValue() {
     role, heldRoles, areas, startedWithoutRoute, searchRequest, requestSearch, liveSession, sessionLoading, sessionError, theme, themePref, setThemePref, route, navigate,
     toasts, toast, dismissToast: (id: number) => setToasts((l) => l.filter((t) => t.id !== id)),
     caps, can,
-    records, setRecords, selectedRef, setSelectedRef, openDocId, setOpenDocId, resultsShown, setResultsShown,
+    records, setRecords, selectedRef, setSelectedRef, openDocId, setOpenDocId, resultsShown, setResultsShown, recentRecords, setRecentRecords,
   }
 }
 

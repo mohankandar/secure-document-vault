@@ -131,6 +131,8 @@ export type RecordSummary = {
   /** Over the record's incomplete submissions; 0 when complete. */
   incompleteExpectedCount?: number
   incompleteReceivedCount?: number
+  /** Task 0022, an "anywhere" search only: every field that matched, best match first, with the record's own value. */
+  matchedFields?: { fieldKey: string; displayLabel: string; value: string }[]
 }
 
 export type SearchResponse = {

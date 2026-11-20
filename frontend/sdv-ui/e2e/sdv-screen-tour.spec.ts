@@ -76,7 +76,7 @@ async function expectNoRecordsAccess(page: Page, testInfo: TestInfo, ownArea: st
   await expect(page.getByRole('heading', { name: /This page isn.t part of your role/ })).toBeVisible({ timeout: 15000 })
   await expect(page.getByRole('button', { name: 'Sign out', exact: true })).toBeVisible()
   await expect(page.getByText(/enforced by the server|only reflects it/)).toHaveCount(0)
-  await expect(page.getByRole('searchbox', { name: 'Search records' })).toBeHidden()
+  await expect(page.getByRole('combobox', { name: 'Search records' })).toBeHidden()
   await capture(page, testInfo, 'records-not-assigned')
   await page.evaluate((h) => { window.location.hash = h }, back)
 }
@@ -868,7 +868,7 @@ function missingDemoData(testInfo: TestInfo, what: string): void {
   throw new Error(`No demo records: ${what}. ${SEED_HELP} Set SDV_E2E_ALLOW_NO_DATA=1 to skip these steps on purpose.`)
 }
 
-const searchBox = (page: Page) => page.getByRole('searchbox', { name: 'Search records' })
+const searchBox = (page: Page) => page.getByRole('combobox', { name: 'Search records' })
 const resultRows = (page: Page) => page.getByRole('grid', { name: 'Records' }).locator('tbody tr')
 const chip = (page: Page, text: RegExp) => page.getByRole('search').locator('.ws-chip').filter({ hasText: text })
 const clearSearch = (page: Page) => page.getByRole('button', { name: 'Clear', exact: true }).click()
@@ -917,8 +917,9 @@ async function homeSteps(page: Page, testInfo: TestInfo) {
   await searchBox(page).fill(demoRecord)
   await searchBox(page).press('Enter')
   await expect(areaTab(page, 'Records')).toHaveAttribute('aria-current', 'page')
-  await expect(chip(page, new RegExp(`Contract Number is ${demoRecord}`))).toBeVisible()
-  await expect(resultRows(page).filter({ hasText: demoRecord })).toBeVisible({ timeout: 15000 })
+  // Task 0022: Enter searches every field; the exact contract number comes first.
+  await expect(chip(page, new RegExp(`^Anywhere ${demoRecord}`))).toBeVisible()
+  await expect(resultRows(page).first()).toContainText(demoRecord, { timeout: 15000 })
   await capture(page, testInfo, 'records-from-home-search')
   await clearSearch(page)
 }
@@ -1043,28 +1044,27 @@ async function tryBusinessRecordJourney(page: Page, testInfo: TestInfo, role: st
   const placeholder = (await searchBox(page).getAttribute('placeholder')) ?? ''
   if (!/Contract Number/i.test(placeholder)) return missingDemoData(testInfo, `the search box offers "${placeholder}", no Contract Number field`)
 
-  // 1. Search by contract number: the box routes digits to the contract number field.
+  // 1. Search by contract number (task 0022): Enter searches every field; the exact contract number comes first.
   await searchFor(page, demoRecord)
-  await expect(chip(page, new RegExp(`Contract Number is ${demoRecord}`))).toBeVisible()
+  await expect(chip(page, new RegExp(`^Anywhere ${demoRecord}`))).toBeVisible()
   if (!(await expectRows(page, testInfo, `contract ${demoRecord} not found`))) return
   const recordRow = resultRows(page).filter({ hasText: demoRecord }).first()
   await expect(recordRow).toBeVisible({ timeout: 15000 })
+  await expect(resultRows(page).first()).toContainText(demoRecord)
   await capture(page, testInfo, 'results-contract')
 
-  // 2. Suggestion: a member number typed in the box is read as a contract number, finds nothing,
-  //    and one click searches it as Member Number instead.
+  // 2. One field from the list (task 0022, replaces the "Search it as … instead" suggestion): a member number,
+  //    searched only as Member Number.
   await clearSearch(page)
-  await searchFor(page, demoMember)
-  await expect(page.getByRole('heading', { name: `No Contract Number ${demoMember}` })).toBeVisible({ timeout: 15000 })
-  await capture(page, testInfo, 'suggestion')
-  await page.getByRole('button', { name: 'Search it as Member Number instead' }).click()
+  await searchBox(page).fill(demoMember)
+  await page.getByRole('listbox', { name: 'Search suggestions' }).getByRole('option', { name: new RegExp(`^Member Number is .${demoMember}.`) }).click()
   await expect(chip(page, new RegExp(`Member Number is ${demoMember}`))).toBeVisible()
   await expect(resultRows(page).filter({ hasText: demoRecord })).toBeVisible({ timeout: 15000 })
 
-  // 3. Search by name in lower case: the server ignores case for Contains/Starts with ("pat" finds "Patel").
+  // 3. Search by name in lower case, everywhere: Contains/Starts with ignore case ("pat" finds "Patel").
   await clearSearch(page)
   await searchFor(page, demoName)
-  await expect(chip(page, new RegExp(`(contains|starts with) ${demoName}$`))).toBeVisible()
+  await expect(chip(page, new RegExp(`^Anywhere ${demoName}`))).toBeVisible()
   if (!(await expectRows(page, testInfo, `no record whose name contains "${demoName}"`))) return
   const nameRows = await resultRows(page).count()
   await capture(page, testInfo, 'results-name')
@@ -1334,6 +1334,149 @@ test.describe('SDV role-based screen capture', () => {
     await page.goto('/?app=r5')
     await expect(page.getByRole('alert')).toContainText(/Your session didn.t start/, { timeout: 15000 })
     await expect(page.locator('.auth-shell, .auth-card')).toHaveCount(0)
+  })
+
+  test('Quick search across all fields (task 0022)', async ({ page }, testInfo) => {
+    test.skip(!isDesktop(testInfo), 'Runs once per tour (desktop only); it takes the 390px screenshots itself.')
+    test.setTimeout(180_000)
+    // The canvas's loan system (Seed-SDV-Canvas-Demo.ps1): 300000000004 Ana Gomez has co-borrower Priya Patel,
+    // 300000000006 Sam Turner has closing agent Patel & Sons Title. Neither field is a Records column.
+    const los = (await searchSources(page)).find((s) => s.displayName === 'Loan Origination System')
+    expect(los, 'the Loan Origination System from Seed-SDV-Canvas-Demo.ps1').toBeTruthy()
+    await page.evaluate(([key, id]) => window.localStorage.setItem(key, id), [LAST_SOURCE_KEY, los!.sourceId])
+    await page.reload()
+    await selectRole(page, 'Business User')
+    const shots = path.resolve(process.cwd(), '..', '..', '.runtime', 'ui-checks', '0022')
+    fs.mkdirSync(shots, { recursive: true })
+    /** 1440 and 390 px, light and dark, of the state on screen now. */
+    const fourShots = async (name: string) => {
+      for (const width of [1440, 390]) {
+        await page.setViewportSize({ width, height: width === 1440 ? 900 : 844 })
+        for (const theme of ['light', 'dark']) {
+          await page.evaluate((t) => document.documentElement.setAttribute('data-theme', t), theme)
+          await page.waitForTimeout(150)
+          await page.screenshot({ path: path.join(shots, `${name}-${width}-${theme}.png`), animations: 'disabled' })
+        }
+      }
+      await page.evaluate(() => document.documentElement.setAttribute('data-theme', 'light'))
+      await page.setViewportSize({ width: 1440, height: 1000 })
+    }
+    const list = page.getByRole('listbox', { name: 'Search suggestions' })
+    const option = (name: RegExp) => list.getByRole('option', { name })
+
+    // ---- Typing: the list opens after 2 characters, Search everywhere highlighted ----
+    await areaTab(page, 'Records').click()
+    await waitForBusinessSearchReady(page)
+    await searchBox(page).fill('p')
+    await expect(list).toHaveCount(0)
+    await searchBox(page).fill('patel')
+    await expect(list).toBeVisible()
+    await expect(option(/^Search everywhere for .patel./)).toHaveAttribute('aria-selected', 'true')
+    for (const name of [/^Borrower contains .patel./, /^Loan type is .patel./, /^Co-borrower contains .patel./, /^Closing agent starts with .patel./]) {
+      await expect(option(name)).toBeVisible()
+    }
+    // Digits-only fields need digits; dates stay in Filters.
+    await expect(option(/^Contract number/)).toHaveCount(0)
+    await expect(option(/^Closing date/)).toHaveCount(0)
+    await capture(page, testInfo, 'quick-search-typing')
+    await fourShots('typing')
+    await searchBox(page).focus()
+    await expect(list).toBeVisible()
+
+    // ---- Keyboard only: Escape closes the list, arrows move, Enter picks one field ----
+    await searchBox(page).press('Escape')
+    await expect(list).toHaveCount(0)
+    await expect(searchBox(page)).toHaveValue('patel')
+    await searchBox(page).press('ArrowDown')
+    await expect(list).toBeVisible()
+    for (let i = 0; i < 10 && (await option(/^Co-borrower contains/).getAttribute('aria-selected')) !== 'true'; i++) await searchBox(page).press('ArrowDown')
+    await expect(option(/^Co-borrower contains/)).toHaveAttribute('aria-selected', 'true')
+    await searchBox(page).press('Enter')
+    await expect(chip(page, /^Co-borrower contains patel/)).toBeVisible()
+    await expect(chip(page, /^Anywhere/)).toHaveCount(0)
+    await expect(resultRows(page)).toHaveCount(1, { timeout: 15000 })
+    await expect(resultRows(page).first()).toContainText('300000000004')
+
+    // ---- Results: Enter searches everywhere; best match first; "Matched …" for fields that aren't columns ----
+    await clearSearch(page)
+    const sent = page.waitForRequest((r) => r.url().endsWith('/api/v1/business/search') && r.method() === 'POST' && (r.postDataJSON() as { anywhere?: string }).anywhere === 'patel')
+    await searchFor(page, 'patel')
+    expect(Object.keys((await sent).postDataJSON().criteria ?? {})).toHaveLength(0)
+    await expect(chip(page, /^Anywhere patel/)).toBeVisible()
+    const head = page.locator('.ws-results-head')
+    await expect(head.getByRole('heading')).toContainText(/2 records · “patel” in any searchable field · Loan Origination System/)
+    await expect(head).toContainText('Best match first')
+    // Closing agent starts with "Patel" (ranks before contains): Sam Turner first, then Ana Gomez.
+    await expect(resultRows(page).nth(0)).toContainText('300000000006')
+    await expect(resultRows(page).nth(0)).toContainText('Matched Closing agent: Patel & Sons Title')
+    await expect(resultRows(page).nth(1)).toContainText('Matched Co-borrower: Priya Patel')
+    await expect(resultRows(page).nth(1).locator('mark')).toHaveText('Patel')
+    await expect(page.locator('.ws-pager')).toContainText('Narrow it with Filters, or pick one field from the search list.')
+    await resultRows(page).nth(1).click()
+    const inspector = page.getByRole('complementary', { name: 'Record inspector' })
+    await expect(inspector).toBeVisible({ timeout: 15000 })
+    await expect(inspector.locator('.ws-kv div', { hasText: 'Co-borrower' }).locator('mark')).toHaveText('Patel', { timeout: 15000 })
+    await capture(page, testInfo, 'quick-search-results')
+    await fourShots('results')
+
+    // ---- With a date range: Filters keep the "anywhere" text ----
+    await page.getByRole('button', { name: /^Filters/ }).click()
+    const filters = page.getByRole('dialog', { name: 'Filters' })
+    await filters.getByRole('group', { name: 'Received quick ranges' }).getByRole('button', { name: 'Last 30 days' }).click()
+    const withRange = page.waitForRequest((r) => r.url().endsWith('/api/v1/business/search') && r.method() === 'POST')
+    await filters.getByRole('button', { name: 'Show results' }).click()
+    const body = (await withRange).postDataJSON() as { anywhere?: string; dateFrom?: string }
+    expect(body.anywhere).toBe('patel')
+    expect(body.dateFrom).toBeTruthy()
+    await expect(chip(page, /^Anywhere patel/)).toBeVisible()
+    await expect(chip(page, /^Received /)).toBeVisible()
+    await expect(page.getByRole('region', { name: 'Search results' }).locator('[aria-busy="true"]')).toHaveCount(0, { timeout: 15000 })
+    await capture(page, testInfo, 'quick-search-with-date-range')
+
+    // ---- By name, everywhere: the borrower's name is marked in the title ----
+    await clearSearch(page)
+    await searchFor(page, 'gomez')
+    await expect(resultRows(page).first()).toContainText('300000000004', { timeout: 15000 })
+    await expect(resultRows(page).first().locator('td.ws-name mark')).toHaveText('Gomez')
+
+    // ---- A contract number lands first ----
+    await clearSearch(page)
+    await searchFor(page, '300000000004')
+    await expect(chip(page, /^Anywhere 300000000004/)).toBeVisible()
+    await expect(resultRows(page).first()).toContainText('300000000004', { timeout: 15000 })
+
+    // ---- A record opened recently, from the list (Home's Recently viewed; no new server call) ----
+    await resultRows(page).first().click()
+    await page.getByRole('complementary', { name: 'Record inspector' }).getByRole('button', { name: /Open documents/ }).click()
+    await expect(page.getByRole('img', { name: /Document page 1/ })).toBeVisible({ timeout: 20000 })
+    await page.getByRole('button', { name: 'Back to results' }).click()
+    await clearSearch(page)
+    await areaTab(page, 'Home').click()
+    await expect(page.getByRole('region', { name: 'Recently viewed' }).getByRole('listitem').first()).toContainText('300000000004', { timeout: 15000 })
+    let recentCalls = 0
+    page.on('request', (r) => { if (r.url().includes('/me/recent-records')) recentCalls++ })
+    await searchBox(page).fill('gomez')
+    const recentOption = option(/^300000000004/)
+    await expect(list.getByText('Records you opened recently')).toBeVisible()
+    await expect(recentOption).toBeVisible()
+    await capture(page, testInfo, 'quick-search-recent')
+    await recentOption.click()
+    await expect(areaTab(page, 'Records')).toHaveAttribute('aria-current', 'page')
+    await expect(page.getByRole('complementary', { name: 'Record inspector' })).toContainText('300000000004', { timeout: 15000 })
+    expect(recentCalls, 'the list uses the Recently viewed data Home already has').toBe(0)
+
+    // ---- Phones: a full-width list ----
+    await clearSearch(page)
+    await page.setViewportSize({ width: 390, height: 844 })
+    await searchBox(page).fill('patel')
+    await expect(list).toBeVisible()
+    const bar = await page.locator('.ws-bar').boundingBox()
+    const box = await page.locator('.qs-list').boundingBox()
+    expect(Math.abs((box?.width ?? 0) - (bar?.width ?? 0))).toBeLessThan(4)
+    await searchBox(page).press('Escape')
+    await page.setViewportSize({ width: 1440, height: 1000 })
+    // The tour's other tests search LexaVault.
+    await chooseLexaVault(page)
   })
 
   test('Tenant IT Administrator screens', async ({ page }, testInfo) => {

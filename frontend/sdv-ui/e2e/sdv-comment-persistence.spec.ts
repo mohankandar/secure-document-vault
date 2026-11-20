@@ -30,8 +30,8 @@ test('a document comment persists after leaving and reopening Viewer', async ({ 
     }
     await expect(account).toHaveAttribute('aria-label', steward, { timeout: 15000 })
 
-    // The search box routes a number to the source's contract number field.
-    const box = page.getByRole('searchbox', { name: 'Search records' })
+    // The search box searches every field; an exact contract number comes first (task 0022).
+    const box = page.getByRole('combobox', { name: 'Search records' })
     await expect(box).toBeVisible({ timeout: 15000 })
     await box.fill(contract)
     await box.press('Enter')

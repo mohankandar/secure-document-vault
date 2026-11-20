@@ -6,9 +6,11 @@ import type { Source } from './model'
 import type { RecordSummary } from '../api'
 import { recentRecords, schema, search, toSource, type RecentRecord } from './liveApi'
 import { Badge, Callout, Skeleton, fmtRel } from './ui'
-import { boxLabel, quickRange, routeBoxInput } from './searchRouting'
+import { boxLabel, quickRange } from './searchRouting'
 import { NOTHING_TO_SEARCH, defaultSource, searchableSources } from './sourceChoice'
 import { extraField } from './recordColumns'
+import { anywhereProblem, identifierCriteria } from './quickSearchRules'
+import { useQuickSearch, type QuickPick } from './QuickSearch'
 
 const showDevelopmentUtilities = import.meta.env.DEV
 const RECENT_LIMIT = 8
@@ -20,14 +22,8 @@ const greetingFor = (hour: number) => (hour < 12 ? 'Good morning' : hour < 18 ? 
 const firstNameOf = (displayName?: string | null) => displayName?.trim().split(/\s+/)[0] || ''
 const lower = (t: string) => t.charAt(0).toLowerCase() + t.slice(1)
 
-/** Criteria that find exactly this record in Records: each of its searchable identifiers, matched exactly. */
-function identifierCriteria(record: RecordSummary, source: Source | undefined): Record<string, string> {
-  const searchable = new Set(source?.fields.filter((f) => f.searchable).map((f) => f.key) ?? [])
-  return Object.fromEntries(record.identifiers.filter((i) => searchable.has(i.fieldKey) && i.value).map((i) => [i.fieldKey, i.value]))
-}
-
 export function Home() {
-  const { liveSession, navigate, requestSearch } = useStore()
+  const { liveSession, navigate, requestSearch, setRecentRecords } = useStore()
   const [sources, setSources] = useState<Source[]>([])
   const [sourcesLoaded, setSourcesLoaded] = useState(false)
   // The same rule as Records (sourceChoice.ts): only systems with a searchable field, and the same default.
@@ -42,9 +38,10 @@ export function Home() {
   useEffect(() => { let active = true; schema().then((s) => { if (active) { setSources(s.sources.map(toSource)); setSourcesLoaded(true) } }).catch((e) => { if (active) setAttentionError(failureText('Home: search fields did not load', e)) }); return () => { active = false } }, [])
   useEffect(() => {
     let active = true
-    recentRecords(RECENT_LIMIT).then((r) => { if (active) setRecent(r.records) }).catch((e) => { if (active) { setRecent([]); setRecentError(failureText('Home: recently viewed did not load', e)) } })
+    // The list is kept for the search box on Records too (task 0022), so it doesn't ask the server again.
+    recentRecords(RECENT_LIMIT).then((r) => { if (active) { setRecent(r.records); setRecentRecords(r.records) } }).catch((e) => { if (active) { setRecent([]); setRecentError(failureText('Home: recently viewed did not load', e)) } })
     return () => { active = false }
-  }, [])
+  }, [setRecentRecords])
   // Needs attention: records with missing documents received in the last 30 days, from each source.
   useEffect(() => {
     if (!sourcesLoaded) return
@@ -64,29 +61,36 @@ export function Home() {
   const label = boxLabel(fields)
   const firstName = firstNameOf(liveSession?.displayName)
   const greeting = greetingFor(new Date().getHours())
-  // The canvas's wording, from this system's own field labels ("Contract number or borrower"). The box searches
-  // those fields only, so it doesn't promise "anything else".
+  // The canvas's wording, from this system's own field labels ("Contract number or borrower").
   const parts = label ? label.split(' or ') : []
   const placeholder = nothingToSearch ? 'Nothing to search yet' : parts.length ? parts.map((p, i) => (i ? lower(p) : p)).join(' or ') : 'Use Filters to search'
   const lede = parts.length ? `Find a ${parts.map(lower).join(', a ')} or a document.` : 'Find a record or a document.'
   const sourceName = (id: string) => sources.find((s) => s.id === id)?.name ?? 'the sending system'
 
-  const submit = (e: FormEvent) => {
-    e.preventDefault()
-    if (!box.trim()) return
-    if (nothingToSearch) { setBoxMessage(NOTHING_TO_SEARCH); return }
-    // Before the source list has loaded, Records routes the text itself once its sources are known.
-    if (!source) { requestSearch({ box }); navigate('workspace'); return }
-    const route = routeBoxInput(box, fields)
-    if (!route) return
-    if (!route.ok) { setBoxMessage(route.message); return }
-    requestSearch({ box, sourceId: source?.id })
-    navigate('workspace')
-  }
   const openInRecords = (sourceId: string, record: RecordSummary) => {
     requestSearch({ sourceId, criteria: identifierCriteria(record, sources.find((s) => s.id === sourceId)), selectRef: record.recordRef })
     navigate('workspace')
   }
+  // Task 0022: Enter (or Search) searches every searchable field; the list also offers one field, or a recent record.
+  const searchEverywhere = () => {
+    const text = box.trim()
+    if (!text) return
+    if (nothingToSearch) { setBoxMessage(NOTHING_TO_SEARCH); return }
+    const problem = anywhereProblem(text)
+    if (problem) { setBoxMessage(problem); return }
+    // Before the source list has loaded, Records searches the default system once its sources are known.
+    requestSearch({ anywhere: text, sourceId: source?.id })
+    navigate('workspace')
+  }
+  const onPick = (pick: QuickPick) => {
+    if (pick.kind === 'everywhere') return searchEverywhere()
+    if (pick.kind === 'recent') return openInRecords(pick.recent.sourceId, pick.recent.record)
+    if (!source) return
+    requestSearch({ sourceId: source.id, criteria: { [pick.field.key]: box.trim() } })
+    navigate('workspace')
+  }
+  const quick = useQuickSearch({ text: nothingToSearch ? '' : box, fields, recent, onPick })
+  const submit = (e: FormEvent) => { e.preventDefault(); searchEverywhere() }
 
   return (
     <div className="home">
@@ -95,16 +99,19 @@ export function Home() {
         <p className="muted">{lede}</p>
       </header>
 
-      {/* One box with Filters and Search inside it, as on the canvas. */}
-      <form className="home-search" role="search" aria-label="Record search" onSubmit={submit}>
-        <Search size={20} aria-hidden />
-        <input type="search" aria-label="Search records" value={box} autoComplete="off" spellCheck={false}
-          placeholder={placeholder} aria-describedby={boxMessage ? 'home-box-message' : undefined}
-          onChange={(e) => { setBox(e.target.value); setBoxMessage('') }}
-          onKeyDown={(e) => { if (e.key === 'Escape') { e.preventDefault(); setBox(''); setBoxMessage('') } }} />
-        <button type="button" className="v-btn quiet" disabled={nothingToSearch} onClick={() => { requestSearch({ openFilters: true, sourceId: source?.id }); navigate('workspace') }}><SlidersHorizontal size={16} aria-hidden />Filters</button>
-        <button type="submit" className="v-btn primary">Search</button>
-      </form>
+      {/* One box with Filters and Search inside it, as on the canvas; the search list opens under it. */}
+      <div className="qs-anchor">
+        <form className="home-search" role="search" aria-label="Record search" onSubmit={submit}>
+          <Search size={20} aria-hidden />
+          <input type="search" aria-label="Search records" value={box} autoComplete="off" spellCheck={false} {...quick.inputProps}
+            placeholder={placeholder} aria-describedby={boxMessage ? 'home-box-message' : undefined}
+            onChange={(e) => { setBox(e.target.value); setBoxMessage(''); quick.typing(e.target.value) }}
+            onKeyDown={(e) => { if (quick.onKeyDown(e)) return; if (e.key === 'Escape') { e.preventDefault(); setBox(''); setBoxMessage('') } }} />
+          <button type="button" className="v-btn quiet" disabled={nothingToSearch} onClick={() => { requestSearch({ openFilters: true, sourceId: source?.id }); navigate('workspace') }}><SlidersHorizontal size={16} aria-hidden />Filters</button>
+          <button type="submit" className="v-btn primary">Search</button>
+        </form>
+        {quick.list}
+      </div>
       {boxMessage && <p id="home-box-message" className="ws-box-message" role="status">{boxMessage}</p>}
 
       <div className="home-grid">

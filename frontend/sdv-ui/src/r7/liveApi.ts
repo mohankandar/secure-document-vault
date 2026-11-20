@@ -15,12 +15,14 @@ const dayEnd = (d: string) => (d ? new Date(d + 'T23:59:59.999').toISOString() :
  * updated: last activity on the submission (server lastUpdatedFrom/lastUpdatedTo, submissions.last_activity_at).
  */
 /** incompleteOnly: only records with missing documents; counts as a criterion. pageSize defaults to SEARCH_PAGE_SIZE. */
-export type SearchOptions = { incompleteOnly?: boolean; pageSize?: number }
+/** anywhere (task 0022): text searched in every searchable field, each with its own match; results come best match first. */
+export type SearchOptions = { incompleteOnly?: boolean; pageSize?: number; anywhere?: string }
 export const search = (sourceId: string, criteria: Record<string,string>, received: DayRange, updated: DayRange, page: number, options: SearchOptions = {}) =>
   roleApi<SearchResponse>('/api/v1/business/search', 'business', { method: 'POST', body: JSON.stringify({
     sourceId, criteria: Object.fromEntries(Object.entries(criteria).map(([key,value]) => [key,value.trim()]).filter(([,value]) => value.length > 0)),
     dateFrom: dayStart(received.from), dateTo: dayEnd(received.to),
     lastUpdatedFrom: dayStart(updated.from), lastUpdatedTo: dayEnd(updated.to), incompleteOnly: options.incompleteOnly ? true : undefined,
+    anywhere: options.anywhere?.trim() || undefined,
     page, pageSize: options.pageSize ?? SEARCH_PAGE_SIZE
   }) })
 /** The signed-in person's own recently opened records (server: own DOCUMENT_VIEW_OPENED events, still available). */

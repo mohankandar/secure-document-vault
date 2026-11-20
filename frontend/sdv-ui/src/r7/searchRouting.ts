@@ -1,18 +1,12 @@
 import type { Field } from './model'
 
-// The server has no free-text search. The search box routes what the person types to ONE configured field:
-//  1. Input that looks like a number (digits, optionally with spaces, dashes, dots or slashes) goes to the
-//     first identifier field, in display order, whose normalization is DIGITS_ONLY. The server strips the
-//     separators, as it does for the Filters field.
-//  2. Anything else goes to the first searchable text field whose match is Contains or Starts with.
-//  3. If neither field exists, nothing is searched and the person is pointed to Filters.
+// The search box searches every searchable field (task 0022, quickSearchRules.ts and QuickSearch.tsx). Its
+// placeholder still names the two fields people use most: the first digits-only identifier, and the first text
+// field matched by Contains or Starts with ("Contract number or borrower").
 
-export type BoxTargets = { identifier?: Field; text?: Field }
-export type BoxRoute = { ok: true; field: Field; value: string } | { ok: false; message: string }
+type BoxTargets = { identifier?: Field; text?: Field }
 
-const NUMBER_SHAPE = /^[\d\s\-./]+$/
-
-export function boxTargets(fields: Field[]): BoxTargets {
+function boxTargets(fields: Field[]): BoxTargets {
   const searchable = fields.filter((f) => f.searchable && f.type !== 'DATE')
   return {
     identifier: searchable.find((f) => f.identifier && f.normalizationRaw === 'DIGITS_ONLY'),
@@ -20,19 +14,7 @@ export function boxTargets(fields: Field[]): BoxTargets {
   }
 }
 
-export const looksLikeNumber = (value: string) => NUMBER_SHAPE.test(value) && /\d/.test(value)
-
-export function routeBoxInput(input: string, fields: Field[]): BoxRoute | null {
-  const value = input.trim()
-  if (!value) return null
-  const { identifier, text } = boxTargets(fields)
-  if (identifier && looksLikeNumber(value)) return { ok: true, field: identifier, value }
-  if (text) return { ok: true, field: text, value }
-  if (identifier) return { ok: false, message: `Enter a ${identifier.label} (digits), or use Filters for other fields.` }
-  return { ok: false, message: 'This source has no field the search box can use. Use Filters.' }
-}
-
-/** Names the fields the box searches, from the source's own labels. */
+/** Names the placeholder's fields, from the source's own labels. */
 export function boxLabel(fields: Field[]): string | null {
   const { identifier, text } = boxTargets(fields)
   if (identifier && text) return `${identifier.label} or ${text.label}`
@@ -54,15 +36,6 @@ export function filterHint(f: Field): string | undefined {
   if (f.mode === 'PREFIX') return 'The first letters'
   if (f.mode === 'PARTIAL') return 'Any part'
   return undefined
-}
-
-/**
- * Other identifier fields that accept the same typed number (DIGITS_ONLY, like the field the box used).
- * Offered as one-click suggestions when the box finds nothing; never searched automatically.
- */
-export function alternativeFields(used: Field, value: string, fields: Field[]): Field[] {
-  if (!looksLikeNumber(value)) return []
-  return fields.filter((f) => f.searchable && f.identifier && f.key !== used.key && f.normalizationRaw === 'DIGITS_ONLY')
 }
 
 // ---- Date ranges (yyyy-mm-dd, the person's own calendar days) ----
