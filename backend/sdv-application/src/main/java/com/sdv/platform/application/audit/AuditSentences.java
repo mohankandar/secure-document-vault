@@ -57,7 +57,8 @@ public final class AuditSentences {
 
     public static String sentence(AuditQueryService.AuditEntry e) {
         String w = actorName(e);
-        String f = e.filename() == null || e.filename().isEmpty() ? "a document" : e.filename();
+        // Task 0027 (0.4): admin views never name a file; the Record, Level, Received and Pages columns say which.
+        String f = "a document";
         JsonNode d = details(e.safeDetailsJson());
         return switch (e.action()) {
             case "DOCUMENT_VIEW_OPENED" -> w + " opened " + f;
@@ -88,6 +89,8 @@ public final class AuditSentences {
             case "DOCUMENT_ACCESS_REFUSED" -> w + " tried to " + ATTEMPT_WORDS.getOrDefault(text(d, "attempt"), "use")
                     + " " + f + ("SDV-SEN-009".equals(text(d, "code"))
                             ? ", but that needs an approval" : ", but its level is restricted");
+            case "LEGAL_HOLD_PLACED" -> w + " put " + f + " on legal hold";
+            case "LEGAL_HOLD_RELEASED" -> w + " released the legal hold on " + f;
             case "ROLE_GROUP_MAPPING_CHANGED" -> "The sign-in groups for " + text(d, "role") + " changed";
             case "RETENTION_POLICY_UPDATED" -> d.path("indefinite").asBoolean(false) && d.path("indefinite").isBoolean()
                     ? w + " changed how long to keep new documents: keep them forever"

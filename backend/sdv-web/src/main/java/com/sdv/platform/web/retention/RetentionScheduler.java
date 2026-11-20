@@ -41,9 +41,11 @@ public class RetentionScheduler implements SchedulingConfigurer {
             RetentionDeletionService.SweepResult result = retention.sweep(100);
             monitor.success(startedAt, Instant.now(), result);
             if (result.failed() > 0) {
-                log.warn("Retention sweep completed with failures candidates={} deleted={} failed={}", result.candidates(), result.completed(), result.failed());
+                log.warn("Retention sweep completed with failures candidates={} deleted={} failed={} keptOnLegalHold={}", result.candidates(), result.completed(), result.failed(), result.heldSkipped());
             } else if (result.completed() > 0) {
-                log.info("Retention sweep completed candidates={} deleted={} failed=0", result.candidates(), result.completed());
+                log.info("Retention sweep completed candidates={} deleted={} failed=0 keptOnLegalHold={}", result.candidates(), result.completed(), result.heldSkipped());
+            } else if (result.heldSkipped() > 0) {
+                log.info("Retention sweep completed with nothing to delete keptOnLegalHold={}", result.heldSkipped());
             } else {
                 log.debug("Retention sweep completed with no due documents");
             }

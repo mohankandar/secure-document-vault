@@ -2,6 +2,8 @@
 // The server's processing error codes come from DocumentFinalizationService.classify; a code not listed here
 // falls back to "Vero couldn't store this file (code X)."
 
+import type { SensitivityLevel } from '../api'
+
 export type ProblemKind = 'store' | 'stuck' | 'missing'
 
 /** Code → what happened (short, for the list) and the cause (for the detail). */
@@ -47,7 +49,11 @@ const times = (n: number) => (n === 1 ? 'once' : n === 2 ? 'twice' : `${n} times
 
 export type ProblemFacts = {
   kind: ProblemKind
-  file?: string | null
+  /** Task 0027 (0.4): never a file name. The document is described by these instead. */
+  documentId?: string
+  receivedAt?: string
+  pages?: number | null
+  level?: SensitivityLevel | null
   source?: string | null
   recordNumber?: string | null
   recordLabel?: string | null
@@ -61,7 +67,7 @@ export type ProblemFacts = {
 
 /** The three blocks of the detail panel and the line for the list. */
 export function problemSentences(p: ProblemFacts): { what: string; happened: string; means: string; todo: string } {
-  const file = p.file || 'a document'
+  const file = p.pages ? `a ${p.pages}-page document` : 'a document'
   const from = p.source ? p.source : 'the sending system'
   const team = p.source ? `the team that runs ${p.source}` : 'the team that runs the sending system'
   if (p.kind === 'store') {
@@ -70,7 +76,7 @@ export function problemSentences(p: ProblemFacts): { what: string; happened: str
       what: w.short,
       happened: `Vero received ${file} from ${from} on ${dayWords(p.at)} and tried ${times(p.attempts ?? 1)}. ${w.cause}`,
       means: 'This document is not stored, and nobody can open it in Vero. The record’s other documents are not affected.',
-      todo: `Ask ${team} to send ${file} again. It arrives as a new delivery; there is nothing to retry here.`,
+      todo: `Ask ${team} to send this document again. It arrives as a new delivery; there is nothing to retry here.`,
     }
   }
   if (p.kind === 'stuck') {
@@ -79,7 +85,7 @@ export function problemSentences(p: ProblemFacts): { what: string; happened: str
       what,
       happened: `Vero received ${file} from ${from} and has been working on it since ${dayWords(p.at)}. ${what}.`,
       means: 'Nobody can open this document in Vero until Vero finishes.',
-      todo: `If it doesn’t finish, ask ${team} to send ${file} again as a new delivery, and give your IT team the technical details below.`,
+      todo: `If it doesn’t finish, ask ${team} to send this document again as a new delivery, and give your IT team the technical details below.`,
     }
   }
   const received = p.received ?? 0, expected = p.expected ?? 0
@@ -92,20 +98,27 @@ export function problemSentences(p: ProblemFacts): { what: string; happened: str
 }
 
 /**
- * The note to copy for the sending system's team: record number, file name, what happened and what to send.
- * Never document content, and no personal data beyond the record number and file name (so no record title).
+ * The note to copy for the sending system's team: record number, the document (received date, pages, Vero's document
+ * ID), what happened and what to send. Never document content, file names (task 0027) or record titles.
  */
 export function problemNote(p: ProblemFacts): string {
   const s = problemSentences(p)
   const record = p.recordNumber ? `${p.recordLabel ?? 'Record'} ${p.recordNumber}` : 'not known'
   const ask = p.kind === 'missing'
     ? `Please send the missing documents for this record (${s.what}).`
-    : `Please send ${p.file || 'the document'} again for this record.`
+    : `Please send this document again for this record.`
   return [
     'Vero: a document needs to be sent again',
     `Record: ${record}`,
-    ...(p.kind !== 'missing' ? [`File: ${p.file || 'not known'}`] : []),
+    ...(p.kind !== 'missing' ? [`Document: ${documentWords(p)}`] : []),
     `What happened: ${s.what}.`,
     ask,
   ].join('\n')
+}
+
+/** Task 0027 (0.4): a document without its file name: received date, pages and Vero's document ID. */
+export function documentWords(p: ProblemFacts): string {
+  const parts = [p.receivedAt ? `received ${dayWords(p.receivedAt)}` : null, p.pages ? `${p.pages} pages` : null,
+    p.documentId ? `Vero document ID ${p.documentId}` : null].filter(Boolean)
+  return parts.length ? parts.join(', ') : 'not known'
 }

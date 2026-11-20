@@ -42,6 +42,8 @@ export const AUDIT_SENTENCES: Record<string, Sentence> = {
   DOCUMENT_REDACTION_FAILED: (w, f) => `${w} tried to redact part of ${f}, but it failed`,
   DOCUMENT_RETENTION_DELETED: (_w, f) => `Vero deleted ${f} for good, as the keeping rule says`,
   DOCUMENT_RETENTION_DELETE_FAILED: (_w, f) => `Vero couldn't delete ${f} when its time was up`,
+  LEGAL_HOLD_PLACED: (w, f) => `${w} put ${f} on legal hold`,
+  LEGAL_HOLD_RELEASED: (w, f) => `${w} released the legal hold on ${f}`,
   BUSINESS_RECORD_OPENED: (w) => `${w} opened a record`,
   // Task 0022: a search across all fields says so ("searched all fields"); the text itself is never stored.
   BUSINESS_SEARCH: (w, _f, d) => { const what = d.anywhere === true ? 'searched all fields' : 'searched records'; return n(d.resultCount) != null ? `${w} ${what} and found ${n(d.resultCount)}` : `${w} ${what}` },
@@ -77,7 +79,8 @@ export const AUDIT_SENTENCES: Record<string, Sentence> = {
 
 export function auditSentence(e: OpsAuditEvent): string {
   const who = actorName(e)
-  const file = e.filename || 'a document'
+  // Task 0027 (0.4): admin views never name a file; the Record column and the entry's details say which document.
+  const file = 'a document'
   const pattern = AUDIT_SENTENCES[e.action]
   return pattern ? pattern(who, file, details(e), e) : `${who} · ${humanize(e.action)}`
 }
@@ -88,7 +91,7 @@ export const RESULT_WORDS: Record<string, string> = { SUCCESS: 'Done', DENIED: '
 export const ACTIVITY_GROUPS: { id: string; label: string; actions?: string[]; outcome?: string }[] = [
   { id: 'reading', label: 'Opening and reading', actions: ['DOCUMENT_VIEW_OPENED', 'DOCUMENT_PAGE_VIEWED', 'BUSINESS_RECORD_OPENED', 'BUSINESS_SEARCH', 'BUSINESS_RECENT_RECORDS_LISTED', 'AUDIT_VIEWED'] },
   { id: 'downloads', label: 'Downloads, prints and exports', actions: ['DOCUMENT_DOWNLOADED', 'DOCUMENT_DOWNLOAD_FAILED', 'DOCUMENT_PRINTED', 'AUDIT_EXPORTED'] },
-  { id: 'changes', label: 'Changes to documents', actions: ['DOCUMENT_TAG_ADDED', 'DOCUMENT_COMMENT_ADDED', 'DOCUMENT_PERMANENTLY_REDACTED', 'DOCUMENT_REDACTION_FAILED', 'DOCUMENT_RETENTION_DELETED', 'DOCUMENT_RETENTION_DELETE_FAILED'] },
+  { id: 'changes', label: 'Changes to documents', actions: ['DOCUMENT_TAG_ADDED', 'DOCUMENT_COMMENT_ADDED', 'DOCUMENT_PERMANENTLY_REDACTED', 'DOCUMENT_REDACTION_FAILED', 'DOCUMENT_RETENTION_DELETED', 'DOCUMENT_RETENTION_DELETE_FAILED', 'LEGAL_HOLD_PLACED', 'LEGAL_HOLD_RELEASED'] },
   { id: 'settings', label: 'Settings changes', actions: ['ROLE_CAPABILITIES_UPDATED', 'RETENTION_POLICY_UPDATED', 'METADATA_BEHAVIOR_REVISED', 'METADATA_DISPLAY_ORDER_UPDATED', 'RECORD_TITLE_FIELDS_UPDATED', 'METADATA_FIELD_CREATED', 'METADATA_FIELD_REVISED', 'SOURCE_FIELD_DEFINED', 'SOURCE_FIELD_REVISED', 'INGESTION_SOURCE_CREATED', 'INGESTION_SOURCE_UPDATED', 'STORAGE_VOLUME_CREATED', 'STORAGE_VOLUME_UPDATED', 'STORAGE_FOLDER_CHECKED', 'ENTERPRISE_IDENTITY_DRAFT_SAVED', 'ENTERPRISE_IDENTITY_CONNECTION_TESTED', 'ENTERPRISE_IDENTITY_CONNECTION_ACTIVATED', 'ENTERPRISE_IDENTITY_CONNECTION_ACTIVATION_FAILED', 'ENTERPRISE_IDENTITY_CONNECTION_ROLLED_BACK', 'ENTERPRISE_IDENTITY_CONNECTION_ROLLBACK_FAILED'] },
   { id: 'deliveries', label: 'Deliveries', actions: ['SUBMISSION_CREATED', 'DOCUMENT_RECEIVED', 'DOCUMENT_AVAILABLE', 'DOCUMENT_PROCESSING_FAILED'] },
   { id: 'refused', label: 'Refused', outcome: 'DENIED' },

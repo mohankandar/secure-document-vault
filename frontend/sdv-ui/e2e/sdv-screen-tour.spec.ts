@@ -560,11 +560,14 @@ async function problemsChecks(page: Page, testInfo: TestInfo, area: 'Platform op
     await storeRow.click()
     const panel = page.getByRole('dialog').filter({ hasText: 'What happened' })
     for (const heading of ['What happened', 'What it means', 'What you can do']) await expect(panel.getByRole('heading', { name: heading })).toBeVisible()
-    await expect(panel).toContainText(/Vero received appraisal\.pdf from LexaVault on \d+ \w+ and tried 3 times\./)
+    // Task 0027 (0.4): admin views never name a file; the document is described instead.
+    await expect(panel).toContainText(/Vero received a (\d+-page )?document from LexaVault on \d+ \w+ and tried 3 times\./)
+    await expect(panel).not.toContainText('.pdf')
     await expect(panel).toContainText('there is nothing to retry here')
     const note = panel.getByLabel('Note to copy')
     await expect(note).toContainText(`Record: Contract Number ${problemDemo.store}`)
-    await expect(note).toContainText('File: appraisal.pdf')
+    await expect(note).toContainText(/Document: received \d+ \w+.*Vero document ID [0-9a-f-]{36}/)
+    await expect(note).not.toContainText('.pdf')
     await expect(note).not.toContainText('Olivia')
     await expect(visible(page, 'DOCUMENT_FINALIZATION_FAILED')).toHaveCount(0)
     if (isDesktop(testInfo)) {
@@ -600,11 +603,11 @@ async function auditChecks(page: Page, testInfo: TestInfo) {
   await expect(list).toBeVisible({ timeout: 15000 })
   const activity = page.getByLabel('Activity')
   const sentences: [string, RegExp][] = [
-    ['Opening and reading', /opened .+\.pdf/],
-    ['Downloads, prints and exports', /downloaded .+\.pdf/],
+    ['Opening and reading', /opened a document/],
+    ['Downloads, prints and exports', /downloaded a document/],
     ['Refused', /tried to .+ without permission/],
     ['Settings changes', /changed /],
-    ['Deliveries', /delivered \d+ documents?|sent .+\.pdf/],
+    ['Deliveries', /delivered \d+ documents?|sent a document/],
   ]
   for (const [group, sentence] of sentences) {
     await activity.selectOption({ label: group })
@@ -665,7 +668,9 @@ async function auditChecks(page: Page, testInfo: TestInfo) {
   const [download] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Export', exact: true }).click()])
   await expect(page.getByRole('status').filter({ hasText: 'The export is recorded in the audit.' })).toBeVisible({ timeout: 15000 })
   const csv = parseCsv(fs.readFileSync(await download.path()).toString('utf8').replace(/^﻿/, ''))
-  expect(csv[0]).toEqual(['When (UTC)', 'What happened', 'Person', 'Record', 'Result', 'Action code'])
+  // Task 0027 (0.4): the document's ID, level, received date and pages instead of a file name.
+  expect(csv[0]).toEqual(['When (UTC)', 'What happened', 'Person', 'Record', 'Result', 'Action code', 'Document ID', 'Level', 'Received (UTC)', 'Pages'])
+  expect(csv.flat().some((cell) => cell.toLowerCase().endsWith('.pdf')), 'no file name in the export').toBeFalsy()
   const rows = csv.slice(1)
   expect(rows.length, 'exported rows').toBeGreaterThanOrEqual(onScreen.length)
   expect(rows.every((r) => r[3] === titleRecord), 'every exported row is about the filtered record').toBeTruthy()

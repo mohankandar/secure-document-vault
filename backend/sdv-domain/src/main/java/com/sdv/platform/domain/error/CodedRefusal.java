@@ -34,6 +34,21 @@ public interface CodedRefusal {
         }
     }
 
+    /** Task 0027: nothing of this tenant has this reference (404). */
+    final class NotFound extends java.util.NoSuchElementException implements CodedRefusal {
+        private final SdvErrorCode errorCode;
+
+        public NotFound(SdvErrorCode errorCode, String message) {
+            super(message);
+            this.errorCode = errorCode;
+        }
+
+        @Override
+        public SdvErrorCode errorCode() {
+            return errorCode;
+        }
+    }
+
     /** A request that conflicts with what is already stored (409). */
     final class Conflict extends IllegalStateException implements CodedRefusal {
         private final SdvErrorCode errorCode;

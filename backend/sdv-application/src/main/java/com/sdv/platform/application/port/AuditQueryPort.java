@@ -12,21 +12,24 @@ public interface AuditQueryPort {
     List<AuditEvent> find(UUID tenantId, Filter filter, int limitPlusOne);
 
     /**
-     * Task 0011 Part C.3: the events with, for document events, the record number and file name looked up when the
-     * list is read (never stored in the audit). Implementations without the lookup return the events alone.
+     * Task 0011 Part C.3: the events with, for document events, the record number (the record's primary identifier)
+     * and the document's facts looked up when the list is read (never stored in the audit). Implementations without
+     * the lookup return the events alone.
      */
     default List<Row> findRows(UUID tenantId, Filter filter, int limitPlusOne) {
-        return find(tenantId, filter, limitPlusOne).stream().map(event -> new Row(event, null, null)).toList();
+        return find(tenantId, filter, limitPlusOne).stream().map(event -> new Row(event, null, null, null, null)).toList();
     }
 
     /**
      * document (task 0026): the document behind a document event, to work out its effective level; null when the
-     * event names no document. A file name without it is never shown (fail closed).
+     * event names no stored document. Task 0027 (0.4): admin views never show a file name, so none is read; the
+     * document is described by its received date and page count instead.
      */
-    record Row(AuditEvent event, String recordNumber, String filename,
-               com.sdv.platform.application.access.DocumentAccessGuard.DocumentLevelRef document) {
-        public Row(AuditEvent event, String recordNumber, String filename) {
-            this(event, recordNumber, filename, null);
+    record Row(AuditEvent event, String recordNumber,
+               com.sdv.platform.application.access.DocumentAccessGuard.DocumentLevelRef document,
+               Instant documentReceivedAt, Integer documentPageCount) {
+        public Row(AuditEvent event, String recordNumber) {
+            this(event, recordNumber, null, null, null);
         }
     }
 

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { FailureNotice, loadFailed, type Failure } from './CardError'
-import { Drawer, TechDetails, fmtDateTime } from './ui'
+import { Drawer, TechDetails, fmtDateTime, levelWords } from './ui'
 import { fmtWhen } from './opsWords'
 import { opsAudit, opsAuditExport, type OpsAuditEvent } from './liveApi'
 import { ApiRequestError } from '../api'
@@ -148,6 +148,11 @@ export function AuditLog() {
         <div><dt>When</dt><dd>{fmtDateTime(selected.occurredAt)}</dd></div>
         <div><dt>Result</dt><dd><span className={`v-dot ${selected.outcome === 'SUCCESS' ? 'g' : 'r'}`} aria-hidden />{RESULT_WORDS[selected.outcome] ?? selected.outcome}</dd></div>
         {selected.recordNumber && <div><dt>Record</dt><dd className="mono">{selected.recordNumber}</dd></div>}
+        {selected.documentId && <>
+          <div><dt>Level</dt><dd>{levelWords(selected.sensitivityLevel)}</dd></div>
+          <div><dt>Received</dt><dd>{fmtDateTime(selected.documentReceivedAt)}</dd></div>
+          <div><dt>Pages</dt><dd>{selected.documentPageCount ?? '—'}</dd></div>
+        </>}
       </dl>
       <TechDetails flat hint="action code, actor, target, IDs">
         <dl className="v-kv">

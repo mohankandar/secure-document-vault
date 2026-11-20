@@ -1,0 +1,8 @@
+databaseChangeLog:
+  - changeSet:
+      id: 026-legal-holds
+      author: sdv
+      changes:
+        - sqlFile:
+            path: db/changelog/026-legal-holds.sql
+            relativeToChangelogFile: false

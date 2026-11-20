@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Vero · Viewer for a Highly Confidential document</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&amp;family=IBM+Plex+Sans:wght@400;500;600;700&amp;display=swap">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{margin:0;font-family:'IBM Plex Sans',sans-serif;color:#14191c}
+.screen{width:100%;min-width:1280px;height:900px;background:#f3f5f4;overflow:hidden;display:flex;flex-direction:column;position:relative}
+.top{height:56px;background:#fff;border-bottom:1px solid #dce1e2;display:flex;align-items:center;padding:0 20px;gap:28px;flex:none}
+.brand{font-size:21px;font-weight:700;color:#166a4f;letter-spacing:-.5px;display:flex;align-items:flex-end;gap:3px}
+.brand i{width:7px;height:7px;border-radius:50%;background:#166a4f;margin-bottom:6px;display:block}
+.nav{display:flex;gap:4px}
+.nav a{font-size:15px;color:#4a5459;padding:7px 12px;border-radius:8px;text-decoration:none}
+.nav a.on{background:#e2efe9;color:#105a42;font-weight:500}
+.grow{flex:1}
+.acct{display:flex;align-items:center;gap:10px;padding:4px 10px 4px 4px;border:1px solid #dce1e2;border-radius:10px;background:#fff}
+.av{width:30px;height:30px;border-radius:50%;background:#166a4f;color:#fff;font-size:12px;font-weight:600;display:flex;align-items:center;justify-content:center;flex:none}
+.acct .who{display:flex;flex-direction:column;line-height:1.2}
+.acct .who b{font-size:13px;font-weight:600}
+.acct .who span{font-size:12px;color:#737d82}
+svg{flex:none}
+.btn{height:38px;border-radius:9px;border:1px solid #c3cacc;background:#fff;font-size:14px;font-weight:500;display:flex;align-items:center;gap:8px;padding:0 14px;color:#14191c;white-space:nowrap;font-family:inherit}
+.btn.primary{background:#166a4f;border-color:#166a4f;color:#fff}
+.btn.sm{height:32px;font-size:13px;padding:0 11px}
+.btn.quiet{border-color:transparent;background:transparent;color:#4a5459}
+.btn.danger{color:#9b2c22;border-color:#e6b7b1}
+.muted{color:#737d82}
+.lvl{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:600;border-radius:6px;padding:2px 8px;white-space:nowrap}
+.lvl.hc{background:#14191c;color:#fff}
+.vbar{height:56px;background:#fff;border-bottom:1px solid #dce1e2;display:flex;align-items:center;gap:12px;padding:0 16px;flex:none}
+.vt{display:flex;flex-direction:column;line-height:1.25}
+.vt b{font-size:15px;font-weight:600}
+.vt span{font-size:13px;color:#737d82}
+.sep{width:1px;height:24px;background:#dce1e2}
+.body{flex:1;display:flex;min-height:0}
+.vleft{width:200px;background:#fff;border-right:1px solid #dce1e2;padding:16px;display:flex;flex-direction:column;gap:14px;flex:none;align-items:center}
+.mini{width:72px;height:94px;background:#fff;border:1px solid #c3cacc;border-radius:3px;padding:9px 8px;display:flex;flex-direction:column;gap:3px}
+.mini i{display:block;height:2px;background:#cdd3d5}
+.mini.on{border:2px solid #166a4f}
+.pg{font-size:12px;color:#4a5459}
+.stage{flex:1;background:#e6eaea;display:flex;justify-content:center;padding:24px;position:relative;overflow:hidden}
+.page{width:600px;height:776px;background:#fff;box-shadow:0 2px 10px rgba(0,0,0,.1);padding:48px 52px;display:flex;flex-direction:column;gap:12px}
+.page h4{font-size:20px;font-weight:700;margin-bottom:8px;font-family:Georgia,serif}
+.page .ln{height:7px;background:#e3e6e7;border-radius:2px}
+.vright{width:360px;background:#fff;border-left:1px solid #dce1e2;display:flex;flex-direction:column;flex:none}
+.tabs{display:flex;gap:2px;padding:0 12px;border-bottom:1px solid #dce1e2;height:48px;align-items:flex-end}
+.tabs a{font-size:14px;color:#4a5459;padding:0 10px 12px;text-decoration:none;border-bottom:2px solid transparent}
+.tabs a.on{color:#14191c;font-weight:600;border-bottom-color:#166a4f}
+.pb{padding:18px;display:flex;flex-direction:column;gap:18px}
+h3{font-size:14px;font-weight:600}
+.kv{display:grid;grid-template-columns:110px 1fr;gap:10px 12px;font-size:14px}
+.kv dt{color:#737d82}
+.req{border:1px solid #dce1e2;border-radius:9px;padding:10px 12px;display:flex;flex-direction:column;gap:3px;font-size:13px}
+.req b{font-size:14px;font-weight:500}
+.st{font-size:12px;font-weight:500;border-radius:999px;padding:2px 9px;align-self:flex-start}
+.st.ok{background:#e2efe9;color:#105a42}
+.st.wait{background:#fdf0d5;color:#8a5300}
+.pop{position:absolute;background:#fff;border:1px solid #dce1e2;border-radius:12px;box-shadow:0 12px 32px rgba(0,0,0,.14);display:flex;flex-direction:column;gap:14px;padding:18px}
+.field{display:flex;flex-direction:column;gap:6px}
+.field label{font-size:13px;font-weight:500}
+.ta{min-height:76px;border:1px solid #c3cacc;border-radius:8px;padding:10px 12px;font-size:14px;line-height:1.45;font-family:inherit;color:#14191c;resize:none}
+.info{background:#f3f5f4;border-radius:9px;padding:10px 12px;font-size:13px;line-height:1.5;color:#4a5459}
+.role{display:inline-flex;align-items:center;gap:6px;padding:3px 10px 3px 8px;border:1px dashed #3b6fd4;background:#e8f0ff;border-radius:4px;font-size:12px;color:#1f3f80;font-weight:500;white-space:nowrap}
+.role b{font-size:11px;color:#3b6fd4;font-weight:600;letter-spacing:.04em}
+.tagpos{position:absolute;z-index:5}
+</style>
+</helmet>
+<div class="screen">
+  <span class="role tagpos" style="right:380px;top:118px"><b>SEEN BY</b> Restricted steward</span>
+  <div class="top">
+    <div class="brand">vero<i></i></div>
+    <div class="nav"><a>Home</a><a class="on">Records</a></div>
+    <div class="grow"></div>
+    <div class="acct"><div class="av" style="background:#5a3f7a">DR</div><div class="who"><b>Dana Ruiz</b><span>Acme Lending · Legal</span></div><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#737d82" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></div>
+  </div>
+  <div class="vbar">
+    <button class="btn quiet sm" aria-label="Back to record"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4a5459" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M19 12H5M11 6l-6 6 6 6"/></svg></button>
+    <div class="vt"><b>Settlement agreement · Jordan Ellis</b><span>300000000001 · 9 pages</span></div>
+    <span class="lvl hc"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>Highly Confidential</span>
+    <div class="grow"></div>
+    <button class="btn sm"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#4a5459" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>Find</button>
+    <button class="btn sm" style="border-color:#166a4f;box-shadow:0 0 0 2px #e2efe9">Request download</button>
+    <button class="btn sm">Request print</button>
+    <div class="sep"></div>
+    <button class="btn sm">Level <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#4a5459" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>
+    <button class="btn sm danger">Redact</button>
+  </div>
+  <div class="body">
+    <div class="vleft">
+      <div class="mini on"><i></i><i></i><i></i><i></i><i></i></div><span class="pg">1</span>
+      <div class="mini"><i></i><i></i><i></i><i></i><i></i></div><span class="pg">2</span>
+      <div class="mini"><i></i><i></i><i></i><i></i><i></i></div><span class="pg">3</span>
+    </div>
+    <div class="stage">
+      <div class="page"><h4>Settlement Agreement</h4><div class="ln" style="width:92%"></div><div class="ln" style="width:86%"></div><div class="ln" style="width:90%"></div><div class="ln" style="width:60%"></div><div style="height:10px"></div><div class="ln" style="width:94%"></div><div class="ln" style="width:88%"></div><div class="ln" style="width:91%"></div><div class="ln" style="width:72%"></div><div style="height:10px"></div><div class="ln" style="width:90%"></div><div class="ln" style="width:84%"></div><div class="ln" style="width:52%"></div></div>
+      <div class="pop" style="right:24px;top:12px;width:380px">
+        <div style="display:flex;justify-content:space-between;align-items:center"><span style="font-size:16px;font-weight:600">Request a download</span><button class="btn quiet sm" aria-label="Close"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4a5459" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button></div>
+        <div class="field"><label for="why">Why do you need it?</label><textarea id="why" class="ta">Outside counsel needs a copy for the hearing on 2 December.</textarea></div>
+        <div class="info">A Business admin approves it. Once approved, you can download this document once, within 24 hours. Every step is recorded.</div>
+        <div style="display:flex;gap:10px;justify-content:flex-end"><button class="btn sm">Cancel</button><button class="btn sm primary">Send request</button></div>
+      </div>
+    </div>
+    <div class="vright">
+      <div class="tabs"><a class="on">Details</a><a>Requests</a></div>
+      <div class="pb">
+        <dl class="kv"><dt>Borrower</dt><dd>Jordan Ellis</dd><dt>Received</dt><dd>14 Nov 2026</dd><dt>Sensitivity</dt><dd><span class="lvl hc">Highly Confidential</span></dd><dt>Set by</dt><dd>Sending system</dd></dl>
+        <div style="display:flex;flex-direction:column;gap:8px"><h3>Your requests</h3>
+          <div class="req"><b>Print</b><span class="muted">Sent today 09:40 · "Board pack for legal review"</span><span class="st ok">Approved · use by tomorrow 10:12</span></div>
+          <div class="req"><b>Lower to Confidential</b><span class="muted">Sent yesterday · "Case closed"</span><span class="st wait">Waiting for approval</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+renderVals() {
+return {};
+}
+}
+</script>
+</body>
+</html>

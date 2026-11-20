@@ -1,4 +1,4 @@
-import { roleApi, contentBinary, type SessionInfo, type SearchSchema, type SearchResponse, type BusinessRecord, type RecordSummary, type SearchSource } from '../api'
+import { roleApi, contentBinary, type SessionInfo, type SearchSchema, type SearchResponse, type BusinessRecord, type RecordSummary, type SearchSource, type SensitivityLevel } from '../api'
 import type { Field, Source, RecordItem, Doc } from './model'
 
 export const session = () => roleApi<SessionInfo>('/api/v1/session', 'business')
@@ -139,20 +139,22 @@ export const identityOverview=()=>roleApi<IdentityOverview>('/api/v1/admin/enter
 /** databaseSchema: checked once when Vero started. state CURRENT, OLDER, NEWER or UNREACHABLE; message is the plain sentence. */
 export type SystemInfo={productName:string;version:string;status:string;activeProfiles:string[];timestamp:string;databaseSchema?:{state:string;message:string}}
 export const systemInfo=(role:'tenantIt'|'platform'='tenantIt')=>roleApi<SystemInfo>('/api/v1/system/info',role)
-export type OpsDetail=OpSummary & {storageVolumes:{volumeId:string;displayName:string;state:string;health:string;usedPercent:number|null;writable:boolean;warningThresholdReached:boolean;stopWriteThresholdReached:boolean;observationError:string|null;rootPath?:string;priority?:number;warningPercent?:number;stopWritePercent?:number;totalBytes?:number|null;usableBytes?:number|null;observedAt?:string|null}[];processingFailures:{documentId:string;submissionId:string;sourceId:string;errorCode:string;processingAttemptCount:number;ingestedAt:string;originalFilename?:string|null}[];stuckDocuments:{documentId:string;submissionId:string;status:string;stateSince:string;processingErrorCode:string|null;originalFilename?:string|null}[];attentionSubmissions:{submissionId:string;sourceSubmissionId:string;status:string;expectedDocumentCount:number;receivedDocumentCount:number;lastActivityAt:string;attentionHours:number;sourceId?:string}[];
+export type OpsDetail=OpSummary & {storageVolumes:{volumeId:string;displayName:string;state:string;health:string;usedPercent:number|null;writable:boolean;warningThresholdReached:boolean;stopWriteThresholdReached:boolean;observationError:string|null;rootPath?:string;priority?:number;warningPercent?:number;stopWritePercent?:number;totalBytes?:number|null;usableBytes?:number|null;observedAt?:string|null}[];processingFailures:{documentId:string;submissionId:string;sourceId:string;errorCode:string;processingAttemptCount:number;ingestedAt:string;
+  /** Task 0027 (0.4): never a file name; the effective level (null if unknown) and the page count instead. */ pageCount?:number|null;sensitivityLevel?:SensitivityLevel|null}[];stuckDocuments:{documentId:string;submissionId:string;status:string;stateSince:string;processingErrorCode:string|null;ingestedAt?:string;pageCount?:number|null;sensitivityLevel?:SensitivityLevel|null}[];attentionSubmissions:{submissionId:string;sourceSubmissionId:string;status:string;expectedDocumentCount:number;receivedDocumentCount:number;lastActivityAt:string;attentionHours:number;sourceId?:string}[];
   /** Task 0011: by submission ID, the record and sending system behind each problem. */
   problemRecords?:Record<string,{recordNumber:string|null;recordNumberLabel:string|null;recordTitle:string|null;sourceName:string|null}>}
 /** Tenant IT reads the same summary for its read-only Problems tab. */
 export const opsDetail=(role:'platform'|'tenantIt'='platform')=>roleApi<OpsDetail>('/api/v1/operations/summary',role)
 export type OpsAuditEvent={auditEventId:string;occurredAt:string;action:string;outcome:string;actorId:string;actorType:string;targetType:string;targetId:string;correlationId:string|null;safeDetailsJson:string|null;
   /** Null for events before migration 020 (show actorId). */ actorDisplayName?:string|null;
-  /** Document events: looked up when the list is read. */ recordNumber?:string|null;filename?:string|null}
+  /** Document events: looked up when the list is read. recordNumber is the record's primary identifier. */ recordNumber?:string|null;
+  /** Task 0027 (0.4): never a file name. The document instead: ID (support only), effective level, received date, pages. */ documentId?:string|null;sensitivityLevel?:SensitivityLevel|null;documentReceivedAt?:string|null;documentPageCount?:number|null}
 export const opsAudit=(cursor?:string,filters?:{action?:string;outcome?:string;actorId?:string;actorType?:string;targetType?:string;targetId?:string;correlationId?:string;from?:string;to?:string;recordNumber?:string},limit=50)=>{const p=new URLSearchParams({limit:String(limit)});if(cursor)p.set('cursor',cursor);for(const [k,v] of Object.entries(filters??{}))if(v)p.set(k,v);return roleApi<{events:OpsAuditEvent[];nextCursor:string|null;hasMore:boolean}>('/api/v1/operations/audit-events?'+p.toString(),'platform')}
 /** Task 0011 export: the server builds the CSV from the list's filters (plus the activity group and hidden routine codes) and records the export. */
 export const opsAuditExport=(filters:Record<string,string|undefined>,actions?:string[],excludeActions?:string[])=>{const p=new URLSearchParams();for(const [k,v] of Object.entries(filters))if(v)p.set(k,v);if(actions?.length)p.set('actions',actions.join(','));if(excludeActions?.length)p.set('excludeActions',excludeActions.join(','));return contentBinary('/api/v1/operations/audit-events/export?'+p.toString(),'platform')}
 /** The last automatic cleanup run since the server started (kept in memory; the server reports no schedule). */
 /** nextRunAt (task 0023): when the next cleanup run is due, from the scheduler's own setting; null when the server can't say. */
-export type OpsRetention={outcome:'SUCCESS'|'FAILED'|'NEVER_RUN'|string;startedAt:string|null;completedAt:string|null;candidates:number;deleted:number;failed:number;reasonCode:string|null;nextRunAt?:string|null}
+export type OpsRetention={outcome:'SUCCESS'|'FAILED'|'NEVER_RUN'|string;startedAt:string|null;completedAt:string|null;candidates:number;deleted:number;failed:number;/** Task 0027: due documents the run kept because they are on legal hold. */ heldSkipped?:number;reasonCode:string|null;nextRunAt?:string|null}
 export const opsRetention=()=>roleApi<OpsRetention>('/api/v1/operations/retention-status','platform')
 
 /** Thresholds left out use the tenant's standard warning and stop levels. */

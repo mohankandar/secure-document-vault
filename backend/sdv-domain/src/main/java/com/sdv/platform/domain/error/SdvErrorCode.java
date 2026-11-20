@@ -33,7 +33,23 @@ public enum SdvErrorCode {
     /** Task 0025: a sign-in was refused because its roles can never be held together and no other role was left. */
     ROL_004("SDV-ROL-004"),
     /** Task 0025: a sign-in was refused because its role conflict couldn't be recorded. */
-    ROL_005("SDV-ROL-005");
+    ROL_005("SDV-ROL-005"),
+    /** Task 0027: finding, placing, releasing or listing legal holds needs MANAGE_LEGAL_HOLD (Business Admin) (403). */
+    HLD_001("SDV-HLD-001"),
+    /** Task 0027: a legal hold's reason is missing, shorter than 3 or longer than 500 characters (400). */
+    HLD_002("SDV-HLD-002"),
+    /** Task 0027: the record identifier to look documents up by is missing or longer than 300 characters (400). */
+    HLD_003("SDV-HLD-003"),
+    /** Task 0027: no document of this tenant has this reference (404). */
+    HLD_004("SDV-HLD-004"),
+    /** Task 0027: the document is already on legal hold (409). */
+    HLD_005("SDV-HLD-005"),
+    /** Task 0027: the retention cleanup deleted the document, or is deleting it, so it can't be held (409). */
+    HLD_006("SDV-HLD-006"),
+    /** Task 0027: no legal hold of this tenant has this reference (404). */
+    HLD_007("SDV-HLD-007"),
+    /** Task 0027: the legal hold was already released (409). */
+    HLD_008("SDV-HLD-008");
 
     private final String code;
 

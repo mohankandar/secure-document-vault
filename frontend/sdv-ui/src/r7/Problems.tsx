@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { ChevronRight } from 'lucide-react'
 import { FailureNotice, loadFailed, type Failure } from './CardError'
-import { Badge, Callout, Drawer, TechDetails, fmtDateTime, fmtRel } from './ui'
+import { Badge, Callout, Drawer, TechDetails, fmtDateTime, fmtRel, levelWords } from './ui'
 import { opsDetail, type OpsDetail } from './liveApi'
 import { problemNote, problemSentences, type ProblemFacts, type ProblemKind } from './problemWords'
 
@@ -16,14 +16,14 @@ const FILTERS: { id: 'all' | ProblemKind; label: string }[] = [
 export function toProblems(d: OpsDetail): Problem[] {
   const rec = (submissionId: string) => d.problemRecords?.[submissionId]
   const store: Problem[] = d.processingFailures.map((f) => ({
-    id: `store-${f.documentId}`, kind: 'store', file: f.originalFilename, at: f.ingestedAt, errorCode: f.errorCode, attempts: f.processingAttemptCount,
+    id: `store-${f.documentId}`, kind: 'store', documentId: f.documentId, receivedAt: f.ingestedAt, pages: f.pageCount, level: f.sensitivityLevel, at: f.ingestedAt, errorCode: f.errorCode, attempts: f.processingAttemptCount,
     source: rec(f.submissionId)?.sourceName, recordNumber: rec(f.submissionId)?.recordNumber, recordLabel: rec(f.submissionId)?.recordNumberLabel, title: rec(f.submissionId)?.recordTitle,
-    tech: [['Error code', f.errorCode], ['Attempts', String(f.processingAttemptCount)], ['Document', f.documentId], ['Submission', f.submissionId], ['Sending system', f.sourceId], ['Received', fmtDateTime(f.ingestedAt)]],
+    tech: [['Error code', f.errorCode], ['Attempts', String(f.processingAttemptCount)], ['Document', f.documentId], ['Level', levelWords(f.sensitivityLevel)], ['Pages', f.pageCount ? String(f.pageCount) : '—'], ['Submission', f.submissionId], ['Sending system', f.sourceId], ['Received', fmtDateTime(f.ingestedAt)]],
   }))
   const stuck: Problem[] = d.stuckDocuments.map((s) => ({
-    id: `stuck-${s.documentId}`, kind: 'stuck', file: s.originalFilename, at: s.stateSince, status: s.status,
+    id: `stuck-${s.documentId}`, kind: 'stuck', documentId: s.documentId, receivedAt: s.ingestedAt, pages: s.pageCount, level: s.sensitivityLevel, at: s.stateSince, status: s.status,
     source: rec(s.submissionId)?.sourceName, recordNumber: rec(s.submissionId)?.recordNumber, recordLabel: rec(s.submissionId)?.recordNumberLabel, title: rec(s.submissionId)?.recordTitle,
-    tech: [['State', s.status], ['Error code', s.processingErrorCode ?? '—'], ['Document', s.documentId], ['Submission', s.submissionId], ['Since', fmtDateTime(s.stateSince)]],
+    tech: [['State', s.status], ['Error code', s.processingErrorCode ?? '—'], ['Document', s.documentId], ['Level', levelWords(s.sensitivityLevel)], ['Pages', s.pageCount ? String(s.pageCount) : '—'], ['Submission', s.submissionId], ['Received', s.ingestedAt ? fmtDateTime(s.ingestedAt) : '—'], ['Since', fmtDateTime(s.stateSince)]],
   }))
   const missing: Problem[] = d.attentionSubmissions.map((a) => ({
     id: `missing-${a.submissionId}`, kind: 'missing', at: a.lastActivityAt, expected: a.expectedDocumentCount, received: a.receivedDocumentCount,

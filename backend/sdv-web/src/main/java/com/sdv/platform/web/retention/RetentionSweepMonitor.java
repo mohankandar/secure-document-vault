@@ -42,12 +42,13 @@ public class RetentionSweepMonitor {
     }
 
     public void success(Instant startedAt, Instant completedAt, RetentionDeletionService.SweepResult result) {
-        last.set(new Status("SUCCESS", startedAt, completedAt, result.candidates(), result.completed(), result.failed(), null, null));
+        last.set(new Status("SUCCESS", startedAt, completedAt, result.candidates(), result.completed(), result.failed(),
+                result.heldSkipped(), null, null));
         running.set(false);
     }
 
     public void failure(Instant startedAt, Instant completedAt) {
-        last.set(new Status("FAILED", startedAt, completedAt, 0, 0, 1, "RETENTION_SWEEP_FAILED", null));
+        last.set(new Status("FAILED", startedAt, completedAt, 0, 0, 1, 0, "RETENTION_SWEEP_FAILED", null));
         running.set(false);
     }
 
@@ -61,12 +62,13 @@ public class RetentionSweepMonitor {
         return schedule.next(clock.instant());
     }
 
+    /** heldSkipped (task 0027): documents due for deletion that the run kept because they are on legal hold. */
     public record Status(String outcome, Instant startedAt, Instant completedAt, int candidates, int deleted, int failed,
-                         String reasonCode, Instant nextRunAt) {
-        static Status never() { return new Status("NEVER_RUN", null, null, 0, 0, 0, null, null); }
+                         long heldSkipped, String reasonCode, Instant nextRunAt) {
+        static Status never() { return new Status("NEVER_RUN", null, null, 0, 0, 0, 0, null, null); }
 
         Status withNextRunAt(Instant next) {
-            return new Status(outcome, startedAt, completedAt, candidates, deleted, failed, reasonCode, next);
+            return new Status(outcome, startedAt, completedAt, candidates, deleted, failed, heldSkipped, reasonCode, next);
         }
     }
 }

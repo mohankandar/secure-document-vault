@@ -51,7 +51,7 @@ public class OperationsController {
     @GetMapping("/summary")
     public OperationsService.OperationsSummary summary() {
         SdvPrincipal principal = requireTechnicalView();
-        return operations.summary(principal.tenantId(), authorization.clearance(principal));
+        return operations.summary(principal.tenantId());
     }
 
     @GetMapping("/retention-status")
@@ -77,8 +77,7 @@ public class OperationsController {
         SdvPrincipal principal = requireTechnicalView();
         return audit.search(principal.tenantId(), principal.subject(),
                 new AuditQueryService.SearchRequest(action, outcome, actorType, actorId, targetType, targetId,
-                        correlationId, from, to, limit, cursor, recordNumber), correlationId(),
-                authorization.clearance(principal));
+                        correlationId, from, to, limit, cursor, recordNumber), correlationId());
     }
 
     /**
@@ -104,7 +103,7 @@ public class OperationsController {
         AuditQueryService.AuditExport export = audit.export(principal.tenantId(), principal.subject(),
                 new AuditQueryService.ExportRequest(new AuditQueryService.SearchRequest(action, outcome, actorType, actorId,
                         targetType, targetId, correlationId, from, to, null, null, recordNumber), actions, excludeActions),
-                correlationId(), authorization.clearance(principal));
+                correlationId());
         String filename = "vero-audit-" + DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss").withZone(ZoneOffset.UTC).format(Instant.now()) + ".csv";
         return ResponseEntity.ok()
                 .contentType(new MediaType("text", "csv", StandardCharsets.UTF_8))

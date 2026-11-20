@@ -69,7 +69,7 @@ public class FoundationExceptionHandler {
     @ExceptionHandler(NoSuchElementException.class)
     @ResponseStatus(HttpStatus.NOT_FOUND)
     Map<String, Object> notFound(NoSuchElementException ex) {
-        return error("NOT_FOUND", ex.getMessage());
+        return error(code(ex, "NOT_FOUND"), ex.getMessage());
     }
 
     /** Task 0026: a coded 403 (for example SDV-SEN-008, a restricted document). Its message names nothing else. */

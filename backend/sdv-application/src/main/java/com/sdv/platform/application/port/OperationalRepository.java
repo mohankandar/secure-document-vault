@@ -1,5 +1,7 @@
 package com.sdv.platform.application.port;
 
+import com.sdv.platform.domain.document.SensitivityLevel;
+
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
@@ -16,6 +18,13 @@ public interface OperationalRepository {
     long countAttentionSubmissions(UUID tenantId, Instant now);
     List<AttentionSubmission> findAttentionSubmissions(UUID tenantId, Instant now, int limit);
 
+    /*
+     * Task 0027 (0.4, separation rule 4): Problems never show a file name, at any level, so none is read. A document
+     * is named by its record's primary identifier (problemRecords), its document ID, its effective level
+     * (sensitivityLevel, set by OperationsService; null when it couldn't be worked out), its received date and its
+     * page count (null until the document is stored).
+     */
+
     record ProcessingFailure(
             UUID documentId,
             UUID submissionId,
@@ -23,17 +32,11 @@ public interface OperationalRepository {
             String errorCode,
             int processingAttemptCount,
             Instant ingestedAt,
-            String originalFilename,
-            /* Task 0026: the document's own level, to work out its effective level; not sent to the screen. */
-            @com.fasterxml.jackson.annotation.JsonIgnore com.sdv.platform.domain.document.SensitivityLevel sensitivityLevel) {
-        public ProcessingFailure(UUID documentId, UUID submissionId, UUID sourceId, String errorCode,
-                                 int processingAttemptCount, Instant ingestedAt, String originalFilename) {
-            this(documentId, submissionId, sourceId, errorCode, processingAttemptCount, ingestedAt, originalFilename, null);
-        }
-
-        public ProcessingFailure withoutFilename() {
+            Integer pageCount,
+            SensitivityLevel sensitivityLevel) {
+        public ProcessingFailure withLevel(SensitivityLevel level) {
             return new ProcessingFailure(documentId, submissionId, sourceId, errorCode, processingAttemptCount,
-                    ingestedAt, null, sensitivityLevel);
+                    ingestedAt, pageCount, level);
         }
     }
 
@@ -44,17 +47,12 @@ public interface OperationalRepository {
             String status,
             Instant stateSince,
             String processingErrorCode,
-            String originalFilename,
-            /* Task 0026: as ProcessingFailure.sensitivityLevel. */
-            @com.fasterxml.jackson.annotation.JsonIgnore com.sdv.platform.domain.document.SensitivityLevel sensitivityLevel) {
-        public StuckDocument(UUID documentId, UUID submissionId, UUID sourceId, String status, Instant stateSince,
-                             String processingErrorCode, String originalFilename) {
-            this(documentId, submissionId, sourceId, status, stateSince, processingErrorCode, originalFilename, null);
-        }
-
-        public StuckDocument withoutFilename() {
+            Instant ingestedAt,
+            Integer pageCount,
+            SensitivityLevel sensitivityLevel) {
+        public StuckDocument withLevel(SensitivityLevel level) {
             return new StuckDocument(documentId, submissionId, sourceId, status, stateSince, processingErrorCode,
-                    null, sensitivityLevel);
+                    ingestedAt, pageCount, level);
         }
     }
 

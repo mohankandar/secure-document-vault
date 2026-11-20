@@ -126,26 +126,61 @@ public class JdbcRetentionRepository implements RetentionRepository {
                 .addValue("createdAt", Timestamp.from(policy.createdAt())));
     }
 
+    /** Task 0027: the document has a legal hold in place (uq_legal_holds_active covers this lookup). */
+    static final String ACTIVE_HOLD = """
+            select 1 from legal_holds h
+             where h.tenant_id=documents.tenant_id and h.document_id=documents.document_id and h.released_at is null""";
+
+    /** Due for deletion by retention, as findDueDocuments and claimDueDocument see it, apart from holds. */
+    private static final String DUE = """
+                   expires_at is not null
+                   and expires_at <= current_timestamp
+                   and status in ('RECEIVED','PROCESSING','AVAILABLE','PROCESSING_FAILED','RETENTION_DELETING')
+            """;
+
     @Override
     public List<DueDocument> findDueDocuments(int limit) {
+        // Task 0027: a document on legal hold is never a candidate.
         return jdbc.query("""
                 select tenant_id, document_id
                   from documents
-                 where expires_at is not null
-                   and expires_at <= current_timestamp
-                   and status in ('RECEIVED','PROCESSING','AVAILABLE','PROCESSING_FAILED','RETENTION_DELETING')
+                 where %s
+                   and not exists (%s)
                  order by case when status='RETENTION_DELETING' then 0 else 1 end,
                           expires_at,
                           document_id
                  limit :limit
-                """, new MapSqlParameterSource("limit", limit),
+                """.formatted(DUE, ACTIVE_HOLD), new MapSqlParameterSource("limit", limit),
                 (rs, rowNum) -> new DueDocument(
                         rs.getObject("tenant_id", UUID.class),
                         rs.getObject("document_id", UUID.class)));
     }
 
     @Override
+    public long countHeldDueDocuments() {
+        Long count = jdbc.queryForObject("""
+                select count(*)
+                  from documents
+                 where %s
+                   and exists (%s)
+                """.formatted(DUE, ACTIVE_HOLD), new MapSqlParameterSource(), Long.class);
+        return count == null ? 0L : count;
+    }
+
+    /**
+     * Task 0027: the caller runs this in one transaction. The document row is locked first, then the claim is a new
+     * statement, so it sees every legal hold committed before the lock was granted. Placing a hold takes the same lock
+     * (JdbcLegalHoldRepository.lockDocument), so a hold and a claim can't pass each other: a hold placed first stops
+     * the claim; a claim made first makes the hold refuse (the document is being deleted).
+     */
+    @Override
     public boolean claimDueDocument(UUID tenantId, UUID documentId, Instant startedAt) {
+        List<UUID> locked = jdbc.query("""
+                select document_id from documents
+                 where tenant_id=:tenantId and document_id=:documentId
+                 for update
+                """, params(tenantId, documentId), (rs, rowNum) -> rs.getObject("document_id", UUID.class));
+        if (locked.isEmpty()) return false;
         int updated = jdbc.update("""
                 update documents
                    set status='RETENTION_DELETING',
@@ -165,7 +200,8 @@ public class JdbcRetentionRepository implements RetentionRepository {
                             )
                         )
                    )
-                """, new MapSqlParameterSource()
+                   and not exists (%s)
+                """.formatted(ACTIVE_HOLD), new MapSqlParameterSource()
                 .addValue("tenantId", tenantId)
                 .addValue("documentId", documentId)
                 .addValue("startedAt", Timestamp.from(startedAt)));

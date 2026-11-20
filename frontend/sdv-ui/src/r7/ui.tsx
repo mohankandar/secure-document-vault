@@ -264,3 +264,11 @@ export function TechDetails({ hint, flat, children }: { hint?: string; flat?: bo
 export function Banner({ tone = 'warn', lead, children }: { tone?: 'warn' | 'bad' | 'ok' | 'info'; lead: ReactNode; children?: ReactNode }) {
   return <div className={`v-banner ${tone}`} role={tone === 'bad' ? 'alert' : undefined}><b>{lead}</b>{children && <> {children}</>}</div>
 }
+
+/** Task 0027 (0.4): a sensitivity level in words, for admin views that describe a document without its file name. */
+export function levelWords(level: string | null | undefined): string {
+  if (level === 'STANDARD') return 'Standard'
+  if (level === 'CONFIDENTIAL') return 'Confidential'
+  if (level === 'HIGHLY_CONFIDENTIAL') return 'Highly Confidential'
+  return 'Not known'
+}

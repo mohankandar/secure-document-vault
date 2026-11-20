@@ -113,3 +113,63 @@ Every refusal listed here comes back with a short, stable `code` and a plain `me
 - **Meaning:** the sign-in named roles that can never be held together, and Vero could not record the conflict (for example the database was unavailable). A conflict is never left unrecorded, so the sign-in was refused.
 - **What the user should do:** try again in a few minutes. If it keeps happening, ask your IT team to take you out of one of the two groups.
 - **What support should tell the customer:** Vero could not write to its database at that moment. Check the server's health. The person is also in two groups that can't be held together; their IT team should fix that too.
+
+## Legal hold (HLD)
+
+Sent by the Business Admin's legal-hold endpoints, `/api/v1/admin/legal-holds` (task 0027). A document on legal hold is never deleted by the daily retention cleanup; corrective redaction still works on it.
+
+### SDV-HLD-001: legal holds need the Business Admin
+
+- **HTTP status:** 403. Sent by every legal-hold endpoint: find documents (`GET /api/v1/admin/legal-holds/documents`), list holds (`GET /api/v1/admin/legal-holds`), place (`POST /api/v1/admin/legal-holds`) and release (`POST /api/v1/admin/legal-holds/{holdId}/release`).
+- **Meaning:** the person's role does not include managing legal holds. Only the Business Admin has it, and Roles & permissions can't give it to anyone else. Nothing was read or changed. The refusal is audited as `AUTHORIZATION_DENIED` (capability `MANAGE_LEGAL_HOLD`).
+- **What the user should do:** ask a Business Admin to place or release the hold.
+- **What support should tell the customer:** this is working as intended. Legal holds are a Business Admin task. Role membership comes from the customer's own sign-in groups, so a change is made there by their IT team, not in Vero.
+
+### SDV-HLD-002: reason missing or the wrong length
+
+- **HTTP status:** 400. Sent by place hold (`POST /api/v1/admin/legal-holds`).
+- **Meaning:** the hold's `reason` is missing, or shorter than 3 or longer than 500 characters once spaces at either end are removed. Nothing was stored.
+- **What the user should do:** write why the document must be kept (for example the case or inquiry it belongs to), in 3 to 500 characters, and place the hold again.
+- **What support should tell the customer:** every hold needs a reason so the audit shows why a document was kept. Ask them to give one of 3 to 500 characters.
+
+### SDV-HLD-003: identifier missing or too long
+
+- **HTTP status:** 400. Sent by find documents (`GET /api/v1/admin/legal-holds/documents?identifier=…`).
+- **Meaning:** `identifier` is missing, blank or longer than 300 characters. Nothing was looked up.
+- **What the user should do:** enter the record's identifier (for example the contract or patient number) and look again.
+- **What support should tell the customer:** documents are found by the record's primary identifier, the same number shown as the record elsewhere. Ask them to enter it.
+
+### SDV-HLD-004: no such document
+
+- **HTTP status:** 404. Sent by place hold (`POST /api/v1/admin/legal-holds`).
+- **Meaning:** `documentId` is missing, is not a document reference, or names no document of the person's own organization. Nothing was stored.
+- **What the user should do:** find the document again by its record's identifier and place the hold from there.
+- **What support should tell the customer:** the reference sent doesn't match a document of theirs. A screen or script may be using a stale or mistyped reference; finding the record again gives the right one.
+
+### SDV-HLD-005: already on legal hold
+
+- **HTTP status:** 409. Sent by place hold (`POST /api/v1/admin/legal-holds`).
+- **Meaning:** the document already has a legal hold in place. A document has at most one hold at a time. Nothing was stored.
+- **What the user should do:** nothing; the document is already kept. To change the reason, release the hold and place a new one.
+- **What support should tell the customer:** the document is already protected. The list of holds in place shows who placed it, when and why.
+
+### SDV-HLD-006: document deleted or being deleted
+
+- **HTTP status:** 409. Sent by place hold (`POST /api/v1/admin/legal-holds`).
+- **Meaning:** the retention cleanup has already deleted the document, or has started deleting it, so it can't be held. Nothing was stored.
+- **What the user should do:** nothing in Vero can bring the document back. If it is still needed, ask the sending system's team whether they can send it again.
+- **What support should tell the customer:** the document's retention period had ended and the cleanup removed it (or was removing it) before the hold was placed. The audit shows when (`DOCUMENT_RETENTION_DELETED`). A hold must be placed before the retention date to keep a document.
+
+### SDV-HLD-007: no such legal hold
+
+- **HTTP status:** 404. Sent by release hold (`POST /api/v1/admin/legal-holds/{holdId}/release`).
+- **Meaning:** `holdId` is not a hold reference, or names no hold of the person's own organization. Nothing was changed.
+- **What the user should do:** open the list of holds in place again and release the hold from there.
+- **What support should tell the customer:** the reference sent doesn't match a hold of theirs. The list of holds in place gives the right one.
+
+### SDV-HLD-008: legal hold already released
+
+- **HTTP status:** 409. Sent by release hold (`POST /api/v1/admin/legal-holds/{holdId}/release`).
+- **Meaning:** the hold was already released (perhaps by someone else a moment earlier). Nothing was changed.
+- **What the user should do:** nothing; the hold is no longer in place. Reload the list of holds.
+- **What support should tell the customer:** the hold was already released; the audit shows who released it and when (`LEGAL_HOLD_RELEASED`). The document will be deleted at the next daily cleanup if its retention date has passed.

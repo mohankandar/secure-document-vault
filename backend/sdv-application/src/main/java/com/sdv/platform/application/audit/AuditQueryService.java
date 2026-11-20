@@ -2,12 +2,12 @@ package com.sdv.platform.application.audit;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.sdv.platform.application.access.Clearance;
 import com.sdv.platform.application.access.DocumentAccessGuard;
 import com.sdv.platform.application.port.AuditEventPort;
 import com.sdv.platform.application.port.AuditQueryPort;
 import com.sdv.platform.domain.audit.AuditEvent;
 import com.sdv.platform.domain.audit.AuditOutcome;
+import com.sdv.platform.domain.document.SensitivityLevel;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -56,8 +56,7 @@ public class AuditQueryService {
     public AuditPage search(UUID tenantId,
                             String actorId,
                             SearchRequest request,
-                            String correlationId,
-                            Clearance clearance) {
+                            String correlationId) {
         if (tenantId == null) throw new IllegalArgumentException("tenantId is required.");
         SearchRequest safe = request == null ? new SearchRequest(null, null, null, null, null, null, null, null, null, null, null, null) : request;
         int limit = safe.limit() == null ? DEFAULT_LIMIT : safe.limit();
@@ -82,8 +81,7 @@ public class AuditQueryService {
                 AuditOutcome.SUCCESS,
                 "{\"resultCount\":" + page.size() + ",\"filtered\":" + hasAnyFilter(safe) + "}"));
 
-        return new AuditPage(withoutRestrictedNames(tenantId, page, clearance).stream().map(AuditEntry::from).toList(),
-                nextCursor, hasMore);
+        return new AuditPage(entries(tenantId, page), nextCursor, hasMore);
     }
 
     /**
@@ -93,8 +91,7 @@ public class AuditQueryService {
      * and nothing is exported. The export is recorded as AUDIT_EXPORTED with the filters and the row count before the
      * file is handed back; if that record can't be written, nothing is exported (fail closed).
      */
-    public AuditExport export(UUID tenantId, String actorId, ExportRequest request, String correlationId,
-                              Clearance clearance) {
+    public AuditExport export(UUID tenantId, String actorId, ExportRequest request, String correlationId) {
         if (tenantId == null) throw new IllegalArgumentException("tenantId is required.");
         if (request == null) throw new IllegalArgumentException("export filters are required.");
         SearchRequest search = request.search() == null
@@ -108,7 +105,7 @@ public class AuditQueryService {
 
         List<AuditQueryPort.Row> rows = query.findRows(tenantId, filter(search, null, actions, excluded), EXPORT_MAX_ROWS + 1);
         if (rows.size() > EXPORT_MAX_ROWS) throw new ExportTooLargeException(EXPORT_TOO_BIG);
-        List<AuditEntry> entries = withoutRestrictedNames(tenantId, rows, clearance).stream().map(AuditEntry::from).toList();
+        List<AuditEntry> entries = entries(tenantId, rows);
         byte[] csv = AuditCsv.write(entries);
 
         Map<String, Object> details = new LinkedHashMap<>();
@@ -123,23 +120,18 @@ public class AuditQueryService {
     }
 
     /**
-     * Task 0026: a document event keeps its file name only when this person could open the document at its effective
-     * level. Otherwise the name is left out and the event reads "a document". A name with no document to check is
-     * left out too.
+     * Task 0027 (0.4, separation rule 4): admin views never show a file name, at any level. A document event names
+     * its document by the record's primary identifier (recordNumber), the document ID, its effective level, its
+     * received date and its page count.
      */
-    private List<AuditQueryPort.Row> withoutRestrictedNames(UUID tenantId, List<AuditQueryPort.Row> rows, Clearance clearance) {
-        java.util.Objects.requireNonNull(clearance, "clearance");
+    private List<AuditEntry> entries(UUID tenantId, List<AuditQueryPort.Row> rows) {
         List<DocumentAccessGuard.DocumentLevelRef> refs = rows.stream()
-                .filter(row -> row.filename() != null && row.document() != null)
                 .map(AuditQueryPort.Row::document)
+                .filter(java.util.Objects::nonNull)
                 .toList();
-        Map<UUID, com.sdv.platform.domain.document.SensitivityLevel> levels = refs.isEmpty() ? Map.of()
-                : access.effectiveLevels(tenantId, refs);
-        return rows.stream().map(row -> {
-            if (row.filename() == null) return row;
-            boolean visible = row.document() != null && clearance.canOpen(levels.get(row.document().documentId()));
-            return visible ? row : new AuditQueryPort.Row(row.event(), row.recordNumber(), null, row.document());
-        }).toList();
+        Map<UUID, SensitivityLevel> levels = refs.isEmpty() ? Map.of() : access.effectiveLevels(tenantId, refs);
+        return rows.stream().map(row -> AuditEntry.from(row,
+                row.document() == null ? null : levels.get(row.document().documentId()))).toList();
     }
 
     private static Map<String, Object> appliedFilters(SearchRequest s, Set<String> actions, Set<String> excluded) {
@@ -278,14 +270,25 @@ public class AuditQueryService {
             String safeDetailsJson,
             /* Null for events before migration 020: show actorId. */
             String actorDisplayName,
-            /* Document events: looked up when the list is read. */
+            /* Document events: looked up when the list is read. recordNumber is the record's primary identifier. */
             String recordNumber,
-            String filename) {
-        static AuditEntry from(AuditQueryPort.Row row) {
+            /* Task 0027 (0.4): the document instead of its file name, null when the event names no stored document.
+               documentId is for support; sensitivityLevel is the effective level. */
+            UUID documentId,
+            SensitivityLevel sensitivityLevel,
+            Instant documentReceivedAt,
+            Integer documentPageCount) {
+        static AuditEntry from(AuditQueryPort.Row row, SensitivityLevel level) {
             AuditEvent event = row.event();
             return new AuditEntry(event.auditEventId(), event.actorType(), event.actorId(), event.action(),
                     event.targetType(), event.targetId(), event.occurredAt(), event.correlationId(),
-                    event.outcome(), event.safeDetailsJson(), event.actorDisplayName(), row.recordNumber(), row.filename());
+                    event.outcome(), event.safeDetailsJson(), event.actorDisplayName(), row.recordNumber(),
+                    row.document() == null ? null : row.document().documentId(), level,
+                    row.documentReceivedAt(), row.documentPageCount());
+        }
+
+        static AuditEntry from(AuditQueryPort.Row row) {
+            return from(row, null);
         }
     }
 

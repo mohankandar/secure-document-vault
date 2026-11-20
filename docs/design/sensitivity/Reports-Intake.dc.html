@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Vero · Business administration · Reports · Daily intake</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&amp;family=IBM+Plex+Sans:wght@400;500;600;700&amp;display=swap">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{margin:0;font-family:'IBM Plex Sans',sans-serif;color:#14191c}
+.mono{font-family:'IBM Plex Mono',monospace}
+.screen{width:100%;min-width:1280px;height:900px;background:#f3f5f4;overflow:hidden;display:flex;flex-direction:column;position:relative}
+.top{height:56px;background:#fff;border-bottom:1px solid #dce1e2;display:flex;align-items:center;padding:0 20px;gap:28px;flex:none}
+.brand{font-size:21px;font-weight:700;color:#166a4f;letter-spacing:-.5px;display:flex;align-items:flex-end;gap:3px}
+.brand i{width:7px;height:7px;border-radius:50%;background:#166a4f;margin-bottom:6px;display:block}
+.nav{display:flex;gap:4px}
+.nav a{font-size:15px;color:#4a5459;padding:7px 12px;border-radius:8px;text-decoration:none}
+.nav a.on{background:#e2efe9;color:#105a42;font-weight:500}
+.grow{flex:1}
+.acct{display:flex;align-items:center;gap:10px;padding:4px 10px 4px 4px;border:1px solid #dce1e2;border-radius:10px;background:#fff}
+.av{width:30px;height:30px;border-radius:50%;background:#4a5459;color:#fff;font-size:12px;font-weight:600;display:flex;align-items:center;justify-content:center;flex:none}
+.acct .who{display:flex;flex-direction:column;line-height:1.2}
+.acct .who b{font-size:13px;font-weight:600}
+.acct .who span{font-size:12px;color:#737d82}
+svg{flex:none}
+.main{flex:1;padding:16px 32px 20px;display:flex;flex-direction:column;gap:14px;min-width:0}
+h1{font-size:26px;font-weight:600;letter-spacing:-.3px}
+.sub{font-size:15px;color:#4a5459}
+.crumb{font-size:13px;color:#737d82}
+.card{background:#fff;border:1px solid #dce1e2;border-radius:12px;overflow:hidden}
+.btn{height:34px;border-radius:8px;border:1px solid #c3cacc;background:#fff;font-size:13px;font-weight:500;display:inline-flex;align-items:center;gap:6px;padding:0 12px;color:#14191c;white-space:nowrap;font-family:inherit}
+.btn.xs{height:26px;font-size:12px;padding:0 8px}
+.muted{color:#737d82}
+.n{font-size:12px;font-weight:600;background:#fdf0d5;color:#8a5300;border-radius:999px;padding:1px 7px;margin-left:6px}
+.tabs2{display:flex;gap:4px;border-bottom:1px solid #dce1e2;padding:0 32px;background:#f3f5f4}
+.tabs2 a{font-size:15px;padding:10px 12px;color:#4a5459;text-decoration:none}
+.tabs2 a.on{color:#14191c;font-weight:500;box-shadow:inset 0 -2px 0 #166a4f}
+.subtabs{display:flex;gap:6px}
+.subtabs a{font-size:14px;padding:6px 12px;border-radius:8px;color:#4a5459;text-decoration:none}
+.subtabs a.on{background:#fff;border:1px solid #dce1e2;color:#14191c;font-weight:500}
+.fchip{height:34px;border:1px solid #c3cacc;border-radius:8px;background:#fff;font-size:13px;display:inline-flex;align-items:center;gap:8px;padding:0 12px;color:#14191c;font-family:inherit}
+.fchip b{font-weight:500;color:#737d82}
+.kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:12px}
+.kpi{background:#fff;border:1px solid #dce1e2;border-radius:12px;padding:14px 16px;display:flex;flex-direction:column;gap:4px}
+.kpi span{font-size:12px;color:#737d82}
+.kpi b{font-size:26px;font-weight:600;letter-spacing:-.3px}
+.kpi i{font-style:normal;font-size:12px;color:#4a5459}
+.kpi.bad b{color:#9b2c22}
+.tbl{width:100%;border-collapse:collapse;font-size:13px}
+.tbl th{font-size:12px;font-weight:500;color:#737d82;text-align:right;padding:9px 14px;border-bottom:1px solid #dce1e2;white-space:nowrap}
+.tbl th:first-child,.tbl td:first-child{text-align:left}
+.tbl td{padding:9px 14px;border-bottom:1px solid #eceff0;text-align:right;white-space:nowrap}
+.tbl tr.sys td{background:#f7f8f8;font-weight:600}
+.tbl tr.sys td:first-child{display:flex;align-items:center;gap:8px}
+.tbl tr.tot td{font-weight:600;border-top:1px solid #dce1e2;border-bottom:0}
+.bad{color:#9b2c22}
+.code{font-family:'IBM Plex Mono',monospace;font-size:12px;background:#fbe9e7;color:#9b2c22;border-radius:4px;padding:1px 5px}
+.role{display:inline-flex;align-items:center;gap:6px;padding:3px 10px 3px 8px;border:1px dashed #3b6fd4;background:#e8f0ff;border-radius:4px;font-size:12px;color:#1f3f80;font-weight:500;white-space:nowrap}
+.role b{font-size:11px;color:#3b6fd4;font-weight:600;letter-spacing:.04em}
+</style>
+</helmet>
+<div class="screen">
+  <div class="top"><div class="brand">vero<i></i></div><div class="nav"><a class="on">Business administration</a></div><div class="grow"></div>
+    <div class="acct"><div class="av">PN</div><div class="who"><b>Priya Natarajan</b><span>Acme Lending · Business admin</span></div><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#737d82" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></div></div>
+  <div style="padding:20px 32px 0;display:flex;flex-direction:column;gap:6px">
+    <div style="display:flex;justify-content:space-between;align-items:center"><span class="crumb">Business administration</span><span class="role"><b>SEEN BY</b> Business admin</span></div>
+    <h1>Reports</h1><div class="sub">Counts only. No document contents, titles or names.</div></div>
+  <div class="tabs2" style="margin-top:12px"><a>People &amp; roles</a><a>Roles &amp; permissions</a><a>Keeping documents</a><a>Legal holds</a><a>Search fields</a><a>Approvals<span class="n">48</span></a><a class="on">Reports</a></div>
+  <div class="main">
+    <div style="display:flex;align-items:center;gap:10px">
+      <div class="subtabs"><a class="on">Daily intake</a><a>Sensitivity</a></div>
+      <div class="grow"></div>
+      <button class="fchip"><b>Day</b> Today, Fri 20 Nov <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#4a5459" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>
+      <button class="fchip"><b>Sending system</b> All <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#4a5459" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>
+      <span class="muted" style="font-size:12px">Eastern time (entity)</span>
+      <button class="btn"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#4a5459" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>Export CSV</button>
+    </div>
+    <div class="kpis">
+      <div class="kpi"><span>Deliveries received</span><b>486</b><i>from 3 sending systems</i></div>
+      <div class="kpi"><span>Documents accepted</span><b>2,914</b><i>29,140 pages · plus 12 exact duplicates (not stored again)</i></div>
+      <div class="kpi"><span>Contracts</span><b>471</b><i>402 new · 69 updated</i></div>
+      <div class="kpi bad"><span>Refused at intake</span><b>7</b><i>see codes below</i></div>
+      <div class="kpi bad"><span>Failed after receipt</span><b>2</b><i>shown to Tenant IT</i></div>
+    </div>
+    <div class="card">
+      <table class="tbl"><thead><tr><th>Sending system · delivery</th><th>Received</th><th>Contract</th><th>Documents</th><th>Pages</th><th>Duplicates</th><th>Refused</th><th>Failed</th></tr></thead><tbody>
+        <tr class="sys"><td><button class="btn xs" aria-label="Collapse LexaVault" aria-expanded="true"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#4a5459" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>LexaVault</td><td>412</td><td>398</td><td>2,431</td><td>24,610</td><td>9</td><td class="bad">3</td><td class="bad">1</td></tr>
+        <tr><td class="mono muted">req 7c1e-90a2-…-4f18</td><td>09:12</td><td class="mono">300000000001</td><td>6</td><td>54</td><td>0</td><td>0</td><td>0</td></tr>
+        <tr><td class="mono muted">req 7c1e-90a2-…-4f19</td><td>09:14</td><td class="mono">300000000003</td><td>3</td><td>41</td><td>1</td><td>0</td><td>0</td></tr>
+        <tr><td class="mono muted">req 2b07-11ce-…-08a3</td><td>09:31</td><td class="mono">300000000077</td><td>4</td><td>62</td><td>0</td><td><span class="code">SDV-SEN-001</span></td><td>0</td></tr>
+        <tr><td colspan="8" class="muted" style="text-align:left;font-size:12px">… 409 more deliveries · shown in full in the CSV</td></tr>
+        <tr class="sys"><td><button class="btn xs" aria-label="Expand Loan Origination System" aria-expanded="false"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#4a5459" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button>Loan Origination System</td><td>61</td><td>60</td><td>402</td><td>3,920</td><td>3</td><td class="bad">4</td><td>0</td></tr>
+        <tr class="sys"><td><button class="btn xs" aria-label="Expand Branch scanners" aria-expanded="false"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#4a5459" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button>Branch scanners</td><td>13</td><td>13</td><td>81</td><td>610</td><td>0</td><td>0</td><td class="bad">1</td></tr>
+        <tr class="tot"><td>All sending systems</td><td>486</td><td>471</td><td>2,914</td><td>29,140</td><td>12</td><td class="bad">7</td><td class="bad">2</td></tr>
+      </tbody></table>
+    </div>
+    <div class="muted" style="font-size:13px">Each delivery shows the request ID its sending system used, so the line can be matched with that system's own report. Duplicates are files whose checksum matches one already received; they are acknowledged to the sender and counted; no second copy is kept. Refusal codes are explained in the error code list.</div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+renderVals() {
+return {};
+}
+}
+</script>
+</body>
+</html>
