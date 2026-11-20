@@ -431,7 +431,19 @@ public class BusinessExperienceService {
             throw new IllegalArgumentException(
                     "Search value for '" + fieldKey + "' is empty after configured normalization.");
         }
-        return new SearchCriterion(fieldKey, field.searchMode(), variants);
+        return new SearchCriterion(fieldKey, field.searchMode(), variants, exactIgnoresCase(field));
+    }
+
+    /**
+     * Task 0022 follow-up: an Exact text field ignores capitals ("mortgage" finds "Mortgage"), in quick search and in
+     * single-field search. Identifiers and digits-only fields keep their exact comparison, and so do fields that
+     * aren't text. Starts with and Contains already ignore case.
+     */
+    static boolean exactIgnoresCase(MetadataFieldDefinition field) {
+        return field.searchMode() == MetadataSearchMode.EXACT
+                && !field.businessIdentifier()
+                && field.normalization() != MetadataNormalization.DIGITS_ONLY
+                && (field.fieldType() == MetadataFieldType.TEXT || field.fieldType() == MetadataFieldType.EMAIL);
     }
 
     /** The value as each normalization the field has had would have stored it (so older records still match). */
@@ -461,7 +473,8 @@ public class BusinessExperienceService {
             if (field.normalization() == MetadataNormalization.DIGITS_ONLY && !hasDigit) continue;
             List<String> variants = normalizedVariants(tenantId, sourceId, field, text);
             if (variants.isEmpty()) continue;
-            fields.add(new AnywhereField(field.fieldKey(), field.searchMode(), variants, field.businessIdentifier()));
+            fields.add(new AnywhereField(field.fieldKey(), field.searchMode(), variants, field.businessIdentifier(),
+                    exactIgnoresCase(field)));
         }
         return fields.isEmpty() ? null : new AnywhereCriterion(fields);
     }
@@ -502,7 +515,10 @@ public class BusinessExperienceService {
         for (String variant : field.normalizedVariants()) {
             Integer rank;
             if (field.searchMode() == MetadataSearchMode.EXACT) {
-                rank = normalizedValue.equals(variant) ? exact : null;
+                boolean equal = field.ignoreCase()
+                        ? normalizedValue.toLowerCase(Locale.ROOT).equals(variant.toLowerCase(Locale.ROOT))
+                        : normalizedValue.equals(variant);
+                rank = equal ? exact : null;
             } else {
                 String value = normalizedValue.toLowerCase(Locale.ROOT), wanted = variant.toLowerCase(Locale.ROOT);
                 boolean matches = field.searchMode() == MetadataSearchMode.PREFIX ? value.startsWith(wanted) : value.contains(wanted);

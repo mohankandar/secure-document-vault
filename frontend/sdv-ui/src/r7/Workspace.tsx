@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } 
 import { AlertTriangle, ArrowRight, ChevronDown, ChevronUp, Search, SlidersHorizontal, X } from 'lucide-react'
 import { useStore } from './store'
 import type { RecordItem, Source } from './model'
-import { schema, search, record, toSource, toSummary, toRecord, documentActivity, SEARCH_PAGE_SIZE, type LiveDocumentActivity } from './liveApi'
+import { schema, search, record, toSource, toSummary, toRecord, documentActivity, recentRecords as loadRecentRecords, RECENT_LIMIT, SEARCH_PAGE_SIZE, type LiveDocumentActivity } from './liveApi'
 import { LoadErrorCard, failureText, loadFailed, type Failure } from './CardError'
 import { Badge, Callout, Drawer, Empty, Skeleton, actorWords, auditEventLabel, fmtDate, fmtRel, fmtShortDate } from './ui'
 import { Viewer } from './Viewer'
@@ -40,7 +40,7 @@ const hasCriteria = (a: Pick<Applied, 'c' | 'received' | 'updated' | 'incomplete
 const valueOf = (list: FieldValue[] | undefined, label: string) => list?.find((f) => f.label === label)?.value ?? ''
 
 export function Workspace() {
-  const { records, setRecords, selectedRef, setSelectedRef, openDocId, setOpenDocId, can, setResultsShown, searchRequest, requestSearch, recentRecords } = useStore()
+  const { records, setRecords, selectedRef, setSelectedRef, openDocId, setOpenDocId, can, setResultsShown, searchRequest, requestSearch, recentRecords, setRecentRecords, route } = useStore()
   const [sources, setSources] = useState<Source[]>([])
   const [status, setStatus] = useState<'loading' | 'live' | 'error'>('loading')
   // A failed load shows the shared card (plain words + reference); Try again re-runs the loads.
@@ -57,6 +57,19 @@ export function Workspace() {
   const [panelOpen, setPanelOpen] = useState(false)
   const filtersButton = useRef<HTMLButtonElement>(null)
   const wide = useMediaQuery('(min-width: 1024px)')
+  // Task 0022 follow-up: Records loads the person's Recently viewed list itself, once each time they come to Records,
+  // with the same call and audit entry as Home. This component stays mounted, hidden, on other pages, so the load
+  // follows the route, not the mount. The ref keeps it to one call per visit even when React runs the effect twice
+  // (StrictMode in development). The result goes to the store, so it is kept even if the person has moved on.
+  // If the load fails, the search list leaves out "Records you opened recently".
+  const onRecords = route.area === 'workspace'
+  const loadedThisVisit = useRef(false)
+  useEffect(() => {
+    if (!onRecords) { loadedThisVisit.current = false; return }
+    if (loadedThisVisit.current) return
+    loadedThisVisit.current = true
+    loadRecentRecords(RECENT_LIMIT).then((r) => setRecentRecords(r.records)).catch(() => { /* section left out */ })
+  }, [onRecords, setRecentRecords])
 
   useEffect(() => { let active = true; schema().then((s) => { if (active) { setSources(s.sources.map(toSource)); setStatus('live') } })
     .catch((e) => { if (active) { setFailure(loadFailed('Search fields did not load', e)); setStatus('error') } }); return () => { active = false } }, [reload])

@@ -1445,7 +1445,26 @@ test.describe('SDV role-based screen capture', () => {
     await expect(chip(page, /^Anywhere 300000000004/)).toBeVisible()
     await expect(resultRows(page).first()).toContainText('300000000004', { timeout: 15000 })
 
-    // ---- A record opened recently, from the list (Home's Recently viewed; no new server call) ----
+    // ---- Follow-up: an exact text field ignores capitals ("mortgage" finds the 4 loans stored as "Mortgage") ----
+    await clearSearch(page)
+    await searchFor(page, 'mortgage')
+    await expect(chip(page, /^Anywhere mortgage/)).toBeVisible()
+    await expect(resultRows(page)).toHaveCount(4, { timeout: 15000 })
+    await clearSearch(page)
+    await searchBox(page).fill('mortgage')
+    await option(/^Loan type is .mortgage./).click()
+    await expect(chip(page, /^Loan type/)).toBeVisible()
+    await expect(chip(page, /^Anywhere/)).toHaveCount(0)
+    await expect(resultRows(page)).toHaveCount(4, { timeout: 15000 })
+    for (const n of ['300000000001', '300000000003', '300000000005', '300000000007']) {
+      await expect(resultRows(page).filter({ hasText: n })).toHaveCount(1)
+    }
+    // An identifier is still matched exactly: the contract number search above found exactly its own record.
+    await clearSearch(page)
+    await searchFor(page, '300000000004')
+    await expect(resultRows(page).first()).toContainText('300000000004', { timeout: 15000 })
+
+    // ---- A record opened recently, from the list (Home's Recently viewed; no new server call while typing) ----
     await resultRows(page).first().click()
     await page.getByRole('complementary', { name: 'Record inspector' }).getByRole('button', { name: /Open documents/ }).click()
     await expect(page.getByRole('img', { name: /Document page 1/ })).toBeVisible({ timeout: 20000 })
@@ -1460,10 +1479,31 @@ test.describe('SDV role-based screen capture', () => {
     await expect(list.getByText('Records you opened recently')).toBeVisible()
     await expect(recentOption).toBeVisible()
     await capture(page, testInfo, 'quick-search-recent')
+    expect(recentCalls, 'typing on Home uses the Recently viewed data Home already has').toBe(0)
     await recentOption.click()
     await expect(areaTab(page, 'Records')).toHaveAttribute('aria-current', 'page')
     await expect(page.getByRole('complementary', { name: 'Record inspector' })).toContainText('300000000004', { timeout: 15000 })
-    expect(recentCalls, 'the list uses the Recently viewed data Home already has').toBe(0)
+    // Follow-up: arriving on Records loads the list once, as Home does.
+    await expect.poll(() => recentCalls, { message: 'Records loads Recently viewed once per visit' }).toBe(1)
+    await page.waitForTimeout(500)
+    expect(recentCalls, 'only once per visit').toBe(1)
+
+    // ---- Follow-up: opening Records directly (Home never shown) still offers recently opened matches ----
+    let directCalls = 0
+    page.on('request', (r) => { if (r.url().includes('/me/recent-records')) directCalls++ })
+    // A fresh page load straight onto Records (the page is already on #/workspace, so a hash change alone wouldn't load it).
+    await page.goto('about:blank')
+    await page.goto('/#/workspace/search')
+    await expect(areaTab(page, 'Records')).toHaveAttribute('aria-current', 'page', { timeout: 15000 })
+    await waitForBusinessSearchReady(page)
+    await expect.poll(() => directCalls, { message: 'Records loads Recently viewed itself' }).toBe(1)
+    await searchBox(page).fill('gomez')
+    await expect(list.getByText('Records you opened recently')).toBeVisible({ timeout: 15000 })
+    await expect(option(/^300000000004/)).toBeVisible()
+    await capture(page, testInfo, 'quick-search-recent-records-direct')
+    await page.waitForTimeout(500)
+    expect(directCalls, 'once per visit; typing makes no further call').toBe(1)
+    await searchBox(page).press('Escape')
 
     // ---- Phones: a full-width list ----
     await clearSearch(page)

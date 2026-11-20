@@ -293,4 +293,65 @@ class QuickSearchTest {
         assertThrows(java.util.NoSuchElementException.class, () ->
                 service.search(OTHER_TENANT, SOURCE, Map.of(), "patel", null, null, null, null, false, 1, 25, "x", "corr"));
     }
+
+    // ---- follow-up: exact text fields ignore capitals; identifiers and digits-only fields don't ----
+
+    @Test
+    void whichExactFieldsIgnoreCase() {
+        assertTrue(BusinessExperienceService.exactIgnoresCase(FIELDS.get(3)), "Loan type: exact text");
+        assertFalse(BusinessExperienceService.exactIgnoresCase(FIELDS.getFirst()), "Contract number: identifier, digits-only");
+        assertFalse(BusinessExperienceService.exactIgnoresCase(field("memberId", "Member ID", MetadataFieldType.TEXT, true, true,
+                MetadataNormalization.TRIM, MetadataSearchMode.EXACT)), "an identifier keeps capitals");
+        assertFalse(BusinessExperienceService.exactIgnoresCase(field("branchCode", "Branch code", MetadataFieldType.TEXT, false, true,
+                MetadataNormalization.DIGITS_ONLY, MetadataSearchMode.EXACT)), "a digits-only field is unchanged");
+        assertFalse(BusinessExperienceService.exactIgnoresCase(field("term", "Term", MetadataFieldType.INTEGER, false, true,
+                MetadataNormalization.TRIM, MetadataSearchMode.EXACT)), "not a text field");
+        assertTrue(BusinessExperienceService.exactIgnoresCase(field("email", "Email", MetadataFieldType.EMAIL, false, true,
+                MetadataNormalization.TRIM, MetadataSearchMode.EXACT)), "an email address is text");
+        assertFalse(BusinessExperienceService.exactIgnoresCase(FIELDS.get(1)), "contains already ignores case by its own rule");
+    }
+
+    @Test
+    void quickSearchSendsExactTextFieldsToIgnoreCase_andFindsMortgageFromLowerCase() {
+        found(SUB_LENA);
+        var lena = anywhere("mortgage").records().getFirst();
+        var loanType = sentCriterion().fields().stream().filter(f -> f.fieldKey().equals("loanType")).findFirst().orElseThrow();
+        assertTrue(loanType.ignoreCase());
+        assertEquals(List.of("mortgage"), loanType.normalizedVariants(), "the text itself is sent; the comparison ignores case");
+        assertEquals(List.of(new BusinessExperienceView.MatchedField("loanType", "Loan type", "Mortgage")), lena.matchedFields());
+    }
+
+    @Test
+    void quickSearchKeepsDigitsOnlyIdentifiersExact() {
+        found();
+        anywhere("3000-0000-0041");
+        AnywhereField contract = sentCriterion().fields().getFirst();
+        assertEquals("contractNumber", contract.fieldKey());
+        assertFalse(contract.ignoreCase());
+    }
+
+    @Test
+    void singleFieldSearchOnAnExactTextFieldIgnoresCase_identifierDoesNot() {
+        when(records.findMatchingSubmissions(eq(TENANT), eq(SOURCE), anyList(), any(), any(), any(), any(), anyBoolean(), anyInt(), anyInt()))
+                .thenReturn(List.of());
+        service.search(TENANT, SOURCE, Map.of("loanType", "mortgage", "contractNumber", "300000000041"), null, null, null, null,
+                false, 1, 25, "maya", "corr");
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<BusinessRecordRepository.SearchCriterion>> sent = ArgumentCaptor.forClass(List.class);
+        verify(records).findMatchingSubmissions(eq(TENANT), eq(SOURCE), sent.capture(), any(), any(), any(), any(), anyBoolean(), anyInt(), anyInt());
+        var byKey = sent.getValue().stream().collect(java.util.stream.Collectors.toMap(
+                BusinessRecordRepository.SearchCriterion::fieldKey, BusinessRecordRepository.SearchCriterion::ignoreCase));
+        assertEquals(Map.of("loanType", true, "contractNumber", false), byKey);
+    }
+
+    @Test
+    void matchRankIgnoresCaseOnlyWhenTheFieldSaysSo() {
+        var loanType = new AnywhereField("loanType", MetadataSearchMode.EXACT, List.of("mortgage"), false, true);
+        var memberId = new AnywhereField("memberId", MetadataSearchMode.EXACT, List.of("ab-12"), true, false);
+        assertEquals(1, BusinessExperienceService.matchRank(loanType, "Mortgage"));
+        assertEquals(1, BusinessExperienceService.matchRank(loanType, "MORTGAGE"));
+        assertNull(BusinessExperienceService.matchRank(loanType, "Mortgage refinance"), "still the whole value");
+        assertNull(BusinessExperienceService.matchRank(memberId, "AB-12"), "an identifier keeps capitals");
+        assertEquals(0, BusinessExperienceService.matchRank(memberId, "ab-12"));
+    }
 }

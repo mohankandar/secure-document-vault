@@ -27,7 +27,9 @@ export const search = (sourceId: string, criteria: Record<string,string>, receiv
   }) })
 /** The signed-in person's own recently opened records (server: own DOCUMENT_VIEW_OPENED events, still available). */
 export type RecentRecord = { sourceId: string; record: RecordSummary; lastOpenedAt: string }
-export const recentRecords = (limit = 8) => roleApi<{ records: RecentRecord[] }>('/api/v1/business/me/recent-records?limit=' + limit, 'business')
+/** How many records Home and Records ask for. */
+export const RECENT_LIMIT = 8
+export const recentRecords = (limit = RECENT_LIMIT) => roleApi<{ records: RecentRecord[] }>('/api/v1/business/me/recent-records?limit=' + limit, 'business')
 export const record = (ref: string) => roleApi<BusinessRecord>('/api/v1/business/records/' + encodeURIComponent(ref), 'business')
 export function toSource(s: SearchSource): Source {
   return { id:s.sourceId, key:s.sourceKey, name:s.displayName, status:'ACTIVE', fields:s.fields.map(f=>({

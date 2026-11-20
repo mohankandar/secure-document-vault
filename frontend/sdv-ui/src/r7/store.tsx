@@ -82,8 +82,8 @@ function useStoreValue() {
   const [selectedRef, setSelectedRef] = useState<string | null>(null)
   const [openDocId, setOpenDocId] = useState<string | null>(null)
   const [resultsShown,setResultsShown]=useState(false)
-  // The person's own Recently viewed list as Home last loaded it; the search list offers matching records from it
-  // (task 0022) without asking the server again.
+  // The person's own Recently viewed list as Home or Records last loaded it; the search list offers matching
+  // records from it (task 0022).
   const [recentRecords, setRecentRecords] = useState<RecentRecord[] | null>(null)
 
   useEffect(() => {

@@ -102,6 +102,27 @@ class AnywhereSearchSqlTest {
         assertTrue(sql.contains("and m.match_rank is not null"), sql);
     }
 
+    // ---- follow-up: exact text fields ignore capitals ----
+
+    @Test
+    void anExactFieldThatIgnoresCaseComparesLowerCase_inQuickSearch() {
+        AnywhereCriterion mortgage = new AnywhereCriterion(List.of(
+                new AnywhereField("contractNumber", MetadataSearchMode.EXACT, List.of("300000000041"), true, false),
+                new AnywhereField("loanType", MetadataSearchMode.EXACT, List.of("mortgage"), false, true)));
+        String sql = send(List.of(), mortgage, null, null).sql();
+        assertTrue(sql.contains("when v.field_key=:a0Field and (v.normalized_value=:a0Value0) then 0"), sql);
+        assertTrue(sql.contains("when v.field_key=:a1Field and (lower(v.normalized_value)=lower(:a1Value0)) then 1"), sql);
+    }
+
+    @Test
+    void anExactFieldThatIgnoresCaseComparesLowerCase_inSingleFieldSearch() {
+        String sql = send(List.of(
+                new SearchCriterion("contractNumber", MetadataSearchMode.EXACT, List.of("300000000041"), false),
+                new SearchCriterion("loanType", MetadataSearchMode.EXACT, List.of("mortgage"), true)), null, null, null).sql();
+        assertTrue(sql.contains("v.field_key= :c0Field and (v.normalized_value=:c0Value0)"), sql);
+        assertTrue(sql.contains("v.field_key= :c1Field and (lower(v.normalized_value)=lower(:c1Value0))"), sql);
+    }
+
     @Test
     void withoutAnywhereTheSearchIsUnchanged() {
         String sql = send(List.of(new SearchCriterion("loanType", MetadataSearchMode.EXACT, List.of("Auto"))), null, null, null).sql();

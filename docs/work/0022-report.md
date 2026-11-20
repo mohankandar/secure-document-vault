@@ -106,3 +106,48 @@ Nothing in the task was left undone. Differences from the boards:
 ## Suggested next step
 
 Owner review of `chore/remove-prototype-code` (0021), then of `feature/quick-search` (0022). Then the `pg_trgm` backlog item, if large sending systems are expected soon.
+
+## Follow-up (owner review, 2026-11-19)
+
+The owner approved 0022 and asked for two changes. These also answer the two questions above.
+
+**1. Exact text fields ignore capitals**, in quick search and in single-field search. "mortgage" now finds "Mortgage". There is no schema change and no new dependency.
+- **Which fields** (`BusinessExperienceService.exactIgnoresCase`): Exact, type Text or Email, not an identifier, not digits-only. Identifiers, digits-only fields and other types (numbers and so on) still compare exactly as before. Starts with and Contains already ignored case.
+- **How:** `SearchCriterion` and `AnywhereField` carry `ignoreCase`. The SQL then compares `lower(v.normalized_value)=lower(:value)`; otherwise it is unchanged. `matchRank` (for `matchedFields`) uses the same rule. The row is still found through the `(tenant_id, submission_id, field_key)` index, so index use doesn't change.
+- **Tests:**
+  - `QuickSearchTest`, 5 new: which fields ignore case; quick search sends Loan type with `ignoreCase` and "mortgage" matches "Mortgage"; the contract number stays exact; single-field search on Loan type ignores case and the contract number doesn't; `matchRank` with and without it.
+  - `AnywhereSearchSqlTest`, 2 new: the SQL for quick search and for single-field search.
+  - Tour: "mortgage" everywhere and "Loan type is "mortgage"" each find the 4 Mortgage loans.
+
+**2. Records loads Recently viewed itself**, once per visit. It uses the same call as Home (`/me/recent-records?limit=8`) and writes the same routine `BUSINESS_RECENT_RECORDS_LISTED` audit entry (`Workspace.tsx`).
+- Records stays mounted, hidden, on other pages, so the load follows the route (each time the person comes to Records), not the mount.
+- A ref keeps it to one call per visit, even when React StrictMode runs the effect twice in development.
+- If the load fails, the list leaves out "Records you opened recently", as before.
+- `RECENT_LIMIT` is now shared from `liveApi.ts`.
+- **Tour checks:**
+  - picking a recent record on Home makes no call while typing, and arriving on Records makes exactly one;
+  - **opening Records directly** (a fresh page load on `#/workspace/search`, Home never shown) makes exactly one call, and typing "gomez" shows 300000000004 under "Records you opened recently". Screenshot `quick-search-recent-records-direct`.
+- Noted, not changed: Home on its own also runs its load twice in the development server because of StrictMode. The production build runs it once.
+
+**Commands run and results**
+
+| Command | Result |
+|---|---|
+| `.\Build-SDV-All.ps1` (app stopped first) | BUILD SUCCESS. Backend tests: 188 run, 0 failures, 0 errors (sdv-web 149; 7 new). Frontend build passed. |
+| `npm run typecheck` | passed |
+| `npm run build` | passed |
+| `.\Start-SDV-Local.ps1` | started (the 0022 seed data was already in place) |
+| `npm run ui:capture` | 20 passed, 4 skipped (the same skips as before) |
+| `npm run ui:compare` | 21 passed |
+
+**Failures along the way** (all fixed before the final runs above):
+- The new direct-open check first counted 0 calls. The page was already on `#/workspace`, so `page.goto` only changed the hash. The test now goes to `about:blank` first.
+- It then counted 2 calls, because of StrictMode's double effect in development. The ref guard in `Workspace.tsx` fixes that in the app; the test was not loosened.
+
+**Files changed:**
+- Backend: `BusinessRecordRepository.java`, `BusinessExperienceService.java`, `JdbcBusinessRecordRepository.java`; tests `QuickSearchTest.java`, `AnywhereSearchSqlTest.java`
+- Frontend: `Workspace.tsx`, `Home.tsx`, `store.tsx`, `liveApi.ts`
+- Tour: `e2e/sdv-screen-tour.spec.ts`
+- This report
+
+`Start-SDV-Local.ps1` was left as it was and not committed.

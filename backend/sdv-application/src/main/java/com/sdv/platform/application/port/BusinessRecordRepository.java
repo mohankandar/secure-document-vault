@@ -96,27 +96,44 @@ public interface BusinessRecordRepository {
             UUID sourceId,
             List<UUID> submissionIds);
 
+    /**
+     * ignoreCase: an Exact match compares without regard to capitals (exact text fields that are neither an
+     * identifier nor digits-only; task 0022 follow-up). Starts with and Contains always ignore case.
+     */
     record SearchCriterion(
             String fieldKey,
             MetadataSearchMode searchMode,
-            List<String> normalizedVariants) {
+            List<String> normalizedVariants,
+            boolean ignoreCase) {
         public SearchCriterion {
             normalizedVariants = List.copyOf(normalizedVariants);
+        }
+
+        /** Exact keeps capitals. */
+        public SearchCriterion(String fieldKey, MetadataSearchMode searchMode, List<String> normalizedVariants) {
+            this(fieldKey, searchMode, normalizedVariants, false);
         }
     }
 
     /**
      * One field the "anywhere" text is tried in, with that field's own match and normalized variants.
-     * businessIdentifier: an exact match here ranks first.
+     * businessIdentifier: an exact match here ranks first. ignoreCase: as for {@link SearchCriterion}.
      */
     record AnywhereField(
             String fieldKey,
             MetadataSearchMode searchMode,
             List<String> normalizedVariants,
-            boolean businessIdentifier) {
+            boolean businessIdentifier,
+            boolean ignoreCase) {
         public AnywhereField {
             normalizedVariants = List.copyOf(normalizedVariants);
             if (normalizedVariants.isEmpty()) throw new IllegalArgumentException("An anywhere field needs a value.");
+        }
+
+        /** Exact keeps capitals. */
+        public AnywhereField(String fieldKey, MetadataSearchMode searchMode, List<String> normalizedVariants,
+                boolean businessIdentifier) {
+            this(fieldKey, searchMode, normalizedVariants, businessIdentifier, false);
         }
     }
 

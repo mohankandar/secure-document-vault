@@ -4,7 +4,7 @@ import { useStore } from './store'
 import { failureText } from './CardError'
 import type { Source } from './model'
 import type { RecordSummary } from '../api'
-import { recentRecords, schema, search, toSource, type RecentRecord } from './liveApi'
+import { RECENT_LIMIT, recentRecords, schema, search, toSource, type RecentRecord } from './liveApi'
 import { Badge, Callout, Skeleton, fmtRel } from './ui'
 import { boxLabel, quickRange } from './searchRouting'
 import { NOTHING_TO_SEARCH, defaultSource, searchableSources } from './sourceChoice'
@@ -13,7 +13,6 @@ import { anywhereProblem, identifierCriteria } from './quickSearchRules'
 import { useQuickSearch, type QuickPick } from './QuickSearch'
 
 const showDevelopmentUtilities = import.meta.env.DEV
-const RECENT_LIMIT = 8
 const ATTENTION_LIMIT = 5
 
 type Attention = { sourceId: string; record: RecordSummary }
@@ -38,7 +37,7 @@ export function Home() {
   useEffect(() => { let active = true; schema().then((s) => { if (active) { setSources(s.sources.map(toSource)); setSourcesLoaded(true) } }).catch((e) => { if (active) setAttentionError(failureText('Home: search fields did not load', e)) }); return () => { active = false } }, [])
   useEffect(() => {
     let active = true
-    // The list is kept for the search box on Records too (task 0022), so it doesn't ask the server again.
+    // Also kept in the store for the search box. Records loads its own copy on each visit (task 0022 follow-up).
     recentRecords(RECENT_LIMIT).then((r) => { if (active) { setRecent(r.records); setRecentRecords(r.records) } }).catch((e) => { if (active) { setRecent([]); setRecentError(failureText('Home: recently viewed did not load', e)) } })
     return () => { active = false }
   }, [setRecentRecords])

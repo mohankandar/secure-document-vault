@@ -80,10 +80,13 @@ public class JdbcBusinessRecordRepository implements BusinessRecordRepository {
                 if (v > 0) sql.append(" or ");
                 String valueParam = prefix + "Value" + v;
                 params.addValue(valueParam, variants.get(v));
-                // Exact keeps the field's configured normalization. Starts with and Contains ignore case:
-                // "pat" finds "Patel". The row is already found through the unique
-                // (tenant_id, submission_id, field_key) index, so lower() does not change index use.
-                if (criterion.searchMode() == MetadataSearchMode.EXACT) {
+                // Exact keeps the field's configured normalization, and ignores case on exact text fields that are
+                // neither an identifier nor digits-only. Starts with and Contains ignore case: "pat" finds "Patel".
+                // The row is already found through the unique (tenant_id, submission_id, field_key) index, so
+                // lower() does not change index use.
+                if (criterion.searchMode() == MetadataSearchMode.EXACT && criterion.ignoreCase()) {
+                    sql.append("lower(v.normalized_value)=lower(:").append(valueParam).append(")");
+                } else if (criterion.searchMode() == MetadataSearchMode.EXACT) {
                     sql.append("v.normalized_value=:").append(valueParam);
                 } else if (criterion.searchMode() == MetadataSearchMode.PREFIX) {
                     sql.append("position(lower(:").append(valueParam).append(") in lower(v.normalized_value))=1");
@@ -102,8 +105,8 @@ public class JdbcBusinessRecordRepository implements BusinessRecordRepository {
 
     /**
      * The submission's best anywhere match, as m.match_rank (null when no field matches). Each field is tried with
-     * its own match: Exact compares the normalized value as configured; Starts with and Contains ignore case, as the
-     * field search does. Only this submission's own rows in its own tenant and source are read.
+     * its own match: Exact compares the normalized value as configured (ignoring case when the field says so);
+     * Starts with and Contains ignore case, as the field search does. Only this submission's own rows in its own tenant and source are read.
      */
     private static void appendAnywhereRank(StringBuilder sql, MapSqlParameterSource params, AnywhereCriterion anywhere) {
         List<String> keys = new ArrayList<>();
@@ -120,8 +123,10 @@ public class JdbcBusinessRecordRepository implements BusinessRecordRepository {
             for (int v = 0; v < field.normalizedVariants().size(); v++) {
                 String value = ":" + prefix + "Value" + v;
                 params.addValue(prefix + "Value" + v, field.normalizedVariants().get(v));
-                if (field.searchMode() == MetadataSearchMode.EXACT) {
+                if (field.searchMode() == MetadataSearchMode.EXACT && !field.ignoreCase()) {
                     equal.add("v.normalized_value=" + value);
+                } else if (field.searchMode() == MetadataSearchMode.EXACT) {
+                    equal.add("lower(v.normalized_value)=lower(" + value + ")");
                 } else {
                     equal.add("lower(v.normalized_value)=lower(" + value + ")");
                     starts.add("position(lower(" + value + ") in lower(v.normalized_value))=1");
