@@ -73,7 +73,8 @@ class LegalHoldControllerTest {
 
     private static LegalHoldService.LegalHoldView view() {
         return new LegalHoldService.LegalHoldView(HOLD, DOCUMENT, "300000000001", "Contract number",
-                SensitivityLevel.HIGHLY_CONFIDENTIAL, NOW.minusSeconds(86400), 9, "Litigation", "person-business_admin", NOW, null, null);
+                SensitivityLevel.HIGHLY_CONFIDENTIAL, NOW.minusSeconds(86400), 9, "Litigation", "person-business_admin", "Pat Person",
+                NOW, null, null, null);
     }
 
     private static Set<String> keys(JsonNode node) {
@@ -118,7 +119,8 @@ class LegalHoldControllerTest {
                 .andExpect(status().isCreated()).andReturn();
         assertEquals("no-store, must-revalidate, private", placed.getResponse().getHeader("Cache-Control"));
         assertEquals(new TreeSet<>(List.of("holdId", "documentId", "primaryIdentifier", "primaryIdentifierLabel",
-                "sensitivityLevel", "receivedAt", "pageCount", "reason", "placedBy", "placedAt", "releasedBy", "releasedAt")),
+                "sensitivityLevel", "receivedAt", "pageCount", "reason", "placedBy", "placedByName", "placedAt", "releasedBy",
+                "releasedByName", "releasedAt")),
                 keys(JSON.readTree(placed.getResponse().getContentAsString())));
 
         MvcResult found = mvc.perform(get("/api/v1/admin/legal-holds/documents").param("identifier", "300000000001"))

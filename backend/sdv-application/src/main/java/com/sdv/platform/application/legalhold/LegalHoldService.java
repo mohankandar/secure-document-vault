@@ -108,7 +108,8 @@ public class LegalHoldService {
             if (document.activeHoldId() != null) {
                 throw new CodedRefusal.Conflict(SdvErrorCode.HLD_005, "This document is already on legal hold.");
             }
-            LegalHold hold = new LegalHold(UUID.randomUUID(), tenantId, documentId, why, actorId, now, null, null);
+            LegalHold hold = new LegalHold(UUID.randomUUID(), tenantId, documentId, why, actorId, name(actorDisplayName),
+                    now, null, null, null);
             holds.insert(hold);
             Map<String, Object> details = new LinkedHashMap<>();
             details.put("holdId", hold.holdId().toString());
@@ -131,13 +132,13 @@ public class LegalHoldService {
                 throw new CodedRefusal.Conflict(SdvErrorCode.HLD_008, "This legal hold was already released.");
             }
             Instant releasedAt = now.isBefore(hold.placedAt()) ? hold.placedAt() : now;
-            holds.release(tenantId, holdId, actorId, releasedAt);
+            holds.release(tenantId, holdId, actorId, name(actorDisplayName), releasedAt);
             Map<String, Object> details = new LinkedHashMap<>();
             details.put("holdId", holdId.toString());
             details.put("placedAt", hold.placedAt().toString());
             append(tenantId, actorId, actorDisplayName, RELEASED_ACTION, hold.documentId(), releasedAt, correlationId, details);
             LegalHold released = new LegalHold(hold.holdId(), hold.tenantId(), hold.documentId(), hold.reason(),
-                    hold.placedBy(), hold.placedAt(), actorId, releasedAt);
+                    hold.placedBy(), hold.placedByName(), hold.placedAt(), actorId, name(actorDisplayName), releasedAt);
             DocumentFacts document = holds.lockDocument(tenantId, hold.documentId()).orElse(null);
             SensitivityLevel level = document == null ? null : levels(tenantId, List.of(document)).get(hold.documentId());
             return LegalHoldView.of(released, document, level);
@@ -187,6 +188,11 @@ public class LegalHoldService {
         }
     }
 
+    /** Task 0028, 0.3: the name from the signed-in session, or null when the session has none. */
+    private static String name(String displayName) {
+        return displayName == null || displayName.isBlank() ? null : displayName.strip();
+    }
+
     private static void requireTenant(UUID tenantId) {
         if (tenantId == null) throw new IllegalArgumentException("tenantId is required.");
     }
@@ -225,14 +231,18 @@ public class LegalHoldService {
             Integer pageCount,
             String reason,
             String placedBy,
+            /* Task 0028, 0.3: the person's name at the time; null for holds placed before names were kept. */
+            String placedByName,
             Instant placedAt,
             String releasedBy,
+            String releasedByName,
             Instant releasedAt) {
         static LegalHoldView of(LegalHold h, DocumentFacts d, SensitivityLevel level) {
             return new LegalHoldView(h.holdId(), h.documentId(),
                     d == null ? null : d.primaryIdentifier(), d == null ? null : d.primaryIdentifierLabel(), level,
                     d == null ? null : d.receivedAt(), d == null ? null : d.pageCount(),
-                    h.reason(), h.placedBy(), h.placedAt(), h.releasedBy(), h.releasedAt());
+                    h.reason(), h.placedBy(), h.placedByName(), h.placedAt(), h.releasedBy(), h.releasedByName(),
+                    h.releasedAt());
         }
     }
 }

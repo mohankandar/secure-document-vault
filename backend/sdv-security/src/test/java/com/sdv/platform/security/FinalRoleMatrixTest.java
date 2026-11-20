@@ -61,8 +61,10 @@ class FinalRoleMatrixTest {
      * Task 0026, carry-over 1: docs/design/sensitivity/ROLE-MATRIX.md sections 3.2 and 3.4, every cell, as the
      * capability each function needs. Section 3.1 (documents, with its L cells) is checked through the real
      * controllers and services in DocumentLevelEnforcementTest (sdv-web), for every role and level.
-     * Two cells carry a condition that belongs to later tasks and isn't a capability: a Steward may ask to lower only
-     * from Confidential (task 0027), and a Business Admin never approves their own request (task 0028).
+     * Two cells carry a condition that isn't a capability. Task 0028 enforces both in the services, tested in sdv-web:
+     * a Steward may ask to lower only from Confidential (SensitivityLevelChangeTest, SDV-SEN-015), and nobody approves
+     * their own request (AccessRequestApprovalsTest and AccessRequestPostgresTest, SDV-APR-006 and the table's check).
+     * The endpoints' permission checks for these cells are in ApprovalsControllerTest.
      */
     @Test
     void sections32And34OfTheSensitivityMatrix() {

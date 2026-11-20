@@ -73,6 +73,7 @@ class LegalHoldServiceTest {
         assertEquals(TENANT, hold.getValue().tenantId());
         assertEquals(DOCUMENT, hold.getValue().documentId());
         assertEquals("admin", hold.getValue().placedBy());
+        assertEquals("Ari Admin", hold.getValue().placedByName(), "task 0028, 0.3: the name at the time");
         assertEquals(NOW, hold.getValue().placedAt());
         assertNull(hold.getValue().releasedAt());
 
@@ -151,12 +152,15 @@ class LegalHoldServiceTest {
 
     @Test
     void aHoldIsReleasedOnceAndAudited() {
-        LegalHold active = new LegalHold(HOLD, TENANT, DOCUMENT, "Litigation", "admin", NOW.minusSeconds(60), null, null);
+        LegalHold active = new LegalHold(HOLD, TENANT, DOCUMENT, "Litigation", "admin", "Ari Admin", NOW.minusSeconds(60), null, null, null);
         when(repository.lockHold(TENANT, HOLD)).thenReturn(Optional.of(active));
         when(repository.lockDocument(TENANT, DOCUMENT)).thenReturn(Optional.of(facts("AVAILABLE", null)));
 
         var view = service.release(TENANT, "admin2", "Bo Admin", HOLD.toString(), "corr-r");
-        verify(repository).release(TENANT, HOLD, "admin2", NOW);
+        verify(repository).release(TENANT, HOLD, "admin2", "Bo Admin", NOW);
+        // Task 0028, 0.3: the names at the time of each action.
+        assertEquals("Ari Admin", view.placedByName());
+        assertEquals("Bo Admin", view.releasedByName());
         assertEquals("admin2", view.releasedBy());
         assertEquals(NOW, view.releasedAt());
         ArgumentCaptor<AuditEvent> event = ArgumentCaptor.forClass(AuditEvent.class);
@@ -167,7 +171,7 @@ class LegalHoldServiceTest {
         assertFalse(event.getValue().safeDetailsJson().contains("Litigation"));
 
         when(repository.lockHold(TENANT, HOLD)).thenReturn(Optional.of(
-                new LegalHold(HOLD, TENANT, DOCUMENT, "Litigation", "admin", NOW.minusSeconds(60), "admin2", NOW)));
+                new LegalHold(HOLD, TENANT, DOCUMENT, "Litigation", "admin", null, NOW.minusSeconds(60), "admin2", null, NOW)));
         assertEquals("SDV-HLD-008", code(assertThrows(CodedRefusal.Conflict.class,
                 () -> service.release(TENANT, "admin", null, HOLD.toString(), "c"))));
         when(repository.lockHold(OTHER_TENANT, HOLD)).thenReturn(Optional.empty());
@@ -175,7 +179,7 @@ class LegalHoldServiceTest {
                 () -> service.release(OTHER_TENANT, "admin", null, HOLD.toString(), "c"))));
         assertEquals("SDV-HLD-007", code(assertThrows(CodedRefusal.NotFound.class,
                 () -> service.release(TENANT, "admin", null, "nope", "c"))));
-        verify(repository, times(1)).release(any(), any(), any(), any());
+        verify(repository, times(1)).release(any(), any(), any(), any(), any());
     }
 
     @Test

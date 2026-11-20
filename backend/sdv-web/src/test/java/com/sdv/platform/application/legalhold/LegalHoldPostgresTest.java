@@ -144,7 +144,7 @@ class LegalHoldPostgresTest {
             TransactionStatus holding = tx.getTransaction(new DefaultTransactionDefinition());
             holdRepository.lockDocument(T1, D).orElseThrow();
             holdRepository.insert(new com.sdv.platform.application.port.LegalHoldRepository.LegalHold(UUID.randomUUID(), T1, D,
-                    "Race test", "admin", java.time.Instant.now(), null, null));
+                    "Race test", "admin", "Ari Admin", java.time.Instant.now(), null, null, null));
             Future<Boolean> claim = pool.submit(() -> new TransactionTemplate(tx).execute(
                     s -> retentionRepository.claimDueDocument(T1, D, java.time.Instant.now())));
             Thread.sleep(Duration.ofMillis(800));

@@ -37,23 +37,40 @@ public class DocumentAccessGuard {
     public static final String REFUSED_ACTION = "DOCUMENT_ACCESS_REFUSED";
     public static final String RESTRICTED_MESSAGE = "This document is restricted.";
     public static final String APPROVAL_NEEDED_MESSAGE =
-            "Printing or downloading a Highly Confidential document needs an approval, which isn't available yet.";
+            "Printing or downloading a Highly Confidential document needs a Business Admin's approval, used once "
+                    + "within its time. Ask for one, then try again.";
 
-    /** What the person tried; written in the refusal's audit event. */
-    public enum Attempt { OPEN, PAGE, PREVIEWS, TEXT_SEARCH, TAGS, ADD_TAG, COMMENTS, ADD_COMMENT, ACTIVITY, PRINT, DOWNLOAD, REDACT }
+    /**
+     * What the person tried; written in the refusal's audit event. Task 0028: CHANGE_LEVEL (raise or ask to lower)
+     * and REQUEST_ACCESS (ask to print or download).
+     */
+    public enum Attempt { OPEN, PAGE, PREVIEWS, TEXT_SEARCH, TAGS, ADD_TAG, COMMENTS, ADD_COMMENT, ACTIVITY, PRINT, DOWNLOAD, REDACT,
+        CHANGE_LEVEL, REQUEST_ACCESS }
 
     private final BusinessRecordRepository records;
     private final AuditEventPort audit;
+    private final SensitiveAccessGrants grants;
     private final Clock clock;
 
-    @Autowired
+    /** No grants: every Highly Confidential print and download is refused. */
     public DocumentAccessGuard(BusinessRecordRepository records, AuditEventPort audit) {
-        this(records, audit, Clock.systemUTC());
+        this(records, audit, SensitiveAccessGrants.NONE, Clock.systemUTC());
     }
 
     public DocumentAccessGuard(BusinessRecordRepository records, AuditEventPort audit, Clock clock) {
+        this(records, audit, SensitiveAccessGrants.NONE, clock);
+    }
+
+    @Autowired
+    public DocumentAccessGuard(BusinessRecordRepository records, AuditEventPort audit, SensitiveAccessGrants grants) {
+        this(records, audit, grants, Clock.systemUTC());
+    }
+
+    public DocumentAccessGuard(BusinessRecordRepository records, AuditEventPort audit, SensitiveAccessGrants grants,
+                               Clock clock) {
         this.records = records;
         this.audit = audit;
+        this.grants = Objects.requireNonNull(grants, "grants");
         this.clock = clock;
     }
 
@@ -82,22 +99,35 @@ public class DocumentAccessGuard {
         return level;
     }
 
+    /** What a print or download may go ahead with: the effective level, and the grant used (Highly Confidential only). */
+    public record PrintOrDownload(SensitivityLevel level, UUID grantId) { }
+
     /**
-     * Print and download: the document must be openable, and in this version a Highly Confidential one is refused
-     * for everyone (403, SDV-SEN-009) until approvals exist (task 0028). Returns the effective level, which the
-     * caller writes in its own audit event.
+     * Print and download: the document must be openable. Task 0028: a Highly Confidential one also needs a valid grant
+     * for this person, this document and this kind (approved, unused, unexpired); without one it is refused (403,
+     * SDV-SEN-009) and audited. With {@link SensitiveAccessGrants.Use#USE} the grant is used up here, so it works
+     * once; {@link SensitiveAccessGrants.Use#CHECK} only looks (a download checks before it sends anything, and uses
+     * the grant just before it decrypts). Returns the effective level, which the caller writes in its own audit event.
      */
-    public SensitivityLevel requirePrintOrDownload(Document document, Clearance clearance, Attempt attempt,
-                                                   String actorId, String correlationId) {
+    public PrintOrDownload requirePrintOrDownload(Document document, Clearance clearance, Attempt attempt,
+                                                  String actorId, String correlationId, SensitiveAccessGrants.Use use) {
         if (attempt != Attempt.PRINT && attempt != Attempt.DOWNLOAD) {
             throw new IllegalArgumentException("Only print and download need this check.");
         }
+        Objects.requireNonNull(use, "use");
         SensitivityLevel level = requireOpenable(document, clearance, attempt, actorId, correlationId);
-        if (level == SensitivityLevel.HIGHLY_CONFIDENTIAL) {
+        if (level != SensitivityLevel.HIGHLY_CONFIDENTIAL) return new PrintOrDownload(level, null);
+        UUID grant = null;
+        try {
+            grant = grants.grant(document.tenantId(), document.documentId(), actorId, attempt, use, correlationId).orElse(null);
+        } catch (RuntimeException ex) {
+            // A grant that can't be read or used is no grant (fail closed).
+        }
+        if (grant == null) {
             refuse(document, level, attempt, SdvErrorCode.SEN_009, actorId, correlationId);
             throw new CodedRefusal.Forbidden(SdvErrorCode.SEN_009, APPROVAL_NEEDED_MESSAGE);
         }
-        return level;
+        return new PrintOrDownload(level, grant);
     }
 
     /** A document described in a list (audit and problem views): enough to work out its effective level. */

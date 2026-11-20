@@ -736,7 +736,6 @@ small.bad { color: var(--danger); }
 .pr-table td .v-badge { margin-right: 6px; }
 .pr-table .act { width: 32px; }
 .pr-sub { margin: -10px 0 0; font-size: var(--fs-meta); }
-.pr-title { display: block; font-size: var(--fs-meta); color: var(--ink-3); margin-top: 2px; }
 .pr-block { display: flex; flex-direction: column; gap: 4px; font-size: var(--fs-small); }
 .pr-block h3 { margin: 0; }
 .pr-block p { margin: 0; }

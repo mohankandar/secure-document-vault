@@ -64,7 +64,8 @@ public class JdbcLegalHoldRepository implements LegalHoldRepository {
     @Override
     public Optional<LegalHold> lockHold(UUID tenantId, UUID holdId) {
         return jdbc.query("""
-                select hold_id, tenant_id, document_id, reason, placed_by, placed_at, released_by, released_at
+                select hold_id, tenant_id, document_id, reason, placed_by, placed_by_display_name, placed_at,
+                       released_by, released_by_display_name, released_at
                   from legal_holds
                  where tenant_id=:tenantId and hold_id=:holdId
                  for update
@@ -75,27 +76,29 @@ public class JdbcLegalHoldRepository implements LegalHoldRepository {
     @Override
     public void insert(LegalHold hold) {
         jdbc.update("""
-                insert into legal_holds(hold_id, tenant_id, document_id, reason, placed_by, placed_at)
-                values (:holdId, :tenantId, :documentId, :reason, :placedBy, :placedAt)
+                insert into legal_holds(hold_id, tenant_id, document_id, reason, placed_by, placed_by_display_name, placed_at)
+                values (:holdId, :tenantId, :documentId, :reason, :placedBy, :placedByName, :placedAt)
                 """, new MapSqlParameterSource()
                 .addValue("holdId", hold.holdId())
                 .addValue("tenantId", hold.tenantId())
                 .addValue("documentId", hold.documentId())
                 .addValue("reason", hold.reason())
                 .addValue("placedBy", hold.placedBy())
+                .addValue("placedByName", hold.placedByName())
                 .addValue("placedAt", Timestamp.from(hold.placedAt())));
     }
 
     @Override
-    public void release(UUID tenantId, UUID holdId, String releasedBy, Instant releasedAt) {
+    public void release(UUID tenantId, UUID holdId, String releasedBy, String releasedByName, Instant releasedAt) {
         int updated = jdbc.update("""
                 update legal_holds
-                   set released_by=:releasedBy, released_at=:releasedAt
+                   set released_by=:releasedBy, released_by_display_name=:releasedByName, released_at=:releasedAt
                  where tenant_id=:tenantId and hold_id=:holdId and released_at is null
                 """, new MapSqlParameterSource()
                 .addValue("tenantId", tenantId)
                 .addValue("holdId", holdId)
                 .addValue("releasedBy", releasedBy)
+                .addValue("releasedByName", releasedByName)
                 .addValue("releasedAt", Timestamp.from(releasedAt)));
         if (updated != 1) throw new IllegalStateException("The legal hold release did not change exactly one active hold.");
     }
@@ -124,7 +127,8 @@ public class JdbcLegalHoldRepository implements LegalHoldRepository {
     @Override
     public List<HoldRow> findActive(UUID tenantId, int limit) {
         return jdbc.query("select h.hold_id as h_hold_id, h.tenant_id as h_tenant_id, h.document_id as h_document_id, "
-                        + "h.reason as h_reason, h.placed_by as h_placed_by, h.placed_at as h_placed_at, "
+                        + "h.reason as h_reason, h.placed_by as h_placed_by, h.placed_by_display_name as h_placed_by_display_name, "
+                        + "h.placed_at as h_placed_at, h.released_by_display_name as h_released_by_display_name, "
                         + "h.released_by as h_released_by, h.released_at as h_released_at, " + DOCUMENT_COLUMNS
                         + " from legal_holds h join documents d on d.tenant_id=h.tenant_id and d.document_id=h.document_id "
                         + PRIMARY_IDENTIFIER + """
@@ -159,8 +163,10 @@ public class JdbcLegalHoldRepository implements LegalHoldRepository {
                 rs.getObject(prefix + "document_id", UUID.class),
                 rs.getString(prefix + "reason"),
                 rs.getString(prefix + "placed_by"),
+                rs.getString(prefix + "placed_by_display_name"),
                 rs.getTimestamp(prefix + "placed_at").toInstant(),
                 rs.getString(prefix + "released_by"),
+                rs.getString(prefix + "released_by_display_name"),
                 released == null ? null : released.toInstant());
     }
 

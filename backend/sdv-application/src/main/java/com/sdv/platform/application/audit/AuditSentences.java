@@ -36,7 +36,8 @@ public final class AuditSentences {
             Map.entry("TEXT_SEARCH", "search in"), Map.entry("TAGS", "see the tags of"), Map.entry("ADD_TAG", "tag"),
             Map.entry("COMMENTS", "see the comments on"), Map.entry("ADD_COMMENT", "comment on"),
             Map.entry("ACTIVITY", "see the activity of"), Map.entry("PRINT", "print"),
-            Map.entry("DOWNLOAD", "download"), Map.entry("REDACT", "redact"));
+            Map.entry("DOWNLOAD", "download"), Map.entry("REDACT", "redact"),
+            Map.entry("CHANGE_LEVEL", "change the level of"), Map.entry("REQUEST_ACCESS", "ask to print or download"));
 
     private AuditSentences() { }
 
@@ -91,6 +92,17 @@ public final class AuditSentences {
                             ? ", but that needs an approval" : ", but its level is restricted");
             case "LEGAL_HOLD_PLACED" -> w + " put " + f + " on legal hold";
             case "LEGAL_HOLD_RELEASED" -> w + " released the legal hold on " + f;
+            // Task 0028: level changes and approvals. Levels in words; the reason stays in the details.
+            case "DOCUMENT_SENSITIVITY_RAISED" -> w + " raised " + f + " to " + levelWords(text(d, "to"));
+            case "DOCUMENT_SENSITIVITY_LOWERED" -> w + " approved lowering " + f + " to " + levelWords(text(d, "to"));
+            case "RECORD_SENSITIVITY_RAISED" -> w + " raised a record to " + levelWords(text(d, "to"));
+            case "RECORD_SENSITIVITY_LOWERED" -> w + " approved lowering a record to " + levelWords(text(d, "to"));
+            case "ACCESS_REQUEST_CREATED" -> w + " asked " + requestWords(text(d, "kind"), text(d, "requestedLevel"), f);
+            case "ACCESS_REQUEST_APPROVED" -> w + " approved a request " + requestWords(text(d, "kind"), text(d, "requestedLevel"), f);
+            case "ACCESS_REQUEST_DECLINED" -> w + " declined a request " + requestWords(text(d, "kind"), text(d, "requestedLevel"), f);
+            case "ACCESS_REQUEST_DECISION_REFUSED" -> w + " tried to decide a request; Vero refused it";
+            case "ACCESS_REQUEST_EXPIRED" -> "A request " + requestWords(text(d, "kind"), null, f) + " expired";
+            case "SENSITIVE_ACCESS_GRANT_USED" -> w + " used an approval to " + ("DOWNLOAD".equals(text(d, "kind")) ? "download " : "print ") + f;
             case "ROLE_GROUP_MAPPING_CHANGED" -> "The sign-in groups for " + text(d, "role") + " changed";
             case "RETENTION_POLICY_UPDATED" -> d.path("indefinite").asBoolean(false) && d.path("indefinite").isBoolean()
                     ? w + " changed how long to keep new documents: keep them forever"
@@ -140,6 +152,29 @@ public final class AuditSentences {
     private static String text(JsonNode d, String key) {
         JsonNode v = d.get(key);
         return v == null || v.isNull() ? "null" : v.asText();
+    }
+
+    /** Task 0028: a level in words, as the screens say it. */
+    private static String levelWords(String level) {
+        if (level == null) return "another level";
+        return switch (level) {
+            case "STANDARD" -> "Standard";
+            case "CONFIDENTIAL" -> "Confidential";
+            case "HIGHLY_CONFIDENTIAL" -> "Highly Confidential";
+            default -> "another level";
+        };
+    }
+
+    /** Task 0028: what a request asks for, in words ("to print a document", "to lower a record to Standard"). */
+    private static String requestWords(String kind, String requestedLevel, String document) {
+        if (kind == null) return "for approval";
+        return switch (kind) {
+            case "PRINT" -> "to print " + document;
+            case "DOWNLOAD" -> "to download " + document;
+            case "LOWER_LEVEL" -> "to lower " + document + (requestedLevel == null ? "" : " to " + levelWords(requestedLevel));
+            case "LOWER_RECORD_LEVEL" -> "to lower a record" + (requestedLevel == null ? "" : " to " + levelWords(requestedLevel));
+            default -> "for approval";
+        };
     }
 
     private static String docs(Long k) {

@@ -96,3 +96,11 @@ sdv:
     # For check scripts only: a Spring cron expression that replaces daily-at when set. Leave empty.
     cron: ${SDV_RETENTION_CRON:}
 
+  # Task 0028: approvals. How long an approved Highly Confidential print or download stays usable (hours, 1-168),
+  # and how long a request may wait undecided before it expires (days, 1-90). Per tenant: tenant id=number, comma-separated.
+  approvals:
+    grant-hours: ${SDV_APPROVALS_GRANT_HOURS:24}
+    pending-days: ${SDV_APPROVALS_PENDING_DAYS:7}
+    tenant-grant-hours: ${SDV_APPROVALS_TENANT_GRANT_HOURS:}
+    tenant-pending-days: ${SDV_APPROVALS_TENANT_PENDING_DAYS:}
+

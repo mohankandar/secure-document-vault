@@ -23,7 +23,8 @@ public interface LegalHoldRepository {
     void insert(LegalHold hold);
 
     /** Releases an active hold; fails unless exactly one active hold was released. */
-    void release(UUID tenantId, UUID holdId, String releasedBy, Instant releasedAt);
+    /** Task 0028, 0.3: releasedByName is the name from the signed-in session at the time (null when unknown). */
+    void release(UUID tenantId, UUID holdId, String releasedBy, String releasedByName, Instant releasedAt);
 
     /**
      * Documents whose record's primary identifier (its first business identifier in display order, as the record
@@ -57,8 +58,11 @@ public interface LegalHoldRepository {
             UUID documentId,
             String reason,
             String placedBy,
+            /* Task 0028, 0.3: names from the signed-in session at the time of the action; null for older holds. */
+            String placedByName,
             Instant placedAt,
             String releasedBy,
+            String releasedByName,
             Instant releasedAt) {
         public boolean active() {
             return releasedAt == null;

@@ -18,6 +18,16 @@ public interface RecordSensitivityRepository {
     /** Raises a level; the caller has checked under the lock that the new level is higher. */
     void raise(UUID tenantId, UUID recordLevelId, SensitivityLevel level, String setBy, Instant updatedAt);
 
+    /**
+     * Task 0028: a person's change of a record's level (a Steward's raise, or a lowering a Business Admin approved).
+     * The caller has checked the direction under the lock. setBy is the person's subject; reason replaces the stored one.
+     * Only the database repository supports it; the in-memory stand-ins used where no record levels exist refuse it.
+     */
+    default void setLevel(UUID tenantId, UUID recordLevelId, SensitivityLevel level, String setBy, String reason,
+                          Instant updatedAt) {
+        throw new UnsupportedOperationException("Record levels can't be changed here.");
+    }
+
     /** How many records of this sending system have a level. */
     long countForSource(UUID tenantId, UUID sourceId);
 

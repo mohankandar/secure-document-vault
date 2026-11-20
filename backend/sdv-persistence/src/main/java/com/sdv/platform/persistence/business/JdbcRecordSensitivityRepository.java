@@ -76,6 +76,23 @@ public class JdbcRecordSensitivityRepository implements RecordSensitivityReposit
     }
 
     @Override
+    public void setLevel(UUID tenantId, UUID recordLevelId, SensitivityLevel level, String setBy, String reason,
+                         Instant updatedAt) {
+        int updated = jdbc.update("""
+                update record_sensitivity_levels
+                   set sensitivity_level=:level, set_by=:setBy, reason=:reason, updated_at=greatest(set_at, :updatedAt)
+                 where tenant_id=:tenantId and record_level_id=:id
+                """, new MapSqlParameterSource()
+                .addValue("tenantId", tenantId)
+                .addValue("id", recordLevelId)
+                .addValue("level", level.name())
+                .addValue("setBy", setBy)
+                .addValue("reason", reason)
+                .addValue("updatedAt", Timestamp.from(updatedAt)));
+        if (updated != 1) throw new IllegalStateException("The record's sensitivity level could not be changed.");
+    }
+
+    @Override
     public long countForSource(UUID tenantId, UUID sourceId) {
         Long count = jdbc.queryForObject("""
                 select count(*) from record_sensitivity_levels where tenant_id=:tenantId and source_id=:sourceId

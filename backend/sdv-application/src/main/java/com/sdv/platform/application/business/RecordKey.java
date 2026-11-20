@@ -74,6 +74,35 @@ public final class RecordKey {
         return identifiers.isEmpty() ? ofSubmission(submissionId) : ofIdentifiers(identifiers);
     }
 
+    /**
+     * Task 0028: a stored key read back. Exactly one of the two is set: the identifier values, or the submission that
+     * is a record on its own. Anything not written by this class is refused.
+     */
+    public record Parsed(List<Part> identifiers, UUID submissionId) { }
+
+    public static Parsed parse(String recordKey) {
+        if (recordKey == null) throw new IllegalArgumentException("A record key is required.");
+        if (recordKey.startsWith(SUBMISSION)) {
+            return new Parsed(List.of(), UUID.fromString(recordKey.substring(SUBMISSION.length())));
+        }
+        if (!recordKey.startsWith(IDENTIFIERS)) throw new IllegalArgumentException("Unknown record key.");
+        try {
+            com.fasterxml.jackson.databind.JsonNode array = JSON.readTree(recordKey.substring(IDENTIFIERS.length()));
+            if (array == null || !array.isArray() || array.isEmpty()) throw new IllegalArgumentException("Unknown record key.");
+            List<Part> parts = new java.util.ArrayList<>();
+            for (com.fasterxml.jackson.databind.JsonNode pair : array) {
+                if (!pair.isArray() || pair.size() != 2 || !pair.get(0).isTextual() || !pair.get(1).isTextual()) {
+                    throw new IllegalArgumentException("Unknown record key.");
+                }
+                parts.add(new Part(pair.get(0).asText(), pair.get(1).asText()));
+            }
+            if (!ofIdentifiers(parts).equals(recordKey)) throw new IllegalArgumentException("Unknown record key.");
+            return new Parsed(List.copyOf(parts), null);
+        } catch (JsonProcessingException ex) {
+            throw new IllegalArgumentException("Unknown record key.", ex);
+        }
+    }
+
     /** The key's SHA-256 as lower-case hex, over its UTF-8 bytes (the database checks the same). */
     public static String sha256(String recordKey) {
         try {

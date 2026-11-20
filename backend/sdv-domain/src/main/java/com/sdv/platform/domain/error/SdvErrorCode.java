@@ -22,8 +22,27 @@ public enum SdvErrorCode {
     SEN_007("SDV-SEN-007"),
     /** Task 0026: the person's role can't open documents at this document's effective level (403). */
     SEN_008("SDV-SEN-008"),
-    /** Task 0026: printing or downloading a Highly Confidential document needs an approval Vero can't give yet (403). */
+    /**
+     * Task 0026: printing or downloading a Highly Confidential document needs an approval (403). Task 0028: sent when
+     * the person has no valid grant (approved, unused, unexpired, for them, this document and this kind).
+     */
     SEN_009("SDV-SEN-009"),
+    /** Task 0028: raising or asking to lower a level needs CHANGE_SENSITIVITY_LEVEL (a Steward) (403). */
+    SEN_010("SDV-SEN-010"),
+    /** Task 0028: the level asked for is missing or not one of the exact names (400). */
+    SEN_011("SDV-SEN-011"),
+    /** Task 0028: a level change's reason is missing, shorter than 3 or longer than 500 characters (400). */
+    SEN_012("SDV-SEN-012"),
+    /** Task 0028: a raise must go to a level higher than the current one (409). */
+    SEN_013("SDV-SEN-013"),
+    /** Task 0028: a lowering must go to a level lower than the current one (409). */
+    SEN_014("SDV-SEN-014"),
+    /** Task 0028: a Steward may ask to lower only from Confidential (403). */
+    SEN_015("SDV-SEN-015"),
+    /** Task 0028: no document or record of this tenant has this reference (404). */
+    SEN_016("SDV-SEN-016"),
+    /** Task 0028: only an available document's level can be changed (409). */
+    SEN_017("SDV-SEN-017"),
     /** Task 0025: a role-permission override would give a role a capability it may never have. */
     ROL_001("SDV-ROL-001"),
     /** Task 0025: a role-permission override names a role whose permissions are fixed. */
@@ -49,7 +68,37 @@ public enum SdvErrorCode {
     /** Task 0027: no legal hold of this tenant has this reference (404). */
     HLD_007("SDV-HLD-007"),
     /** Task 0027: the legal hold was already released (409). */
-    HLD_008("SDV-HLD-008");
+    HLD_008("SDV-HLD-008"),
+    /** Task 0028: asking to print or download a Highly Confidential document needs REQUEST_SENSITIVE_ACCESS (403). */
+    APR_001("SDV-APR-001"),
+    /** Task 0028: a request's reason is missing, shorter than 3 or longer than 500 characters (400). */
+    APR_002("SDV-APR-002"),
+    /** Task 0028: the document isn't Highly Confidential, so printing or downloading it needs no approval (409). */
+    APR_003("SDV-APR-003"),
+    /** Task 0028: the same person already has the same request waiting (409). */
+    APR_004("SDV-APR-004"),
+    /** Task 0028: listing or deciding requests needs APPROVE_SENSITIVE_ACCESS (Business Admin) (403). */
+    APR_005("SDV-APR-005"),
+    /** Task 0028: nobody approves or declines their own request (403). */
+    APR_006("SDV-APR-006"),
+    /** Task 0028: no request of this tenant has this reference (404). */
+    APR_007("SDV-APR-007"),
+    /** Task 0028: the request is no longer waiting: it was approved, declined, used or has expired (409). */
+    APR_008("SDV-APR-008"),
+    /** Task 0028: a whole-record request is decided one at a time, never in a bulk decision (409). */
+    APR_009("SDV-APR-009"),
+    /** Task 0028: a bulk decision is malformed: no decision, no requests, or more than 100 (400). */
+    APR_010("SDV-APR-010"),
+    /** Task 0028: the lowering no longer applies: the level changed since the request, or the document is gone (409). */
+    APR_011("SDV-APR-011"),
+    /** Task 0028: the request kind is missing or unknown (400). */
+    APR_012("SDV-APR-012"),
+    /** Task 0028: no document of this tenant has this reference (404). */
+    APR_013("SDV-APR-013"),
+    /** Task 0028: the document isn't available, so it can't be printed or downloaded (409). */
+    APR_014("SDV-APR-014"),
+    /** Task 0028: a person's own requests are listed for Stewards only (CHANGE_SENSITIVITY_LEVEL) (403). */
+    APR_015("SDV-APR-015");
 
     private final String code;
 

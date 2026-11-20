@@ -2,6 +2,7 @@ package com.sdv.platform.application.document;
 
 import com.sdv.platform.application.access.Clearance;
 import com.sdv.platform.application.access.DocumentAccessGuard;
+import com.sdv.platform.application.access.SensitiveAccessGrants;
 import com.sdv.platform.application.port.AuditEventPort;
 import com.sdv.platform.application.port.BusinessActivityQueryPort;
 import com.sdv.platform.application.port.DocumentIntakeRepository;
@@ -91,15 +92,20 @@ public class DocumentActionService {
         return created;
     }
 
-    /** Task 0026: Highly Confidential is refused for everyone; the event names the effective level. */
+    /**
+     * The event names the effective level. Task 0028: Highly Confidential needs a valid print grant for this person
+     * and document, which this uses up (one print per approval); the event then names the request it used.
+     */
     public void recordPrint(UUID tenantId, UUID documentId, Clearance clearance, String actorId, String correlationId) {
         Document document = requireAvailable(tenantId, documentId, clearance, DocumentAccessGuard.Attempt.PRINT,
                 actorId, correlationId);
-        SensitivityLevel level = access.requirePrintOrDownload(document, clearance, DocumentAccessGuard.Attempt.PRINT,
-                actorId, correlationId);
+        DocumentAccessGuard.PrintOrDownload allowed = access.requirePrintOrDownload(document, clearance,
+                DocumentAccessGuard.Attempt.PRINT, actorId, correlationId, SensitiveAccessGrants.Use.USE);
+        SensitivityLevel level = allowed.level();
         audit.append(new AuditEvent(UUID.randomUUID(), tenantId, "USER", actorId,
                 "DOCUMENT_PRINTED", "DOCUMENT", document.documentId().toString(), clock.instant(), correlationId,
-                AuditOutcome.SUCCESS, "{\"currentApproved\":true,\"sensitivityLevel\":\"" + level.name() + "\"}"));
+                AuditOutcome.SUCCESS, "{\"currentApproved\":true,\"sensitivityLevel\":\"" + level.name() + "\""
+                        + (allowed.grantId() == null ? "" : ",\"accessRequestId\":\"" + allowed.grantId() + "\"") + "}"));
     }
 
     public List<ActivityEntry> activity(UUID tenantId, UUID documentId, Instant from, Instant to,

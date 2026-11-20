@@ -73,9 +73,65 @@ Every refusal listed here comes back with a short, stable `code` and a plain `me
 ### SDV-SEN-009: Highly Confidential print or download needs approval
 
 - **HTTP status:** 403. Sent by download (`GET /api/v1/business/documents/{id}/download`) and print (`POST …/print-event`).
-- **Meaning:** the document's effective level is Highly Confidential. Printing or downloading one needs a Business Admin's approval, and this version of Vero can't give one yet, so it is refused even for a Restricted steward, who can still open and read it. The refusal is audited as `DOCUMENT_ACCESS_REFUSED`.
-- **What the user should do:** read the document in the viewer. Approved printing and downloading comes in a later version.
-- **What support should tell the customer:** this is intended. Highly Confidential documents can't leave Vero until the approval step is available.
+- **Meaning:** the document's effective level is Highly Confidential. Printing or downloading one needs a Business Admin's approval (task 0028): a grant for this person, this document and this kind (print or download), approved, not used yet, and still inside its use window (24 hours after approval unless the customer's setting says otherwise). There is no such grant: none was asked for or approved, it was already used once, or its time ran out. Only a Restricted steward can hold one. The refusal is audited as `DOCUMENT_ACCESS_REFUSED`.
+- **What the user should do:** a Restricted steward asks for approval (`POST /api/v1/business/documents/{id}/access-requests` with kind `PRINT` or `DOWNLOAD` and a reason), waits for a Business Admin to approve it, and then prints or downloads once within the time. Each approval is good for one print or one download.
+- **What support should tell the customer:** this is intended. Highly Confidential documents leave Vero only with an approval, once. The person's own request list (`GET /api/v1/business/access-requests`) shows whether the request is waiting, approved, used, declined or expired.
+
+### SDV-SEN-010: changing a level needs a Steward
+
+- **HTTP status:** 403. Sent by raise and request-lower, for a document (`POST /api/v1/business/documents/{id}/sensitivity/raise`, `…/sensitivity/lower-request`) and for a record (`POST /api/v1/business/records/{ref}/sensitivity/raise`, `…/sensitivity/lower-request`).
+- **Meaning:** the person's role can't change sensitivity levels. A Document steward or Restricted steward can. Nothing was changed. The refusal is audited as `AUTHORIZATION_DENIED` (capability `CHANGE_SENSITIVITY_LEVEL`).
+- **What the user should do:** ask a Steward to raise the level, or to ask for it to be lowered.
+- **What support should tell the customer:** this is working as intended. Role membership comes from the customer's own sign-in groups, so a change is made there by their IT team, not in Vero.
+
+### SDV-SEN-011: unknown level asked for
+
+- **HTTP status:** 400. Sent by raise and request-lower (document and record).
+- **Meaning:** `level` is missing or not exactly `STANDARD`, `CONFIDENTIAL` or `HIGHLY_CONFIDENTIAL`. Lower case, mixed case and extra spaces are refused. Nothing was changed.
+- **What the user should do:** choose one of the three levels and send it again.
+- **What support should tell the customer:** the screen or program sent a level Vero doesn't know. Ask them to choose one of the three levels.
+
+### SDV-SEN-012: level change reason missing or the wrong length
+
+- **HTTP status:** 400. Sent by raise and request-lower (document and record).
+- **Meaning:** the `reason` is missing, or shorter than 3 or longer than 500 characters once spaces at either end are removed. Nothing was changed.
+- **What the user should do:** write why the level must change, in 3 to 500 characters, and send it again.
+- **What support should tell the customer:** every level change needs a reason, because the audit records it with the change. Ask them to give one of 3 to 500 characters.
+
+### SDV-SEN-013: a raise must go higher
+
+- **HTTP status:** 409. Sent by raise (document and record).
+- **Meaning:** the level asked for is not higher than the level now. For a document, "now" is its effective level: the higher of its own level and its record's level. For a record with no level of its own, any level above Standard is a raise. The message names the level now. Nothing was changed.
+- **What the user should do:** choose a higher level. To make it lower, ask for a lowering instead.
+- **What support should tell the customer:** the document or record is already at that level or higher. Lowering is a separate request that a Business Admin approves.
+
+### SDV-SEN-014: a lowering must go lower
+
+- **HTTP status:** 409. Sent by request-lower (document and record).
+- **Meaning:** the level asked for is not lower than the level now. For a document, that is the document's own level. For a record, it is the record's level; a record with no level can't be lowered. The message names the level now. No request was made.
+- **What the user should do:** choose a lower level. If the document is restricted only through its record's level, ask for the record's level to be lowered instead.
+- **What support should tell the customer:** nothing can be lowered below where it is. If a document's own level is already low, its record's level is what restricts it.
+
+### SDV-SEN-015: a Steward can lower only from Confidential
+
+- **HTTP status:** 403. Sent by request-lower (document and record).
+- **Meaning:** a Document steward may ask to lower a level only when it is Confidential now. This one is Highly Confidential (or, for a document, Standard). Only a Restricted steward may ask to lower from Highly Confidential. No request was made.
+- **What the user should do:** ask a Restricted steward to request the lowering.
+- **What support should tell the customer:** this is intended: Highly Confidential material is handled by Restricted stewards.
+
+### SDV-SEN-016: no such document or record
+
+- **HTTP status:** 404. Sent by raise and request-lower (document and record).
+- **Meaning:** the document ID or record reference is malformed, or names nothing in the person's own organization. Nothing was changed.
+- **What the user should do:** open the record again from search and try again from there.
+- **What support should tell the customer:** the reference sent doesn't match a document or record of theirs. Search gives the right one.
+
+### SDV-SEN-017: only an available document's level can be changed
+
+- **HTTP status:** 409. Sent by raise and request-lower for a document.
+- **Meaning:** the document is still being stored, failed to store, or was deleted by the retention cleanup (or is being deleted). Its level can't be changed. Nothing was changed.
+- **What the user should do:** wait until the document is available, or, if it was deleted, nothing.
+- **What support should tell the customer:** a document's level is changed once it is stored and available. A deleted document is gone.
 
 ## Roles (ROL)
 
@@ -173,3 +229,112 @@ Sent by the Business Admin's legal-hold endpoints, `/api/v1/admin/legal-holds` (
 - **Meaning:** the hold was already released (perhaps by someone else a moment earlier). Nothing was changed.
 - **What the user should do:** nothing; the hold is no longer in place. Reload the list of holds.
 - **What support should tell the customer:** the hold was already released; the audit shows who released it and when (`LEGAL_HOLD_RELEASED`). The document will be deleted at the next daily cleanup if its retention date has passed.
+
+## Approvals (APR)
+
+Sent by the access requests of task 0028: a Restricted steward's request to print or download one Highly Confidential document (`POST /api/v1/business/documents/{id}/access-requests`), a Steward's own list (`GET /api/v1/business/access-requests`), and the Business Admin's approvals (`/api/v1/admin/access-requests`). A Steward's request to lower a level is made with `…/sensitivity/lower-request` (see the SEN codes) and is decided here.
+
+### SDV-APR-001: asking to print or download needs a Restricted steward
+
+- **HTTP status:** 403. Sent by `POST /api/v1/business/documents/{id}/access-requests`.
+- **Meaning:** the person's role can't ask to print or download a Highly Confidential document. Only a Restricted steward can. No request was made. The refusal is audited as `AUTHORIZATION_DENIED` (capability `REQUEST_SENSITIVE_ACCESS`).
+- **What the user should do:** ask a Restricted steward.
+- **What support should tell the customer:** this is working as intended. Role membership comes from the customer's own sign-in groups, so a change is made there by their IT team, not in Vero.
+
+### SDV-APR-002: request reason missing or the wrong length
+
+- **HTTP status:** 400. Sent by `POST /api/v1/business/documents/{id}/access-requests`.
+- **Meaning:** the `reason` is missing, or shorter than 3 or longer than 500 characters once spaces at either end are removed. No request was made.
+- **What the user should do:** write why the document must be printed or downloaded, in 3 to 500 characters, and ask again.
+- **What support should tell the customer:** every request needs a reason for the Business Admin who decides it. Ask them to give one of 3 to 500 characters.
+
+### SDV-APR-003: no approval needed
+
+- **HTTP status:** 409. Sent by `POST /api/v1/business/documents/{id}/access-requests`.
+- **Meaning:** the document's effective level is not Highly Confidential, so printing or downloading it needs no approval. No request was made.
+- **What the user should do:** print or download it directly, if their role allows that.
+- **What support should tell the customer:** only Highly Confidential documents need an approval to leave Vero.
+
+### SDV-APR-004: the same request is already waiting
+
+- **HTTP status:** 409. Sent by `POST /api/v1/business/documents/{id}/access-requests` and by request-lower (document and record).
+- **Meaning:** this person already has the same request waiting for a decision: the same kind for the same document, or a lowering of the same record. No second request was made.
+- **What the user should do:** wait for the Business Admin's decision. Their own request list shows it.
+- **What support should tell the customer:** the first request is still waiting; a Business Admin decides it in the approvals list. A request nobody decides expires after 7 days (unless the customer's setting says otherwise), and then a new one can be made.
+
+### SDV-APR-005: approvals need the Business Admin
+
+- **HTTP status:** 403. Sent by every `/api/v1/admin/access-requests` endpoint: the list, approve, decline and the bulk decision.
+- **Meaning:** the person's role can't see or decide requests. Only the Business Admin can, and Roles & permissions can never give it to a Steward. Nothing was read or changed. The refusal is audited as `AUTHORIZATION_DENIED` (capability `APPROVE_SENSITIVE_ACCESS`).
+- **What the user should do:** ask a Business Admin.
+- **What support should tell the customer:** this is working as intended. Role membership comes from the customer's own sign-in groups, so a change is made there by their IT team, not in Vero.
+
+### SDV-APR-006: nobody decides their own request
+
+- **HTTP status:** 403. Sent by approve, decline and the bulk decision (per request).
+- **Meaning:** the person deciding made this request themselves. Nobody approves or declines their own request. Nothing was changed. The refusal is audited as `ACCESS_REQUEST_DECISION_REFUSED`.
+- **What the user should do:** ask another Business Admin to decide it.
+- **What support should tell the customer:** this is intended (separation rule 3). Another Business Admin of the customer has to decide.
+
+### SDV-APR-007: no such request
+
+- **HTTP status:** 404. Sent by approve, decline and the bulk decision (per request).
+- **Meaning:** the request reference is malformed, or names no request of the person's own organization. Nothing was changed.
+- **What the user should do:** reload the approvals list and decide from there.
+- **What support should tell the customer:** the reference sent doesn't match a request of theirs. The approvals list gives the right one.
+
+### SDV-APR-008: the request is no longer waiting
+
+- **HTTP status:** 409. Sent by approve, decline and the bulk decision (per request).
+- **Meaning:** the request was already approved, declined or used (perhaps by another Business Admin a moment earlier), or it expired because nobody decided it in time. The message says which. Nothing was changed.
+- **What the user should do:** reload the approvals list. For an expired request, the Steward asks again if it is still needed.
+- **What support should tell the customer:** the audit shows what happened to the request (`ACCESS_REQUEST_APPROVED`, `ACCESS_REQUEST_DECLINED`, `SENSITIVE_ACCESS_GRANT_USED` or `ACCESS_REQUEST_EXPIRED`).
+
+### SDV-APR-009: a whole-record request is decided on its own
+
+- **HTTP status:** 409. Sent by the bulk decision (`POST /api/v1/admin/access-requests/decisions`), per request.
+- **Meaning:** the request is about a whole record (contract, patient file), for example lowering its level. Such requests are never decided together with others. This one was left waiting; the others in the same bulk decision were decided as usual.
+- **What the user should do:** open it on its own and approve or decline it there (`POST /api/v1/admin/access-requests/{id}/approve` or `…/decline`).
+- **What support should tell the customer:** this is intended. A whole-record change affects every document of the record, so it is decided one at a time.
+
+### SDV-APR-010: bulk decision malformed
+
+- **HTTP status:** 400. Sent by the bulk decision (`POST /api/v1/admin/access-requests/decisions`).
+- **Meaning:** `decision` is not exactly `APPROVE` or `DECLINE`, or `requestIds` is missing, empty or longer than 100. Nothing was decided.
+- **What the user should do:** choose from 1 to 100 requests and approve or decline them.
+- **What support should tell the customer:** at most 100 requests can be decided at once. The screen or program sent something else.
+
+### SDV-APR-011: the lowering no longer applies
+
+- **HTTP status:** 409. Sent by approve and the bulk decision (per request), for a lowering.
+- **Meaning:** since the Steward asked, the level has changed (it is already at or below the level asked for), or the document was deleted. Nothing was changed and the request is still waiting.
+- **What the user should do:** decline the request. The Steward can ask again from the level as it is now.
+- **What support should tell the customer:** the request was made against a level that is no longer current, so approving it could have the wrong effect. It must be declined.
+
+### SDV-APR-012: unknown request kind
+
+- **HTTP status:** 400. Sent by `POST /api/v1/business/documents/{id}/access-requests` (kind must be `PRINT` or `DOWNLOAD`) and by the approvals list filter (`GET /api/v1/admin/access-requests?kind=…`, any of `PRINT`, `DOWNLOAD`, `LOWER_LEVEL`, `LOWER_RECORD_LEVEL`, comma-separated).
+- **Meaning:** the kind is missing or not one of the exact names, in capitals. Nothing was stored.
+- **What the user should do:** choose one of the kinds and send it again.
+- **What support should tell the customer:** the screen or program sent a kind Vero doesn't know.
+
+### SDV-APR-013: no such document
+
+- **HTTP status:** 404. Sent by `POST /api/v1/business/documents/{id}/access-requests`.
+- **Meaning:** the document ID is malformed, or names no document of the person's own organization. No request was made.
+- **What the user should do:** open the document again from its record and ask from there.
+- **What support should tell the customer:** the reference sent doesn't match a document of theirs.
+
+### SDV-APR-014: the document isn't available
+
+- **HTTP status:** 409. Sent by `POST /api/v1/business/documents/{id}/access-requests`.
+- **Meaning:** the document is still being stored, failed to store, or was deleted by the retention cleanup, so it can't be printed or downloaded. No request was made.
+- **What the user should do:** wait until it is available, or, if it was deleted, nothing.
+- **What support should tell the customer:** only an available document can be printed or downloaded.
+
+### SDV-APR-015: own request list needs a Steward
+
+- **HTTP status:** 403. Sent by `GET /api/v1/business/access-requests`.
+- **Meaning:** only Stewards make requests, so only they have a list of their own. Nothing was read. The refusal is audited as `AUTHORIZATION_DENIED` (capability `CHANGE_SENSITIVITY_LEVEL`).
+- **What the user should do:** nothing; their role makes no requests.
+- **What support should tell the customer:** this is working as intended.

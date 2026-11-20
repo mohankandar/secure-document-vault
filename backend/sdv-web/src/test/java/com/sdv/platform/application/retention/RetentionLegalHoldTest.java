@@ -109,8 +109,8 @@ class RetentionLegalHoldTest {
         repository.findByPrimaryIdentifier(TENANT, "300000000001", 100);
         repository.findActive(TENANT, 200);
         repository.insert(new com.sdv.platform.application.port.LegalHoldRepository.LegalHold(UUID.randomUUID(), TENANT,
-                DOCUMENT, "Litigation", "admin", Instant.now(), null, null));
-        repository.release(TENANT, DOCUMENT, "admin", Instant.now());
+                DOCUMENT, "Litigation", "admin", "Ari Admin", Instant.now(), null, null, null));
+        repository.release(TENANT, DOCUMENT, "admin", "Ari Admin", Instant.now());
 
         ArgumentCaptor<String> reads = ArgumentCaptor.forClass(String.class);
         ArgumentCaptor<SqlParameterSource> readParams = ArgumentCaptor.forClass(SqlParameterSource.class);
