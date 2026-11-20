@@ -112,7 +112,9 @@ async function businessAdminChecks(page: Page, testInfo: TestInfo) {
   const people = page.locator('table.v-table')
   await expect(people).toContainText('Name in your sign-in system')
   await expect(people).toContainText('Can change in Vero')
-  await expect(people.locator('tbody tr')).toHaveCount(4)
+  // Task 0025: Restricted steward is listed too, read-only (Fixed).
+  await expect(people.locator('tbody tr')).toHaveCount(5)
+  await expect(people.locator('tbody tr').filter({ hasText: 'RESTRICTED_STEWARD' })).toContainText('Fixed')
   await expect(people.locator('tbody')).not.toContainText(/Platform operations/i)
   await expect(page.getByText(/Claim value/)).toHaveCount(0)
 

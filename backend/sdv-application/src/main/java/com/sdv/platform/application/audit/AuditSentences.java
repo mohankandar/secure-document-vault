@@ -74,6 +74,9 @@ public final class AuditSentences {
             case "DOCUMENT_AVAILABLE" -> f + " is stored and ready to open";
             case "DOCUMENT_PROCESSING_FAILED" -> "Vero couldn't store " + f;
             case "ROLE_CAPABILITIES_UPDATED" -> w + " changed what business roles may do";
+            case "ROLE_CAPABILITIES_UPDATE_REFUSED" -> w + " tried to change what a role may do; Vero refused it";
+            case "ROLE_CONFLICT_DETECTED" -> w + " signed in with roles that can't be held together; Vero gave neither";
+            case "ROLE_GROUP_MAPPING_CHANGED" -> "The sign-in groups for " + text(d, "role") + " changed";
             case "RETENTION_POLICY_UPDATED" -> d.path("indefinite").asBoolean(false) && d.path("indefinite").isBoolean()
                     ? w + " changed how long to keep new documents: keep them forever"
                     : w + " changed how long to keep new documents to " + ruleWords(d);

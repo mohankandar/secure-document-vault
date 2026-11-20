@@ -5,6 +5,7 @@ import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Profile;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -56,6 +57,18 @@ public class LocalHeaderAuthenticationFilter extends OncePerRequestFilter {
             "local-platform-operations", "aiko.tanaka@acmelending.com",
             "local-administrator", "ari.lindqvist@acmelending.com");
 
+    private final RoleSeparationGuard separationGuard;
+
+    /** Without a reporter, a local sign-in that names conflicting roles is refused (task 0025). */
+    public LocalHeaderAuthenticationFilter() {
+        this(null);
+    }
+
+    @Autowired
+    public LocalHeaderAuthenticationFilter(RoleConflictReporter conflictReporter) {
+        this.separationGuard = new RoleSeparationGuard(conflictReporter);
+    }
+
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
             throws ServletException, IOException {
@@ -85,16 +98,27 @@ public class LocalHeaderAuthenticationFilter extends OncePerRequestFilter {
                             principal, null, List.of(new SimpleGrantedAuthority("SDV_INGESTION_SOURCE")));
                     SecurityContextHolder.getContext().setAuthentication(authentication);
                 } else {
-                    EnumSet<SdvRole> roles = EnumSet.noneOf(SdvRole.class);
+                    EnumSet<SdvRole> named = EnumSet.noneOf(SdvRole.class);
                     Arrays.stream(rolesText.split(","))
                             .map(String::trim)
                             .filter(value -> !value.isEmpty())
                             .map(SdvRole::valueOf)
-                            .forEach(roles::add);
-                    if (roles.isEmpty()) throw new IllegalArgumentException("At least one SDV role is required.");
+                            .forEach(named::add);
+                    if (named.isEmpty()) throw new IllegalArgumentException("At least one SDV role is required.");
+
+                    String displayName = LOCAL_TEST_NAMES.get(subject.trim());
+                    // Task 0025, rule 1: the same separation as a sign-in through login groups.
+                    EnumSet<SdvRole> roles;
+                    try {
+                        roles = separationGuard.apply(tenantId, subject.trim(), displayName,
+                                RoleConflictReporter.Source.LOCAL_SIGN_IN, named);
+                    } catch (RoleSeparationGuard.RefusedException refused) {
+                        response.sendError(HttpServletResponse.SC_UNAUTHORIZED, refused.getMessage());
+                        return;
+                    }
 
                     SdvPrincipal principal = new SdvPrincipal(tenantId, subject.trim(), roles,
-                            LOCAL_TEST_NAMES.get(subject.trim()), LOCAL_TEST_EMAILS.get(subject.trim()));
+                            displayName, LOCAL_TEST_EMAILS.get(subject.trim()));
                     List<SimpleGrantedAuthority> authorities = roles.stream()
                             .map(role -> new SimpleGrantedAuthority("ROLE_" + role.name()))
                             .toList();

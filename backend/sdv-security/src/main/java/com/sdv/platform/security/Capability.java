@@ -15,5 +15,17 @@ public enum Capability {
     CONFIGURE_INGESTION_SOURCES,
     CONFIGURE_TENANT_AUTH,
     CONFIGURE_STORAGE_KEY_PROVIDER,
-    VIEW_TECHNICAL_FAILURES
+    VIEW_TECHNICAL_FAILURES,
+    // Task 0025 (sensitivity). Nothing filters documents on these yet; task 0026 does.
+    /** See documents whose effective level is CONFIDENTIAL. */
+    VIEW_CONFIDENTIAL,
+    /** See documents whose effective level is HIGHLY_CONFIDENTIAL. */
+    VIEW_HIGHLY_CONFIDENTIAL,
+    /** Raise a document's level, or ask for it to be lowered. */
+    CHANGE_SENSITIVITY_LEVEL,
+    /** Ask to print or download a Highly Confidential document. */
+    REQUEST_SENSITIVE_ACCESS,
+    /** Approve or refuse such a request. */
+    APPROVE_SENSITIVE_ACCESS,
+    MANAGE_LEGAL_HOLD
 }

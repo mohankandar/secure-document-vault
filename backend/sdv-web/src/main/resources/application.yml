@@ -68,6 +68,9 @@ sdv:
       role-mappings:
         business-user: ${SDV_AUTH_GROUP_BUSINESS_USER:}
         document-steward: ${SDV_AUTH_GROUP_DOCUMENT_STEWARD:}
+        # Task 0025: only this mapping gives RESTRICTED_STEWARD (a direct sdv_roles claim never does). Changes are
+        # audited at start for every tenant. Never held with business-admin, tenant-it-admin or platform-operations-admin.
+        restricted-steward: ${SDV_AUTH_GROUP_RESTRICTED_STEWARD:}
         business-admin: ${SDV_AUTH_GROUP_BUSINESS_ADMIN:}
         tenant-it-admin: ${SDV_AUTH_GROUP_TENANT_IT_ADMIN:}
         platform-operations-admin: ${SDV_AUTH_GROUP_PLATFORM_OPERATIONS_ADMIN:}

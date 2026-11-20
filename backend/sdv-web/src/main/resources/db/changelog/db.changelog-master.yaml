@@ -66,3 +66,6 @@ databaseChangeLog:
 
   - include:
       file: db/changelog/024-record-sensitivity-levels.yaml
+
+  - include:
+      file: db/changelog/025-role-separation.yaml

@@ -7,6 +7,8 @@ import com.documentplatform.identity.OidcConnectionBindingResolver;
 import com.documentplatform.identity.spring.OidcJwtIdentityNormalizer;
 import com.sdv.platform.security.SdvRole;
 import com.sdv.platform.security.auth.IngestionSourcePrincipal;
+import com.sdv.platform.security.auth.RoleConflictReporter;
+import com.sdv.platform.security.auth.RoleSeparationGuard;
 import com.sdv.platform.security.auth.SdvPrincipal;
 import org.springframework.core.convert.converter.Converter;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -40,6 +42,7 @@ public final class EnterpriseJwtAuthenticationConverter implements Converter<Jwt
     private final String userGroupsClaim;
     private final OidcJwtIdentityNormalizer identityNormalizer;
     private final SdvGroupRoleMapper roleMapper;
+    private final RoleSeparationGuard separationGuard;
 
     /** Backward-compatible constructor retained for frozen enterprise-JWT tests/configuration. */
     public EnterpriseJwtAuthenticationConverter(String tenantClaim, String rolesClaim, String sourceIdClaim) {
@@ -78,6 +81,20 @@ public final class EnterpriseJwtAuthenticationConverter implements Converter<Jwt
             String tenantClaim, UUID configuredHumanTenantId, String sourceIdClaim, String userGroupsClaim,
             OidcJwtIdentityNormalizer identityNormalizer, SdvGroupRoleMapper roleMapper,
             OidcConnectionBindingResolver connectionResolver, String providerId, String audience) {
+        this(tenantClaim, configuredHumanTenantId, sourceIdClaim, userGroupsClaim, identityNormalizer, roleMapper,
+                connectionResolver, providerId, audience, null);
+    }
+
+    /**
+     * Task 0025: {@code conflictReporter} records sign-ins whose groups name roles that can never be held together.
+     * Without one (the older constructors), such a sign-in is refused.
+     */
+    public EnterpriseJwtAuthenticationConverter(
+            String tenantClaim, UUID configuredHumanTenantId, String sourceIdClaim, String userGroupsClaim,
+            OidcJwtIdentityNormalizer identityNormalizer, SdvGroupRoleMapper roleMapper,
+            OidcConnectionBindingResolver connectionResolver, String providerId, String audience,
+            RoleConflictReporter conflictReporter) {
+        this.separationGuard = new RoleSeparationGuard(conflictReporter);
         this.tenantClaim = requireClaimName(tenantClaim, "tenant claim");
         this.configuredHumanTenantId = configuredHumanTenantId;
         this.connectionResolver = connectionResolver;
@@ -113,7 +130,15 @@ public final class EnterpriseJwtAuthenticationConverter implements Converter<Jwt
 
             UUID tenantId = resolveHumanTenant(jwt);
             AuthenticatedIdentity identity = identityNormalizer.normalize(jwt);
-            EnumSet<SdvRole> roles = roleMapper.map(identity.groups());
+            EnumSet<SdvRole> named = roleMapper.map(identity.groups());
+            // Task 0025, rule 1: roles that can never be held together are withheld and reported.
+            EnumSet<SdvRole> roles;
+            try {
+                roles = separationGuard.apply(tenantId, identity.subject(), identity.displayName(),
+                        RoleConflictReporter.Source.LOGIN_GROUPS, named);
+            } catch (RoleSeparationGuard.RefusedException ex) {
+                throw invalid(ex.getMessage());
+            }
             // Name and email are display-only; they come from the claims configured for the shared normalizer
             // (defaults: "name" and "email") and never influence roles or tenant.
             SdvPrincipal principal = new SdvPrincipal(tenantId, identity.subject(), roles, identity.displayName(), identity.email());

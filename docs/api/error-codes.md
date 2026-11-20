@@ -62,3 +62,40 @@ Every refusal listed here comes back with a short, stable `code` and a plain `me
 - **Meaning:** some records of this sending system have a sensitivity level, and the change would alter how records are grouped. That means making a field an identifier or not, or changing an identifier's normalization. Later documents would then fall into records without the level. The message gives the number of records with a level. Nothing was changed.
 - **What the user should do:** keep the identifier settings as they are. Labels, search settings and the other field settings can still be changed.
 - **What support should tell the customer:** this protects restricted records from losing their restriction. A change to identifiers needs a planned migration of those levels. Raise it with the Vero team; there is no setting to override it.
+
+## Roles (ROL)
+
+### SDV-ROL-001: permission a role may never have
+
+- **HTTP status:** 400. Sent by Roles & permissions (`PUT /api/v1/admin/role-capabilities`).
+- **Meaning:** the change would give a role a permission that Vero's separation rules forbid. Business Admin, Tenant IT Admin and Platform Operations can never be given `VIEW_CONFIDENTIAL`, `VIEW_HIGHLY_CONFIDENTIAL` or `REQUEST_SENSITIVE_ACCESS`. Document Steward and Restricted Steward can never be given `APPROVE_SENSITIVE_ACCESS`. The message names the role and the permission. Nothing was changed, for any role in the request. The refusal is audited.
+- **What the user should do:** leave that permission off for that role. A person who needs it must be given a role that has it.
+- **What support should tell the customer:** this is a fixed safety rule, not a setting. People who look after the system or approve requests must not also read restricted documents, and the people who read them must not approve their own requests.
+
+### SDV-ROL-002: role whose permissions are fixed
+
+- **HTTP status:** 400. Sent by Roles & permissions.
+- **Meaning:** the change names a role whose permissions can't be changed in Vero: Restricted Steward, Business Admin, Tenant IT Admin or Platform Operations. Only Business User and Document Steward can be changed there. Nothing was changed. The refusal is audited.
+- **What the user should do:** change only Business User and Document Steward.
+- **What support should tell the customer:** these roles have a fixed set of permissions. Who holds them is decided in the customer's sign-in system (its groups), not in Vero.
+
+### SDV-ROL-003: permission that can't be changed here
+
+- **HTTP status:** 400. Sent by Roles & permissions.
+- **Meaning:** the change names a permission that isn't one of those Roles & permissions can switch (download, print, add tags, add comments, permanently redact), or a name Vero doesn't know. Nothing was changed. The refusal is audited.
+- **What the user should do:** send only the permissions the screen shows.
+- **What support should tell the customer:** the other permissions come with the role and can't be switched on or off per customer. If the request came from a script, the script sent a name the screen doesn't offer.
+
+### SDV-ROL-004: sign-in with roles that can never be held together
+
+- **HTTP status:** 401 at sign-in. The code starts the error description of the refused sign-in (there is no JSON body at sign-in).
+- **Meaning:** the person's sign-in groups give Restricted Steward together with Business Admin, Tenant IT Admin or Platform Operations. Vero gives neither of the conflicting roles, and here no other role was left, so the sign-in was refused. The conflict is recorded for the Tenant IT Admin (`GET /api/v1/admin/role-conflicts`) and audited as `ROLE_CONFLICT_DETECTED`. When the person has other roles too, they sign in with those only and get no error.
+- **What the user should do:** ask your IT team to take you out of one of the two groups.
+- **What support should tell the customer:** someone is in the sign-in group for Restricted Steward and in an admin group at the same time. Vero never allows that. Their IT team must remove the person from one of the groups; the role conflict list names the person.
+
+### SDV-ROL-005: role conflict could not be recorded
+
+- **HTTP status:** 401 at sign-in. The code starts the error description of the refused sign-in.
+- **Meaning:** the sign-in named roles that can never be held together, and Vero could not record the conflict (for example the database was unavailable). A conflict is never left unrecorded, so the sign-in was refused.
+- **What the user should do:** try again in a few minutes. If it keeps happening, ask your IT team to take you out of one of the two groups.
+- **What support should tell the customer:** Vero could not write to its database at that moment. Check the server's health. The person is also in two groups that can't be held together; their IT team should fix that too.

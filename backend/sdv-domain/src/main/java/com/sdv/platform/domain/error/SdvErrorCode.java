@@ -19,7 +19,17 @@ public enum SdvErrorCode {
     /** A document level was sent on the submission instead of on the document upload. */
     SEN_006("SDV-SEN-006"),
     /** An identifier field change was refused because records of the sending system have a level. */
-    SEN_007("SDV-SEN-007");
+    SEN_007("SDV-SEN-007"),
+    /** Task 0025: a role-permission override would give a role a capability it may never have. */
+    ROL_001("SDV-ROL-001"),
+    /** Task 0025: a role-permission override names a role whose permissions are fixed. */
+    ROL_002("SDV-ROL-002"),
+    /** Task 0025: a role-permission override names a capability that can't be changed in Roles & permissions. */
+    ROL_003("SDV-ROL-003"),
+    /** Task 0025: a sign-in was refused because its roles can never be held together and no other role was left. */
+    ROL_004("SDV-ROL-004"),
+    /** Task 0025: a sign-in was refused because its role conflict couldn't be recorded. */
+    ROL_005("SDV-ROL-005");
 
     private final String code;
 

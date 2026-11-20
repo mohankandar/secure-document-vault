@@ -3,6 +3,7 @@ package com.sdv.platform.web.admin;
 import com.sdv.platform.application.port.AuditEventPort;
 import com.sdv.platform.domain.audit.AuditEvent;
 import com.sdv.platform.domain.audit.AuditOutcome;
+import com.sdv.platform.domain.error.CodedRefusal;
 import com.sdv.platform.security.Capability;
 import com.sdv.platform.security.SdvRole;
 import com.sdv.platform.security.auth.AuthorizationService;
@@ -46,10 +47,20 @@ public class RoleCapabilityAdminController {
     public RoleCapabilityView update(@RequestBody UpdateRequest request) {
         SdvPrincipal principal = requireAdmin();
         if (request == null || request.roles() == null) throw new IllegalArgumentException("roles is required.");
+        // Task 0025: the whole request is checked before anything is stored, so a refusal changes nothing.
+        LinkedHashMap<SdvRole, Map<String, Boolean>> checked = new LinkedHashMap<>();
         for (Map.Entry<String, Map<String, Boolean>> entry : request.roles().entrySet()) {
-            SdvRole role = parseConfigurableRole(entry.getKey());
-            capabilities.replace(principal.tenantId(), role, entry.getValue() == null ? Map.of() : entry.getValue(), principal.subject());
+            SdvRole role = parseRole(entry.getKey());
+            Map<String, Boolean> states = entry.getValue() == null ? Map.of() : entry.getValue();
+            try {
+                capabilities.validate(role, states);
+            } catch (RuntimeException refused) {
+                if (refused instanceof CodedRefusal coded) auditRefusal(principal, role, coded);
+                throw refused;
+            }
+            checked.put(role, states);
         }
+        checked.forEach((role, states) -> capabilities.replace(principal.tenantId(), role, states, principal.subject()));
         audit.append(new AuditEvent(UUID.randomUUID(), principal.tenantId(), "USER", principal.subject(),
                 "ROLE_CAPABILITIES_UPDATED", "TENANT", principal.tenantId().toString(), Instant.now(),
                 MDC.get("correlationId"), AuditOutcome.SUCCESS, "{\"rolesUpdated\":" + request.roles().size() + "}"));
@@ -74,14 +85,18 @@ public class RoleCapabilityAdminController {
         return principal;
     }
 
-    private static SdvRole parseConfigurableRole(String value) {
-        SdvRole role;
-        try { role = SdvRole.valueOf(value); }
+    /** The refused change is audited (DENIED) with its code; the refused values themselves are not stored. */
+    private void auditRefusal(SdvPrincipal principal, SdvRole role, CodedRefusal refusal) {
+        audit.append(new AuditEvent(UUID.randomUUID(), principal.tenantId(), "USER", principal.subject(),
+                "ROLE_CAPABILITIES_UPDATE_REFUSED", "TENANT", principal.tenantId().toString(), Instant.now(),
+                MDC.get("correlationId"), AuditOutcome.DENIED,
+                "{\"role\":\"" + role.name() + "\",\"code\":\"" + refusal.errorCode().code() + "\"}"));
+    }
+
+    /** Which roles can be changed is decided by {@link CapabilityPolicyService#validate} (SDV-ROL-002). */
+    private static SdvRole parseRole(String value) {
+        try { return SdvRole.valueOf(value); }
         catch (RuntimeException ex) { throw new IllegalArgumentException("Unknown role: " + value); }
-        if (role != SdvRole.BUSINESS_USER && role != SdvRole.DOCUMENT_STEWARD) {
-            throw new IllegalArgumentException("Only BUSINESS_USER and DOCUMENT_STEWARD are configurable here.");
-        }
-        return role;
     }
 
     public record UpdateRequest(Map<String, Map<String, Boolean>> roles) { }

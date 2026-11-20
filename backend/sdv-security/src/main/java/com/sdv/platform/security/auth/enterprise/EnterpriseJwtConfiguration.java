@@ -6,6 +6,7 @@ import com.documentplatform.identity.spring.CachingOidcConnectionBindingResolver
 import com.documentplatform.identity.spring.OidcJwtIdentityNormalizer;
 import com.documentplatform.identity.spring.RequiredAudienceValidator;
 import com.sdv.platform.security.SdvRole;
+import com.sdv.platform.security.auth.RoleConflictReporter;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
@@ -27,6 +28,9 @@ import java.util.Set;
 @Configuration
 @ConditionalOnProperty(prefix = "sdv.auth", name = "mode", havingValue = "enterprise-jwt")
 public class EnterpriseJwtConfiguration {
+    /** Task 0025: the login groups that give Restricted Steward. Changes to it are audited at start. */
+    public static final String RESTRICTED_STEWARD_GROUPS_PROPERTY = "sdv.auth.jwt.role-mappings.restricted-steward";
+
     @Bean
     JwtDecoder enterpriseJwtDecoder(
             @Value("${sdv.auth.jwt.issuer:}") String issuer,
@@ -62,17 +66,20 @@ public class EnterpriseJwtConfiguration {
             @Value("${sdv.auth.jwt.display-name-claim:name}") String displayNameClaim,
             @Value("${sdv.auth.jwt.role-mappings.business-user:}") String businessUserGroups,
             @Value("${sdv.auth.jwt.role-mappings.document-steward:}") String documentStewardGroups,
+            @Value("${" + RESTRICTED_STEWARD_GROUPS_PROPERTY + ":}") String restrictedStewardGroups,
             @Value("${sdv.auth.jwt.role-mappings.business-admin:}") String businessAdminGroups,
             @Value("${sdv.auth.jwt.role-mappings.tenant-it-admin:}") String tenantItAdminGroups,
             @Value("${sdv.auth.jwt.role-mappings.platform-operations-admin:}") String platformOperationsGroups,
             @Value("${sdv.auth.jwt.persistent-connection-enabled:true}") boolean persistentConnectionEnabled,
             ObjectProvider<OidcConnectionBindingResolver> connectionResolverProvider,
             @Value("${sdv.auth.jwt.legacy-direct-role-claim-enabled:true}") boolean legacyDirectRoleClaimEnabled,
-            @Value("${sdv.auth.jwt.roles-claim:sdv_roles}") String legacyRolesClaim) {
+            @Value("${sdv.auth.jwt.roles-claim:sdv_roles}") String legacyRolesClaim,
+            ObjectProvider<RoleConflictReporter> conflictReporterProvider) {
 
         // Compatibility: frozen deployments can continue to present sdv_roles until tenant group mappings are configured.
         String effectiveGroupsClaim = hasConfiguredMappings(
-                businessUserGroups, documentStewardGroups, businessAdminGroups, tenantItAdminGroups, platformOperationsGroups)
+                businessUserGroups, documentStewardGroups, restrictedStewardGroups, businessAdminGroups,
+                tenantItAdminGroups, platformOperationsGroups)
                 ? groupsClaim
                 : (legacyDirectRoleClaimEnabled ? legacyRolesClaim : groupsClaim);
 
@@ -83,6 +90,7 @@ public class EnterpriseJwtConfiguration {
         EnumMap<SdvRole, Set<String>> mappings = new EnumMap<>(SdvRole.class);
         mappings.put(SdvRole.BUSINESS_USER, SdvGroupRoleMapper.split(businessUserGroups));
         mappings.put(SdvRole.DOCUMENT_STEWARD, SdvGroupRoleMapper.split(documentStewardGroups));
+        mappings.put(SdvRole.RESTRICTED_STEWARD, SdvGroupRoleMapper.split(restrictedStewardGroups));
         mappings.put(SdvRole.BUSINESS_ADMIN, SdvGroupRoleMapper.split(businessAdminGroups));
         mappings.put(SdvRole.TENANT_IT_ADMIN, SdvGroupRoleMapper.split(tenantItAdminGroups));
         mappings.put(SdvRole.PLATFORM_OPERATIONS_ADMIN, SdvGroupRoleMapper.split(platformOperationsGroups));
@@ -96,7 +104,14 @@ public class EnterpriseJwtConfiguration {
         return new EnterpriseJwtAuthenticationConverter(
                 tenantClaim, optionalUuid(configuredTenantId, "sdv.auth.jwt.tenant-id"), sourceIdClaim, effectiveGroupsClaim,
                 identityNormalizer, new SdvGroupRoleMapper(mappings, legacyDirectRoleClaimEnabled),
-                persistentResolver, providerId, normalizedAudience(audience));
+                persistentResolver, providerId, normalizedAudience(audience), requireReporter(conflictReporterProvider));
+    }
+
+    /** Task 0025: the role-conflict reporter is required; without it the server doesn't start (fail closed). */
+    private static RoleConflictReporter requireReporter(ObjectProvider<RoleConflictReporter> provider) {
+        RoleConflictReporter reporter = provider.getIfAvailable();
+        if (reporter == null) throw new IllegalStateException("No role-conflict reporter is available.");
+        return reporter;
     }
 
 

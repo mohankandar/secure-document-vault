@@ -1,8 +1,9 @@
 <#
 .SYNOPSIS
   Repeatable upgrade check for task 0024: a database at an earlier schema moves to this version's schema with its data
-  unchanged. -From 024 (the default) starts at 023 and checks changeset 024 (record sensitivity levels); -From 023
-  starts at 022 and checks 023 (the document sensitivity level) and then 024.
+  unchanged. -From 025 (the default, task 0025) starts at 024 and checks changeset 025 (the role tables); -From 024
+  starts at 023 and checks 024 (record sensitivity levels) and then 025; -From 023 starts at 022 and checks 023 (the
+  document sensitivity level), 024 and 025.
 
 .DESCRIPTION
   Uses a scratch database, sdv_schema_test, inside the existing sdv-postgres server, and one scratch role,
@@ -22,7 +23,8 @@
        unknown and lower-case values. For 024: record_sensitivity_levels exists and is empty, its checks refuse an
        unknown level, a key whose SHA-256 doesn't match, a second row for the same record and an unknown sending
        system; "insert ... on conflict do nothing" (what intake runs) adds nothing for the same record; the database
-       computes the same SHA-256 as the application. Always: every other column of every row is unchanged, no other
+       computes the same SHA-256 as the application. For 025: the three role tables exist and are empty, the
+       statements the application runs on them behave as it expects, and their checks refuse bad rows. Always: every other column of every row is unchanged, no other
        table changed, status is up to date.
 
   Prerequisite: the application jar is built (.\Build-SDV-All.ps1).
@@ -31,8 +33,8 @@
 param(
     [string]$Jar,
     # The first changeset the upgrade applies; the scratch database is built up to the one before it.
-    [ValidateSet('023', '024')]
-    [string]$From = '024',
+    [ValidateSet('023', '024', '025')]
+    [string]$From = '025',
     # Drop a scratch database and role left by an earlier run of this script that could not clean up.
     [switch]$DropLeftover
 )
@@ -44,13 +46,15 @@ $db = 'sdv_schema_test'
 $owner = 'sdv_schema_owner'
 $hostUrl = 'jdbc:postgresql://localhost:5433/' + $db
 # In order. The upgrade applies every changeset from -From on.
-$checked = @('022-retention-policy-creator-name', '023-document-sensitivity-level', '024-record-sensitivity-levels')
+$checked = @('022-retention-policy-creator-name', '023-document-sensitivity-level', '024-record-sensitivity-levels', '025-role-separation')
 $start = [array]::IndexOf(($checked | ForEach-Object { $_.Substring(0, 3) }), $From)
 $newChangesets = @($checked[$start..($checked.Count - 1)])
 $newChangeset = $newChangesets[0]
 $lastPrevious = $checked[$start - 1]
 $has023 = $newChangesets -contains '023-document-sensitivity-level'
 $has024 = $newChangesets -contains '024-record-sensitivity-levels'
+$has025 = $newChangesets -contains '025-role-separation'
+$roleTables = @('role_conflict_problems', 'role_group_mappings_seen', 'role_mapping_notices')
 $run = Join-Path $root ('.runtime\schema-upgrade\' + (Get-Date -Format 'yyyyMMdd-HHmmss'))
 New-Item -ItemType Directory -Force -Path $run | Out-Null
 
@@ -119,7 +123,7 @@ function Invoke-SchemaStep([string[]]$StepArgs) {
 $otherTablesSql = @"
 select string_agg(t.relname || '=' || (xpath('/row/c/text()', query_to_xml(format('select count(*) || '':'' || coalesce(md5(string_agg(x::text, ''|'' order by x::text)), '''') as c from %I x', t.relname), false, true, '')))[1]::text, ',' order by t.relname)
   from pg_stat_user_tables t
- where t.relname not in ('documents', 'record_sensitivity_levels', 'databasechangelog', 'databasechangeloglock');
+ where t.relname not in ('documents', 'record_sensitivity_levels', 'role_conflict_problems', 'role_group_mappings_seen', 'role_mapping_notices', 'databasechangelog', 'databasechangeloglock');
 "@
 $levelColumn = if ($has023) { '' } else { ', sensitivity_level' }
 $documentsOldColumnsSql = @"
@@ -130,6 +134,8 @@ select count(*) || ':' || md5(string_agg(row(document_id, tenant_id, submission_
 "@
 $hasColumnSql = "select count(*) from information_schema.columns where table_name = 'documents' and column_name = 'sensitivity_level';"
 $hasTableSql = "select count(*) from information_schema.tables where table_name = 'record_sensitivity_levels';"
+$hasRoleTablesSql = "select count(*) from information_schema.tables where table_name in ('role_conflict_problems', 'role_group_mappings_seen', 'role_mapping_notices');"
+$recordTableBefore = if ($has024) { '0' } else { '1' }
 
 # ---------------------------------------------------------------- preconditions
 if ($Jar) { $jarPath = (Resolve-Path -LiteralPath $Jar).Path }
@@ -179,9 +185,10 @@ revoke all on database $db from public;
     Assert-That ($last -eq $lastPrevious) "the previous version should end with $lastPrevious, ends with $last"
     $hasColumn = Get-Value $hasColumnSql
     Assert-That ($hasColumn -eq $(if ($has023) { '0' } else { '1' })) "documents.sensitivity_level should $(if ($has023) { 'not ' })exist at the previous version"
-    Assert-That ((Get-Value $hasTableSql) -eq '0') 'record_sensitivity_levels already exists at the previous version'
+    Assert-That ((Get-Value $hasTableSql) -eq $recordTableBefore) "record_sensitivity_levels should $(if ($has024) { 'not ' })exist at the previous version"
+    Assert-That ((Get-Value $hasRoleTablesSql) -eq '0') 'a role table already exists at the previous version'
     $prevCount = Get-Value 'select count(*) from databasechangelog;'
-    $missing = @(); if ($has023) { $missing += 'no sensitivity_level' }; $missing += 'no record_sensitivity_levels'
+    $missing = @(); if ($has023) { $missing += 'no sensitivity_level' }; if ($has024) { $missing += 'no record_sensitivity_levels' }; $missing += 'no role tables'
     Write-Step "1. Previous version (changesets up to $($lastPrevious.Substring(0, 3)))" $w.Elapsed.TotalSeconds "$prevCount changesets, last $last, $($missing -join ', ')"
 
     # ------------------------------------------------------------ 2. data at the previous version
@@ -233,9 +240,15 @@ values ('40000000-0000-0000-0000-000000000001', '10000000-0000-0000-0000-0000000
             Assert-That ($upgradeText.Contains($c)) "the reviewable SQL lacks $c"
         }
     }
+    if ($has025) {
+        foreach ($c in ($roleTables | ForEach-Object { "create table $_" }) + @('uq_role_conflict_problems', 'ck_role_conflict_problems_seen', 'idx_role_conflict_problems_tenant_seen', 'idx_role_mapping_notices_tenant_time')) {
+            Assert-That ($upgradeText.Contains($c)) "the reviewable SQL lacks $c"
+        }
+    }
     Assert-That (-not ($upgradeText -match "::$lastPrevious::")) 'the reviewable SQL repeats an already applied changeset'
     Assert-That ((Get-Value $hasColumnSql) -eq $hasColumn) 'sql changed the database (documents)'
-    Assert-That ((Get-Value $hasTableSql) -eq '0') 'sql changed the database (record_sensitivity_levels)'
+    Assert-That ((Get-Value $hasTableSql) -eq $recordTableBefore) 'sql changed the database (record_sensitivity_levels)'
+    Assert-That ((Get-Value $hasRoleTablesSql) -eq '0') 'sql changed the database (role tables)'
     Write-Step '3b. Schema step sql (the SQL to review)' $sq.Seconds "only $($newChangesets.ForEach({ $_.Substring(0, 3) }) -join ' and '); database unchanged"
 
     $up = Invoke-SchemaStep @('update')
@@ -300,6 +313,50 @@ values ('40000000-0000-0000-0000-000000000001', '10000000-0000-0000-0000-0000000
         }
         Assert-That ((Get-Value 'select count(*) from record_sensitivity_levels;') -eq '0') 'a check row was left behind'
         Write-Step '4b. After 024: record_sensitivity_levels' $w.Elapsed.TotalSeconds 'empty; checks refuse bad level, wrong SHA, duplicate, unknown source, blank key; SHA agrees'
+        $w = [System.Diagnostics.Stopwatch]::StartNew()
+    }
+    if ($has025) {
+        Assert-That ((Get-Value $hasRoleTablesSql) -eq '3') 'the three role tables were not created'
+        foreach ($table in $roleTables) { Assert-That ((Get-Value "select count(*) from $table;") -eq '0') "$table should start empty" }
+        $t = "'10000000-0000-0000-0000-000000000001'"
+        # The statements JdbcRoleGovernanceRepository runs, with literal values. A second sighting adds no row (the
+        # insert does nothing) and the update counts it; the mapping upsert keeps one row per role.
+        $conflictInsert = { param($id)
+            "insert into role_conflict_problems(problem_id, tenant_id, subject, display_name, resolved_from, held_roles, withheld_roles, broken_rules, first_seen_at, last_seen_at, occurrences) " +
+            "values ('$id', $t, 'person-1', 'Pat Lee', 'LOGIN_GROUPS', 'BUSINESS_ADMIN,BUSINESS_USER,RESTRICTED_STEWARD', 'BUSINESS_ADMIN,RESTRICTED_STEWARD', 'RESTRICTED_STEWARD_NOT_ADMIN', now(), now(), 1)" }
+        $onConflict = ' on conflict (tenant_id, subject, resolved_from, held_roles) do nothing'
+        $repositorySql = @"
+begin;
+$(& $conflictInsert '60000000-0000-0000-0000-000000000001')$onConflict;
+$(& $conflictInsert '60000000-0000-0000-0000-000000000002')$onConflict;
+update role_conflict_problems set last_seen_at = greatest(last_seen_at, now()), occurrences = occurrences + 1, display_name = coalesce(null, display_name), withheld_roles = 'BUSINESS_ADMIN,RESTRICTED_STEWARD', broken_rules = 'RESTRICTED_STEWARD_NOT_ADMIN'
+ where tenant_id = $t and subject = 'person-1' and resolved_from = 'LOGIN_GROUPS' and held_roles = 'BUSINESS_ADMIN,BUSINESS_USER,RESTRICTED_STEWARD';
+select 1/(case when (select count(*) from role_conflict_problems) = 1 and (select occurrences from role_conflict_problems) = 2 and (select display_name from role_conflict_problems) = 'Pat Lee' then 1 else 0 end);
+insert into role_group_mappings_seen(role_name, login_groups, recorded_at) values ('RESTRICTED_STEWARD', '', now())
+  on conflict (role_name) do update set login_groups = excluded.login_groups, recorded_at = excluded.recorded_at;
+insert into role_group_mappings_seen(role_name, login_groups, recorded_at) values ('RESTRICTED_STEWARD', 'hc-readers,vero-restricted', now())
+  on conflict (role_name) do update set login_groups = excluded.login_groups, recorded_at = excluded.recorded_at;
+select 1/(case when (select count(*) from role_group_mappings_seen) = 1 and (select login_groups from role_group_mappings_seen) = 'hc-readers,vero-restricted' then 1 else 0 end);
+insert into role_mapping_notices(notice_id, tenant_id, role_name, groups_before, groups_after, created_at) values ('70000000-0000-0000-0000-000000000001', $t, 'RESTRICTED_STEWARD', null, 'hc-readers,vero-restricted', now());
+rollback;
+"@
+        $null = Invoke-Sql -Database $db -AsOwner -Sql $repositorySql
+        $first = & $conflictInsert '60000000-0000-0000-0000-000000000003'
+        $roleRefusals = [ordered]@{
+            'role_conflict_problems_resolved_from_check' = $first -replace "'LOGIN_GROUPS'", "'SOMEWHERE_ELSE'"
+            'role_conflict_problems_held_roles_check'    = $first -replace "'BUSINESS_ADMIN,BUSINESS_USER,RESTRICTED_STEWARD'", "''"
+            'role_conflict_problems_occurrences_check'   = $first -replace ', 1\)$', ', 0)'
+            'ck_role_conflict_problems_seen'             = $first -replace "now\(\), now\(\), 1\)$", "now(), now() - interval '1 minute', 1)"
+            'role_conflict_problems_tenant_id_fkey'      = $first -replace [regex]::Escape($t), "'10000000-0000-0000-0000-000000000099'"
+            'uq_role_conflict_problems'                  = "$first; $(& $conflictInsert '60000000-0000-0000-0000-000000000004')"
+            'role_mapping_notices_tenant_id_fkey'        = "insert into role_mapping_notices(notice_id, tenant_id, role_name, groups_before, groups_after, created_at) values ('70000000-0000-0000-0000-000000000002', '10000000-0000-0000-0000-000000000099', 'RESTRICTED_STEWARD', null, '', now())"
+        }
+        foreach ($name in $roleRefusals.Keys) {
+            $r = Invoke-Sql -Database $db -AsOwner -AllowFailure -Sql "begin; $($roleRefusals[$name]); rollback;"
+            Assert-That ($r.Code -ne 0 -and $r.Err -match $name) "$name should refuse the row; got exit $($r.Code): $($r.Err.Trim())"
+        }
+        foreach ($table in $roleTables) { Assert-That ((Get-Value "select count(*) from $table;") -eq '0') "a check row was left behind in $table" }
+        Write-Step '4c. After 025: role tables' $w.Elapsed.TotalSeconds 'empty; repository statements behave; checks refuse bad source, blank roles, count 0, time order, unknown tenant, duplicate'
         $w = [System.Diagnostics.Stopwatch]::StartNew()
     }
     Write-Step '4. After: nothing else changed' $w.Elapsed.TotalSeconds 'other document columns and every other table unchanged'
