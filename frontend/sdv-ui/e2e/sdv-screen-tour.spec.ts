@@ -695,11 +695,13 @@ async function overviewChecks(page: Page, testInfo: TestInfo) {
     await route.fulfill({ json: { ...s, processingFailureCount: 0, stuckDocumentCount: 0, attentionSubmissionCount: 0, processingFailures: [], stuckDocuments: [], attentionSubmissions: [],
       storageVolumes: s.storageVolumes.map((v: Record<string, unknown>) => (v.state === 'ACTIVE' ? { ...v, warningThresholdReached: false, stopWriteThresholdReached: false, observationError: null, writable: true } : v)) } })
   })
-  await page.route('**/api/v1/operations/retention-status', (route) => route.fulfill({ json: { outcome: 'SUCCESS', startedAt: new Date().toISOString(), completedAt: new Date().toISOString(), candidates: 0, deleted: 0, failed: 0, reasonCode: null } }))
+  await page.route('**/api/v1/operations/retention-status', (route) => route.fulfill({ json: { outcome: 'SUCCESS', startedAt: new Date().toISOString(), completedAt: new Date().toISOString(), candidates: 0, deleted: 0, failed: 0, reasonCode: null, nextRunAt: tomorrowAt7().toISOString() } }))
   await opsTab(page, 'Overview').click()
   await expect(lead).toHaveText('Everything is working.', { timeout: 15000 })
   await expect(tiles.nth(0)).toContainText('None')
   await expect(tiles.nth(2)).toContainText('All working')
+  // Task 0023, as on the canvas: the Cleanup tile says when the next run is.
+  await expect(tiles.nth(3)).toContainText('Documents past their keep date · next run tomorrow 07:00')
   await capture(page, testInfo, 'overview-all-working')
   await page.unroute('**/api/v1/operations/summary')
   await page.unroute('**/api/v1/operations/retention-status')
@@ -724,6 +726,9 @@ async function opsStorageChecks(page: Page, testInfo: TestInfo) {
   await capture(page, testInfo, 'ops-storage')
 }
 
+/** Tomorrow at 07:00 local time: the canvas's daily cleanup sample (task 0023). */
+function tomorrowAt7() { const d = new Date(); d.setDate(d.getDate() + 1); d.setHours(7, 0, 0, 0); return d }
+
 /** Health: checked time and Check now, services in words, a stopped key service (simulated), and cleanup in a sentence. */
 async function healthChecks(page: Page, testInfo: TestInfo) {
   await opsTab(page, 'Health').click()
@@ -738,6 +743,25 @@ async function healthChecks(page: Page, testInfo: TestInfo) {
   await expect(cleanup).toContainText(/Last ran (today|yesterday|on .+) at \d{2}:\d{2}|hasn’t run since Vero last started/)
   await expectNoRawWords(page)
   await capture(page, testInfo, 'health')
+
+  // Task 0023: the next run, worked out by the server from the scheduler's own setting. Locally that is a fixed
+  // delay after each run (one minute by default), so it is soon, or null while a run is going on.
+  const status = await (await page.request.get('/api/v1/operations/retention-status', { headers: OPS_HEADERS })).json() as { nextRunAt?: string | null }
+  expect('nextRunAt' in status, 'the retention status has nextRunAt').toBeTruthy()
+  if (status.nextRunAt) expect(Date.parse(status.nextRunAt)).toBeGreaterThan(Date.now() - 5_000)
+  // A daily sample (simulated in the browser): the sentence ends with the next run, in the "Last ran" style.
+  const today7 = new Date(); today7.setHours(7, 0, 0, 0)
+  await page.route('**/api/v1/operations/retention-status', (route) => route.fulfill({ json: { outcome: 'SUCCESS', startedAt: today7.toISOString(), completedAt: today7.toISOString(), candidates: 3, deleted: 3, failed: 0, reasonCode: null, nextRunAt: tomorrowAt7().toISOString() } }))
+  await page.getByRole('button', { name: 'Check now' }).click()
+  await expect(cleanup).toContainText('Last ran today at 07:00 and deleted 3 documents that had passed their keep date. Next run: tomorrow at 07:00.', { timeout: 15000 })
+  await capture(page, testInfo, 'health-next-run')
+  // When the server can't say (no nextRunAt), nothing is shown rather than a guess.
+  await page.unroute('**/api/v1/operations/retention-status')
+  await page.route('**/api/v1/operations/retention-status', (route) => route.fulfill({ json: { outcome: 'SUCCESS', startedAt: today7.toISOString(), completedAt: today7.toISOString(), candidates: 3, deleted: 3, failed: 0, reasonCode: null, nextRunAt: null } }))
+  await page.getByRole('button', { name: 'Check now' }).click()
+  await expect(cleanup).toContainText('Last ran today at 07:00 and deleted 3 documents that had passed their keep date.', { timeout: 15000 })
+  await expect(cleanup).not.toContainText('Next run')
+  await page.unroute('**/api/v1/operations/retention-status')
 
   // The key service stops (simulated in the browser only), and a cleanup run fails.
   await page.route('**/api/v1/operations/summary', async (route) => {
@@ -1152,7 +1176,9 @@ async function tryBusinessRecordJourney(page: Page, testInfo: TestInfo, role: st
 
 const BUSINESS_HEADERS = { 'X-SDV-Tenant-Id': LOCAL_TENANT, 'X-SDV-Subject': 'local-business-user', 'X-SDV-Roles': 'BUSINESS_USER' }
 const LAST_SOURCE_KEY = 'vero.records.sourceId'
-type SchemaSource = { sourceId: string; displayName: string; fields: unknown[] }
+/** A record of the canvas's loan system (Seed-SDV-Canvas-Demo.ps1); LexaVault has no record with this number. */
+const CANVAS_RECORD = '300000000001'
+type SchemaSource = { sourceId: string; displayName: string; fields: unknown[]; status: 'ACTIVE' | 'PAUSED'; hasRecords: boolean; lastDeliveredAt: string | null }
 async function searchSources(page: Page) {
   const r = await page.request.get('/api/v1/business/search-schema', { headers: BUSINESS_HEADERS })
   expect(r.ok(), 'reading the search schema').toBeTruthy()
@@ -1173,27 +1199,46 @@ test.describe('SDV role-based screen capture', () => {
     await chooseLexaVault(page)
   })
 
-  test('Records starts with LexaVault while a half-set-up system exists', async ({ page }, testInfo) => {
+  test('Records starts with the loan system while a paused, half-set-up system exists', async ({ page }, testInfo) => {
     test.skip(!isDesktop(testInfo), 'Runs once per tour (desktop only).')
-    test.setTimeout(150_000) // ten full page loads
-    // The test case is the leftover paused "Tour test system …" source, which has no search fields (report 0013).
+    test.setTimeout(240_000) // thirteen full page loads
+    // The test case is the leftover paused "Tour test system …" source: no searchable field and no record (reports
+    // 0013 and 0017; Seed-SDV-Canvas-Demo.ps1 makes it on a fresh machine).
     const sources = await searchSources(page)
     const leftover = sources.find((s) => /^Tour test system /.test(s.displayName) && s.fields.length === 0)
     expect(leftover, 'the test case: a "Tour test system" source without search fields must exist (keep it, task 0017)').toBeTruthy()
+    // Task 0023: the schema says each system's status, whether it holds records and when it last delivered.
+    expect(leftover!.status, 'the leftover system is paused').toBe('PAUSED')
+    expect(leftover!.hasRecords, 'the leftover system holds no record').toBe(false)
+    const los = sources.find((s) => s.displayName === 'Loan Origination System')
+    const lexa = sources.find((s) => s.displayName === 'LexaVault')
+    expect(los && lexa, 'the loan system and LexaVault (Seed-SDV-Canvas-Demo.ps1)').toBeTruthy()
+    for (const s of [los!, lexa!]) {
+      expect(s.status, `${s.displayName} is active`).toBe('ACTIVE')
+      expect(s.hasRecords, `${s.displayName} holds records`).toBe(true)
+    }
+    // The seed delivers the loan system last, so it is the active system that delivered most recently.
+    expect(Date.parse(los!.lastDeliveredAt ?? ''), 'the loan system delivered most recently').toBeGreaterThan(Date.parse(lexa!.lastDeliveredAt ?? ''))
     await selectRole(page, 'Business User')
     await areaTab(page, 'Records').click()
     await waitForBusinessSearchReady(page)
 
-    // Ten loads in a row with no remembered choice, and with the half-set-up system remembered (it can't be chosen).
-    for (let i = 1; i <= 10; i++) {
-      const remembered = i % 2 === 0 ? leftover!.sourceId : null
-      await page.evaluate(([key, id]) => { if (id) window.localStorage.setItem(key, id); else window.localStorage.removeItem(key) }, [LAST_SOURCE_KEY, remembered] as const)
+    const results = page.getByRole('region', { name: 'Search results' })
+    const remember = (id: string | null) => page.evaluate(([key, v]) => { if (v) window.localStorage.setItem(key, v); else window.localStorage.removeItem(key) }, [LAST_SOURCE_KEY, id] as const)
+    /** Reload, type straight away (before the sending systems have loaded, the cause in report 0017) and search. */
+    const searchAfterReload = async (contract: string, system: string, what: string) => {
       await page.reload()
-      // Typed straight away, before the sending systems have loaded (the cause in report 0017).
-      await searchBox(page).fill(demoRecord)
+      await searchBox(page).fill(contract)
       await searchBox(page).press('Enter')
-      await expect(resultRows(page).filter({ hasText: demoRecord }).first(), `load ${i}: the default is LexaVault`).toBeVisible({ timeout: 15000 })
+      await expect(resultRows(page).filter({ hasText: contract }).first(), `${what}: the default is ${system}`).toBeVisible({ timeout: 15000 })
+      await expect(results, `${what}: searched in ${system}`).toContainText(system)
       await expect(page.getByText('no field the search box can use')).toHaveCount(0)
+    }
+
+    // Ten loads in a row with no remembered choice, and with the half-set-up system remembered (it never qualifies).
+    for (let i = 1; i <= 10; i++) {
+      await remember(i % 2 === 0 ? leftover!.sourceId : null)
+      await searchAfterReload(CANVAS_RECORD, 'Loan Origination System', `load ${i}`)
       await page.getByRole('button', { name: /^Filters/ }).click()
       const filters = page.getByRole('dialog', { name: 'Filters' })
       await expect(filters).toBeVisible()
@@ -1202,13 +1247,31 @@ test.describe('SDV role-based screen capture', () => {
       await expect(filters).toHaveCount(0)
     }
 
+    // A last choice that still qualifies is kept.
+    await remember(lexa!.sourceId)
+    await searchAfterReload(demoRecord, 'LexaVault', 'LexaVault remembered')
+
+    // Simulated in the browser: LexaVault, the remembered choice, no longer holds records, so it is ignored.
+    const changeSchema = (change: (s: SchemaSource) => SchemaSource) => page.route('**/api/v1/business/search-schema', async (route) => {
+      const s = await (await route.fetch()).json() as { sources: SchemaSource[] }
+      await route.fulfill({ json: { ...s, sources: s.sources.map(change) } })
+    })
+    await changeSchema((s) => s.sourceId === lexa!.sourceId ? { ...s, hasRecords: false, lastDeliveredAt: null } : s)
+    await searchAfterReload(CANVAS_RECORD, 'Loan Origination System', 'LexaVault remembered but without records')
+    await page.unrouteAll({ behavior: 'ignoreErrors' })
+
+    // Simulated: the loan system is paused. An active system that qualifies comes first, although it delivered earlier.
+    await remember(null)
+    await changeSchema((s) => s.sourceId === los!.sourceId ? { ...s, status: 'PAUSED' } : s)
+    await searchAfterReload(demoRecord, 'LexaVault', 'loan system paused')
+    await page.unrouteAll({ behavior: 'ignoreErrors' })
+
     // With only systems that can't be searched (simulated in the browser), Records and Home say so.
     await page.route('**/api/v1/business/search-schema', async (route) => {
       const s = await (await route.fetch()).json() as { sources: SchemaSource[] }
       await route.fulfill({ json: { ...s, sources: s.sources.filter((x) => x.fields.length === 0) } })
     })
     await page.reload()
-    const results = page.getByRole('region', { name: 'Search results' })
     await expect(results.getByRole('heading', { name: 'There’s nothing to search yet.' })).toBeVisible({ timeout: 15000 })
     await expect(results).toContainText('Records appear here once a sending system delivers documents.')
     await expect(page.getByRole('button', { name: /^Filters/ })).toBeDisabled()

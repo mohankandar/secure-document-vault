@@ -8,7 +8,9 @@ param(
     [ValidatePattern('^([0-9]{11})?$')][string]$MemberNumber = '',
     [ValidateRange(1,100)][int]$Count = 1,
     # Task 0011: one record whose document could not be stored and one whose document is stuck (local only).
-    [switch]$ProblemDemo
+    [switch]$ProblemDemo,
+    # Task 0023: the local database to read (sdv, or a scratch database such as sdv_seed_test in sdv-postgres).
+    [ValidatePattern('^sdv(_[a-z0-9_]+)?$')][string]$Database = 'sdv'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -41,10 +43,14 @@ function InvokeJson([string]$Method,[string]$Uri,[hashtable]$Headers,[object]$Bo
     return $r.Content | ConvertFrom-Json
 }
 function DbScalar([string]$Sql) {
-    return (& docker exec sdv-postgres psql -U sdv -d sdv -tAc $Sql | Out-String).Trim()
+    return (& docker exec sdv-postgres psql -U sdv -d $Database -v ON_ERROR_STOP=1 -tAc $Sql | Out-String).Trim()
 }
+# Task 0023: a field that already exists is left as it is. Every PUT adds a new field version and an audit event,
+# so sending it again on each run would change the data every time.
 function EnsureField([string]$SourceId,[string]$FieldKey,[string]$Label,[bool]$Identifier,[bool]$Required,[string]$Normalization,[string]$SearchMode) {
     $admin = UserHeaders 'local-demo-business-admin' 'BUSINESS_ADMIN'
+    $have = DbScalar "select count(*) from metadata_field_definitions where tenant_id='$Tenant' and source_id='$SourceId' and field_key='$FieldKey' and active;"
+    if ([int]$have -gt 0) { Ok "Metadata field already there: $Label"; return }
     InvokeJson 'PUT' "$Base/api/v1/admin/ingestion-sources/$SourceId/metadata-fields/$FieldKey" $admin @{
         displayLabel=$Label; fieldType='TEXT'; required=$Required; businessIdentifier=$Identifier; searchable=$true
         normalization=$Normalization; searchMode=$SearchMode; validationRules=@{}
@@ -84,7 +90,7 @@ if ($ProblemDemo) {
         $sourceDocumentId = "problem-demo-doc-$($p.contract)"
         if ([string]::IsNullOrWhiteSpace($submissionId)) {
             $submission = InvokeJson 'POST' "$Base/api/v1/ingestion/submissions" (SourceHeaders $SourceId 'local-demo-producer') @{
-                sourceSubmissionId=$sourceSubmissionId; expectedDocumentCount=$(if ($p.kind -eq 'missing') { 2 } else { 1 }); expectedDocuments=$(if ($p.kind -eq 'missing') { @(@{ sourceDocumentId=$sourceDocumentId }, @{ sourceDocumentId="$sourceDocumentId-2" }) } else { @(@{ sourceDocumentId=$sourceDocumentId }) })
+                sourceSubmissionId=$sourceSubmissionId; expectedDocumentCount=$(if ($p.kind -eq 'missing') { 2 } else { 1 }); expectedDocuments=@(if ($p.kind -eq 'missing') { @{ sourceDocumentId=$sourceDocumentId }; @{ sourceDocumentId="$sourceDocumentId-2" } } else { @{ sourceDocumentId=$sourceDocumentId } })
                 metadata=@{ contractNumber=$p.contract; memberNumber=$p.member; serviceEntity='001'; firstName=$p.firstName; lastName=$p.lastName }
             }
             $submissionId = [string]$submission.submissionId
@@ -100,13 +106,13 @@ if ($ProblemDemo) {
         }
         if ($p.kind -eq 'missing') {
             # 1 of 2 received, last activity a week ago: past any attention time, so it is listed under Missing documents.
-            $null = DbScalar "update submissions set last_activity_at=now() - interval '7 days' where tenant_id='$Tenant' and submission_id='$submissionId';"
+            $null = DbScalar "update submissions set last_activity_at=now() - interval '7 days' where tenant_id='$Tenant' and submission_id='$submissionId' and last_activity_at > now() - interval '7 days';"
             Ok "$($p.contract): 1 of 2 documents received a week ago"
         } elseif ($p.kind -eq 'could-not-store') {
-            $null = DbScalar "update documents set status='PROCESSING_FAILED', processing_error_code='DOCUMENT_FINALIZATION_FAILED', processing_attempt_count=3 where tenant_id='$Tenant' and document_id='$documentId';"
+            $null = DbScalar "update documents set status='PROCESSING_FAILED', processing_error_code='DOCUMENT_FINALIZATION_FAILED', processing_attempt_count=3 where tenant_id='$Tenant' and document_id='$documentId' and status<>'PROCESSING_FAILED';"
             Ok "$($p.contract): $($p.file) could not be stored"
         } else {
-            $null = DbScalar "update documents set status='PROCESSING', processing_error_code=null, ingested_at=now() - interval '2 days' where tenant_id='$Tenant' and document_id='$documentId';"
+            $null = DbScalar "update documents set status='PROCESSING', processing_error_code=null, ingested_at=now() - interval '2 days' where tenant_id='$Tenant' and document_id='$documentId' and status<>'PROCESSING';"
             Ok "$($p.contract): $($p.file) is stuck (still being stored after 2 days)"
         }
     }

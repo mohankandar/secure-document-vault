@@ -43,7 +43,8 @@ function Get-RelativePath([string]$FullName) {
 function Is-Excluded([string]$RelativePath) {
     $normalized = $RelativePath.Replace('\','/')
     $parts = $normalized.Split('/')
-    $blockedDirectories = @('.git','.idea','.vscode','.runtime','target','node_modules','dist','release')
+    # demo-files: local demo PDFs for Seed-SDV-Canvas-Demo.ps1 only, never part of a package (task 0023).
+    $blockedDirectories = @('.git','.idea','.vscode','.runtime','target','node_modules','dist','release','demo-files')
     foreach ($part in $parts) {
         if ($blockedDirectories -contains $part) { return $true }
     }

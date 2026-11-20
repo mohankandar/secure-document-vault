@@ -80,7 +80,7 @@ export function Workspace() {
   }, [selectedRef, setRecords])
   // A record chosen elsewhere (e.g. "Go to") opens the record panel.
   useEffect(() => { if (selectedRef) setPanelOpen(true) }, [selectedRef])
-  // One fixed rule for the default (sourceChoice.ts); a system without a searchable field is never chosen.
+  // One fixed rule for the default (sourceChoice.ts, task 0023), shared with Home.
   useEffect(() => { if (!sources.length || sourceId) return; const d = defaultSource(sources); if (d) setSourceId(d.id) }, [sources, sourceId])
   const candidates = useMemo(() => searchableSources(sources), [sources])
   const sourcesKnown = status !== 'loading' || sources.length > 0
@@ -358,7 +358,7 @@ function FiltersPanel({ sources, initial, onApply, onClose }: { sources: Source[
         {sources.length > 1 && (
           <label className="v-field"><span>Source</span>
             <select className="v-select" value={src.id} onChange={(e) => { setSrcId(e.target.value); setDraft({}); setTouched(false) }}>
-              {sources.filter((s) => s.status === 'ACTIVE').map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+              {sources.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
           </label>
         )}

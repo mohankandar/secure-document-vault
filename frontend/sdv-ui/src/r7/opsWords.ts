@@ -67,6 +67,26 @@ export function atWhen(iso: string, now = new Date()): string {
   const [day, month, t] = w.split(' ')
   return `on ${day} ${month} at ${t}`
 }
+/** A time still to come, or null when there is none or it can't be read (nothing is guessed). */
+function upcoming(iso: string | null | undefined, now: Date): { d: Date; day: string } | null {
+  if (!iso) return null
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return null
+  const tomorrow = new Date(now); tomorrow.setDate(now.getDate() + 1)
+  const day = sameDay(d, now) ? 'today' : sameDay(d, tomorrow) ? 'tomorrow' : new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short' }).format(d)
+  return { d, day }
+}
+/** "today at 07:00", "tomorrow at 07:00", "on 21 Nov at 07:00" (inside a sentence); null when unknown. */
+export function atWhenNext(iso: string | null | undefined, now = new Date()): string | null {
+  const u = upcoming(iso, now)
+  if (!u) return null
+  return `${u.day === 'today' || u.day === 'tomorrow' ? u.day : `on ${u.day}`} at ${time(u.d)}`
+}
+/** "today 07:00", "tomorrow 07:00", "21 Nov 07:00" (a short line); null when unknown. */
+export function whenNext(iso: string | null | undefined, now = new Date()): string | null {
+  const u = upcoming(iso, now)
+  return u ? `${u.day} ${time(u.d)}` : null
+}
 /** "just now", "2 minutes ago", "1 hour ago". */
 export function ago(iso: string | null, now = Date.now()): string {
   if (!iso) return 'not yet'
@@ -83,9 +103,18 @@ export function ago(iso: string | null, now = Date.now()): string {
 
 const docs = (n: number) => `${n.toLocaleString()} document${n === 1 ? '' : 's'}`
 export type Cleanup = { tone: 'ok' | 'bad' | 'neutral'; sentence: string; whatToDo?: string }
-/** The last run in a sentence. The server keeps only the last run since it started, and reports no schedule. */
-export function cleanupWords(r: OpsRetention | null): Cleanup {
+/**
+ * The last run in a sentence, then the next one ("Next run: tomorrow at 07:00."). The server keeps only the last
+ * run since it started. It works the next run out from the scheduler's own setting and sends none when it can't
+ * (task 0023); then nothing is said about it.
+ */
+export function cleanupWords(r: OpsRetention | null, now = new Date()): Cleanup {
   if (!r) return { tone: 'neutral', sentence: 'Vero couldn’t say how automatic cleanup is doing.' }
+  const c = lastRunWords(r)
+  const next = atWhenNext(r.nextRunAt, now)
+  return next ? { ...c, sentence: `${c.sentence} Next run: ${next}.` } : c
+}
+function lastRunWords(r: OpsRetention): Cleanup {
   if (r.outcome === 'NEVER_RUN' || !r.completedAt) return { tone: 'neutral', sentence: 'Automatic cleanup hasn’t run since Vero last started. It starts by itself shortly after start-up.' }
   const when = atWhen(r.completedAt)
   if (r.outcome === 'FAILED') return {

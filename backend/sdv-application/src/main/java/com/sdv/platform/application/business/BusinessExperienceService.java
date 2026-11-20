@@ -21,6 +21,7 @@ import com.sdv.platform.domain.metadata.MetadataFieldType;
 import com.sdv.platform.domain.metadata.MetadataNormalization;
 import com.sdv.platform.domain.metadata.MetadataSearchMode;
 import com.sdv.platform.domain.source.IngestionSource;
+import com.sdv.platform.domain.source.IngestionSourceStatus;
 import com.sdv.platform.domain.submission.Submission;
 import com.sdv.platform.domain.submission.SubmissionStatus;
 import com.sdv.platform.domain.tenant.TenantStatus;
@@ -105,6 +106,11 @@ public class BusinessExperienceService {
 
     public BusinessExperienceView.SearchSchema searchSchema(UUID tenantId) {
         requireActiveTenant(tenantId);
+        // Task 0023: one query for every system's last delivery, read only for this tenant.
+        Map<UUID, Instant> lastDelivered = new HashMap<>();
+        for (BusinessRecordRepository.SourceActivity a : records.findSourceActivity(tenantId)) {
+            if (a.lastDeliveredAt() != null) lastDelivered.put(a.sourceId(), a.lastDeliveredAt());
+        }
         List<BusinessExperienceView.SourceSchema> sourceSchemas = sources.findAll(tenantId).stream()
                 .sorted(Comparator.comparing(IngestionSource::displayName, String.CASE_INSENSITIVE_ORDER)
                         .thenComparing(IngestionSource::sourceKey))
@@ -121,7 +127,10 @@ public class BusinessExperienceService {
                                         field.businessIdentifier(),
                                         field.normalization(),
                                         field.searchMode()))
-                                .toList()))
+                                .toList(),
+                        source.status() == IngestionSourceStatus.ACTIVE ? "ACTIVE" : "PAUSED",
+                        lastDelivered.containsKey(source.sourceId()),
+                        lastDelivered.get(source.sourceId())))
                 .toList();
         return new BusinessExperienceView.SearchSchema(sourceSchemas);
     }

@@ -176,4 +176,14 @@ public interface BusinessRecordRepository {
     record DocumentCount(UUID submissionId, int documentCount) { }
 
     record RecentDocumentView(UUID documentId, UUID submissionId, UUID sourceId, Instant lastOpenedAt) { }
+
+    /**
+     * Task 0023: for every sending system of the tenant, in one query, when it last delivered (the newest
+     * last_activity_at of its submissions), or null when it holds no record. Nothing is counted.
+     */
+    List<SourceActivity> findSourceActivity(UUID tenantId);
+
+    record SourceActivity(UUID sourceId, Instant lastDeliveredAt) {
+        public boolean hasRecords() { return lastDeliveredAt != null; }
+    }
 }

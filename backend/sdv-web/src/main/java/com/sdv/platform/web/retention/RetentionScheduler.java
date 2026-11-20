@@ -11,6 +11,9 @@ import java.time.Instant;
 
 @Component
 public class RetentionScheduler {
+    /** The schedule: first run this long after start-up, then each run this long after the previous one ended. */
+    static final String INITIAL_DELAY_MS = "${sdv.retention.initial-delay-ms:15000}";
+    static final String SWEEP_DELAY_MS = "${sdv.retention.sweep-delay-ms:60000}";
     private static final Logger log = LoggerFactory.getLogger(RetentionScheduler.class);
     private final RetentionDeletionService retention;
     private final RetentionSweepMonitor monitor;
@@ -23,11 +26,12 @@ public class RetentionScheduler {
     }
 
     @Scheduled(
-            initialDelayString = "${sdv.retention.initial-delay-ms:15000}",
-            fixedDelayString = "${sdv.retention.sweep-delay-ms:60000}")
+            initialDelayString = INITIAL_DELAY_MS,
+            fixedDelayString = SWEEP_DELAY_MS)
     public void sweep() {
         if (!schema.current()) return; // the database doesn't match this version (DatabaseSchemaCheck)
         Instant startedAt = Instant.now();
+        monitor.started();
         try {
             RetentionDeletionService.SweepResult result = retention.sweep(100);
             monitor.success(startedAt, Instant.now(), result);
