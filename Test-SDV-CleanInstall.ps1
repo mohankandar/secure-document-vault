@@ -116,7 +116,7 @@ function Wait-Watching([double]$seconds) {
 function Start-Vero([string]$name) {
     $out = Join-Path $run "$name.out.log"; $err = Join-Path $run "$name.err.log"
     $env:SDV_DB_URL = $hostUrl; $env:SDV_DB_USERNAME = $app; $env:SDV_DB_PASSWORD = $appPassword
-    $env:SDV_SERVER_PORT = "$Port"; $env:SDV_RETENTION_INITIAL_DELAY_MS = '1000'
+    $env:SDV_SERVER_PORT = "$Port"; $env:SDV_RETENTION_CRON = '* * * * * *'
     try {
         $watch = [System.Diagnostics.Stopwatch]::StartNew()
         # No --spring.profiles.active: this is a customer-style (production context) start. Sign-in stays "disabled".
@@ -124,7 +124,7 @@ function Start-Vero([string]$name) {
             -ArgumentList @('-jar', "`"$jarPath`"", '--sdv.redaction.recovery-initial-delay-ms=1000') `
             -RedirectStandardOutput $out -RedirectStandardError $err
     } finally {
-        foreach ($k in 'SDV_DB_URL', 'SDV_DB_USERNAME', 'SDV_DB_PASSWORD', 'SDV_SERVER_PORT', 'SDV_RETENTION_INITIAL_DELAY_MS') { Remove-Item "Env:$k" -ErrorAction SilentlyContinue }
+        foreach ($k in 'SDV_DB_URL', 'SDV_DB_USERNAME', 'SDV_DB_PASSWORD', 'SDV_SERVER_PORT', 'SDV_RETENTION_CRON') { Remove-Item "Env:$k" -ErrorAction SilentlyContinue }
     }
     while ($watch.Elapsed.TotalSeconds -lt $StartTimeoutSeconds) {
         if ($script:appProcess.HasExited) { throw "FAIL: Vero exited during start ($name). See $out" }

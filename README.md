@@ -68,6 +68,10 @@ Stop with:
 .\Stop-SDV-Local.ps1
 ```
 
+## Automatic cleanup time
+
+Documents past their keep date are deleted once a day at a fixed time, by default 02:00 in the server's time zone. To change it, set `sdv.retention.daily-at` (environment variable `SDV_RETENTION_DAILY_AT`) to a 24-hour `HH:mm` time, for example `23:30`. Health and Overview show the next run from this setting. A time in any other format stops the server at start-up. The old `SDV_RETENTION_INITIAL_DELAY_MS` and `SDV_RETENTION_SWEEP_DELAY_MS` settings are no longer used, and the server refuses to start while either is set. `SDV_RETENTION_CRON` is for the check scripts only.
+
 ## Current UI/R3 preflight
 
 ```powershell
@@ -78,13 +82,21 @@ The filename is retained for compatibility with the current development workflow
 
 ## Demo data for Search / Results / Viewer / Activity validation
 
-With the local backend and Vault running:
+With the local backend and Vault running, one command gives a fresh machine the demo data the screen tour (`npm run ui:capture`) and `npm run ui:compare` use:
 
 ```powershell
-.\Seed-SDV-Demo-Records.ps1
+.\Seed-SDV-Canvas-Demo.ps1
 ```
 
-The seed uses the normal ingestion APIs and is intended for local validation only.
+It creates the LexaVault and Loan Origination System sending systems with their records (including the 14-page demo document on 300000000092 and the record with a missing document, 300000000090), the storage volumes `primary-a` and `primary-b`, the `e2e-demo` tag and a demo comment, the paused "Title Records" and "Tour test system" sending systems, and the organization name "Acme Lending". It runs `Seed-SDV-Demo-Records.ps1` itself; that script is still there for one-off records (`-FreshTestData`, `-ProblemDemo`).
+
+Running it again changes nothing. The seed uses the normal APIs plus a few direct writes to the local database and is for local development only: it refuses anything but `localhost`. Its PDFs (`test-tools\fixtures`, `scripts\demo-files`) are not part of the backend jar or the frontend build.
+
+To check the seed on an empty scratch database (`sdv_seed_test`, created and dropped by the check; the `sdv` database is not touched):
+
+```powershell
+.\Test-SDV-DemoSeed.ps1 -WithTour
+```
 
 ## Release-readiness scripts
 

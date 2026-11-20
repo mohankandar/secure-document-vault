@@ -392,6 +392,26 @@ public class JdbcBusinessRecordRepository implements BusinessRecordRepository {
                         rs.getInt("document_count")));
     }
 
+    /**
+     * Task 0023: one query for all of the tenant's sending systems. Each max() is read from the
+     * (tenant_id, source_id, last_activity_at desc) index, so no submission is counted.
+     */
+    @Override
+    public List<SourceActivity> findSourceActivity(UUID tenantId) {
+        return jdbc.query("""
+                select src.source_id,
+                       (select max(s.last_activity_at)
+                          from submissions s
+                         where s.tenant_id=src.tenant_id
+                           and s.source_id=src.source_id) as last_delivered_at
+                  from ingestion_sources src
+                 where src.tenant_id=:tenantId
+                """, new MapSqlParameterSource().addValue("tenantId", tenantId),
+                (rs, rowNum) -> new SourceActivity(
+                        rs.getObject("source_id", UUID.class),
+                        instant(rs, "last_delivered_at")));
+    }
+
     private static String submissionSelect() {
         return """
                 select s.submission_id, s.tenant_id, s.source_id, s.source_submission_id,

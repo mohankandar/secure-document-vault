@@ -9,7 +9,7 @@ import { isMeaningfulActivity } from './auditWords'
 import { About } from './About'
 import { Banner, Callout, Panel, TechDetails, fmtDateTime } from './ui'
 import {
-  SERVICE_KEYS, SERVICE_STATE_WORDS, SERVICE_WORDS, ago, asLiveVolume, canStoreWords, cleanupWords, fmtWhen, overviewSentence,
+  SERVICE_KEYS, SERVICE_STATE_WORDS, SERVICE_WORDS, ago, asLiveVolume, canStoreWords, cleanupWords, fmtWhen, overviewSentence, whenNext,
   problemKinds, problemTotal, serviceSentence, serviceState, servicesDown, storageRoleWord, storageWhatToDo, volumeNeedsAttention,
 } from './opsWords'
 
@@ -106,6 +106,7 @@ function Overview() {
   const unreachable = active.find((v) => v.observationError)
   const down = servicesDown(data)
   const sweep = cleanupWords(cleanup)
+  const nextRun = whenNext(cleanup?.nextRunAt)
   const partial = data.dataObservations?.some((x) => x.status === 'DEGRADED')
 
   const tiles: { id: string; label: string; value: string; detail: string; tab: string; bad: boolean; tone?: string }[] = [
@@ -120,7 +121,8 @@ function Overview() {
       detail: 'Vero, database and key service' },
     { id: 'cleanup', label: 'Cleanup', tab: 'health', bad: sweep.tone === 'bad',
       value: sweep.tone === 'bad' ? 'Last run failed' : deletedToday === undefined ? 'Counting…' : deletedToday === null ? 'Couldn’t count' : deletedToday.n === 0 ? 'Nothing deleted today' : `${deletedToday.more ? 'More than ' : ''}${deletedToday.n.toLocaleString()} deleted today`,
-      detail: cleanup?.completedAt ? `Documents past their keep date · last ran ${ago(cleanup.completedAt)}` : 'Documents past their keep date' },
+      // Canvas: "next run tomorrow 07:00"; when the server can't say when, the last run as before (nothing guessed).
+      detail: nextRun ? `Documents past their keep date · next run ${nextRun}` : cleanup?.completedAt ? `Documents past their keep date · last ran ${ago(cleanup.completedAt)}` : 'Documents past their keep date' },
   ]
   // Canvas: the value's colour says how it is (problems red, storage amber when it needs attention, services green).
   for (const t of tiles) t.tone = t.id === 'problems' ? (t.bad ? 'bad' : '') : t.id === 'storage' ? (t.bad ? 'warn' : '') : t.id === 'services' ? (t.bad ? 'bad' : 'ok') : t.bad ? 'bad' : ''

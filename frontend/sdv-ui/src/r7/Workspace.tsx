@@ -7,7 +7,7 @@ import { LoadErrorCard, failureText, loadFailed, type Failure } from './CardErro
 import { Badge, Callout, Drawer, Empty, Skeleton, actorWords, auditEventLabel, fmtDate, fmtRel, fmtShortDate } from './ui'
 import { Viewer } from './Viewer'
 import { MODE_HINT, MODE_WORD, QUICK_RANGES, filterHint, boxLabel, quickRange, rangeLabel, type Range } from './searchRouting'
-import { NOTHING_TO_SEARCH, defaultSource, rememberSourceChoice, searchableSources } from './sourceChoice'
+import { NOTHING_TO_SEARCH, defaultSource, nothingToSearchIn, rememberSourceChoice, searchableSources } from './sourceChoice'
 import { extraField, orderedPreview, titleLabel } from './recordColumns'
 import { anywhereProblem, hiddenMatch, identifierCriteria, type MatchedField } from './quickSearchRules'
 import { Mark, useQuickSearch, type QuickPick } from './QuickSearch'
@@ -80,11 +80,11 @@ export function Workspace() {
   }, [selectedRef, setRecords])
   // A record chosen elsewhere (e.g. "Go to") opens the record panel.
   useEffect(() => { if (selectedRef) setPanelOpen(true) }, [selectedRef])
-  // One fixed rule for the default (sourceChoice.ts); a system without a searchable field is never chosen.
+  // One fixed rule for the default (sourceChoice.ts, task 0023), shared with Home.
   useEffect(() => { if (!sources.length || sourceId) return; const d = defaultSource(sources); if (d) setSourceId(d.id) }, [sources, sourceId])
   const candidates = useMemo(() => searchableSources(sources), [sources])
   const sourcesKnown = status !== 'loading' || sources.length > 0
-  const nothingToSearch = sourcesKnown && status !== 'error' && candidates.length === 0
+  const nothingToSearch = sourcesKnown && status !== 'error' && nothingToSearchIn(sources)
 
   const activeSourceId = applied?.sourceId ?? sourceId
   const source = sources.find((s) => s.id === activeSourceId) ?? defaultSource(sources)
@@ -358,7 +358,7 @@ function FiltersPanel({ sources, initial, onApply, onClose }: { sources: Source[
         {sources.length > 1 && (
           <label className="v-field"><span>Source</span>
             <select className="v-select" value={src.id} onChange={(e) => { setSrcId(e.target.value); setDraft({}); setTouched(false) }}>
-              {sources.filter((s) => s.status === 'ACTIVE').map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+              {sources.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
           </label>
         )}

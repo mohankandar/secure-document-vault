@@ -17,11 +17,18 @@ public final class BusinessExperienceView {
         }
     }
 
+    /**
+     * status (task 0023): ACTIVE or PAUSED. hasRecords: whether the system holds at least one record (not a count).
+     * lastDeliveredAt: when it last delivered, null when it holds no record.
+     */
     public record SourceSchema(
             UUID sourceId,
             String sourceKey,
             String displayName,
-            List<SearchField> fields) {
+            List<SearchField> fields,
+            String status,
+            boolean hasRecords,
+            Instant lastDeliveredAt) {
         public SourceSchema {
             fields = List.copyOf(fields);
         }

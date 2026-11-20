@@ -105,6 +105,10 @@ export type SearchSource = {
   sourceKey: string
   displayName: string
   fields: SearchField[]
+  /** Task 0023: whether the system is receiving, whether it holds any record, and when it last delivered. */
+  status: 'ACTIVE' | 'PAUSED'
+  hasRecords: boolean
+  lastDeliveredAt: string | null
 }
 
 export type SearchSchema = {

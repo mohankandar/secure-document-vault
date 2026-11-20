@@ -27,9 +27,31 @@ const AREA_TAB_BY_ROLE: Record<string, string> = {
 
 const accountButton = (page: Page) => page.getByRole('banner').getByRole('button', { name: /^Account: / })
 
+/**
+ * The page has loaded once the app's own code has run. main.tsx loads the app with import(), after the browser's
+ * load event, so that event says nothing about the app (task 0023 follow-up: a blank page at the role switch when
+ * this machine briefly froze while the code was still arriving). mount() in r7/entry.tsx marks <html> with r7-html.
+ */
+async function appLoaded(page: Page) {
+  await page.waitForFunction(() => document.documentElement.classList.contains('r7-html'), undefined, { timeout: 15000 })
+}
+async function openApp(page: Page, url: string) {
+  await page.goto(url)
+  await appLoaded(page)
+}
+async function reloadApp(page: Page) {
+  await page.reload()
+  await appLoaded(page)
+}
+/** Signed in: the app has loaded the session and the top bar shows the account button. */
+async function signedIn(page: Page) {
+  await appLoaded(page)
+  await expect(accountButton(page)).toBeVisible({ timeout: 15000 })
+}
+
 async function openAccountMenu(page: Page) {
   const button = accountButton(page)
-  await expect(button).toBeVisible({ timeout: 15000 })
+  await signedIn(page)
   if ((await button.getAttribute('aria-expanded')) !== 'true') await button.click()
   const menu = page.getByRole('dialog', { name: 'Account menu' })
   await expect(menu).toBeVisible()
@@ -38,12 +60,14 @@ async function openAccountMenu(page: Page) {
 
 async function selectRole(page: Page, role: string) {
   const expected = ACCOUNT_BY_ROLE[role]
-  if ((await accountButton(page).getAttribute('aria-label').catch(() => null)) !== expected) {
+  await signedIn(page)
+  if ((await accountButton(page).getAttribute('aria-label')) !== expected) {
     const menu = await openAccountMenu(page)
     const roleSelect = menu.getByLabel('Local test role')
     await expect(roleSelect).toBeVisible()
     // Selecting a role reloads the page with the new local test identity.
     await Promise.all([page.waitForEvent('load'), roleSelect.selectOption({ label: role })])
+    await signedIn(page)
   }
   // Wait for the actual principal: the account button names the person and role, never the login ID.
   await expect(accountButton(page)).toHaveAttribute('aria-label', expected, { timeout: 15000 })
@@ -62,7 +86,7 @@ const areaTab = (page: Page, name: string) => page.getByRole('banner').getByRole
 
 /** Opening the app without an address lands on the person's first area (Home for search roles). */
 async function expectLanding(page: Page, area: string) {
-  await page.goto('/')
+  await openApp(page, '/')
   await expect(areaTab(page, area)).toHaveAttribute('aria-current', 'page', { timeout: 15000 })
 }
 
@@ -296,7 +320,7 @@ async function searchFieldsChecks(page: Page, testInfo: TestInfo) {
     await restore()
   }
   // Back to the default title: the first preview field, A to Z (First Name).
-  await page.reload()
+  await reloadApp(page)
   await expect(page.getByRole('region', { name: 'Recently viewed' }).getByRole('listitem').first()).toContainText(/Ava/, { timeout: 15000 })
 }
 
@@ -695,11 +719,13 @@ async function overviewChecks(page: Page, testInfo: TestInfo) {
     await route.fulfill({ json: { ...s, processingFailureCount: 0, stuckDocumentCount: 0, attentionSubmissionCount: 0, processingFailures: [], stuckDocuments: [], attentionSubmissions: [],
       storageVolumes: s.storageVolumes.map((v: Record<string, unknown>) => (v.state === 'ACTIVE' ? { ...v, warningThresholdReached: false, stopWriteThresholdReached: false, observationError: null, writable: true } : v)) } })
   })
-  await page.route('**/api/v1/operations/retention-status', (route) => route.fulfill({ json: { outcome: 'SUCCESS', startedAt: new Date().toISOString(), completedAt: new Date().toISOString(), candidates: 0, deleted: 0, failed: 0, reasonCode: null } }))
+  await page.route('**/api/v1/operations/retention-status', (route) => route.fulfill({ json: { outcome: 'SUCCESS', startedAt: new Date().toISOString(), completedAt: new Date().toISOString(), candidates: 0, deleted: 0, failed: 0, reasonCode: null, nextRunAt: tomorrowAt7().toISOString() } }))
   await opsTab(page, 'Overview').click()
   await expect(lead).toHaveText('Everything is working.', { timeout: 15000 })
   await expect(tiles.nth(0)).toContainText('None')
   await expect(tiles.nth(2)).toContainText('All working')
+  // Task 0023, as on the canvas: the Cleanup tile says when the next run is.
+  await expect(tiles.nth(3)).toContainText('Documents past their keep date · next run tomorrow 07:00')
   await capture(page, testInfo, 'overview-all-working')
   await page.unroute('**/api/v1/operations/summary')
   await page.unroute('**/api/v1/operations/retention-status')
@@ -724,6 +750,9 @@ async function opsStorageChecks(page: Page, testInfo: TestInfo) {
   await capture(page, testInfo, 'ops-storage')
 }
 
+/** Tomorrow at 07:00 local time: the canvas's daily cleanup sample (task 0023). */
+function tomorrowAt7() { const d = new Date(); d.setDate(d.getDate() + 1); d.setHours(7, 0, 0, 0); return d }
+
 /** Health: checked time and Check now, services in words, a stopped key service (simulated), and cleanup in a sentence. */
 async function healthChecks(page: Page, testInfo: TestInfo) {
   await opsTab(page, 'Health').click()
@@ -738,6 +767,25 @@ async function healthChecks(page: Page, testInfo: TestInfo) {
   await expect(cleanup).toContainText(/Last ran (today|yesterday|on .+) at \d{2}:\d{2}|hasn’t run since Vero last started/)
   await expectNoRawWords(page)
   await capture(page, testInfo, 'health')
+
+  // Task 0023: the next run, worked out by the server from the scheduler's own setting. Locally that is a fixed
+  // delay after each run (one minute by default), so it is soon, or null while a run is going on.
+  const status = await (await page.request.get('/api/v1/operations/retention-status', { headers: OPS_HEADERS })).json() as { nextRunAt?: string | null }
+  expect('nextRunAt' in status, 'the retention status has nextRunAt').toBeTruthy()
+  if (status.nextRunAt) expect(Date.parse(status.nextRunAt)).toBeGreaterThan(Date.now() - 5_000)
+  // A daily sample (simulated in the browser): the sentence ends with the next run, in the "Last ran" style.
+  const today7 = new Date(); today7.setHours(7, 0, 0, 0)
+  await page.route('**/api/v1/operations/retention-status', (route) => route.fulfill({ json: { outcome: 'SUCCESS', startedAt: today7.toISOString(), completedAt: today7.toISOString(), candidates: 3, deleted: 3, failed: 0, reasonCode: null, nextRunAt: tomorrowAt7().toISOString() } }))
+  await page.getByRole('button', { name: 'Check now' }).click()
+  await expect(cleanup).toContainText('Last ran today at 07:00 and deleted 3 documents that had passed their keep date. Next run: tomorrow at 07:00.', { timeout: 15000 })
+  await capture(page, testInfo, 'health-next-run')
+  // When the server can't say (no nextRunAt), nothing is shown rather than a guess.
+  await page.unroute('**/api/v1/operations/retention-status')
+  await page.route('**/api/v1/operations/retention-status', (route) => route.fulfill({ json: { outcome: 'SUCCESS', startedAt: today7.toISOString(), completedAt: today7.toISOString(), candidates: 3, deleted: 3, failed: 0, reasonCode: null, nextRunAt: null } }))
+  await page.getByRole('button', { name: 'Check now' }).click()
+  await expect(cleanup).toContainText('Last ran today at 07:00 and deleted 3 documents that had passed their keep date.', { timeout: 15000 })
+  await expect(cleanup).not.toContainText('Next run')
+  await page.unroute('**/api/v1/operations/retention-status')
 
   // The key service stops (simulated in the browser only), and a cleanup run fails.
   await page.route('**/api/v1/operations/summary', async (route) => {
@@ -1029,7 +1077,7 @@ async function viewerChecks(page: Page, testInfo: TestInfo, role: string) {
     expect(await preview.evaluate((img: HTMLImageElement) => img.naturalWidth)).toBeGreaterThan(0)
     await page.getByRole('button', { name: 'Hide document list' }).click()
     await expect(page.getByRole('navigation', { name: 'Record documents' })).toHaveCount(0)
-    await page.reload()
+    await reloadApp(page)
     await openViewerFor(page, demoRecord)
     await expect(page.getByRole('button', { name: 'Show document list' })).toBeVisible()
     await expect(page.getByRole('navigation', { name: 'Record documents' })).toHaveCount(0)
@@ -1152,7 +1200,9 @@ async function tryBusinessRecordJourney(page: Page, testInfo: TestInfo, role: st
 
 const BUSINESS_HEADERS = { 'X-SDV-Tenant-Id': LOCAL_TENANT, 'X-SDV-Subject': 'local-business-user', 'X-SDV-Roles': 'BUSINESS_USER' }
 const LAST_SOURCE_KEY = 'vero.records.sourceId'
-type SchemaSource = { sourceId: string; displayName: string; fields: unknown[] }
+/** A record of the canvas's loan system (Seed-SDV-Canvas-Demo.ps1); LexaVault has no record with this number. */
+const CANVAS_RECORD = '300000000001'
+type SchemaSource = { sourceId: string; displayName: string; fields: unknown[]; status: 'ACTIVE' | 'PAUSED'; hasRecords: boolean; lastDeliveredAt: string | null }
 async function searchSources(page: Page) {
   const r = await page.request.get('/api/v1/business/search-schema', { headers: BUSINESS_HEADERS })
   expect(r.ok(), 'reading the search schema').toBeTruthy()
@@ -1168,32 +1218,50 @@ async function chooseLexaVault(page: Page) {
 
 test.describe('SDV role-based screen capture', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/')
-    await page.waitForLoadState('domcontentloaded')
+    await openApp(page, '/')
     await chooseLexaVault(page)
   })
 
-  test('Records starts with LexaVault while a half-set-up system exists', async ({ page }, testInfo) => {
+  test('Records starts with the loan system while a paused, half-set-up system exists', async ({ page }, testInfo) => {
     test.skip(!isDesktop(testInfo), 'Runs once per tour (desktop only).')
-    test.setTimeout(150_000) // ten full page loads
-    // The test case is the leftover paused "Tour test system …" source, which has no search fields (report 0013).
+    test.setTimeout(240_000) // thirteen full page loads
+    // The test case is the leftover paused "Tour test system …" source: no searchable field and no record (reports
+    // 0013 and 0017; Seed-SDV-Canvas-Demo.ps1 makes it on a fresh machine).
     const sources = await searchSources(page)
     const leftover = sources.find((s) => /^Tour test system /.test(s.displayName) && s.fields.length === 0)
     expect(leftover, 'the test case: a "Tour test system" source without search fields must exist (keep it, task 0017)').toBeTruthy()
+    // Task 0023: the schema says each system's status, whether it holds records and when it last delivered.
+    expect(leftover!.status, 'the leftover system is paused').toBe('PAUSED')
+    expect(leftover!.hasRecords, 'the leftover system holds no record').toBe(false)
+    const los = sources.find((s) => s.displayName === 'Loan Origination System')
+    const lexa = sources.find((s) => s.displayName === 'LexaVault')
+    expect(los && lexa, 'the loan system and LexaVault (Seed-SDV-Canvas-Demo.ps1)').toBeTruthy()
+    for (const s of [los!, lexa!]) {
+      expect(s.status, `${s.displayName} is active`).toBe('ACTIVE')
+      expect(s.hasRecords, `${s.displayName} holds records`).toBe(true)
+    }
+    // The seed delivers the loan system last, so it is the active system that delivered most recently.
+    expect(Date.parse(los!.lastDeliveredAt ?? ''), 'the loan system delivered most recently').toBeGreaterThan(Date.parse(lexa!.lastDeliveredAt ?? ''))
     await selectRole(page, 'Business User')
     await areaTab(page, 'Records').click()
     await waitForBusinessSearchReady(page)
 
-    // Ten loads in a row with no remembered choice, and with the half-set-up system remembered (it can't be chosen).
-    for (let i = 1; i <= 10; i++) {
-      const remembered = i % 2 === 0 ? leftover!.sourceId : null
-      await page.evaluate(([key, id]) => { if (id) window.localStorage.setItem(key, id); else window.localStorage.removeItem(key) }, [LAST_SOURCE_KEY, remembered] as const)
-      await page.reload()
-      // Typed straight away, before the sending systems have loaded (the cause in report 0017).
-      await searchBox(page).fill(demoRecord)
+    const results = page.getByRole('region', { name: 'Search results' })
+    const remember = (id: string | null) => page.evaluate(([key, v]) => { if (v) window.localStorage.setItem(key, v); else window.localStorage.removeItem(key) }, [LAST_SOURCE_KEY, id] as const)
+    /** Reload, type straight away (before the sending systems have loaded, the cause in report 0017) and search. */
+    const searchAfterReload = async (contract: string, system: string, what: string) => {
+      await reloadApp(page)
+      await searchBox(page).fill(contract)
       await searchBox(page).press('Enter')
-      await expect(resultRows(page).filter({ hasText: demoRecord }).first(), `load ${i}: the default is LexaVault`).toBeVisible({ timeout: 15000 })
+      await expect(resultRows(page).filter({ hasText: contract }).first(), `${what}: the default is ${system}`).toBeVisible({ timeout: 15000 })
+      await expect(results, `${what}: searched in ${system}`).toContainText(system)
       await expect(page.getByText('no field the search box can use')).toHaveCount(0)
+    }
+
+    // Ten loads in a row with no remembered choice, and with the half-set-up system remembered (it never qualifies).
+    for (let i = 1; i <= 10; i++) {
+      await remember(i % 2 === 0 ? leftover!.sourceId : null)
+      await searchAfterReload(CANVAS_RECORD, 'Loan Origination System', `load ${i}`)
       await page.getByRole('button', { name: /^Filters/ }).click()
       const filters = page.getByRole('dialog', { name: 'Filters' })
       await expect(filters).toBeVisible()
@@ -1202,13 +1270,31 @@ test.describe('SDV role-based screen capture', () => {
       await expect(filters).toHaveCount(0)
     }
 
+    // A last choice that still qualifies is kept.
+    await remember(lexa!.sourceId)
+    await searchAfterReload(demoRecord, 'LexaVault', 'LexaVault remembered')
+
+    // Simulated in the browser: LexaVault, the remembered choice, no longer holds records, so it is ignored.
+    const changeSchema = (change: (s: SchemaSource) => SchemaSource) => page.route('**/api/v1/business/search-schema', async (route) => {
+      const s = await (await route.fetch()).json() as { sources: SchemaSource[] }
+      await route.fulfill({ json: { ...s, sources: s.sources.map(change) } })
+    })
+    await changeSchema((s) => s.sourceId === lexa!.sourceId ? { ...s, hasRecords: false, lastDeliveredAt: null } : s)
+    await searchAfterReload(CANVAS_RECORD, 'Loan Origination System', 'LexaVault remembered but without records')
+    await page.unrouteAll({ behavior: 'ignoreErrors' })
+
+    // Simulated: the loan system is paused. An active system that qualifies comes first, although it delivered earlier.
+    await remember(null)
+    await changeSchema((s) => s.sourceId === los!.sourceId ? { ...s, status: 'PAUSED' } : s)
+    await searchAfterReload(demoRecord, 'LexaVault', 'loan system paused')
+    await page.unrouteAll({ behavior: 'ignoreErrors' })
+
     // With only systems that can't be searched (simulated in the browser), Records and Home say so.
     await page.route('**/api/v1/business/search-schema', async (route) => {
       const s = await (await route.fetch()).json() as { sources: SchemaSource[] }
       await route.fulfill({ json: { ...s, sources: s.sources.filter((x) => x.fields.length === 0) } })
     })
-    await page.reload()
-    const results = page.getByRole('region', { name: 'Search results' })
+    await reloadApp(page)
     await expect(results.getByRole('heading', { name: 'There’s nothing to search yet.' })).toBeVisible({ timeout: 15000 })
     await expect(results).toContainText('Records appear here once a sending system delivers documents.')
     await expect(page.getByRole('button', { name: /^Filters/ })).toBeDisabled()
@@ -1219,6 +1305,33 @@ test.describe('SDV role-based screen capture', () => {
     await searchBox(page).press('Enter')
     await expect(page.getByRole('status').filter({ hasText: 'There’s nothing to search yet. Records appear here once a sending system delivers documents.' })).toBeVisible({ timeout: 15000 })
     await page.unrouteAll({ behavior: 'ignoreErrors' }) // a schema request may still be in flight
+
+    // Task 0023 follow-up (owner's answer 2): searchable systems exist, but none holds a record yet (a new
+    // installation, simulated in the browser). No system is picked by name; Records and Home say so instead.
+    await page.route('**/api/v1/business/search-schema', async (route) => {
+      const s = await (await route.fetch()).json() as { sources: SchemaSource[] }
+      await route.fulfill({ json: { ...s, sources: s.sources.map((x) => ({ ...x, hasRecords: false, lastDeliveredAt: null })) } })
+    })
+    await remember(los!.sourceId) // even a stored last choice is not used
+    await areaTab(page, 'Records').click()
+    await reloadApp(page)
+    await expect(results.getByRole('heading', { name: 'There’s nothing to search yet.' })).toBeVisible({ timeout: 15000 })
+    await expect(results).toContainText('Records appear here once a sending system delivers documents.')
+    await expect(page.getByRole('button', { name: /^Filters/ })).toBeDisabled()
+    await expect(searchBox(page)).toHaveAttribute('placeholder', 'Nothing to search yet')
+    await searchBox(page).fill(CANVAS_RECORD)
+    await searchBox(page).press('Enter')
+    await expect(page.getByRole('status').filter({ hasText: 'There’s nothing to search yet. Records appear here once a sending system delivers documents.' })).toBeVisible({ timeout: 15000 })
+    await capture(page, testInfo, 'records-nothing-delivered')
+    await areaTab(page, 'Home').click()
+    await expect(searchBox(page)).toHaveAttribute('placeholder', 'Nothing to search yet', { timeout: 15000 })
+    await expect(page.getByRole('button', { name: /^Filters/ })).toBeDisabled()
+    await searchBox(page).fill(CANVAS_RECORD)
+    await searchBox(page).press('Enter')
+    await expect(page.getByRole('status').filter({ hasText: 'There’s nothing to search yet. Records appear here once a sending system delivers documents.' })).toBeVisible({ timeout: 15000 })
+    await capture(page, testInfo, 'home-nothing-delivered')
+    await page.unrouteAll({ behavior: 'ignoreErrors' })
+    await remember(null)
   })
 
   test('Business User screens', async ({ page }, testInfo) => {
@@ -1260,7 +1373,7 @@ test.describe('SDV role-based screen capture', () => {
     await expect(page.getByRole('img', { name: /Document page 1/ })).toBeVisible({ timeout: 20000 })
     await capture(page, testInfo, 'redaction-applied')
     // Task 0018 follow-up: the record's document list now says the document was redacted.
-    await page.reload()
+    await reloadApp(page)
     await openViewerFor(page, redactionRecord)
     await expect(page.getByRole('navigation', { name: 'Record documents' })).toContainText('redacted', { timeout: 15000 })
   })
@@ -1326,12 +1439,12 @@ test.describe('SDV role-based screen capture', () => {
   test('Without a session the app shows the error page, never sample data (task 0021)', async ({ page }) => {
     // The server refuses the session (simulated in the browser only).
     await page.route('**/api/v1/session', (route) => route.fulfill({ status: 401, json: { message: 'Not signed in' } }))
-    await page.goto('/')
+    await openApp(page, '/')
     await expect(page.getByRole('alert')).toContainText(/Your session didn.t start/, { timeout: 15000 })
     await expect(page.getByRole('main')).not.toContainText(/Records|Recently viewed|Needs attention|Simulated|simulated/)
     await expect(page.getByRole('banner')).not.toContainText(/Simulated|R7 · business integration/)
     // The old R5 address now opens Vero too: the old app is gone.
-    await page.goto('/?app=r5')
+    await openApp(page, '/?app=r5')
     await expect(page.getByRole('alert')).toContainText(/Your session didn.t start/, { timeout: 15000 })
     await expect(page.locator('.auth-shell, .auth-card')).toHaveCount(0)
   })
@@ -1344,7 +1457,7 @@ test.describe('SDV role-based screen capture', () => {
     const los = (await searchSources(page)).find((s) => s.displayName === 'Loan Origination System')
     expect(los, 'the Loan Origination System from Seed-SDV-Canvas-Demo.ps1').toBeTruthy()
     await page.evaluate(([key, id]) => window.localStorage.setItem(key, id), [LAST_SOURCE_KEY, los!.sourceId])
-    await page.reload()
+    await reloadApp(page)
     await selectRole(page, 'Business User')
     const shots = path.resolve(process.cwd(), '..', '..', '.runtime', 'ui-checks', '0022')
     fs.mkdirSync(shots, { recursive: true })
@@ -1493,7 +1606,7 @@ test.describe('SDV role-based screen capture', () => {
     page.on('request', (r) => { if (r.url().includes('/me/recent-records')) directCalls++ })
     // A fresh page load straight onto Records (the page is already on #/workspace, so a hash change alone wouldn't load it).
     await page.goto('about:blank')
-    await page.goto('/#/workspace/search')
+    await openApp(page, '/#/workspace/search')
     await expect(areaTab(page, 'Records')).toHaveAttribute('aria-current', 'page', { timeout: 15000 })
     await waitForBusinessSearchReady(page)
     await expect.poll(() => directCalls, { message: 'Records loads Recently viewed itself' }).toBe(1)

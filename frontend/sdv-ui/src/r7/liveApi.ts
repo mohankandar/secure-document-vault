@@ -32,7 +32,8 @@ export const RECENT_LIMIT = 8
 export const recentRecords = (limit = RECENT_LIMIT) => roleApi<{ records: RecentRecord[] }>('/api/v1/business/me/recent-records?limit=' + limit, 'business')
 export const record = (ref: string) => roleApi<BusinessRecord>('/api/v1/business/records/' + encodeURIComponent(ref), 'business')
 export function toSource(s: SearchSource): Source {
-  return { id:s.sourceId, key:s.sourceKey, name:s.displayName, status:'ACTIVE', fields:s.fields.map(f=>({
+  // Fail closed: anything but ACTIVE counts as paused, and a missing flag as holding no record.
+  return { id:s.sourceId, key:s.sourceKey, name:s.displayName, status:s.status === 'ACTIVE' ? 'ACTIVE' : 'PAUSED', hasRecords:s.hasRecords === true, lastDeliveredAt:s.lastDeliveredAt ?? null, fields:s.fields.map(f=>({
     key:f.fieldKey, label:f.displayLabel, type:f.fieldType === 'DATE' ? 'DATE':'STRING',
     identifier:f.businessIdentifier, searchable:true, mode:f.searchMode, normalization:
     f.normalization === 'DIGITS_ONLY' || f.normalization === 'UPPERCASE' ? f.normalization : 'NONE', normalizationRaw:f.normalization
@@ -148,7 +149,8 @@ export const opsAudit=(cursor?:string,filters?:{action?:string;outcome?:string;a
 /** Task 0011 export: the server builds the CSV from the list's filters (plus the activity group and hidden routine codes) and records the export. */
 export const opsAuditExport=(filters:Record<string,string|undefined>,actions?:string[],excludeActions?:string[])=>{const p=new URLSearchParams();for(const [k,v] of Object.entries(filters))if(v)p.set(k,v);if(actions?.length)p.set('actions',actions.join(','));if(excludeActions?.length)p.set('excludeActions',excludeActions.join(','));return contentBinary('/api/v1/operations/audit-events/export?'+p.toString(),'platform')}
 /** The last automatic cleanup run since the server started (kept in memory; the server reports no schedule). */
-export type OpsRetention={outcome:'SUCCESS'|'FAILED'|'NEVER_RUN'|string;startedAt:string|null;completedAt:string|null;candidates:number;deleted:number;failed:number;reasonCode:string|null}
+/** nextRunAt (task 0023): when the next cleanup run is due, from the scheduler's own setting; null when the server can't say. */
+export type OpsRetention={outcome:'SUCCESS'|'FAILED'|'NEVER_RUN'|string;startedAt:string|null;completedAt:string|null;candidates:number;deleted:number;failed:number;reasonCode:string|null;nextRunAt?:string|null}
 export const opsRetention=()=>roleApi<OpsRetention>('/api/v1/operations/retention-status','platform')
 
 /** Thresholds left out use the tenant's standard warning and stop levels. */
