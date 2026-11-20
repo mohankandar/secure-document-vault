@@ -158,7 +158,7 @@ Screen tour (`npm run ui:capture`):
 
 ## Commits (hash and message), or "not committed"
 
-See the commit on `feature/sensitivity-2`: `feat: restricted steward role and separation rules (task 0025)`. Not pushed, not merged.
+`3011a8f` feat: restricted steward role and separation rules (task 0025), on `feature/sensitivity-2`. Not pushed, not merged. (This report line was added in a second commit.)
 
 ## Not done, and why
 
