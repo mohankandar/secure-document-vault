@@ -7,6 +7,9 @@ export default defineConfig({
   timeout: 45_000,
   expect: { timeout: 8_000 },
   fullyParallel: false,
+  // One worker for every run, including ui:capture and ui:compare. Task 0023 follow-up: the tour failures came from this
+  // machine freezing for about 10 s at a time under load, not from the app. The owner chose to reduce load instead of
+  // raising the time limits. There is no CI configuration in this repository; one added later can set its own count.
   workers: 1,
   retries: 0,
   reporter: [

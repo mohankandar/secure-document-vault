@@ -68,6 +68,10 @@ Stop with:
 .\Stop-SDV-Local.ps1
 ```
 
+## Automatic cleanup time
+
+Documents past their keep date are deleted once a day at a fixed time, by default 02:00 in the server's time zone. To change it, set `sdv.retention.daily-at` (environment variable `SDV_RETENTION_DAILY_AT`) to a 24-hour `HH:mm` time, for example `23:30`. Health and Overview show the next run from this setting. A time in any other format stops the server at start-up. The old `SDV_RETENTION_INITIAL_DELAY_MS` and `SDV_RETENTION_SWEEP_DELAY_MS` settings are no longer used, and the server refuses to start while either is set. `SDV_RETENTION_CRON` is for the check scripts only.
+
 ## Current UI/R3 preflight
 
 ```powershell

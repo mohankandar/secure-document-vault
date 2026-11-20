@@ -7,7 +7,7 @@ import type { RecordSummary } from '../api'
 import { RECENT_LIMIT, recentRecords, schema, search, toSource, type RecentRecord } from './liveApi'
 import { Badge, Callout, Skeleton, fmtRel } from './ui'
 import { boxLabel, quickRange } from './searchRouting'
-import { NOTHING_TO_SEARCH, defaultSource, searchableSources } from './sourceChoice'
+import { NOTHING_TO_SEARCH, defaultSource, nothingToSearchIn, searchableSources } from './sourceChoice'
 import { extraField } from './recordColumns'
 import { anywhereProblem, identifierCriteria } from './quickSearchRules'
 import { useQuickSearch, type QuickPick } from './QuickSearch'
@@ -55,7 +55,7 @@ export function Home() {
   }, [sourcesLoaded, candidates])
 
   const source = defaultSource(sources)
-  const nothingToSearch = sourcesLoaded && candidates.length === 0
+  const nothingToSearch = sourcesLoaded && nothingToSearchIn(sources)
   const fields = useMemo(() => source?.fields.filter((f) => f.searchable) ?? [], [source])
   const label = boxLabel(fields)
   const firstName = firstNameOf(liveSession?.displayName)

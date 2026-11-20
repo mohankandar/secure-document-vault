@@ -88,6 +88,8 @@ sdv:
       key-prefix: ${SDV_VAULT_KEY_PREFIX:sdv-tenant-}
 
   retention:
-    initial-delay-ms: ${SDV_RETENTION_INITIAL_DELAY_MS:15000}
-    sweep-delay-ms: ${SDV_RETENTION_SWEEP_DELAY_MS:60000}
+    # Automatic cleanup runs once a day at this time: HH:mm, 24-hour, in the server's time zone.
+    daily-at: ${SDV_RETENTION_DAILY_AT:02:00}
+    # For check scripts only: a Spring cron expression that replaces daily-at when set. Leave empty.
+    cron: ${SDV_RETENTION_CRON:}
 

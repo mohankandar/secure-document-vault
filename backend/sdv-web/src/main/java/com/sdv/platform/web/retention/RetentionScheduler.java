@@ -4,30 +4,35 @@ import com.sdv.platform.application.retention.RetentionDeletionService;
 import com.sdv.platform.web.schema.DatabaseSchemaCheck;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.scheduling.annotation.SchedulingConfigurer;
+import org.springframework.scheduling.config.ScheduledTaskRegistrar;
 import org.springframework.stereotype.Component;
 
 import java.time.Instant;
 
+/** Automatic cleanup, once a day at the time in RetentionSchedule (default 02:00 server time). */
 @Component
-public class RetentionScheduler {
-    /** The schedule: first run this long after start-up, then each run this long after the previous one ended. */
-    static final String INITIAL_DELAY_MS = "${sdv.retention.initial-delay-ms:15000}";
-    static final String SWEEP_DELAY_MS = "${sdv.retention.sweep-delay-ms:60000}";
+public class RetentionScheduler implements SchedulingConfigurer {
     private static final Logger log = LoggerFactory.getLogger(RetentionScheduler.class);
     private final RetentionDeletionService retention;
     private final RetentionSweepMonitor monitor;
     private final DatabaseSchemaCheck schema;
+    private final RetentionSchedule schedule;
 
-    public RetentionScheduler(RetentionDeletionService retention, RetentionSweepMonitor monitor, DatabaseSchemaCheck schema) {
+    public RetentionScheduler(RetentionDeletionService retention, RetentionSweepMonitor monitor, DatabaseSchemaCheck schema,
+                              RetentionSchedule schedule) {
         this.retention = retention;
         this.monitor = monitor;
         this.schema = schema;
+        this.schedule = schedule;
     }
 
-    @Scheduled(
-            initialDelayString = INITIAL_DELAY_MS,
-            fixedDelayString = SWEEP_DELAY_MS)
+    @Override
+    public void configureTasks(ScheduledTaskRegistrar registrar) {
+        registrar.addTriggerTask(this::sweep, schedule.trigger());
+        log.info("Retention cleanup scheduled cron=\"{}\" zone={}", schedule.cron(), schedule.zone());
+    }
+
     public void sweep() {
         if (!schema.current()) return; // the database doesn't match this version (DatabaseSchemaCheck)
         Instant startedAt = Instant.now();

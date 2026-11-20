@@ -23,8 +23,7 @@ $Document1 = $null
 $Document2 = $null
 $Document3 = $null
 $SubmissionIds = @()
-$previousSweep = $env:SDV_RETENTION_SWEEP_DELAY_MS
-$previousInitial = $env:SDV_RETENTION_INITIAL_DELAY_MS
+$previousCron = $env:SDV_RETENTION_CRON
 
 function Ok([string]$Message) { Write-Host "  [OK  ] $Message" -ForegroundColor Green }
 function Require([bool]$Condition, [string]$Message) {
@@ -126,8 +125,7 @@ try {
 
     Write-Host ''
     Write-Host '=== PHASE 1 - Runtime, migration 008 and frozen baseline ==='
-    $env:SDV_RETENTION_INITIAL_DELAY_MS = '1000'
-    $env:SDV_RETENTION_SWEEP_DELAY_MS = '1000'
+    $env:SDV_RETENTION_CRON = '* * * * * *' # cleanup every second for this check (normally once a day, sdv.retention.daily-at)
     & (Join-Path $Root 'Start-SDV-Local.ps1') -WithVault
     $health = Invoke-RestMethod -Uri "$Base/actuator/health" -TimeoutSec 5
     Require ($health.status -eq 'UP') 'Backend health is UP on port 8280'
@@ -327,8 +325,7 @@ try {
         Remove-Item -Recurse -Force $StorageRoot -ErrorAction SilentlyContinue
     }
 
-    $env:SDV_RETENTION_SWEEP_DELAY_MS = $previousSweep
-    $env:SDV_RETENTION_INITIAL_DELAY_MS = $previousInitial
+    $env:SDV_RETENTION_CRON = $previousCron
 
     if (-not $KeepRunning) {
         try { & (Join-Path $Root 'Stop-SDV-Local.ps1') } catch { Write-Warning $_.Exception.Message }

@@ -110,8 +110,7 @@ function Start-BackendInstance([int]$Port,[string]$Database,[string]$VaultUrl,[s
         SDV_KEY_PROVIDER=$env:SDV_KEY_PROVIDER
         SDV_VAULT_BASE_URL=$env:SDV_VAULT_BASE_URL
         SDV_VAULT_TOKEN=$env:SDV_VAULT_TOKEN
-        SDV_RETENTION_INITIAL_DELAY_MS=$env:SDV_RETENTION_INITIAL_DELAY_MS
-        SDV_RETENTION_SWEEP_DELAY_MS=$env:SDV_RETENTION_SWEEP_DELAY_MS
+        SDV_RETENTION_CRON=$env:SDV_RETENTION_CRON
     }
     try {
         $env:SERVER_PORT = [string]$Port
@@ -122,8 +121,7 @@ function Start-BackendInstance([int]$Port,[string]$Database,[string]$VaultUrl,[s
         $env:SDV_KEY_PROVIDER = 'vault'
         $env:SDV_VAULT_BASE_URL = $VaultUrl
         $env:SDV_VAULT_TOKEN = $VaultToken
-        $env:SDV_RETENTION_INITIAL_DELAY_MS = '3600000'
-        $env:SDV_RETENTION_SWEEP_DELAY_MS = '3600000'
+        $env:SDV_RETENTION_CRON = '0 0 0 1 1 *' # no cleanup run during this check (1 January only)
         $p = Start-Process -FilePath 'java' -ArgumentList @('-jar', $Jar, '--spring.profiles.active=local') -WorkingDirectory $Root -RedirectStandardOutput $out -RedirectStandardError $err -PassThru
     } finally {
         foreach ($k in $saved.Keys) {

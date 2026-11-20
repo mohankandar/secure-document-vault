@@ -113,3 +113,32 @@ Nothing in the task was left undone. Two readings of mine:
 ## Suggested next step
 
 Owner review of `feature/small-items-1`.
+
+## Follow-up
+
+**The owner's answers, put into code**
+1. **Schedule:** automatic cleanup now runs once a day at a fixed time, by default 02:00 in the server's time zone.
+   - Set it with `sdv.retention.daily-at` (`SDV_RETENTION_DAILY_AT`, `HH:mm`). The new `RetentionSchedule.java` holds it, and Health and Overview show the next run from it.
+   - The server refuses to start if the time is in any other format, or if one of the old `SDV_RETENTION_INITIAL_DELAY_MS` / `SDV_RETENTION_SWEEP_DELAY_MS` settings is still set.
+   - `SDV_RETENTION_CRON` is only for the check scripts. `Test-SDV-CleanInstall.ps1`, `Test-SDV-ControlledActions-B-Units17-18.ps1` and `Test-SDV-EnterpriseReadiness-C-Unit22.ps1` now use it. README section "Automatic cleanup time".
+2. **No default for a new installation:** while no searchable system holds a record, Records and Home pick no system.
+   - Both say "There’s nothing to search yet." instead. `sourceChoice.ts`, `Workspace.tsx`, `Home.tsx`.
+   - A new tour check covers it (screenshots `records-nothing-delivered`, `home-nothing-delivered`).
+
+**Tour failures: the cause.** The screen tour failed now and then. The cause was this machine freezing for about 10 s at a time under load, not the app.
+
+**Change.** The owner decided to reduce load instead of raising the tour's time limits.
+- `playwright.config.ts` keeps one worker for every run, including `ui:capture` and `ui:compare`. A comment now gives the reason. One worker was already set, and there is no CI configuration in this repository.
+- The earlier draft raised the limits: the test went from 45 s to 120 s, and some waits had no limit. That was undone. The test limit is 45 s again, and the new "app loaded" and "signed in" waits use the same 15 s as the other steps.
+- The tour still waits for the app's own code to run (`r7-html` on `<html>`) after each page load and reload.
+
+**Results** (app started with `.\start-local.cmd`)
+- `npm run typecheck`: passed.
+- `npm run ui:capture`, run 1: 20 passed, 4 skipped, 4.5 min.
+- `npm run ui:capture`, run 2, straight after: 20 passed, 4 skipped, 4.5 min.
+  - The skips are by design: three tests run once per tour (desktop only), and the redaction test runs only when it is switched on.
+- `npm run ui:compare`: 21 passed, 2.2 min.
+- `.\Build-SDV-All.ps1`: BUILD SUCCESS. Backend tests 14 + 19 + 2 + 4 + 167, no failures; frontend build passed.
+  - The first attempt failed only because the running backend held the jar open. It passed after `.\stop-local.cmd`.
+
+`Start-SDV-Local.ps1` was left as it was and not committed.

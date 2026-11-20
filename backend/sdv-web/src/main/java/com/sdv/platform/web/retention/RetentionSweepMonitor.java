@@ -1,76 +1,40 @@
 package com.sdv.platform.web.retention;
 
 import com.sdv.platform.application.retention.RetentionDeletionService;
+import com.sdv.platform.web.schema.DatabaseSchemaCheck;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.context.event.ContextRefreshedEvent;
-import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 
 import java.time.Clock;
-import java.time.Duration;
 import java.time.Instant;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.BooleanSupplier;
 
 /**
  * The last cleanup run, and (task 0023) when the next one is due.
  *
- * RetentionScheduler runs on a fixed delay: the first run {@code sdv.retention.initial-delay-ms} after the scheduler
- * starts, then each run {@code sdv.retention.sweep-delay-ms} after the previous one ended. The next run is worked out
- * from those same two settings. It is null when it can't be said: a run is going on now, the scheduler hasn't
- * started, or the time worked out has already passed (the scheduler is late, or the database doesn't match this
- * version and the runs are skipped).
+ * Cleanup runs once a day at a fixed time (RetentionSchedule, {@code sdv.retention.daily-at}, default 02:00 server
+ * time). The next run is the schedule's next time after now, from the same setting the scheduler uses. It is null when
+ * it can't be said: a run is going on now, or the database doesn't match this version, so the runs are skipped.
  */
 @Component
 public class RetentionSweepMonitor {
     private final AtomicReference<Status> last = new AtomicReference<>(Status.never());
     private final AtomicBoolean running = new AtomicBoolean(false);
-    private final AtomicReference<Instant> schedulerStartedAt = new AtomicReference<>();
-    private final Duration initialDelay;
-    private final Duration sweepDelay;
+    private final RetentionSchedule schedule;
+    private final BooleanSupplier schemaCurrent;
     private final Clock clock;
 
     @Autowired
-    public RetentionSweepMonitor(
-            @Value(RetentionScheduler.INITIAL_DELAY_MS) String initialDelay,
-            @Value(RetentionScheduler.SWEEP_DELAY_MS) String sweepDelay) {
-        this(delay(initialDelay), delay(sweepDelay), Clock.systemUTC());
+    public RetentionSweepMonitor(RetentionSchedule schedule, DatabaseSchemaCheck schema) {
+        this(schedule, schema::current, Clock.systemUTC());
     }
 
-    /**
-     * The setting as the scheduler reads it: milliseconds, or an ISO-8601 duration such as PT24H. Anything else is
-     * not guessed at: the next run is then left unknown (null).
-     */
-    static Duration delay(String setting) {
-        if (setting == null || setting.isBlank()) return null;
-        String s = setting.trim();
-        try {
-            return Duration.ofMillis(Long.parseLong(s));
-        } catch (NumberFormatException notMillis) {
-            try {
-                return Duration.parse(s);
-            } catch (java.time.format.DateTimeParseException notIso) {
-                return null;
-            }
-        }
-    }
-
-    /** initialDelay or sweepDelay may be null (unreadable setting): the next run is then never worked out from it. */
-    RetentionSweepMonitor(Duration initialDelay, Duration sweepDelay, Clock clock) {
-        this.initialDelay = initialDelay;
-        this.sweepDelay = sweepDelay;
+    RetentionSweepMonitor(RetentionSchedule schedule, BooleanSupplier schemaCurrent, Clock clock) {
+        this.schedule = schedule;
+        this.schemaCurrent = schemaCurrent;
         this.clock = clock;
-    }
-
-    /** Spring schedules the @Scheduled methods when the context is refreshed; the initial delay counts from then. */
-    @EventListener(ContextRefreshedEvent.class)
-    public void schedulerStarted() {
-        schedulerStarted(clock.instant());
-    }
-
-    void schedulerStarted(Instant at) {
-        schedulerStartedAt.compareAndSet(null, at);
     }
 
     public void started() {
@@ -89,22 +53,12 @@ public class RetentionSweepMonitor {
 
     public Status status() {
         Status s = last.get();
-        return s.withNextRunAt(nextRunAt(s));
+        return s.withNextRunAt(nextRunAt());
     }
 
-    private Instant nextRunAt(Status s) {
-        if (running.get()) return null;
-        Instant next;
-        Instant schedulerStart = schedulerStartedAt.get();
-        if (s.completedAt() != null) {
-            if (sweepDelay == null) return null;
-            next = s.completedAt().plus(sweepDelay);
-        } else if (schedulerStart != null && initialDelay != null) {
-            next = schedulerStart.plus(initialDelay);
-        } else {
-            return null;
-        }
-        return next.isBefore(clock.instant()) ? null : next;
+    private Instant nextRunAt() {
+        if (running.get() || !schemaCurrent.getAsBoolean()) return null;
+        return schedule.next(clock.instant());
     }
 
     public record Status(String outcome, Instant startedAt, Instant completedAt, int candidates, int deleted, int failed,

@@ -11,13 +11,16 @@ import type { Source } from './model'
  *   3. else the active system that delivered most recently;
  *   4. a paused system only if no active one qualifies (then the paused one that delivered most recently);
  *   5. else by name, in the server's own order (name, then key).
- *   When no system has a record yet (a new installation), the first searchable system by name is used, so
- *   Records can still be opened and searched; it finds nothing until a delivery arrives.
+ *   When no searchable system holds a record yet (a new installation), there is no default: Records and Home show
+ *   NOTHING_TO_SEARCH instead (the owner's answer to task 0023, question 2).
  */
 export const searchableSources = (sources: Source[]) => sources.filter((s) => s.fields.some((f) => f.searchable))
 
 /** Rule 1: a system can be the default only if it can be searched and holds at least one record. */
 export const canBeDefault = (s: Source) => s.fields.some((f) => f.searchable) && s.hasRecords
+
+/** No system can be the default: nothing can be searched, or nothing searchable has been delivered yet. */
+export const nothingToSearchIn = (sources: Source[]) => !sources.some(canBeDefault)
 
 const LAST_CHOICE_KEY = 'vero.records.sourceId'
 
@@ -44,7 +47,7 @@ export function pickDefault(sources: Source[], last: string | null): Source | un
   const active = qualifying.filter((s) => s.status === 'ACTIVE')
   if (active.length) return newestDelivery(active)
   if (qualifying.length) return newestDelivery(qualifying)
-  return searchableSources(sources)[0]
+  return undefined
 }
 
 export function defaultSource(sources: Source[]): Source | undefined {
