@@ -171,7 +171,7 @@ Failures on the way:
 
 ## Commits (hash and message), or "not committed"
 
-See the commit on `feature/sensitivity-4`: "feat: legal hold V1-lite; admin views never show file names (task 0027)". Not pushed, not merged.
+`eec6edf` feat: legal hold V1-lite; admin views never show file names (task 0027), on `feature/sensitivity-4`. Not pushed, not merged. (This line was added in a second commit.)
 
 ## Not done, and why
 
