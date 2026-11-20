@@ -19,6 +19,21 @@ public interface CodedRefusal {
         }
     }
 
+    /** Task 0026: a request this person may not make on this item (403). The message says nothing about the item. */
+    final class Forbidden extends RuntimeException implements CodedRefusal {
+        private final SdvErrorCode errorCode;
+
+        public Forbidden(SdvErrorCode errorCode, String message) {
+            super(message);
+            this.errorCode = errorCode;
+        }
+
+        @Override
+        public SdvErrorCode errorCode() {
+            return errorCode;
+        }
+    }
+
     /** A request that conflicts with what is already stored (409). */
     final class Conflict extends IllegalStateException implements CodedRefusal {
         private final SdvErrorCode errorCode;

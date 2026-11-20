@@ -19,7 +19,16 @@ public interface AuditQueryPort {
         return find(tenantId, filter, limitPlusOne).stream().map(event -> new Row(event, null, null)).toList();
     }
 
-    record Row(AuditEvent event, String recordNumber, String filename) { }
+    /**
+     * document (task 0026): the document behind a document event, to work out its effective level; null when the
+     * event names no document. A file name without it is never shown (fail closed).
+     */
+    record Row(AuditEvent event, String recordNumber, String filename,
+               com.sdv.platform.application.access.DocumentAccessGuard.DocumentLevelRef document) {
+        public Row(AuditEvent event, String recordNumber, String filename) {
+            this(event, recordNumber, filename, null);
+        }
+    }
 
     record Filter(
             String action,

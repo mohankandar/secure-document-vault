@@ -30,6 +30,14 @@ public final class AuditSentences {
             Map.entry("CONFIGURE_STORAGE_KEY_PROVIDER", "change storage"),
             Map.entry("VIEW_TECHNICAL_FAILURES", "see problems and the audit"));
 
+    /** Task 0026: what a refused DOCUMENT_ACCESS_REFUSED tried, in words. */
+    private static final Map<String, String> ATTEMPT_WORDS = Map.ofEntries(
+            Map.entry("OPEN", "open"), Map.entry("PAGE", "load a page of"), Map.entry("PREVIEWS", "see the pages of"),
+            Map.entry("TEXT_SEARCH", "search in"), Map.entry("TAGS", "see the tags of"), Map.entry("ADD_TAG", "tag"),
+            Map.entry("COMMENTS", "see the comments on"), Map.entry("ADD_COMMENT", "comment on"),
+            Map.entry("ACTIVITY", "see the activity of"), Map.entry("PRINT", "print"),
+            Map.entry("DOWNLOAD", "download"), Map.entry("REDACT", "redact"));
+
     private AuditSentences() { }
 
     /** The name from the event; older events and background work show the subject ID ("Vero" for system work). */
@@ -76,6 +84,10 @@ public final class AuditSentences {
             case "ROLE_CAPABILITIES_UPDATED" -> w + " changed what business roles may do";
             case "ROLE_CAPABILITIES_UPDATE_REFUSED" -> w + " tried to change what a role may do; Vero refused it";
             case "ROLE_CONFLICT_DETECTED" -> w + " signed in with roles that can't be held together; Vero gave neither";
+            case "ROLE_CONFLICT_ENDED" -> w + " signed in with roles that no longer conflict";
+            case "DOCUMENT_ACCESS_REFUSED" -> w + " tried to " + ATTEMPT_WORDS.getOrDefault(text(d, "attempt"), "use")
+                    + " " + f + ("SDV-SEN-009".equals(text(d, "code"))
+                            ? ", but that needs an approval" : ", but its level is restricted");
             case "ROLE_GROUP_MAPPING_CHANGED" -> "The sign-in groups for " + text(d, "role") + " changed";
             case "RETENTION_POLICY_UPDATED" -> d.path("indefinite").asBoolean(false) && d.path("indefinite").isBoolean()
                     ? w + " changed how long to keep new documents: keep them forever"

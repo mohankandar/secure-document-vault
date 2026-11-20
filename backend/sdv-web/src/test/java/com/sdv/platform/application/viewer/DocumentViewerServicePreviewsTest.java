@@ -54,7 +54,8 @@ class DocumentViewerServicePreviewsTest {
     private final StreamingCryptoPort crypto = mock(StreamingCryptoPort.class);
     private final AuditEventPort audit = mock(AuditEventPort.class);
     private final DocumentViewerService service =
-            new DocumentViewerService(documents, volumes, List.of(provider), crypto, audit, mock(com.sdv.platform.application.port.PageViewAuditPort.class));
+            new DocumentViewerService(documents, volumes, List.of(provider), crypto, audit, mock(com.sdv.platform.application.port.PageViewAuditPort.class),
+                    mock(com.sdv.platform.application.access.DocumentAccessGuard.class));
 
     /** A grey page per page number; page content does not matter except for the redaction test. */
     private static byte[] pdf(int pages) throws Exception {
@@ -105,7 +106,7 @@ class DocumentViewerServicePreviewsTest {
     @Test
     void returnsSmallPngPreviewsForTheRequestedPagesDecryptingOnceAndWritingNoAuditEvent() throws Exception {
         stored(pdf(5), DocumentStatus.AVAILABLE);
-        var result = service.previews(TENANT, DOC, 2, 12);
+        var result = service.previews(TENANT, DOC, 2, 12, com.sdv.platform.application.access.Clearance.ALL, "steward", "c");
         assertEquals(5, result.pageCount());
         assertEquals(List.of(2, 3, 4, 5), result.previews().stream().map(DocumentViewerService.PagePreview::pageNumber).toList());
         for (var preview : result.previews()) {
@@ -120,24 +121,24 @@ class DocumentViewerServicePreviewsTest {
     @Test
     void anotherTenantsDocumentIsRefused() throws Exception {
         stored(pdf(2), DocumentStatus.AVAILABLE);
-        assertThrows(NoSuchElementException.class, () -> service.previews(OTHER_TENANT, DOC, 1, 12));
+        assertThrows(NoSuchElementException.class, () -> service.previews(OTHER_TENANT, DOC, 1, 12, com.sdv.platform.application.access.Clearance.ALL, "steward", "c"));
         verifyNoInteractions(crypto);
     }
 
     @Test
     void aDocumentThatIsNotAvailableIsRefused() throws Exception {
         stored(pdf(2), DocumentStatus.RETENTION_DELETING);
-        assertThrows(IllegalStateException.class, () -> service.previews(TENANT, DOC, 1, 12));
+        assertThrows(IllegalStateException.class, () -> service.previews(TENANT, DOC, 1, 12, com.sdv.platform.application.access.Clearance.ALL, "steward", "c"));
         verifyNoInteractions(crypto);
     }
 
     @Test
     void moreThan24PagesOrAnInvalidRangeIsRefused() throws Exception {
         stored(pdf(2), DocumentStatus.AVAILABLE);
-        assertThrows(IllegalArgumentException.class, () -> service.previews(TENANT, DOC, 1, 25));
-        assertThrows(IllegalArgumentException.class, () -> service.previews(TENANT, DOC, 0, 12));
-        assertThrows(IllegalArgumentException.class, () -> service.previews(TENANT, DOC, 3, 12));
-        assertDoesNotThrow(() -> service.previews(TENANT, DOC, 1, 24));
+        assertThrows(IllegalArgumentException.class, () -> service.previews(TENANT, DOC, 1, 25, com.sdv.platform.application.access.Clearance.ALL, "steward", "c"));
+        assertThrows(IllegalArgumentException.class, () -> service.previews(TENANT, DOC, 0, 12, com.sdv.platform.application.access.Clearance.ALL, "steward", "c"));
+        assertThrows(IllegalArgumentException.class, () -> service.previews(TENANT, DOC, 3, 12, com.sdv.platform.application.access.Clearance.ALL, "steward", "c"));
+        assertDoesNotThrow(() -> service.previews(TENANT, DOC, 1, 24, com.sdv.platform.application.access.Clearance.ALL, "steward", "c"));
     }
 
     @Test
@@ -147,7 +148,7 @@ class DocumentViewerServicePreviewsTest {
         byte[] redacted = new PdfSanitizingRedactor().sanitize(original,
                 List.of(new RedactionRegion(1, 0.25, 0.25, 0.5, 0.5)), 50_000_000L);
         stored(redacted, DocumentStatus.AVAILABLE);
-        BufferedImage preview = image(service.previews(TENANT, DOC, 1, 1).previews().getFirst());
+        BufferedImage preview = image(service.previews(TENANT, DOC, 1, 1, com.sdv.platform.application.access.Clearance.ALL, "steward", "c").previews().getFirst());
         Color centre = new Color(preview.getRGB(preview.getWidth() / 2, preview.getHeight() / 2));
         Color corner = new Color(preview.getRGB(3, 3));
         assertTrue(centre.getRed() < 40 && centre.getGreen() < 40 && centre.getBlue() < 40, "redacted area is black: " + centre);

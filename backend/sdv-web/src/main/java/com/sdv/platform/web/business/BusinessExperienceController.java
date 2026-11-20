@@ -52,14 +52,16 @@ public class BusinessExperienceController {
                 request.page(),
                 request.pageSize() == null ? request.limit() : request.pageSize(),
                 principal.subject(),
-                correlationId());
+                correlationId(),
+                authorization.clearance(principal));
     }
 
     /** The signed-in person's own recently opened records (never another person's activity). */
     @GetMapping("/me/recent-records")
     public BusinessExperienceView.RecentRecords recentRecords(@RequestParam(required = false) Integer limit) {
         SdvPrincipal principal = requireSearch();
-        return business.recentRecords(principal.tenantId(), principal.subject(), limit, correlationId());
+        return business.recentRecords(principal.tenantId(), principal.subject(), limit, correlationId(),
+                authorization.clearance(principal));
     }
 
     @GetMapping("/records/{recordRef}")
@@ -69,7 +71,8 @@ public class BusinessExperienceController {
                 principal.tenantId(),
                 recordRef,
                 principal.subject(),
-                correlationId());
+                correlationId(),
+                authorization.clearance(principal));
     }
 
     private SdvPrincipal requireSearch() {

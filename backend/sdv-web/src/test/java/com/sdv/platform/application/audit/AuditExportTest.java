@@ -29,11 +29,18 @@ class AuditExportTest {
 
     private final AuditQueryPort query = mock(AuditQueryPort.class);
     private final AuditEventPort audit = mock(AuditEventPort.class);
-    private final AuditQueryService service = new AuditQueryService(query, audit, Clock.fixed(NOW, ZoneOffset.UTC));
+    private final AuditQueryService service = new AuditQueryService(query, audit,
+            // Task 0026: a real guard; with no record level every document below is Standard, so its name shows.
+            new com.sdv.platform.application.access.DocumentAccessGuard(
+                    mock(com.sdv.platform.application.port.BusinessRecordRepository.class), audit),
+            Clock.fixed(NOW, ZoneOffset.UTC));
 
     private static AuditQueryPort.Row row(String action, String actorId, String name, String details, String record, String file, AuditOutcome outcome) {
+        UUID document = UUID.randomUUID();
         return new AuditQueryPort.Row(new AuditEvent(UUID.randomUUID(), TENANT, "USER", actorId, action, "DOCUMENT",
-                UUID.randomUUID().toString(), Instant.parse("2026-11-18T12:00:00Z"), "corr", outcome, details, name), record, file);
+                document.toString(), Instant.parse("2026-11-18T12:00:00Z"), "corr", outcome, details, name), record, file,
+                new com.sdv.platform.application.access.DocumentAccessGuard.DocumentLevelRef(document, UUID.randomUUID(),
+                        UUID.randomUUID(), com.sdv.platform.domain.document.SensitivityLevel.STANDARD));
     }
 
     private static AuditQueryService.SearchRequest search(AuditOutcome outcome, String recordNumber) {
@@ -55,7 +62,7 @@ class AuditExportTest {
 
         var export = service.export(TENANT, "local-platform-operations-admin", new AuditQueryService.ExportRequest(
                 search(null, " 300000000076 "), List.of("DOCUMENT_DOWNLOADED", "AUTHORIZATION_DENIED"),
-                List.of("AUDIT_VIEWED", "BUSINESS_RECENT_RECORDS_LISTED")), "corr-1");
+                List.of("AUDIT_VIEWED", "BUSINESS_RECENT_RECORDS_LISTED")), "corr-1", com.sdv.platform.application.access.Clearance.STANDARD_ONLY);
 
         assertEquals(2, export.rowCount());
         List<String> lines = csvLines(export.csv());
@@ -99,7 +106,8 @@ class AuditExportTest {
         when(query.findRows(eq(TENANT), any(), anyInt())).thenReturn(many);
 
         var ex = assertThrows(AuditQueryService.ExportTooLargeException.class, () -> service.export(TENANT, "ops",
-                new AuditQueryService.ExportRequest(search(null, null), null, null), "c"));
+                new AuditQueryService.ExportRequest(search(null, null), null, null), "c",
+                com.sdv.platform.application.access.Clearance.STANDARD_ONLY));
         assertTrue(ex.getMessage().startsWith("This list has more than 10,000 events"), ex.getMessage());
         verifyNoInteractions(audit);
     }
@@ -110,7 +118,7 @@ class AuditExportTest {
         AuditQueryPort.Row one = row("DOCUMENT_VIEW_OPENED", "a", null, null, null, "x.pdf", AuditOutcome.SUCCESS);
         for (int i = 0; i < AuditQueryService.EXPORT_MAX_ROWS; i++) many.add(one);
         when(query.findRows(eq(TENANT), any(), anyInt())).thenReturn(many);
-        assertEquals(10_000, service.export(TENANT, "ops", new AuditQueryService.ExportRequest(search(null, null), null, null), "c").rowCount());
+        assertEquals(10_000, service.export(TENANT, "ops", new AuditQueryService.ExportRequest(search(null, null), null, null), "c", com.sdv.platform.application.access.Clearance.STANDARD_ONLY).rowCount());
         verify(audit).append(argThat(e -> e.action().equals("AUDIT_EXPORTED") && e.safeDetailsJson().contains("\"rowCount\":10000")));
     }
 
@@ -125,10 +133,10 @@ class AuditExportTest {
                 new AuditQueryService.ExportRequest(new AuditQueryService.SearchRequest(null, null, null, null, null, null, null,
                         null, null, null, "c29tZQ", null), null, null));
         for (var request : bad) {
-            assertThrows(IllegalArgumentException.class, () -> service.export(TENANT, "ops", request, "c"), request.toString());
+            assertThrows(IllegalArgumentException.class, () -> service.export(TENANT, "ops", request, "c", com.sdv.platform.application.access.Clearance.STANDARD_ONLY), request.toString());
         }
-        assertThrows(IllegalArgumentException.class, () -> service.export(TENANT, "ops", null, "c"));
-        assertThrows(IllegalArgumentException.class, () -> service.export(null, "ops", new AuditQueryService.ExportRequest(null, null, null), "c"));
+        assertThrows(IllegalArgumentException.class, () -> service.export(TENANT, "ops", null, "c", com.sdv.platform.application.access.Clearance.STANDARD_ONLY));
+        assertThrows(IllegalArgumentException.class, () -> service.export(null, "ops", new AuditQueryService.ExportRequest(null, null, null), "c", com.sdv.platform.application.access.Clearance.STANDARD_ONLY));
         verifyNoInteractions(query, audit);
     }
 
@@ -137,7 +145,8 @@ class AuditExportTest {
         when(query.findRows(eq(TENANT), any(), anyInt())).thenReturn(List.of());
         doThrow(new IllegalStateException("database down")).when(audit).append(any());
         assertThrows(IllegalStateException.class, () -> service.export(TENANT, "ops",
-                new AuditQueryService.ExportRequest(search(AuditOutcome.DENIED, null), null, null), "c"));
+                new AuditQueryService.ExportRequest(search(AuditOutcome.DENIED, null), null, null), "c",
+                com.sdv.platform.application.access.Clearance.STANDARD_ONLY));
     }
 
     @Test
@@ -146,7 +155,7 @@ class AuditExportTest {
         var marked = java.util.Arrays.stream(AuditQueryService.class.getDeclaredConstructors())
                 .filter(c -> c.isAnnotationPresent(org.springframework.beans.factory.annotation.Autowired.class)).toList();
         assertEquals(1, marked.size());
-        assertEquals(2, marked.get(0).getParameterCount());
+        assertEquals(3, marked.get(0).getParameterCount()); // task 0026 added the document access guard
     }
 
     @Test

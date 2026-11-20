@@ -63,6 +63,20 @@ Every refusal listed here comes back with a short, stable `code` and a plain `me
 - **What the user should do:** keep the identifier settings as they are. Labels, search settings and the other field settings can still be changed.
 - **What support should tell the customer:** this protects restricted records from losing their restriction. A change to identifiers needs a planned migration of those levels. Raise it with the Vero team; there is no setting to override it.
 
+### SDV-SEN-008: restricted document
+
+- **HTTP status:** 403. Sent by every request on one document: the viewer (`GET /api/v1/business/documents/{id}/viewer`), page images (`…/viewer/pages/{n}`), page previews (`…/viewer/previews`), text search in it (`…/viewer/search`), download (`…/download`), print (`…/print-event`), corrective redaction (`…/redactions`), tags and comments (`…/tags`, `…/comments`, read and add) and its activity (`…/activity`).
+- **Meaning:** the person's role can't open documents at this document's level. The level checked is the effective one: the higher of the document's own level and its record's level. Confidential needs a Document steward or Restricted steward; Highly Confidential needs a Restricted steward. The message is always "This document is restricted." and says nothing else about the document. The refusal is audited as `DOCUMENT_ACCESS_REFUSED` (who, when, the document ID, its level and what was tried).
+- **What the user should do:** nothing in Vero can change this for them. If they need the document for their work, ask someone who holds the right role.
+- **What support should tell the customer:** this is working as intended. The record and its search fields stay visible to everyone with record access, but the document itself needs the role for its level. Role membership comes from the customer's own sign-in groups, so a change is made there by their IT team, not in Vero.
+
+### SDV-SEN-009: Highly Confidential print or download needs approval
+
+- **HTTP status:** 403. Sent by download (`GET /api/v1/business/documents/{id}/download`) and print (`POST …/print-event`).
+- **Meaning:** the document's effective level is Highly Confidential. Printing or downloading one needs a Business Admin's approval, and this version of Vero can't give one yet, so it is refused even for a Restricted steward, who can still open and read it. The refusal is audited as `DOCUMENT_ACCESS_REFUSED`.
+- **What the user should do:** read the document in the viewer. Approved printing and downloading comes in a later version.
+- **What support should tell the customer:** this is intended. Highly Confidential documents can't leave Vero until the approval step is available.
+
 ## Roles (ROL)
 
 ### SDV-ROL-001: permission a role may never have

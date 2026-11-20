@@ -1,5 +1,7 @@
 package com.sdv.platform.application.redaction;
 
+import com.sdv.platform.application.access.Clearance;
+import com.sdv.platform.application.access.DocumentAccessGuard;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sdv.platform.application.port.*;
@@ -38,6 +40,7 @@ public class CorrectiveRedactionService {
     private final StreamingCryptoPort crypto;
     private final PdfSanitizingRedactor sanitizer;
     private final AuditEventPort audit;
+    private final DocumentAccessGuard access;
     private final TransactionTemplate transactions;
     private final ObjectMapper json = new ObjectMapper();
     private final Clock clock = Clock.systemUTC();
@@ -53,7 +56,8 @@ public class CorrectiveRedactionService {
             StreamingCryptoPort crypto,
             PdfSanitizingRedactor sanitizer,
             AuditEventPort audit,
-            PlatformTransactionManager transactionManager) {
+            PlatformTransactionManager transactionManager,
+            DocumentAccessGuard access) {
         this.tenants = tenants;
         this.sources = sources;
         this.documents = documents;
@@ -64,11 +68,13 @@ public class CorrectiveRedactionService {
         this.crypto = crypto;
         this.sanitizer = sanitizer;
         this.audit = audit;
+        this.access = java.util.Objects.requireNonNull(access, "access");
         this.transactions = new TransactionTemplate(transactionManager);
     }
 
     public RedactionResult redact(UUID tenantId, UUID documentId, String reason, boolean confirmed,
-                                  List<RedactionRegion> requestedRegions, String actorId, String correlationId) {
+                                  List<RedactionRegion> requestedRegions, Clearance clearance,
+                                  String actorId, String correlationId) {
         if (!confirmed) throw new IllegalArgumentException("Permanent corrective redaction requires explicit confirmation.");
         String normalizedReason = normalizeReason(reason);
         List<RedactionRegion> regions = normalizeRegions(requestedRegions);
@@ -77,6 +83,8 @@ public class CorrectiveRedactionService {
 
         Document current = documents.findDocumentByIdForTenant(tenantId, documentId)
                 .orElseThrow(() -> new NoSuchElementException("Document not found."));
+        // Task 0026: before anything else about the document is looked at or changed.
+        access.requireOpenable(current, clearance, DocumentAccessGuard.Attempt.REDACT, actorId, correlationId);
 
         if (current.status() == DocumentStatus.REDACTION_PROCESSING) {
             RedactionOperation pending = redactions.findPending(tenantId, documentId)

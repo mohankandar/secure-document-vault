@@ -57,6 +57,40 @@ class FinalRoleMatrixTest {
         for (SdvRole role : SdvRole.values()) assertEquals(EXPECTED.get(role), RoleCapabilities.capabilities(role), role.name());
     }
 
+    /**
+     * Task 0026, carry-over 1: docs/design/sensitivity/ROLE-MATRIX.md sections 3.2 and 3.4, every cell, as the
+     * capability each function needs. Section 3.1 (documents, with its L cells) is checked through the real
+     * controllers and services in DocumentLevelEnforcementTest (sdv-web), for every role and level.
+     * Two cells carry a condition that belongs to later tasks and isn't a capability: a Steward may ask to lower only
+     * from Confidential (task 0027), and a Business Admin never approves their own request (task 0028).
+     */
+    @Test
+    void sections32And34OfTheSensitivityMatrix() {
+        // Roles in the matrix's column order: Business User, Steward, Restricted Steward, Business Admin, IT Admin,
+        // Platform Ops. ✓ = 1.
+        Map<String, Object[]> rows = new java.util.LinkedHashMap<>();
+        rows.put("3.2 Raise the level", new Object[]{Capability.CHANGE_SENSITIVITY_LEVEL, "011000"});
+        rows.put("3.2 Request to lower", new Object[]{Capability.CHANGE_SENSITIVITY_LEVEL, "011000"});
+        rows.put("3.2 Approve lowering", new Object[]{Capability.APPROVE_SENSITIVE_ACCESS, "000100"});
+        rows.put("3.4 Request print / download of Highly Confidential", new Object[]{Capability.REQUEST_SENSITIVE_ACCESS, "001000"});
+        rows.put("3.4 Approve or decline requests", new Object[]{Capability.APPROVE_SENSITIVE_ACCESS, "000100"});
+        rows.put("3.4 Place and release legal holds", new Object[]{Capability.MANAGE_LEGAL_HOLD, "000100"});
+        List<SdvRole> columns = List.of(SdvRole.BUSINESS_USER, SdvRole.DOCUMENT_STEWARD, SdvRole.RESTRICTED_STEWARD,
+                SdvRole.BUSINESS_ADMIN, SdvRole.TENANT_IT_ADMIN, SdvRole.PLATFORM_OPERATIONS_ADMIN);
+        assertEquals(EnumSet.allOf(SdvRole.class), EnumSet.copyOf(columns), "every role has a column");
+        List<String> wrong = new ArrayList<>();
+        for (Map.Entry<String, Object[]> row : rows.entrySet()) {
+            Capability capability = (Capability) row.getValue()[0];
+            String cells = (String) row.getValue()[1];
+            for (int i = 0; i < columns.size(); i++) {
+                boolean expected = cells.charAt(i) == '1';
+                boolean actual = RoleCapabilities.has(EnumSet.of(columns.get(i)), capability);
+                if (expected != actual) wrong.add(row.getKey() + " / " + columns.get(i) + ": expected " + expected);
+            }
+        }
+        assertTrue(wrong.isEmpty(), String.join("\n", wrong));
+    }
+
     @Test
     void v1RoleMatrixIsExact() {
         assertEquals(

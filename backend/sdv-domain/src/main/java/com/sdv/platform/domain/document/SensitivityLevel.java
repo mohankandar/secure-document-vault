@@ -9,7 +9,7 @@ import java.util.stream.Collectors;
 /**
  * Task 0024: how sensitive a document is, set by the sending system when it delivers the document.
  * Declared from lowest to highest; {@link #higherOf} relies on that order.
- * Nothing filters on the level yet (enforcement is task 0026).
+ * Task 0026: every document path checks the effective level ({@link #effective}) against the person's role.
  */
 public enum SensitivityLevel {
     STANDARD,

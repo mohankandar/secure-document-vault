@@ -46,6 +46,14 @@ public final class RoleSeparationGuard {
             } catch (RuntimeException ex) {
                 throw new RefusedException(NOT_RECORDED);
             }
+        } else if (reporter != null && !held.isEmpty()) {
+            // Task 0026, carry-over 3: a conflict this person had has ended. Not recording it never refuses the
+            // sign-in: the open problem stays, so the next sign-in records the end.
+            try {
+                reporter.noConflict(tenantId, subject, displayName, source);
+            } catch (RuntimeException ignored) {
+                // retried at the next sign-in
+            }
         }
         if (resolution.granted().isEmpty()) {
             throw new RefusedException(resolution.conflicted() ? NO_ROLE_LEFT : NO_ROLE);

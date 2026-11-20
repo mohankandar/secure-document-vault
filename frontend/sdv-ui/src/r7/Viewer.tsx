@@ -263,6 +263,9 @@ export function Viewer({ record, results, docId, onClose, recordTitle, backLabel
 
   const title = recordTitle || record.title
   const kind = docKind(doc.filename)
+  // Task 0026: the server refuses printing and downloading a Highly Confidential document (SDV-SEN-009) until
+  // approvals exist, so the buttons are not offered. A missing level is treated the same way (fail closed).
+  const mayTakeOut = doc.level === 'STANDARD' || doc.level === 'CONFIDENTIAL'
 
   const docsNav = (inDrawer: boolean) => (
     <>
@@ -310,8 +313,8 @@ export function Viewer({ record, results, docId, onClose, recordTitle, backLabel
         </button>
         <div className="vw-group">
           <button type="button" className="v-btn sm" aria-pressed={findOpen} onClick={() => setFindOpen((f) => !f)} aria-label="Find in document"><Search size={16} aria-hidden /><span className="vw-label">Find</span></button>
-          {can('DOWNLOAD_CURRENT_PDF') && <button type="button" className="v-btn sm vw-hide-sm" disabled={actionBusy} onClick={download}><Download size={16} aria-hidden />Download</button>}
-          {can('PRINT_DOCUMENT') && <button type="button" className="v-btn sm vw-hide-sm" disabled={actionBusy} onClick={print}><Printer size={16} aria-hidden />Print</button>}
+          {mayTakeOut && can('DOWNLOAD_CURRENT_PDF') && <button type="button" className="v-btn sm vw-hide-sm" disabled={actionBusy} onClick={download}><Download size={16} aria-hidden />Download</button>}
+          {mayTakeOut && can('PRINT_DOCUMENT') && <button type="button" className="v-btn sm vw-hide-sm" disabled={actionBusy} onClick={print}><Printer size={16} aria-hidden />Print</button>}
           {can('PERMANENT_REDACTION') && <button type="button" className="v-btn sm vw-redact" disabled={actionBusy} aria-pressed={redacting} onClick={startRedact} aria-label="Redact"><Eraser size={16} aria-hidden /><span className="vw-label">Redact</span></button>}
           <button type="button" className="v-btn quiet icon vw-panel-toggle" aria-pressed={infoOpen} onClick={() => setInfoOpen(true)} aria-label="Document information"><PanelRight size={18} /></button>
         </div>
@@ -377,10 +380,10 @@ export function Viewer({ record, results, docId, onClose, recordTitle, backLabel
 
       {infoOpen && (
         <Drawer eyebrow={doc.kind} title="Document information" onClose={() => setInfoOpen(false)}>
-          {(can('DOWNLOAD_CURRENT_PDF') || can('PRINT_DOCUMENT')) && (
+          {mayTakeOut && (can('DOWNLOAD_CURRENT_PDF') || can('PRINT_DOCUMENT')) && (
             <div className="row wrap vw-actions-sm" style={{ gap: 8 }}>
-              {can('DOWNLOAD_CURRENT_PDF') && <button type="button" className="v-btn sm" disabled={actionBusy} onClick={download}><Download size={16} aria-hidden />Download</button>}
-              {can('PRINT_DOCUMENT') && <button type="button" className="v-btn sm" disabled={actionBusy} onClick={print}><Printer size={16} aria-hidden />Print</button>}
+              {mayTakeOut && can('DOWNLOAD_CURRENT_PDF') && <button type="button" className="v-btn sm" disabled={actionBusy} onClick={download}><Download size={16} aria-hidden />Download</button>}
+              {mayTakeOut && can('PRINT_DOCUMENT') && <button type="button" className="v-btn sm" disabled={actionBusy} onClick={print}><Printer size={16} aria-hidden />Print</button>}
             </div>
           )}
           <DocInfo doc={{...doc,pages:pageTotal}} tab={infoTab} setTab={setInfoTab} embedded />

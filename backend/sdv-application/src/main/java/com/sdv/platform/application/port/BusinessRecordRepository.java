@@ -84,6 +84,21 @@ public interface BusinessRecordRepository {
             UUID sourceId,
             String recordKey);
 
+    /**
+     * Task 0026: the levels of several records of one sending system at once, by record key; records without a level
+     * are left out. The default asks one record at a time.
+     */
+    default java.util.Map<String, SensitivityLevel> findRecordSensitivityLevels(
+            UUID tenantId,
+            UUID sourceId,
+            java.util.Collection<String> recordKeys) {
+        java.util.Map<String, SensitivityLevel> levels = new java.util.HashMap<>();
+        for (String key : new java.util.LinkedHashSet<>(recordKeys)) {
+            findRecordSensitivityLevel(tenantId, sourceId, key).ifPresent(level -> levels.put(key, level));
+        }
+        return levels;
+    }
+
     List<MetadataSnapshot> findMetadataSnapshots(
             UUID tenantId,
             UUID sourceId,

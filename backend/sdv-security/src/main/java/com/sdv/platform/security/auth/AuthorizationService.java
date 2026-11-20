@@ -28,6 +28,16 @@ public class AuthorizationService {
         }
     }
 
+    /**
+     * Task 0026: the sensitivity levels this person may open, from their effective capabilities. Nothing else in
+     * the request (headers, parameters) can change it.
+     */
+    public com.sdv.platform.application.access.Clearance clearance(SdvPrincipal principal) {
+        return new com.sdv.platform.application.access.Clearance(
+                capabilities.has(principal, Capability.VIEW_CONFIDENTIAL),
+                capabilities.has(principal, Capability.VIEW_HIGHLY_CONFIDENTIAL));
+    }
+
     private void safeDeniedAudit(SdvPrincipal principal, Capability capability) {
         try {
             audit.append(new AuditEvent(

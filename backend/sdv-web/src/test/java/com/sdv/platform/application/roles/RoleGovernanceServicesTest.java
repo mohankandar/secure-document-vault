@@ -133,4 +133,42 @@ class RoleGovernanceServicesTest {
         assertEquals("[\"BUSINESS_ADMIN\",\"RESTRICTED_STEWARD\"]", details.get("withheldRoles").toString());
         assertEquals("[\"RESTRICTED_STEWARD_NOT_ADMIN\"]", details.get("rules").toString());
     }
+
+    /** Task 0026, carry-over 3: one event when the conflict starts, one when it ends, nothing in between. */
+    @Test
+    void aConflictIsAuditedWhenItStartsAndWhenItEndsAndNotWhileItLasts() throws Exception {
+        when(store.recordRoleConflict(any())).thenReturn(true, false, false);
+        RoleGovernancePort.RoleConflictProblem open = new RoleGovernancePort.RoleConflictProblem(UUID.randomUUID(), T1,
+                "person-1", "Pat Lee", "LOGIN_GROUPS", List.of("BUSINESS_ADMIN", "RESTRICTED_STEWARD"),
+                List.of("BUSINESS_ADMIN", "RESTRICTED_STEWARD"), List.of("RESTRICTED_STEWARD_NOT_ADMIN"),
+                NOW.minusSeconds(3600), NOW.minusSeconds(60), 3);
+        when(store.endRoleConflicts(T1, "person-1", "LOGIN_GROUPS")).thenReturn(List.of(open), List.of());
+        for (int i = 0; i < 3; i++) {
+            conflicts.record(T1, "person-1", "Pat Lee", "LOGIN_GROUPS", List.of("RESTRICTED_STEWARD", "BUSINESS_ADMIN"),
+                    List.of("RESTRICTED_STEWARD", "BUSINESS_ADMIN"), List.of("RESTRICTED_STEWARD_NOT_ADMIN"));
+        }
+        conflicts.ended(T1, "person-1", "Pat Lee", "LOGIN_GROUPS"); // the groups no longer conflict
+        conflicts.ended(T1, "person-1", "Pat Lee", "LOGIN_GROUPS"); // later sign-ins: nothing open, nothing written
+
+        List<AuditEvent> events = audited();
+        assertEquals(List.of("ROLE_CONFLICT_DETECTED", "ROLE_CONFLICT_ENDED"), events.stream().map(AuditEvent::action).toList());
+        AuditEvent ended = events.get(1);
+        assertEquals(AuditOutcome.SUCCESS, ended.outcome());
+        assertEquals("person-1", ended.actorId());
+        assertEquals("person-1", ended.targetId());
+        assertEquals("Pat Lee", ended.actorDisplayName());
+        assertEquals(NOW, ended.occurredAt());
+        JsonNode details = JSON.readTree(ended.safeDetailsJson());
+        assertEquals("LOGIN_GROUPS", details.get("resolvedFrom").asText());
+        assertEquals("[\"BUSINESS_ADMIN\",\"RESTRICTED_STEWARD\"]", details.get("withheldRoles").toString());
+        assertEquals(NOW.minusSeconds(3600).toString(), details.get("firstSeenAt").asText());
+        assertEquals(3, details.get("occurrences").asInt());
+    }
+
+    @Test
+    void aSignInThatNeverConflictedWritesNothing() {
+        when(store.endRoleConflicts(any(), any(), any())).thenReturn(List.of());
+        conflicts.ended(T1, "person-2", null, "LOCAL_SIGN_IN");
+        verifyNoInteractions(audit);
+    }
 }

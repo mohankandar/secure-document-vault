@@ -64,4 +64,40 @@ class RoleSeparationGuardTest {
                 RoleConflictReporter.Source.LOGIN_GROUPS, EnumSet.of(SdvRole.BUSINESS_ADMIN, SdvRole.TENANT_IT_ADMIN)));
         assertTrue(reported.isEmpty());
     }
+
+    /** Task 0026, carry-over 3: the reporter hears when a sign-in has no conflict, so an earlier conflict can end. */
+    private static final class Recorder implements RoleConflictReporter {
+        final List<RoleConflict> conflicts = new ArrayList<>();
+        final List<String> clear = new ArrayList<>();
+        boolean failOnClear;
+
+        @Override public void report(RoleConflict conflict) { conflicts.add(conflict); }
+
+        @Override public void noConflict(UUID tenantId, String subject, String displayName, Source source) {
+            if (failOnClear) throw new IllegalStateException("db down");
+            clear.add(tenantId + "/" + subject + "/" + displayName + "/" + source);
+        }
+    }
+
+    @Test
+    void aSignInWithoutAConflictTellsTheReporterSoAnEarlierConflictCanEnd() {
+        Recorder recorder = new Recorder();
+        RoleSeparationGuard withRecorder = new RoleSeparationGuard(recorder);
+        withRecorder.apply(TENANT, "u1", "Una", RoleConflictReporter.Source.LOGIN_GROUPS,
+                EnumSet.of(SdvRole.RESTRICTED_STEWARD, SdvRole.BUSINESS_ADMIN, SdvRole.BUSINESS_USER));
+        assertEquals(1, recorder.conflicts.size());
+        assertTrue(recorder.clear.isEmpty(), "a conflicted sign-in doesn't end anything");
+
+        withRecorder.apply(TENANT, "u1", "Una", RoleConflictReporter.Source.LOGIN_GROUPS,
+                EnumSet.of(SdvRole.RESTRICTED_STEWARD, SdvRole.BUSINESS_USER));
+        assertEquals(List.of(TENANT + "/u1/Una/LOGIN_GROUPS"), recorder.clear);
+    }
+
+    @Test
+    void notRecordingAnEndNeverRefusesTheSignIn() {
+        Recorder recorder = new Recorder();
+        recorder.failOnClear = true;
+        assertEquals(EnumSet.of(SdvRole.DOCUMENT_STEWARD), new RoleSeparationGuard(recorder).apply(TENANT, "u1", null,
+                RoleConflictReporter.Source.LOCAL_SIGN_IN, EnumSet.of(SdvRole.DOCUMENT_STEWARD)));
+    }
 }

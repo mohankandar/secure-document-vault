@@ -63,6 +63,9 @@ class ErrorCodesDocumentedTest {
         @GetMapping("/bad") void bad() { throw new CodedRefusal.BadRequest(SdvErrorCode.SEN_002, "plain message"); }
         @GetMapping("/conflict") void conflict() { throw new CodedRefusal.Conflict(SdvErrorCode.SEN_007, "plain message"); }
         @GetMapping("/plain") void plain() { throw new IllegalStateException("uncoded"); }
+        @GetMapping("/restricted") void restricted() {
+            throw new CodedRefusal.Forbidden(SdvErrorCode.SEN_008, "This document is restricted.");
+        }
     }
 
     @Test
@@ -74,5 +77,10 @@ class ErrorCodesDocumentedTest {
         mvc.perform(get("/conflict")).andExpect(status().is(HttpStatus.CONFLICT.value()))
                 .andExpect(jsonPath("$.code").value("SDV-SEN-007"));
         mvc.perform(get("/plain")).andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("CONFLICT"));
+        // Task 0026: a coded 403 sends exactly the code and the fixed message (and the time), nothing else.
+        mvc.perform(get("/restricted")).andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("SDV-SEN-008"))
+                .andExpect(jsonPath("$.message").value("This document is restricted."))
+                .andExpect(jsonPath("$.length()").value(3));
     }
 }

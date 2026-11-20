@@ -21,6 +21,11 @@ public class RecordingRoleConflictReporter implements RoleConflictReporter {
                 names(conflict.held()), names(conflict.withheld()), conflict.brokenRules());
     }
 
+    @Override
+    public void noConflict(java.util.UUID tenantId, String subject, String displayName, Source source) {
+        conflicts.ended(tenantId, subject, displayName, source.name());
+    }
+
     private static java.util.List<String> names(Set<SdvRole> roles) {
         return roles.stream().map(Enum::name).sorted().toList();
     }

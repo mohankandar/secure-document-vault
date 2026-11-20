@@ -300,6 +300,33 @@ public class JdbcBusinessRecordRepository implements BusinessRecordRepository {
                 .stream().findFirst();
     }
 
+    /** Task 0026: one query for a page of records, by the unique (tenant, source, key SHA-256) index. */
+    @Override
+    public java.util.Map<String, SensitivityLevel> findRecordSensitivityLevels(
+            UUID tenantId,
+            UUID sourceId,
+            java.util.Collection<String> recordKeys) {
+        if (recordKeys.isEmpty()) return java.util.Map.of();
+        java.util.Map<String, String> keyBySha = new java.util.HashMap<>();
+        for (String key : recordKeys) {
+            keyBySha.put(com.sdv.platform.application.business.RecordKey.sha256(key), key);
+        }
+        java.util.Map<String, SensitivityLevel> levels = new java.util.HashMap<>();
+        jdbc.query("""
+                select record_key_sha256, sensitivity_level
+                  from record_sensitivity_levels
+                 where tenant_id=:tenantId and source_id=:sourceId and record_key_sha256 in (:shas)
+                """, new MapSqlParameterSource()
+                .addValue("tenantId", tenantId)
+                .addValue("sourceId", sourceId)
+                .addValue("shas", List.copyOf(keyBySha.keySet())),
+                rs -> {
+                    String key = keyBySha.get(rs.getString("record_key_sha256"));
+                    if (key != null) levels.put(key, SensitivityLevel.valueOf(rs.getString("sensitivity_level")));
+                });
+        return levels;
+    }
+
     @Override
     public List<MetadataSnapshot> findMetadataSnapshots(
             UUID tenantId,

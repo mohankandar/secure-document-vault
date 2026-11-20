@@ -2,6 +2,8 @@ package com.sdv.platform.application.audit;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.sdv.platform.application.access.Clearance;
+import com.sdv.platform.application.access.DocumentAccessGuard;
 import com.sdv.platform.application.port.AuditEventPort;
 import com.sdv.platform.application.port.AuditQueryPort;
 import com.sdv.platform.domain.audit.AuditEvent;
@@ -35,24 +37,27 @@ public class AuditQueryService {
 
     private final AuditQueryPort query;
     private final AuditEventPort audit;
+    private final DocumentAccessGuard access;
     private final Clock clock;
     private final ObjectMapper json = new ObjectMapper();
 
     @Autowired
-    public AuditQueryService(AuditQueryPort query, AuditEventPort audit) {
-        this(query, audit, Clock.systemUTC());
+    public AuditQueryService(AuditQueryPort query, AuditEventPort audit, DocumentAccessGuard access) {
+        this(query, audit, access, Clock.systemUTC());
     }
 
-    AuditQueryService(AuditQueryPort query, AuditEventPort audit, Clock clock) {
+    AuditQueryService(AuditQueryPort query, AuditEventPort audit, DocumentAccessGuard access, Clock clock) {
         this.query = query;
         this.audit = audit;
+        this.access = java.util.Objects.requireNonNull(access, "access");
         this.clock = clock;
     }
 
     public AuditPage search(UUID tenantId,
                             String actorId,
                             SearchRequest request,
-                            String correlationId) {
+                            String correlationId,
+                            Clearance clearance) {
         if (tenantId == null) throw new IllegalArgumentException("tenantId is required.");
         SearchRequest safe = request == null ? new SearchRequest(null, null, null, null, null, null, null, null, null, null, null, null) : request;
         int limit = safe.limit() == null ? DEFAULT_LIMIT : safe.limit();
@@ -77,7 +82,8 @@ public class AuditQueryService {
                 AuditOutcome.SUCCESS,
                 "{\"resultCount\":" + page.size() + ",\"filtered\":" + hasAnyFilter(safe) + "}"));
 
-        return new AuditPage(page.stream().map(AuditEntry::from).toList(), nextCursor, hasMore);
+        return new AuditPage(withoutRestrictedNames(tenantId, page, clearance).stream().map(AuditEntry::from).toList(),
+                nextCursor, hasMore);
     }
 
     /**
@@ -87,7 +93,8 @@ public class AuditQueryService {
      * and nothing is exported. The export is recorded as AUDIT_EXPORTED with the filters and the row count before the
      * file is handed back; if that record can't be written, nothing is exported (fail closed).
      */
-    public AuditExport export(UUID tenantId, String actorId, ExportRequest request, String correlationId) {
+    public AuditExport export(UUID tenantId, String actorId, ExportRequest request, String correlationId,
+                              Clearance clearance) {
         if (tenantId == null) throw new IllegalArgumentException("tenantId is required.");
         if (request == null) throw new IllegalArgumentException("export filters are required.");
         SearchRequest search = request.search() == null
@@ -101,7 +108,7 @@ public class AuditQueryService {
 
         List<AuditQueryPort.Row> rows = query.findRows(tenantId, filter(search, null, actions, excluded), EXPORT_MAX_ROWS + 1);
         if (rows.size() > EXPORT_MAX_ROWS) throw new ExportTooLargeException(EXPORT_TOO_BIG);
-        List<AuditEntry> entries = rows.stream().map(AuditEntry::from).toList();
+        List<AuditEntry> entries = withoutRestrictedNames(tenantId, rows, clearance).stream().map(AuditEntry::from).toList();
         byte[] csv = AuditCsv.write(entries);
 
         Map<String, Object> details = new LinkedHashMap<>();
@@ -113,6 +120,26 @@ public class AuditQueryService {
                 "AUDIT_EXPORTED", "TENANT", tenantId.toString(), clock.instant(), correlationId,
                 AuditOutcome.SUCCESS, toJson(details)));
         return new AuditExport(csv, entries.size());
+    }
+
+    /**
+     * Task 0026: a document event keeps its file name only when this person could open the document at its effective
+     * level. Otherwise the name is left out and the event reads "a document". A name with no document to check is
+     * left out too.
+     */
+    private List<AuditQueryPort.Row> withoutRestrictedNames(UUID tenantId, List<AuditQueryPort.Row> rows, Clearance clearance) {
+        java.util.Objects.requireNonNull(clearance, "clearance");
+        List<DocumentAccessGuard.DocumentLevelRef> refs = rows.stream()
+                .filter(row -> row.filename() != null && row.document() != null)
+                .map(AuditQueryPort.Row::document)
+                .toList();
+        Map<UUID, com.sdv.platform.domain.document.SensitivityLevel> levels = refs.isEmpty() ? Map.of()
+                : access.effectiveLevels(tenantId, refs);
+        return rows.stream().map(row -> {
+            if (row.filename() == null) return row;
+            boolean visible = row.document() != null && clearance.canOpen(levels.get(row.document().documentId()));
+            return visible ? row : new AuditQueryPort.Row(row.event(), row.recordNumber(), null, row.document());
+        }).toList();
     }
 
     private static Map<String, Object> appliedFilters(SearchRequest s, Set<String> actions, Set<String> excluded) {

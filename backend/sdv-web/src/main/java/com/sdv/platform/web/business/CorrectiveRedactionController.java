@@ -43,7 +43,7 @@ public class CorrectiveRedactionController {
 
         RedactionResult result = redaction.redact(
                 principal.tenantId(), documentId, request.reason(), request.confirmed(),
-                regions, principal.subject(), MDC.get("correlationId"));
+                regions, authorization.clearance(principal), principal.subject(), MDC.get("correlationId"));
 
         return ResponseEntity.ok()
                 .cacheControl(CacheControl.noStore().cachePrivate().mustRevalidate())

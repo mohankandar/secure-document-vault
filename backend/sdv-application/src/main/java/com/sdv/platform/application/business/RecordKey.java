@@ -58,6 +58,22 @@ public final class RecordKey {
         return SUBMISSION + submissionId;
     }
 
+    /**
+     * Task 0026: the key of the record a submission belongs to, from its stored metadata, grouped exactly as search
+     * and record detail group it: its business-identifier values that are not blank, or the submission alone when it
+     * has none.
+     */
+    public static String forSubmission(UUID submissionId,
+                                       List<com.sdv.platform.application.port.BusinessRecordRepository.MetadataSnapshot> metadata) {
+        List<Part> identifiers = metadata.stream()
+                .filter(value -> submissionId.equals(value.submissionId()))
+                .filter(com.sdv.platform.application.port.BusinessRecordRepository.MetadataSnapshot::businessIdentifier)
+                .filter(value -> value.normalizedValue() != null && !value.normalizedValue().isBlank())
+                .map(value -> new Part(value.fieldKey(), value.normalizedValue()))
+                .toList();
+        return identifiers.isEmpty() ? ofSubmission(submissionId) : ofIdentifiers(identifiers);
+    }
+
     /** The key's SHA-256 as lower-case hex, over its UTF-8 bytes (the database checks the same). */
     public static String sha256(String recordKey) {
         try {

@@ -66,11 +66,13 @@ class DocumentSensitivityReadTest {
     void recordDetailSendsEachDocumentsLevelAndHidesNothing() {
         var found = service.search(TENANT, SOURCE, java.util.Map.of(), NOW.minusSeconds(3600), null, null, null,
                 false, 1, 25, "maya", "corr");
-        var detail = service.record(TENANT, found.records().getFirst().recordRef(), "maya", "corr");
+        // Task 0026: with full clearance nothing is locked; locking is tested in DocumentLevelEnforcementTest.
+        var detail = service.record(TENANT, found.records().getFirst().recordRef(), "maya", "corr",
+                com.sdv.platform.application.access.Clearance.ALL);
         assertEquals(java.util.Map.of("a.pdf", "STANDARD", "b.pdf", "CONFIDENTIAL", "c.pdf", "HIGHLY_CONFIDENTIAL"),
                 detail.documents().stream().collect(java.util.stream.Collectors.toMap(
                         BusinessExperienceView.DocumentSummary::originalFilename,
                         BusinessExperienceView.DocumentSummary::sensitivityLevel)));
-        assertEquals(3, found.records().getFirst().availableDocumentCount(), "search counts every document: no filtering yet");
+        assertEquals(3, found.records().getFirst().availableDocumentCount(), "search counts every document");
     }
 }

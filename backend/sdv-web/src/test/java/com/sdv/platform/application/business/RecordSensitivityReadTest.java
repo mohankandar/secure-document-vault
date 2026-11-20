@@ -78,7 +78,8 @@ class RecordSensitivityReadTest {
         var codec = new BusinessRecordRefCodec();
         String ref = codec.encode(new BusinessRecordRefCodec.RecordIdentity(SOURCE,
                 List.of(new BusinessRecordRefCodec.IdentifierPart("contractNumber", "300000000076")), null));
-        return service.record(TENANT, ref, "maya", "corr");
+        // Task 0026: read with full clearance; locking is tested in DocumentLevelEnforcementTest.
+        return service.record(TENANT, ref, "maya", "corr", com.sdv.platform.application.access.Clearance.ALL);
     }
 
     private static Map<String, List<String>> levels(BusinessExperienceView.RecordView view) {
@@ -126,7 +127,7 @@ class RecordSensitivityReadTest {
 
         var codec = new BusinessRecordRefCodec();
         var view = service.record(TENANT, codec.encode(new BusinessRecordRefCodec.RecordIdentity(SOURCE, List.of(), alone)),
-                "maya", "corr");
+                "maya", "corr", com.sdv.platform.application.access.Clearance.ALL);
         assertEquals("HIGHLY_CONFIDENTIAL", view.recordSensitivityLevel());
         assertEquals(Map.of("note.pdf", List.of("STANDARD", "HIGHLY_CONFIDENTIAL")), levels(view));
     }

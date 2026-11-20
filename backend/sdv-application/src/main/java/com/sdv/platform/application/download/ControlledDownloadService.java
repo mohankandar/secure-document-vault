@@ -2,6 +2,8 @@ package com.sdv.platform.application.download;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.sdv.platform.application.access.Clearance;
+import com.sdv.platform.application.access.DocumentAccessGuard;
 import com.sdv.platform.application.port.AuditEventPort;
 import com.sdv.platform.application.port.DocumentIntakeRepository;
 import com.sdv.platform.application.port.StorageProvider;
@@ -13,6 +15,7 @@ import com.sdv.platform.domain.document.Document;
 import com.sdv.platform.domain.document.DocumentCryptoMetadata;
 import com.sdv.platform.domain.document.DocumentStatus;
 import com.sdv.platform.domain.document.DocumentStorageRef;
+import com.sdv.platform.domain.document.SensitivityLevel;
 import com.sdv.platform.domain.storage.StorageVolume;
 import org.springframework.stereotype.Service;
 
@@ -40,6 +43,7 @@ public class ControlledDownloadService {
     private final List<StorageProvider> storageProviders;
     private final StreamingCryptoPort crypto;
     private final AuditEventPort audit;
+    private final DocumentAccessGuard access;
     private final ObjectMapper json = new ObjectMapper();
     private final Clock clock = Clock.systemUTC();
 
@@ -48,20 +52,25 @@ public class ControlledDownloadService {
             StorageVolumeRepository volumes,
             List<StorageProvider> storageProviders,
             StreamingCryptoPort crypto,
-            AuditEventPort audit) {
+            AuditEventPort audit,
+            DocumentAccessGuard access) {
         this.documents = documents;
         this.volumes = volumes;
         this.storageProviders = List.copyOf(storageProviders);
         this.crypto = crypto;
         this.audit = audit;
+        this.access = java.util.Objects.requireNonNull(access, "access");
     }
 
     /**
      * Resolves and pre-validates the current AVAILABLE document before HTTP headers are committed.
      * The encrypted object is immutable and is verified by size + committed ciphertext SHA-256.
      */
-    public PreparedDownload prepare(UUID tenantId, UUID documentId) {
-        Document document = requireAvailable(tenantId, documentId);
+    public PreparedDownload prepare(UUID tenantId, UUID documentId, Clearance clearance,
+                                    String actorId, String correlationId) {
+        Document document = requireAvailable(tenantId, documentId, clearance, actorId, correlationId);
+        SensitivityLevel level = access.requirePrintOrDownload(document, clearance,
+                DocumentAccessGuard.Attempt.DOWNLOAD, actorId, correlationId);
         DocumentStorageRef storage = documents.findStorageRef(tenantId, documentId)
                 .orElseThrow(() -> unavailable("Current document storage metadata is unavailable."));
         DocumentCryptoMetadata cryptoMetadata = documents.findCryptoMetadata(tenantId, documentId)
@@ -75,7 +84,7 @@ public class ControlledDownloadService {
         }
 
         verifyEncryptedObject(document, storage, volume, provider);
-        return new PreparedDownload(document, storage, cryptoMetadata, volume, provider.providerId());
+        return new PreparedDownload(document, storage, cryptoMetadata, volume, provider.providerId(), clearance, level);
     }
 
     /**
@@ -91,7 +100,11 @@ public class ControlledDownloadService {
         Objects.requireNonNull(prepared, "prepared download is required.");
         Objects.requireNonNull(response, "download response stream is required.");
 
-        Document current = requireAvailable(prepared.document().tenantId(), prepared.document().documentId());
+        Document current = requireAvailable(prepared.document().tenantId(), prepared.document().documentId(),
+                prepared.clearance(), actorId, correlationId);
+        // Task 0026: checked again just before decrypting, in case the level was raised since the preparation.
+        SensitivityLevel level = access.requirePrintOrDownload(current, prepared.clearance(),
+                DocumentAccessGuard.Attempt.DOWNLOAD, actorId, correlationId);
         DocumentStorageRef currentStorage = documents.findStorageRef(
                         current.tenantId(), current.documentId())
                 .orElseThrow(() -> unavailable("Current document storage metadata is unavailable."));
@@ -124,7 +137,7 @@ public class ControlledDownloadService {
                     UUID.randomUUID(), current.tenantId(), "USER", actorId,
                     "DOCUMENT_DOWNLOADED", "DOCUMENT", current.documentId().toString(),
                     clock.instant(), correlationId, AuditOutcome.SUCCESS,
-                    successDetails(current, currentStorage)));
+                    successDetails(current, currentStorage, level)));
         } catch (IOException ex) {
             safeFailureAudit(current, actorId, correlationId, ex);
             throw ex;
@@ -159,9 +172,12 @@ public class ControlledDownloadService {
         }
     }
 
-    private Document requireAvailable(UUID tenantId, UUID documentId) {
+    /** Task 0026: the level check comes before the status check, so a restricted document reveals nothing. */
+    private Document requireAvailable(UUID tenantId, UUID documentId, Clearance clearance,
+                                      String actorId, String correlationId) {
         Document document = documents.findDocumentByIdForTenant(tenantId, documentId)
                 .orElseThrow(() -> new NoSuchElementException("Document not found."));
+        access.requireOpenable(document, clearance, DocumentAccessGuard.Attempt.DOWNLOAD, actorId, correlationId);
         if (document.status() != DocumentStatus.AVAILABLE) {
             throw new IllegalStateException("Only the current AVAILABLE document may be downloaded.");
         }
@@ -175,13 +191,15 @@ public class ControlledDownloadService {
                 .orElseThrow(() -> unavailable("Configured storage provider is unavailable."));
     }
 
-    private String successDetails(Document document, DocumentStorageRef storage) {
+    private String successDetails(Document document, DocumentStorageRef storage, SensitivityLevel level) {
         try {
             Map<String, Object> safe = new LinkedHashMap<>();
             safe.put("contentSha256", document.contentSha256());
             safe.put("ciphertextSha256", storage.integrityValue());
             safe.put("contentSizeBytes", document.contentSizeBytes());
             safe.put("currentApproved", true);
+            // Task 0026: the effective level, so Confidential downloads stand out in the audit trail.
+            safe.put("sensitivityLevel", level.name());
             return json.writeValueAsString(safe);
         } catch (JsonProcessingException ex) {
             throw new IllegalStateException("Could not serialize download audit details.", ex);
@@ -226,7 +244,9 @@ public class ControlledDownloadService {
             DocumentStorageRef storage,
             DocumentCryptoMetadata crypto,
             StorageVolume volume,
-            String providerId) {
+            String providerId,
+            Clearance clearance,
+            SensitivityLevel sensitivityLevel) {
         public long contentSizeBytes() {
             return document.contentSizeBytes();
         }

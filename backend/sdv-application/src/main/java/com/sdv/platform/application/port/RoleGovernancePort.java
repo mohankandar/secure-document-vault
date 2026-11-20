@@ -27,6 +27,13 @@ public interface RoleGovernancePort {
 
     List<RoleConflictProblem> findRoleConflicts(UUID tenantId, int limit);
 
+    /**
+     * Task 0026, carry-over 3: the person signed in from this source with roles that no longer conflict. Removes their
+     * open problems from that source and returns them, all in one statement, so only one caller ever gets them.
+     * Empty when there were none.
+     */
+    List<RoleConflictProblem> endRoleConflicts(UUID tenantId, String subject, String resolvedFrom);
+
     /** The login groups last recorded for {@code roleName}; empty when nothing was ever recorded. */
     Optional<List<String>> findRecordedGroups(String roleName);
 

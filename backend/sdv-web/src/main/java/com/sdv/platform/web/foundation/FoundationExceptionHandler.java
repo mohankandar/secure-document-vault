@@ -72,6 +72,13 @@ public class FoundationExceptionHandler {
         return error("NOT_FOUND", ex.getMessage());
     }
 
+    /** Task 0026: a coded 403 (for example SDV-SEN-008, a restricted document). Its message names nothing else. */
+    @ExceptionHandler(com.sdv.platform.domain.error.CodedRefusal.Forbidden.class)
+    @ResponseStatus(HttpStatus.FORBIDDEN)
+    Map<String, Object> codedForbidden(com.sdv.platform.domain.error.CodedRefusal.Forbidden ex) {
+        return error(ex.errorCode().code(), ex.getMessage());
+    }
+
     @ExceptionHandler(AccessDeniedException.class)
     @ResponseStatus(HttpStatus.FORBIDDEN)
     Map<String, Object> forbidden(AccessDeniedException ex) {

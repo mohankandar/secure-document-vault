@@ -23,7 +23,19 @@ public interface OperationalRepository {
             String errorCode,
             int processingAttemptCount,
             Instant ingestedAt,
-            String originalFilename) { }
+            String originalFilename,
+            /* Task 0026: the document's own level, to work out its effective level; not sent to the screen. */
+            @com.fasterxml.jackson.annotation.JsonIgnore com.sdv.platform.domain.document.SensitivityLevel sensitivityLevel) {
+        public ProcessingFailure(UUID documentId, UUID submissionId, UUID sourceId, String errorCode,
+                                 int processingAttemptCount, Instant ingestedAt, String originalFilename) {
+            this(documentId, submissionId, sourceId, errorCode, processingAttemptCount, ingestedAt, originalFilename, null);
+        }
+
+        public ProcessingFailure withoutFilename() {
+            return new ProcessingFailure(documentId, submissionId, sourceId, errorCode, processingAttemptCount,
+                    ingestedAt, null, sensitivityLevel);
+        }
+    }
 
     record StuckDocument(
             UUID documentId,
@@ -32,7 +44,19 @@ public interface OperationalRepository {
             String status,
             Instant stateSince,
             String processingErrorCode,
-            String originalFilename) { }
+            String originalFilename,
+            /* Task 0026: as ProcessingFailure.sensitivityLevel. */
+            @com.fasterxml.jackson.annotation.JsonIgnore com.sdv.platform.domain.document.SensitivityLevel sensitivityLevel) {
+        public StuckDocument(UUID documentId, UUID submissionId, UUID sourceId, String status, Instant stateSince,
+                             String processingErrorCode, String originalFilename) {
+            this(documentId, submissionId, sourceId, status, stateSince, processingErrorCode, originalFilename, null);
+        }
+
+        public StuckDocument withoutFilename() {
+            return new StuckDocument(documentId, submissionId, sourceId, status, stateSince, processingErrorCode,
+                    null, sensitivityLevel);
+        }
+    }
 
     record AttentionSubmission(
             UUID submissionId,

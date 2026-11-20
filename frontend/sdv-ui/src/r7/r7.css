@@ -414,6 +414,18 @@ html.r7-html, html.r7-html body { margin: 0; background: var(--bg); color: var(-
 .ws-doc .sheet::before { content: ''; position: absolute; left: 5px; right: 5px; top: 6px; height: 17px; background: repeating-linear-gradient(#cdd3d5 0 2px, transparent 2px 5px); }
 .ws-doc strong { font-size: var(--fs-body); font-weight: 500; display: block; line-height: 1.3; }
 .ws-doc span { font-size: var(--fs-meta); color: var(--ink-3); }
+/* Task 0026: a document this person can't open, and the lock next to a record's number (Sens-Results board).
+   Task 0029 matches the board exactly. */
+.ws-doc.locked { cursor: default; background: var(--surface-2); border-style: dashed; }
+.ws-doc.locked:hover { border-color: var(--line); }
+.ws-doc .lsheet { flex: none; width: 28px; height: 36px; border: 1px dashed var(--line-strong); border-radius: 3px; display: flex; align-items: center; justify-content: center; color: var(--ink-3); }
+.ws-level { flex: none; font-size: 12px; font-weight: 600; border-radius: 6px; padding: 2px 8px; white-space: nowrap; }
+.ws-doc span.ws-level.c, .ws-level.c { background: #e6edfb; color: #1f3f80; }
+.ws-doc span.ws-level.hc, .ws-level.hc { background: #14191c; color: #fff; }
+.ws-num { display: inline-flex; align-items: center; gap: 8px; }
+.ws-lock { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 5px; }
+.ws-lock.c { background: #e6edfb; color: #1f3f80; }
+.ws-lock.hc { background: #14191c; color: #fff; }
 .ws-kv { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 10px 12px; margin: 0; font-size: var(--fs-body); }
 .ws-kv > div { display: contents; }
 .ws-kv dt { color: var(--ink-3); }

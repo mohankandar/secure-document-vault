@@ -51,13 +51,15 @@ export function toSummary(r: RecordSummary, sourceId:string):RecordItem {
 export function toRecord(r: BusinessRecord):RecordItem {
   const ids=fields(r.identifiers)
   const docs:Doc[]=r.documents.map(d=>({id:d.documentId,submissionId:d.submissionId,filename:d.originalFilename,kind:d.originalFilename,pages:d.pageCount ?? 0,redacted:!!d.redacted,
-    ingestedAt:d.ingestedAt,expiresAt:d.expiresAt || ''}))
+    ingestedAt:d.ingestedAt,expiresAt:d.expiresAt || '',level:d.effectiveSensitivityLevel ?? d.sensitivityLevel}))
+  // Task 0026: documents this person can't open come apart, with only a reference and a level.
+  const locked=(r.lockedDocuments ?? []).map(d=>({id:d.documentId,level:d.effectiveSensitivityLevel}))
   // A record can have several incomplete submissions: add up the counts and list every missing document.
   const open=r.incompleteAttention?.submissions ?? []
   const incomplete=open.length?{expectedCount:open.reduce((n,s)=>n+s.expectedCount,0),receivedCount:open.reduce((n,s)=>n+s.receivedCount,0),missing:open.flatMap(s=>s.missingSourceDocumentIds ?? [])}:null
   return {ref:r.recordRef,sourceId:r.sourceId,identifiers:ids,metadata:fields(r.metadata),
     title:recordName(r.title,ids,r.recordRef),updatedAt:r.latestSubmissionAt,
-    incomplete:incomplete?{expected:incomplete.expectedCount,received:incomplete.receivedCount,missing:incomplete.missing}:null,docs}
+    incomplete:incomplete?{expected:incomplete.expectedCount,received:incomplete.receivedCount,missing:incomplete.missing}:null,docs,locked}
 }
 
 /** viewingId: this opening's ID; page requests send it back so each page is recorded once per viewing. */

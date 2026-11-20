@@ -45,6 +45,7 @@ import static org.mockito.Mockito.*;
  * JdbcPageViewAuditRepositorySqlTest and the live check in report 0007).
  */
 class DocumentViewerServicePageViewTest {
+    private static final com.sdv.platform.application.access.Clearance ALL = com.sdv.platform.application.access.Clearance.ALL;
     private static final UUID TENANT = UUID.fromString("11111111-1111-1111-1111-111111111111");
     private static final UUID DOC = UUID.fromString("dddddddd-dddd-dddd-dddd-dddddddddddd");
     private static final UUID OTHER_DOC = UUID.fromString("dddddddd-0000-0000-0000-dddddddddddd");
@@ -80,7 +81,8 @@ class DocumentViewerServicePageViewTest {
     private final StorageProvider provider = mock(StorageProvider.class);
     private final StreamingCryptoPort crypto = mock(StreamingCryptoPort.class);
     private final DocumentViewerService service = new DocumentViewerService(
-            documents, volumes, List.of(provider), crypto, audit, pageViews, Clock.fixed(NOW, ZoneOffset.UTC));
+            documents, volumes, List.of(provider), crypto, audit, pageViews,
+            mock(com.sdv.platform.application.access.DocumentAccessGuard.class), Clock.fixed(NOW, ZoneOffset.UTC));
 
     @BeforeEach
     void setUp() throws Exception {
@@ -118,7 +120,7 @@ class DocumentViewerServicePageViewTest {
     }
 
     private UUID open(UUID documentId, String actor) {
-        return service.metadata(TENANT, documentId, actor, "c").viewingId();
+        return service.metadata(TENANT, documentId, ALL, actor, "c").viewingId();
     }
 
     @Test
@@ -132,8 +134,8 @@ class DocumentViewerServicePageViewTest {
     @Test
     void samePageTwiceInOneViewingIsRecordedOnce() {
         UUID viewing = open(DOC, "steward");
-        service.renderPage(TENANT, DOC, 2, 1.0, viewing, "steward", "c");
-        service.renderPage(TENANT, DOC, 2, 1.0, viewing, "steward", "c");
+        service.renderPage(TENANT, DOC, ALL, 2, 1.0, viewing, "steward", "c");
+        service.renderPage(TENANT, DOC, ALL, 2, 1.0, viewing, "steward", "c");
         assertEquals(1, pageEvents());
         String details = events.getLast().safeDetailsJson();
         assertTrue(details.contains("\"viewingId\":\"" + viewing + "\"") && details.contains("\"page\":2"), details);
@@ -142,18 +144,18 @@ class DocumentViewerServicePageViewTest {
     @Test
     void anotherZoomOfTheSamePageIsStillOneRecordButAnotherPageIsRecorded() {
         UUID viewing = open(DOC, "steward");
-        service.renderPage(TENANT, DOC, 1, 0.93, viewing, "steward", "c");
-        service.renderPage(TENANT, DOC, 1, 1.25, viewing, "steward", "c");
-        service.renderPage(TENANT, DOC, 1, 1.50, viewing, "steward", "c");
-        service.renderPage(TENANT, DOC, 2, 1.50, viewing, "steward", "c");
+        service.renderPage(TENANT, DOC, ALL, 1, 0.93, viewing, "steward", "c");
+        service.renderPage(TENANT, DOC, ALL, 1, 1.25, viewing, "steward", "c");
+        service.renderPage(TENANT, DOC, ALL, 1, 1.50, viewing, "steward", "c");
+        service.renderPage(TENANT, DOC, ALL, 2, 1.50, viewing, "steward", "c");
         assertEquals(2, pageEvents());
     }
 
     @Test
     void anotherPersonsViewingIdIsRecordedNormally() {
         UUID someoneElses = open(DOC, "someone-else");
-        service.renderPage(TENANT, DOC, 1, 1.0, someoneElses, "steward", "c");
-        service.renderPage(TENANT, DOC, 1, 1.0, someoneElses, "steward", "c");
+        service.renderPage(TENANT, DOC, ALL, 1, 1.0, someoneElses, "steward", "c");
+        service.renderPage(TENANT, DOC, ALL, 1, 1.0, someoneElses, "steward", "c");
         assertEquals(2, pageEvents(), "a viewing that is not this person's never suppresses a record");
         assertFalse(events.getLast().safeDetailsJson().contains("viewingId"));
     }
@@ -161,16 +163,16 @@ class DocumentViewerServicePageViewTest {
     @Test
     void anotherDocumentsViewingIdIsRecordedNormally() {
         UUID otherDocViewing = open(OTHER_DOC, "steward");
-        service.renderPage(TENANT, DOC, 1, 1.0, otherDocViewing, "steward", "c");
-        service.renderPage(TENANT, DOC, 1, 1.0, otherDocViewing, "steward", "c");
+        service.renderPage(TENANT, DOC, ALL, 1, 1.0, otherDocViewing, "steward", "c");
+        service.renderPage(TENANT, DOC, ALL, 1, 1.0, otherDocViewing, "steward", "c");
         assertEquals(2, pageEvents());
     }
 
     @Test
     void noViewingIdIsRecordedNormally() {
         open(DOC, "steward");
-        service.renderPage(TENANT, DOC, 1, 1.0, null, "steward", "c");
-        service.renderPage(TENANT, DOC, 1, 1.0, null, "steward", "c");
+        service.renderPage(TENANT, DOC, ALL, 1, 1.0, null, "steward", "c");
+        service.renderPage(TENANT, DOC, ALL, 1, 1.0, null, "steward", "c");
         assertEquals(2, pageEvents());
     }
 
@@ -179,8 +181,8 @@ class DocumentViewerServicePageViewTest {
         UUID old = UUID.randomUUID();
         events.add(new AuditEvent(old, TENANT, "USER", "steward", "DOCUMENT_VIEW_OPENED", "DOCUMENT", DOC.toString(),
                 NOW.minus(Duration.ofHours(8)).minusSeconds(1), "c", com.sdv.platform.domain.audit.AuditOutcome.SUCCESS, "{}"));
-        service.renderPage(TENANT, DOC, 1, 1.0, old, "steward", "c");
-        service.renderPage(TENANT, DOC, 1, 1.0, old, "steward", "c");
+        service.renderPage(TENANT, DOC, ALL, 1, 1.0, old, "steward", "c");
+        service.renderPage(TENANT, DOC, ALL, 1, 1.0, old, "steward", "c");
         assertEquals(2, pageEvents());
         assertEquals(Duration.ofHours(8), DocumentViewerService.VIEWING_LIFETIME);
     }

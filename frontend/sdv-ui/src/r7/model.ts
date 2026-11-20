@@ -1,4 +1,5 @@
 // Shared R7 types and role definitions. Every value shown on screen comes from the server; nothing here is sample data.
+import type { SensitivityLevel } from '../api'
 
 export type RoleId = 'business' | 'steward' | 'businessAdmin' | 'tenantIt' | 'platform'
 export type AreaId = 'home' | 'workspace' | 'governance' | 'tenant' | 'operations' | 'system'
@@ -31,8 +32,10 @@ export type Source = { id: string; key: string; name: string; status: 'ACTIVE' |
 
 /** A region marked for permanent redaction, in percent of the page. */
 export type Redaction = { page: number; x: number; y: number; w: number; h: number }
-export type Doc = { id: string; filename: string; kind: string; pages: number; ingestedAt: string; expiresAt: string; submissionId: string; /** the server says a correction was applied */ redacted?: boolean }
-export type RecordItem = { ref: string; sourceId: string; identifiers: { label: string; value: string }[]; metadata: { label: string; value: string }[]; title: string; updatedAt: string; incomplete: null | { expected: number; received: number; /** Source document IDs still expected (record details only). */ missing?: string[] }; docs: Doc[] }
+export type Doc = { id: string; filename: string; kind: string; pages: number; ingestedAt: string; expiresAt: string; submissionId: string; /** the server says a correction was applied */ redacted?: boolean; /** task 0026: the effective level */ level?: SensitivityLevel }
+/** Task 0026: a document this person can't open; only its reference and level. */
+export type LockedDoc = { id: string; level: SensitivityLevel }
+export type RecordItem = { ref: string; sourceId: string; identifiers: { label: string; value: string }[]; metadata: { label: string; value: string }[]; title: string; updatedAt: string; incomplete: null | { expected: number; received: number; /** Source document IDs still expected (record details only). */ missing?: string[] }; docs: Doc[]; /** task 0026, record details only */ locked?: LockedDoc[] }
 
 /** Business limits as the screens show them (comment and tag length, page size). */
 export const BUSINESS_LIMITS = { pageSize: 25, maxCommentLength: 2000, maxTagLength: 80 }

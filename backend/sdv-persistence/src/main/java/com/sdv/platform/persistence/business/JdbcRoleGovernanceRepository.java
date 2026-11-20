@@ -77,6 +77,25 @@ public class JdbcRoleGovernanceRepository implements RoleGovernancePort {
                         instant(rs, "first_seen_at"), instant(rs, "last_seen_at"), rs.getLong("occurrences")));
     }
 
+    /** Task 0026: delete … returning, so two sign-ins at once can't both report the same end. */
+    @Override
+    public List<RoleConflictProblem> endRoleConflicts(UUID tenantId, String subject, String resolvedFrom) {
+        return jdbc.query("""
+                delete from role_conflict_problems
+                 where tenant_id = :tenantId and subject = :subject and resolved_from = :resolvedFrom
+                returning problem_id, tenant_id, subject, display_name, resolved_from, held_roles, withheld_roles,
+                          broken_rules, first_seen_at, last_seen_at, occurrences
+                """, new MapSqlParameterSource()
+                        .addValue("tenantId", tenantId)
+                        .addValue("subject", subject)
+                        .addValue("resolvedFrom", resolvedFrom),
+                (rs, row) -> new RoleConflictProblem(rs.getObject("problem_id", UUID.class),
+                        rs.getObject("tenant_id", UUID.class), rs.getString("subject"), rs.getString("display_name"),
+                        rs.getString("resolved_from"), split(rs.getString("held_roles")),
+                        split(rs.getString("withheld_roles")), split(rs.getString("broken_rules")),
+                        instant(rs, "first_seen_at"), instant(rs, "last_seen_at"), rs.getLong("occurrences")));
+    }
+
     @Override
     public Optional<List<String>> findRecordedGroups(String roleName) {
         List<String> found = jdbc.query("select login_groups from role_group_mappings_seen where role_name = :role",

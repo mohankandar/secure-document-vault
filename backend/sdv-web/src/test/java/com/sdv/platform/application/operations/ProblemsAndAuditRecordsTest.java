@@ -87,18 +87,26 @@ class ProblemsAndAuditRecordsTest {
         when(ops.databaseAvailable()).thenReturn(true);
         when(ops.countProcessingFailures(TENANT)).thenReturn(1L);
         when(ops.findProcessingFailures(eq(TENANT), anyInt())).thenReturn(List.of(new OperationalRepository.ProcessingFailure(
-                UUID.randomUUID(), SUB_UNKNOWN, SOURCE, "DOCUMENT_FINALIZATION_FAILED", 3, Instant.now(), "appraisal.pdf")));
+                UUID.randomUUID(), SUB_UNKNOWN, SOURCE, "DOCUMENT_FINALIZATION_FAILED", 3, Instant.now(), "appraisal.pdf",
+                com.sdv.platform.domain.document.SensitivityLevel.STANDARD)));
         TenantRepository tenants = mock(TenantRepository.class);
         Tenant tenant = mock(Tenant.class);
         when(tenant.status()).thenReturn(TenantStatus.ACTIVE);
         when(tenants.findById(TENANT)).thenReturn(Optional.of(tenant));
         ProblemRecordResolver broken = mock(ProblemRecordResolver.class);
         when(broken.resolve(any(), anyMap())).thenThrow(new IllegalStateException("lookup failed"));
-        OperationsService service = new OperationsService(ops, mock(StorageVolumeAdminService.class), mock(KeyServiceHealthProbe.class), tenants, broken);
-        var summary = service.summary(TENANT);
+        OperationsService service = new OperationsService(ops, mock(StorageVolumeAdminService.class), mock(KeyServiceHealthProbe.class), tenants, broken,
+                guard());
+        var summary = service.summary(TENANT, com.sdv.platform.application.access.Clearance.STANDARD_ONLY);
         assertEquals(1, summary.processingFailures().size());
         assertEquals("appraisal.pdf", summary.processingFailures().getFirst().originalFilename());
         assertTrue(summary.problemRecords().isEmpty());
+    }
+
+    /** Task 0026: a real guard; with no record level a Standard document keeps its name. */
+    private static com.sdv.platform.application.access.DocumentAccessGuard guard() {
+        return new com.sdv.platform.application.access.DocumentAccessGuard(
+                mock(com.sdv.platform.application.port.BusinessRecordRepository.class), mock(AuditEventPort.class));
     }
 
     @Test
@@ -109,11 +117,14 @@ class ProblemsAndAuditRecordsTest {
         AuditEvent older = new AuditEvent(UUID.randomUUID(), TENANT, "USER", "okta|00u2", "BUSINESS_SEARCH", "INGESTION_SOURCE",
                 SOURCE.toString(), Instant.parse("2026-11-01T12:00:00Z"), null, AuditOutcome.SUCCESS, "{}");
         when(query.findRows(eq(TENANT), any(), anyInt())).thenReturn(List.of(
-                new AuditQueryPort.Row(named, "300000000090", "loan-agreement.pdf"), new AuditQueryPort.Row(older, null, null)));
-        AuditQueryService service = new AuditQueryService(query, mock(AuditEventPort.class));
+                new AuditQueryPort.Row(named, "300000000090", "loan-agreement.pdf",
+                        new com.sdv.platform.application.access.DocumentAccessGuard.DocumentLevelRef(UUID.fromString(named.targetId()),
+                                SOURCE, UUID.randomUUID(), com.sdv.platform.domain.document.SensitivityLevel.STANDARD)), new AuditQueryPort.Row(older, null, null)));
+        AuditQueryService service = new AuditQueryService(query, mock(AuditEventPort.class), guard());
 
         var page = service.search(TENANT, "ops", new AuditQueryService.SearchRequest(null, null, null, null, null, null, null,
-                null, null, null, null, " 300000000090 "), "c");
+                null, null, null, null, " 300000000090 "), "c",
+                com.sdv.platform.application.access.Clearance.STANDARD_ONLY);
         assertEquals("Maya Okafor", page.events().get(0).actorDisplayName());
         assertEquals("300000000090", page.events().get(0).recordNumber());
         assertEquals("loan-agreement.pdf", page.events().get(0).filename());

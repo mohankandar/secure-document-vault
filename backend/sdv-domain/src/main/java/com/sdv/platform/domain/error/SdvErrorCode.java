@@ -20,6 +20,10 @@ public enum SdvErrorCode {
     SEN_006("SDV-SEN-006"),
     /** An identifier field change was refused because records of the sending system have a level. */
     SEN_007("SDV-SEN-007"),
+    /** Task 0026: the person's role can't open documents at this document's effective level (403). */
+    SEN_008("SDV-SEN-008"),
+    /** Task 0026: printing or downloading a Highly Confidential document needs an approval Vero can't give yet (403). */
+    SEN_009("SDV-SEN-009"),
     /** Task 0025: a role-permission override would give a role a capability it may never have. */
     ROL_001("SDV-ROL-001"),
     /** Task 0025: a role-permission override names a role whose permissions are fixed. */

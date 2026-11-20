@@ -27,18 +27,21 @@ public class OperationsService {
     private final KeyServiceHealthProbe keyHealth;
     private final TenantRepository tenants;
     private final ProblemRecordResolver problemRecords;
+    private final com.sdv.platform.application.access.DocumentAccessGuard access;
     private final Clock clock = Clock.systemUTC();
 
     public OperationsService(OperationalRepository repository,
                              StorageVolumeAdminService storage,
                              KeyServiceHealthProbe keyHealth,
                              TenantRepository tenants,
-                             ProblemRecordResolver problemRecords) {
+                             ProblemRecordResolver problemRecords,
+                             com.sdv.platform.application.access.DocumentAccessGuard access) {
         this.repository = repository;
         this.storage = storage;
         this.keyHealth = keyHealth;
         this.tenants = tenants;
         this.problemRecords = problemRecords;
+        this.access = java.util.Objects.requireNonNull(access, "access");
     }
 
     public CapacityBanner capacityBanner(UUID tenantId) {
@@ -72,7 +75,36 @@ public class OperationsService {
         return new CapacityBanner("NORMAL", false, null, 0, 0, clock.instant());
     }
 
-    public OperationsSummary summary(UUID tenantId) {
+    /**
+     * Task 0026: a problem keeps its document's file name only when this person could open the document at its
+     * effective level; otherwise the name is left out. Counts are unchanged.
+     */
+    public OperationsSummary summary(UUID tenantId, com.sdv.platform.application.access.Clearance clearance) {
+        java.util.Objects.requireNonNull(clearance, "clearance");
+        OperationsSummary full = summaryWithNames(tenantId);
+        List<com.sdv.platform.application.access.DocumentAccessGuard.DocumentLevelRef> refs = new java.util.ArrayList<>();
+        full.processingFailures().forEach(f -> refs.add(new com.sdv.platform.application.access.DocumentAccessGuard
+                .DocumentLevelRef(f.documentId(), f.sourceId(), f.submissionId(), f.sensitivityLevel())));
+        full.stuckDocuments().forEach(s -> refs.add(new com.sdv.platform.application.access.DocumentAccessGuard
+                .DocumentLevelRef(s.documentId(), s.sourceId(), s.submissionId(), s.sensitivityLevel())));
+        java.util.Map<UUID, com.sdv.platform.domain.document.SensitivityLevel> levels;
+        try {
+            levels = refs.isEmpty() ? java.util.Map.of() : access.effectiveLevels(tenantId, refs);
+        } catch (RuntimeException ex) {
+            levels = java.util.Map.of(); // no level known: every name is left out (fail closed)
+        }
+        java.util.Map<UUID, com.sdv.platform.domain.document.SensitivityLevel> known = levels;
+        List<OperationalRepository.ProcessingFailure> failures = full.processingFailures().stream()
+                .map(f -> clearance.canOpen(known.get(f.documentId())) ? f : f.withoutFilename()).toList();
+        List<OperationalRepository.StuckDocument> stuck = full.stuckDocuments().stream()
+                .map(s -> clearance.canOpen(known.get(s.documentId())) ? s : s.withoutFilename()).toList();
+        return new OperationsSummary(full.overallStatus(), full.observedAt(), full.application(), full.database(),
+                full.keyService(), full.dataObservations(), full.storageVolumes(), full.processingFailureCount(), failures,
+                full.stuckDocumentCount(), stuck, full.attentionSubmissionCount(), full.attentionSubmissions(),
+                full.problemRecords());
+    }
+
+    private OperationsSummary summaryWithNames(UUID tenantId) {
         requireActiveTenant(tenantId);
         Instant now = clock.instant();
         ComponentHealth application = new ComponentHealth("application", "UP", "SDV application is serving requests.", now);

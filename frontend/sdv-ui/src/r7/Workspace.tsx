@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
-import { AlertTriangle, ArrowRight, ChevronDown, ChevronUp, Search, SlidersHorizontal, X } from 'lucide-react'
+import { AlertTriangle, ArrowRight, ChevronDown, ChevronUp, Lock, Search, SlidersHorizontal, X } from 'lucide-react'
+import type { SensitivityLevel } from '../api'
 import { useStore } from './store'
 import type { RecordItem, Source } from './model'
 import { schema, search, record, toSource, toSummary, toRecord, documentActivity, recentRecords as loadRecentRecords, RECENT_LIMIT, SEARCH_PAGE_SIZE, type LiveDocumentActivity } from './liveApi'
@@ -22,7 +23,17 @@ const NO_RANGE: Range = { from: '', to: '' }
 const emptyApplied = (sourceId: string): Applied => ({ sourceId, c: {}, received: NO_RANGE, updated: NO_RANGE })
 type FieldValue = { label: string; value: string }
 /** What the search result said about a record; kept apart so loading the full record does not change the row. */
-type Summary = { /** the server's record title, null when it has none */ title: string | null; identifiers: FieldValue[]; preview: FieldValue[]; docs: number; incomplete: boolean; expected: number; received: number; /** an "anywhere" search only */ matched: MatchedField[] }
+type Summary = { /** the server's record title, null when it has none */ title: string | null; identifiers: FieldValue[]; preview: FieldValue[]; docs: number; incomplete: boolean; expected: number; received: number; /** an "anywhere" search only */ matched: MatchedField[]; /** task 0026: highest level this person can't open, or null */ restricted?: SensitivityLevel | null }
+
+/** Task 0026: level names as people read them. */
+const LEVEL_WORDS: Record<SensitivityLevel, string> = { STANDARD: 'Standard', CONFIDENTIAL: 'Confidential', HIGHLY_CONFIDENTIAL: 'Highly Confidential' }
+
+/** Task 0026: the lock next to a record's number when it holds documents this person can't open (dark: Highly Confidential). */
+function RestrictedLock({ level }: { level?: SensitivityLevel | null }) {
+  if (!level || level === 'STANDARD') return null
+  const label = `Holds ${LEVEL_WORDS[level]} documents you can't open`
+  return <span className={`ws-lock ${level === 'HIGHLY_CONFIDENTIAL' ? 'hc' : 'c'}`} role="img" aria-label={label} title={label}><Lock size={12} aria-hidden /></span>
+}
 
 function useMediaQuery(q: string) {
   const [m, setM] = useState(() => window.matchMedia(q).matches)
@@ -107,6 +118,7 @@ export function Workspace() {
         docs: x.availableDocumentCount, incomplete: x.incomplete,
         expected: x.incompleteExpectedCount ?? 0, received: x.incompleteReceivedCount ?? 0,
         matched: x.matchedFields ?? [],
+        restricted: x.restrictedLevel ?? null,
       }])))
       setHasMore(r.hasMore)
       setStatus('live')
@@ -441,7 +453,7 @@ function ResultsTable({ results, summaries, selectedRef, onOpen, source, needle 
                 else if (e.key === 'End') { e.preventDefault(); move(results.length - 1) }
                 else if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen(r.ref) }
               }}>
-              <td className="mono lead" data-label={numberLabel}><Mark text={number} needle={needle} /></td>
+              <td className="mono lead" data-label={numberLabel}><span className="ws-num"><Mark text={number} needle={needle} /><RestrictedLock level={s?.restricted} /></span></td>
               <td className="ws-name" data-label={titleHead}>
                 <span className="ws-cell">{s?.title ? <Mark text={s.title} needle={needle} /> : "—"}{s?.incomplete && missing(s)}</span>
                 {/* Quick search board 2: a match in a field that is not a column, under the title. */}
@@ -478,7 +490,9 @@ function RecordPanelBody({ record, summary, onOpen, source, action, needle }: { 
     return () => { active = false }
   }, [record.ref, record.docs.map((d) => d.id).join(','), includeViews])
   const inc = record.incomplete
-  const loadingDocs = record.docs.length === 0 && (summary?.docs ?? 0) > 0
+  const locked = record.locked ?? []
+  const docCount = record.docs.length + locked.length
+  const loadingDocs = docCount === 0 && (summary?.docs ?? 0) > 0
   return (
     <>
       <div className={`ws-ids${record.identifiers.length > 2 ? " wrap" : ""}`}>{record.identifiers.map((i) => <div key={i.label}><span>{i.label}</span><strong title={i.value}>{i.value}</strong></div>)}</div>
@@ -490,7 +504,7 @@ function RecordPanelBody({ record, summary, onOpen, source, action, needle }: { 
         ) : <Callout tone="warn" title="Missing documents">Some expected documents have not arrived yet.</Callout>
       )}
       <div className="stack" style={{ gap: 8 }}>
-        <h3>Documents · {record.docs.length || summary?.docs || 0}</h3>
+        <h3>Documents · {docCount || summary?.docs || 0}</h3>
         {loadingDocs ? <p className="faint">Loading documents…</p> : (
           <ul className="ws-docs">
             {record.docs.map((d) => (
@@ -502,6 +516,19 @@ function RecordPanelBody({ record, summary, onOpen, source, action, needle }: { 
                     <span>{d.pages > 0 ? `${d.pages} page${d.pages === 1 ? '' : 's'} · ` : ''}received {fmtShortDate(d.ingestedAt)}{d.redacted && ' · redacted'}</span>
                   </span>
                 </button>
+              </li>
+            ))}
+            {/* Task 0026: a document this person can't open shows only that it is restricted and its level. */}
+            {locked.map((d) => (
+              <li key={d.id}>
+                <div className="ws-doc locked" aria-label={`Restricted document, ${LEVEL_WORDS[d.level]}. You can't open this document.`}>
+                  <span className="lsheet" aria-hidden><Lock size={14} /></span>
+                  <span className="grow" style={{ minWidth: 0 }}>
+                    <strong>Restricted</strong>
+                    <span>You can't open this document</span>
+                  </span>
+                  <span className={`ws-level ${d.level === 'HIGHLY_CONFIDENTIAL' ? 'hc' : 'c'}`}>{LEVEL_WORDS[d.level]}</span>
+                </div>
               </li>
             ))}
           </ul>

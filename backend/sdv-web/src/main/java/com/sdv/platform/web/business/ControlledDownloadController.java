@@ -41,10 +41,10 @@ public class ControlledDownloadController {
         SdvPrincipal principal = security.requirePrincipal();
         authorization.require(principal, Capability.DOWNLOAD_CURRENT_PDF);
 
-        ControlledDownloadService.PreparedDownload prepared = downloads.prepare(
-                principal.tenantId(), documentId);
-        String filename = safeFilename(prepared.originalFilename());
         String correlationId = MDC.get("correlationId");
+        ControlledDownloadService.PreparedDownload prepared = downloads.prepare(
+                principal.tenantId(), documentId, authorization.clearance(principal), principal.subject(), correlationId);
+        String filename = safeFilename(prepared.originalFilename());
 
         StreamingResponseBody body = output -> downloads.stream(
                 prepared, output, principal.subject(), correlationId);

@@ -23,6 +23,8 @@ import java.util.UUID;
 @Service
 public class RoleConflictService {
     public static final String AUDIT_ACTION = "ROLE_CONFLICT_DETECTED";
+    /** Task 0026, carry-over 3: written once when a conflict ends. */
+    public static final String ENDED_AUDIT_ACTION = "ROLE_CONFLICT_ENDED";
     static final int LIST_LIMIT = 200;
 
     private final RoleGovernancePort store;
@@ -55,6 +57,28 @@ public class RoleConflictService {
                 + ",\"rules\":" + RoleJson.array(brokenRules) + "}";
         audit.append(new AuditEvent(UUID.randomUUID(), tenantId, "USER", subject, AUDIT_ACTION, "USER", subject, now,
                 null, AuditOutcome.DENIED, details, displayName));
+    }
+
+    /**
+     * Task 0026, carry-over 3: the person signed in from this source and their roles no longer conflict. Their open
+     * problems from that source are removed and one ROLE_CONFLICT_ENDED event is written, in one transaction. With no
+     * open problem nothing happens, so a conflict that lasts or a sign-in that never conflicted adds no event.
+     */
+    @Transactional
+    public void ended(UUID tenantId, String subject, String displayName, String resolvedFrom) {
+        List<RoleConflictProblem> ended = store.endRoleConflicts(tenantId, subject, resolvedFrom);
+        if (ended.isEmpty()) return;
+        List<String> held = ended.stream().flatMap(p -> p.heldRoles().stream()).distinct().sorted().toList();
+        List<String> withheld = ended.stream().flatMap(p -> p.withheldRoles().stream()).distinct().sorted().toList();
+        Instant firstSeen = ended.stream().map(RoleConflictProblem::firstSeenAt).min(Instant::compareTo).orElseThrow();
+        long occurrences = ended.stream().mapToLong(RoleConflictProblem::occurrences).sum();
+        String details = "{\"resolvedFrom\":" + RoleJson.quote(resolvedFrom)
+                + ",\"heldRoles\":" + RoleJson.array(held)
+                + ",\"withheldRoles\":" + RoleJson.array(withheld)
+                + ",\"firstSeenAt\":" + RoleJson.quote(firstSeen.toString())
+                + ",\"occurrences\":" + occurrences + "}";
+        audit.append(new AuditEvent(UUID.randomUUID(), tenantId, "USER", subject, ENDED_AUDIT_ACTION, "USER", subject,
+                clock.instant(), null, AuditOutcome.SUCCESS, details, displayName));
     }
 
     public List<RoleConflictProblem> list(UUID tenantId) {

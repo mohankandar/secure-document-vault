@@ -19,4 +19,11 @@ public interface RoleConflictReporter {
                         Set<SdvRole> held, Set<SdvRole> withheld, List<String> brokenRules) { }
 
     void report(RoleConflict conflict);
+
+    /**
+     * Task 0026, carry-over 3: this sign-in's roles don't conflict. A conflict this person had from this source has
+     * ended; the reporter audits that once. Failing here never refuses the sign-in: the open problem stays, so the
+     * next sign-in tries again.
+     */
+    default void noConflict(java.util.UUID tenantId, String subject, String displayName, Source source) { }
 }

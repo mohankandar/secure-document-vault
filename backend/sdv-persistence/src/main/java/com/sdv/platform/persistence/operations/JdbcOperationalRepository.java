@@ -1,9 +1,11 @@
 package com.sdv.platform.persistence.operations;
 
+import com.sdv.platform.application.access.DocumentAccessGuard;
 import com.sdv.platform.application.port.AuditQueryPort;
 import com.sdv.platform.application.port.OperationalRepository;
 import com.sdv.platform.domain.audit.AuditEvent;
 import com.sdv.platform.domain.audit.AuditOutcome;
+import com.sdv.platform.domain.document.SensitivityLevel;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.stereotype.Repository;
@@ -99,7 +101,8 @@ public class JdbcOperationalRepository implements AuditQueryPort, OperationalRep
         String paged = sql + " order by occurred_at desc, audit_event_id desc limit :limit";
         p.addValue("uuidPattern", UUID_PATTERN);
         String withRecords = """
-                select a.*, d.original_filename,
+                select a.*, d.original_filename, d.document_id as doc_document_id, d.source_id as doc_source_id,
+                       d.submission_id as doc_submission_id, d.sensitivity_level as doc_sensitivity_level,
                        (select v.stored_value
                           from business_metadata_values v
                           join metadata_field_definitions f on f.definition_id=v.definition_id and f.business_identifier
@@ -123,7 +126,27 @@ public class JdbcOperationalRepository implements AuditQueryPort, OperationalRep
                 rs.getString("target_type"), rs.getString("target_id"), rs.getTimestamp("occurred_at").toInstant(),
                 rs.getString("correlation_id"), AuditOutcome.valueOf(rs.getString("outcome")),
                 rs.getString("safe_details_json"), rs.getString("actor_display_name")),
-                rs.getString("record_number"), rs.getString("original_filename")));
+                rs.getString("record_number"), rs.getString("original_filename"), documentRef(rs)));
+    }
+
+    /** Task 0026: enough to work out a document's effective level; null when the row names no stored document. */
+    private static DocumentAccessGuard.DocumentLevelRef documentRef(java.sql.ResultSet rs, String prefix)
+            throws java.sql.SQLException {
+        UUID documentId = rs.getObject(prefix + "document_id", UUID.class);
+        if (documentId == null) return null;
+        String level = rs.getString(prefix + "sensitivity_level");
+        return new DocumentAccessGuard.DocumentLevelRef(documentId,
+                rs.getObject(prefix + "source_id", UUID.class), rs.getObject(prefix + "submission_id", UUID.class),
+                level == null ? null : SensitivityLevel.valueOf(level));
+    }
+
+    private static SensitivityLevel level(java.sql.ResultSet rs) throws java.sql.SQLException {
+        String level = rs.getString("sensitivity_level");
+        return level == null ? null : SensitivityLevel.valueOf(level);
+    }
+
+    private static DocumentAccessGuard.DocumentLevelRef documentRef(java.sql.ResultSet rs) throws java.sql.SQLException {
+        return documentRef(rs, "doc_");
     }
 
     @Override
@@ -141,7 +164,7 @@ public class JdbcOperationalRepository implements AuditQueryPort, OperationalRep
     public List<ProcessingFailure> findProcessingFailures(UUID tenantId, int limit) {
         return jdbc.query("""
                 select document_id, submission_id, source_id, processing_error_code,
-                       processing_attempt_count, ingested_at, original_filename
+                       processing_attempt_count, ingested_at, original_filename, sensitivity_level
                   from documents
                  where tenant_id=:tenantId and status='PROCESSING_FAILED'
                  order by ingested_at desc, document_id
@@ -150,7 +173,7 @@ public class JdbcOperationalRepository implements AuditQueryPort, OperationalRep
                 rs.getObject("document_id", UUID.class), rs.getObject("submission_id", UUID.class),
                 rs.getObject("source_id", UUID.class), rs.getString("processing_error_code"),
                 rs.getInt("processing_attempt_count"), rs.getTimestamp("ingested_at").toInstant(),
-                rs.getString("original_filename")));
+                rs.getString("original_filename"), level(rs)));
     }
 
     @Override
@@ -178,6 +201,7 @@ public class JdbcOperationalRepository implements AuditQueryPort, OperationalRep
     private List<StuckDocument> queryStuck(UUID tenantId, Instant processingCutoff, Instant transitionCutoff, int limit) {
         String sql = """
                 select d.document_id, d.submission_id, d.source_id, d.status, d.processing_error_code, d.original_filename,
+                       d.sensitivity_level,
                        case
                          when d.status='REDACTION_PROCESSING' then coalesce(r.created_at, d.ingested_at)
                          when d.status='RETENTION_DELETING' then coalesce(d.retention_delete_started_at, d.ingested_at)
@@ -200,7 +224,7 @@ public class JdbcOperationalRepository implements AuditQueryPort, OperationalRep
                 rs.getObject("document_id", UUID.class), rs.getObject("submission_id", UUID.class),
                 rs.getObject("source_id", UUID.class), rs.getString("status"),
                 rs.getTimestamp("state_since").toInstant(), rs.getString("processing_error_code"),
-                rs.getString("original_filename")));
+                rs.getString("original_filename"), level(rs)));
     }
 
     @Override

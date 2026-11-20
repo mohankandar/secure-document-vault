@@ -137,7 +137,15 @@ export type RecordSummary = {
   incompleteReceivedCount?: number
   /** Task 0022, an "anywhere" search only: every field that matched, best match first, with the record's own value. */
   matchedFields?: { fieldKey: string; displayLabel: string; value: string }[]
+  /** Task 0026: the highest level among this record's documents this person can't open; null when none. */
+  restrictedLevel?: SensitivityLevel | null
 }
+
+/** Task 0024/0026: a document's sensitivity level. */
+export type SensitivityLevel = 'STANDARD' | 'CONFIDENTIAL' | 'HIGHLY_CONFIDENTIAL'
+
+/** Task 0026: a document this person can't open: its reference and level only. Opening it is refused (SDV-SEN-008). */
+export type LockedDocument = { documentId: string; effectiveSensitivityLevel: SensitivityLevel }
 
 export type SearchResponse = {
   sourceId: string
@@ -160,6 +168,9 @@ export type RecordDocument = {
   pageCount?: number | null
   /** A permanent correction (redaction) has been applied. */
   redacted?: boolean
+  sensitivityLevel?: SensitivityLevel
+  /** The higher of its own level and its record's level. */
+  effectiveSensitivityLevel?: SensitivityLevel
 }
 
 export type IncompleteSubmission = {
@@ -183,4 +194,8 @@ export type BusinessRecord = {
   latestSubmissionAt: string
   documents: RecordDocument[]
   incompleteAttention: { submissions: IncompleteSubmission[] } | null
+  recordSensitivityLevel?: SensitivityLevel | null
+  /** Task 0026: documents this person can't open; they are not in `documents`. */
+  lockedDocuments?: LockedDocument[]
+  restrictedLevel?: SensitivityLevel | null
 }

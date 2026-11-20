@@ -1,5 +1,7 @@
 package com.sdv.platform.application.viewer;
 
+import com.sdv.platform.application.access.Clearance;
+import com.sdv.platform.application.access.DocumentAccessGuard;
 import com.sdv.platform.application.port.AuditEventPort;
 import com.sdv.platform.application.port.PageViewAuditPort;
 import com.sdv.platform.application.port.DocumentIntakeRepository;
@@ -62,6 +64,7 @@ public class DocumentViewerService {
     private final StreamingCryptoPort crypto;
     private final AuditEventPort audit;
     private final PageViewAuditPort pageViews;
+    private final DocumentAccessGuard access;
     private final Clock clock;
 
     /** A viewing (one DOCUMENT_VIEW_OPENED) groups page events for this long. */
@@ -74,8 +77,9 @@ public class DocumentViewerService {
             List<StorageProvider> storageProviders,
             StreamingCryptoPort crypto,
             AuditEventPort audit,
-            PageViewAuditPort pageViews) {
-        this(documents, volumes, storageProviders, crypto, audit, pageViews, Clock.systemUTC());
+            PageViewAuditPort pageViews,
+            DocumentAccessGuard access) {
+        this(documents, volumes, storageProviders, crypto, audit, pageViews, access, Clock.systemUTC());
     }
 
     DocumentViewerService(
@@ -85,6 +89,7 @@ public class DocumentViewerService {
             StreamingCryptoPort crypto,
             AuditEventPort audit,
             PageViewAuditPort pageViews,
+            DocumentAccessGuard access,
             Clock clock) {
         this.documents = documents;
         this.volumes = volumes;
@@ -92,15 +97,18 @@ public class DocumentViewerService {
         this.crypto = crypto;
         this.audit = audit;
         this.pageViews = pageViews;
+        this.access = java.util.Objects.requireNonNull(access, "access");
         this.clock = clock;
     }
 
     public ViewerMetadata metadata(
             UUID tenantId,
             UUID documentId,
+            Clearance clearance,
             String actorId,
             String correlationId) {
-        Document document = requireAvailableDocument(tenantId, documentId);
+        Document document = requireAvailableDocument(tenantId, documentId, clearance,
+                DocumentAccessGuard.Attempt.OPEN, actorId, correlationId);
         byte[] plaintext = verifiedPlaintext(document);
         try (PDDocument pdf = load(plaintext)) {
             int pageCount = pdf.getNumberOfPages();
@@ -123,11 +131,12 @@ public class DocumentViewerService {
     public PageImage renderPage(
             UUID tenantId,
             UUID documentId,
+            Clearance clearance,
             int pageNumber,
             double scale,
             String actorId,
             String correlationId) {
-        return renderPage(tenantId, documentId, pageNumber, scale, null, actorId, correlationId);
+        return renderPage(tenantId, documentId, clearance, pageNumber, scale, null, actorId, correlationId);
     }
 
     /**
@@ -139,6 +148,7 @@ public class DocumentViewerService {
     public PageImage renderPage(
             UUID tenantId,
             UUID documentId,
+            Clearance clearance,
             int pageNumber,
             double scale,
             UUID viewingId,
@@ -150,7 +160,7 @@ public class DocumentViewerService {
                     "scale must be between " + MIN_SCALE + " and " + MAX_SCALE + ".");
         }
 
-        Document document = requireAvailableDocument(tenantId, documentId);
+        Document document = requireAvailableDocument(tenantId, documentId, clearance, DocumentAccessGuard.Attempt.PAGE, actorId, correlationId);
         byte[] plaintext = verifiedPlaintext(document);
         try (PDDocument pdf = load(plaintext)) {
             if (pageNumber > pdf.getNumberOfPages()) {
@@ -217,13 +227,14 @@ public class DocumentViewerService {
      * caller's tenant, verified plaintext of the current PDF, so redactions show), the document is decrypted once per
      * request, and no audit event is written: previews belong to the DOCUMENT_VIEW_OPENED already recorded.
      */
-    public PagePreviews previews(UUID tenantId, UUID documentId, int first, int count) {
+    public PagePreviews previews(UUID tenantId, UUID documentId, int first, int count,
+                                 Clearance clearance, String actorId, String correlationId) {
         if (first < 1) throw new IllegalArgumentException("first must be at least 1.");
         if (count < 1 || count > MAX_PREVIEW_COUNT) {
             throw new IllegalArgumentException("count must be between 1 and " + MAX_PREVIEW_COUNT + ".");
         }
 
-        Document document = requireAvailableDocument(tenantId, documentId);
+        Document document = requireAvailableDocument(tenantId, documentId, clearance, DocumentAccessGuard.Attempt.PREVIEWS, actorId, correlationId);
         byte[] plaintext = verifiedPlaintext(document);
         try (PDDocument pdf = load(plaintext)) {
             int pageCount = pdf.getNumberOfPages();
@@ -268,6 +279,7 @@ public class DocumentViewerService {
             UUID tenantId,
             UUID documentId,
             String query,
+            Clearance clearance,
             String actorId,
             String correlationId) {
         String normalizedQuery = query == null ? "" : query.trim();
@@ -279,7 +291,7 @@ public class DocumentViewerService {
                     "Viewer text search query exceeds " + MAX_SEARCH_QUERY_LENGTH + " characters.");
         }
 
-        Document document = requireAvailableDocument(tenantId, documentId);
+        Document document = requireAvailableDocument(tenantId, documentId, clearance, DocumentAccessGuard.Attempt.TEXT_SEARCH, actorId, correlationId);
         byte[] plaintext = verifiedPlaintext(document);
         try (PDDocument pdf = load(plaintext)) {
             String needle = normalizedQuery.toLowerCase(Locale.ROOT);
@@ -432,9 +444,12 @@ public class DocumentViewerService {
         }
     }
 
-    private Document requireAvailableDocument(UUID tenantId, UUID documentId) {
+    /** Task 0026: the level check comes first, so a restricted document reveals nothing, not even its status. */
+    private Document requireAvailableDocument(UUID tenantId, UUID documentId, Clearance clearance,
+                                              DocumentAccessGuard.Attempt attempt, String actorId, String correlationId) {
         Document document = documents.findDocumentByIdForTenant(tenantId, documentId)
                 .orElseThrow(() -> new NoSuchElementException("Document not found."));
+        access.requireOpenable(document, clearance, attempt, actorId, correlationId);
         if (document.status() != DocumentStatus.AVAILABLE) {
             throw new IllegalStateException(
                     "Only AVAILABLE documents may be opened in the secure viewer.");
