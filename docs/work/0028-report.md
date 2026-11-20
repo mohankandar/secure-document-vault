@@ -203,7 +203,7 @@ Failures on the way:
 
 ## Commits (hash and message), or "not committed"
 
-One commit on `feature/sensitivity-5`: "feat: level changes and approvals; no titles in admin views; hold names (task 0028)". The hash is in `git log`. Not pushed, not merged.
+`eed4f73` feat: level changes and approvals; no titles in admin views; hold names (task 0028), on `feature/sensitivity-5`. Not pushed, not merged. (This line was added in a second commit.)
 
 ## Not done, and why
 
