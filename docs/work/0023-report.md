@@ -96,7 +96,7 @@ No failures in the final runs.
 
 ## Commits (hash and message), or "not committed"
 
-See `git log` on `feature/small-items-1`: "feat: default sending system, demo seed, next cleanup time (task 0023)". Not pushed or merged.
+`0e0fb95` "feat: default sending system, demo seed, next cleanup time (task 0023)" on `feature/small-items-1`, plus a commit adding this hash to the report. Not pushed or merged.
 
 ## Not done, and why
 
