@@ -168,7 +168,7 @@ Screen tour (`npm run ui:capture`, app running): **20 passed, 4 skipped** (the u
 
 ## Commits (hash and message), or "not committed"
 
-COMMIT_LINE
+`b219e72` feat: enforce sensitivity levels on every document path; locked results (task 0026), on `feature/sensitivity-3`. Not pushed, not merged. (This line was added in a second commit.)
 
 ## Not done, and why
 
