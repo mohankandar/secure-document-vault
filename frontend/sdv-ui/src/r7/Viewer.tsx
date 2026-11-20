@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState, type PointerEvent as RPointerEvent } from 'react'
 import { ArrowLeft, ChevronLeft, ChevronRight, Download, Eraser, Maximize2, Minus, PanelLeftClose, PanelLeftOpen, PanelRight, Plus, Printer, Search, ShieldAlert, Sparkles, X } from 'lucide-react'
 import { useStore } from './store'
-import { BUSINESS_LIMITS, PAGE_TEXT, RETENTION, type Doc, type RecordItem, type Redaction } from './data'
+import { BUSINESS_LIMITS, type Doc, type RecordItem, type Redaction } from './model'
 import { ApiRequestError } from '../api'
 import { failureText } from './CardError'
-import { Badge, Callout, Dialog, Drawer, Tabs, TechDetails, actorWords, auditEventLabel, fmtDate, fmtDateTime, fmtRel, fmtShortDate, humanize } from './ui'
+import { Badge, Callout, Dialog, Drawer, Tabs, TechDetails, actorWords, auditEventLabel, fmtDate, fmtDateTime, fmtRel, fmtShortDate } from './ui'
 import { viewerMetadata, viewerPage, viewerSearch, record as fetchRecord, toRecord, documentActivity, type LiveDocumentActivity, type ViewerSearch, documentTags, documentComments, createDocumentTag, createDocumentComment, type LiveTag, type LiveComment, secureDownload, recordPrintEvent, permanentRedaction, viewerPreviews } from './liveApi'
 
 type Zoom = 'width' | 'page' | number
@@ -31,10 +31,8 @@ const DOCS_FOLDED_KEY = 'sdv.r7.viewer.docsFolded'
 const readFolded = () => { try { return window.localStorage.getItem(DOCS_FOLDED_KEY) === 'true' } catch { return false } }
 const PREVIEW_CHUNK = 12
 
-const SSN = /\d{3}-\d{2}-\d{4}/
-
 export function Viewer({ record, results, docId, onClose, recordTitle, backLabel = 'Results' }: { record: RecordItem; results: RecordItem[]; docId: string; onClose: () => void; /** Same title as the record panel. */ recordTitle?: string; backLabel?: string }) {
-  const { can, setOpenDocId, setSelectedRef, setRecords, addDocActivity, toast, liveSession } = useStore()
+  const { can, setOpenDocId, setSelectedRef, setRecords, toast } = useStore()
   const doc = record.docs.find((d) => d.id === docId) ?? record.docs[0]
   const [pageCount, setPageCount] = useState(0)
   // This opening's ID from the server; page requests send it so each page is recorded once per viewing (task 0007).
@@ -240,7 +238,7 @@ export function Viewer({ record, results, docId, onClose, recordTitle, backLabel
     } catch (e) { toast({ tone: 'bad', title: "The next record didn't open", detail: failureText('Viewer: next record did not open', e) }) }
     finally { setRecordLoading(false) }
   }
-  const switchDoc = (id: string) => { setOpenDocId(id); if(!liveSession)addDocActivity(id, 'DOCUMENT_VIEWED'); setDocsOpen(false) }
+  const switchDoc = (id: string) => { setOpenDocId(id); setDocsOpen(false) }
 
   // Real page previews, loaded in chunks of PREVIEW_CHUNK only for pages whose thumbnail is on screen
   // (so only while the column or the phone drawer is open). On failure the list falls back to plain boxes.
@@ -283,7 +281,7 @@ export function Viewer({ record, results, docId, onClose, recordTitle, backLabel
         <span className="eyebrow">Documents · {record.docs.length}</span>
         {record.docs.map((d) => (
           <button key={d.id} type="button" className="vw-thumb" aria-current={d.id === doc.id} onClick={() => switchDoc(d.id)}>
-            <span className="grow" style={{ minWidth: 0 }}><strong className="truncate">{docKind(d.filename)}</strong>{(() => { const pages = d.id === doc.id && pageTotal ? pageTotal : d.pages; return [pages > 0 ? `${pages} page${pages === 1 ? '' : 's'}` : `received ${fmtShortDate(d.ingestedAt)}`, d.redacted || d.redactions.length > 0 ? 'redacted' : ''].filter(Boolean).join(' · ') })()}</span>
+            <span className="grow" style={{ minWidth: 0 }}><strong className="truncate">{docKind(d.filename)}</strong>{(() => { const pages = d.id === doc.id && pageTotal ? pageTotal : d.pages; return [pages > 0 ? `${pages} page${pages === 1 ? '' : 's'}` : `received ${fmtShortDate(d.ingestedAt)}`, d.redacted ? 'redacted' : ''].filter(Boolean).join(' · ') })()}</span>
           </button>
         ))}
       </div>
@@ -486,20 +484,20 @@ function RedactionReview({ doc, marks, onCancel, onApply, busy, failure }: { doc
 }
 
 function DocInfo({ doc, tab, setTab, embedded }: { doc: Doc; tab: InfoTab; setTab: (t: InfoTab) => void; embedded?: boolean }) {
-  const { can, role, updateDoc, addDocActivity, toast, liveSession } = useStore()
+  const { can, toast } = useStore()
   const [comment, setComment] = useState('')
   const [tag, setTag] = useState('')
   const [liveEvents,setLiveEvents] = useState<LiveDocumentActivity[]>([])
   const [includeViews,setIncludeViews] = useState(false)
   const [activityError,setActivityError] = useState('')
-  useEffect(()=>{if(!liveSession || tab!=='activity')return;let active=true;setActivityError('');documentActivity(doc.id,includeViews).then(rows=>{if(active)setLiveEvents(rows)}).catch(e=>{if(active){setLiveEvents([]);setActivityError(failureText('Viewer: activity did not load', e))}});return()=>{active=false}},[liveSession,tab,doc.id,includeViews])
+  useEffect(()=>{if(tab!=='activity')return;let active=true;setActivityError('');documentActivity(doc.id,includeViews).then(rows=>{if(active)setLiveEvents(rows)}).catch(e=>{if(active){setLiveEvents([]);setActivityError(failureText('Viewer: activity did not load', e))}});return()=>{active=false}},[tab,doc.id,includeViews])
   const [liveTags,setLiveTags] = useState<LiveTag[]>([])
   const [liveComments,setLiveComments] = useState<LiveComment[]>([])
   const [metadataLoading,setMetadataLoading] = useState(false)
   const [metadataError,setMetadataError] = useState('')
   const [saving,setSaving] = useState(false)
   useEffect(()=>{
-    if(!liveSession || (tab!=='comments' && tab!=='tags')) return
+    if(tab!=='comments' && tab!=='tags') return
     let active=true
     setMetadataLoading(true);setMetadataError('')
     const task=tab==='comments'?documentComments(doc.id):documentTags(doc.id)
@@ -507,14 +505,13 @@ function DocInfo({ doc, tab, setTab, embedded }: { doc: Doc; tab: InfoTab; setTa
       .catch(e=>{if(active)setMetadataError(failureText('Viewer: comments or tags did not load', e))})
       .finally(()=>{if(active)setMetadataLoading(false)})
     return()=>{active=false}
-  },[liveSession,tab,doc.id])
+  },[tab,doc.id])
   // Load comments when a document opens so the Comments tab shows its count (reading comments is not audited).
   useEffect(()=>{
-    if(!liveSession)return
     let active=true
     documentComments(doc.id).then(items=>{if(active)setLiveComments(items)}).catch(()=>{})
     return()=>{active=false}
-  },[liveSession,doc.id])
+  },[doc.id])
   const submitLiveComment=async()=>{
     const value=comment.trim()
     if(!value || saving)return
@@ -538,7 +535,6 @@ function DocInfo({ doc, tab, setTab, embedded }: { doc: Doc; tab: InfoTab; setTa
     }catch(e){setMetadataError(errorText(e))}
     finally{setSaving(false)}
   }
-  const suggestsSsn = !liveSession && (PAGE_TEXT[doc.kind] ?? []).some((t) => SSN.test(t)) && doc.redactions.length === 0
   const body = (
     <>
       {tab === 'ask' && showDevelopmentUtilities && (
@@ -549,16 +545,14 @@ function DocInfo({ doc, tab, setTab, embedded }: { doc: Doc; tab: InfoTab; setTa
       )}
       {tab === 'details' && (
         <>
-          {suggestsSsn && can('PERMANENT_REDACTION') && <Callout tone="warn" title="Possible sensitive identifier on page 1">Sample content includes a full SSN. Stewards can correct this with permanent redaction.</Callout>}
           <dl className="v-kv">
             <div><dt>File name</dt><dd className="mono">{doc.filename}</dd></div>
             <div><dt>Pages</dt><dd>{doc.pages || 'Not available'}</dd></div>
             <div><dt>Received</dt><dd>{fmtDateTime(doc.ingestedAt)}</dd></div>
             {/* Keeping documents' own words: no end date means the rule keeps it forever. */}
-            <div><dt>Keeping</dt><dd>{doc.expiresAt ? `Kept until ${fmtDate(doc.expiresAt)}` : 'Kept forever'}{!liveSession && <span className="faint"> · policy v{RETENTION.active.version} at ingestion</span>}</dd></div>
+            <div><dt>Keeping</dt><dd>{doc.expiresAt ? `Kept until ${fmtDate(doc.expiresAt)}` : 'Kept forever'}</dd></div>
             <div><dt>Protection</dt><dd>Encrypted at rest · served page-by-page to authorized sessions</dd></div>
             {doc.redacted && <div><dt>Corrections</dt><dd>Redacted (permanent)</dd></div>}
-            {!liveSession && doc.redactions.length > 0 && <div><dt>Corrections</dt><dd><Badge tone="warn">{doc.redactions.length} simulated redaction{doc.redactions.length === 1 ? '' : 's'}</Badge></dd></div>}
           </dl>
           <TechDetails flat hint="document and submission IDs">
             <dl className="v-kv">
@@ -570,67 +564,40 @@ function DocInfo({ doc, tab, setTab, embedded }: { doc: Doc; tab: InfoTab; setTa
       )}
       {tab === 'comments' && (
         <>
-          {liveSession && metadataLoading && <p className="faint">Loading comments…</p>}
-          {liveSession && metadataError && <Callout tone="warn" title={metadataError.startsWith(REFUSED.title) ? REFUSED.title : 'Comments unavailable'}>{metadataError.startsWith(REFUSED.title) ? REFUSED.detail : metadataError}</Callout>}
-          {liveSession && !metadataLoading && !metadataError && liveComments.length === 0 && <p className="faint">No comments yet.</p>}
-          {liveSession && liveComments.map(c=><article key={c.commentId} className="v-comment"><header><strong>{c.createdBy}</strong><span>{fmtRel(c.createdAt)}</span></header><p>{c.comment}</p></article>)}
-          {liveSession && can('ADD_DOCUMENT_COMMENT') && <form className="stack" style={{gap:8}} onSubmit={e=>{e.preventDefault();void submitLiveComment()}}>
+          {metadataLoading && <p className="faint">Loading comments…</p>}
+          {metadataError && <Callout tone="warn" title={metadataError.startsWith(REFUSED.title) ? REFUSED.title : 'Comments unavailable'}>{metadataError.startsWith(REFUSED.title) ? REFUSED.detail : metadataError}</Callout>}
+          {!metadataLoading && !metadataError && liveComments.length === 0 && <p className="faint">No comments yet.</p>}
+          {liveComments.map(c=><article key={c.commentId} className="v-comment"><header><strong>{c.createdBy}</strong><span>{fmtRel(c.createdAt)}</span></header><p>{c.comment}</p></article>)}
+          {can('ADD_DOCUMENT_COMMENT') && <form className="stack" style={{gap:8}} onSubmit={e=>{e.preventDefault();void submitLiveComment()}}>
             <textarea className="v-textarea" aria-label="New comment" value={comment} maxLength={BUSINESS_LIMITS.maxCommentLength} onChange={e=>setComment(e.target.value)} placeholder="Add a comment for other authorized users"/>
             <button type="submit" className="v-btn sm" style={{alignSelf:'flex-end'}} disabled={!comment.trim() || saving}>Add comment</button>
           </form>}
-          {!liveSession && doc.comments.map((c) => <article key={c.id} className="v-comment"><header><strong>{c.by}</strong><span>{fmtRel(c.at)}</span></header><p>{c.text}</p></article>)}
-          {!liveSession && can('ADD_DOCUMENT_COMMENT') ? (
-            <form className="stack" style={{ gap: 8 }} onSubmit={(e) => {
-              e.preventDefault(); if (!comment.trim()) return
-              updateDoc(doc.id, (d) => ({ ...d, comments: [...d.comments, { id: `sim-c${Date.now()}`, text: comment.trim(), by: role.person, at: new Date().toISOString() }] }))
-              addDocActivity(doc.id, 'DOCUMENT_COMMENT_ADDED'); setComment(''); toast({ title: 'Comment added (simulated)', detail: 'Visible in this tab only.' })
-            }}>
-              <textarea className="v-textarea" aria-label="New comment" value={comment} maxLength={BUSINESS_LIMITS.maxCommentLength} onChange={(e) => setComment(e.target.value)} placeholder="Add a comment for other authorized users" />
-              <button type="submit" className="v-btn sm" style={{ alignSelf: 'flex-end' }} disabled={!comment.trim()}>Add comment</button>
-            </form>
-          ) : null}
         </>
       )}
       {tab === 'tags' && (
         <>
-          {liveSession && metadataLoading && <p className="faint">Loading tags…</p>}
-          {liveSession && metadataError && <Callout tone="warn" title={metadataError.startsWith(REFUSED.title) ? REFUSED.title : 'Tags unavailable'}>{metadataError.startsWith(REFUSED.title) ? REFUSED.detail : metadataError}</Callout>}
-          <div className="v-tagrow">{liveSession ? (liveTags.length===0 ? <span className="faint">No tags yet.</span> : liveTags.map(t=><Badge key={t.tagId} tone="outline">{t.tag}</Badge>)) : doc.tags.length === 0 ? <span className="faint">No tags yet.</span> : doc.tags.map((t) => <Badge key={t.id} tone="outline">{t.tag}</Badge>)}</div>
-          {liveSession && can('ADD_DOCUMENT_TAG') && <form className="row" onSubmit={e=>{e.preventDefault();void submitLiveTag()}}>
+          {metadataLoading && <p className="faint">Loading tags…</p>}
+          {metadataError && <Callout tone="warn" title={metadataError.startsWith(REFUSED.title) ? REFUSED.title : 'Tags unavailable'}>{metadataError.startsWith(REFUSED.title) ? REFUSED.detail : metadataError}</Callout>}
+          <div className="v-tagrow">{liveTags.length===0 ? <span className="faint">No tags yet.</span> : liveTags.map(t=><Badge key={t.tagId} tone="outline">{t.tag}</Badge>)}</div>
+          {can('ADD_DOCUMENT_TAG') && <form className="row" onSubmit={e=>{e.preventDefault();void submitLiveTag()}}>
             <input className="v-input grow" aria-label="New tag" value={tag} maxLength={BUSINESS_LIMITS.maxTagLength} onChange={e=>setTag(e.target.value)} placeholder="Add tag"/>
             <button type="submit" className="v-btn" disabled={!tag.trim() || saving}>Add</button>
           </form>}
-          {!liveSession && can('ADD_DOCUMENT_TAG') ? (
-            <form className="row" onSubmit={(e) => {
-              e.preventDefault(); const v = tag.trim(); if (!v) return
-              if (doc.tags.some((t) => t.tag.toLowerCase() === v.toLowerCase())) { toast({ tone: 'bad', title: 'Tag already applied' }); return }
-              updateDoc(doc.id, (d) => ({ ...d, tags: [...d.tags, { id: `sim-t${Date.now()}`, tag: v, by: role.person, at: new Date().toISOString() }] }))
-              addDocActivity(doc.id, 'DOCUMENT_TAG_ADDED'); setTag('')
-            }}>
-              <input className="v-input grow" aria-label="New tag" value={tag} maxLength={BUSINESS_LIMITS.maxTagLength} onChange={(e) => setTag(e.target.value)} placeholder="Add tag" />
-              <button type="submit" className="v-btn" disabled={!tag.trim()}>Add</button>
-            </form>
-          ) : null}
         </>
       )}
       {tab === 'activity' && (<>
-        {liveSession && <label className="v-check"><input type="checkbox" checked={includeViews} onChange={e=>setIncludeViews(e.target.checked)}/>Include document view activity</label>}
+        <label className="v-check"><input type="checkbox" checked={includeViews} onChange={e=>setIncludeViews(e.target.checked)}/>Include document view activity</label>
         {activityError && <Callout tone="warn" title="Activity unavailable">{activityError}</Callout>}
-        {liveSession && !activityError && liveEvents.length===0 && <p className="faint">No matching activity.</p>}
+        {!activityError && liveEvents.length===0 && <p className="faint">No matching activity.</p>}
         <ol className="v-timeline">
-          {liveSession && liveEvents.map(a=><li key={a.auditEventId}><span className={`pt ${a.outcome==='SUCCESS'?'ok':'bad'}`} aria-hidden/><div className="stack" style={{gap:0}}><strong>{auditEventLabel(a.action,a.safeDetailsJson,doc.filename,true)}</strong><span>{actorWords(a.actorType)} · {fmtDateTime(a.occurredAt)}</span></div></li>)}
-          {!liveSession && doc.activity.map((a) => (
-            <li key={a.id}><span className={`pt ${a.simulated ? 'sim' : a.outcome === 'SUCCESS' ? 'ok' : 'bad'}`} aria-hidden />
-              <div className="stack" style={{ gap: 0 }}><strong>{humanize(a.action.replace('DOCUMENT_', ''))}</strong><span>{a.actor} · {fmtDateTime(a.at)}{a.simulated ? ' · simulated' : ''}</span></div>
-            </li>
-          ))}
+          {liveEvents.map(a=><li key={a.auditEventId}><span className={`pt ${a.outcome==='SUCCESS'?'ok':'bad'}`} aria-hidden/><div className="stack" style={{gap:0}}><strong>{auditEventLabel(a.action,a.safeDetailsJson,doc.filename,true)}</strong><span>{actorWords(a.actorType)} · {fmtDateTime(a.occurredAt)}</span></div></li>)}
         </ol>
       </>)}
     </>
   )
   return (
     <>
-      <Tabs label="Document information" value={tab} onChange={(t) => setTab(t as InfoTab)} tabs={[...(showDevelopmentUtilities ? [{ id: 'ask', label: 'Ask' }] : []), { id: 'details', label: 'Details' }, { id: 'comments', label: `Comments${(liveSession?liveComments.length:doc.comments.length) ? ` ${liveSession?liveComments.length:doc.comments.length}` : ''}` }, { id: 'tags', label: 'Tags' }, { id: 'activity', label: 'Activity' }]} />
+      <Tabs label="Document information" value={tab} onChange={(t) => setTab(t as InfoTab)} tabs={[...(showDevelopmentUtilities ? [{ id: 'ask', label: 'Ask' }] : []), { id: 'details', label: 'Details' }, { id: 'comments', label: `Comments${liveComments.length ? ` ${liveComments.length}` : ''}` }, { id: 'tags', label: 'Tags' }, { id: 'activity', label: 'Activity' }]} />
       {embedded ? <div className="stack-lg">{body}</div> : <div className="vw-panel-body">{body}</div>}
     </>
   )

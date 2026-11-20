@@ -88,8 +88,8 @@ export function Panel({ title, description, meta, actions, children, flush, id }
   )
 }
 
-export function Callout({ tone = '', title, children }: { tone?: 'warn' | 'bad' | 'ok' | 'sim' | ''; title: ReactNode; children?: ReactNode }) {
-  const IconC = tone === 'bad' ? XCircle : tone === 'warn' ? AlertTriangle : tone === 'ok' ? CheckCircle2 : tone === 'sim' ? FlaskConical : Info
+export function Callout({ tone = '', title, children }: { tone?: 'warn' | 'bad' | 'ok' | ''; title: ReactNode; children?: ReactNode }) {
+  const IconC = tone === 'bad' ? XCircle : tone === 'warn' ? AlertTriangle : tone === 'ok' ? CheckCircle2 : Info
   return (
     <div className={`v-callout ${tone}`} role={tone === 'bad' ? 'alert' : undefined}>
       <IconC size={18} aria-hidden />
@@ -117,22 +117,12 @@ export function Skeleton({ rows = 4 }: { rows?: number }) {
   )
 }
 
-export function ErrorState({ what }: { what: string }) {
-  const { setScenario } = useStore()
+export function ErrorState({ what, onRetry }: { what: string; onRetry?: () => void }) {
   return (
-    <Empty title={`Could not load ${what}`} icon={<XCircle size={20} />} action={<button type="button" className="v-btn sm" onClick={() => setScenario('live')}><RefreshCw size={14} aria-hidden />Retry</button>}>
+    <Empty title={`Could not load ${what}`} icon={<XCircle size={20} />} action={<button type="button" className="v-btn sm" onClick={onRetry}><RefreshCw size={14} aria-hidden />Retry</button>}>
       Vero couldn&apos;t load this just now. Nothing was changed.
     </Empty>
   )
-}
-
-/** Renders scenario-driven loading / empty / error states around live content. */
-export function Scenario({ what, children, empty, rows }: { what: string; children: ReactNode; empty?: ReactNode; rows?: number }) {
-  const { scenario } = useStore()
-  if (scenario === 'loading') return <Skeleton rows={rows} />
-  if (scenario === 'error') return <ErrorState what={what} />
-  if (scenario === 'empty') return <>{empty ?? <Empty title={`No ${what} yet`} />}</>
-  return <>{children}</>
 }
 
 export function Switch({ checked, onChange, label, disabled }: { checked: boolean; onChange: (v: boolean) => void; label: string; disabled?: boolean }) {

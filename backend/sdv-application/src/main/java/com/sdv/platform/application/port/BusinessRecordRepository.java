@@ -8,8 +8,26 @@ import java.util.List;
 import java.util.UUID;
 
 public interface BusinessRecordRepository {
-    /** incompleteOnly: only submissions that are not COMPLETE (records with missing documents). */
+    /**
+     * incompleteOnly: only submissions that are not COMPLETE (records with missing documents).
+     * anywhere (task 0022): when not null, a submission must also match at least one of its fields, and the best
+     * match comes first (exact identifier, exact other field, starts with, contains; then newest first).
+     */
     List<Submission> findMatchingSubmissions(
+            UUID tenantId,
+            UUID sourceId,
+            List<SearchCriterion> criteria,
+            AnywhereCriterion anywhere,
+            Instant createdFrom,
+            Instant createdTo,
+            Instant updatedFrom,
+            Instant updatedTo,
+            boolean incompleteOnly,
+            int offset,
+            int limit);
+
+    /** incompleteOnly: only submissions that are not COMPLETE (records with missing documents). */
+    default List<Submission> findMatchingSubmissions(
             UUID tenantId,
             UUID sourceId,
             List<SearchCriterion> criteria,
@@ -19,7 +37,10 @@ public interface BusinessRecordRepository {
             Instant updatedTo,
             boolean incompleteOnly,
             int offset,
-            int limit);
+            int limit) {
+        return findMatchingSubmissions(tenantId, sourceId, criteria, null, createdFrom, createdTo, updatedFrom, updatedTo,
+                incompleteOnly, offset, limit);
+    }
 
     default List<Submission> findMatchingSubmissions(
             UUID tenantId,
@@ -75,12 +96,52 @@ public interface BusinessRecordRepository {
             UUID sourceId,
             List<UUID> submissionIds);
 
+    /**
+     * ignoreCase: an Exact match compares without regard to capitals (exact text fields that are neither an
+     * identifier nor digits-only; task 0022 follow-up). Starts with and Contains always ignore case.
+     */
     record SearchCriterion(
             String fieldKey,
             MetadataSearchMode searchMode,
-            List<String> normalizedVariants) {
+            List<String> normalizedVariants,
+            boolean ignoreCase) {
         public SearchCriterion {
             normalizedVariants = List.copyOf(normalizedVariants);
+        }
+
+        /** Exact keeps capitals. */
+        public SearchCriterion(String fieldKey, MetadataSearchMode searchMode, List<String> normalizedVariants) {
+            this(fieldKey, searchMode, normalizedVariants, false);
+        }
+    }
+
+    /**
+     * One field the "anywhere" text is tried in, with that field's own match and normalized variants.
+     * businessIdentifier: an exact match here ranks first. ignoreCase: as for {@link SearchCriterion}.
+     */
+    record AnywhereField(
+            String fieldKey,
+            MetadataSearchMode searchMode,
+            List<String> normalizedVariants,
+            boolean businessIdentifier,
+            boolean ignoreCase) {
+        public AnywhereField {
+            normalizedVariants = List.copyOf(normalizedVariants);
+            if (normalizedVariants.isEmpty()) throw new IllegalArgumentException("An anywhere field needs a value.");
+        }
+
+        /** Exact keeps capitals. */
+        public AnywhereField(String fieldKey, MetadataSearchMode searchMode, List<String> normalizedVariants,
+                boolean businessIdentifier) {
+            this(fieldKey, searchMode, normalizedVariants, businessIdentifier, false);
+        }
+    }
+
+    /** The "anywhere" text as the fields it is tried in; a submission matches when any one of them matches. */
+    record AnywhereCriterion(List<AnywhereField> fields) {
+        public AnywhereCriterion {
+            fields = List.copyOf(fields);
+            if (fields.isEmpty()) throw new IllegalArgumentException("An anywhere search needs at least one field.");
         }
     }
 

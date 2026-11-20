@@ -122,8 +122,6 @@ html.r7-html, html.r7-html body { margin: 0; background: var(--bg); color: var(-
 /* ---------- Shell ---------- */
 /* No left rail: the top bar (topbar/topbar.css) carries the areas; phones use the bottom bar. */
 .v-app { min-height: 100dvh; display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: var(--top) 1fr; }
-.v-sim-chip { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: 999px; font-size: 12px; font-weight: 500; color: var(--attention); background: var(--attention-soft); border: 1px solid color-mix(in oklab, var(--attention) 30%, transparent); white-space: nowrap; }
-.v-sim-chip .long { display: none; }
 
 .v-main { min-width: 0; padding-bottom: calc(var(--bottom) + env(safe-area-inset-bottom)); }
 .v-bottom { position: fixed; z-index: 30; left: 0; right: 0; bottom: 0; display: flex; padding: 6px 8px calc(6px + env(safe-area-inset-bottom)); background: color-mix(in oklab, var(--surface) 94%, transparent); backdrop-filter: blur(10px); border-top: 1px solid var(--line); }
@@ -134,8 +132,6 @@ html.r7-html, html.r7-html body { margin: 0; background: var(--bg); color: var(-
 @media (min-width: 768px) {
   .v-bottom { display: none; }
   .v-main { padding-bottom: 0; }
-  .v-sim-chip .long { display: inline; }
-  .v-sim-chip .short { display: none; }
 }
 
 /* ---------- Page ---------- */
@@ -263,8 +259,6 @@ html.r7-html, html.r7-html body { margin: 0; background: var(--bg); color: var(-
 .v-callout.bad svg { color: var(--danger); }
 .v-callout.ok { background: var(--primary-soft); border-color: color-mix(in oklab, var(--primary) 30%, transparent); }
 .v-callout.ok svg { color: var(--primary); }
-.v-callout.sim { background: transparent; border-style: dashed; border-color: color-mix(in oklab, var(--attention) 55%, transparent); }
-.v-callout.sim svg { color: var(--attention); }
 .v-callout strong { font-weight: 600; }
 .v-callout p { color: var(--ink-2); font-size: var(--fs-small); margin-top: 0; text-wrap: pretty; }
 .v-empty { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 6px; padding: 40px 20px; color: var(--ink-2); }
@@ -338,7 +332,6 @@ html.r7-html, html.r7-html body { margin: 0; background: var(--bg); color: var(-
 .v-timeline .pt { width: 11px; height: 11px; margin-top: 5px; border-radius: 50%; border: 2px solid var(--ink-3); background: var(--surface); flex: none; }
 .v-timeline .pt.ok { border-color: var(--primary); }
 .v-timeline .pt.bad { border-color: var(--danger); }
-.v-timeline .pt.sim { border-color: var(--attention); border-style: dashed; }
 .v-timeline strong { font-size: 14px; font-weight: 500; }
 .v-timeline span { font-size: 13px; color: var(--ink-3); }
 
@@ -831,4 +824,33 @@ small.bad { color: var(--danger); }
   .int-field > .row.between .v-btn.quiet svg { width: 16px; height: 16px; }
   .int-field > .row.between small { display: none; }
   .int-field-head { grid-template-columns: 1.3fr 1fr 1.1fr 92px; }
+}
+
+/* ---------- Quick search (task 0022): the list under the search box, marked text, "Matched …" ---------- */
+.qs-anchor { position: relative; }
+.qs-list { position: absolute; z-index: 45; left: -1.5px; right: -1.5px; top: calc(100% + 6px); overflow: hidden; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-2); color: var(--ink); }
+.qs-anchor > .qs-list { left: 0; right: 0; }
+.qs-list ul { margin: 0; padding: 0; list-style: none; max-height: min(420px, 60dvh); overflow-y: auto; }
+.qs-item { display: flex; align-items: center; gap: 12px; min-height: 41px; padding: 8px 16px 8px 46px; border-bottom: 1px solid var(--line-soft); font-size: var(--fs-body); cursor: pointer; }
+.qs-item:last-child { border-bottom: 0; }
+.qs-item[aria-selected='true'] { background: var(--primary-soft); }
+.qs-everywhere { padding-left: 16px; min-height: 44px; }
+.qs-everywhere .qs-icon { flex: none; width: 18px; margin-right: 0; color: var(--ink-2); }
+.qs-everywhere strong { font-weight: 600; }
+.qs-head { padding: 10px 16px 6px; font-size: 11px; font-weight: 600; letter-spacing: .6px; text-transform: uppercase; color: var(--ink-3); border-bottom: 0; }
+.qs-word { color: var(--ink-3); }
+.qs-enter { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs-meta); color: var(--ink-3); }
+.qs-recent .qs-num { flex: none; font-size: var(--fs-body); }
+.qs-recent .qs-title { min-width: 0; }
+.qs-recent .qs-when { margin-left: auto; flex: none; font-size: var(--fs-meta); }
+.qs-recent[aria-selected='true'] .qs-when { display: none; }
+.r7 mark.qs-mark { padding: 0 2px; border-radius: 3px; background: #fdeeb5; color: inherit; }
+:root[data-theme='dark'] .r7 mark.qs-mark { background: color-mix(in oklab, #e0b84a 38%, transparent); }
+.ws-matched { display: block; margin-top: 2px; font-size: var(--fs-meta); font-weight: 400; color: var(--ink-3); }
+.ws-matched b { font-weight: 600; color: var(--ink-2); }
+@media (max-width: 767px) {
+  /* Phones: a full-width list, rows tall enough to tap. */
+  .qs-item { min-height: 48px; padding-left: 16px; }
+  .qs-enter { display: none; }
+  .qs-recent { flex-wrap: wrap; row-gap: 2px; }
 }

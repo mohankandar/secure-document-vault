@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react'
 import { GripVertical } from 'lucide-react'
 import { useStore } from './store'
-import { BUSINESS_LIMITS, type SearchMode } from './data'
+import { BUSINESS_LIMITS, type SearchMode } from './model'
 import { FailureNotice, actionFailed, loadFailed, type Failure } from './CardError'
 import { Callout, Drawer, Switch, TechDetails } from './ui'
 import {

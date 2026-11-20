@@ -25,11 +25,16 @@ public class JdbcBusinessRecordRepository implements BusinessRecordRepository {
         this.jdbc = jdbc;
     }
 
+    /** Rank of an anywhere match (task 0022): lower is better. Exact on an identifier is 0, exact elsewhere 1. */
+    static final int RANK_STARTS_WITH = 2;
+    static final int RANK_CONTAINS = 3;
+
     @Override
     public List<Submission> findMatchingSubmissions(
             UUID tenantId,
             UUID sourceId,
             List<SearchCriterion> criteria,
+            AnywhereCriterion anywhere,
             Instant createdFrom,
             Instant createdTo,
             Instant updatedFrom,
@@ -37,13 +42,16 @@ public class JdbcBusinessRecordRepository implements BusinessRecordRepository {
             boolean incompleteOnly,
             int offset,
             int limit) {
-        StringBuilder sql = new StringBuilder(submissionSelect())
-                .append(" where s.tenant_id=:tenantId and s.source_id=:sourceId");
+        StringBuilder sql = new StringBuilder(submissionSelect());
         MapSqlParameterSource params = new MapSqlParameterSource()
                 .addValue("tenantId", tenantId)
                 .addValue("sourceId", sourceId)
                 .addValue("offset", offset)
                 .addValue("limit", limit);
+        if (anywhere != null) appendAnywhereRank(sql, params, anywhere);
+        sql.append(" where s.tenant_id=:tenantId and s.source_id=:sourceId");
+        // A submission none of whose fields matches gets no rank and is left out.
+        if (anywhere != null) sql.append(" and m.match_rank is not null");
 
         if (createdFrom != null) { sql.append(" and s.created_at>=:createdFrom"); params.addValue("createdFrom", Timestamp.from(createdFrom)); }
         if (createdTo != null) { sql.append(" and s.created_at<=:createdTo"); params.addValue("createdTo", Timestamp.from(createdTo)); }
@@ -72,10 +80,13 @@ public class JdbcBusinessRecordRepository implements BusinessRecordRepository {
                 if (v > 0) sql.append(" or ");
                 String valueParam = prefix + "Value" + v;
                 params.addValue(valueParam, variants.get(v));
-                // Exact keeps the field's configured normalization. Starts with and Contains ignore case:
-                // "pat" finds "Patel". The row is already found through the unique
-                // (tenant_id, submission_id, field_key) index, so lower() does not change index use.
-                if (criterion.searchMode() == MetadataSearchMode.EXACT) {
+                // Exact keeps the field's configured normalization, and ignores case on exact text fields that are
+                // neither an identifier nor digits-only. Starts with and Contains ignore case: "pat" finds "Patel".
+                // The row is already found through the unique (tenant_id, submission_id, field_key) index, so
+                // lower() does not change index use.
+                if (criterion.searchMode() == MetadataSearchMode.EXACT && criterion.ignoreCase()) {
+                    sql.append("lower(v.normalized_value)=lower(:").append(valueParam).append(")");
+                } else if (criterion.searchMode() == MetadataSearchMode.EXACT) {
                     sql.append("v.normalized_value=:").append(valueParam);
                 } else if (criterion.searchMode() == MetadataSearchMode.PREFIX) {
                     sql.append("position(lower(:").append(valueParam).append(") in lower(v.normalized_value))=1");
@@ -86,8 +97,68 @@ public class JdbcBusinessRecordRepository implements BusinessRecordRepository {
             sql.append("))");
         }
 
-        sql.append(" order by s.created_at desc, s.submission_id offset :offset limit :limit");
+        // Best match first when the text is searched anywhere; otherwise (and for ties) newest first.
+        sql.append(anywhere != null ? " order by m.match_rank, " : " order by ")
+                .append("s.created_at desc, s.submission_id offset :offset limit :limit");
         return jdbc.query(sql.toString(), params, submissionMapper());
+    }
+
+    /**
+     * The submission's best anywhere match, as m.match_rank (null when no field matches). Each field is tried with
+     * its own match: Exact compares the normalized value as configured (ignoring case when the field says so);
+     * Starts with and Contains ignore case, as the field search does. Only this submission's own rows in its own tenant and source are read.
+     */
+    private static void appendAnywhereRank(StringBuilder sql, MapSqlParameterSource params, AnywhereCriterion anywhere) {
+        List<String> keys = new ArrayList<>();
+        sql.append("""
+                 cross join lateral (
+                     select min(case
+                """);
+        for (int i = 0; i < anywhere.fields().size(); i++) {
+            AnywhereField field = anywhere.fields().get(i);
+            String prefix = "a" + i;
+            params.addValue(prefix + "Field", field.fieldKey());
+            keys.add(field.fieldKey());
+            List<String> equal = new ArrayList<>(), starts = new ArrayList<>(), contains = new ArrayList<>();
+            for (int v = 0; v < field.normalizedVariants().size(); v++) {
+                String value = ":" + prefix + "Value" + v;
+                params.addValue(prefix + "Value" + v, field.normalizedVariants().get(v));
+                if (field.searchMode() == MetadataSearchMode.EXACT && !field.ignoreCase()) {
+                    equal.add("v.normalized_value=" + value);
+                } else if (field.searchMode() == MetadataSearchMode.EXACT) {
+                    equal.add("lower(v.normalized_value)=lower(" + value + ")");
+                } else {
+                    equal.add("lower(v.normalized_value)=lower(" + value + ")");
+                    starts.add("position(lower(" + value + ") in lower(v.normalized_value))=1");
+                    contains.add("position(lower(" + value + ") in lower(v.normalized_value))>0");
+                }
+            }
+            int exactRank = field.businessIdentifier() ? 0 : 1;
+            String allowed = switch (field.searchMode()) {
+                case EXACT -> String.join(" or ", equal);
+                case PREFIX -> String.join(" or ", starts);
+                case PARTIAL -> String.join(" or ", contains);
+            };
+            sql.append(" when v.field_key=:").append(prefix).append("Field and (").append(allowed).append(") then ");
+            if (field.searchMode() == MetadataSearchMode.EXACT) {
+                sql.append(exactRank);
+            } else {
+                sql.append("case when ").append(String.join(" or ", equal)).append(" then ").append(exactRank)
+                        .append(" when ").append(String.join(" or ", starts)).append(" then ").append(RANK_STARTS_WITH)
+                        .append(" else ").append(RANK_CONTAINS).append(" end");
+            }
+            sql.append('\n');
+        }
+        params.addValue("anywhereFields", keys);
+        sql.append("""
+                     end) as match_rank
+                       from business_metadata_values v
+                      where v.tenant_id=s.tenant_id
+                        and v.source_id=s.source_id
+                        and v.submission_id=s.submission_id
+                        and v.field_key in (:anywhereFields)
+                 ) m
+                """);
     }
 
     @Override

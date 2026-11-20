@@ -65,12 +65,18 @@ public final class BusinessExperienceView {
             boolean incomplete,
             /* Over the record's incomplete submissions (0 when complete), counted as in record detail. */
             int incompleteExpectedCount,
-            int incompleteReceivedCount) {
+            int incompleteReceivedCount,
+            /* An "anywhere" search only (task 0022): every field of this record that matched, best match first. */
+            List<MatchedField> matchedFields) {
         public RecordSummary {
             identifiers = List.copyOf(identifiers);
             metadataPreview = List.copyOf(metadataPreview);
+            matchedFields = matchedFields == null ? List.of() : List.copyOf(matchedFields);
         }
     }
+
+    /** A field that matched an "anywhere" search: its label and the record's own value (task 0022). */
+    public record MatchedField(String fieldKey, String displayLabel, String value) { }
 
     /** A record the person opened themselves, with when they last opened one of its documents. */
     public record RecentRecord(UUID sourceId, RecordSummary record, Instant lastOpenedAt) { }

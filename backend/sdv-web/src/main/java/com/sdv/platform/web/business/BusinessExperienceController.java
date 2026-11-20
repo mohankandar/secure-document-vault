@@ -43,6 +43,7 @@ public class BusinessExperienceController {
                 principal.tenantId(),
                 request.sourceId(),
                 request.criteria() == null ? Map.of() : new LinkedHashMap<>(request.criteria()),
+                request.anywhere(),
                 request.dateFrom(),
                 request.dateTo(),
                 request.lastUpdatedFrom(),
@@ -84,6 +85,8 @@ public class BusinessExperienceController {
     public record SearchRequest(
             UUID sourceId,
             Map<String, String> criteria,
+            /** Task 0022: text searched in every searchable field (2 to 100 characters after trimming). */
+            String anywhere,
             Instant dateFrom,
             Instant dateTo,
             Instant lastUpdatedFrom,

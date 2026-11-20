@@ -16,7 +16,7 @@ const SWATCHES = [
 export function DesignSystem() {
   const { route } = useStore()
   return (
-    <AreaFrame crumbs={['Prototype', 'Design system']} title={`${PRODUCT_NAME} design system`} lede="Custody ledger: calm, dense surfaces where identifiers, state and accountability are always legible.">
+    <AreaFrame crumbs={['Development only', 'Design system']} title={`${PRODUCT_NAME} design system`} lede="Custody ledger: calm, dense surfaces where identifiers, state and accountability are always legible.">
       {route.tab === 'foundations' && <Foundations />}
       {route.tab === 'components' && <Components />}
       {route.tab === 'states' && <States />}
@@ -89,7 +89,6 @@ function Components() {
           <Callout tone="ok" title="Success">Operation completed.</Callout>
           <Callout tone="warn" title="Warning">Needs attention soon.</Callout>
           <Callout tone="bad" title="Destructive">Permanent and irreversible.</Callout>
-          <Callout tone="sim" title="Simulated">Prototype-only behavior; nothing reaches a backend.</Callout>
         </div>
       </Panel>
     </>
@@ -99,7 +98,7 @@ function Components() {
 function States() {
   return (
     <>
-      <Callout title="Every data panel supports these states">Switch the data scenario from Session to see them in place on any screen.</Callout>
+      <Callout title="Every data panel supports these states">Each screen shows these while it loads, when it has nothing to show, and when it fails.</Callout>
       <div className="v-grid-2">
         <Panel title="Loading"><Skeleton rows={5} /></Panel>
         <Panel title="Empty"><Empty title="No matching records">Exact fields must match in full. Try fewer criteria.</Empty></Panel>

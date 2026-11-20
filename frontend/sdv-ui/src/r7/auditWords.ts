@@ -43,7 +43,8 @@ export const AUDIT_SENTENCES: Record<string, Sentence> = {
   DOCUMENT_RETENTION_DELETED: (_w, f) => `Vero deleted ${f} for good, as the keeping rule says`,
   DOCUMENT_RETENTION_DELETE_FAILED: (_w, f) => `Vero couldn't delete ${f} when its time was up`,
   BUSINESS_RECORD_OPENED: (w) => `${w} opened a record`,
-  BUSINESS_SEARCH: (w, _f, d) => (n(d.resultCount) != null ? `${w} searched records and found ${n(d.resultCount)}` : `${w} searched records`),
+  // Task 0022: a search across all fields says so ("searched all fields"); the text itself is never stored.
+  BUSINESS_SEARCH: (w, _f, d) => { const what = d.anywhere === true ? 'searched all fields' : 'searched records'; return n(d.resultCount) != null ? `${w} ${what} and found ${n(d.resultCount)}` : `${w} ${what}` },
   BUSINESS_RECENT_RECORDS_LISTED: (w) => `${w} looked at Recently viewed`,
   AUDIT_VIEWED: (w) => `${w} looked at the audit`,
   AUDIT_EXPORTED: (w, _f, d) => (n(d.rowCount) != null ? `${w} exported the audit (${n(d.rowCount)} event${n(d.rowCount) === 1 ? '' : 's'})` : `${w} exported the audit`),

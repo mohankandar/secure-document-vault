@@ -1,4 +1,4 @@
-import type { Source } from './data'
+import type { Source } from './model'
 
 /**
  * What a record shows in a list (task 0018, the canvas's Recently viewed and Search results):

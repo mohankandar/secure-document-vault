@@ -2,6 +2,8 @@ package com.sdv.platform.application.business;
 
 import com.sdv.platform.application.port.AuditEventPort;
 import com.sdv.platform.application.port.BusinessRecordRepository;
+import com.sdv.platform.application.port.BusinessRecordRepository.AnywhereCriterion;
+import com.sdv.platform.application.port.BusinessRecordRepository.AnywhereField;
 import com.sdv.platform.application.port.BusinessRecordRepository.AvailableDocumentSnapshot;
 import com.sdv.platform.application.port.BusinessRecordRepository.DocumentCount;
 import com.sdv.platform.application.port.BusinessRecordRepository.ExpectedDocumentSnapshot;
@@ -15,6 +17,9 @@ import com.sdv.platform.application.port.TenantRepository;
 import com.sdv.platform.domain.audit.AuditEvent;
 import com.sdv.platform.domain.audit.AuditOutcome;
 import com.sdv.platform.domain.metadata.MetadataFieldDefinition;
+import com.sdv.platform.domain.metadata.MetadataFieldType;
+import com.sdv.platform.domain.metadata.MetadataNormalization;
+import com.sdv.platform.domain.metadata.MetadataSearchMode;
 import com.sdv.platform.domain.source.IngestionSource;
 import com.sdv.platform.domain.submission.Submission;
 import com.sdv.platform.domain.submission.SubmissionStatus;
@@ -38,6 +43,14 @@ public class BusinessExperienceService {
     private static final int MAX_PAGE = 10_000;
     private static final int MAX_CRITERIA = 10;
     private static final int MAX_QUERY_VALUE_LENGTH = 500;
+    /** "Anywhere" text, after trimming (task 0022). */
+    static final int ANYWHERE_MIN_LENGTH = 2;
+    static final int ANYWHERE_MAX_LENGTH = 100;
+    /** Rank of an anywhere match, lower is better; must match the order the search SQL uses. */
+    static final int RANK_EXACT_IDENTIFIER = 0;
+    static final int RANK_EXACT = 1;
+    static final int RANK_STARTS_WITH = 2;
+    static final int RANK_CONTAINS = 3;
     static final int RECENT_DEFAULT_LIMIT = 8;
     static final int RECENT_MAX_LIMIT = 20;
     /** At most this many of the person's newest view events are read for Recently viewed. */
@@ -163,8 +176,38 @@ public class BusinessExperienceService {
             Integer requestedPageSize,
             String actorId,
             String correlationId) {
+        return search(tenantId, sourceId, requestedCriteria, null, createdFrom, createdTo, updatedFrom, updatedTo,
+                incompleteOnly, requestedPage, requestedPageSize, actorId, correlationId);
+    }
+
+    /**
+     * anywhere (task 0022): text tried in every searchable field of the source, each with its own match and
+     * normalization (digits-only fields only when the text has digits; dates never). It counts as a criterion and
+     * combines with the others by AND. Results then come best match first and name the fields that matched.
+     */
+    public BusinessExperienceView.SearchResponse search(
+            UUID tenantId,
+            UUID sourceId,
+            Map<String, String> requestedCriteria,
+            String anywhere,
+            Instant createdFrom,
+            Instant createdTo,
+            Instant updatedFrom,
+            Instant updatedTo,
+            boolean incompleteOnly,
+            Integer requestedPage,
+            Integer requestedPageSize,
+            String actorId,
+            String correlationId) {
         requireActiveTenant(tenantId);
         IngestionSource source = requireSource(tenantId, sourceId);
+
+        String anywhereText = anywhere == null ? null : anywhere.trim();
+        if (anywhereText != null
+                && (anywhereText.length() < ANYWHERE_MIN_LENGTH || anywhereText.length() > ANYWHERE_MAX_LENGTH)) {
+            throw new IllegalArgumentException("Search text must be " + ANYWHERE_MIN_LENGTH + " to "
+                    + ANYWHERE_MAX_LENGTH + " characters.");
+        }
 
         int page = requestedPage == null ? 1 : requestedPage;
         int pageSize = requestedPageSize == null ? DEFAULT_LIMIT : requestedPageSize;
@@ -176,9 +219,9 @@ public class BusinessExperienceService {
         }
 
         Map<String, String> safeCriteria = requestedCriteria == null ? Map.of() : requestedCriteria;
-        if (safeCriteria.isEmpty() && !incompleteOnly
+        if (safeCriteria.isEmpty() && anywhereText == null && !incompleteOnly
                 && createdFrom == null && createdTo == null && updatedFrom == null && updatedTo == null) {
-            throw new IllegalArgumentException("At least one configured metadata field, common date filter or incompleteOnly is required.");
+            throw new IllegalArgumentException("At least one configured metadata field, anywhere text, common date filter or incompleteOnly is required.");
         }
         if (createdFrom != null && createdTo != null && createdFrom.isAfter(createdTo)) {
             throw new IllegalArgumentException("dateFrom cannot be after dateTo.");
@@ -198,6 +241,14 @@ public class BusinessExperienceService {
                 .map(entry -> buildCriterion(tenantId, sourceId, current, entry.getKey(), entry.getValue()))
                 .toList();
 
+        boolean isAnywhere = anywhereText != null;
+        AnywhereCriterion anywhereCriterion = isAnywhere ? anywhereCriterion(tenantId, sourceId, anywhereText) : null;
+        if (isAnywhere && anywhereCriterion == null) {
+            // No field of this source can match the text (e.g. letters and only digits-only fields): nothing found.
+            appendSearchAudit(tenantId, actorId, sourceId, criteria.size(), 0, true, correlationId);
+            return new BusinessExperienceView.SearchResponse(sourceId, List.of(), page, pageSize, false, false);
+        }
+
         int firstIndex = Math.multiplyExact(page - 1, pageSize);
         int requiredCandidateCount = Math.addExact(firstIndex, pageSize + 1);
         int scanOffset = 0;
@@ -206,10 +257,15 @@ public class BusinessExperienceService {
 
         LinkedHashMap<String, BusinessRecordRefCodec.RecordIdentity> candidates = new LinkedHashMap<>();
         while (candidates.size() < requiredCandidateCount && !exhausted) {
-            List<Submission> matching = records.findMatchingSubmissions(
-                    tenantId, sourceId, criteria,
-                    createdFrom, createdTo, updatedFrom, updatedTo,
-                    incompleteOnly, scanOffset, scanBatchSize);
+            List<Submission> matching = anywhereCriterion == null
+                    ? records.findMatchingSubmissions(
+                            tenantId, sourceId, criteria,
+                            createdFrom, createdTo, updatedFrom, updatedTo,
+                            incompleteOnly, scanOffset, scanBatchSize)
+                    : records.findMatchingSubmissions(
+                            tenantId, sourceId, criteria, anywhereCriterion,
+                            createdFrom, createdTo, updatedFrom, updatedTo,
+                            incompleteOnly, scanOffset, scanBatchSize);
 
             if (matching.isEmpty()) {
                 exhausted = true;
@@ -234,7 +290,7 @@ public class BusinessExperienceService {
 
         List<BusinessRecordRefCodec.RecordIdentity> ordered = new ArrayList<>(candidates.values());
         if (firstIndex >= ordered.size()) {
-            appendSearchAudit(tenantId, actorId, sourceId, criteria.size(), 0, correlationId);
+            appendSearchAudit(tenantId, actorId, sourceId, criteria.size(), 0, isAnywhere, correlationId);
             return new BusinessExperienceView.SearchResponse(
                     sourceId, List.of(), page, pageSize, false, false);
         }
@@ -245,12 +301,12 @@ public class BusinessExperienceService {
         for (BusinessRecordRefCodec.RecordIdentity identity : ordered.subList(firstIndex, pageEndExclusive)) {
             RecordAggregate aggregate = aggregate(tenantId, source, identity);
             if (!aggregate.submissions().isEmpty()) {
-                results.add(summary(aggregate, titleFields));
+                results.add(summary(aggregate, titleFields, matchedFields(aggregate, anywhereCriterion)));
             }
         }
 
         boolean hasMore = ordered.size() > firstIndex + pageSize || !exhausted;
-        appendSearchAudit(tenantId, actorId, sourceId, criteria.size(), results.size(), correlationId);
+        appendSearchAudit(tenantId, actorId, sourceId, criteria.size(), results.size(), isAnywhere, correlationId);
         return new BusinessExperienceView.SearchResponse(
                 sourceId, results, page, pageSize, hasMore, hasMore);
     }
@@ -370,8 +426,30 @@ public class BusinessExperienceService {
             throw new IllegalArgumentException("Search value for '" + fieldKey + "' is too long.");
         }
 
+        List<String> variants = normalizedVariants(tenantId, sourceId, field, rawValue);
+        if (variants.isEmpty()) {
+            throw new IllegalArgumentException(
+                    "Search value for '" + fieldKey + "' is empty after configured normalization.");
+        }
+        return new SearchCriterion(fieldKey, field.searchMode(), variants, exactIgnoresCase(field));
+    }
+
+    /**
+     * Task 0022 follow-up: an Exact text field ignores capitals ("mortgage" finds "Mortgage"), in quick search and in
+     * single-field search. Identifiers and digits-only fields keep their exact comparison, and so do fields that
+     * aren't text. Starts with and Contains already ignore case.
+     */
+    static boolean exactIgnoresCase(MetadataFieldDefinition field) {
+        return field.searchMode() == MetadataSearchMode.EXACT
+                && !field.businessIdentifier()
+                && field.normalization() != MetadataNormalization.DIGITS_ONLY
+                && (field.fieldType() == MetadataFieldType.TEXT || field.fieldType() == MetadataFieldType.EMAIL);
+    }
+
+    /** The value as each normalization the field has had would have stored it (so older records still match). */
+    private List<String> normalizedVariants(UUID tenantId, UUID sourceId, MetadataFieldDefinition field, String rawValue) {
         LinkedHashSet<String> variants = new LinkedHashSet<>();
-        definitions.findHistory(tenantId, sourceId, fieldKey).stream()
+        definitions.findHistory(tenantId, sourceId, field.fieldKey()).stream()
                 .map(MetadataFieldDefinition::normalization)
                 .distinct()
                 .forEach(normalization -> {
@@ -380,12 +458,75 @@ public class BusinessExperienceService {
                 });
         String currentNormalized = SearchValueNormalizer.normalize(field.normalization(), rawValue);
         if (!currentNormalized.isBlank()) variants.add(currentNormalized);
+        return List.copyOf(variants);
+    }
 
-        if (variants.isEmpty()) {
-            throw new IllegalArgumentException(
-                    "Search value for '" + fieldKey + "' is empty after configured normalization.");
+    /**
+     * The fields "anywhere" text is tried in, in the source's display order: every searchable field except dates,
+     * and digits-only fields only when the text has a digit. Null when no field can match the text.
+     */
+    private AnywhereCriterion anywhereCriterion(UUID tenantId, UUID sourceId, String text) {
+        boolean hasDigit = text.chars().anyMatch(Character::isDigit);
+        List<AnywhereField> fields = new ArrayList<>();
+        for (MetadataFieldDefinition field : orderedSearchFields(tenantId, sourceId)) {
+            if (!field.searchable() || !field.active() || field.fieldType() == MetadataFieldType.DATE) continue;
+            if (field.normalization() == MetadataNormalization.DIGITS_ONLY && !hasDigit) continue;
+            List<String> variants = normalizedVariants(tenantId, sourceId, field, text);
+            if (variants.isEmpty()) continue;
+            fields.add(new AnywhereField(field.fieldKey(), field.searchMode(), variants, field.businessIdentifier(),
+                    exactIgnoresCase(field)));
         }
-        return new SearchCriterion(fieldKey, field.searchMode(), List.copyOf(variants));
+        return fields.isEmpty() ? null : new AnywhereCriterion(fields);
+    }
+
+    /**
+     * The record's fields that match the anywhere text, best match first (then in display order). Values come from
+     * the record's own data, newest submission first. Only the fields the search tried can appear.
+     */
+    static List<BusinessExperienceView.MatchedField> matchedFields(RecordAggregate aggregate, AnywhereCriterion anywhere) {
+        if (anywhere == null) return List.of();
+        Map<UUID, List<MetadataSnapshot>> bySubmission = groupMetadata(aggregate.metadata());
+        LinkedHashMap<String, Integer> rankByField = new LinkedHashMap<>();
+        LinkedHashMap<String, BusinessExperienceView.MatchedField> byField = new LinkedHashMap<>();
+        for (Submission submission : aggregate.submissions()) {
+            for (MetadataSnapshot value : bySubmission.getOrDefault(submission.submissionId(), List.of())) {
+                for (AnywhereField field : anywhere.fields()) {
+                    if (!field.fieldKey().equals(value.fieldKey()) || byField.containsKey(field.fieldKey())) continue;
+                    Integer rank = matchRank(field, value.normalizedValue());
+                    if (rank == null) continue;
+                    rankByField.put(field.fieldKey(), rank);
+                    byField.put(field.fieldKey(), new BusinessExperienceView.MatchedField(
+                            value.fieldKey(), value.displayLabel(), value.storedValue()));
+                }
+            }
+        }
+        List<String> order = anywhere.fields().stream().map(AnywhereField::fieldKey).toList();
+        return byField.values().stream()
+                .sorted(Comparator.comparingInt((BusinessExperienceView.MatchedField m) -> rankByField.get(m.fieldKey()))
+                        .thenComparingInt(m -> order.indexOf(m.fieldKey())))
+                .toList();
+    }
+
+    /** The same match and rank as the search SQL, for one stored (normalized) value; null when it doesn't match. */
+    static Integer matchRank(AnywhereField field, String normalizedValue) {
+        if (normalizedValue == null) return null;
+        int exact = field.businessIdentifier() ? RANK_EXACT_IDENTIFIER : RANK_EXACT;
+        Integer best = null;
+        for (String variant : field.normalizedVariants()) {
+            Integer rank;
+            if (field.searchMode() == MetadataSearchMode.EXACT) {
+                boolean equal = field.ignoreCase()
+                        ? normalizedValue.toLowerCase(Locale.ROOT).equals(variant.toLowerCase(Locale.ROOT))
+                        : normalizedValue.equals(variant);
+                rank = equal ? exact : null;
+            } else {
+                String value = normalizedValue.toLowerCase(Locale.ROOT), wanted = variant.toLowerCase(Locale.ROOT);
+                boolean matches = field.searchMode() == MetadataSearchMode.PREFIX ? value.startsWith(wanted) : value.contains(wanted);
+                rank = !matches ? null : value.equals(wanted) ? exact : value.startsWith(wanted) ? RANK_STARTS_WITH : RANK_CONTAINS;
+            }
+            if (rank != null && (best == null || rank < best)) best = rank;
+        }
+        return best;
     }
 
     private RecordAggregate aggregate(
@@ -424,6 +565,13 @@ public class BusinessExperienceService {
     }
 
     private BusinessExperienceView.RecordSummary summary(RecordAggregate aggregate, List<String> titleFields) {
+        return summary(aggregate, titleFields, List.of());
+    }
+
+    private BusinessExperienceView.RecordSummary summary(
+            RecordAggregate aggregate,
+            List<String> titleFields,
+            List<BusinessExperienceView.MatchedField> matchedFields) {
         List<BusinessExperienceView.FieldValue> latestMetadata = latestMetadata(aggregate);
         List<BusinessExperienceView.FieldValue> identifiers = displayIdentifiers(aggregate, latestMetadata);
         List<BusinessExperienceView.FieldValue> preview = latestMetadata.stream()
@@ -449,7 +597,8 @@ public class BusinessExperienceService {
                 aggregate.submissions().getFirst().createdAt(),
                 !open.isEmpty(),
                 expected,
-                received);
+                received,
+                matchedFields);
     }
 
     private BusinessExperienceView.RecordView recordView(RecordAggregate aggregate, List<String> titleFields) {
@@ -606,12 +755,15 @@ public class BusinessExperienceService {
             UUID sourceId,
             int criteriaCount,
             int resultCount,
+            boolean anywhere,
             String correlationId) {
+        // An "anywhere" search says so; the text itself is never stored (it may be a name).
         audit.append(new AuditEvent(
                 UUID.randomUUID(), tenantId, "USER", actorId,
                 "BUSINESS_SEARCH", "INGESTION_SOURCE", sourceId.toString(),
                 clock.instant(), correlationId, AuditOutcome.SUCCESS,
-                "{\"criteriaCount\":" + criteriaCount + ",\"resultCount\":" + resultCount + "}"));
+                "{\"criteriaCount\":" + criteriaCount + ",\"resultCount\":" + resultCount
+                        + (anywhere ? ",\"anywhere\":true" : "") + "}"));
     }
 
     private static String sha256(String value) {

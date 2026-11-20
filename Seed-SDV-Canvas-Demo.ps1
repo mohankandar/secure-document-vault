@@ -8,6 +8,8 @@
     Closing date), its Record title set to Borrower, and the canvas's records 300000000001-300000000008,
     delivered through the producer API like any other delivery. 300000000003 (Marcus Lee) has 2 of 4 documents;
     Appraisal and Insurance are still expected.
+  - Task 0022: Co-borrower and Closing agent fields on the Loan Origination System (last in its field order), with
+    "Priya Patel" as 300000000004's co-borrower and "Patel & Sons Title" as 300000000006's closing agent.
   - LexaVault (the source the screen tour uses): a "Loan Type" field, its Record title set to First Name + Last
     Name, and full names and a loan type on every demo record. Records that were delivered without names
     (100000000001-100000000003) get them added to their delivery in the local database, because a new delivery
@@ -137,12 +139,12 @@ Ok 'LexaVault field order (Loan Type last) and Record title: First Name + Last N
 # Names for the deliveries that were sent without them, and a loan type on every LexaVault delivery. Written as a
 # delivery would have stored them (trimmed text: stored and normalized values are the same).
 $names = @{ '100000000001' = @('Jordan', 'Ellis'); '100000000002' = @('Priya', 'Shah'); '100000000003' = @('Marcus', 'Lee') }
-function AddValue([string]$SubmissionId, [string]$Key, [string]$Value) {
+function AddValue([string]$SubmissionId, [string]$Key, [string]$Value, [string]$SourceId = $LexaId) {
     $null = Db @"
 insert into business_metadata_values (metadata_value_id, tenant_id, submission_id, definition_id, field_key, definition_version, stored_value, normalized_value, source_id)
 select gen_random_uuid(), d.tenant_id, '$SubmissionId', d.definition_id, d.field_key, d.version, $(Lit $Value), $(Lit $Value), d.source_id
 from metadata_field_definitions d
-where d.tenant_id='$Tenant' and d.source_id='$LexaId' and d.field_key='$Key' and d.active
+where d.tenant_id='$Tenant' and d.source_id='$SourceId' and d.field_key='$Key' and d.active
   and not exists (select 1 from business_metadata_values v where v.tenant_id='$Tenant' and v.submission_id='$SubmissionId' and v.field_key='$Key')
 order by d.version desc limit 1;
 "@
@@ -156,6 +158,19 @@ foreach ($line in ($rows -split "`n" | Where-Object { $_.Trim() })) {
     $index++
 }
 Ok "LexaVault: names on 100000000001-100000000003, a loan type on $index deliveries"
+
+# ---- Quick search (task 0022): fields that aren't columns, so "Matched Co-borrower: Priya Patel" can be shown ----
+# Two more searchable fields on the Loan Origination System, last in the field order (so the Records columns stay
+# Contract number, Borrower, Loan type), and a value on two existing records. No new record or document.
+EnsureField $LosId 'coBorrower' 'Co-borrower' 'TEXT' $false $false 'TRIM' 'PARTIAL'
+EnsureField $LosId 'closingAgent' 'Closing agent' 'TEXT' $false $false 'TRIM' 'PREFIX'
+$null = Api 'PUT' "/api/v1/admin/metadata-sources/$LosId/display-order" $admin @{ fieldKeys = @('contractNumber', 'borrowerName', 'loanType', 'closingDate', 'coBorrower', 'closingAgent') }
+$extra = @{ '300000000004' = @('coBorrower', 'Priya Patel'); '300000000006' = @('closingAgent', 'Patel & Sons Title') }
+foreach ($n in $extra.Keys) {
+    $sid = Db "select submission_id from submissions where tenant_id='$Tenant' and source_id='$LosId' and source_submission_id='canvas-demo-$n' limit 1;"
+    if ($sid) { AddValue $sid $extra[$n][0] $extra[$n][1] $LosId }
+}
+Ok 'Loan Origination System: Co-borrower on 300000000004, Closing agent on 300000000006'
 
 # ---- Admin canvas (task 0019): two storage volumes and a second sending system ----
 $rawVolumes = Api 'GET' '/api/v1/admin/storage-volumes' $it

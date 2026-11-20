@@ -1,13 +1,9 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
-import {
-  AUDIT, DEFAULT_ROLE_CAPS, IDENTITY, RETENTION, ROLES, SOURCES, VOLUMES,
-  type AreaId, type AuditEvent, type Capability, type Doc, type IdentityConfig, type RecordItem, type RoleId, type Source, type Volume, NOW,
-} from './data'
-import { session as loadSession } from './liveApi'
+import { KNOWN_CAPABILITIES, ROLES, type AreaId, type Capability, type RecordItem, type RoleId } from './model'
+import { session as loadSession, type RecentRecord } from './liveApi'
 import type { SessionInfo } from '../api'
 import { failureText } from './CardError'
 
-export type Scenario = 'live' | 'loading' | 'empty' | 'error'
 export type Theme = 'light' | 'dark'
 export type ThemePref = Theme | 'system'
 const THEME_KEY = 'sdv.r7.theme'
@@ -15,10 +11,10 @@ const readThemePref = (): ThemePref => {
   try { const v = window.localStorage.getItem(THEME_KEY); return v === 'light' || v === 'dark' || v === 'system' ? v : 'system' } catch { return 'system' }
 }
 const systemTheme = (): Theme => (window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
-export type Toast = { id: number; title: string; detail?: string; tone?: 'sim' | 'ok' | 'bad' }
+export type Toast = { id: number; title: string; detail?: string; tone?: 'ok' | 'bad' }
 export type Route = { area: AreaId; tab: string }
 /** A search started outside Records (e.g. on Home), carried out by the Records page. */
-export type SearchRequest = { id: number; box?: string; openFilters?: boolean; incompleteOnly?: boolean; receivedLast30Days?: boolean; sourceId?: string; criteria?: Record<string, string>; selectRef?: string }
+export type SearchRequest = { id: number; /** Task 0022: text searched in every searchable field. */ anywhere?: string; openFilters?: boolean; incompleteOnly?: boolean; receivedLast30Days?: boolean; sourceId?: string; criteria?: Record<string, string>; selectRef?: string }
 let searchRequestSeq = 0
 
 export const AREA_TABS: Record<AreaId, { id: string; label: string }[]> = {
@@ -50,15 +46,16 @@ export const useStore = () => {
 
 const AREA_ORDER: AreaId[] = ['home', 'workspace', 'governance', 'tenant', 'operations']
 
+/** The role the session names first, in this order; Business user when it names none of them. */
+const primaryRole = (roles: string[]): RoleId =>
+  roles.includes('PLATFORM_OPERATIONS_ADMIN') ? 'platform' : roles.includes('TENANT_IT_ADMIN') ? 'tenantIt' : roles.includes('BUSINESS_ADMIN') ? 'businessAdmin' : roles.includes('DOCUMENT_STEWARD') ? 'steward' : 'business'
+
 let toastSeq = 0
-let eventSeq = 0
 
 function useStoreValue() {
-  const [roleId, setRoleId] = useState<RoleId>('business')
   const [liveSession, setLiveSession] = useState<SessionInfo | null>(null)
   const [sessionError, setSessionError] = useState<string | null>(null)
   const [sessionLoading, setSessionLoading] = useState(true)
-  const [scenario, setScenario] = useState<Scenario>('live')
   // Theme choice: Light, Dark or System (follows the computer; default). Remembered in this browser.
   const [themePref, setThemePrefState] = useState<ThemePref>(readThemePref)
   const [systemThemeValue, setSystemThemeValue] = useState<Theme>(systemTheme)
@@ -80,28 +77,23 @@ function useStoreValue() {
   const [searchRequest, setSearchRequest] = useState<SearchRequest | null>(null)
   const requestSearch = useCallback((r: Omit<SearchRequest, 'id'>) => { searchRequestSeq += 1; setSearchRequest({ ...r, id: searchRequestSeq }) }, [])
   const [toasts, setToasts] = useState<Toast[]>([])
-  const [roleCaps, setRoleCaps] = useState(DEFAULT_ROLE_CAPS)
+  // The records the last search found (Records); "Go to" lists them too.
   const [records, setRecords] = useState<RecordItem[]>([])
-  const [retention, setRetention] = useState(RETENTION)
-  const [volumes, setVolumes] = useState<Volume[]>(VOLUMES)
-  const [sources, setSources] = useState<Source[]>(SOURCES)
-  const [identity, setIdentity] = useState(IDENTITY)
-  const [audit, setAudit] = useState<AuditEvent[]>(AUDIT)
   const [selectedRef, setSelectedRef] = useState<string | null>(null)
   const [openDocId, setOpenDocId] = useState<string | null>(null)
   const [resultsShown,setResultsShown]=useState(false)
+  // The person's own Recently viewed list as Home or Records last loaded it; the search list offers matching
+  // records from it (task 0022).
+  const [recentRecords, setRecentRecords] = useState<RecentRecord[] | null>(null)
 
   useEffect(() => {
     let active = true
-    loadSession().then(s => {
-      if (!active) return
-      setLiveSession(s)
-      setRoleId(s.roles.includes('PLATFORM_OPERATIONS_ADMIN') ? 'platform' : s.roles.includes('TENANT_IT_ADMIN') ? 'tenantIt' : s.roles.includes('BUSINESS_ADMIN') ? 'businessAdmin' : s.roles.includes('DOCUMENT_STEWARD') ? 'steward' : 'business')
-    }).catch(e => { if (active) setSessionError(failureText('Session did not load', e)) })
+    loadSession().then(s => { if (active) setLiveSession(s) })
+      .catch(e => { if (active) setSessionError(failureText('Session did not load', e)) })
       .finally(() => { if(active) setSessionLoading(false) })
     return () => { active = false }
   }, [])
-  const role = ROLES.find((r) => r.id === roleId)!
+  const role = ROLES.find((r) => r.id === primaryRole(liveSession?.roles ?? []))!
   // A person with several roles sees the areas of all of them (the server still enforces each request).
   const heldRoles = useMemo(() => {
     const held = liveSession ? ROLES.filter((r) => liveSession.roles.includes(r.code)) : []
@@ -129,14 +121,6 @@ function useStoreValue() {
     if (window.location.hash !== hash) window.history[replace ? 'replaceState' : 'pushState'](null, '', hash)
   }, [])
 
-  const switchRole = useCallback((id: RoleId) => {
-    if (liveSession) return
-    setRoleId(id)
-    setOpenDocId(null)
-    const target = ROLES.find((r) => r.id === id)!
-    navigate(target.areas[0])
-  }, [navigate])
-
   const toast = useCallback((t: Omit<Toast, 'id'>) => {
     toastSeq += 1
     const id = toastSeq
@@ -144,38 +128,16 @@ function useStoreValue() {
     window.setTimeout(() => setToasts((list) => list.filter((x) => x.id !== id)), 4800)
   }, [])
 
-  const caps = useMemo<Capability[]>(() => liveSession ? liveSession.capabilities.filter((c):c is Capability =>
-    c in ({ SEARCH_RECORDS:1, VIEW_PDF:1, PERMANENT_REDACTION:1, DOWNLOAD_CURRENT_PDF:1, PRINT_DOCUMENT:1, ADD_DOCUMENT_TAG:1, ADD_DOCUMENT_COMMENT:1, CONFIGURE_ROLE_PERMISSIONS:1, CONFIGURE_RETENTION:1, CONFIGURE_METADATA_SEARCH:1, CONFIGURE_BUSINESS_LIMITS:1 })
-  ) : [], [liveSession])
+  const caps = useMemo<Capability[]>(() => liveSession ? liveSession.capabilities.filter((c): c is Capability => (KNOWN_CAPABILITIES as readonly string[]).includes(c)) : [], [liveSession])
   const can = useCallback((c: Capability) => caps.includes(c), [caps])
 
-  const recordAudit = useCallback((e: Omit<AuditEvent, 'id' | 'at' | 'actorType' | 'actor' | 'correlationId'>) => {
-    eventSeq += 1
-    setAudit((list) => [{ ...e, id: `sim-${eventSeq}`, at: new Date(NOW + eventSeq * 1000).toISOString(), actorType: 'USER', actor: role.person.toLowerCase().replace(' ', '.'), correlationId: `sim-${eventSeq.toString(16).padStart(6, '0')}` }, ...list])
-  }, [role.person])
-
-  const updateDoc = useCallback((docId: string, fn: (d: Doc) => Doc) => {
-    setRecords((list) => list.map((r) => (r.docs.some((d) => d.id === docId) ? { ...r, docs: r.docs.map((d) => (d.id === docId ? fn(d) : d)) } : r)))
-  }, [])
-
-  const addDocActivity = useCallback((docId: string, action: string, outcome: 'SUCCESS' | 'DENIED' = 'SUCCESS') => {
-    eventSeq += 1
-    const at = new Date(NOW + eventSeq * 1000).toISOString()
-    updateDoc(docId, (d) => ({ ...d, activity: [{ id: `sim-a${eventSeq}`, action, actor: role.person, at, outcome, simulated: true }, ...d.activity] }))
-    recordAudit({ action, targetType: 'DOCUMENT', target: docId, outcome, details: { simulated: 'true' } })
-  }, [recordAudit, role.person, updateDoc])
-
   return {
-    role, roleId, heldRoles, areas, switchRole, startedWithoutRoute, searchRequest, requestSearch, liveSession, sessionLoading, sessionError, scenario, setScenario, theme, themePref, setThemePref, route, navigate,
+    role, heldRoles, areas, startedWithoutRoute, searchRequest, requestSearch, liveSession, sessionLoading, sessionError, theme, themePref, setThemePref, route, navigate,
     toasts, toast, dismissToast: (id: number) => setToasts((l) => l.filter((t) => t.id !== id)),
-    roleCaps, setRoleCaps, caps, can,
-    records, setRecords, updateDoc, addDocActivity, selectedRef, setSelectedRef, openDocId, setOpenDocId, resultsShown, setResultsShown,
-    retention, setRetention, volumes, setVolumes, sources, setSources,
-    identity, setIdentity: setIdentity as (fn: (prev: typeof IDENTITY) => typeof IDENTITY) => void, audit, recordAudit,
+    caps, can,
+    records, setRecords, selectedRef, setSelectedRef, openDocId, setOpenDocId, resultsShown, setResultsShown, recentRecords, setRecentRecords,
   }
 }
-
-export type { IdentityConfig }
 
 export function StoreProvider({ children }: { children: ReactNode }) {
   const value = useStoreValue()

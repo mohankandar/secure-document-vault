@@ -78,7 +78,7 @@ export async function asRole(page: Page, role: string, width: number, height: nu
 }
 
 const area = (page: Page, name: string) => page.getByRole('banner').getByRole('navigation', { name: 'Areas' }).getByRole('button', { name: new RegExp(`^${name}( .+)?$`) })
-const searchBox = (page: Page) => page.getByRole('searchbox', { name: 'Search records' })
+const searchBox = (page: Page) => page.getByRole('combobox', { name: 'Search records' })
 const rows = (page: Page) => page.getByRole('grid', { name: 'Records' }).locator('tbody tr')
 
 /** The canvas's records, from Seed-SDV-Canvas-Demo.ps1: Marcus Lee (2 of 4 documents) and Jordan Ellis. */
@@ -130,6 +130,35 @@ export const MAIN_BOARDS: (Board & { setUp: (page: Page) => Promise<void> })[] =
     await area(page, 'Home').click()
     await accountButton(page).click()
     await expect(page.getByRole('menu').or(page.getByRole('dialog', { name: /Account/ })).first()).toBeVisible()
+  } },
+]
+
+// ---- Quick search boards (task 0022): docs/design/vero-quick-search-typing.html and -results.html ----
+// The local seed has no Lena or Ava Patel; "patel" there finds 300000000004 (co-borrower Priya Patel, like the
+// canvas's Omar Haddad) and 300000000006 (closing agent Patel & Sons Title, like Grace Lin).
+
+const QUICK_TYPING = resolve(REPO, 'docs', 'design', 'vero-quick-search-typing.html')
+const QUICK_RESULTS = resolve(REPO, 'docs', 'design', 'vero-quick-search-results.html')
+const suggestions = (page: Page) => page.getByRole('listbox', { name: 'Search suggestions' })
+
+export const QUICK_BOARDS: (Board & { setUp: (page: Page) => Promise<void> })[] = [
+  { name: 'quick-search-typing', canvas: QUICK_TYPING, index: 0, width: 1440, height: 900, setUp: async (page) => {
+    await asRole(page, 'Business User', 1440, 900)
+    await area(page, 'Records').click()
+    await searchBox(page).fill('patel')
+    await expect(suggestions(page)).toBeVisible()
+    await page.waitForLoadState('networkidle')
+  } },
+  { name: 'quick-search-results', canvas: QUICK_RESULTS, index: 0, width: 1440, height: 900, setUp: async (page) => {
+    await asRole(page, 'Business User', 1440, 900)
+    await area(page, 'Records').click()
+    await searchBox(page).fill('patel')
+    await searchBox(page).press('Enter')
+    const row = rows(page).filter({ hasText: /Matched Co-borrower/ }).first()
+    await expect(row).toBeVisible({ timeout: 15000 })
+    await row.click()
+    await expect(page.getByRole('complementary', { name: 'Record inspector' })).toBeVisible({ timeout: 15000 })
+    await page.waitForLoadState('networkidle')
   } },
 ]
 
@@ -187,7 +216,7 @@ export const ADMIN_BOARDS: (Board & { setUp: (page: Page) => Promise<void> })[] 
 ].map((b) => ({ ...b, canvas: ADMIN_CANVAS, width: 1440 }))
 
 test.describe('Canvas comparison', () => {
-  for (const board of [...MAIN_BOARDS, ...ADMIN_BOARDS].filter((b) => !process.env.SDV_COMPARE_ONLY || b.name.includes(process.env.SDV_COMPARE_ONLY))) {
+  for (const board of [...MAIN_BOARDS, ...QUICK_BOARDS, ...ADMIN_BOARDS].filter((b) => !process.env.SDV_COMPARE_ONLY || b.name.includes(process.env.SDV_COMPARE_ONLY))) {
     test(board.name, async ({ page, browser }) => {
       test.setTimeout(90_000)
       const canvasPage = await browser.newPage()

@@ -1,4 +1,4 @@
-import type { Source } from './data'
+import type { Source } from './model'
 
 /**
  * Which sending systems Records and Home search, and which one they start with (task 0017).
