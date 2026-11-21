@@ -160,7 +160,7 @@ Failures on the way, all fixed: the denied-audit count (above), and the PostgreS
 
 ## Commits (hash and message), or "not committed"
 
-See the last line of this section; the hash is added in a second commit.
+`643df19` feat: exact duplicates kept once and acknowledged; decided recently for all admins; levels on openings (task 0031), on `feature/intake-duplicates`. Not pushed, not merged. (This line was added in a second commit.)
 
 ## Not done, and why
 
