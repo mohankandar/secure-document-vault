@@ -152,7 +152,10 @@ Not touched: `Start-SDV-Local.ps1` and `Stop-SDV-Local.ps1` (local changes left 
 
 ## Commits (hash and message), or "not committed"
 
-See the commit on `fix/error-plumbing`: "fix: one error body with a reference, last-resort handler, SYS/STO codes (task 0036)". A second commit adds its hash here. Not pushed, not merged.
+- `b2e0c99` fix: one error body with a reference, last-resort handler, SYS/STO codes (task 0036)
+- A second commit adds this hash to the report.
+
+On `fix/error-plumbing` only; not pushed, not merged.
 
 ## Not done, and why
 
