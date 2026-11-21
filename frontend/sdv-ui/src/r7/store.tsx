@@ -21,7 +21,8 @@ export const AREA_TABS: Record<AreaId, { id: string; label: string }[]> = {
   home: [{ id: 'home', label: 'Home' }],
   workspace: [{ id: 'search', label: 'Search' }],
   // Labels only; the addresses (#/governance/access …) stay the same.
-  governance: [{ id: 'access', label: 'People & roles' }, { id: 'roles', label: 'Roles & permissions' }, { id: 'retention', label: 'Keeping documents' }, { id: 'metadata', label: 'Search fields' }],
+  // Task 0030: Legal holds after Keeping documents, Approvals last (boards Sens-LegalHold and Sens-Approvals).
+  governance: [{ id: 'access', label: 'People & roles' }, { id: 'roles', label: 'Roles & permissions' }, { id: 'retention', label: 'Keeping documents' }, { id: 'holds', label: 'Legal holds' }, { id: 'metadata', label: 'Search fields' }, { id: 'approvals', label: 'Approvals' }],
   tenant: [{ id: 'storage', label: 'Storage' }, { id: 'authentication', label: 'Sign-in' }, { id: 'integrations', label: 'Integrations' }, { id: 'problems', label: 'Problems' }, { id: 'about', label: 'About' }],
   operations: [{ id: 'overview', label: 'Overview' }, { id: 'problems', label: 'Problems' }, { id: 'storage', label: 'Storage' }, { id: 'health', label: 'Health' }, { id: 'audit', label: 'Audit' }, { id: 'about', label: 'About' }],
   system: [{ id: 'foundations', label: 'Foundations' }, { id: 'components', label: 'Components' }, { id: 'states', label: 'States' }],

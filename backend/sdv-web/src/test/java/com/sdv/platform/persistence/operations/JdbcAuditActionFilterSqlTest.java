@@ -1,6 +1,7 @@
 package com.sdv.platform.persistence.operations;
 
 import com.sdv.platform.application.port.AuditQueryPort;
+import com.sdv.platform.domain.document.SensitivityLevel;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.jdbc.core.RowMapper;
@@ -38,6 +39,26 @@ class JdbcAuditActionFilterSqlTest {
         assertEquals(Set.of("DOCUMENT_DOWNLOADED"), params.getValue().getValue("actions"));
         assertEquals(Set.of("AUDIT_VIEWED"), params.getValue().getValue("excludeActions"));
         assertEquals(10_001, params.getValue().getValue("limit"));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void theLevelFilterIsTheLevelTheEventRecordedAsABoundParameter() {
+        // Task 0030 (item 6).
+        repository.findRows(TENANT, new AuditQueryPort.Filter(null, null, null, null, null, null, null, null, null, null,
+                null, null, null, null, SensitivityLevel.HIGHLY_CONFIDENTIAL), 51);
+        ArgumentCaptor<String> sql = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<SqlParameterSource> params = ArgumentCaptor.forClass(SqlParameterSource.class);
+        verify(jdbc).query(sql.capture(), params.capture(), any(RowMapper.class));
+        String s = sql.getValue().replaceAll("\\s+", " ");
+        assertTrue(s.contains("where tenant_id=:tenantId"), s);
+        assertTrue(s.contains("and coalesce(safe_details->>'sensitivityLevel', safe_details->>'level')=:sensitivityLevel"), s);
+        assertEquals("HIGHLY_CONFIDENTIAL", params.getValue().getValue("sensitivityLevel"));
+
+        reset(jdbc);
+        repository.findRows(TENANT, filter(null, null), 51);
+        verify(jdbc).query(sql.capture(), any(SqlParameterSource.class), any(RowMapper.class));
+        assertFalse(sql.getValue().contains(":sensitivityLevel"), "no level: no clause");
     }
 
     @Test

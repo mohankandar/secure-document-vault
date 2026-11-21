@@ -45,6 +45,8 @@ public enum SdvErrorCode {
     SEN_017("SDV-SEN-017"),
     /** Task 0029: only a Steward or a Business Admin can read a level-change history (403). */
     SEN_018("SDV-SEN-018"),
+    /** Task 0030: the audit's sensitivity filter names no level (400). */
+    SEN_019("SDV-SEN-019"),
     /** Task 0025: a role-permission override would give a role a capability it may never have. */
     ROL_001("SDV-ROL-001"),
     /** Task 0025: a role-permission override names a role whose permissions are fixed. */

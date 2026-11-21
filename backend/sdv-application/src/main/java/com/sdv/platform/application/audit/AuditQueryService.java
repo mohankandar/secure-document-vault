@@ -8,6 +8,8 @@ import com.sdv.platform.application.port.AuditQueryPort;
 import com.sdv.platform.domain.audit.AuditEvent;
 import com.sdv.platform.domain.audit.AuditOutcome;
 import com.sdv.platform.domain.document.SensitivityLevel;
+import com.sdv.platform.domain.error.CodedRefusal;
+import com.sdv.platform.domain.error.SdvErrorCode;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -146,6 +148,7 @@ public class AuditQueryService {
         put(f, "from", s.from() == null ? null : s.from().toString());
         put(f, "to", s.to() == null ? null : s.to().toString());
         put(f, "recordNumber", blankToNull(s.recordNumber()));
+        put(f, "sensitivityLevel", s.sensitivityLevel() == null || s.sensitivityLevel().isEmpty() ? null : s.sensitivityLevel());
         put(f, "actions", actions == null ? null : List.copyOf(new TreeSet<>(actions)));
         put(f, "excludeActions", excluded == null || excluded.isEmpty() ? null : List.copyOf(new TreeSet<>(excluded)));
         return f;
@@ -185,6 +188,7 @@ public class AuditQueryService {
         validateLength(safe.targetId(), "targetId", 300);
         validateLength(safe.correlationId(), "correlationId", 200);
         validateLength(safe.recordNumber(), "recordNumber", 300);
+        levelFilter(safe.sensitivityLevel());
         if (safe.from() != null && safe.to() != null && safe.from().isAfter(safe.to())) {
             throw new IllegalArgumentException("from cannot be after to.");
         }
@@ -195,14 +199,16 @@ public class AuditQueryService {
                 blankToNull(safe.action()), safe.outcome(), blankToNull(safe.actorType()), blankToNull(safe.actorId()),
                 blankToNull(safe.targetType()), blankToNull(safe.targetId()), blankToNull(safe.correlationId()),
                 safe.from(), safe.to(), cursor == null ? null : cursor.occurredAt(), cursor == null ? null : cursor.auditEventId(),
-                blankToNull(safe.recordNumber() == null ? null : safe.recordNumber().strip()), actions, excluded);
+                blankToNull(safe.recordNumber() == null ? null : safe.recordNumber().strip()), actions, excluded,
+                levelFilter(safe.sensitivityLevel()));
     }
 
     private static boolean hasAnyFilter(SearchRequest request) {
         return blankToNull(request.action()) != null || request.outcome() != null || blankToNull(request.actorType()) != null
                 || blankToNull(request.actorId()) != null || blankToNull(request.targetType()) != null
                 || blankToNull(request.targetId()) != null || blankToNull(request.correlationId()) != null
-                || request.from() != null || request.to() != null || blankToNull(request.recordNumber()) != null;
+                || request.from() != null || request.to() != null || blankToNull(request.recordNumber()) != null
+                || (request.sensitivityLevel() != null && !request.sensitivityLevel().isEmpty());
     }
 
     private static void validateLength(String value, String name, int max) {
@@ -233,6 +239,10 @@ public class AuditQueryService {
 
     private record Cursor(Instant occurredAt, UUID auditEventId) { }
 
+    /**
+     * sensitivityLevel (task 0030, item 6): only events that recorded this level for their document when they
+     * happened. Exactly STANDARD, CONFIDENTIAL or HIGHLY_CONFIDENTIAL; anything else is refused with SDV-SEN-019.
+     */
     public record SearchRequest(
             String action,
             AuditOutcome outcome,
@@ -245,7 +255,25 @@ public class AuditQueryService {
             Instant to,
             Integer limit,
             String cursor,
-            String recordNumber) { }
+            String recordNumber,
+            String sensitivityLevel) {
+        public SearchRequest(String action, AuditOutcome outcome, String actorType, String actorId, String targetType,
+                             String targetId, String correlationId, Instant from, Instant to, Integer limit,
+                             String cursor, String recordNumber) {
+            this(action, outcome, actorType, actorId, targetType, targetId, correlationId, from, to, limit, cursor,
+                    recordNumber, null);
+        }
+    }
+
+    /** Null for no level filter; a level for exactly its name; a coded refusal otherwise (fail closed). */
+    static SensitivityLevel levelFilter(String value) {
+        if (value == null || value.isEmpty()) return null;
+        for (SensitivityLevel level : SensitivityLevel.values()) {
+            if (level.name().equals(value)) return level;
+        }
+        throw new CodedRefusal.BadRequest(SdvErrorCode.SEN_019,
+                "The sensitivity filter must be one of STANDARD, CONFIDENTIAL, HIGHLY_CONFIDENTIAL (exactly, in capitals); leave it out for any level.");
+    }
 
     /** The list's filters, plus the activity group's action codes and the routine codes the screen hides. */
     public record ExportRequest(SearchRequest search, List<String> actions, List<String> excludeActions) { }

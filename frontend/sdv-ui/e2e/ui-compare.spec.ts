@@ -261,6 +261,30 @@ export const SENSITIVITY_BOARDS: (Board & { setUp: (page: Page) => Promise<void>
     await dialog.getByLabel('Reason').fill("Contains an employee's own loan file")
     await page.waitForLoadState('networkidle')
   } },
+  // Task 0030. Seed-SDV-Canvas-Demo.ps1: 50 waiting print and download requests from five demo Restricted stewards,
+  // a whole-contract request on 300000000002 and two legal holds. More than 10 wait, so the groups start collapsed;
+  // as on the board, the first group is opened and ticked, and a second (collapsed) group is ticked too.
+  { name: 'sens-approvals', canvas: SENS('Sens-Approvals.dc.html'), index: 0, width: 1440, height: 900, alone: true, setUp: async (page) => {
+    await asRole(page, BA, 1440, 900)
+    await page.evaluate(() => { window.location.hash = '#/governance/approvals' })
+    const list = page.getByRole('region', { name: 'Waiting requests' })
+    await expect(list).toBeVisible({ timeout: 15000 })
+    const groups = list.getByRole('group')
+    await groups.first().getByRole('button', { name: /^Expand / }).click()
+    await groups.first().getByRole('checkbox', { name: /^Select all on / }).check()
+    const second = groups.filter({ has: page.getByRole('button', { name: /^Expand / }) }).first()
+    if (await second.count()) await second.getByRole('checkbox', { name: /^Select all on / }).check()
+    await expect(page.getByRole('region', { name: 'Selected requests' })).toBeVisible()
+    await page.waitForLoadState('networkidle')
+  } },
+  { name: 'sens-legalhold', canvas: SENS('Sens-LegalHold.dc.html'), index: 0, width: 1440, height: 820, alone: true, setUp: async (page) => {
+    await asRole(page, BA, 1440, 820)
+    await page.evaluate(() => { window.location.hash = '#/governance/holds' })
+    await page.getByLabel('Contract number').fill(RECORD)
+    await page.getByLabel('Reason').fill('Litigation: Ellis v. Acme Lending, case 26-CV-0412')
+    await expect(page.getByText(/documents? on contract .* will be held/)).toBeVisible({ timeout: 15000 })
+    await page.waitForLoadState('networkidle')
+  } },
 ]
 
 test.describe('Canvas comparison', () => {

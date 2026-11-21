@@ -7,6 +7,7 @@ import { failureText } from './CardError'
 import { Badge, Callout, Dialog, Drawer, Tabs, TechDetails, actorWords, auditEventLabel, fmtDate, fmtDateTime, fmtRel, fmtShortDate } from './ui'
 import { viewerMetadata, viewerPage, viewerSearch, record as fetchRecord, toRecord, documentActivity, type LiveDocumentActivity, type ViewerSearch, documentTags, documentComments, createDocumentTag, createDocumentComment, type LiveTag, type LiveComment, secureDownload, recordPrintEvent, permanentRedaction, viewerPreviews, myRequests, documentLevelHistory, LEVEL_NAMES, type MyRequest, type LevelHistoryEntry } from './liveApi'
 import { LOCKED_MESSAGE, LevelBadge, LevelDialog, RequestItem, RequestPopover, pendingOf, recordWord, validGrant, whenWords } from './Sensitivity'
+import { markViewed, unseenDecisions, useSeenRevision } from './Notices'
 
 type Zoom = 'width' | 'page' | number
 type InfoTab = 'ask' | 'details' | 'requests' | 'comments' | 'tags' | 'activity'
@@ -549,7 +550,15 @@ function DocInfo({ doc, tab, setTab, embedded, requests, record }: { doc: Doc; t
   // read it), or the sending system when nobody has changed it.
   const stewardView = can('CHANGE_SENSITIVITY_LEVEL')
   const word = recordWord(record)
-  const mine = requests.filter((r) => r.documentId === doc.id)
+  // Task 0030 (0.3): this document's requests, and whole-contract requests for its record (marked "Whole contract").
+  const primary = record.identifiers[0]?.value
+  const mine = requests.filter((r) => r.documentId === doc.id
+    || (r.scope === 'RECORD' && !!primary && r.sourceId === record.sourceId && r.primaryIdentifier === primary))
+  // Task 0030 (item 7): decisions not looked at yet count on the Requests tab until the tab is opened.
+  const subject = useStore().liveSession?.subject ?? ''
+  useSeenRevision()
+  const unseen = stewardView && subject ? unseenDecisions(subject, mine).length : 0
+  useEffect(() => { if (tab === 'requests' && stewardView && subject) markViewed(subject, mine) }, [tab, stewardView, subject, mine.map((r) => r.requestId + r.status).join()]) // eslint-disable-line react-hooks/exhaustive-deps
   const [history, setHistory] = useState<LevelHistoryEntry[] | null>(null)
   useEffect(() => {
     setHistory(null)
@@ -684,7 +693,7 @@ function DocInfo({ doc, tab, setTab, embedded, requests, record }: { doc: Doc; t
   )
   return (
     <>
-      <Tabs label="Document information" value={tab} onChange={(t) => setTab(t as InfoTab)} tabs={[...(showDevelopmentUtilities ? [{ id: 'ask', label: 'Ask' }] : []), { id: 'details', label: 'Details' }, ...(stewardView ? [{ id: 'requests', label: `Requests${mine.some((r) => r.status === 'PENDING' || r.status === 'APPROVED') ? ` ${mine.filter((r) => r.status === 'PENDING' || r.status === 'APPROVED').length}` : ''}` }] : []), { id: 'comments', label: `Comments${liveComments.length ? ` ${liveComments.length}` : ''}` }, { id: 'tags', label: 'Tags' }, { id: 'activity', label: 'Activity' }]} />
+      <Tabs label="Document information" value={tab} onChange={(t) => setTab(t as InfoTab)} tabs={[...(showDevelopmentUtilities ? [{ id: 'ask', label: 'Ask' }] : []), { id: 'details', label: 'Details' }, ...(stewardView ? [{ id: 'requests', label: `Requests${mine.some((r) => r.status === 'PENDING' || r.status === 'APPROVED') ? ` ${mine.filter((r) => r.status === 'PENDING' || r.status === 'APPROVED').length}` : ''}`, count: unseen, countLabel: `${unseen} new decision${unseen === 1 ? '' : 's'}` }] : []), { id: 'comments', label: `Comments${liveComments.length ? ` ${liveComments.length}` : ''}` }, { id: 'tags', label: 'Tags' }, { id: 'activity', label: 'Activity' }]} />
       {embedded ? <div className="stack-lg">{body}</div> : <div className="vw-panel-body">{body}</div>}
     </>
   )

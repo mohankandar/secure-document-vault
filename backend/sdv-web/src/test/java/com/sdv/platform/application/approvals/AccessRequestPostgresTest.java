@@ -276,6 +276,41 @@ class AccessRequestPostgresTest {
         assertEquals(0, count("select count(*) from audit_events where tenant_id='" + T1 + "' and action like 'ACCESS_REQUEST_%'"
                 + " and safe_details::text like '%Court bundle%'"), "request reasons stay out of the audit");
 
+        // ---- Task 0030 (0.3): the requester's own list names the record, for a whole-record request too.
+        var mine = approvals.mine(T1, "steward-1", "c");
+        var recordMine = mine.stream().filter(r -> r.requestId().equals(lowerRecord)).findFirst().orElseThrow();
+        assertEquals(CONTRACT, recordMine.primaryIdentifier(), "a whole-record request names its record");
+        assertEquals("Contract number", recordMine.primaryIdentifierLabel());
+        assertEquals(S1, recordMine.sourceId());
+        assertNull(recordMine.documentId());
+        var documentMine = mine.stream().filter(r -> r.requestId().equals(lower)).findFirst().orElseThrow();
+        assertEquals(CONTRACT, documentMine.primaryIdentifier(), "and so does a document request");
+        assertEquals(S1, documentMine.sourceId());
+
+        // ---- Task 0030 (item 6): the audit's level filter, real SQL: the level each event recorded, tenants apart.
+        var auditQuery = new com.sdv.platform.persistence.operations.JdbcOperationalRepository(jdbc);
+        java.util.function.BiFunction<UUID, SensitivityLevel, List<com.sdv.platform.domain.audit.AuditEvent>> byLevel =
+                (tenant, level) -> auditQuery.findRows(tenant, new com.sdv.platform.application.port.AuditQueryPort.Filter(
+                        null, null, null, null, null, null, null, null, null, null, null, null, null, null, level), 1000)
+                        .stream().map(com.sdv.platform.application.port.AuditQueryPort.Row::event).toList();
+        var highly = byLevel.apply(T1, SensitivityLevel.HIGHLY_CONFIDENTIAL);
+        var confidential = byLevel.apply(T1, SensitivityLevel.CONFIDENTIAL);
+        var actionsFound = highly.stream().map(com.sdv.platform.domain.audit.AuditEvent::action).collect(java.util.stream.Collectors.toSet());
+        assertTrue(actionsFound.containsAll(List.of("ACCESS_REQUEST_CREATED", "DOCUMENT_PRINTED", DocumentAccessGuard.REFUSED_ACTION)),
+                "requests, prints and refusals of Highly Confidential documents: " + actionsFound);
+        assertTrue(highly.stream().allMatch(e -> e.safeDetailsJson().contains("\"HIGHLY_CONFIDENTIAL\"")), "only that level");
+        assertFalse(confidential.isEmpty(), "the Confidential lowering request");
+        assertTrue(confidential.stream().allMatch(e -> e.safeDetailsJson().contains("\"CONFIDENTIAL\"")
+                && !e.safeDetailsJson().contains("HIGHLY_CONFIDENTIAL")), "and nothing else");
+        long recorded = count("select count(*) from audit_events where tenant_id='" + T1 + "' and safe_details->>'level' is null"
+                + " and safe_details->>'sensitivityLevel' is null");
+        assertTrue(recorded > 0, "events that recorded no level exist");
+        int all = auditQuery.findRows(T1, new com.sdv.platform.application.port.AuditQueryPort.Filter(null, null, null, null,
+                null, null, null, null, null, null, null, null), 1000).size();
+        assertTrue(highly.size() + confidential.size() < all, "and are left out by the filter");
+        assertTrue(byLevel.apply(T2, SensitivityLevel.HIGHLY_CONFIDENTIAL).stream().allMatch(e -> e.tenantId().equals(T2)),
+                "another tenant's events are never found");
+
         // ---- The table's checks.
         String base = "insert into access_requests(request_id, tenant_id, kind, document_id, source_id, record_key, record_key_sha256, "
                 + "requested_level, reason, requested_by, requested_at, status, expires_at, decided_by, decided_at, used_at) values (";

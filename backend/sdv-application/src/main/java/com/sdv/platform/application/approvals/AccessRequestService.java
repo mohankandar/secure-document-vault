@@ -206,12 +206,45 @@ public class AccessRequestService {
         });
     }
 
-    /** The person's own requests, newest first, with their status (waiting, approved, declined, used or expired). */
+    /**
+     * The person's own requests, newest first, with their status (waiting, approved, declined, used or expired).
+     * Task 0030 (0.3): each names its record by the sending system and the primary identifier, so the viewer can list
+     * a whole-record request with the documents of that record. Both are null when the record can't be found (gone).
+     */
     public List<RequestView> mine(UUID tenantId, String actorId, String correlationId) {
         requireTenant(tenantId);
         requireActor(actorId);
         grants.expireDue(tenantId, correlationId);
-        return requests.findByRequester(tenantId, actorId, MINE_LIMIT).stream().map(RequestView::of).toList();
+        List<AccessRequest> rows = requests.findByRequester(tenantId, actorId, MINE_LIMIT);
+        List<UUID> documentIds = rows.stream().map(AccessRequest::documentId).filter(Objects::nonNull).distinct().toList();
+        Map<UUID, DocumentFacts> facts = new HashMap<>();
+        if (!documentIds.isEmpty()) requests.findDocumentFacts(tenantId, documentIds).forEach(f -> facts.put(f.documentId(), f));
+        Map<String, Optional<AccessRequestRepository.PrimaryIdentifier>> recordIds = new HashMap<>();
+        List<RequestView> views = new ArrayList<>();
+        for (AccessRequest r : rows) {
+            if (r.kind().scope() == AccessRequestKind.Scope.DOCUMENT) {
+                DocumentFacts f = facts.get(r.documentId());
+                views.add(f == null ? RequestView.of(r)
+                        : RequestView.of(r, f.sourceId(), f.primaryIdentifier(), f.primaryIdentifierLabel()));
+            } else {
+                Optional<AccessRequestRepository.PrimaryIdentifier> id = recordIds.computeIfAbsent(
+                        r.sourceId() + "|" + r.recordKey(), k -> recordIdentifier(tenantId, r));
+                views.add(id.map(p -> RequestView.of(r, r.sourceId(), p.value(), p.label())).orElseGet(() -> RequestView.of(r)));
+            }
+        }
+        return List.copyOf(views);
+    }
+
+    private Optional<AccessRequestRepository.PrimaryIdentifier> recordIdentifier(UUID tenantId, AccessRequest r) {
+        try {
+            return recordReferences.fromKey(tenantId, r.sourceId(), r.recordKey())
+                    .flatMap(found -> found.submissionIds().stream()
+                            .map(id -> requests.findPrimaryIdentifier(tenantId, id))
+                            .flatMap(Optional::stream).findFirst());
+        } catch (RuntimeException ex) {
+            // The record is named only to help the requester; without it the request is still listed.
+            return Optional.empty();
+        }
     }
 
     // ---------------------------------------------------------------------------------------- Business Admin
@@ -582,7 +615,11 @@ public class AccessRequestService {
 
     // -------------------------------------------------------------------------------------------------- views
 
-    /** A request as its requester sees it. */
+    /**
+     * A request as its requester sees it. Task 0030 (0.3): sourceId, primaryIdentifier and primaryIdentifierLabel name
+     * the record (the document's record, or the whole record asked about); null when it can't be found, and in the
+     * answer to a new request.
+     */
     public record RequestView(
             UUID requestId,
             AccessRequestKind kind,
@@ -594,10 +631,18 @@ public class AccessRequestService {
             Instant requestedAt,
             Instant decidedAt,
             Instant expiresAt,
-            Instant usedAt) {
+            Instant usedAt,
+            UUID sourceId,
+            String primaryIdentifier,
+            String primaryIdentifierLabel) {
         static RequestView of(AccessRequest r) {
+            return of(r, null, null, null);
+        }
+
+        static RequestView of(AccessRequest r, UUID sourceId, String identifier, String label) {
             return new RequestView(r.requestId(), r.kind(), r.kind().scope(), r.status(), r.documentId(),
-                    r.requestedLevel(), r.reason(), r.requestedAt(), r.decidedAt(), r.expiresAt(), r.usedAt());
+                    r.requestedLevel(), r.reason(), r.requestedAt(), r.decidedAt(), r.expiresAt(), r.usedAt(),
+                    sourceId, identifier, label);
         }
     }
 

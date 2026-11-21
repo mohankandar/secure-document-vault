@@ -31,6 +31,10 @@
   - "Title Records" (paused, no fields) for the admin canvas, and, task 0023, the paused "Tour test system
     20261118181639" with two fields that can't be searched: the test case of the Records default rule (task 0017).
 
+  - Tasks 0029 and 0030: the sensitivity demo (see the sections at the end): Highly Confidential and Confidential
+    documents, requests in every state, 50 waiting print and download requests from five demo Restricted stewards,
+    a whole-contract request and two legal holds.
+
   It never runs against anything but http://localhost / 127.0.0.1 and a local sdv* database in sdv-postgres.
   Running it again changes nothing: whatever is already there is left as it is (no field, order or title is sent
   again, because every such save adds a version and an audit event).
@@ -366,4 +370,70 @@ if ((Requests $ds "kind='LOWER_LEVEL' and document_id='$income' and status='PEND
 }
 $states = Db "select string_agg(status || ' ' || n, ', ' order by status) from (select status, count(*) n from access_requests where tenant_id='$Tenant' and requested_by in ('$rs','$ds') group by status) x;"
 Ok "Demo requests by Dana Ruiz and Daniel Reyes: $states"
+
+# ---- Task 0030: Approvals and Legal holds (boards Sens-Approvals, Sens-LegalHold) ----
+# Two Highly Confidential documents more on each of 300000000007 Fatima Noor and 300000000008 Liam Brooks (second
+# deliveries, so the existing documents stay as they are). With the settlement agreement that makes five. Five demo
+# Restricted stewards who never sign in (Sam Kim, Ali Haddad, Leo Grant, Mia Novak, Tom Reed) each ask to print and to
+# download all five: 50 waiting print and download requests, the bulk approval the task tests. Their names are written
+# in the local database only, as the other demo names are. Dana Ruiz also asks to lower the whole of 300000000002 to
+# Confidential (a whole-contract request). Two legal holds: the two new documents of 300000000007, and Wei Chen's
+# income statement. Each is made only when it is missing, so a second run changes nothing; after the bulk approval
+# (or 7 days), a run makes the 50 waiting requests again.
+$approvalDocs = @($hc)
+foreach ($r in @(
+    @{ n = '300000000007'; who = 'Fatima Noor'; type = 'Mortgage'; closing = '2026-07-31'; files = @('hardship-letter.pdf', 'fraud-report.pdf') },
+    @{ n = '300000000008'; who = 'Liam Brooks'; type = 'Auto'; closing = '2026-10-09'; files = @('police-report.pdf', 'medical-letter.pdf') })) {
+    $subKey = "canvas-demo-$($r.n)-approvals"
+    $expected = @(); $docs = @()
+    for ($i = 0; $i -lt $r.files.Count; $i++) { $expected += "$subKey-$($i + 1)"; $docs += @{ id = "$subKey-$($i + 1)"; file = [string]$r.files[$i]; path = $PdfPath; level = 'HIGHLY_CONFIDENTIAL' } }
+    $sid = Deliver $LosId $subKey @{ contractNumber = $r.n; borrowerName = $r.who; loanType = $r.type; closingDate = $r.closing } $expected $docs "$($r.n) $($r.who) (approvals demo)"
+    foreach ($e in $expected) {
+        $d = Db "select document_id from documents where tenant_id='$Tenant' and submission_id='$sid' and source_document_id='$e' limit 1;"
+        if (-not $d) { throw "Demo document $e was not stored." }
+        $approvalDocs += $d
+    }
+}
+# A request needs an available document: wait for the new ones (they are usually available at once).
+for ($try = 0; $try -lt 30; $try++) {
+    $notYet = [int](Db "select count(*) from documents where tenant_id='$Tenant' and document_id in ($(($approvalDocs | ForEach-Object { "'$_'" }) -join ',')) and status <> 'AVAILABLE';")
+    if ($notYet -eq 0) { break }
+    Start-Sleep -Seconds 1
+}
+if ($notYet -ne 0) { throw "$notYet approvals demo document(s) are not available yet; run the seed again in a minute." }
+
+$askers = @(
+    @{ id = 'local-demo-sam-kim'; name = 'Sam Kim' }, @{ id = 'local-demo-ali-haddad'; name = 'Ali Haddad' },
+    @{ id = 'local-demo-leo-grant'; name = 'Leo Grant' }, @{ id = 'local-demo-mia-novak'; name = 'Mia Novak' },
+    @{ id = 'local-demo-tom-reed'; name = 'Tom Reed' })
+$why = @{ PRINT = @('Hearing bundle, two copies', 'Board pack for the risk committee', 'Signed copy for the file review', 'Copy for the mediation session', 'Paper copy for the auditor'); DOWNLOAD = @('Outside counsel needs a copy for the hearing on 2 December.', 'Regulator asked for the original by Friday', 'Send to the insurer for the claim', 'Evidence pack for the complaint', 'Copy for the external auditor') }
+$made = 0
+for ($p = 0; $p -lt $askers.Count; $p++) {
+    $as = Headers $askers[$p].id 'RESTRICTED_STEWARD'
+    foreach ($doc in $approvalDocs) {
+        foreach ($kind in @('PRINT', 'DOWNLOAD')) {
+            if ((Requests $askers[$p].id "kind='$kind' and document_id='$doc' and status='PENDING'") -eq 0) { $null = Ask $as $doc $kind $why[$kind][$p]; $made++ }
+        }
+    }
+    $null = Db "update access_requests set requested_by_display_name=$(Lit $askers[$p].name) where tenant_id='$Tenant' and requested_by='$($askers[$p].id)' and requested_by_display_name is null;"
+}
+# Whole contract: Dana asks to lower 300000000002 (Highly Confidential as a whole contract) to Confidential.
+if ((Requests $rs "kind='LOWER_RECORD_LEVEL' and status='PENDING'") -eq 0) {
+    $found = Api 'POST' '/api/v1/business/search' $restricted @{ sourceId = $LosId; criteria = @{ contractNumber = '300000000002' }; page = 1; pageSize = 5 }
+    $ref = @($found.records)[0].recordRef
+    if (-not $ref) { throw 'Record 300000000002 was not found for the whole-contract request.' }
+    $null = Api 'POST' "/api/v1/business/records/$([uri]::EscapeDataString($ref))/sensitivity/lower-request" $restricted @{ level = 'CONFIDENTIAL'; reason = 'Migration review finished; the old card numbers are now redacted.' }
+}
+$waiting = Db "select count(*) from access_requests where tenant_id='$Tenant' and status='PENDING' and expires_at > now();"
+Ok "Approvals demo: $made new request(s); $waiting waiting in all"
+
+# Legal holds, placed by Priya Natarajan: only on a document that has none.
+foreach ($h in @(
+    @{ doc = $approvalDocs[1]; reason = 'Regulator inquiry 2026-117' }, @{ doc = $approvalDocs[2]; reason = 'Regulator inquiry 2026-117' },
+    @{ doc = $income; reason = 'HR dispute' })) {
+    if ([int](Db "select count(*) from legal_holds where tenant_id='$Tenant' and document_id='$($h.doc)' and released_at is null;") -eq 0) {
+        $null = Api 'POST' '/api/v1/admin/legal-holds' $approver @{ documentId = $h.doc; reason = $h.reason }
+    }
+}
+Ok "Legal holds in place: $(Db "select count(*) from legal_holds where tenant_id='$Tenant' and released_at is null;")"
 Write-Host 'Demo data ready.' -ForegroundColor Green

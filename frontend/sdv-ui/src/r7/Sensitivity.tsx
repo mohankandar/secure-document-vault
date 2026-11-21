@@ -71,7 +71,7 @@ export function RequestItem({ r, word }: { r: MyRequest; word: string }) {
   const sent = whenWords(r.requestedAt, !isYesterdayOrOlder(r.requestedAt))
   return (
     <li className="v-req">
-      <b>{KIND_WORDS(r, word)}</b>
+      <b>{KIND_WORDS(r, word)}{r.scope === 'RECORD' && <span className="v-req-whole">Whole {word}</span>}</b>
       <span className="faint">Sent {sent} · “{r.reason}”</span>
       <span className={`v-req-st ${state.tone}`}>{state.text}</span>
     </li>

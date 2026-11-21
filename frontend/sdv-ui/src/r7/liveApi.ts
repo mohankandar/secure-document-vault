@@ -150,7 +150,8 @@ export type OpsAuditEvent={auditEventId:string;occurredAt:string;action:string;o
   /** Null for events before migration 020 (show actorId). */ actorDisplayName?:string|null;
   /** Document events: looked up when the list is read. recordNumber is the record's primary identifier. */ recordNumber?:string|null;
   /** Task 0027 (0.4): never a file name. The document instead: ID (support only), effective level, received date, pages. */ documentId?:string|null;sensitivityLevel?:SensitivityLevel|null;documentReceivedAt?:string|null;documentPageCount?:number|null}
-export const opsAudit=(cursor?:string,filters?:{action?:string;outcome?:string;actorId?:string;actorType?:string;targetType?:string;targetId?:string;correlationId?:string;from?:string;to?:string;recordNumber?:string},limit=50)=>{const p=new URLSearchParams({limit:String(limit)});if(cursor)p.set('cursor',cursor);for(const [k,v] of Object.entries(filters??{}))if(v)p.set(k,v);return roleApi<{events:OpsAuditEvent[];nextCursor:string|null;hasMore:boolean}>('/api/v1/operations/audit-events?'+p.toString(),'platform')}
+/** sensitivityLevel (task 0030): only events that recorded this level for their document when they happened. */
+export const opsAudit=(cursor?:string,filters?:{action?:string;outcome?:string;actorId?:string;actorType?:string;targetType?:string;targetId?:string;correlationId?:string;from?:string;to?:string;recordNumber?:string;sensitivityLevel?:string},limit=50)=>{const p=new URLSearchParams({limit:String(limit)});if(cursor)p.set('cursor',cursor);for(const [k,v] of Object.entries(filters??{}))if(v)p.set(k,v);return roleApi<{events:OpsAuditEvent[];nextCursor:string|null;hasMore:boolean}>('/api/v1/operations/audit-events?'+p.toString(),'platform')}
 /** Task 0011 export: the server builds the CSV from the list's filters (plus the activity group and hidden routine codes) and records the export. */
 export const opsAuditExport=(filters:Record<string,string|undefined>,actions?:string[],excludeActions?:string[])=>{const p=new URLSearchParams();for(const [k,v] of Object.entries(filters))if(v)p.set(k,v);if(actions?.length)p.set('actions',actions.join(','));if(excludeActions?.length)p.set('excludeActions',excludeActions.join(','));return contentBinary('/api/v1/operations/audit-events/export?'+p.toString(),'platform')}
 /** The last automatic cleanup run since the server started (kept in memory; the server reports no schedule). */
@@ -182,7 +183,8 @@ export type AccessRequestStatus = 'PENDING' | 'APPROVED' | 'DECLINED' | 'USED' |
  * One of the signed-in Steward's own requests. expiresAt: while PENDING, when it expires undecided; once a print or
  * download is APPROVED, when its one use must happen by. A whole-record request names no document.
  */
-export type MyRequest = { requestId: string; kind: AccessRequestKind; scope: 'DOCUMENT' | 'RECORD'; status: AccessRequestStatus; documentId: string | null; requestedLevel: SensitivityLevel | null; reason: string; requestedAt: string; decidedAt: string | null; expiresAt: string; usedAt: string | null }
+export type MyRequest = { requestId: string; kind: AccessRequestKind; scope: 'DOCUMENT' | 'RECORD'; status: AccessRequestStatus; documentId: string | null; requestedLevel: SensitivityLevel | null; reason: string; requestedAt: string; decidedAt: string | null; expiresAt: string; usedAt: string | null;
+  /** Task 0030 (0.3): the record, by its sending system and primary identifier; null when it can't be found, and in the answer to a new request. */ sourceId?: string | null; primaryIdentifier?: string | null; primaryIdentifierLabel?: string | null }
 /** Stewards only (a Business user is refused with SDV-APR-015, so the screens don't ask). */
 export const myRequests = () => roleApi<MyRequest[]>('/api/v1/business/access-requests', 'business')
 /** A Restricted Steward asks to print or download one Highly Confidential document once. */
@@ -204,3 +206,38 @@ export type PendingLevels = { level: SensitivityLevel | null; requestedLevel: Se
 export const approvalLevelNote = (r: PendingLevels, recordWord = 'contract') =>
   r.accessUnchanged === true && r.recordLevel ? `The ${recordWord} stays at ${LEVEL_NAMES[r.recordLevel]}, so who can open it won't change` : null
 export const LEVEL_NAMES: Record<SensitivityLevel, string> = { STANDARD: 'Standard', CONFIDENTIAL: 'Confidential', HIGHLY_CONFIDENTIAL: 'Highly Confidential' }
+
+// ---- Task 0030: Approvals and Legal holds for the Business admin (the server side is tasks 0027 and 0028) ----
+
+/** "Document 2 of 6": only when two documents of the record can't be told apart by received date and pages. */
+export type RequestPosition = { index: number; of: number }
+/**
+ * A waiting request as the Business admin sees it, and nothing more: the record's primary identifier, the document's
+ * received date and page count (or the record's document count), the levels, who asked, why and when. Never a title,
+ * file name or content. documentId is for support only: the screen doesn't show it.
+ */
+export type PendingRequest = PendingLevels & { requestId: string; kind: AccessRequestKind; scope: 'DOCUMENT' | 'RECORD'; primaryIdentifier: string | null; primaryIdentifierLabel: string | null; receivedAt: string | null; pageCount: number | null; documentCount: number | null; position: RequestPosition | null; requester: string; reason: string; requestedAt: string; documentId: string | null }
+export type PendingGroup = { primaryIdentifier: string | null; primaryIdentifierLabel: string | null; requests: PendingRequest[] }
+export type PendingList = { groups: PendingGroup[]; requestCount: number }
+/** Oldest first, grouped by the record's primary identifier. Every Business admin of the tenant sees the same list. */
+export const pendingRequests = () => roleApi<PendingList>('/api/v1/admin/access-requests', 'businessAdmin')
+export type DecisionResult = { requestId: string; status: AccessRequestStatus; grantExpiresAt: string | null }
+export const decideRequest = (requestId: string, decision: 'approve' | 'decline') =>
+  roleApi<DecisionResult>('/api/v1/admin/access-requests/' + encodeURIComponent(requestId) + '/' + decision, 'businessAdmin', { method: 'POST' })
+/** outcome: APPROVED, DECLINED, REFUSED (with its code and message) or FAILED. */
+export type BulkItem = { requestId: string; outcome: 'APPROVED' | 'DECLINED' | 'REFUSED' | 'FAILED'; code: string | null; message: string | null }
+export type BulkResult = { results: BulkItem[]; decided: number; notDecided: number }
+/** At most this many at once (the server's limit). Whole-record requests are never sent this way. */
+export const BULK_MAX = 100
+export const decideMany = (decision: 'APPROVE' | 'DECLINE', requestIds: string[]) =>
+  roleApi<BulkResult>('/api/v1/admin/access-requests/decisions', 'businessAdmin', { method: 'POST', body: JSON.stringify({ decision, requestIds }) })
+
+/** A document as the Business admin sees it for a hold: never a title, file name or content. documentId: support only. */
+export type HoldDocument = { documentId: string; primaryIdentifier: string | null; primaryIdentifierLabel: string | null; sensitivityLevel: SensitivityLevel | null; receivedAt: string | null; pageCount: number | null; onHold: boolean; activeHoldId: string | null }
+export type LegalHold = { holdId: string; documentId: string; primaryIdentifier: string | null; primaryIdentifierLabel: string | null; sensitivityLevel: SensitivityLevel | null; receivedAt: string | null; pageCount: number | null; reason: string; placedBy: string; placedByName: string | null; placedAt: string; releasedBy: string | null; releasedByName: string | null; releasedAt: string | null }
+/** The documents of the record with this primary identifier (at most 100). */
+export const holdDocuments = (identifier: string) => roleApi<HoldDocument[]>('/api/v1/admin/legal-holds/documents?identifier=' + encodeURIComponent(identifier), 'businessAdmin')
+/** Holds in place, newest first (at most 200). */
+export const activeHolds = () => roleApi<LegalHold[]>('/api/v1/admin/legal-holds', 'businessAdmin')
+export const placeHold = (documentId: string, reason: string) => roleApi<LegalHold>('/api/v1/admin/legal-holds', 'businessAdmin', { method: 'POST', body: JSON.stringify({ documentId, reason }) })
+export const releaseHold = (holdId: string) => roleApi<LegalHold>('/api/v1/admin/legal-holds/' + encodeURIComponent(holdId) + '/release', 'businessAdmin', { method: 'POST' })

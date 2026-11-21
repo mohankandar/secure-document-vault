@@ -140,6 +140,13 @@ Every refusal listed here comes back with a short, stable `code` and a plain `me
 - **What the user should do:** ask a Steward or a Business admin if you need to know why a level changed.
 - **What support should tell the customer:** the reasons are kept out of the audit on purpose (they are free text and may hold names), so IT admins can't read them either. A Steward or Business admin of the organization can.
 
+### SDV-SEN-019: unknown level in the audit's sensitivity filter
+
+- **HTTP status:** 400. Sent by `GET /api/v1/operations/audit-events` and `GET /api/v1/operations/audit-events/export` when `sensitivityLevel` is given.
+- **Meaning:** the filter is not exactly `STANDARD`, `CONFIDENTIAL` or `HIGHLY_CONFIDENTIAL`. Lower case and extra spaces are refused, so a typing slip never quietly shows every event. Nothing was listed or exported.
+- **What the user should do:** choose Any, Confidential or Highly Confidential in the Audit screen's Sensitivity filter. A program should send one of the three names exactly, or leave the filter out.
+- **What support should tell the customer:** the filter keeps only events that recorded the document's level when they happened: downloads, prints, refused openings and requests. Today, opening a document and loading its pages don't record a level, so they aren't found by this filter.
+
 ## Roles (ROL)
 
 ### SDV-ROL-001: permission a role may never have

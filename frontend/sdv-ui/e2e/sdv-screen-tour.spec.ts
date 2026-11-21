@@ -904,7 +904,8 @@ async function captureSectionTabs(page: Page, testInfo: TestInfo, sectionsLabel:
   for (const tab of tabs) {
     // A tab may carry a status dot, which adds ' needs attention' to its accessible name.
     const escaped = tab.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-    const tabButton = tablist.getByRole('tab', { name: new RegExp(`^${escaped}( needs attention)?$`) })
+    // Task 0030: a tab may also carry a count ("Approvals 50 waiting").
+    const tabButton = tablist.getByRole('tab', { name: new RegExp(`^${escaped}( needs attention)?( \\d+ [a-z ]+)?$`) })
     await tabButton.click()
     await expect(tabButton).toHaveAttribute('aria-selected', 'true')
     await page.waitForTimeout(400)
@@ -1439,6 +1440,163 @@ test.describe('SDV role-based screen capture', () => {
     await closeViewer()
   })
 
+  // Task 0030. Needs Seed-SDV-Canvas-Demo.ps1 (50 waiting print and download requests, a whole-contract request on
+  // 300000000002, legal holds). Changes one thing only: Dana Ruiz asks to print a demo document and a Business admin
+  // declines it, so the notice can be seen (a declined request stays in her history).
+  test('Approvals, legal holds, requester notices and the audit level filter (task 0030)', async ({ page }, testInfo) => {
+    test.skip(!isDesktop(testInfo), 'Runs once per tour (desktop only).')
+    test.setTimeout(240_000)
+    const TENANT = '11111111-1111-1111-1111-111111111111'
+    const as = (subject: string, roles: string) => ({ 'X-SDV-Tenant-Id': TENANT, 'X-SDV-Subject': subject, 'X-SDV-Roles': roles, 'Content-Type': 'application/json' })
+    const dana = as('local-restricted-steward', 'RESTRICTED_STEWARD'), priya = as('local-business-admin', 'BUSINESS_ADMIN')
+
+    // 1. Approvals: more than 10 wait, so the groups start collapsed; the whole-contract group stays open.
+    await selectRole(page, 'Business Administrator')
+    await page.evaluate(() => { window.location.hash = '#/governance/approvals' })
+    const tabs = page.getByRole('tablist', { name: 'Business administration sections' })
+    await expect(tabs.getByRole('tab', { name: /^Approvals \d+ waiting$/ })).toBeVisible({ timeout: 15000 })
+    await expect(page.getByRole('heading', { level: 1, name: 'Approvals' })).toBeVisible()
+    const list = page.getByRole('region', { name: 'Waiting requests' })
+    await expect(list).toBeVisible({ timeout: 15000 })
+    const wholeGroup = list.getByRole('group').filter({ hasText: 'Whole contract: decide on its own' }).first()
+    await expect(wholeGroup.getByRole('button', { name: /^Collapse / })).toHaveAttribute('aria-expanded', 'true')
+    await expect(wholeGroup.getByRole('checkbox', { name: 'Cannot be selected: whole contract' })).toBeDisabled()
+    await expect(wholeGroup.getByRole('button', { name: 'Review' })).toBeVisible()
+    const collapsed = list.getByRole('group').filter({ has: page.getByRole('button', { name: /^Expand / }) })
+    expect(await collapsed.count(), 'more than 10 waiting: the other groups start collapsed').toBeGreaterThan(0)
+    // Chips count by kind; a collapsed heading names count, kinds and requesters; its tick selects the whole group.
+    const chips = page.getByRole('toolbar', { name: 'Approvals filters' })
+    await expect(chips.getByRole('button', { name: /^Downloads \d+$/ })).toBeVisible()
+    const first = list.getByRole('group', { name: (await collapsed.first().getAttribute('aria-label'))!, exact: true })
+    await expect(first).toContainText(/\d+ requests? · .*(download|print|lower).* · /)
+    await first.getByRole('checkbox', { name: /^Select all on / }).check()
+    const bar = page.getByRole('region', { name: 'Selected requests' })
+    await expect(bar).toContainText(/\d+ selected · \d+ on \d+ \(.+\) · all one document/)
+    await capture(page, testInfo, 'approvals-selected')
+    await bar.getByRole('button', { name: 'Clear' }).click()
+    await expect(bar).toHaveCount(0)
+    // Nothing the board leaves out: no document ID, file name or title.
+    const text = await list.innerText()
+    expect(text).not.toMatch(/\.pdf|[0-9a-f]{8}-[0-9a-f]{4}-/i)
+    // Review of a whole-contract request, cancelled.
+    await wholeGroup.getByRole('button', { name: 'Review' }).click()
+    const review = page.getByRole('alertdialog', { name: 'Review a whole-contract request' })
+    await expect(review).toContainText('Lower to Confidential for the whole contract')
+    await review.getByRole('button', { name: 'Cancel' }).click()
+    // Self-approval: the server's refusal (SDV-APR-006) is shown in its own words. The refusal is simulated here,
+    // because no local sign-in both asks and approves; the rule itself is tested on the server (AccessRequestApprovalsTest).
+    await page.route('**/api/v1/admin/access-requests/*/approve', (route) => route.fulfill({ status: 403, contentType: 'application/json',
+      body: JSON.stringify({ code: 'SDV-APR-006', message: "You can't approve or decline your own request." }) }))
+    await first.getByRole('button', { name: /^Expand / }).click()
+    await first.getByRole('button', { name: 'Approve', exact: true }).first().click()
+    await expect(page.getByRole('alert').filter({ hasText: 'Not approved' })).toContainText("You can't approve or decline your own request. (SDV-APR-006)")
+    await page.unroute('**/api/v1/admin/access-requests/*/approve')
+
+    // 2. Legal holds: how many documents a contract number covers, never which; the holds in place with Release.
+    await tabs.getByRole('tab', { name: 'Legal holds' }).click()
+    await page.getByLabel('Contract number').fill('300000000001')
+    await expect(page.getByText(/3 documents on contract 300000000001 will be held/)).toBeVisible({ timeout: 15000 })
+    await expect(page.getByRole('button', { name: 'Place hold' })).toBeDisabled() // no reason yet
+    const held = page.getByRole('table', { name: 'Legal holds in place' })
+    await expect(held.locator('tbody tr').first()).toBeVisible()
+    expect(await held.innerText()).not.toMatch(/\.pdf/i)
+    await held.getByRole('button', { name: 'Release' }).first().click()
+    await page.getByRole('alertdialog', { name: 'Release this hold?' }).getByRole('button', { name: 'Cancel' }).click()
+    await capture(page, testInfo, 'legal-holds')
+    await tabs.getByRole('tab', { name: 'Keeping documents' }).click()
+    await expect(page.getByRole('button', { name: /^\d+ documents? on legal hold$/ })).toBeVisible({ timeout: 15000 })
+
+    // 3. A notice after a decision. Dana opens Vero (this browser starts from what is there), asks to print a demo
+    // document, a Business admin declines it, and the next time she opens Vero she is told; the Requests tab counts it.
+    await selectRole(page, 'Restricted Steward')
+    // The notice has read her requests once, so what is there now counts as seen.
+    await page.waitForFunction(() => Object.keys(window.localStorage).some((k) => k.startsWith('vero.requests.seen.')), undefined, { timeout: 15000 })
+    const found = await (await page.request.post('/api/v1/business/search', { headers: dana, data: { sourceId: (await searchSources(page)).find((s) => s.displayName === 'Loan Origination System')!.sourceId, criteria: { contractNumber: '300000000008' }, page: 1, pageSize: 5 } })).json() as { records: { recordRef: string }[] }
+    const rec = await (await page.request.get('/api/v1/business/records/' + encodeURIComponent(found.records[0].recordRef), { headers: dana })).json() as { documents: { documentId: string; originalFilename: string }[] }
+    const police = rec.documents.find((d) => d.originalFilename === 'police-report.pdf')
+    expect(police, 'police-report.pdf on 300000000008 from the seed').toBeTruthy()
+    const asked = await page.request.post(`/api/v1/business/documents/${police!.documentId}/access-requests`, { headers: dana, data: { kind: 'PRINT', reason: 'Tour check (task 0030)' } })
+    let requestId = asked.ok() ? (await asked.json() as { requestId: string }).requestId : ''
+    if (!requestId) { // one is already waiting from an earlier run that stopped
+      const mine = await (await page.request.get('/api/v1/business/access-requests', { headers: dana })).json() as { requestId: string; documentId: string; kind: string; status: string }[]
+      requestId = mine.find((r) => r.documentId === police!.documentId && r.kind === 'PRINT' && r.status === 'PENDING')!.requestId
+    }
+    expect((await page.request.post(`/api/v1/admin/access-requests/${requestId}/decline`, { headers: priya })).ok()).toBeTruthy()
+    await reloadApp(page)
+    const notice = page.getByRole('status', { name: 'Your requests' })
+    await expect(notice).toContainText('Print on 300000000008 declined', { timeout: 15000 })
+    await capture(page, testInfo, 'requester-notice')
+    await notice.getByRole('button', { name: 'Dismiss' }).click()
+    await reloadApp(page)
+    await expect(page.getByRole('status', { name: 'Your requests' })).toHaveCount(0) // told once
+    const los = (await searchSources(page)).find((s) => s.displayName === 'Loan Origination System')!
+    await page.evaluate(([key, id]) => window.localStorage.setItem(key, id), [LAST_SOURCE_KEY, los.sourceId])
+    await reloadApp(page)
+    await areaTab(page, 'Records').click()
+    await waitForBusinessSearchReady(page)
+    await searchFor(page, '300000000008')
+    await resultRows(page).filter({ hasText: '300000000008' }).first().click()
+    await page.getByRole('complementary', { name: 'Record inspector' }).getByRole('button', { name: /Open documents/ }).click()
+    await page.getByRole('navigation', { name: 'Record documents' }).getByRole('button', { name: /Police report/ }).click()
+    const requestsTab = viewer(page).getByRole('tab', { name: /^Requests/ })
+    await expect(requestsTab).toHaveAccessibleName(/1 new decision$/, { timeout: 15000 })
+    await requestsTab.click()
+    await expect(requestsTab).not.toHaveAccessibleName(/new decision/)
+    await viewer(page).getByRole('button', { name: /^Back to/ }).click()
+    // Whole-contract requests show with the documents of their record, marked "Whole contract".
+    await searchFor(page, '300000000002')
+    await resultRows(page).filter({ hasText: '300000000002' }).first().click()
+    await page.getByRole('complementary', { name: 'Record inspector' }).getByRole('button', { name: /Open documents/ }).click()
+    await expect(page.getByRole('img', { name: /Document page 1/ })).toBeVisible({ timeout: 20000 })
+    await viewer(page).getByRole('tab', { name: /^Requests/ }).click()
+    await expect(viewer(page).getByRole('complementary', { name: 'Document information' }).getByRole('listitem').filter({ hasText: 'Whole contract' }).first()).toContainText('Lower contract to Confidential')
+    await viewer(page).getByRole('button', { name: /^Back to/ }).click()
+
+    // 4. Audit filter by level: only events that recorded the level; a value that names no level is refused, coded.
+    await selectRole(page, 'Platform Operations Administrator')
+    await page.evaluate(() => { window.location.hash = '#/operations/audit' })
+    const asked2 = page.waitForRequest((r) => r.url().includes('/api/v1/operations/audit-events?') && r.url().includes('sensitivityLevel=HIGHLY_CONFIDENTIAL'))
+    await page.getByLabel('Sensitivity').selectOption({ label: 'Highly Confidential' })
+    await asked2
+    const ops = as('local-platform-operations-admin', 'PLATFORM_OPERATIONS_ADMIN')
+    const hc = await (await page.request.get('/api/v1/operations/audit-events?limit=200&sensitivityLevel=HIGHLY_CONFIDENTIAL', { headers: ops })).json() as { events: { safeDetailsJson: string }[] }
+    expect(hc.events.length, 'the seed made Highly Confidential requests').toBeGreaterThan(0)
+    expect(hc.events.every((e) => /"(level|sensitivityLevel)":\s*"HIGHLY_CONFIDENTIAL"/.test(e.safeDetailsJson))).toBeTruthy()
+    const bad = await page.request.get('/api/v1/operations/audit-events?sensitivityLevel=highly', { headers: ops })
+    expect(bad.status()).toBe(400)
+    expect((await bad.json() as { code: string }).code).toBe('SDV-SEN-019')
+    await capture(page, testInfo, 'audit-highly-confidential')
+  })
+
+  // Task 0030: approve 50 waiting requests in one go. Opt-in, because it uses up the seed's 50 waiting print and
+  // download requests (run Seed-SDV-Canvas-Demo.ps1 again afterwards to make them again).
+  test('Bulk approval of the 50 waiting print and download requests (task 0030)', async ({ page }, testInfo) => {
+    test.skip(process.env.SDV_BULK_APPROVAL_REGRESSION !== '1', 'Opt-in: set SDV_BULK_APPROVAL_REGRESSION=1 (approves the seed\'s 50 waiting requests)')
+    test.skip(!isDesktop(testInfo), 'Desktop only.')
+    test.setTimeout(180_000)
+    await selectRole(page, 'Business Administrator')
+    await page.evaluate(() => { window.location.hash = '#/governance/approvals' })
+    const list = page.getByRole('region', { name: 'Waiting requests' })
+    await expect(list).toBeVisible({ timeout: 15000 })
+    const chips = page.getByRole('toolbar', { name: 'Approvals filters' })
+    // Downloads, then Prints: each group's tick selects its requests of that kind; the selection is kept between chips.
+    for (const chip of [/^Downloads \d+$/, /^Prints \d+$/]) {
+      await chips.getByRole('button', { name: chip }).click()
+      const boxes = list.getByRole('checkbox', { name: /^Select all on / })
+      for (let i = 0; i < await boxes.count(); i++) if (await boxes.nth(i).isEnabled()) await boxes.nth(i).check()
+    }
+    const bar = page.getByRole('region', { name: 'Selected requests' })
+    await expect(bar).toContainText('50 selected')
+    await capture(page, testInfo, 'approvals-bulk-50')
+    const sent = page.waitForResponse((r) => r.url().endsWith('/api/v1/admin/access-requests/decisions') && r.request().method() === 'POST')
+    await bar.getByRole('button', { name: 'Approve 50' }).click()
+    const body = await (await sent).json() as { decided: number; notDecided: number }
+    expect(body).toEqual(expect.objectContaining({ decided: 50, notDecided: 0 }))
+    await expect(page.getByText('50 requests approved')).toBeVisible()
+    await chips.getByRole('button', { name: /^All \d+$/ }).click()
+    await expect(chips.getByRole('button', { name: /^Downloads 0$/ })).toBeVisible({ timeout: 15000 })
+  })
+
   test('Business User screens', async ({ page }, testInfo) => {
     await selectRole(page, 'Business User')
     await homeSteps(page, testInfo)
@@ -1519,7 +1677,9 @@ test.describe('SDV role-based screen capture', () => {
       'People & roles',
       'Roles & permissions',
       'Keeping documents',
+      'Legal holds',
       'Search fields',
+      'Approvals',
     ])
     await businessAdminChecks(page, testInfo)
     // Settings that change shared rules run once, on the desktop project; the tablet project only tours the screens.

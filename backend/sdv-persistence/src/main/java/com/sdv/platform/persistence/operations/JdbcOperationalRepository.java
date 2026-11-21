@@ -73,6 +73,12 @@ public class JdbcOperationalRepository implements AuditQueryPort, OperationalRep
             sql.append(" and action not in (:excludeActions)");
             p.addValue("excludeActions", filter.excludeActions());
         }
+        if (filter.sensitivityLevel() != null) {
+            // Task 0030 (item 6): the level the event recorded for its document when it happened. Downloads and
+            // prints write "sensitivityLevel"; refusals and requests write "level". Never today's level.
+            sql.append(" and coalesce(safe_details->>'sensitivityLevel', safe_details->>'level')=:sensitivityLevel");
+            p.addValue("sensitivityLevel", filter.sensitivityLevel().name());
+        }
         if (filter.recordNumber() != null) {
             // Document events of records with this identifier value (as typed, or as stored after normalization),
             // and record opens whose safe details name a submission with that value (task 0020 item 1), both
