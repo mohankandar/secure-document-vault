@@ -9,7 +9,7 @@ Every refusal listed here comes back with a short, stable `code` and a plain `me
 - **Format:** `SDV-<AREA>-<NNN>`. `SDV` is the product. `AREA` is three letters: `SEN` sensitivity, `ROL` roles, `HLD` legal hold, `APR` approvals, `INT` intake, `RPT` reports.
 - **Stable:** a code never changes meaning once it is released. A code that is no longer used stays listed and is marked retired. Its number is never reused.
 - **Messages** may be reworded. Programs should read the `code`, not the message.
-- **Not yet coded:** errors that are not listed here still send a generic code (`BAD_REQUEST`, `CONFLICT`, `NOT_FOUND`, `FORBIDDEN` and so on). They get an `SDV-` code when their area is worked on.
+- **Not yet coded:** errors that are not listed here still send a generic code (`BAD_REQUEST`, `CONFLICT`, `NOT_FOUND`, `FORBIDDEN` and so on). They get an `SDV-` code when their area is worked on. The failure catalog at the end of this file (task 0034) lists every such point and proposes its code.
 - Other applications read this list, for example the Platform Console runbook. Keep one section per code in the layout below. The build checks that every code in the product is listed here.
 
 ## Sensitivity (SEN)
@@ -414,3 +414,1264 @@ Sent by the Business Admin's reports: the Daily intake report (task 0032, `GET /
 - **Meaning:** the range holds more than 200,000 documents, duplicates and refusals, more than one report reads at once. Nothing was returned.
 - **What the user should do:** choose fewer days, or one sending system.
 - **What support should tell the customer:** export the period in parts.
+
+## Failure catalog (task 0034): proposed codes
+
+Task 0034 went through the code flow by flow and listed every point where something can fail: thrown, caught, returned or swallowed. The released codes above are unchanged. Everything below is a **proposal**: **Vero does not send these codes yet.**
+
+- **Why the headings are smaller.** Each proposed code has a `####` heading, not a `###` heading. The build test (`ErrorCodesDocumentedTest`) reads only `### SDV-…:` headings, and it requires every listed code to exist in the product. When a fix task makes Vero send a code, its block moves up into its area as a `###` section with the three required parts.
+- **Where.** File names are unique in `backend/`, so `File.java:123` is enough to find a line. Line numbers are from branch `docs/failure-catalog` (from `feature/reports-2` at `92ea7da`).
+- **New areas.**
+  - `SYS`: start-up, setup and the server as a whole.
+  - `AUT`: sign-in.
+  - `STO`: storage.
+  - `KEY`: key service and encryption.
+  - `PRC`: processing after receipt.
+  - `DOC`: viewing, print, download, tags and comments.
+  - `SCH`: search and records.
+  - `RED`: corrective redaction.
+  - `RET`: retention.
+  - `AUD`: audit log.
+  - `ADM`: admin screens for sending systems, fields and roles.
+  - `IDP`: the sign-in connection set up by Tenant IT.
+  - Existing areas continue their own numbering, for example `INT` from 004 and `ROL` from 006.
+- **Kind** is one of:
+  - **never reached us**: refused before Vero's own code ran;
+  - **reached but refused**: the request is wrong as sent; nothing was stored;
+  - **accepted then failed**;
+  - **needs a person**: a setting, a group or data must be fixed by someone;
+  - **not authorised**: the role doesn't allow it;
+  - **restricted**: the role can't open this sensitivity level;
+  - **not found**;
+  - **authorised but system failed**;
+  - **outside dependency down**.
+- **Generic today** means the answer has no stable code, or the code covers several different causes (for example `CONFLICT`, `BAD_REQUEST`, `NOT_FOUND`, `HTTP 500`, `VIEWER_UNAVAILABLE`).
+- **Message rules** for every code below:
+  - no passwords, keys, tokens, document content or redacted values in messages or logs;
+  - sign-in messages never say whether an account exists;
+  - every logged failure carries the request's reference (the `X-Correlation-Id`). Today the reference is sent only as a response header, never in the error body.
+  - "Ref" in a message below means that reference.
+
+### Start-up and setup (SYS)
+
+#### SDV-SYS-001 (proposed): database older than this version
+- **Where:** `SchemaGateFilter.java:43` (answer), `DatabaseSchemaCheck.java:36` (log), `SchemaVersion.java:31` (sentence).
+- **Trigger:** changesets of this version have not been applied to the database.
+- **Today:** 503 `DATABASE_OLDER` with a plain sentence, on every request except health and system information. Generic: no (own code, not in SDV form).
+- **Kind:** needs a person.
+- **User sees:** "Vero is waiting for a database update and can't be used yet. Your IT team has been told. (SDV-SYS-001)"
+- **IT admin and log:** ERROR at start, with the changesets not applied (already logged). Add the code to the log line.
+- **Fix:** the database team runs the schema step (`Update-SDV-Schema.ps1`), then Vero is restarted.
+- **L1 tells the customer:** Vero was upgraded but its database wasn't. Their database team runs the schema step from the install guide, then restarts Vero. No data is lost.
+
+#### SDV-SYS-002 (proposed): database newer than this version
+- **Where:** `SchemaGateFilter.java:43`, `DatabaseSchemaCheck.java:36`, `SchemaVersion.java:32`.
+- **Trigger:** the database has changesets this version doesn't know (an older Vero started against an upgraded database).
+- **Today:** 503 `DATABASE_NEWER`. Generic: no (own code).
+- **Kind:** needs a person.
+- **User sees:** "Vero can't start because its version doesn't match the database. Your IT team has been told. (SDV-SYS-002)"
+- **IT admin and log:** ERROR at start with the unknown changesets.
+- **Fix:** start the Vero version the database was updated for.
+- **L1 tells the customer:** an older Vero was started after an upgrade. Start the newer version again; never roll the database back by hand.
+
+#### SDV-SYS-003 (proposed): database unreachable at start
+- **Where:** `DatabaseSchemaCheck.java:52-54` (caught; logs the JDBC exception class and message), `SchemaGateFilter.java:43`.
+- **Trigger:** PostgreSQL is down, unreachable, or refuses the user when Vero starts.
+- **Today:** 503 `DATABASE_UNREACHABLE` until Vero is **restarted**. The check runs once, so Vero stays refusing even after the database comes back. Generic: no (own code).
+- **Kind:** outside dependency down.
+- **User sees:** "Vero can't reach its database. Try again in a few minutes. If it keeps happening, tell your IT team. (SDV-SYS-003)"
+- **IT admin and log:** WARN today. Make it ERROR, with the code, the host and port from the URL, and the JDBC SQL state. The PostgreSQL message can name the database user; it never holds the password.
+- **Fix:** bring the database back, then restart Vero. Fix task: re-check the database every minute while unreachable.
+- **L1 tells the customer:** Vero started while its database was unavailable. Once the database is up, restart Vero.
+
+#### SDV-SYS-004 (proposed): bundled changelog unreadable
+- **Where:** `SchemaVersion.java:75-76`.
+- **Trigger:** the changelog inside the Vero package is missing or damaged.
+- **Today:** start stops with a stack trace, "The changelog bundled with this Vero version could not be read." Generic: yes (no code).
+- **Kind:** authorised but system failed.
+- **User sees:** nothing; Vero is not running.
+- **IT admin and log:** ERROR with the code and the resource name.
+- **Fix:** reinstall the Vero package.
+- **L1 tells the customer:** the installed package is damaged. Reinstall it from the release.
+
+#### SDV-SYS-005 (proposed): sign-in settings not valid
+- **Where:**
+  - `SecurityConfiguration.java:41`, `:48`, `:55`;
+  - `EnterpriseJwtConfiguration.java:101`, `:113`, `:125`, `:140`, `:143`, `:149`, `:156`;
+  - `EnterpriseJwtAuthenticationConverter.java:106`, `:194`;
+  - `MaximumTokenLifetimeValidator.java:17`.
+- **Trigger:** one of these:
+  - `SDV_AUTH_MODE` is unknown;
+  - `local-header` is used outside the local profile;
+  - an issuer, JWKS or audience setting is missing, not HTTPS, or not a URI;
+  - a tenant ID setting is not a UUID;
+  - two claim names are the same.
+- **Today:** start stops with a Spring stack trace. The messages are good, but carry no code. Generic: yes.
+- **Kind:** needs a person.
+- **User sees:** nothing; Vero is not running.
+- **IT admin and log:** one ERROR line, with the code and the setting's name (never its value when it is a secret).
+- **Fix:** correct the named setting.
+- **L1 tells the customer:** a sign-in setting is wrong. The log names it.
+
+#### SDV-SYS-006 (proposed): sign-in switched off
+- **Where:** `SecurityConfiguration.java:52-54` (`SDV_AUTH_MODE` left at its default `disabled`).
+- **Trigger:** Vero is started outside the local profile without `SDV_AUTH_MODE`.
+- **Today:** Vero starts, and every request gets 401 with Spring's generic body. Nothing is logged. Generic: yes.
+- **Kind:** needs a person.
+- **User sees:** "Sign-in isn't set up for Vero yet. Your IT team has been told. (SDV-SYS-006)"
+- **IT admin and log:** WARN at start, with the code: "sign-in is disabled (SDV_AUTH_MODE)". Health info shows it.
+- **Fix:** set `SDV_AUTH_MODE=enterprise-jwt` and the issuer settings.
+- **L1 tells the customer:** the install is missing its sign-in setting. See the install guide, "Sign-in".
+
+#### SDV-SYS-007 (proposed): key service settings not valid
+- **Where:** `VaultCryptoConfiguration.java:42`, `:47`, `:50`, `:57`; `VaultTransitKeyProtectionProvider.java:41-44`.
+- **Trigger:** with `SDV_KEY_PROVIDER=vault`, one of these:
+  - the Vault address is missing;
+  - both a token and a token file are given, or neither;
+  - the token file is empty or can't be read;
+  - the mount or key prefix is not valid.
+- **Today:** start stops with a stack trace; messages name the setting, never the token. Generic: yes (no code).
+- **Kind:** needs a person.
+- **User sees:** nothing; Vero is not running.
+- **IT admin and log:** ERROR with the code and the setting's name. Never log the token or the token file's contents.
+- **Fix:** correct the named setting.
+- **L1 tells the customer:** the key service setting is wrong; the log names it.
+
+#### SDV-SYS-008 (proposed): approval settings not valid
+- **Where:** `ApprovalSettings.java:66`, `:74`, `:79`, `:82` (`:63` is caught and refused at `:66`).
+- **Trigger:** one of these:
+  - `SDV_APPROVALS_GRANT_HOURS` or `SDV_APPROVALS_PENDING_DAYS` is not a whole number in its range;
+  - a per-tenant entry isn't written `tenant id=number`;
+  - a per-tenant entry names a tenant twice.
+- **Today:** start stops; plain message, no code. Generic: yes.
+- **Kind:** needs a person.
+- **User sees:** nothing; Vero is not running.
+- **IT admin and log:** ERROR with the code and the setting's name.
+- **Fix:** correct the setting.
+- **L1 tells the customer:** an approvals setting is wrong; the log names it.
+
+#### SDV-SYS-009 (proposed): retention schedule settings not valid
+- **Where:** `RetentionSchedule.java:49`, `:58-59`, `:71`, `:75-76`.
+- **Trigger:** `SDV_RETENTION_DAILY_AT` is empty or not `HH:mm`, or `SDV_RETENTION_CRON` can't be read.
+- **Today:** start stops; plain message, no code. Generic: yes.
+- **Kind:** needs a person.
+- **User sees:** nothing; Vero is not running.
+- **IT admin and log:** ERROR with the code and the setting's name and value. The value is not secret.
+- **Fix:** correct the setting.
+- **L1 tells the customer:** the daily cleanup time is written wrongly; use `HH:mm`, for example `02:00`.
+
+#### SDV-SYS-010 (proposed): install default time zone not valid
+- **Where:** `IntakeReportService.java:101`, `:105-106`.
+- **Trigger:** `SDV_DEFAULT_TIME_ZONE` is empty or not an IANA name.
+- **Today:** start stops; plain message, no code. Generic: yes. (The same problem in one tenant's own setting is SDV-RPT-004.)
+- **Kind:** needs a person.
+- **User sees:** nothing; Vero is not running.
+- **IT admin and log:** ERROR with the code and the value.
+- **Fix:** set an IANA name such as `America/New_York`.
+- **L1 tells the customer:** the default time zone is written wrongly.
+
+#### SDV-SYS-011 (proposed): sign-in recovery at start refused
+- **Where:** `OidcKnownGoodRecovery.java:35`, `:37`, `:38` (`UUID.fromString` with no message of its own); `JdbcOidcConnectionBindingRepository.java:124`, `:126`, `:128`, `:129`, `:131`, `:136`, `:140`, `:144`.
+- **Trigger:** the recovery settings are incomplete, the database doesn't match, the request ID was already used, or the target isn't a disabled known-good connection.
+- **Today:** start stops. The messages are good except at `:38`, where a malformed ID gives Java's raw "Invalid UUID string". Generic: yes (no code).
+- **Kind:** needs a person.
+- **User sees:** nothing; Vero is not running.
+- **IT admin and log:** ERROR with the code and which check failed.
+- **Fix:** correct the recovery settings, or remove them to start normally.
+- **L1 tells the customer:** the emergency sign-in recovery could not be applied; the log says why. Follow the recovery runbook.
+
+#### SDV-SYS-012 (proposed): start-up work needs the database
+- **Where:**
+  - `RestrictedStewardMappingWatcher.java:35`: no schema check before it reads and writes the database;
+  - `OidcConnectionBootstrap.java:29`: `UUID.fromString` on `SDV_AUTH_JWT_TENANT_ID` with no message of its own.
+- **Trigger:** with `enterprise-jwt`, Vero starts while the database is unreachable or doesn't match, or the tenant ID setting is not a UUID.
+- **Today:** likely the start stops with a raw database or UUID stack trace. That defeats the "stay up and show why" design of SYS-001 to SYS-003. Generic: yes.
+- **Kind:** outside dependency down, or needs a person (tenant ID).
+- **User sees:** nothing; Vero is not running.
+- **IT admin and log:** ERROR with the code.
+- **Fix:** fix task. Skip the watcher while the database doesn't match (as the bootstrap does), and check the tenant ID with the other sign-in settings (SYS-005).
+- **L1 tells the customer:** Vero could not start because its database was unavailable. Start it again once the database is up.
+
+#### SDV-SYS-013 (proposed): unexpected server failure
+- **Where:** `FoundationExceptionHandler.java` (no handler for `Exception`, `IOException` or Spring's `DataAccessException`). Any failure not listed elsewhere ends here. Main callers:
+  - `DocumentIntakeController.java:62-67`: storage, key service and client-disconnect `IOException`s;
+  - `ControlledDownloadController`: failures after the download started.
+- **Trigger:** a failure Vero didn't expect.
+- **Today:** 500 with Spring's default body (`timestamp`, `status`, `error`, `path`). It has no code and no message, and the screen shows "HTTP 500". Tomcat logs the stack trace; Vero adds nothing. Generic: yes.
+- **Kind:** authorised but system failed.
+- **User sees:** "Vero couldn't finish this just now. Try again. If it keeps happening, give your IT team this reference: Ref <id>. (SDV-SYS-013)"
+- **IT admin and log:** ERROR with the code, the reference, the exception class and the stack trace. No request body.
+- **Fix:** fix task. Add a last-resort handler that sends `{code, message, reference, timestamp}` with 500, and give each recurring cause its own code.
+- **L1 tells the customer:** something failed inside Vero. Ask for the reference and pass it to Vero support with the time.
+
+#### SDV-SYS-014 (proposed): database failed during a request
+- **Where:** every JDBC repository (`Jdbc*Repository.java`). Spring's `DataAccessException` reaches no Vero handler.
+- **Trigger:** PostgreSQL goes down, times out or runs out of connections after Vero has started.
+- **Today:** 500, generic body, same as SYS-013. Readiness stays UP, because it reports only the start-up schema check. Generic: yes.
+- **Kind:** outside dependency down.
+- **User sees:** "Vero can't reach its database just now. Try again in a few minutes. Ref <id>. (SDV-SYS-014)"
+- **IT admin and log:** ERROR with the code, the reference, the SQL state and the repository method. No SQL parameters, because they can hold identifiers.
+- **Fix:** restore the database. Fix task: map `DataAccessException` to 503 with this code, and add a database ping to readiness.
+- **L1 tells the customer:** Vero lost its database for a while. Check the database server; nothing needs re-sending unless the sender got a 503.
+
+#### SDV-SYS-015 (proposed): request malformed before Vero's code ran
+- **Where:** Spring MVC, before any controller (`DefaultHandlerExceptionResolver`):
+  - an `@PathVariable UUID` that isn't a UUID (every `{documentId}`, `{submissionId}`, `{sourceId}`, `{volumeId}`, `{requestId}` and `{holdId}`);
+  - JSON that doesn't parse;
+  - a required header that is missing, such as `X-SDV-Filename` (`DocumentIntakeController.java:41`);
+  - the wrong method;
+  - an upload that isn't `application/pdf`. That gets 415 before `DocumentIntakeService.java:581-584` can answer.
+- **Trigger:** the caller sends something that can't be read.
+- **Today:** 400, 405 or 415 with Spring's generic body. No code, nothing logged, and the refusal is not counted in the Daily intake report. Generic: yes.
+- **Kind:** never reached us.
+- **User sees:** "Vero couldn't read this request: <what> (SDV-SYS-015)", where <what> is, for example, "the document ID is not valid".
+- **IT admin and log:** INFO with the code, the reference, the path pattern (not the values) and Spring's reason.
+- **Fix:** fix task. Handle these exceptions in `FoundationExceptionHandler`, and record intake ones as `INTAKE_REFUSED`.
+- **L1 tells the customer:** the sending program or screen sent a request in the wrong form. The message says which part.
+
+#### SDV-SYS-016 (proposed): internal check failed
+- **Where:** checks that "can't happen". Today they are `IllegalStateException` (sent as **409 `CONFLICT` with developer text**), `UnsupportedOperationException`, or a bare `orElseThrow()` (sent as **404 "No value present"**).
+  - SHA-256: `BusinessExperienceService.java:873`, `RecordKey.java:51`, `:112`, `BusinessRecordRefCodec.java:38`, `ValidatedPdfInputStream.java:28`, `SubmissionService.java:433`, `StorageVolumeAdminService.java:153`, `CorrectiveRedactionService.java:412`, `:459`.
+  - Row counts:
+    - `JdbcAccessRequestRepository.java:101`, `:263`;
+    - `JdbcRecordSensitivityRepository.java:75`, `:92`;
+    - `JdbcFoundationRepository.java:104`, `:182`;
+    - `JdbcSecureIngestionRepository.java:52`, `:188`, `:421`, `:538`, `:573`, `:623`, `:646`;
+    - `JdbcLegalHoldRepository.java:103`;
+    - `JdbcRetentionRepository.java:32`, `:239`.
+  - Unreadable stored values:
+    - `JdbcSensitivityReportRepository.java:77-78`, `:270`, `:291`;
+    - `SensitivityReportService.java:156`, `:162`, `:263`;
+    - `StewardNoticeService.java:98`;
+    - `IntakeReportService.java:162`;
+    - `SensitivityLevelService.java:177`;
+    - `SubmissionService.java:369`;
+    - `RetentionPolicyService.java:91`;
+    - `CorrectiveRedactionService.java:220`, `:223`, `:306`;
+    - `DocumentIntakeService.java:223`, `:269`.
+  - Bare `orElseThrow()`: `BusinessRecordRefCodec.java:107`, `RoleConflictService.java:73`, `JdbcOidcConnectionBindingRepository.java:62`, `:74`, `:97`, `:117`, `:146`.
+  - Internal "required" arguments that no request can trigger:
+    - `AccessRequestService.java:646`, `:650`;
+    - `LegalHoldService.java:197`, `:201`;
+    - `SensitivityLevelService.java:235`, `:273`, `:274`, `:284`;
+    - `AuditQueryService.java:62`, `:97`, `:98`;
+    - `DocumentAccessGuard.java:115`;
+    - `PdfSanitizingRedactor.java:30-32`;
+    - `ValidatedPdfInputStream.java:22-23`;
+    - `StoragePlacementService.java:24`;
+    - `SdvEnc001StreamingCrypto.java:63`, `:119`;
+    - `VaultTransitKeyProtectionProvider.java:110`;
+    - `Document.java:28`;
+    - `SensitivityLevel.java:50`;
+    - `ForbiddenGrant.java:12`, `:16`;
+    - `RoleSeparationPolicy.java:23`, `:34`;
+    - `RoleSeparationRule.java:18`, `:24`, `:28`;
+    - `JdbcRoleGovernanceRepository.java:151`;
+    - `JdbcDocumentRedactionRepository.java:78`, `:81`.
+  - Unsupported defaults: `MetadataFieldDefinitionRepository.java:17`, `:20`, `RecordSensitivityRepository.java:28`, `StorageVolumeProbe.java:19`. The no-op class at `SubmissionService.java:462-493` is used only when nothing else is wired, and is never reached in the product.
+- **Trigger:** a bug, or data changed outside Vero.
+- **Today:** 409 `CONFLICT` with an internal sentence such as "Tenant-scoped ingestion source update affected 2 rows.". That tells the caller to change their request, which is wrong. Not logged. Generic: yes.
+- **Kind:** authorised but system failed.
+- **User sees:** "Vero stopped this because something inside didn't add up. Nothing was changed. Give your IT team this reference: Ref <id>. (SDV-SYS-016)"
+- **IT admin and log:** ERROR with the code, the reference, the check's own sentence (it holds no values) and the stack trace.
+- **Fix:** fix task. Throw a dedicated `InternalCheckFailed` (500), not `IllegalStateException`.
+- **L1 tells the customer:** this is a Vero fault, not the customer's. Pass the reference to Vero support.
+
+#### SDV-SYS-017 (proposed): action not done because the audit couldn't be written
+- **Where:** audit JSON failures: `AccessRequestService.java:577-578`, `AuditQueryService.java:164-165`, `LegalHoldService.java:163-164`, `IntakeReportService.java:355-356`, `SensitivityReportService.java:287-288`, `StewardNoticeService.java:104-105`, `SensitivityLevelService.java:335-336`, `RetentionPolicyService.java:127-128`, `RoleJson.java:25-26`, `DocumentIntakeService.java:483-484`, `ControlledDownloadService.java:212-213`, `CorrectiveRedactionService.java:428-429`, `RetentionDeletionService.java:143-144`. More often, `audit.append` itself fails with SYS-014.
+- **Trigger:** the audit store can't be written, so the action is not done (fail closed).
+- **Today:** 409 `CONFLICT` with "…could not be audited, so nothing was changed." (good words, wrong status and no code), or a generic 500. Generic: yes.
+- **Kind:** authorised but system failed.
+- **User sees:** "Vero couldn't record this action, so it wasn't done. Try again in a few minutes. Ref <id>. (SDV-SYS-017)"
+- **IT admin and log:** ERROR with the code, the reference, the audit action and the target type. No details JSON.
+- **Fix:** restore the database; fix task as SYS-016.
+- **L1 tells the customer:** Vero never acts without recording it. The database was not writable; check it, then try again.
+
+### Sign-in (AUT, ROL)
+
+#### SDV-AUT-001 (proposed): not signed in
+- **Where:**
+  - `SecurityConfiguration.java:27` (entry point);
+  - `SecurityContextFacade.java:30`;
+  - `FoundationExceptionHandler.java:104` (`UNAUTHORIZED`, "Authentication is required.").
+- **Trigger:** no token, or a request reached Vero with no sign-in.
+- **Today:** 401 from Spring with its generic body and no message, or 401 `UNAUTHORIZED`. Generic: yes. The screen sends the person to sign in again (`api.ts:65`).
+- **Kind:** not authorised.
+- **User sees:** "Please sign in again." (SDV-AUT-001) Nothing about the account.
+- **IT admin and log:** DEBUG only. These are frequent and normal.
+- **Fix:** none; the person signs in.
+- **L1 tells the customer:** the session ended. Sign in again.
+
+#### SDV-AUT-002 (proposed): wrong kind of sign-in for this address
+- **Where:** `SecurityContextFacade.java:12` (a sending system's token on a person's endpoint) and `:21` (a person's token on an intake endpoint).
+- **Trigger:** a person's token is used on `/api/v1/ingestion/…`, or a sending system's token on a person's endpoint.
+- **Today:** **401** `UNAUTHORIZED` "Authentication is required.". That is wrong: the caller is signed in, and retrying sign-in won't help. Generic: yes.
+- **Kind:** not authorised.
+- **User sees:** "This address is for sending systems only." / "This address is for people, not sending systems." (SDV-AUT-002), sent with 403.
+- **IT admin and log:** INFO with the code, the reference and the principal type.
+- **Fix:** the sending system uses its own client credentials.
+- **L1 tells the customer:** the program signed in as the wrong kind of user. Its setup must use the sending system's own client.
+
+#### SDV-AUT-003 (proposed): token not accepted
+- **Where:** Spring's resource server (signature, expiry, issuer, audience) and `MaximumTokenLifetimeValidator.java`. Answer: `WWW-Authenticate: Bearer error="invalid_token", error_description=…`.
+- **Trigger:** an expired, forged or wrongly issued token, or one with too long a lifetime.
+- **Today:** 401 with Spring's English description. Not logged. Generic: yes.
+- **Kind:** not authorised.
+- **User sees:** "Please sign in again." (SDV-AUT-003)
+- **IT admin and log:** INFO with the code, the reference and the reason class (expired, signature, issuer, audience, lifetime). Never the token.
+- **Fix:** sign in again. If it happens to everyone, check the sign-in hub's issuer and audience settings.
+- **L1 tells the customer:** the sign-in has expired, or wasn't issued for Vero. If everyone sees it, their IT team checks the sign-in hub's settings for Vero.
+
+#### SDV-AUT-004 (proposed): sign-in hub's keys can't be fetched
+- **Where:** Spring's JWKS fetch (`SDV_AUTH_JWT_JWK_SET_URI`). It is not checked at start.
+- **Trigger:** the sign-in hub (Keycloak) is down or unreachable when Vero needs its keys.
+- **Today:** from the code, this becomes a 401 `invalid_token` or a 500, depending on Spring's handling (to confirm with a test). Either way, nothing says the sign-in hub is down. Generic: yes.
+- **Kind:** outside dependency down.
+- **User sees:** "Vero can't check sign-ins right now because the sign-in service isn't answering. Try again in a few minutes. (SDV-AUT-004)"
+- **IT admin and log:** ERROR with the code, the reference and the JWKS host.
+- **Fix:** bring the sign-in hub back. Fix task: add the JWKS fetch to the health checks.
+- **L1 tells the customer:** their sign-in service is unavailable; nobody can sign in to Vero until it is back.
+
+#### SDV-AUT-005 (proposed): sign-in claims not usable
+- **Where:** `EnterpriseJwtAuthenticationConverter.java:121`, `:123`, `:125`, `:152`, `:171`, `:178`, `:185`, `:188`. There are 7 descriptions: subject missing, claim missing or not a string, claim too long, tenant or source not a UUID, both a user and a source in one token.
+- **Trigger:** the sign-in hub sends a token without the claims Vero needs.
+- **Today:** 401 `invalid_token` with Vero's English description. Not logged. Generic: yes.
+- **Kind:** needs a person.
+- **User sees:** "Your sign-in is missing details Vero needs. Your IT team can fix this. (SDV-AUT-005)"
+- **IT admin and log:** WARN with the code, the reference and the claim's name (never its value).
+- **Fix:** add the claim mapper in the sign-in hub.
+- **L1 tells the customer:** the sign-in hub isn't sending a detail Vero needs; the log names it.
+
+#### SDV-AUT-006 (proposed): no sign-in connection for this issuer
+- **Where:** `EnterpriseJwtAuthenticationConverter.java:159`, `:162`.
+- **Trigger:** the token's issuer or audience matches no ACTIVE connection set up by Tenant IT.
+- **Today:** 401 `invalid_token`, "No ACTIVE persisted OIDC connection matches…". Generic: yes.
+- **Kind:** needs a person.
+- **User sees:** "Vero isn't set up to accept this sign-in. Your IT team can fix this. (SDV-AUT-006)"
+- **IT admin and log:** WARN with the code, the reference and the issuer's host.
+- **Fix:** Tenant IT activates the connection (Identity settings).
+- **L1 tells the customer:** the sign-in connection isn't active in Vero. Tenant IT checks Identity settings.
+
+#### SDV-AUT-007 (proposed): no Vero role from the sign-in groups
+- **Where:** `SdvGroupRoleMapper.java:53`, `RoleSeparationGuard.java:59` (`NO_ROLE`).
+- **Trigger:** the person is in none of the mapped groups.
+- **Today:** 401 `invalid_token`, "Authenticated identity has no mapped SDV role." Generic: yes.
+- **Kind:** needs a person.
+- **User sees:** "You're signed in, but you don't have access to Vero. Ask your IT team to add you to a Vero group. (SDV-AUT-007)" It says nothing about other accounts.
+- **IT admin and log:** INFO with the code, the reference and the subject. Not the group list.
+- **Fix:** add the person to a mapped group.
+- **L1 tells the customer:** the person needs to be in one of the Vero sign-in groups.
+
+#### SDV-AUT-008 (proposed): local test sign-in headers not valid
+- **Where:** `LocalHeaderAuthenticationFilter.java:86`, `:90`, `:110`, `:131-132`. Local profile only.
+- **Trigger:** a missing or malformed `X-SDV-*` header on a developer machine.
+- **Today:** 401 from `sendError` with Spring's generic body. Generic: yes.
+- **Kind:** reached but refused.
+- **User sees:** "Local sign-in headers are not valid: <which>. (SDV-AUT-008)"
+- **IT admin and log:** DEBUG.
+- **Fix:** send the headers the local guide lists.
+- **L1 tells the customer:** not used by customers.
+
+#### SDV-AUT-009 (proposed): organisation not found or not active
+- **Where:** "Tenant not found." (404) and "Tenant is not active." (409):
+  - `DocumentIntakeService.java:546-547`, `SubmissionService.java:244-245`;
+  - `BusinessExperienceService.java:839`, `:841`;
+  - `MetadataFieldAdminService.java:268-269`;
+  - `OperationsService.java:177-178`;
+  - `IngestionSourceAdminService.java:60`, `:62`, `:125`, `:127`;
+  - `StorageVolumeAdminService.java:186-187`;
+  - `RetentionPolicyService.java:44`, `:69`;
+  - `CorrectiveRedactionService.java:113`.
+- **Trigger:** the token names a tenant that doesn't exist or is suspended.
+- **Today:** 404 `NOT_FOUND` or 409 `CONFLICT`. Two different answers tell the caller whether the tenant exists. Generic: yes.
+- **Kind:** not authorised.
+- **User sees:** "Your organisation's Vero account isn't available. Contact your IT team. (SDV-AUT-009)", the same for both, with 403.
+- **IT admin and log:** WARN with the code, the reference, the tenant ID and whether it was missing or suspended.
+- **Fix:** reactivate the tenant, or correct the sign-in hub's tenant claim.
+- **L1 tells the customer:** their organisation's Vero account is suspended or misconfigured. Escalate to Vero operations.
+
+#### SDV-ROL-006 (proposed): the role doesn't include this action
+- **Where:**
+  - `AuthorizationService.java:27`, answered by `FoundationExceptionHandler.java:98` (`FORBIDDEN`, "The authenticated principal does not have the required capability.");
+  - `SecurityConfiguration.java:28` ("Access is denied.").
+  - Used by every capability check without a coded wrapper: viewer, download, print, tags, comments, activity, redaction, search, records, Operations, Audit, storage, sending systems, fields, retention policy, Roles & permissions, role conflicts, Identity settings and session.
+- **Trigger:** the person's role lacks the capability.
+- **Today:** 403 `FORBIDDEN`. Audited as `AUTHORIZATION_DENIED` (the audit write is swallowed if it fails, `AuthorizationService.java:56`). Generic: yes. The released area codes (SEN-010, HLD-001, APR-001/005/015, INT-001, RPT-001) cover only their own areas.
+- **Kind:** not authorised.
+- **User sees:** "Your role doesn't include <action in plain words>. Ask someone who has it. (SDV-ROL-006)"
+- **IT admin and log:** INFO with the code, the reference and the capability.
+- **Fix:** none, or change the person's groups.
+- **L1 tells the customer:** working as intended. Roles come from the customer's sign-in groups.
+
+### Intake: API (INT)
+
+The watch folder and polling intake are **not in this repository**. Sending systems deliver only through the API (`/api/v1/ingestion/…`). There are no failure points to list for them.
+
+#### SDV-INT-004 (proposed): no such submission
+- **Where:** `DocumentIntakeService.java:144`, `:277`, `SubmissionService.java:180`, `:189`, `:239`, `JdbcSecureIngestionRepository.java:202`.
+- **Trigger:** the submission ID names no submission of this sending system.
+- **Today:** 404 `NOT_FOUND` "Submission not found." Generic: yes.
+- **Kind:** not found.
+- **User sees:** "No submission of this sending system has this ID. Create the submission first, or check the ID. (SDV-INT-004)"
+- **IT admin and log:** INFO with the code and the reference.
+- **Fix:** the sender uses the `submissionId` returned by create.
+- **L1 tells the customer:** the sending system used a wrong or another system's submission ID.
+
+#### SDV-INT-005 (proposed): sending system unknown or paused
+- **Where:** `DocumentIntakeService.java:553`, `:555`, `SubmissionService.java:251`, `:253`.
+- **Trigger:** the token's source ID isn't a sending system of the tenant (404), or Tenant IT paused it (409).
+- **Today:** 404 `NOT_FOUND` or 409 `CONFLICT` "Ingestion source is not active." Generic: yes.
+- **Kind:** not authorised (paused), or needs a person (unknown).
+- **User sees:** "This sending system is paused or not set up in Vero. Nothing was stored. (SDV-INT-005)", with 403.
+- **IT admin and log:** WARN with the code, the reference and the source ID.
+- **Fix:** Tenant IT reactivates the sending system (Integrations), or corrects the client's source claim.
+- **L1 tells the customer:** the sending system is paused in Vero, or its sign-in names a system Vero doesn't know. Tenant IT checks Integrations.
+
+#### SDV-INT-006 (proposed): submission request incomplete
+- **Where:** `SubmissionService.java:265`, `:268`, `:453`, `:455`.
+- **Trigger:** no body, `expectedDocumentCount` below 1, or a required text field missing or too long.
+- **Today:** 400 `BAD_REQUEST` with a plain message naming the field. Generic: yes.
+- **Kind:** reached but refused.
+- **User sees:** today's message, plus "(SDV-INT-006)".
+- **IT admin and log:** INFO with the code, the reference and the field.
+- **Fix:** the sender corrects the field.
+- **L1 tells the customer:** the sending system left out a required field; the message names it. Nothing was created.
+
+#### SDV-INT-007 (proposed): document list not valid
+- **Where:** `SubmissionService.java:120`, `:123`, `:276`.
+- **Trigger:** `expectedDocumentCount` is above the limit, there are more listed documents than the count, or a listed `sourceDocumentId` appears twice.
+- **Today:** 400 `BAD_REQUEST`. The `:276` message repeats the producer's `sourceDocumentId`. That is an ID, not content, but it is the sender's own value. Generic: yes.
+- **Kind:** reached but refused.
+- **User sees:** today's message, plus "(SDV-INT-007)".
+- **IT admin and log:** INFO with the code and the reference.
+- **Fix:** the sender corrects the list of documents.
+- **L1 tells the customer:** the submission's list of expected documents is inconsistent; nothing was created.
+
+#### SDV-INT-008 (proposed): metadata field unknown or missing
+- **Where:** `SubmissionService.java:285`, `:311`, `:316`, `MetadataValueValidator.java:26`, `SubmissionController.java:106`.
+- **Trigger:** the sender uses a field this sending system doesn't have, leaves out a required one, sends `null`, or sends a non-scalar JSON value.
+- **Today:** 400 `BAD_REQUEST`, naming the field key (never the value). Generic: yes.
+- **Kind:** reached but refused.
+- **User sees:** today's message, plus "(SDV-INT-008)".
+- **IT admin and log:** INFO with the code, the reference and the field key.
+- **Fix:** the sender sends the fields Tenant IT set up, or Tenant IT adds the field.
+- **L1 tells the customer:** the sending system and Vero's field setup disagree about a field; the message names it.
+
+#### SDV-INT-009 (proposed): metadata value not valid
+- **Where:** `MetadataValueValidator.java:46`, `:53`, `:58-59`, `:60-62`, `:92`, `:103`, `:107`, `:123`, `:126`, `:136`.
+- **Trigger:** a value of the wrong type, pattern, range or length.
+- **Today:** 400 `BAD_REQUEST`, naming the field key and the rule (never the value). Generic: yes.
+- **Kind:** reached but refused.
+- **User sees:** today's message, plus "(SDV-INT-009)".
+- **IT admin and log:** INFO with the code, the reference, the field key and the rule.
+- **Fix:** the sender corrects the value.
+- **L1 tells the customer:** a field value breaks the rule Tenant IT set for it; the message names the field and the rule.
+
+#### SDV-INT-010 (proposed): a field's own rules are broken
+- **Where:** `MetadataValueValidator.java:94-95`, `:112-113`, `:121`, `:134`.
+- **Trigger:** the stored rule for a field (pattern, length) can't be used.
+- **Today:** 409 `CONFLICT`. The sender is told to change the request, but the fault is Vero's setup. Generic: yes.
+- **Kind:** needs a person.
+- **User sees:** "Vero's setup for field '<key>' is broken, so this submission can't be checked. Nothing was stored. Your IT team has been told. (SDV-INT-010)"
+- **IT admin and log:** ERROR with the code, the reference, the field key and which rule.
+- **Fix:** Tenant IT corrects the field's rule.
+- **L1 tells the customer:** a field's rule in Vero is broken; Tenant IT fixes it, then the sender re-sends.
+
+#### SDV-INT-011 (proposed): submission retry differs from the first
+- **Where:** `SubmissionService.java:390`, `:409`. (Retries that differ only in record level are SDV-SEN-004.)
+- **Trigger:** the same `sourceSubmissionId` was sent again with different content.
+- **Today:** 409 `CONFLICT` "sourceSubmissionId already exists with a different submission create request." Generic: yes.
+- **Kind:** reached but refused.
+- **User sees:** today's message, plus "(SDV-INT-011)".
+- **IT admin and log:** INFO with the code and the reference.
+- **Fix:** the sender repeats the first request exactly, or uses a new `sourceSubmissionId`.
+- **L1 tells the customer:** the submission already exists; a retry must match it exactly.
+
+#### SDV-INT-012 (proposed): document upload has no identity
+- **Where:** `DocumentIntakeService.java:493`, `:499`, `:504`.
+- **Trigger:** neither `X-SDV-Source-Document-Id` nor `Idempotency-Key` is sent, or the ID isn't in the submission's complete list.
+- **Today:** 400 `BAD_REQUEST`. Generic: yes.
+- **Kind:** reached but refused.
+- **User sees:** today's message, plus "(SDV-INT-012)".
+- **IT admin and log:** INFO with the code and the reference.
+- **Fix:** the sender sends a listed `X-SDV-Source-Document-Id`.
+- **L1 tells the customer:** each document needs its ID from the submission's list.
+
+#### SDV-INT-013 (proposed): upload headers not valid
+- **Where:** `DocumentIntakeService.java:581`, `:584`, `:591`, `:594`, `:596`, `:605`.
+- **Trigger:** a missing, too long or path-like file name; a text header too long; a content type other than PDF (mostly refused earlier by SYS-015).
+- **Today:** 400 `BAD_REQUEST`. Generic: yes.
+- **Kind:** reached but refused.
+- **User sees:** today's message, plus "(SDV-INT-013)".
+- **IT admin and log:** INFO with the code, the reference and the header's name.
+- **Fix:** the sender corrects the header.
+- **L1 tells the customer:** the upload's file name or headers are wrong; the message names which.
+
+#### SDV-INT-014 (proposed): PDF too large
+- **Where:** `DocumentIntakeService.java:156`, `ValidatedPdfInputStream.java:56`.
+- **Trigger:** the PDF is bigger than the limit for the tenant or sending system.
+- **Today:** 413 `PDF_TOO_LARGE` with the limit in bytes. Generic: no (own code, not in SDV form).
+- **Kind:** reached but refused.
+- **User sees:** today's message, plus "(SDV-INT-014)".
+- **IT admin and log:** INFO with the code, the reference and the limit.
+- **Fix:** send a smaller file, or Tenant IT raises the sending system's limit.
+- **L1 tells the customer:** the file is over the size limit; nothing was stored.
+
+#### SDV-INT-015 (proposed): not a PDF
+- **Where:** `ValidatedPdfInputStream.java:73`, `:74`, `:77`.
+- **Trigger:** the body is empty, cut short, or doesn't start with a PDF header.
+- **Today:** 400 `INVALID_PDF`. Generic: no (own code, not in SDV form).
+- **Kind:** reached but refused.
+- **User sees:** today's message, plus "(SDV-INT-015)".
+- **IT admin and log:** INFO with the code and the reference.
+- **Fix:** the sender sends the PDF itself.
+- **L1 tells the customer:** what was sent isn't a PDF, or was cut short; send it again.
+
+#### SDV-INT-016 (proposed): submission already full
+- **Where:** `DocumentIntakeService.java:332` (409, count) and `:365` (400, total size).
+- **Trigger:** the submission already has its expected number of documents, or this document takes it over the total size.
+- **Today:** 409 `CONFLICT` and 400 `BAD_REQUEST`. Generic: yes.
+- **Kind:** reached but refused.
+- **User sees:** today's message, plus "(SDV-INT-016)".
+- **IT admin and log:** INFO with the code and the reference.
+- **Fix:** send the document on a new submission.
+- **L1 tells the customer:** the submission is complete; extra documents go on a new one.
+
+#### SDV-INT-017 (proposed): document retry differs from the first
+- **Where:** `DocumentIntakeService.java:258-259` (duplicate replay) and `:531-532` (`ensureReplayMatches`). (Different level only: SDV-SEN-003.)
+- **Trigger:** the same document ID was sent again with different content or a different file name.
+- **Today:** 409 `CONFLICT`. Generic: yes.
+- **Kind:** reached but refused.
+- **User sees:** today's message, plus "(SDV-INT-017)".
+- **IT admin and log:** INFO with the code, the reference and the document ID.
+- **Fix:** repeat the first upload exactly, or send a new document ID.
+- **L1 tells the customer:** a document with this ID is already stored with other content. A changed document needs a new ID.
+
+#### SDV-INT-018 (proposed): document can't be finished again
+- **Where:** `DocumentIntakeService.java:290` (404 "Document not found."), `:294` (409).
+- **Trigger:** retry-finalization on an unknown document, or on one that is not received, failed or available.
+- **Today:** 404 `NOT_FOUND` or 409 `CONFLICT`. Generic: yes.
+- **Kind:** not found, or reached but refused.
+- **User sees:** "This document can't be finished again in its current state (<state>). (SDV-INT-018)"
+- **IT admin and log:** INFO with the code and the reference.
+- **Fix:** none; check the document's state first.
+- **L1 tells the customer:** the document is already being handled, or was deleted.
+
+### Processing, storage and encryption (PRC, STO, KEY)
+
+#### SDV-PRC-001 (proposed): stored copy missing after receipt
+- **Where:** `DocumentFinalizationService.java:117`, `:119`, `:121`, `:125`, `:168`, all recorded as `DURABLE_OBJECT_VALIDATION_FAILED` (`:171-174`).
+- **Trigger:** the storage reference, the key record, the volume or the encrypted file itself can't be found right after writing.
+- **Today:** the upload answers **201 with `currentStatus: PROCESSING_FAILED`** and `processingErrorCode`. Audited `DOCUMENT_PROCESSING_FAILED`. Not logged. Problems shows "could not store". Generic: yes (one code for many causes).
+- **Kind:** accepted then failed.
+- **User sees (sending system):** `processingErrorCode: SDV-PRC-001` with "Vero received the document but couldn't find its stored copy. It will be shown under Problems; retry with retry-finalization."
+- **IT admin and log:** ERROR with the code, the reference, the document ID and which piece was missing.
+- **Fix:** check the storage volume, then retry-finalization.
+- **L1 tells the customer:** the document arrived but its stored copy is missing. Tenant IT checks the storage volume on Problems, then the sender retries.
+
+#### SDV-PRC-002 (proposed): stored copy doesn't match what was received
+- **Where:** `DocumentFinalizationService.java:144`, `:147`, `:150`, `:153`, `:260`, `:264` (and decryption failures, KEY-004), recorded as `DURABLE_OBJECT_VALIDATION_FAILED`.
+- **Trigger:** the size or fingerprint of the encrypted or decrypted copy differs from what was received.
+- **Today:** as PRC-001. Generic: yes.
+- **Kind:** accepted then failed.
+- **User sees (sending system):** `processingErrorCode: SDV-PRC-002` with "Vero received the document but its stored copy didn't check out, so it won't be shown. Send the document again."
+- **IT admin and log:** ERROR with the code, the reference, the document ID and which check (size or fingerprint, encrypted or decrypted).
+- **Fix:** check the storage hardware; the sender re-sends.
+- **L1 tells the customer:** Vero refused to keep a copy it couldn't verify. If it repeats, the storage may be failing.
+
+#### SDV-PRC-003 (proposed): key service down while finishing
+- **Where:** `DocumentFinalizationService.java:97`, `:171-174`. A key service `IOException` (KEY-002) is recorded as `DURABLE_OBJECT_VALIDATION_FAILED`.
+- **Trigger:** Vault is unreachable or refuses during the read-back check.
+- **Today:** recorded as a storage integrity problem, which is misleading. Generic: yes.
+- **Kind:** outside dependency down.
+- **User sees (sending system):** `processingErrorCode: SDV-PRC-003` with "Vero received the document but its key service didn't answer. Retry with retry-finalization later."
+- **IT admin and log:** ERROR with the code, the reference, the document ID and Vault's HTTP status.
+- **Fix:** restore Vault, then retry-finalization. Fix task: classify crypto failures apart from storage failures.
+- **L1 tells the customer:** the key service was unavailable. Once it is back, the sender retries; nothing needs re-sending.
+
+#### SDV-PRC-004 (proposed): storage security check failed while finishing
+- **Where:** `DocumentFinalizationService.java:172` (`STORAGE_SECURITY_VALIDATION_FAILED`), from `LocalFilesystemStorageProvider.java:91`.
+- **Trigger:** the volume belongs to another tenant.
+- **Today:** `PROCESSING_FAILED` with its own code; not logged. Generic: no (own code).
+- **Kind:** authorised but system failed.
+- **User sees (sending system):** `processingErrorCode: SDV-PRC-004` with "Vero stopped storing this document for a security reason. Your IT team has been told."
+- **IT admin and log:** ERROR (security) with the code, the reference, the tenant ID and the volume ID.
+- **Fix:** Vero support investigates; this should never happen.
+- **L1 tells the customer:** escalate to Vero security at once.
+
+#### SDV-PRC-005 (proposed): finishing failed for another reason
+- **Where:** `DocumentFinalizationService.java:97` (catch-all, `DOCUMENT_FINALIZATION_FAILED`). If marking the failure itself fails (`:99-101`), the exception escapes. The document stays `PROCESSING` and later shows as "Stuck".
+- **Trigger:** an unexpected failure while finishing.
+- **Today:** `PROCESSING_FAILED`, `DOCUMENT_FINALIZATION_FAILED`; not logged. Generic: yes.
+- **Kind:** accepted then failed.
+- **User sees (sending system):** `processingErrorCode: SDV-PRC-005` with "Vero received the document but couldn't finish storing it. Retry with retry-finalization."
+- **IT admin and log:** ERROR with the code, the reference, the document ID and the exception class.
+- **Fix:** retry-finalization; if it repeats, Vero support.
+- **L1 tells the customer:** pass the document ID and time to Vero support.
+
+#### SDV-STO-001 (proposed): no storage can take the document
+- **Where:** `StoragePlacementService.java:38` (`NoWritableStorageException`); probe failures are swallowed at `:56` as "not eligible".
+- **Trigger:** every ACTIVE volume is full, at its stop-write level, unwritable, or unreadable.
+- **Today:** **409 `CONFLICT`** "No healthy ACTIVE storage volume can safely accept the requested content." That tells the sender to change the request; it is counted as a refusal. Not logged. Generic: yes.
+- **Kind:** needs a person.
+- **User sees (sending system):** "Vero has no storage space for new documents right now. Nothing was stored; send it again later. (SDV-STO-001)", with 503.
+- **IT admin and log:** ERROR with the code, the reference and each volume's reason (full, stop-write, unwritable, unreadable).
+- **Fix:** Tenant IT frees space, adds a volume, or raises the stop-write level.
+- **L1 tells the customer:** Vero's storage is full. Tenant IT adds or frees storage; senders re-send.
+
+#### SDV-STO-002 (proposed): writing to storage failed
+- **Where:** `LocalFilesystemStorageProvider.java:33`, `:57-58`, `:70`, plus `IOException`s from the file system (disk full, permission) during `store`. Called from `DocumentIntakeService.java:191` and `CorrectiveRedactionService.java`.
+- **Trigger:** the volume went inactive or offline, the file system refused, or the volume can't move files safely.
+- **Today:** intake gets 500 with Spring's generic body (SYS-013); not logged by Vero. Generic: yes.
+- **Kind:** outside dependency down.
+- **User sees (sending system):** "Vero couldn't write to its storage. Nothing was stored; send it again later. Ref <id>. (SDV-STO-002)", with 503.
+- **IT admin and log:** ERROR with the code, the reference, the volume ID and the reason.
+- **Fix:** Tenant IT checks the volume (Storage), then senders re-send.
+- **L1 tells the customer:** storage refused a write. Tenant IT checks the volume's health.
+
+#### SDV-STO-003 (proposed): storage safety check failed
+- **Where:** `LocalFilesystemStorageProvider.java:90-92`, `:96`, `:99`, `:102`.
+- **Trigger:** wrong tenant, unknown provider, bad object key, or a key that escapes the volume's folder.
+- **Today:** 500 generic, or a `PROCESSING_FAILED` code. Not logged. Generic: yes.
+- **Kind:** authorised but system failed.
+- **User sees:** "Vero stopped this for a security reason. Your IT team has been told. Ref <id>. (SDV-STO-003)"
+- **IT admin and log:** ERROR (security) with the code, the reference, the volume ID and the check.
+- **Fix:** Vero support.
+- **L1 tells the customer:** escalate to Vero security.
+
+#### SDV-STO-004 (proposed): storage type not installed
+- **Where:** `DocumentIntakeService.java:564` (409), `DocumentFinalizationService.java:168`, `DocumentViewerService.java:484`, `ControlledDownloadService.java:197`, `CorrectiveRedactionService.java:374`, `RetentionDeletionService.java:129`.
+- **Trigger:** a volume names a storage provider this install doesn't have.
+- **Today:** 409 `CONFLICT` (intake), 422 `VIEWER_UNAVAILABLE` or `DOWNLOAD_UNAVAILABLE`, or `REDACTION_FAILED`. Generic: yes.
+- **Kind:** needs a person.
+- **User sees:** "Vero can't use the storage this document is on. Your IT team has been told. Ref <id>. (SDV-STO-004)"
+- **IT admin and log:** ERROR with the code, the reference and the provider ID.
+- **Fix:** install or configure the provider, or move the volume.
+- **L1 tells the customer:** an install problem; escalate to Vero operations.
+
+#### SDV-STO-005 (proposed): storage volume settings not valid
+- **Where:** `StorageVolumeAdminService.java:75`, `:76`, `:110`, `:112`, `:113`, `:166`, `:197`, `:198`, `:202`, `:203`, `:204`; `StorageAdminController.java:50`; `LocalFilesystemVolumeProbe.java:28`, `:36-37`, `:111`, `:114-115`.
+- **Trigger:** Tenant IT enters a missing, out-of-range, overlapping or unwritable value for a volume.
+- **Today:** 400 `BAD_REQUEST` with a plain message (`:37` includes the folder path Tenant IT typed). Generic: yes.
+- **Kind:** reached but refused.
+- **User sees:** today's message, plus "(SDV-STO-005)".
+- **IT admin and log:** INFO with the code and the reference.
+- **Fix:** correct the value.
+- **L1 tells the customer:** a storage setting is out of range; the message says which.
+
+#### SDV-STO-006 (proposed): no such storage volume
+- **Where:** `StorageVolumeAdminService.java:193`.
+- **Trigger:** the volume ID names no volume of the tenant.
+- **Today:** 404 `NOT_FOUND`. Generic: yes.
+- **Kind:** not found.
+- **User sees:** "No storage volume has this ID. Reload Storage. (SDV-STO-006)"
+- **IT admin and log:** INFO.
+- **Fix:** none.
+- **L1 tells the customer:** reload the Storage page.
+
+#### SDV-KEY-001 (proposed): encryption not set up
+- **Where:** `DisabledCryptoConfiguration.java:29`, `:34` (`SDV_KEY_PROVIDER` left at its default `disabled`).
+- **Trigger:** a document is uploaded, viewed or downloaded with no key service configured.
+- **Today:** upload gets 500 with Spring's generic body; viewer and download get 422 `VIEWER_UNAVAILABLE` or `DOWNLOAD_UNAVAILABLE`. Nothing at start says encryption is off. Generic: yes.
+- **Kind:** needs a person.
+- **User sees:** "Vero can't store or open documents until its key service is set up. Your IT team has been told. (SDV-KEY-001)"
+- **IT admin and log:** WARN at start, plus ERROR per attempt, with the code.
+- **Fix:** set `SDV_KEY_PROVIDER=vault` and the Vault settings.
+- **L1 tells the customer:** the install has no key service configured; see the install guide.
+
+#### SDV-KEY-002 (proposed): key service unreachable
+- **Where:** `VaultTransitKeyProtectionProvider.java:125` (HTTP other than 2xx), `:129-131` (interrupted), `:138` (field missing), `:93`, `:100`, `:105` (unexpected key). Reached from intake, finishing, the viewer, download and redaction.
+- **Trigger:** Vault is down, sealed, or answers badly.
+- **Today:**
+  - upload: 500 generic;
+  - finishing: `DURABLE_OBJECT_VALIDATION_FAILED`;
+  - viewer: 422 `VIEWER_UNAVAILABLE`;
+  - download: 422 `DOWNLOAD_UNAVAILABLE`;
+  - redaction: 422 `REDACTION_FAILED`.
+  - None says the key service is down; none is logged. Generic: yes.
+- **Kind:** outside dependency down.
+- **User sees:** "Vero's key service isn't answering, so documents can't be stored or opened right now. Try again in a few minutes. Ref <id>. (SDV-KEY-002)", with 503.
+- **IT admin and log:** ERROR with the code, the reference and Vault's HTTP status (never the token or the key reference).
+- **Fix:** bring Vault back or unseal it. Operations shows the key service as DOWN.
+- **L1 tells the customer:** Vero's key service is unavailable; nothing is lost. Retry once it is back.
+
+#### SDV-KEY-003 (proposed): key service refused Vero's token
+- **Where:** `VaultTransitKeyProtectionProvider.java:125` when the HTTP status is 403 (a subcase of KEY-002 today).
+- **Trigger:** the Vault token has expired or was revoked. It is read once at start (`VaultCryptoConfiguration.java:36-52`).
+- **Today:** as KEY-002. Generic: yes.
+- **Kind:** needs a person.
+- **User sees:** as KEY-002, with code SDV-KEY-003.
+- **IT admin and log:** ERROR with the code, "Vault refused the token (HTTP 403)". Never the token.
+- **Fix:** issue a new token into the secret store, then restart Vero.
+- **L1 tells the customer:** Vero's key service access has expired. Their IT team renews it and restarts Vero.
+
+#### SDV-KEY-004 (proposed): stored document failed decryption
+- **Where:** `SdvEnc001StreamingCrypto.java:122`, `:125`, `:130`, `:136-137`, `:139`, `:140`, `:142`, `:145`, `:153-154`, `:160`, `:161`, `:163`, `:166`, `:179`, `:182`, `:185`, `:187`, `:192`, `:234-235`, `:236-237`.
+- **Trigger:** the encrypted file is damaged, truncated or tampered with, or the key doesn't match.
+- **Today:** viewer, download, finishing and redaction each give their own generic answer. Not logged, so a possible tampering is invisible. Generic: yes.
+- **Kind:** authorised but system failed.
+- **User sees:** "This document's stored copy can't be opened safely. Your IT team has been told. Ref <id>. (SDV-KEY-004)"
+- **IT admin and log:** ERROR (security) with the code, the reference, the document ID and the check that failed (header, chunk, tag, final marker).
+- **Fix:** Vero support. Treat as possible tampering; restore from backup.
+- **L1 tells the customer:** escalate to Vero security with the document ID.
+
+#### SDV-KEY-005 (proposed): encryption failed while storing
+- **Where:** `SdvEnc001StreamingCrypto.java:68`, `:213-214`, `:274-275`.
+- **Trigger:** the key service gave a bad key, or the Java crypto library failed.
+- **Today:** upload gets 500 generic. Generic: yes.
+- **Kind:** authorised but system failed.
+- **User sees (sending system):** "Vero couldn't encrypt the document, so nothing was stored. Send it again later. Ref <id>. (SDV-KEY-005)"
+- **IT admin and log:** ERROR with the code and the reference.
+- **Fix:** Vero support.
+- **L1 tells the customer:** pass the reference to Vero support.
+
+#### SDV-STO-007 (proposed): encrypted size doesn't match at receipt
+- **Where:** `DocumentIntakeService.java:202-203`, `:221-223`.
+- **Trigger:** the file written doesn't have the size the encryption reported, or the receipt transaction returned nothing.
+- **Today:** 500 generic, or 409 `CONFLICT`. The file is deleted (`:202`, `:218`, `:222`). Generic: yes.
+- **Kind:** authorised but system failed.
+- **User sees (sending system):** "Vero couldn't store the document safely, so nothing was kept. Send it again. Ref <id>. (SDV-STO-007)"
+- **IT admin and log:** ERROR with the code, the reference and the volume ID.
+- **Fix:** check the storage volume.
+- **L1 tells the customer:** a storage fault; the sender re-sends.
+
+### Viewing, search, print and download (DOC, SCH)
+
+#### SDV-DOC-001 (proposed): no such document
+- **Where:** `DocumentActionService.java:124`, `ControlledDownloadService.java:185`, `DocumentViewerService.java:463`.
+- **Trigger:** the document ID names no document of the person's organisation.
+- **Today:** 404 `NOT_FOUND` "Document not found." Generic: yes. (Sensitivity, approvals and legal holds already use SEN-016, APR-013 and HLD-004 for this case.)
+- **Kind:** not found.
+- **User sees:** "This document isn't there any more, or the link is wrong. Open the record again from search. (SDV-DOC-001)"
+- **IT admin and log:** INFO.
+- **Fix:** none.
+- **L1 tells the customer:** open the record from search; old links can point to deleted documents.
+
+#### SDV-DOC-002 (proposed): document not available
+- **Where:** `DocumentActionService.java:127`, `ControlledDownloadService.java:188`, `DocumentViewerService.java:466`.
+- **Trigger:** the document is still being stored, failed, is being corrected, or was deleted.
+- **Today:** 409 `CONFLICT` "Only AVAILABLE documents…". Generic: yes.
+- **Kind:** reached but refused.
+- **User sees:** "This document can't be opened yet: <state in plain words>. (SDV-DOC-002)"
+- **IT admin and log:** INFO.
+- **Fix:** wait, or see Problems.
+- **L1 tells the customer:** the document is still being processed or was removed.
+
+#### SDV-DOC-003 (proposed): viewer can't read the stored copy
+- **Where:** `DocumentViewerService.java:391`, `:395`, `:399`, `:443-447` (catch-all "cannot be securely reconstructed"), `:532-534` (`unavailable`).
+- **Trigger:** storage metadata is missing, the volume is missing, or storage can't be read.
+- **Today:** 422 `VIEWER_UNAVAILABLE` "The document cannot be viewed securely right now." One code for every viewer cause, and no log at all. Generic: yes.
+- **Kind:** authorised but system failed.
+- **User sees:** "Vero couldn't read this document from storage. Try again later. Ref <id>. (SDV-DOC-003)"
+- **IT admin and log:** ERROR with the code, the reference, the document ID and the cause.
+- **Fix:** check the storage volume.
+- **L1 tells the customer:** a storage problem; Tenant IT checks Storage on Operations.
+
+#### SDV-DOC-004 (proposed): stored copy failed its check before viewing
+- **Where:** `DocumentViewerService.java:405` (too big to view safely), `:433`, `:438`, `:592-593`, `:600`, `:609`, `:618`, `:621`, `:625`, `:630`, `:652-653`.
+- **Trigger:** the encrypted or decrypted size or fingerprint no longer matches what was stored, or the document is too big for the in-memory viewer.
+- **Today:** 422 `VIEWER_UNAVAILABLE`, not logged. Generic: yes.
+- **Kind:** authorised but system failed.
+- **User sees:** "This document's stored copy didn't pass Vero's check, so it isn't shown. Ref <id>. (SDV-DOC-004)", or, for the size case, "This document is too large to view here."
+- **IT admin and log:** ERROR (integrity) with the code, the reference, the document ID and which check.
+- **Fix:** Vero support; restore the copy from backup.
+- **L1 tells the customer:** escalate with the reference; the copy may be damaged.
+
+#### SDV-DOC-005 (proposed): document can't be drawn
+- **Where:** `DocumentViewerService.java:193`, `:260`, `:269`, `:490-492`.
+- **Trigger:** the PDF can't be loaded or a page can't be drawn as an image.
+- **Today:** 422 `VIEWER_UNAVAILABLE`. Generic: yes.
+- **Kind:** authorised but system failed.
+- **User sees:** "Vero can't draw this page. Download it if your role allows, or tell your IT team. Ref <id>. (SDV-DOC-005)"
+- **IT admin and log:** WARN with the code, the reference, the document ID and the page.
+- **Fix:** Vero support, with the document ID.
+- **L1 tells the customer:** the file is stored, but the viewer can't draw it.
+
+#### SDV-DOC-006 (proposed): viewer request not valid
+- **Where:** `DocumentViewerService.java:160`, `:162`, `:171`, `:182`, `:236`, `:238`, `:246`, `:291`, `:294`.
+- **Trigger:** a page number out of range, a preview count out of range, or an empty or too long search text.
+- **Today:** 400 `BAD_REQUEST` with a plain message. Generic: yes.
+- **Kind:** reached but refused.
+- **User sees:** today's message, plus "(SDV-DOC-006)".
+- **IT admin and log:** DEBUG.
+- **Fix:** none.
+- **L1 tells the customer:** the screen asked for a page that doesn't exist; reload.
+
+#### SDV-DOC-007 (proposed): download can't be verified
+- **Where:** `ControlledDownloadService.java:78`, `:80`, `:82`, `:110`, `:113`, `:173-177`, `:285-286`, `:293`, `:304`, `:321`, `:324`, `:328`, `:333`, `:353-354`.
+- **Trigger:** the stored copy is missing, unreadable, or fails its size or fingerprint check.
+- **Today:** 422 `DOWNLOAD_UNAVAILABLE` "The current document cannot be downloaded securely right now." Audited `DOCUMENT_DOWNLOAD_FAILED` with the exception class. Not logged. Generic: yes.
+- **Kind:** authorised but system failed.
+- **User sees:** "Vero couldn't verify this document, so it wasn't downloaded. Ref <id>. (SDV-DOC-007)"
+- **IT admin and log:** ERROR with the code, the reference, the document ID and which check.
+- **Fix:** as DOC-003 or DOC-004.
+- **L1 tells the customer:** as DOC-003 or DOC-004.
+
+#### SDV-DOC-008 (proposed): document changed while downloading
+- **Where:** `ControlledDownloadService.java:118`.
+- **Trigger:** a correction replaced the document between preparing and sending the download.
+- **Today:** 409 `CONFLICT`. Generic: yes.
+- **Kind:** reached but refused.
+- **User sees:** "This document was just changed. Open it again and download the new version. (SDV-DOC-008)"
+- **IT admin and log:** INFO.
+- **Fix:** none.
+- **L1 tells the customer:** someone corrected the document at that moment; download again.
+
+#### SDV-DOC-009 (proposed): download stopped part-way
+- **Where:** `ControlledDownloadService.java:125` (the grant is used **before** decryption starts), then `:145-153` (failures after the file has started to be sent).
+- **Trigger:** storage or the key service fails during the download, or the browser disconnects.
+- **Today:** the person gets a cut-short file or a broken response; the server can't send an error once the file has started. For a Highly Confidential document, the one-time approval is **used up anyway**, so the person must ask again. Audited `DOCUMENT_DOWNLOAD_FAILED`. Generic: yes.
+- **Kind:** authorised but system failed.
+- **User sees:** "The download didn't finish. (SDV-DOC-009)" The screen should show this when the file is shorter than announced.
+- **IT admin and log:** ERROR with the code, the reference, the document ID and whether a grant was used.
+- **Fix:** fix task: mark the grant used only after the last byte is sent. Until then, a Business Admin approves again.
+- **L1 tells the customer:** the download was interrupted. For Highly Confidential, ask for approval again and mention the reference.
+
+#### SDV-DOC-010 (proposed): tag or comment not valid
+- **Where:** `DocumentActionService.java:66`, `:67`, `:86`, `:87`.
+- **Trigger:** empty or too long.
+- **Today:** 400 `BAD_REQUEST`. Generic: yes.
+- **Kind:** reached but refused.
+- **User sees:** today's message, plus "(SDV-DOC-010)".
+- **IT admin and log:** DEBUG.
+- **Fix:** none.
+- **L1 tells the customer:** shorten the text.
+
+#### SDV-SCH-001 (proposed): search criteria not valid
+- **Where:**
+  - `BusinessExperienceService.java:243`, `:250`, `:253`, `:259`, `:262`, `:265`, `:268`, `:494`, `:498`, `:501`, `:506`;
+  - `BusinessRecordRepository.java:152`, `:166`;
+  - `SearchValueNormalizer.java:11`, `:12`;
+  - `BusinessExperienceController.java:102`.
+- **Trigger:** text too short or too long, page out of range, no criteria, dates reversed, too many fields, or a field that isn't searchable.
+- **Today:** 400 `BAD_REQUEST`, naming the field key (never the value). Generic: yes.
+- **Kind:** reached but refused.
+- **User sees:** today's message, plus "(SDV-SCH-001)".
+- **IT admin and log:** DEBUG.
+- **Fix:** none.
+- **L1 tells the customer:** change the search as the message says.
+
+#### SDV-SCH-002 (proposed): record not found or link not valid
+- **Where:** `BusinessExperienceService.java:462`; `BusinessRecordRefCodec.java:44`, `:48`, `:55`, `:63`, `:70`, `:79-80`, `:87`; `RecordReferences.java:37` (swallowed into "not found"); `RecordKey.java:32`, `:34`, `:42`, `:57`, `:84`, `:88`, `:91`, `:95`, `:99`, `:101-102`.
+- **Trigger:** a record reference that is malformed, from another tenant, or no longer has documents.
+- **Today:** 404 `NOT_FOUND` "Business record not found.", or 400 `BAD_REQUEST` "Business-record reference is invalid." Generic: yes.
+- **Kind:** not found.
+- **User sees:** "This record isn't there any more, or the link is wrong. Search for it again. (SDV-SCH-002)", the same for 400 and 404.
+- **IT admin and log:** INFO.
+- **Fix:** none.
+- **L1 tells the customer:** search for the record again; old links can break.
+
+#### SDV-SCH-003 (proposed): recent records request not valid
+- **Where:** `BusinessExperienceService.java:380`, `:384`.
+- **Trigger:** the limit is out of range.
+- **Today:** 400 `BAD_REQUEST`. Generic: yes.
+- **Kind:** reached but refused.
+- **User sees:** today's message, plus "(SDV-SCH-003)".
+- **IT admin and log:** DEBUG.
+- **Fix:** none.
+- **L1 tells the customer:** reload.
+
+### Corrective redaction (RED)
+
+#### SDV-RED-001 (proposed): redaction request not valid
+- **Where:** `CorrectiveRedactionService.java:78`, `:393`, `:396`, `:402`, `:403`; `RedactionRegion.java:5`, `:7`, `:12`, `:15`; `PdfSanitizingRedactor.java:44`.
+- **Trigger:** no confirmation, a reason missing or of the wrong length, no regions, too many regions, a region outside the page, or a page that doesn't exist.
+- **Today:** 400 `BAD_REQUEST`. Generic: yes.
+- **Kind:** reached but refused.
+- **User sees:** today's message, plus "(SDV-RED-001)".
+- **IT admin and log:** DEBUG.
+- **Fix:** none.
+- **L1 tells the customer:** follow the message; nothing was changed.
+
+#### SDV-RED-002 (proposed): another correction is in progress
+- **Where:** `CorrectiveRedactionService.java:94`, `:98`, `:168`.
+- **Trigger:** a different correction of the same document is running, or a recovery holds it.
+- **Today:** 409 `CONFLICT`. Generic: yes.
+- **Kind:** reached but refused.
+- **User sees:** "Someone else is correcting this document right now. Try again in a few minutes. (SDV-RED-002)"
+- **IT admin and log:** INFO.
+- **Fix:** none.
+- **L1 tells the customer:** wait for the other correction to finish.
+
+#### SDV-RED-003 (proposed): document can't be corrected now
+- **Where:** `CorrectiveRedactionService.java:91` ("incomplete corrective-redaction state requiring operational recovery", 422), `:109` (409).
+- **Trigger:** the document isn't available, or an earlier correction was left half done.
+- **Today:** 409 `CONFLICT` or 422 `REDACTION_FAILED`. Generic: yes.
+- **Kind:** needs a person (half-done correction), or reached but refused.
+- **User sees:** "This document can't be corrected right now: <reason>. (SDV-RED-003)"
+- **IT admin and log:** WARN with the code, the reference and the document ID.
+- **Fix:** the recovery job (every few minutes) finishes the earlier correction.
+- **L1 tells the customer:** wait for Vero to finish the earlier correction, then try again.
+
+#### SDV-RED-004 (proposed): correction failed safely
+- **Where:**
+  - `CorrectiveRedactionService.java:118`, `:120`, `:122`, `:148`, `:181-186`, `:247`, `:252`, `:260-261`, `:268`, `:275`, `:316`, `:326`, `:337`, `:341`, `:354`, `:357-358`, `:485`, `:488`, `:492`, `:496`, `:497`, `:498`, `:499`, `:511`;
+  - `PdfSanitizingRedactor.java:62`, `:107`, `:111-112`.
+- **Trigger:** storage, the key service, verification or PDF rewriting failed. The document is unchanged.
+- **Today:** 422 `REDACTION_FAILED` "Corrective redaction could not complete safely." Audited `DOCUMENT_REDACTION_FAILED` with the exception class. Not logged. Generic: yes.
+- **Kind:** authorised but system failed.
+- **User sees:** "The correction couldn't be made, and the document is unchanged. Try again; if it fails again, give your IT team this reference: Ref <id>. (SDV-RED-004)"
+- **IT admin and log:** ERROR with the code, the reference, the document ID and the step (read, rewrite, write, verify, switch, clean-up).
+- **Fix:** as the step's own cause (STO or KEY).
+- **L1 tells the customer:** nothing was changed; pass the reference to Vero support if it repeats.
+
+#### SDV-RED-005 (proposed): document changed during the correction
+- **Where:** `CorrectiveRedactionService.java:230`, `:235`, `:237`, `:278`, `:282`, `:284`; `JdbcDocumentRedactionRepository.java:162`, `:184`, `:197`, `:210`, `:219`.
+- **Trigger:** the document's stored copy or state changed between staging and switching.
+- **Today:** 409 `CONFLICT` with internal text, or 404. Generic: yes.
+- **Kind:** authorised but system failed.
+- **User sees:** "The document changed while it was being corrected. Open it again and redo the correction. (SDV-RED-005)"
+- **IT admin and log:** WARN with the code, the reference and the document ID.
+- **Fix:** none.
+- **L1 tells the customer:** redo the correction on the current version.
+
+#### SDV-RED-006 (proposed): correction recovery job failed
+- **Where:** `RedactionRecoveryScheduler.java:34-35` (WARN with stack trace, no code, no reference); `CorrectiveRedactionService.java:206` (per document; counted and audited with the class name); `:194` (limit).
+- **Trigger:** a half-done correction can't be finished by the recovery job.
+- **Today:** WARN "Corrective-redaction recovery sweep failed safely…"; per document, only a count. Generic: yes.
+- **Kind:** needs a person (if it repeats).
+- **User sees:** nothing directly; the document stays as it was.
+- **IT admin and log:** ERROR with the code, a job reference and the document ID per failure.
+- **Fix:** as RED-004.
+- **L1 tells the customer:** escalate if Operations keeps showing the same document.
+
+### Sensitivity, approvals, legal holds and duplicates (SEN, APR, HLD)
+
+The released SEN, APR and HLD codes cover these flows (see "Points that already send a released code"). Gaps:
+
+#### SDV-APR-016 (proposed): a request in a bulk decision failed
+- **Where:** `AccessRequestService.java:417-418`.
+- **Trigger:** a request in a bulk decision fails for a reason that is not a refusal (for example the database).
+- **Today:** the item reads `FAILED` with "This request couldn't be decided. Try it on its own." There is no code, and the cause is dropped. Generic: yes.
+- **Kind:** authorised but system failed.
+- **User sees:** today's text, plus "Ref <id>. (SDV-APR-016)".
+- **IT admin and log:** ERROR with the code, the reference, the request ID and the exception class.
+- **Fix:** decide it on its own; if that fails, see the cause.
+- **L1 tells the customer:** decide that one request alone; pass the reference if it fails.
+
+#### SDV-SEN-020 (proposed): approval couldn't be checked
+- **Where:** `DocumentAccessGuard.java:122-125` (a grant that can't be read counts as no grant; then SEN-009).
+- **Trigger:** the database fails while reading or using the person's approval.
+- **Today:** 403 **SDV-SEN-009**: the person is told they have no approval when they do. Safe (fail closed), but misleading. Generic: no (a released code), but the wrong one.
+- **Kind:** authorised but system failed.
+- **User sees:** "Vero couldn't check your approval just now. Try again in a minute. Your approval is not used up. (SDV-SEN-020)"
+- **IT admin and log:** ERROR with the code, the reference and the document ID.
+- **Fix:** restore the database.
+- **L1 tells the customer:** a passing database problem; try again.
+
+Duplicates (task 0031) are covered by INT-017 and SEN-003. A duplicate delivery is answered 200 with `duplicate: true` and is not a failure.
+
+### Reports (RPT)
+
+The released RPT codes cover the reports. Gaps: internal checks in the Sensitivity report (`JdbcSensitivityReportRepository.java:77-78`, `:270`, `:291`, `SensitivityReportService.java:156`, `:162`, `:263`) are under SYS-016. The export audit is under SYS-017.
+
+### Admin screens (ADM, IDP, AUD, RET)
+
+#### SDV-ADM-001 (proposed): sending-system settings not valid
+- **Where:** `IngestionSourceAdminService.java:83`, `:109`, `:110`, `:133`, `:138`, `:143`, `:144`, `:145`, `:146`, `:147`.
+- **Trigger:** a missing or malformed key, name, status, sign-in type or limit.
+- **Today:** 400 `BAD_REQUEST`. Generic: yes.
+- **Kind:** reached but refused.
+- **User sees:** today's message, plus "(SDV-ADM-001)".
+- **IT admin and log:** DEBUG.
+- **Fix:** none.
+- **L1 tells the customer:** correct the field the message names.
+
+#### SDV-ADM-002 (proposed): sending-system key already used
+- **Where:** `IngestionSourceAdminService.java:87`.
+- **Trigger:** another sending system of the tenant has this key.
+- **Today:** 400 `BAD_REQUEST`; it should be 409. Generic: yes.
+- **Kind:** reached but refused.
+- **User sees:** "Another sending system already uses this key. Choose another. (SDV-ADM-002)"
+- **IT admin and log:** DEBUG.
+- **Fix:** none.
+- **L1 tells the customer:** keys must be unique.
+
+#### SDV-ADM-003 (proposed): no such sending system
+- **Where:** `IngestionSourceAdminService.java:72`, `SourceOperationsService.java:22`, `MetadataFieldAdminService.java:271`, `BusinessExperienceService.java:847`.
+- **Trigger:** the source ID names no sending system of the tenant.
+- **Today:** 404 `NOT_FOUND`. Generic: yes.
+- **Kind:** not found.
+- **User sees:** "No sending system has this ID. Reload Integrations. (SDV-ADM-003)"
+- **IT admin and log:** INFO.
+- **Fix:** none.
+- **L1 tells the customer:** reload.
+
+#### SDV-ADM-004 (proposed): field settings not valid
+- **Where:** `MetadataFieldAdminService.java:99`, `:104`, `:136`, `:138`, `:141`, `:147`, `:149`, `:200`, `:202`, `:204`, `:205`, `:207`, `:237`, `:238`, `:239`, `:240`, `:276`, `:281`, `:282`, `:283`, `:284`, `:285`, `:287`, `:290`. (Identifier changes while records have a level: SDV-SEN-007.)
+- **Trigger:** a missing label or setting, a bad key, a wrong order list, record-title limits, or a normalization that doesn't fit the type.
+- **Today:** 400 `BAD_REQUEST`. Generic: yes.
+- **Kind:** reached but refused.
+- **User sees:** today's message, plus "(SDV-ADM-004)".
+- **IT admin and log:** DEBUG.
+- **Fix:** none.
+- **L1 tells the customer:** correct the setting the message names.
+
+#### SDV-ADM-005 (proposed): field not defined yet
+- **Where:** `MetadataFieldAdminService.java:211`.
+- **Trigger:** a Business Admin changes a field Tenant IT hasn't defined.
+- **Today:** 404 `NOT_FOUND`, with a good message. Generic: yes.
+- **Kind:** needs a person.
+- **User sees:** today's message, plus "(SDV-ADM-005)".
+- **IT admin and log:** INFO.
+- **Fix:** Tenant IT defines the field first.
+- **L1 tells the customer:** Tenant IT must add the field before it can be set up for search.
+
+#### SDV-ADM-006 (proposed): Roles & permissions request malformed
+- **Where:** `RoleCapabilityAdminController.java:49`, `:99`; `CapabilityPolicyService.java:73`. (Rule refusals: SDV-ROL-001 to 003.)
+- **Trigger:** no `roles`, or a role name Vero doesn't know.
+- **Today:** 400 `BAD_REQUEST`, "Unknown role: <name>". Generic: yes.
+- **Kind:** reached but refused.
+- **User sees:** today's message, plus "(SDV-ADM-006)".
+- **IT admin and log:** DEBUG.
+- **Fix:** none.
+- **L1 tells the customer:** the screen or script sent a role name Vero doesn't have.
+
+#### SDV-IDP-001 (proposed): sign-in connection draft not valid
+- **Where:** `EnterpriseIdentityAdminController.java:28`, `:47`; `JdbcOidcConnectionBindingRepository.java:178`, `:179`.
+- **Trigger:** the draft has no body, or no issuer or required value, or the issuer isn't a URI (`URI.create` gives Java's raw message).
+- **Today:** 400 `BAD_REQUEST`. Generic: yes.
+- **Kind:** reached but refused.
+- **User sees:** "The sign-in connection is missing <field> or it isn't a web address. (SDV-IDP-001)"
+- **IT admin and log:** DEBUG.
+- **Fix:** none.
+- **L1 tells the customer:** correct the field.
+
+#### SDV-IDP-002 (proposed): nothing to test or activate
+- **Where:** `EnterpriseIdentityAdminController.java:30`, `:34`; `JdbcOidcConnectionBindingRepository.java:66`, `:67`, `:78`.
+- **Trigger:** no draft has been saved, or it is in the wrong state.
+- **Today:** 400 `BAD_REQUEST`. Generic: yes.
+- **Kind:** reached but refused.
+- **User sees:** today's message, plus "(SDV-IDP-002)".
+- **IT admin and log:** DEBUG.
+- **Fix:** none.
+- **L1 tells the customer:** save and test a draft first.
+
+#### SDV-IDP-003 (proposed): activation not allowed yet
+- **Where:** `EnterpriseIdentityAdminController.java:33`, `:35`; `JdbcOidcConnectionBindingRepository.java:80`, `:83`, `:84`, `:85`.
+- **Trigger:** a missing confirmation word, a different draft, no successful test in the last 15 minutes, no active connection, or already active.
+- **Today:** 400 or 409, with good messages. Generic: yes.
+- **Kind:** reached but refused.
+- **User sees:** today's message, plus "(SDV-IDP-003)".
+- **IT admin and log:** INFO.
+- **Fix:** test again, then activate.
+- **L1 tells the customer:** follow the message; the test must be recent.
+
+#### SDV-IDP-004 (proposed): sign-in connection changed meanwhile
+- **Where:** `JdbcOidcConnectionBindingRepository.java:52`, `:89`, `:92`, `:110`, `:113`.
+- **Trigger:** someone else changed the connection at the same moment.
+- **Today:** 409 `CONFLICT`, "Reload and try again". Generic: yes.
+- **Kind:** reached but refused.
+- **User sees:** today's message, plus "(SDV-IDP-004)".
+- **IT admin and log:** INFO.
+- **Fix:** none.
+- **L1 tells the customer:** reload and repeat.
+
+#### SDV-IDP-005 (proposed): roll-back not allowed
+- **Where:** `EnterpriseIdentityAdminController.java:40`; `JdbcOidcConnectionBindingRepository.java:101`, `:103`, `:105`, `:106`.
+- **Trigger:** a missing confirmation word, or the target isn't the previous known-good connection.
+- **Today:** 400 or 409. Generic: yes.
+- **Kind:** reached but refused.
+- **User sees:** today's message, plus "(SDV-IDP-005)".
+- **IT admin and log:** INFO.
+- **Fix:** none.
+- **L1 tells the customer:** only the previous working connection can be restored.
+
+#### SDV-IDP-006 (proposed): connection test failed (outbound)
+- **Where:** `OidcDiscoveryTester.java:25`, `:28`, `:31`, `:32`, `:35-43`, `:46` (returned as a failed test, not an error).
+- **Trigger:** the issuer's discovery address can't be reached, answers non-200, names another issuer, or lacks an endpoint.
+- **Today:** a failed test with a sentence. `:46` adds the **raw exception text** (up to 300 characters), which can include internal host names. Generic: yes (no code; the cause is free text).
+- **Kind:** outside dependency down, or needs a person.
+- **User sees:** "The test couldn't reach the sign-in service at <host>: <cause in plain words>. (SDV-IDP-006)"
+- **IT admin and log:** INFO with the code, the reference, the host and the cause class.
+- **Fix:** correct the issuer, or open the network path.
+- **L1 tells the customer:** Vero couldn't reach their sign-in service from its server; check the address and the firewall.
+
+#### SDV-IDP-007 (proposed): more than one active sign-in connection
+- **Where:** `JdbcOidcConnectionBindingRepository.java:28` (read at every sign-in, from `EnterpriseJwtAuthenticationConverter.java:160`).
+- **Trigger:** data changed by hand so that two connections are active for one issuer.
+- **Today:** `IllegalStateException`. The sign-in converter catches only `IllegalArgumentException`, so this is likely a 500 at every sign-in, with Spring's body. Generic: yes.
+- **Kind:** authorised but system failed.
+- **User sees:** "Vero can't sign you in because its sign-in setup is inconsistent. Your IT team has been told. (SDV-IDP-007)"
+- **IT admin and log:** ERROR with the code, the tenant and the issuer.
+- **Fix:** disable one connection (recovery runbook).
+- **L1 tells the customer:** escalate to Vero operations.
+
+#### SDV-AUD-001 (proposed): audit search not valid
+- **Where:** `AuditQueryService.java:65`, `:102`, `:106`, `:172`, `:177`, `:193`, `:215`.
+- **Trigger:** limit out of range, too many action codes, a bad action code, dates reversed, or text too long.
+- **Today:** 400 `BAD_REQUEST`. Generic: yes.
+- **Kind:** reached but refused.
+- **User sees:** today's message, plus "(SDV-AUD-001)".
+- **IT admin and log:** DEBUG.
+- **Fix:** none.
+- **L1 tells the customer:** change the filters.
+
+#### SDV-AUD-002 (proposed): audit page link not valid
+- **Where:** `AuditQueryService.java:229`, `:233`, `:235-236`.
+- **Trigger:** the "more" cursor was changed or is from another list.
+- **Today:** 400 `BAD_REQUEST` "audit cursor is invalid." Generic: yes.
+- **Kind:** reached but refused.
+- **User sees:** "This list changed. Start again from the newest events. (SDV-AUD-002)"
+- **IT admin and log:** DEBUG.
+- **Fix:** none.
+- **L1 tells the customer:** reload the audit list.
+
+#### SDV-AUD-003 (proposed): audit export too large
+- **Where:** `AuditQueryService.java:109`.
+- **Trigger:** more than 10,000 events match.
+- **Today:** 422 `EXPORT_TOO_LARGE`, with a good message. Generic: no (own code, not in SDV form).
+- **Kind:** reached but refused.
+- **User sees:** today's message, plus "(SDV-AUD-003)".
+- **IT admin and log:** DEBUG.
+- **Fix:** none.
+- **L1 tells the customer:** export a shorter period.
+
+#### SDV-RET-001 (proposed): retention policy not valid
+- **Where:** `RetentionPolicyService.java:59`, `:62`, `:65`.
+- **Trigger:** name or description too long, or days not positive.
+- **Today:** 400 `BAD_REQUEST`. Generic: yes.
+- **Kind:** reached but refused.
+- **User sees:** today's message, plus "(SDV-RET-001)".
+- **IT admin and log:** DEBUG.
+- **Fix:** none.
+- **L1 tells the customer:** correct the value.
+
+#### SDV-RET-002 (proposed): a document couldn't be deleted at its time
+- **Where:** `RetentionDeletionService.java:69` (counted only), `:83`, `:88`, `:99`, `:103`, `:117-124`; `JdbcRetentionRepository.java:239`. Audited `DOCUMENT_RETENTION_DELETE_FAILED`, with the exception class and **no reference** (`:157`).
+- **Trigger:** storage, the database or the state check fails for one document.
+- **Today:** WARN with counts only (`RetentionScheduler.java:44`). Generic: yes.
+- **Kind:** needs a person (if it repeats).
+- **User sees:** nothing; the document stays until the next run.
+- **IT admin and log:** ERROR per document with the code, a run reference, the document ID and the cause class.
+- **Fix:** as the cause (STO or SYS-014); the next daily run retries.
+- **L1 tells the customer:** Vero will try again tomorrow; if Operations keeps showing it, escalate.
+
+#### SDV-RET-003 (proposed): daily cleanup failed
+- **Where:** `RetentionScheduler.java:52-55` (WARN "reasonCode=RETENTION_SWEEP_FAILED", **without the cause**).
+- **Trigger:** the whole run fails, for example because the database is down.
+- **Today:** WARN, and Operations shows that the last run failed. Generic: yes (no cause).
+- **Kind:** outside dependency down, or authorised but system failed.
+- **User sees:** Operations: "Last cleanup failed at <time>. (SDV-RET-003)"
+- **IT admin and log:** ERROR with the code, the run reference, the exception class and the stack trace.
+- **Fix:** as the cause; the next run retries.
+- **L1 tells the customer:** expired documents are kept until a cleanup succeeds; nothing is lost.
+
+### Screens (front end)
+
+These are the points where the screen turns a failure into words. Fix tasks belong to the UI.
+
+| Where | Today | Problem | Proposal |
+|---|---|---|---|
+| `api.ts:67`, `:86` | Uses the body's `message`, or `HTTP <status>` when there is none | Spring's own errors (SYS-013, SYS-015, AUT-*) have no `message`, so people can see "HTTP 500" | Map the status to a plain sentence when there is no code; always keep the reference. |
+| `CardError.tsx:19`, `:41`, `:58` | "Vero couldn't reach the server just now…" with Ref | Said for **every** failure, including refusals and 403s, so the cause is wrong | Show the coded message when there is a code; use "couldn't reach" only for network errors. |
+| `Sensitivity.tsx:39-40` | The server's message, or "Something went wrong. Try again." | An uncoded server message (developer text, "HTTP 500") is shown raw; the fallback is generic | Use `CardError` wording with Ref for uncoded failures. |
+| `AuditLog.tsx:100`, `Reports.tsx:113`, `:293`, `Notices.tsx:131` | "The export didn't work. Try again…" with no Ref | No reference to give IT | Add the Ref. |
+
+### Points that already send a released code
+
+| Code | Where |
+|---|---|
+| SDV-SEN-001, 002, 011 | `SensitivityLevel.java:41` (and its callers) |
+| SDV-SEN-003 | `DocumentIntakeService.java:263`, `:537` |
+| SDV-SEN-004 | `SubmissionService.java:401` |
+| SDV-SEN-005 | `RecordSensitivityGuard.java:16` |
+| SDV-SEN-006 | `SubmissionController.java:89` |
+| SDV-SEN-007 | `MetadataFieldAdminService.java:74` |
+| SDV-SEN-008 | `DocumentAccessGuard.java:97` |
+| SDV-SEN-009 | `DocumentAccessGuard.java:128` |
+| SDV-SEN-010 | `SensitivityLevelController.java:126` |
+| SDV-SEN-012 | `AccessRequestService.java:623` (shared reason check) |
+| SDV-SEN-013 | `SensitivityLevelService.java:116`, `:299` |
+| SDV-SEN-014 | `SensitivityLevelService.java:146`, `:213` |
+| SDV-SEN-015 | `SensitivityLevelService.java:307` |
+| SDV-SEN-016 | `SensitivityLevelService.java:112`, `:238`, `:277`, `:286` |
+| SDV-SEN-017 | `SensitivityLevelService.java:113`, `:279`, `:326` |
+| SDV-SEN-018 | `SensitivityLevelController.java:118` |
+| SDV-SEN-019 | `AuditQueryService.java:274` |
+| SDV-ROL-001, 002, 003 | `CapabilityPolicyService.java:92`, `:97`, `:103` |
+| SDV-ROL-004, 005 | `RoleSeparationGuard.java:42`, `:46-47`, `:59`; answered at `EnterpriseJwtAuthenticationConverter.java:139-140`, `LocalHeaderAuthenticationFilter.java:118-119` |
+| SDV-HLD-001 | `LegalHoldController.java:83` |
+| SDV-HLD-002 | `LegalHoldService.java:173` |
+| SDV-HLD-003 | `LegalHoldService.java:78` |
+| SDV-HLD-004, 007 | `LegalHoldService.java:103`, `:130`, `:180`, `:184`, `:186-187` |
+| SDV-HLD-005, 006, 008 | `LegalHoldService.java:109`, `:105`, `:132` |
+| SDV-APR-001, 015 | `AccessRequestController.java:72` |
+| SDV-APR-002 | `AccessRequestService.java:623` |
+| SDV-APR-003, 014 | `AccessRequestService.java:150`, `:146` |
+| SDV-APR-004 | `AccessRequestService.java:196` |
+| SDV-APR-005 | `ApprovalsController.java:92` |
+| SDV-APR-006, 008, 009 | `AccessRequestService.java:438`, `:441`, `:445` |
+| SDV-APR-007, 013 | `AccessRequestService.java:142`, `:436`, `:629`, `:634`, `:636-637` |
+| SDV-APR-010 | `AccessRequestService.java:408`, `:617` |
+| SDV-APR-011 | `AccessRequestService.java:492`, `:516` |
+| SDV-APR-012 | `AccessRequestService.java:138`, `:600` |
+| SDV-INT-001 | `IntakeNoticeController.java:86` |
+| SDV-INT-002 | `StewardNoticeService.java:81` |
+| SDV-INT-003 | `StewardNoticeService.java:75`, `IntakeNoticeController.java:76-77` |
+| SDV-RPT-001 | `ReportsController.java:108` |
+| SDV-RPT-002 | `IntakeReportService.java:206`, `SensitivityReportService.java:229` (and the range checks) |
+| SDV-RPT-003 | `IntakeReportService.java:193`, `SensitivityReportService.java:216` |
+| SDV-RPT-004 | `TenantZone.java:22-23` |
+| SDV-RPT-005 | `IntakeReportService.java:222` |
+
+### Points swallowed on purpose
+
+These failures are caught and not passed on. Each is safe as it is, but most leave **no log line**, so nobody can see that they happen.
+
+| Where | What is swallowed | Effect | Proposal |
+|---|---|---|---|
+| `DocumentAccessGuard.java:192`, `AuthorizationService.java:56`, `AccessRequestService.java:552` | The audit of a refusal | The refusal stands; the audit misses it | WARN with the reference. |
+| `IntakeRefusals.java:61`, `:75` | Recording an intake refusal (5xx failures are never recorded, `:61`) | The Daily intake report misses it | WARN; record 5xx failures as `INTAKE_FAILED`. |
+| `ControlledDownloadService.java:226`, `CorrectiveRedactionService.java:443`, `RetentionDeletionService.java:158` | The audit of a failure | The failure is not audited | WARN with the reference. |
+| `DocumentIntakeService.java:627`, `CorrectiveRedactionService.java:472` | Deleting an unused encrypted file | An orphan file stays on the volume | WARN with the volume and the object key (the key is opaque). |
+| `CorrectiveRedactionService.java:465` | Releasing a recovery claim | Recovery waits for the 10-minute lease | DEBUG. |
+| `AccessRequestService.java:244`, `:345` | The record name and position for the requests list | Shown without them | DEBUG. |
+| `OperationsService.java:52`, `:93`, `:152`, `:170`, `:186`, `:195`, `:222`, `ProblemRecordResolver.java:70`, `StorageVolumeAdminService.java:179`, `StoragePlacementService.java:56` | A health or list section can't be read | The screen shows the section as degraded or unknown | WARN with the section and the reference. |
+| `VaultTransitKeyProtectionProvider.java:69`, `:72` | Key-service health check | Operations shows the key service DOWN | DEBUG; the cause class in the detail. |
+| `RoleSeparationGuard.java:54` | Recording that a role conflict ended | Retried at the next sign-in | DEBUG. |
+| `SessionNamedAuditEventPort.java:56` | The sending system's name for an audit event | Written without the name | DEBUG. |
+| `PdfPageCount.java:19` | Counting pages | Page count left empty | DEBUG. |
+| `AuditSentences.java:159` | Reading audit details | The sentence is shown without details | DEBUG. |
+| `SecurePdfViewerController.java:110` | A malformed viewing ID | Treated as none | none. |
+| `CapabilityPolicyService.java:122`, `SdvGroupRoleMapper.java:47` | An unknown capability or group name | Ignored (then refused, or not a role) | none. |
+| `LocalFilesystemVolumeProbe.java:65`, `:72`, `:80` | A folder check | The check says "can't write here" | none. |
+| `DocumentIntakeService.java:616`, `CorrectiveRedactionService.java:387` | Overflow in a size estimate | The largest value is used | none. |
+
+### Outside dependencies
+
+| Dependency | Used by | Checked at start? | How, and what is missing |
+|---|---|---|---|
+| PostgreSQL (`SDV_DB_URL`) | Everything | **Yes, once.** | `DatabaseSchemaCheck` connects and reads Liquibase's table. If it fails, Vero serves only health until restarted (SYS-001 to 003). The local profile runs Liquibase instead; a failure stops the start. **Missing:** no re-check after start; readiness doesn't ping the database (SYS-014); `RestrictedStewardMappingWatcher` ignores the check (SYS-012). |
+| Vault Transit, the key service (`SDV_VAULT_BASE_URL`) | Upload, finishing, viewer, download, redaction | **Settings only.** | `VaultCryptoConfiguration` checks the address and the token settings. **Not reachability.** With `SDV_KEY_PROVIDER` at its default `disabled`, Vero starts and every document action fails (KEY-001). Operations probes `sys/health` on demand. Not in readiness. |
+| Vault token (env or token file, in the secret store) | Key service | **Read once.** | Read at start; empty or unreadable stops the start. Never re-read, so an expired token fails every document action until restart (KEY-003). |
+| Storage volumes (local folders) | Upload, finishing, viewer, download, redaction, retention | **No.** | Checked per upload (`StoragePlacementService`), on Operations and Storage, and by the capacity banner. Not in readiness. |
+| Sign-in hub: issuer and JWKS (`SDV_AUTH_JWT_*`, Keycloak `lexa-keycloak`) | Every signed-in request | **Settings only.** | `EnterpriseJwtConfiguration` checks the form of the settings (HTTPS, UUID). JWKS is first fetched at the first sign-in (AUT-004). With `SDV_AUTH_MODE` at its default `disabled`, Vero starts and refuses everyone (SYS-006). |
+| Issuer discovery (`/.well-known/openid-configuration`) | Identity settings, Test | No | Only when Tenant IT presses Test (IDP-006). |
+| Install settings (approvals, retention time, default time zone, recovery) | Start | **Yes.** | Each stops the start when wrong (SYS-007 to 011). |
+| Bundled changelog | Schema check | **Yes.** | SYS-004. |
+| Watch folder, polling | n/a | n/a | Not in this repository. |
+
+No other outbound calls exist. The only HTTP clients are in `VaultTransitKeyProtectionProvider.java` and `OidcDiscoveryTester.java`, plus Spring's JWKS client. There is no e-mail and there are no webhooks.
+
+### Rules check (task 0034, item 4)
+
+- **Secrets.** No message or log line found holds a password, key or token.
+  - Vault messages give the HTTP status only (`VaultTransitKeyProtectionProvider.java:125`).
+  - The token file is named, never read out (`VaultCryptoConfiguration.java:47`, `:50`).
+  - `SchemaStep.java:66` refuses a password on the command line.
+  - Watch points:
+    - `DatabaseSchemaCheck.java:53` logs PostgreSQL's message, which can name the database user and host (not the password);
+    - `OidcDiscoveryTester.java:46` returns raw exception text to Tenant IT (IDP-006).
+- **Document content and redacted values.** None found in messages.
+  - Metadata and search messages name the field key, never the value (`MetadataValueValidator`, `BusinessExperienceService.java:494-506`).
+  - The one producer value repeated is a `sourceDocumentId` (`SubmissionService.java:276`).
+  - The redaction region and the redaction reason are never in messages.
+- **Sign-in messages.** Vero never sees passwords; the sign-in hub decides whether an account exists. Vero's 401 descriptions don't say whether an account exists. But they show internal set-up to the browser ("No ACTIVE persisted OIDC connection matches…", "no mapped SDV role"). AUT-005 to 007 replace them with coded plain sentences.
+- **Reference ID.**
+  - `CorrelationIdFilter.java:31-33` gives every response an `X-Correlation-Id` header and puts it in the log pattern. The screens show it as "Ref" (`CardError.tsx:12`).
+  - **Gaps:**
+    1. The JSON error body never carries it (`FoundationExceptionHandler.java:114`, `SchemaGateFilter.java:43`, Spring's `/error`), so programs that read only the body lose it.
+    2. **Vero itself logs almost none of its failures.** The main code has only six WARN or ERROR lines (`DatabaseSchemaCheck.java:36`, `:53`, `RedactionRecoveryScheduler.java:35`, `RetentionScheduler.java:44`, `:54`, `OidcKnownGoodRecovery.java:39`). So for viewer, download, redaction, finishing, storage and key-service failures, the reference matches no log line. Some of them match an audit event; many match nothing.
+    3. Scheduled jobs have no reference: the log shows `no-correlation`, and retention failure audits have `correlationId` null (`RetentionDeletionService.java:157`).
+    4. Start-up failures have none.
