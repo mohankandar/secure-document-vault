@@ -126,13 +126,23 @@ async function businessAdminChecks(page: Page, testInfo: TestInfo) {
   await expect(page.getByText(/Baseline|PRINT_DOCUMENT|PERMANENT_REDACTION/)).toHaveCount(0)
   await expect(page.locator('table.v-table tbody tr').first()).toContainText('Always on')
   const before = await print.getAttribute('aria-checked')
-  for (const _ of [0, 1]) {
-    // Change, save, then change back and save again, so the role rules end as they started.
-    await print.click()
-    await page.getByRole('button', { name: 'Save', exact: true }).click()
-    await expect(page.getByRole('status').filter({ hasText: 'Permissions saved' }).last()).toBeVisible({ timeout: 15000 })
+  // Task 0035: the role rules as they were, put back through the API if a step below stops halfway.
+  const rolesNow = async () => (await (await page.request.get('/api/v1/admin/role-capabilities', { headers: ADMIN_HEADERS })).json() as { roles: Record<string, Record<string, boolean>> }).roles
+  const savedRoles = await rolesNow()
+  try {
+    for (const _ of [0, 1]) {
+      // Change, save, then change back and save again, so the role rules end as they started.
+      await print.click()
+      await page.getByRole('button', { name: 'Save', exact: true }).click()
+      await expect(page.getByRole('status').filter({ hasText: 'Permissions saved' }).last()).toBeVisible({ timeout: 15000 })
+    }
+    await expect(print).toHaveAttribute('aria-checked', before ?? 'false')
+  } finally {
+    if (JSON.stringify(await rolesNow()) !== JSON.stringify(savedRoles)) {
+      const r = await page.request.put('/api/v1/admin/role-capabilities', { headers: { ...ADMIN_HEADERS, 'Content-Type': 'application/json' }, data: { roles: savedRoles } })
+      expect(r.ok(), 'putting the role rules back').toBeTruthy()
+    }
   }
-  await expect(print).toHaveAttribute('aria-checked', before ?? 'false')
 
   // A card that fails to load: plain words, a reference, and Try again reloads only that card.
   let fail = true
@@ -220,7 +230,10 @@ async function searchFieldsChecks(page: Page, testInfo: TestInfo) {
   const sourceId = (sources.find((s) => s.displayName === 'LexaVault') ?? sources[0]).sourceId
   const path = (what: string) => `/api/v1/admin/metadata-sources/${sourceId}/${what}`
   const storedOrder = await (await page.request.get(path('display-order'), { headers: ADMIN_HEADERS })).json() as string[]
-  const fields = await (await page.request.get(`/api/v1/admin/ingestion-sources/${sourceId}/metadata-fields`, { headers: ADMIN_HEADERS })).json() as { fieldKey: string; displayLabel: string }[]
+  type FieldDefinition = { fieldKey: string; displayLabel: string; fieldType: string; required: boolean; businessIdentifier: boolean; searchable: boolean; normalization: string; searchMode: string; validationRulesJson: string; active: boolean }
+  const readFields = async () => (await (await page.request.get(`/api/v1/admin/ingestion-sources/${sourceId}/metadata-fields`, { headers: ADMIN_HEADERS })).json() as FieldDefinition[]).filter((f) => f.active)
+  const fields = await readFields()
+  const savedLastName = fields.find((f) => f.fieldKey === 'lastName')
   const saved = {
     // No stored order means label order (A to Z); the server only accepts a full list, so that is what is put back.
     order: storedOrder.length ? storedOrder : [...fields].sort((a, b) => a.displayLabel.localeCompare(b.displayLabel, undefined, { sensitivity: 'base' }) || a.fieldKey.localeCompare(b.fieldKey)).map((f) => f.fieldKey),
@@ -230,6 +243,15 @@ async function searchFieldsChecks(page: Page, testInfo: TestInfo) {
     for (const [what, fieldKeys] of [['display-order', saved.order], ['record-title', saved.title]] as const) {
       const r = await page.request.put(path(what), { headers: { ...ADMIN_HEADERS, 'Content-Type': 'application/json' }, data: { fieldKeys } })
       expect(r.ok(), `restoring ${what}`).toBeTruthy()
+    }
+    // Task 0035: Last Name's match too, if a step stopped between changing it and changing it back.
+    const now = (await readFields()).find((f) => f.fieldKey === 'lastName')
+    if (savedLastName && now && (now.searchMode !== savedLastName.searchMode || now.normalization !== savedLastName.normalization)) {
+      const s = savedLastName
+      const r = await page.request.put(`/api/v1/admin/ingestion-sources/${sourceId}/metadata-fields/lastName`, { headers: { ...ADMIN_HEADERS, 'Content-Type': 'application/json' }, data: {
+        displayLabel: s.displayLabel, fieldType: s.fieldType, required: s.required, businessIdentifier: s.businessIdentifier, searchable: s.searchable,
+        normalization: s.normalization, searchMode: s.searchMode, validationRules: JSON.parse(s.validationRulesJson || '{}') } })
+      expect(r.ok(), 'restoring how Last Name matches').toBeTruthy()
     }
   }
 
@@ -300,7 +322,12 @@ async function searchFieldsChecks(page: Page, testInfo: TestInfo) {
     await areaTab(page, 'Records').click()
     await waitForBusinessSearchReady(page)
     await page.getByRole('button', { name: /^Filters/ }).click()
-    const filterLabels = await page.locator('.ws-filter-fields .v-field > span').allInnerTexts()
+    // Task 0035: the panel opens only once the search fields have loaded, and the labels were read at once (report
+    // 0033: an empty list, so searchable[0] was undefined). Wait for the panel to list the moved field first.
+    await expect(page.getByRole('dialog', { name: 'Filters' })).toBeVisible({ timeout: 15000 })
+    const fieldLabel = page.locator('.ws-filter-fields .v-field > span')
+    await expect(fieldLabel.first(), 'the Filters panel lists the moved field first').toHaveText(new RegExp(`^${moved.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`), { timeout: 15000 })
+    const filterLabels = await fieldLabel.allInnerTexts()
     const searchable = order.filter((label) => filterLabels.some((t) => t.startsWith(label)))
     expect(filterLabels.map((t) => searchable.find((label) => t.startsWith(label)))).toEqual(searchable)
     expect(searchable[0]).toBe(moved)
@@ -931,15 +958,29 @@ const resultRows = (page: Page) => page.getByRole('grid', { name: 'Records' }).l
 const chip = (page: Page, text: RegExp) => page.getByRole('search').locator('.ws-chip').filter({ hasText: text })
 const clearSearch = (page: Page) => page.getByRole('button', { name: 'Clear', exact: true }).click()
 
+const resultsBusy = (page: Page) => page.getByRole('region', { name: 'Search results' }).locator('[aria-busy="true"]')
+
+/** Records is ready once the sending systems and their fields have loaded: until then the results show a loading skeleton. */
 async function waitForBusinessSearchReady(page: Page) {
   await expect(searchBox(page)).toBeVisible({ timeout: 15000 })
   await expect(page.getByRole('button', { name: /^Filters/ })).toBeVisible()
+  await expect(resultsBusy(page), 'the sending systems have loaded').toHaveCount(0, { timeout: 15000 })
 }
 
+/**
+ * Task 0035: waits for the search's own answer, then for the list to be drawn. Before, only the loading skeleton was
+ * awaited, which can be checked before the search has even started (report 0025: rows never seen for "gomez").
+ */
 async function searchFor(page: Page, value: string) {
+  const wanted = JSON.stringify(value.trim())
+  const answered = page.waitForResponse((r) => r.url().endsWith('/api/v1/business/search') && r.request().method() === 'POST'
+    && JSON.stringify(r.request().postDataJSON() ?? {}).includes(wanted), { timeout: 15000 })
+  answered.catch(() => { /* awaited below; this only stops an early failure from leaving it unhandled */ })
   await searchBox(page).fill(value)
   await searchBox(page).press('Enter')
-  await expect(page.getByRole('region', { name: 'Search results' }).locator('[aria-busy="true"]')).toHaveCount(0, { timeout: 15000 })
+  const response = await answered
+  expect(response.ok(), `the search for ${value} was answered`).toBeTruthy()
+  await expect(resultsBusy(page)).toHaveCount(0, { timeout: 15000 })
 }
 
 /** Results appear, or the test fails with the seeding help. */
@@ -1219,6 +1260,44 @@ async function searchSources(page: Page) {
   return ((await r.json()) as { sources: SchemaSource[] }).sources
 }
 
+// ---- The tour's own test record (task 0035) ----
+// The steps that make a request and decline it (tasks 0030 and 0031) used the seed's police report on 300000000008,
+// so every run added to a demo document's history. They now use this record of the loan system, which only the tour
+// uses: one Highly Confidential document, tour-check.pdf. The tour delivers it through the producer API the first time
+// and uses it again after that (a new record each run would add a record to the demo lists every time).
+const TOUR_RECORD = '399000000001'
+const TOUR_FILE = 'tour-check.pdf'
+const TOUR_PDF = path.resolve(process.cwd(), '..', '..', 'test-tools', 'fixtures', 'business-viewer-two-page.pdf')
+const DANA_HEADERS = { 'X-SDV-Tenant-Id': LOCAL_TENANT, 'X-SDV-Subject': 'local-restricted-steward', 'X-SDV-Roles': 'RESTRICTED_STEWARD', 'Content-Type': 'application/json' }
+
+/** The document ID of tour-check.pdf on the tour's own record, delivered first if it isn't there yet. */
+async function tourCheckDocument(page: Page): Promise<string> {
+  const los = (await searchSources(page)).find((s) => s.displayName === 'Loan Origination System')
+  expect(los, 'the Loan Origination System from Seed-SDV-Canvas-Demo.ps1').toBeTruthy()
+  const find = async () => {
+    const found = await (await page.request.post('/api/v1/business/search', { headers: DANA_HEADERS, data: { sourceId: los!.sourceId, criteria: { contractNumber: TOUR_RECORD }, page: 1, pageSize: 5 } })).json() as { records: { recordRef: string }[] }
+    if (!found.records.length) return null
+    const rec = await (await page.request.get('/api/v1/business/records/' + encodeURIComponent(found.records[0].recordRef), { headers: DANA_HEADERS })).json() as { documents: { documentId: string; originalFilename: string }[] }
+    return rec.documents.find((d) => d.originalFilename === TOUR_FILE)?.documentId ?? null
+  }
+  const have = await find()
+  if (have) return have
+  const producer = { 'X-SDV-Tenant-Id': LOCAL_TENANT, 'X-SDV-Source-Id': los!.sourceId, 'X-SDV-Subject': 'local-demo-producer' }
+  const key = `tour-check-${TOUR_RECORD}`
+  const sub = await page.request.post('/api/v1/ingestion/submissions', { headers: { ...producer, 'Content-Type': 'application/json' }, data: {
+    sourceSubmissionId: key, expectedDocumentCount: 1, expectedDocuments: [{ sourceDocumentId: `${key}-1` }],
+    metadata: { contractNumber: TOUR_RECORD, borrowerName: 'Tour Check (test record)', loanType: 'Auto', closingDate: '2026-12-31' } } })
+  expect(sub.ok(), `delivering the tour's own record ${TOUR_RECORD}: ${sub.status()} ${await sub.text()}`).toBeTruthy()
+  const submissionId = (await sub.json() as { submissionId: string }).submissionId
+  const pdf = Buffer.concat([fs.readFileSync(TOUR_PDF), Buffer.from(`\n%vero-tour-copy ${key}\n`)])
+  const doc = await page.request.post(`/api/v1/ingestion/submissions/${submissionId}/documents`, { headers: { ...producer,
+    'X-SDV-Source-Document-Id': `${key}-1`, 'X-SDV-Filename': TOUR_FILE, 'X-SDV-Sensitivity-Level': 'HIGHLY_CONFIDENTIAL', 'Content-Type': 'application/pdf' }, data: pdf })
+  expect(doc.ok(), `delivering ${TOUR_FILE}: ${doc.status()} ${await doc.text()}`).toBeTruthy()
+  let id: string | null = null
+  await expect.poll(async () => (id = await find()), { message: `${TOUR_FILE} is listed on ${TOUR_RECORD}`, timeout: 15000 }).not.toBeNull()
+  return id!
+}
+
 /** The tour searches LexaVault's demo records, so it chooses LexaVault the way a person does: as their last choice in this browser. */
 async function chooseLexaVault(page: Page) {
   const lexa = (await searchSources(page)).find((s) => s.displayName === 'LexaVault')
@@ -1428,8 +1507,10 @@ test.describe('SDV role-based screen capture', () => {
     await expect(viewerBar().getByRole('button', { name: /^Print \(approved, use by / })).toBeVisible({ timeout: 15000 })
     await viewer(page).getByRole('tab', { name: /^Requests/ }).click()
     const requests = viewer(page).getByRole('complementary', { name: 'Document information' })
-    await expect(requests.getByRole('listitem').filter({ hasText: /^Print/ })).toContainText('Approved · use by')
-    await expect(requests.getByRole('listitem').filter({ hasText: 'Lower to Confidential' })).toContainText('Waiting for approval')
+    // Task 0035: the history may also hold earlier requests (used, declined, expired), so look for the seed's two.
+    const seedHelp = 'from Seed-SDV-Canvas-Demo.ps1; if the demo data has moved on, run .\\Seed-SDV-Canvas-Demo.ps1 -Reset'
+    await expect(requests.getByRole('listitem').filter({ hasText: /^Print/ }).filter({ hasText: 'Approved · use by' }).first(), `Dana's approved print ${seedHelp}`).toBeVisible()
+    await expect(requests.getByRole('listitem').filter({ hasText: 'Lower to Confidential' }).filter({ hasText: 'Waiting for approval' }).first(), `Dana's waiting lowering ${seedHelp}`).toBeVisible()
     await viewerBar().getByRole('button', { name: 'Request download' }).click()
     const pop = page.getByRole('dialog', { name: 'Request a download' })
     await expect(pop).toContainText('A Business admin approves it. Once approved, you can download this document once, within 24 hours.')
@@ -1441,8 +1522,8 @@ test.describe('SDV role-based screen capture', () => {
   })
 
   // Task 0030. Needs Seed-SDV-Canvas-Demo.ps1 (50 waiting print and download requests, a whole-contract request on
-  // 300000000002, legal holds). Changes one thing only: Dana Ruiz asks to print a demo document and a Business admin
-  // declines it, so the notice can be seen (a declined request stays in her history).
+  // 300000000002, legal holds). Changes no demo data: Dana Ruiz asks to print the tour's own document (task 0035) and
+  // a Business admin declines it, so the notice can be seen (a declined request stays in her history).
   test('Approvals, legal holds, requester notices and the audit level filter (task 0030)', async ({ page }, testInfo) => {
     test.skip(!isDesktop(testInfo), 'Runs once per tour (desktop only).')
     test.setTimeout(240_000)
@@ -1506,25 +1587,23 @@ test.describe('SDV role-based screen capture', () => {
     await tabs.getByRole('tab', { name: 'Keeping documents' }).click()
     await expect(page.getByRole('button', { name: /^\d+ documents? on legal hold$/ })).toBeVisible({ timeout: 15000 })
 
-    // 3. A notice after a decision. Dana opens Vero (this browser starts from what is there), asks to print a demo
-    // document, a Business admin declines it, and the next time she opens Vero she is told; the Requests tab counts it.
+    // 3. A notice after a decision. Dana opens Vero (this browser starts from what is there), asks to print the
+    // tour's own document, a Business admin declines it, and the next time she opens Vero she is told; the Requests
+    // tab counts it.
     await selectRole(page, 'Restricted Steward')
     // The notice has read her requests once, so what is there now counts as seen.
     await page.waitForFunction(() => Object.keys(window.localStorage).some((k) => k.startsWith('vero.requests.seen.')), undefined, { timeout: 15000 })
-    const found = await (await page.request.post('/api/v1/business/search', { headers: dana, data: { sourceId: (await searchSources(page)).find((s) => s.displayName === 'Loan Origination System')!.sourceId, criteria: { contractNumber: '300000000008' }, page: 1, pageSize: 5 } })).json() as { records: { recordRef: string }[] }
-    const rec = await (await page.request.get('/api/v1/business/records/' + encodeURIComponent(found.records[0].recordRef), { headers: dana })).json() as { documents: { documentId: string; originalFilename: string }[] }
-    const police = rec.documents.find((d) => d.originalFilename === 'police-report.pdf')
-    expect(police, 'police-report.pdf on 300000000008 from the seed').toBeTruthy()
-    const asked = await page.request.post(`/api/v1/business/documents/${police!.documentId}/access-requests`, { headers: dana, data: { kind: 'PRINT', reason: 'Tour check (task 0030)' } })
+    const tourDoc = await tourCheckDocument(page)
+    const asked = await page.request.post(`/api/v1/business/documents/${tourDoc}/access-requests`, { headers: dana, data: { kind: 'PRINT', reason: 'Tour check (task 0030)' } })
     let requestId = asked.ok() ? (await asked.json() as { requestId: string }).requestId : ''
     if (!requestId) { // one is already waiting from an earlier run that stopped
       const mine = await (await page.request.get('/api/v1/business/access-requests', { headers: dana })).json() as { requestId: string; documentId: string; kind: string; status: string }[]
-      requestId = mine.find((r) => r.documentId === police!.documentId && r.kind === 'PRINT' && r.status === 'PENDING')!.requestId
+      requestId = mine.find((r) => r.documentId === tourDoc && r.kind === 'PRINT' && r.status === 'PENDING')!.requestId
     }
     expect((await page.request.post(`/api/v1/admin/access-requests/${requestId}/decline`, { headers: priya })).ok()).toBeTruthy()
     await reloadApp(page)
     const notice = page.getByRole('status', { name: 'Your requests' })
-    await expect(notice).toContainText('Print on 300000000008 declined', { timeout: 15000 })
+    await expect(notice).toContainText(`Print on ${TOUR_RECORD} declined`, { timeout: 15000 })
     await capture(page, testInfo, 'requester-notice')
     await notice.getByRole('button', { name: 'Dismiss' }).click()
     await reloadApp(page)
@@ -1534,10 +1613,10 @@ test.describe('SDV role-based screen capture', () => {
     await reloadApp(page)
     await areaTab(page, 'Records').click()
     await waitForBusinessSearchReady(page)
-    await searchFor(page, '300000000008')
-    await resultRows(page).filter({ hasText: '300000000008' }).first().click()
+    await searchFor(page, TOUR_RECORD)
+    await resultRows(page).filter({ hasText: TOUR_RECORD }).first().click()
     await page.getByRole('complementary', { name: 'Record inspector' }).getByRole('button', { name: /Open documents/ }).click()
-    await page.getByRole('navigation', { name: 'Record documents' }).getByRole('button', { name: /Police report/ }).click()
+    await page.getByRole('navigation', { name: 'Record documents' }).getByRole('button', { name: /Tour check/ }).click()
     const requestsTab = viewer(page).getByRole('tab', { name: /^Requests/ })
     await expect(requestsTab).toHaveAccessibleName(/1 new decision$/, { timeout: 15000 })
     await requestsTab.click()
@@ -1577,16 +1656,14 @@ test.describe('SDV role-based screen capture', () => {
     const as = (subject: string, roles: string) => ({ 'X-SDV-Tenant-Id': TENANT, 'X-SDV-Subject': subject, 'X-SDV-Roles': roles, 'Content-Type': 'application/json' })
     const dana = as('local-restricted-steward', 'RESTRICTED_STEWARD'), priya = as('local-business-admin', 'BUSINESS_ADMIN')
 
-    // A decision made through the API, not on this screen: the drawer must still list it.
-    const found = await (await page.request.post('/api/v1/business/search', { headers: dana, data: { sourceId: (await searchSources(page)).find((s) => s.displayName === 'Loan Origination System')!.sourceId, criteria: { contractNumber: '300000000008' }, page: 1, pageSize: 5 } })).json() as { records: { recordRef: string }[] }
-    const rec = await (await page.request.get('/api/v1/business/records/' + encodeURIComponent(found.records[0].recordRef), { headers: dana })).json() as { documents: { documentId: string; originalFilename: string }[] }
-    const police = rec.documents.find((d) => d.originalFilename === 'police-report.pdf')
-    expect(police, 'police-report.pdf on 300000000008 from the seed').toBeTruthy()
-    const asked = await page.request.post(`/api/v1/business/documents/${police!.documentId}/access-requests`, { headers: dana, data: { kind: 'DOWNLOAD', reason: 'Tour check (task 0031)' } })
+    // A decision made through the API, not on this screen: the drawer must still list it. On the tour's own document
+    // (task 0035), so no demo document's history grows.
+    const tourDoc = await tourCheckDocument(page)
+    const asked = await page.request.post(`/api/v1/business/documents/${tourDoc}/access-requests`, { headers: dana, data: { kind: 'DOWNLOAD', reason: 'Tour check (task 0031)' } })
     let requestId = asked.ok() ? (await asked.json() as { requestId: string }).requestId : ''
     if (!requestId) { // one is already waiting from an earlier run that stopped
       const mine = await (await page.request.get('/api/v1/business/access-requests', { headers: dana })).json() as { requestId: string; documentId: string; kind: string; status: string }[]
-      requestId = mine.find((r) => r.documentId === police!.documentId && r.kind === 'DOWNLOAD' && r.status === 'PENDING')!.requestId
+      requestId = mine.find((r) => r.documentId === tourDoc && r.kind === 'DOWNLOAD' && r.status === 'PENDING')!.requestId
     }
     expect((await page.request.post(`/api/v1/admin/access-requests/${requestId}/decline`, { headers: priya })).ok()).toBeTruthy()
     const decided = await (await page.request.get('/api/v1/admin/access-requests/decided', { headers: priya })).json() as { requestId: string; decision: string; decidedBy: string; reason?: string }[]
@@ -1602,13 +1679,13 @@ test.describe('SDV role-based screen capture', () => {
     await page.getByRole('button', { name: 'Decided recently ›' }).click()
     const drawer = page.getByRole('dialog', { name: 'Decided recently' })
     await expect(drawer).toContainText('Decisions by every Business admin in the last 30 days')
-    await expect(drawer.getByRole('listitem').first()).toContainText('Declined · Download on 300000000008', { timeout: 15000 })
+    await expect(drawer.getByRole('listitem').first()).toContainText(`Declined · Download on ${TOUR_RECORD}`, { timeout: 15000 })
     await expect(drawer.getByRole('listitem').first()).toContainText(/ · by .+ · /)
     expect(await drawer.innerText()).not.toMatch(/Tour check|\.pdf/)
     await capture(page, testInfo, 'approvals-decided-recently')
 
     // An opening from now on records the document's effective level, so the audit's level filter finds it.
-    const opened = await page.request.get(`/api/v1/business/documents/${police!.documentId}/viewer`, { headers: dana })
+    const opened = await page.request.get(`/api/v1/business/documents/${tourDoc}/viewer`, { headers: dana })
     expect(opened.ok()).toBeTruthy()
     const viewingId = (await opened.json() as { viewingId: string }).viewingId
     const ops = as('local-platform-operations-admin', 'PLATFORM_OPERATIONS_ADMIN')
@@ -1717,7 +1794,6 @@ test.describe('SDV role-based screen capture', () => {
     const TENANT = '11111111-1111-1111-1111-111111111111'
     const as = (subject: string, roles: string) => ({ 'X-SDV-Tenant-Id': TENANT, 'X-SDV-Subject': subject, 'X-SDV-Roles': roles })
     const priya = as('local-business-admin', 'BUSINESS_ADMIN')
-    const dana = as('local-restricted-steward', 'RESTRICTED_STEWARD')
     const dee = as('local-document-steward', 'DOCUMENT_STEWARD')
     type Sens = { from: string; to: string; today: string; timeZone: string; documents: { total: number; highlyConfidential: number }; requests: { kind: string }[]; attempts: { roles: string[]; attempts: number; people: number }[] }
     const sens = async (query = '') => {
@@ -1743,15 +1819,12 @@ test.describe('SDV role-based screen capture', () => {
     expect(await code(await page.request.post('/api/v1/business/intake-notices/read', { headers: dee, data: { noticeIds: [] } }))).toEqual([400, 'SDV-INT-003'])
     expect(await code(await page.request.post('/api/v1/business/intake-notices/read', { headers: priya, data: { noticeIds: [] } }))).toEqual([403, 'SDV-INT-001'])
 
-    // A real attempt: a Business user tries to open the seed's Highly Confidential police report. It is refused
-    // (SDV-SEN-008) and counted under Business user, with no name in the report. (One DOCUMENT_ACCESS_REFUSED audit
-    // event in the dev database per run.)
+    // A real attempt: a Business user tries to open the tour's own Highly Confidential document (task 0035). It is
+    // refused (SDV-SEN-008) and counted under Business user, with no name in the report. (One DOCUMENT_ACCESS_REFUSED
+    // audit event in the dev database per run.)
+    const tourDoc = await tourCheckDocument(page)
     const before = await sens()
-    const found = await (await page.request.post('/api/v1/business/search', { headers: dana, data: { sourceId: (await searchSources(page)).find((s) => s.displayName === 'Loan Origination System')!.sourceId, criteria: { contractNumber: '300000000008' }, page: 1, pageSize: 5 } })).json() as { records: { recordRef: string }[] }
-    const rec = await (await page.request.get('/api/v1/business/records/' + encodeURIComponent(found.records[0].recordRef), { headers: dana })).json() as { documents: { documentId: string; originalFilename: string }[] }
-    const police = rec.documents.find((d) => d.originalFilename === 'police-report.pdf')
-    expect(police, 'police-report.pdf on 300000000008 from the seed').toBeTruthy()
-    expect(await code(await page.request.get(`/api/v1/business/documents/${police!.documentId}/viewer`, { headers: as('local-business-user', 'BUSINESS_USER') }))).toEqual([403, 'SDV-SEN-008'])
+    expect(await code(await page.request.get(`/api/v1/business/documents/${tourDoc}/viewer`, { headers: as('local-business-user', 'BUSINESS_USER') }))).toEqual([403, 'SDV-SEN-008'])
     const after = await sens()
     const businessUser = (r: Sens) => r.attempts.find((a) => a.roles.join(',') === 'BUSINESS_USER')
     expect(businessUser(after)!.attempts).toBe((businessUser(before)?.attempts ?? 0) + 1)

@@ -39,6 +39,27 @@
   Running it again changes nothing: whatever is already there is left as it is (no field, order or title is sent
   again, because every such save adds a version and an audit event).
 
+  Task 0035: it is safe to run in any state. Before each request step it checks what is there. When the demo data
+  has moved on (for example a demo document's level was lowered by hand, so the request the step makes is no longer
+  possible), the step is skipped with a [SKIP] line instead of failing, and the end of the run says so.
+
+  Reset (task 0035): puts the demo data back to the state this script makes, then runs the seed:
+
+      .\Seed-SDV-Canvas-Demo.ps1 -Reset
+
+  It refuses unless Vero at -Base runs in local mode, the database is a local sdv* database that this seed has
+  filled (its canvas-demo deliveries are there) and Vero at -Base is using that database. Through the API, as a
+  person would (so each change is audited), it puts back:
+  - Roles & permissions: Business user without Download, Print, Tags, Comments and Redact; Document steward with all five.
+  - LexaVault receiving, and the seed's field settings (for example Last Name "Contains").
+  - Waiting requests: every waiting request the seed did not make is declined.
+  - Levels: the seed's levels on its documents and on 300000000002 (whole contract); every other document and contract
+    Standard. A raise is made by "local-demo-reset"; a lowering is asked by "local-demo-reset" and approved by Priya
+    Natarajan (Business admin).
+  - Legal holds: the seed's three; any other hold is released.
+  What it can't put back: a permanent redaction, and tags or comments added by hand (Vero has no way to remove them).
+  Requests, decisions and audit events stay in the history; only what is waiting changes.
+
   The demo PDFs (test-tools\fixtures, scripts\demo-files) are for this local seed only. They are not part of the
   backend jar or the frontend build, and the source-package scripts leave scripts\demo-files out.
 
@@ -53,7 +74,9 @@ param(
     [string]$PdfPath = (Join-Path $PSScriptRoot 'test-tools\fixtures\business-viewer-two-page.pdf'),
     [string]$FourteenPagePdfPath = (Join-Path $PSScriptRoot 'scripts\demo-files\loan-file-14-pages.pdf'),
     [string]$StorageFolder = (Join-Path $PSScriptRoot '.runtime\demo-storage'),
-    [string]$StandbyStorageFolder = (Join-Path $PSScriptRoot '.runtime\demo-storage-b')
+    [string]$StandbyStorageFolder = (Join-Path $PSScriptRoot '.runtime\demo-storage-b'),
+    # Task 0035: put the demo data back to the seed's known state first (see the description).
+    [switch]$Reset
 )
 
 $ErrorActionPreference = 'Stop'
@@ -65,6 +88,10 @@ foreach ($f in @($PdfPath, $FourteenPagePdfPath)) { if (-not (Test-Path -Literal
 $Tenant = '11111111-1111-1111-1111-111111111111'
 $Correlation = 'canvas-demo-seed-' + ([guid]::NewGuid().ToString('N')).Substring(0, 10)
 function Ok([string]$Message) { Write-Host "  [OK  ] $Message" -ForegroundColor Green }
+# Task 0035: a step that can't run because the data has moved on is skipped, never failed; the end of the run lists them.
+$script:skipped = New-Object System.Collections.Generic.List[string]
+function Skip([string]$Message) { $script:skipped.Add($Message); Write-Host "  [SKIP] $Message" -ForegroundColor Yellow }
+function Fixed([string]$Message) { Write-Host "  [RESET] $Message" -ForegroundColor Cyan }
 function Headers([string]$Subject, [string]$Roles) { @{ 'X-SDV-Tenant-Id' = $Tenant; 'X-SDV-Subject' = $Subject; 'X-SDV-Roles' = $Roles; 'X-Correlation-Id' = $Correlation } }
 function SourceHeaders([string]$SourceId) { @{ 'X-SDV-Tenant-Id' = $Tenant; 'X-SDV-Source-Id' = $SourceId; 'X-SDV-Subject' = 'local-demo-producer'; 'X-Correlation-Id' = $Correlation } }
 function Api([string]$Method, [string]$Path, [hashtable]$Headers, [object]$Body = $null) {
@@ -86,15 +113,17 @@ $admin = Headers 'local-demo-business-admin' 'BUSINESS_ADMIN'
 $it = Headers 'local-demo-tenant-it' 'TENANT_IT_ADMIN'
 $steward = Headers 'local-document-steward' 'DOCUMENT_STEWARD'
 
-# A field that is already there is left as it is (each save adds a field version and an audit event).
+# A field that is already there is left as it is (each save adds a field version and an audit event). With -Reset, a
+# field whose settings were changed is saved again with the seed's settings.
 function EnsureField([string]$SourceId, [string]$Key, [string]$Label, [string]$Type, [bool]$Identifier, [bool]$Required, [string]$Normalization, [string]$Mode, [bool]$Searchable = $true) {
-    $have = Db "select count(*) from metadata_field_definitions where tenant_id='$Tenant' and source_id='$SourceId' and field_key=$(Lit $Key) and active;"
-    if ([int]$have -gt 0) { Ok "Field already there: $Label"; return }
+    $want = "$Label|$Type|$($Required.ToString().ToLower())|$($Identifier.ToString().ToLower())|$($Searchable.ToString().ToLower())|$Normalization|$Mode"
+    $have = Db "select display_label || '|' || field_type || '|' || required::text || '|' || business_identifier::text || '|' || searchable::text || '|' || normalization || '|' || search_mode from metadata_field_definitions where tenant_id='$Tenant' and source_id='$SourceId' and field_key=$(Lit $Key) and active order by version desc limit 1;"
+    if ($have -and ($have -ceq $want -or -not $Reset)) { Ok "Field already there: $Label"; return }
     $null = Api 'PUT' "/api/v1/admin/ingestion-sources/$SourceId/metadata-fields/$Key" $admin @{
         displayLabel = $Label; fieldType = $Type; required = $Required; businessIdentifier = $Identifier; searchable = $Searchable
         normalization = $Normalization; searchMode = $Mode; validationRules = @{}
     }
-    Ok "Field added: $Label"
+    if ($have) { Fixed "Field settings put back: $Label (were $have)" } else { Ok "Field added: $Label" }
 }
 # Field order and Record title are saved only when they differ (a save adds an audit event).
 function EnsureKeys([string]$SourceId, [string]$What, [string[]]$Keys) {
@@ -153,6 +182,31 @@ if ($health.status -ne 'UP') { throw "SDV is not UP at $Base" }
 $tenantRow = Db "select count(*) from tenants where tenant_id='$Tenant';"
 if ([int]$tenantRow -ne 1) { throw "The local demo tenant is not in database $Database. Is the app at $Base started on it (local profile)?" }
 
+# ---- Task 0035: the reset's safety checks, then the settings it puts back ----
+if ($Reset) {
+    $info = Invoke-RestMethod -Uri "$Base/api/v1/system/info" -TimeoutSec 10
+    if (@($info.activeProfiles) -notcontains 'local') { throw "Reset refused: Vero at $Base is not in local mode (profiles: $(@($info.activeProfiles) -join ', '))." }
+    $demoDeliveries = [int](Db "select count(*) from submissions where tenant_id='$Tenant' and source_submission_id like 'canvas-demo-%';")
+    if ($demoDeliveries -eq 0) { throw "Reset refused: database $Database holds no delivery of this seed, so it is not a demo database. On a new demo database run .\Seed-SDV-Canvas-Demo.ps1 without -Reset." }
+    # Vero at -Base must be using -Database: the loan system's ID in the database is the one the API lists.
+    $losInDb = Db "select source_id from ingestion_sources where tenant_id='$Tenant' and source_key='loanOrigination';"
+    $losInApi = [string](Sources | Where-Object { $_.sourceKey -eq 'loanOrigination' } | Select-Object -First 1).sourceId
+    if (-not $losInDb -or $losInDb -ne $losInApi) { throw "Reset refused: Vero at $Base does not use database $Database (its Loan Origination System is not the one in that database)." }
+    Ok "Reset allowed: local mode, demo database $Database ($demoDeliveries demo deliveries), used by Vero at $Base"
+
+    # Roles & permissions as out of the box: what the screen tour expects.
+    $wantRoles = [ordered]@{
+        BUSINESS_USER    = [ordered]@{ DOWNLOAD_CURRENT_PDF = $false; PRINT_DOCUMENT = $false; ADD_DOCUMENT_TAG = $false; ADD_DOCUMENT_COMMENT = $false; PERMANENT_REDACTION = $false }
+        DOCUMENT_STEWARD = [ordered]@{ DOWNLOAD_CURRENT_PDF = $true; PRINT_DOCUMENT = $true; ADD_DOCUMENT_TAG = $true; ADD_DOCUMENT_COMMENT = $true; PERMANENT_REDACTION = $true }
+    }
+    $nowRoles = (Api 'GET' '/api/v1/admin/role-capabilities' $admin).roles
+    $differs = @(foreach ($role in $wantRoles.Keys) { foreach ($cap in $wantRoles[$role].Keys) { if ([bool]$nowRoles.$role.$cap -ne $wantRoles[$role][$cap]) { "$role $cap" } } })
+    if ($differs.Count) {
+        $null = Api 'PUT' '/api/v1/admin/role-capabilities' $admin @{ roles = $wantRoles }
+        Fixed "Roles & permissions put back ($($differs -join ', '))"
+    } else { Ok 'Roles & permissions as out of the box' }
+}
+
 # ---- Organization ----
 $null = Db "update tenants set display_name='Acme Lending', updated_at=now() where tenant_id='$Tenant' and display_name<>'Acme Lending';"
 Ok 'Organization: Acme Lending'
@@ -173,6 +227,8 @@ Ok 'Volume in use: primary-a'
 
 # ---- LexaVault and its records (Seed-SDV-Demo-Records.ps1) ----
 $lexa = EnsureSource 'lexaVault' 'LexaVault' 'OAUTH2_CLIENT_CREDENTIALS' 'local-demo/lexavault-client'
+# Task 0035: receiving, as the loan system below (a paused LexaVault refuses the record seed's deliveries).
+if ($lexa.status -ne 'ACTIVE') { $lexa = SetSourceStatus $lexa 'ACTIVE'; Fixed 'LexaVault receiving again' }
 $LexaId = [string]$lexa.sourceId
 # The fields as the tour expects them, before the record seed (which then leaves them as they are).
 EnsureField $LexaId 'contractNumber' 'Contract Number' 'TEXT' $true $true 'DIGITS_ONLY' 'EXACT'
@@ -331,63 +387,11 @@ $levels = Db "select string_agg(d.sensitivity_level, ',' order by d.source_docum
 Ok "Sensitivity demo documents: $levels; 300000000002 Highly Confidential as a whole contract"
 
 $hc = $sensitiveDocs['300000000003']; $income = $sensitiveDocs['300000000005']; $court = $sensitiveDocs['300000000002']
-# Reading the lists first lets Vero mark requests whose time is up as expired, so the counts below are current.
-$null = ApiList '/api/v1/business/access-requests' $restricted
-$null = ApiList '/api/v1/business/access-requests' $steward
-function Requests([string]$Who, [string]$Where) { [int](Db "select count(*) from access_requests where tenant_id='$Tenant' and requested_by='$Who' and $Where;") }
-function Ask([hashtable]$As, [string]$Doc, [string]$Kind, [string]$Reason) {
-    (Api 'POST' "/api/v1/business/documents/$Doc/access-requests" $As @{ kind = $Kind; reason = $Reason }).requestId
-}
-function AskLower([hashtable]$As, [string]$Doc, [string]$Level, [string]$Reason) {
-    (Api 'POST' "/api/v1/business/documents/$Doc/sensitivity/lower-request" $As @{ level = $Level; reason = $Reason }).requestId
-}
-function Decide([string]$Id, [string]$Decision) { $null = Api 'POST' "/api/v1/admin/access-requests/$Id/$Decision" $approver }
-$rs = 'local-restricted-steward'; $ds = 'local-document-steward'
-# Approved: Dana may print the settlement agreement once, within 24 hours (the viewer board's "Print, approved").
-if ((Requests $rs "kind='PRINT' and document_id='$hc' and status in ('APPROVED','PENDING') and expires_at > now()") -eq 0) {
-    Decide (Ask $restricted $hc 'PRINT' 'Board pack for legal review') 'approve'
-}
-# Waiting: Dana asks to lower the settlement agreement to Confidential.
-if ((Requests $rs "kind='LOWER_LEVEL' and document_id='$hc' and status='PENDING'") -eq 0) {
-    $null = AskLower $restricted $hc 'CONFIDENTIAL' 'Case closed'
-}
-# Declined: Dana's download of the court order.
-if ((Requests $rs "status='DECLINED'") -eq 0) {
-    $id = Db "select request_id from access_requests where tenant_id='$Tenant' and requested_by='$rs' and kind='DOWNLOAD' and document_id='$court' and status='PENDING' limit 1;"
-    if (-not $id) { $id = Ask $restricted $court 'DOWNLOAD' 'Copy for the insurer' }
-    Decide $id 'decline'
-}
-# Used: Dana's print of the court order, approved and printed once.
-if ((Requests $rs "status='USED'") -eq 0) {
-    $id = Db "select request_id from access_requests where tenant_id='$Tenant' and requested_by='$rs' and kind='PRINT' and document_id='$court' and status in ('PENDING','APPROVED') limit 1;"
-    if (-not $id) { $id = Ask $restricted $court 'PRINT' 'Hearing on 2 December' }
-    if ((Db "select status from access_requests where request_id='$id';") -eq 'PENDING') { Decide $id 'approve' }
-    $null = Api 'POST' "/api/v1/business/documents/$court/print-event" $restricted
-}
-# Expired: a request nobody decided in 7 days. Made now and dated back eight days (local demo data only), then the
-# list read marks it expired, as Vero would.
-if ((Requests $rs "status='EXPIRED'") -eq 0) {
-    $id = Db "select request_id from access_requests where tenant_id='$Tenant' and requested_by='$rs' and kind='LOWER_LEVEL' and document_id='$income' and status='PENDING' limit 1;"
-    if (-not $id) { $id = AskLower $restricted $income 'STANDARD' 'Not sensitive after all' }
-    $null = Db "update access_requests set requested_at = now() - interval '8 days', expires_at = now() - interval '1 day' where request_id='$id' and status='PENDING';"
-    $null = ApiList '/api/v1/business/access-requests' $restricted
-}
-# Waiting: Daniel (Document steward) asks to lower the income statement to Standard.
-if ((Requests $ds "kind='LOWER_LEVEL' and document_id='$income' and status='PENDING'") -eq 0) {
-    $null = AskLower $steward $income 'STANDARD' 'Marked by mistake'
-}
-$states = Db "select string_agg(status || ' ' || n, ', ' order by status) from (select status, count(*) n from access_requests where tenant_id='$Tenant' and requested_by in ('$rs','$ds') group by status) x;"
-Ok "Demo requests by Dana Ruiz and Daniel Reyes: $states"
 
-# ---- Task 0030: Approvals and Legal holds (boards Sens-Approvals, Sens-LegalHold) ----
+# ---- Task 0030 documents (boards Sens-Approvals, Sens-LegalHold) ----
 # Two Highly Confidential documents more on each of 300000000007 Fatima Noor and 300000000008 Liam Brooks (second
-# deliveries, so the existing documents stay as they are). With the settlement agreement that makes five. Five demo
-# Restricted stewards who never sign in (Sam Kim, Ali Haddad, Leo Grant, Mia Novak, Tom Reed) each ask to print and to
-# download all five: 50 waiting print and download requests, the bulk approval the task tests. Their names are written
-# in the local database only, as the other demo names are. Dana Ruiz also asks to lower the whole of 300000000002 to
-# Confidential (a whole-contract request). Two legal holds: the two new documents of 300000000007, and Wei Chen's
-# income statement. Each is made only when it is missing, so a second run changes nothing; after the bulk approval
-# (or 7 days), a run makes the 50 waiting requests again.
+# deliveries, so the existing documents stay as they are). With the settlement agreement that makes five. Delivered
+# here, before any request (task 0035), so the reset below sees every demo document.
 $approvalDocs = @($hc)
 foreach ($r in @(
     @{ n = '300000000007'; who = 'Fatima Noor'; type = 'Mortgage'; closing = '2026-07-31'; files = @('hardship-letter.pdf', 'fraud-report.pdf') },
@@ -410,15 +414,181 @@ for ($try = 0; $try -lt 30; $try++) {
 }
 if ($notYet -ne 0) { throw "$notYet approvals demo document(s) are not available yet; run the seed again in a minute." }
 
+# Reading the lists first lets Vero mark requests whose time is up as expired, so the counts below are current.
+$null = ApiList '/api/v1/business/access-requests' $restricted
+$null = ApiList '/api/v1/business/access-requests' $steward
+function Requests([string]$Who, [string]$Where) { [int](Db "select count(*) from access_requests where tenant_id='$Tenant' and requested_by='$Who' and $Where;") }
+function Ask([hashtable]$As, [string]$Doc, [string]$Kind, [string]$Reason) {
+    (Api 'POST' "/api/v1/business/documents/$Doc/access-requests" $As @{ kind = $Kind; reason = $Reason }).requestId
+}
+function AskLower([hashtable]$As, [string]$Doc, [string]$Level, [string]$Reason) {
+    (Api 'POST' "/api/v1/business/documents/$Doc/sensitivity/lower-request" $As @{ level = $Level; reason = $Reason }).requestId
+}
+function Decide([string]$Id, [string]$Decision, [hashtable]$As = $approver) { $null = Api 'POST' "/api/v1/admin/access-requests/$Id/$Decision" $As }
+# Task 0035: what the request steps below need, read just before each one.
+function OwnLevel([string]$Doc) { Db "select sensitivity_level from documents where tenant_id='$Tenant' and document_id='$Doc';" }
+function ContractLevel([string]$SourceId, [string]$Contract) { $l = Db "select sensitivity_level from record_sensitivity_levels where tenant_id='$Tenant' and source_id='$SourceId' and record_key like '%$Contract%' limit 1;"; if ($l) { $l } else { 'STANDARD' } }
+function RecordRef([string]$SourceId, [string]$Contract) {
+    $found = Api 'POST' '/api/v1/business/search' $restricted @{ sourceId = $SourceId; criteria = @{ contractNumber = $Contract }; page = 1; pageSize = 5 }
+    [string](@($found.records)[0].recordRef)
+}
+$rank = @{ STANDARD = 0; CONFIDENTIAL = 1; HIGHLY_CONFIDENTIAL = 2 }
+$rs = 'local-restricted-steward'; $ds = 'local-document-steward'
 $askers = @(
     @{ id = 'local-demo-sam-kim'; name = 'Sam Kim' }, @{ id = 'local-demo-ali-haddad'; name = 'Ali Haddad' },
     @{ id = 'local-demo-leo-grant'; name = 'Leo Grant' }, @{ id = 'local-demo-mia-novak'; name = 'Mia Novak' },
     @{ id = 'local-demo-tom-reed'; name = 'Tom Reed' })
+
+# ---- Task 0035: reset of waiting requests, levels and legal holds (only with -Reset) ----
+if ($Reset) {
+    $resetter = Headers 'local-demo-reset' 'RESTRICTED_STEWARD'
+    $resetAdmin = Headers 'local-demo-reset-admin' 'BUSINESS_ADMIN' # only for a request Priya made herself (nobody decides their own)
+    $resetWhy = 'Demo reset: back to the seed''s level'
+
+    # 1. Waiting requests: the seed's are kept (one of each), every other one is declined.
+    $mine = @{}
+    $declined = 0
+    $pendingRows = Db "select request_id || '|' || requested_by || '|' || kind || '|' || coalesce(document_id::text, '') || '|' || coalesce(requested_level, '') || '|' || coalesce(source_id::text, '') || '|' || coalesce(record_key, '') from access_requests where tenant_id='$Tenant' and status='PENDING' and expires_at > now() order by requested_at, request_id;"
+    foreach ($line in ($pendingRows -split "`n" | Where-Object { $_.Trim() })) {
+        $id, $who, $kind, $doc, $level, $src, $key = $line.Trim().Split('|', 7)
+        $sig = $null
+        if ($who -eq $rs -and $kind -eq 'LOWER_LEVEL' -and $doc -eq $hc -and $level -eq 'CONFIDENTIAL') { $sig = 'dana-lower-settlement' }
+        elseif ($who -eq $ds -and $kind -eq 'LOWER_LEVEL' -and $doc -eq $income -and $level -eq 'STANDARD') { $sig = 'daniel-lower-income' }
+        elseif ($who -eq $rs -and $kind -eq 'LOWER_RECORD_LEVEL' -and $src -eq $LosId -and $key -like '*300000000002*' -and $level -eq 'CONFIDENTIAL') { $sig = 'dana-lower-contract' }
+        elseif (($askers | ForEach-Object { $_.id }) -contains $who -and $kind -in @('PRINT', 'DOWNLOAD') -and $approvalDocs -contains $doc) { $sig = "$who $kind $doc" }
+        if ($sig -and -not $mine.ContainsKey($sig)) { $mine[$sig] = $true; continue }
+        try {
+            Decide $id 'decline' $(if ($who -eq 'local-business-admin') { $resetAdmin } else { $approver })
+            $declined++
+        } catch { Skip "Could not decline waiting request $id ($kind by $who): $($_.Exception.Message)" }
+    }
+    if ($declined) { Fixed "Declined $declined waiting request(s) the seed did not make" } else { Ok 'Waiting requests: only the seed''s' }
+
+    # 2. Levels, contracts first (a document's level counts with its contract's): 300000000002 Highly Confidential as a
+    # whole contract, every other contract Standard; then each document at the seed's level, every other one Standard.
+    $recordRows = Db "select source_id || '|' || sensitivity_level || '|' || record_key from record_sensitivity_levels where tenant_id='$Tenant' order by record_key;"
+    foreach ($line in ($recordRows -split "`n" | Where-Object { $_.Trim() })) {
+        $src, $now, $key = $line.Trim().Split('|', 3)
+        $contract = ([regex]::Match($key, '\d{6,}')).Value
+        $target = if ($src -eq $LosId -and $contract -eq '300000000002') { 'HIGHLY_CONFIDENTIAL' } else { 'STANDARD' }
+        if ($now -eq $target) { continue }
+        try {
+            $ref = RecordRef $src $contract
+            if (-not $ref) { Skip "Contract $contract was not found to put its level back ($now)"; continue }
+            $path = "/api/v1/business/records/$([uri]::EscapeDataString($ref))/sensitivity"
+            if ($rank[$target] -gt $rank[$now]) { $null = Api 'POST' "$path/raise" $resetter @{ level = $target; reason = $resetWhy } }
+            else { Decide (Api 'POST' "$path/lower-request" $resetter @{ level = $target; reason = $resetWhy }).requestId 'approve' }
+            Fixed "Contract $contract level: $now -> $target"
+        } catch { Skip "Could not put contract $contract back to $target ($now): $($_.Exception.Message)" }
+    }
+    $docTarget = @{
+        'canvas-demo-300000000003-sensitivity-1' = 'HIGHLY_CONFIDENTIAL'; 'canvas-demo-300000000005-sensitivity-1' = 'CONFIDENTIAL'
+        'canvas-demo-300000000009-sensitivity-1' = 'CONFIDENTIAL'
+        'canvas-demo-300000000007-approvals-1' = 'HIGHLY_CONFIDENTIAL'; 'canvas-demo-300000000007-approvals-2' = 'HIGHLY_CONFIDENTIAL'
+        'canvas-demo-300000000008-approvals-1' = 'HIGHLY_CONFIDENTIAL'; 'canvas-demo-300000000008-approvals-2' = 'HIGHLY_CONFIDENTIAL'
+        # The screen tour's own record (frontend/sdv-ui/e2e/sdv-screen-tour.spec.ts, task 0035).
+        'tour-check-399000000001-1' = 'HIGHLY_CONFIDENTIAL'
+    }
+    $docRows = Db "select document_id || '|' || source_document_id || '|' || sensitivity_level from documents where tenant_id='$Tenant' and status='AVAILABLE' order by source_document_id, document_id;"
+    $levelsBack = 0
+    foreach ($line in ($docRows -split "`n" | Where-Object { $_.Trim() })) {
+        $doc, $sourceDoc, $now = $line.Trim().Split('|', 3)
+        $target = if ($docTarget.ContainsKey($sourceDoc)) { $docTarget[$sourceDoc] } else { 'STANDARD' }
+        if ($now -eq $target) { continue }
+        try {
+            if ($rank[$target] -gt $rank[$now]) { $null = Api 'POST' "/api/v1/business/documents/$doc/sensitivity/raise" $resetter @{ level = $target; reason = $resetWhy } }
+            else { Decide (AskLower $resetter $doc $target $resetWhy) 'approve' }
+            Fixed "Document $sourceDoc level: $now -> $target"; $levelsBack++
+        } catch { Skip "Could not put document $sourceDoc back to $target ($now): $($_.Exception.Message)" }
+    }
+    if (-not $levelsBack) { Ok 'Document levels as the seed makes them' }
+
+    # 3. Legal holds: the seed's three (placed again below if missing); any other hold is released.
+    $holdDocs = @($approvalDocs[1], $approvalDocs[2], $income)
+    $holdRows = Db "select hold_id || '|' || document_id from legal_holds where tenant_id='$Tenant' and released_at is null order by placed_at, hold_id;"
+    $released = 0
+    foreach ($line in ($holdRows -split "`n" | Where-Object { $_.Trim() })) {
+        $holdId, $doc = $line.Trim().Split('|', 2)
+        if ($holdDocs -contains $doc) { continue }
+        try { $null = Api 'POST' "/api/v1/admin/legal-holds/$holdId/release" $approver; $released++ } catch { Skip "Could not release legal hold ${holdId}: $($_.Exception.Message)" }
+    }
+    if ($released) { Fixed "Released $released legal hold(s) the seed did not place" } else { Ok 'Legal holds: only the seed''s' }
+}
+# Task 0035: each step first checks the level it needs. When the data has moved on (a level changed by hand), the
+# step is skipped with a note; .\Seed-SDV-Canvas-Demo.ps1 -Reset puts the levels back first.
+$hcLevel = OwnLevel $hc; $incomeLevel = OwnLevel $income; $courtContract = ContractLevel $LosId '300000000002'
+$resetHint = 'run .\Seed-SDV-Canvas-Demo.ps1 -Reset to put the demo data back'
+# Approved: Dana may print the settlement agreement once, within 24 hours (the viewer board's "Print, approved").
+if ((Requests $rs "kind='PRINT' and document_id='$hc' and status='APPROVED' and expires_at > now()") -eq 0) {
+    if ($hcLevel -ne 'HIGHLY_CONFIDENTIAL') { Skip "Dana's approved print: the settlement agreement is $hcLevel, not Highly Confidential; $resetHint" }
+    else {
+        # One left waiting by a run that stopped is approved; otherwise a new one is made.
+        $id = Db "select request_id from access_requests where tenant_id='$Tenant' and requested_by='$rs' and kind='PRINT' and document_id='$hc' and status='PENDING' and expires_at > now() limit 1;"
+        if (-not $id) { $id = Ask $restricted $hc 'PRINT' 'Board pack for legal review' }
+        Decide $id 'approve'
+    }
+}
+# Waiting: Dana asks to lower the settlement agreement to Confidential.
+if ((Requests $rs "kind='LOWER_LEVEL' and document_id='$hc' and status='PENDING'") -eq 0) {
+    if ($hcLevel -ne 'HIGHLY_CONFIDENTIAL') { Skip "Dana's waiting lowering: the settlement agreement is $hcLevel, so it can't be asked to go to Confidential; $resetHint" }
+    else { $null = AskLower $restricted $hc 'CONFIDENTIAL' 'Case closed' }
+}
+# Declined: Dana's download of the court order.
+if ((Requests $rs "status='DECLINED'") -eq 0) {
+    if ($courtContract -ne 'HIGHLY_CONFIDENTIAL') { Skip "Dana's declined download: contract 300000000002 is $courtContract, not Highly Confidential; $resetHint" }
+    else {
+        $id = Db "select request_id from access_requests where tenant_id='$Tenant' and requested_by='$rs' and kind='DOWNLOAD' and document_id='$court' and status='PENDING' limit 1;"
+        if (-not $id) { $id = Ask $restricted $court 'DOWNLOAD' 'Copy for the insurer' }
+        Decide $id 'decline'
+    }
+}
+# Used: Dana's print of the court order, approved and printed once.
+if ((Requests $rs "status='USED'") -eq 0) {
+    if ($courtContract -ne 'HIGHLY_CONFIDENTIAL') { Skip "Dana's used print: contract 300000000002 is $courtContract, not Highly Confidential; $resetHint" }
+    else {
+        $id = Db "select request_id from access_requests where tenant_id='$Tenant' and requested_by='$rs' and kind='PRINT' and document_id='$court' and status in ('PENDING','APPROVED') limit 1;"
+        if (-not $id) { $id = Ask $restricted $court 'PRINT' 'Hearing on 2 December' }
+        if ((Db "select status from access_requests where request_id='$id';") -eq 'PENDING') { Decide $id 'approve' }
+        $null = Api 'POST' "/api/v1/business/documents/$court/print-event" $restricted
+    }
+}
+# Expired: a request nobody decided in 7 days. Made now and dated back eight days (local demo data only), then the
+# list read marks it expired, as Vero would.
+if ((Requests $rs "status='EXPIRED'") -eq 0) {
+    $id = Db "select request_id from access_requests where tenant_id='$Tenant' and requested_by='$rs' and kind='LOWER_LEVEL' and document_id='$income' and status='PENDING' limit 1;"
+    if (-not $id -and $rank[$incomeLevel] -eq 0) { Skip "Dana's expired lowering: the income statement is already Standard; $resetHint" }
+    else {
+        if (-not $id) { $id = AskLower $restricted $income 'STANDARD' 'Not sensitive after all' }
+        $null = Db "update access_requests set requested_at = now() - interval '8 days', expires_at = now() - interval '1 day' where request_id='$id' and status='PENDING';"
+        $null = ApiList '/api/v1/business/access-requests' $restricted
+    }
+}
+# Waiting: Daniel (Document steward) asks to lower the income statement to Standard.
+if ((Requests $ds "kind='LOWER_LEVEL' and document_id='$income' and status='PENDING'") -eq 0) {
+    # A Document steward can open Confidential, not Highly Confidential, and may ask to lower only from Confidential.
+    if ($incomeLevel -ne 'CONFIDENTIAL') { Skip "Daniel's waiting lowering: the income statement is $incomeLevel, not Confidential; $resetHint" }
+    else { $null = AskLower $steward $income 'STANDARD' 'Marked by mistake' }
+}
+$states = Db "select string_agg(status || ' ' || n, ', ' order by status) from (select status, count(*) n from access_requests where tenant_id='$Tenant' and requested_by in ('$rs','$ds') group by status) x;"
+Ok "Demo requests by Dana Ruiz and Daniel Reyes: $states"
+
+# ---- Task 0030: Approvals and Legal holds (boards Sens-Approvals, Sens-LegalHold) ----
+# Two Highly Confidential documents more on each of 300000000007 Fatima Noor and 300000000008 Liam Brooks (second
+# deliveries, so the existing documents stay as they are). With the settlement agreement that makes five. Five demo
+# Restricted stewards who never sign in (Sam Kim, Ali Haddad, Leo Grant, Mia Novak, Tom Reed) each ask to print and to
+# download all five: 50 waiting print and download requests, the bulk approval the task tests. Their names are written
+# in the local database only, as the other demo names are. Dana Ruiz also asks to lower the whole of 300000000002 to
+# Confidential (a whole-contract request). Two legal holds: the two new documents of 300000000007, and Wei Chen's
+# income statement. Each is made only when it is missing, so a second run changes nothing; after the bulk approval
+# (or 7 days), a run makes the 50 waiting requests again. (The documents are delivered further up, task 0035.)
 $why = @{ PRINT = @('Hearing bundle, two copies', 'Board pack for the risk committee', 'Signed copy for the file review', 'Copy for the mediation session', 'Paper copy for the auditor'); DOWNLOAD = @('Outside counsel needs a copy for the hearing on 2 December.', 'Regulator asked for the original by Friday', 'Send to the insurer for the claim', 'Evidence pack for the complaint', 'Copy for the external auditor') }
 $made = 0
+# Print and download are asked for only on a Highly Confidential document (task 0035: one lowered by hand is skipped).
+$askable = @($approvalDocs | Where-Object { (OwnLevel $_) -eq 'HIGHLY_CONFIDENTIAL' })
+foreach ($doc in @($approvalDocs | Where-Object { $askable -notcontains $_ })) { Skip "The 10 print and download requests on approvals demo document $doc`: it is $(OwnLevel $doc), not Highly Confidential; $resetHint" }
 for ($p = 0; $p -lt $askers.Count; $p++) {
     $as = Headers $askers[$p].id 'RESTRICTED_STEWARD'
-    foreach ($doc in $approvalDocs) {
+    foreach ($doc in $askable) {
         foreach ($kind in @('PRINT', 'DOWNLOAD')) {
             if ((Requests $askers[$p].id "kind='$kind' and document_id='$doc' and status='PENDING'") -eq 0) { $null = Ask $as $doc $kind $why[$kind][$p]; $made++ }
         }
@@ -427,10 +597,13 @@ for ($p = 0; $p -lt $askers.Count; $p++) {
 }
 # Whole contract: Dana asks to lower 300000000002 (Highly Confidential as a whole contract) to Confidential.
 if ((Requests $rs "kind='LOWER_RECORD_LEVEL' and status='PENDING'") -eq 0) {
-    $found = Api 'POST' '/api/v1/business/search' $restricted @{ sourceId = $LosId; criteria = @{ contractNumber = '300000000002' }; page = 1; pageSize = 5 }
-    $ref = @($found.records)[0].recordRef
-    if (-not $ref) { throw 'Record 300000000002 was not found for the whole-contract request.' }
-    $null = Api 'POST' "/api/v1/business/records/$([uri]::EscapeDataString($ref))/sensitivity/lower-request" $restricted @{ level = 'CONFIDENTIAL'; reason = 'Migration review finished; the old card numbers are now redacted.' }
+    $courtContract = ContractLevel $LosId '300000000002'
+    if ($courtContract -ne 'HIGHLY_CONFIDENTIAL') { Skip "Dana's whole-contract lowering: contract 300000000002 is $courtContract, not Highly Confidential; $resetHint" }
+    else {
+        $ref = RecordRef $LosId '300000000002'
+        if (-not $ref) { throw 'Record 300000000002 was not found for the whole-contract request.' }
+        $null = Api 'POST' "/api/v1/business/records/$([uri]::EscapeDataString($ref))/sensitivity/lower-request" $restricted @{ level = 'CONFIDENTIAL'; reason = 'Migration review finished; the old card numbers are now redacted.' }
+    }
 }
 $waiting = Db "select count(*) from access_requests where tenant_id='$Tenant' and status='PENDING' and expires_at > now();"
 Ok "Approvals demo: $made new request(s); $waiting waiting in all"
@@ -444,4 +617,8 @@ foreach ($h in @(
     }
 }
 Ok "Legal holds in place: $(Db "select count(*) from legal_holds where tenant_id='$Tenant' and released_at is null;")"
-Write-Host 'Demo data ready.' -ForegroundColor Green
+if ($script:skipped.Count) {
+    Write-Host "Demo data ready, except $($script:skipped.Count) step(s) skipped because the data has moved on (see [SKIP] above). Run .\Seed-SDV-Canvas-Demo.ps1 -Reset to put it back." -ForegroundColor Yellow
+} else {
+    Write-Host 'Demo data ready.' -ForegroundColor Green
+}

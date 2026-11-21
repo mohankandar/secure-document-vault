@@ -92,6 +92,16 @@ It creates the LexaVault and Loan Origination System sending systems with their 
 
 Running it again changes nothing. The seed uses the normal APIs plus a few direct writes to the local database and is for local development only: it refuses anything but `localhost`. Its PDFs (`test-tools\fixtures`, `scripts\demo-files`) are not part of the backend jar or the frontend build.
 
+It is safe to run in any state: when the demo data has moved on (for example a demo document's level was lowered by hand), a step it can't do is skipped with a `[SKIP]` line, never failed.
+
+To put the demo data back to the state the seed makes (levels, waiting requests, legal holds, Roles & permissions, field settings), for example before a test pass or after testing by hand:
+
+```powershell
+.\Seed-SDV-Canvas-Demo.ps1 -Reset
+```
+
+The reset refuses unless Vero runs in local mode on a local `sdv*` database that this seed has filled. It works through the API, so each change is audited. It can't undo a permanent redaction, or tags and comments added by hand.
+
 To check the seed on an empty scratch database (`sdv_seed_test`, created and dropped by the check; the `sdv` database is not touched):
 
 ```powershell
