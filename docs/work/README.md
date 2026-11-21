@@ -15,7 +15,7 @@ This folder is how the design chat and the coding session work together on SDV (
 
 When the owner says "do the next SDV task":
 
-1. Find the highest-numbered `NNNN-task.md` that has no matching `NNNN-report.md`. If there is none, say so and stop.
+1. Find the lowest-numbered `NNNN-task.md` that has no matching `NNNN-report.md`. If there is none, say so and stop.
 2. Read `CLAUDE.md` at the repository root and follow its rules. They always apply.
 3. Do the task exactly as written. If the task is unclear, or would break a rule in `CLAUDE.md`, stop and write the question in the report instead of guessing.
 4. Write `NNNN-report.md` using the layout below.
