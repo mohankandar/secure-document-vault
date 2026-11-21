@@ -40,6 +40,7 @@ public class JdbcSensitivityReportRepository implements SensitivityReportReposit
     static final String STORED = "('RECEIVED', 'PROCESSING', 'AVAILABLE', 'REDACTION_PROCESSING')";
     private static final String RAISED = "('DOCUMENT_SENSITIVITY_RAISED', 'RECORD_SENSITIVITY_RAISED')";
     private static final String LOWERED = "('DOCUMENT_SENSITIVITY_LOWERED', 'RECORD_SENSITIVITY_LOWERED')";
+    private static final String ABOVE_STANDARD = "('CONFIDENTIAL', 'HIGHLY_CONFIDENTIAL')";
 
     private final NamedParameterJdbcTemplate jdbc;
 
@@ -184,21 +185,29 @@ public class JdbcSensitivityReportRepository implements SensitivityReportReposit
             source = " and (d.source_id=:sourceId or (a.target_type='RECORD_SENSITIVITY'"
                     + " and a.safe_details ->> 'sourceId'=:sourceText))";
         }
+        // Task 0033, part 2: a sending system's count also holds a contract's first level above Standard from a
+        // delivery (RECORD_SENSITIVITY_SET, the migration case). A first level at Standard changes nothing.
         return jdbc.queryForObject("""
                 select count(*) filter (where a.action in\s""" + RAISED + """
                  and a.actor_type='USER') as steward,
-                       count(*) filter (where a.action in\s""" + RAISED + """
-                 and a.actor_type='SOURCE') as source,
+                       count(*) filter (where a.actor_type='SOURCE' and (a.action in\s""" + RAISED + """
+                 or (a.action='RECORD_SENSITIVITY_SET' and a.safe_details ->> 'level' in\s""" + ABOVE_STANDARD + """
+                ))) as source,
                        count(*) filter (where a.action in\s""" + LOWERED + """
                 ) as lowered
                   from audit_events a""" + join + """
 
                  where a.tenant_id=:tenantId and a.outcome='SUCCESS' and a.occurred_at>=:from and a.occurred_at<:to
-                   and a.action in ('DOCUMENT_SENSITIVITY_RAISED', 'RECORD_SENSITIVITY_RAISED',
+                   and a.action in ('DOCUMENT_SENSITIVITY_RAISED', 'RECORD_SENSITIVITY_RAISED', 'RECORD_SENSITIVITY_SET',
                                     'DOCUMENT_SENSITIVITY_LOWERED', 'RECORD_SENSITIVITY_LOWERED')""" + source, p,
                 (rs, row) -> new LevelChanges(rs.getLong("steward"), rs.getLong("source"), rs.getLong("lowered")));
     }
 
+    /**
+     * Task 0033, part 2: only the open action (attempt OPEN, one per attempt to open a document) is counted, not pages,
+     * previews, text search, level-change requests or any other attempt a refusal can name, so each count is one try
+     * to open a document. SDV-SEN-009 (approval needed) stays out.
+     */
     @Override
     public List<AttemptCount> countRestrictedAttempts(UUID tenantId, UUID sourceId, Instant from, Instant to) {
         MapSqlParameterSource p = range(tenantId, from, to);
@@ -215,6 +224,7 @@ public class JdbcSensitivityReportRepository implements SensitivityReportReposit
 
                  where a.tenant_id=:tenantId and a.action='DOCUMENT_ACCESS_REFUSED' and a.occurred_at>=:from
                    and a.occurred_at<:to and a.safe_details ->> 'code'='SDV-SEN-008'
+                   and a.safe_details ->> 'attempt'='OPEN'
                  group by 1
                 """, p, (rs, row) -> new AttemptCount(roles(rs.getString("roles")), rs.getLong("attempts"),
                 rs.getLong("people")));

@@ -29,8 +29,8 @@ public interface SensitivityReportRepository {
     LevelChanges countLevelChanges(UUID tenantId, UUID sourceId, Instant from, Instant to);
 
     /**
-     * Refused attempts to open a document the person's role can't open (DOCUMENT_ACCESS_REFUSED with SDV-SEN-008) in
-     * [from, to), by the roles the refusal names (empty: the event names none), with how many people tried.
+     * Refused attempts to open a document the person's role can't open (DOCUMENT_ACCESS_REFUSED with SDV-SEN-008, attempt
+     * OPEN only: task 0033, part 2) in [from, to), by the roles the refusal names (empty: the event names none), with how many people tried.
      */
     List<AttemptCount> countRestrictedAttempts(UUID tenantId, UUID sourceId, Instant from, Instant to);
 

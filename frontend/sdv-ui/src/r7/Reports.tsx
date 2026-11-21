@@ -345,7 +345,7 @@ function SensitivityReportView({ tabs }: { tabs: ReactNode }) {
           <table className="rpt-tbl">
             <tbody>
               <tr><td>Raised by a steward</td><td className="r">{n(report.levelChanges.raisedBySteward)}</td></tr>
-              <tr><td>Raised by a sending system (document or {record} level)</td><td className="r">{n(report.levelChanges.raisedBySendingSystem)}</td></tr>
+              <tr><td>Set or raised by a sending system (document or {record} level)</td><td className="r">{n(report.levelChanges.raisedBySendingSystem)}</td></tr>
               <tr><td>Lowered after approval</td><td className="r">{n(report.levelChanges.lowered)}</td></tr>
             </tbody>
           </table>

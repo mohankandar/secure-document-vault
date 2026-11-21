@@ -193,3 +193,84 @@ Tests changed because the behaviour changed (not to make them pass):
 ## Suggested next step
 
 Answer the questions, then task 0034.
+
+---
+
+## Part 2: owner answers (2026-11-21)
+
+Date: 2026-11-21
+Branch: `feature/reports-2`
+Outcome: DONE. No schema change.
+
+### What was done
+
+1. **Roles on refused openings:** accepted. No change.
+2. **First contract levels from a delivery are counted.**
+   - "Set or raised by a sending system" now also counts `RECORD_SENSITIVITY_SET` from a sending system when the level is Confidential or Highly Confidential (the migration case).
+   - A first level at Standard changes nothing, so it is not counted. The same goes for an event that names no level.
+   - The sending-system filter works as before: the event names its sending system.
+   - New label, on the screen and in the CSV: "Set or raised by a sending system (document or contract level)". The word "contract" still comes from the primary identifier, as before.
+3. **Requests by what became of them as of now:** accepted. No change.
+4. **Attempts to open count only the open action.**
+   - Only refusals with `"attempt":"OPEN"` are counted: one per try to open a document (the viewer's open).
+   - Not counted: pages, previews, text search, tags, comments, activity, print, download, redact, level-change requests, access requests, level history.
+   - SDV-SEN-009 stays out.
+   - All refusals since task 0026 name their attempt, so older events are counted the same way.
+5. **Level-changes label:** "document or contract level", as in item 2.
+6. **Read-at per person as a JSON column:** accepted. No change.
+
+### Commands run and results
+
+| Command | Result |
+|---|---|
+| `.\Build-SDV-All.ps1` (the app was not running) | **BUILD SUCCESS**: 24 + 50 + 2 + 4 + 322 = **402 tests**, 0 failures, 5 skipped (the PostgreSQL tests). Frontend build passed. |
+| `.\Test-SDV-SchemaUpgrade.ps1` (runs the PostgreSQL tests) | **PASS**, 33 s. `SensitivityReportPostgresTest`: 1 run, 0 failures, 0 skipped. |
+| `Start-SDV-Local.ps1` | started |
+| `npm run typecheck` | passed |
+| `npm run ui:compare` | **28 passed**. `reports-sensitivity` shows the new label. |
+| `npm run ui:capture` | **run 1:** 24 passed, 1 failed, 11 skipped. The failure was in "Business Administrator screens", the Search fields step (task 0022 filter order): `expect(searchable[0]).toBe(moved)`, expected "Loan Type", received `undefined` (`sdv-screen-tour.spec.ts:306`). This change does not touch that screen. That test alone: 2 passed. **Run 2 (full):** **25 passed, 11 skipped**. The Sensitivity step passed in both runs. |
+
+### Tests
+
+No new test classes. The test count is unchanged (402).
+- `SensitivityReportPostgresTest`, seeded on real PostgreSQL:
+  - **Item 2:**
+    - first levels from deliveries: Highly Confidential at LexaVault and Confidential at Loan Origination are counted;
+    - a first level at Standard and one with no level are not;
+    - one at 23:59 on 31 October in New York counts in October, not November;
+    - another tenant's is never counted.
+    - Expected counts: all systems 2 → **4**; LexaVault 1 → **2**; Loan Origination 1 → **2**; October 0 → **1**.
+  - **Item 4:**
+    - refusals with SDV-SEN-008 for PAGE, PREVIEWS, TEXT_SEARCH, CHANGE_LEVEL, REQUEST_ACCESS, PRINT and DOWNLOAD, by a person who already has open attempts and by a person with only these;
+    - also one by a Restricted steward on the other sending system.
+    - None is counted. Attempts, people and role rows are as before, for all systems and for each one.
+- `SensitivityReportServiceTest`: the CSV line has the new label. The expected text changed because the label changed.
+
+### Files changed
+
+- `JdbcSensitivityReportRepository.java` (the two queries)
+- `SensitivityReportRepository.java`, `SensitivityReportService.java` (label and comments)
+- `Reports.tsx` (label)
+- `SensitivityReportPostgresTest.java`, `SensitivityReportServiceTest.java`
+- `docs/work/0033-task.md` (your Part 2), this report
+- **Not committed (left as found):** `Start-SDV-Local.ps1`, your edit to `docs/work/README.md`, task 0034.
+
+### Remaining differences from the board
+
+As in Part 1. The board's "Raised by a sending system (contract level)" now reads "Set or raised by a sending system (document or contract level)".
+
+### Commits
+
+See the commit that adds this section, on `feature/reports-2`. Not pushed, not merged.
+
+### Not done, and why
+
+Nothing from Part 2.
+
+### Questions for the owner
+
+1. The Search fields tour step failed once and passed on the next two runs. It is outside this task. Do you want a task to make that step steady?
+
+### Suggested next step
+
+Task 0034.

@@ -152,8 +152,12 @@ class SensitivityReportPostgresTest {
     }
 
     private void refused(UUID tenant, String actor, UUID document, String code, String roles, String at) {
+        refused(tenant, actor, document, "OPEN", code, roles, at);
+    }
+
+    private void refused(UUID tenant, String actor, UUID document, String attempt, String code, String roles, String at) {
         event(tenant, "USER", actor, "DOCUMENT_ACCESS_REFUSED", "DOCUMENT", document, at, "DENIED",
-                "{\"level\":\"HIGHLY_CONFIDENTIAL\",\"attempt\":\"OPEN\",\"code\":\"" + code + "\"" + (roles == null ? "" : ",\"roles\":" + roles) + "}");
+                "{\"level\":\"HIGHLY_CONFIDENTIAL\",\"attempt\":\"" + attempt + "\",\"code\":\"" + code + "\"" + (roles == null ? "" : ",\"roles\":" + roles) + "}");
     }
 
     @Test
@@ -219,7 +223,15 @@ class SensitivityReportPostgresTest {
         event(T, "USER", "dee", "RECORD_SENSITIVITY_RAISED", "RECORD_SENSITIVITY", c1Level, "2026-11-02T11:00:00Z", "SUCCESS", "{\"sourceId\":\"" + LV + "\"}");
         event(T, "SOURCE", "loans", "RECORD_SENSITIVITY_RAISED", "RECORD_SENSITIVITY", c1Level, "2026-11-03T10:00:00Z", "SUCCESS", "{\"sourceId\":\"" + LV + "\",\"setBy\":\"SOURCE\"}");
         event(T, "SOURCE", "origination", "DOCUMENT_SENSITIVITY_RAISED", "DOCUMENT", d8, "2026-11-03T11:00:00Z", "SUCCESS", "{\"setBy\":\"SOURCE\"}");
-        event(T, "SOURCE", "loans", "RECORD_SENSITIVITY_SET", "RECORD_SENSITIVITY", c1Level, "2026-11-03T12:00:00Z", "SUCCESS", "{\"sourceId\":\"" + LV + "\"}");
+        // Part 2: a contract's first level above Standard from a delivery counts as set by a sending system (the
+        // migration case); a first level at Standard, or one naming no level, changes nothing and is not counted.
+        event(T, "SOURCE", "loans", "RECORD_SENSITIVITY_SET", "RECORD_SENSITIVITY", c1Level, "2026-11-03T12:00:00Z", "SUCCESS", "{\"sourceId\":\"" + LV + "\",\"level\":\"HIGHLY_CONFIDENTIAL\",\"setBy\":\"SOURCE\"}");
+        event(T, "SOURCE", "origination", "RECORD_SENSITIVITY_SET", "RECORD_SENSITIVITY", UUID.randomUUID(), "2026-11-03T12:30:00Z", "SUCCESS", "{\"sourceId\":\"" + LOS + "\",\"level\":\"CONFIDENTIAL\",\"setBy\":\"SOURCE\"}");
+        event(T, "SOURCE", "loans", "RECORD_SENSITIVITY_SET", "RECORD_SENSITIVITY", UUID.randomUUID(), "2026-11-03T12:40:00Z", "SUCCESS", "{\"sourceId\":\"" + LV + "\",\"level\":\"STANDARD\",\"setBy\":\"SOURCE\"}");
+        event(T, "SOURCE", "loans", "RECORD_SENSITIVITY_SET", "RECORD_SENSITIVITY", UUID.randomUUID(), "2026-11-03T12:50:00Z", "SUCCESS", "{\"sourceId\":\"" + LV + "\"}");
+        // Before the period (23:59 on 31 October in New York) and another tenant's: not counted in November.
+        event(T, "SOURCE", "loans", "RECORD_SENSITIVITY_SET", "RECORD_SENSITIVITY", UUID.randomUUID(), "2026-11-01T03:59:00Z", "SUCCESS", "{\"sourceId\":\"" + LV + "\",\"level\":\"CONFIDENTIAL\",\"setBy\":\"SOURCE\"}");
+        event(TX, "SOURCE", "other", "RECORD_SENSITIVITY_SET", "RECORD_SENSITIVITY", UUID.randomUUID(), "2026-11-03T12:00:00Z", "SUCCESS", "{\"sourceId\":\"" + XS + "\",\"level\":\"HIGHLY_CONFIDENTIAL\",\"setBy\":\"SOURCE\"}");
         event(T, "SOURCE", "loans", "RECORD_SENSITIVITY_KEPT", "RECORD_SENSITIVITY", c1Level, "2026-11-03T13:00:00Z", "SUCCESS", "{\"sourceId\":\"" + LV + "\"}");
         event(T, "USER", "priya", "DOCUMENT_SENSITIVITY_LOWERED", "DOCUMENT", d2, "2026-11-04T10:00:00Z", "SUCCESS", "{}");
         event(T, "USER", "priya", "RECORD_SENSITIVITY_LOWERED", "RECORD_SENSITIVITY", UUID.randomUUID(), "2026-11-04T11:00:00Z", "SUCCESS", "{\"sourceId\":\"" + LOS + "\"}");
@@ -232,6 +244,13 @@ class SensitivityReportPostgresTest {
         refused(T, "dee", d6, "SDV-SEN-008", "[\"DOCUMENT_STEWARD\"]", "2026-11-06T12:00:00Z");
         refused(T, "ole", d8, "SDV-SEN-008", null, "2026-11-06T13:00:00Z");
         refused(T, "rae", d6, "SDV-SEN-009", "[\"RESTRICTED_STEWARD\"]", "2026-11-06T14:00:00Z");
+        // Part 2: only the open action counts. A page, previews, text search, a level-change request and the rest are
+        // refused too, but are not attempts to open: not counted, and a person with only those is not a person here.
+        for (String attempt : List.of("PAGE", "PREVIEWS", "TEXT_SEARCH", "CHANGE_LEVEL", "REQUEST_ACCESS", "PRINT", "DOWNLOAD")) {
+            refused(T, "bea", d6, attempt, "SDV-SEN-008", "[\"BUSINESS_USER\"]", "2026-11-06T15:00:00Z");
+            refused(T, "zed", d6, attempt, "SDV-SEN-008", "[\"BUSINESS_USER\"]", "2026-11-06T15:00:00Z");
+        }
+        refused(T, "zed", d8, "PAGE", "SDV-SEN-008", "[\"RESTRICTED_STEWARD\"]", "2026-11-06T15:00:00Z");
         // 00:00 on 1 December in New York (05:00 UTC, winter time): after the period.
         refused(T, "bea", d6, "SDV-SEN-008", "[\"BUSINESS_USER\"]", "2026-12-01T05:00:00Z");
         refused(TX, "xan", xd, "SDV-SEN-008", "[\"BUSINESS_USER\"]", "2026-11-06T10:00:00Z");
@@ -247,7 +266,8 @@ class SensitivityReportPostgresTest {
                 new SensitivityReportService.RequestRow("PRINT", 0, 1, 1, 1),
                 new SensitivityReportService.RequestRow("LOWER_LEVEL", 0, 0, 0, 1),
                 new SensitivityReportService.RequestRow("LOWER_RECORD_LEVEL", 0, 0, 0, 1)), all.requests());
-        assertEquals(new SensitivityReportRepository.LevelChanges(2, 2, 2), all.levelChanges());
+        assertEquals(new SensitivityReportRepository.LevelChanges(2, 4, 2), all.levelChanges(),
+                "sending systems: a record raise, a duplicate raise, and two first levels above Standard (part 2)");
         assertEquals(List.of(
                 new SensitivityReportService.AttemptRow(List.of("BUSINESS_USER"), 4, 2),
                 new SensitivityReportService.AttemptRow(List.of(), 1, 1),
@@ -259,19 +279,20 @@ class SensitivityReportPostgresTest {
         assertEquals(new SensitivityReportService.Documents(1, 1, 4, 6, 3, 1), lv.documents());
         assertEquals(new SensitivityReportService.RequestRow("PRINT", 0, 0, 1, 1), lv.requests().get(1));
         assertEquals(new SensitivityReportService.RequestRow("LOWER_RECORD_LEVEL", 0, 0, 0, 1), lv.requests().get(3));
-        assertEquals(new SensitivityReportRepository.LevelChanges(2, 1, 1), lv.levelChanges());
+        assertEquals(new SensitivityReportRepository.LevelChanges(2, 2, 1), lv.levelChanges());
         assertEquals(2, lv.attempts().size());
         SensitivityReportService.SensitivityReport los = service.report(T, "2026-11-01", "2026-11-30", LOS.toString());
         assertEquals(new SensitivityReportService.Documents(1, 0, 0, 1, 0, 0), los.documents());
         assertEquals(new SensitivityReportService.RequestRow("PRINT", 0, 1, 0, 0), los.requests().get(1));
         assertEquals(new SensitivityReportService.RequestRow("DOWNLOAD", 0, 0, 0, 0), los.requests().get(0));
-        assertEquals(new SensitivityReportRepository.LevelChanges(0, 1, 1), los.levelChanges());
+        assertEquals(new SensitivityReportRepository.LevelChanges(0, 2, 1), los.levelChanges());
         assertEquals(List.of(new SensitivityReportService.AttemptRow(List.of(), 1, 1)), los.attempts());
 
         // ---- The period boundary: 31 October in New York holds only what happened before 04:00 UTC on 1 November.
         SensitivityReportService.SensitivityReport october = service.report(T, "2026-10-31", "2026-10-31", null);
         assertEquals(1, october.requests().get(0).waiting(), "r10 only");
-        assertEquals(new SensitivityReportRepository.LevelChanges(1, 0, 0), october.levelChanges());
+        assertEquals(new SensitivityReportRepository.LevelChanges(1, 1, 0), october.levelChanges(),
+                "the first level set at 23:59 on 31 October in New York is October's");
         assertTrue(october.attempts().isEmpty());
         assertEquals(all.documents(), october.documents(), "documents are counted as they are now, whatever the period");
 

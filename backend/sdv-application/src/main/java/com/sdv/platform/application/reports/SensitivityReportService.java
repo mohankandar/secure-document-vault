@@ -50,10 +50,12 @@ import java.util.regex.Pattern;
  *       are on legal hold.</li>
  *   <li><b>Requests</b> made in the period, by kind (download, print, lower one document, lower a whole record) and by
  *       what became of them: approved (also used, or approved and run out), declined, expired undecided, waiting.</li>
- *   <li><b>Level changes</b> in the period: raised by a Steward; raised by a sending system (a delivery raising a record
- *       level, or a duplicate raising a document level); lowered after a Business Admin's approval.</li>
- *   <li><b>Attempts to open restricted documents</b> in the period (refused with SDV-SEN-008), by role, with how many
- *       people. Refusals recorded before task 0033 name no role and are counted as "Role not recorded".</li>
+ *   <li><b>Level changes</b> in the period: raised by a Steward; set or raised by a sending system (a delivery setting a
+ *       record's first level above Standard or raising a record level, or a duplicate raising a document level: task
+ *       0033, part 2); lowered after a Business Admin's approval.</li>
+ *   <li><b>Attempts to open restricted documents</b> in the period (refused with SDV-SEN-008 when opening the
+ *       document; pages, previews, text search and other attempts are not counted: task 0033, part 2), by role, with
+ *       how many people. Refusals recorded before task 0033 name no role and are counted as "Role not recorded".</li>
  * </ol>
  */
 @Service
@@ -120,7 +122,7 @@ public class SensitivityReportService {
             csv.row("Requests", kind, "Waiting", row.waiting(), r.from(), r.to());
         }
         csv.row("Level changes", "Raised by a steward", "Changes", r.levelChanges().raisedBySteward(), r.from(), r.to());
-        csv.row("Level changes", "Raised by a sending system (document or " + singular(records) + " level)", "Changes",
+        csv.row("Level changes", "Set or raised by a sending system (document or " + singular(records) + " level)", "Changes",
                 r.levelChanges().raisedBySendingSystem(), r.from(), r.to());
         csv.row("Level changes", "Lowered after approval", "Changes", r.levelChanges().lowered(), r.from(), r.to());
         for (AttemptRow row : r.attempts()) {

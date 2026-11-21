@@ -149,7 +149,7 @@ class SensitivityReportServiceTest {
         assertTrue(csv.contains("\"Documents by level\",\"On legal hold\",\"Documents stored\",4,"), csv);
         assertTrue(csv.contains("\"Requests\",\"Download\",\"Waiting\",21,\"2026-10-01\",\"2026-10-31\","), csv);
         assertTrue(csv.contains("\"Requests\",\"Lower level (whole contract)\",\"Waiting\",1,"), csv);
-        assertTrue(csv.contains("\"Level changes\",\"Raised by a sending system (document or contract level)\",\"Changes\",118,"), csv);
+        assertTrue(csv.contains("\"Level changes\",\"Set or raised by a sending system (document or contract level)\",\"Changes\",118,"), csv);
         assertTrue(csv.contains("\"Attempts to open restricted documents\",\"Business user\",\"People\",96,"), csv);
         assertTrue(csv.contains("\"Attempts to open restricted documents\",\"Role not recorded\",\"Attempts\",3,"), csv);
         assertFalse(csv.contains(",=") || csv.contains("\"=") , "no cell starts with a formula");
