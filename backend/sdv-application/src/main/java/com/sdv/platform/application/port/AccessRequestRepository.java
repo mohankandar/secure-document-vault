@@ -24,8 +24,11 @@ public interface AccessRequestRepository {
     /** The request, with its row locked until the transaction ends; empty when unknown. */
     Optional<AccessRequest> lock(UUID tenantId, UUID requestId);
 
-    /** Records a decision on a PENDING request; fails unless exactly one pending request changed. */
-    void decide(UUID tenantId, UUID requestId, AccessRequestStatus status, String decidedBy, String decidedByName,
+    /**
+     * Records a decision on a PENDING request. Task 0037: false when no pending request changed (someone else decided
+     * it at the same moment); the caller refuses with SDV-APR-008.
+     */
+    boolean decide(UUID tenantId, UUID requestId, AccessRequestStatus status, String decidedBy, String decidedByName,
                 Instant decidedAt, Instant expiresAt);
 
     /**

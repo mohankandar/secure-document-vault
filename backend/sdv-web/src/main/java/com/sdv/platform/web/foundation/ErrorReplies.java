@@ -58,7 +58,7 @@ public final class ErrorReplies {
 
     static final String SYS_013_MESSAGE =
             "Vero couldn't finish this just now. Try again. If it keeps happening, give your IT team the reference.";
-    static final String SYS_014_MESSAGE = "Vero can't reach its database just now. Try again in a few minutes.";
+    public static final String SYS_014_MESSAGE ="Vero can't reach its database just now. Try again in a few minutes.";
     static final String SYS_015_PREFIX = "Vero couldn't read this request: ";
     static final String SYS_016_MESSAGE = "Vero stopped this because something inside didn't add up. Nothing was "
             + "changed. Give your IT team the reference.";

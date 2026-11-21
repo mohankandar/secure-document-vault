@@ -42,7 +42,7 @@ public final class SystemInfoController {
                 Instant.now());
     }
 
-    /** state: CURRENT, OLDER, NEWER or UNREACHABLE (checked once at startup); message: the plain sentence. */
+    /** state: CURRENT, OLDER, NEWER or UNREACHABLE (checked at startup; task 0037: re-tried while unreachable); message: the plain sentence. */
     public record DatabaseSchema(String state, String message) {
     }
 

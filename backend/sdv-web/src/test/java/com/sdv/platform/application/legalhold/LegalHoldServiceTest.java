@@ -155,6 +155,7 @@ class LegalHoldServiceTest {
         LegalHold active = new LegalHold(HOLD, TENANT, DOCUMENT, "Litigation", "admin", "Ari Admin", NOW.minusSeconds(60), null, null, null);
         when(repository.lockHold(TENANT, HOLD)).thenReturn(Optional.of(active));
         when(repository.lockDocument(TENANT, DOCUMENT)).thenReturn(Optional.of(facts("AVAILABLE", null)));
+        when(repository.release(TENANT, HOLD, "admin2", "Bo Admin", NOW)).thenReturn(true); // task 0037: a row changed
 
         var view = service.release(TENANT, "admin2", "Bo Admin", HOLD.toString(), "corr-r");
         verify(repository).release(TENANT, HOLD, "admin2", "Bo Admin", NOW);
@@ -180,6 +181,40 @@ class LegalHoldServiceTest {
         assertEquals("SDV-HLD-007", code(assertThrows(CodedRefusal.NotFound.class,
                 () -> service.release(TENANT, "admin", null, "nope", "c"))));
         verify(repository, times(1)).release(any(), any(), any(), any(), any());
+    }
+
+    /**
+     * Task 0037 (owner answer 2 to report 0036): the hold looked active, but the release changed no row because
+     * someone else released it at the same moment. A refusal: 409 SDV-HLD-008 with the owner's sentence, audited as
+     * LEGAL_HOLD_RELEASE_REFUSED (DENIED), and the release's own audit event is not written.
+     */
+    @Test
+    void aHoldReleasedBySomeoneElseAtTheSameMomentIsHld008AndAudited() {
+        LegalHold active = new LegalHold(HOLD, TENANT, DOCUMENT, "Litigation", "admin", "Ari Admin", NOW.minusSeconds(60), null, null, null);
+        when(repository.lockHold(TENANT, HOLD)).thenReturn(Optional.of(active));
+        when(repository.release(any(), any(), any(), any(), any())).thenReturn(false);
+
+        CodedRefusal.Conflict refused = assertThrows(CodedRefusal.Conflict.class,
+                () -> service.release(TENANT, "admin2", "Bo Admin", HOLD.toString(), "corr-race"));
+        assertEquals("SDV-HLD-008", code(refused));
+        assertEquals("This hold was already released.", refused.getMessage());
+        ArgumentCaptor<AuditEvent> event = ArgumentCaptor.forClass(AuditEvent.class);
+        verify(audit, times(1)).append(event.capture());
+        assertEquals("LEGAL_HOLD_RELEASE_REFUSED", event.getValue().action());
+        assertEquals(AuditOutcome.DENIED, event.getValue().outcome());
+        assertEquals("corr-race", event.getValue().correlationId());
+        assertEquals(DOCUMENT.toString(), event.getValue().targetId());
+        assertTrue(event.getValue().safeDetailsJson().contains("SDV-HLD-008"));
+        assertFalse(event.getValue().safeDetailsJson().contains("Litigation"));
+    }
+
+    @Test
+    void aRefusedReleaseStandsWhenItsAuditCantBeWritten() {
+        when(repository.lockHold(TENANT, HOLD)).thenReturn(Optional.of(
+                new LegalHold(HOLD, TENANT, DOCUMENT, "Litigation", "admin", null, NOW.minusSeconds(60), "admin2", null, NOW)));
+        doThrow(new IllegalStateException("audit store down")).when(audit).append(any());
+        assertEquals("SDV-HLD-008", code(assertThrows(CodedRefusal.Conflict.class,
+                () -> service.release(TENANT, "admin", null, HOLD.toString(), "c"))));
     }
 
     @Test

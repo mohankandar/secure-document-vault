@@ -233,7 +233,7 @@ public class SensitivityLevelService {
      */
     public List<HistoryEntry> documentHistory(UUID tenantId, String actorId, Clearance clearance, boolean businessAdmin,
                                               String documentReference, String correlationId) {
-        if (tenantId == null) throw new IllegalArgumentException("tenantId is required.");
+        if (tenantId == null) throw new InternalCheckFailed("tenantId is required.");
         UUID documentId = AccessRequestService.referenceOf(documentReference, SdvErrorCode.SEN_016, NO_DOCUMENT);
         Document document = documents.findDocumentByIdForTenant(tenantId, documentId)
                 .orElseThrow(() -> new CodedRefusal.NotFound(SdvErrorCode.SEN_016, NO_DOCUMENT));
@@ -271,8 +271,8 @@ public class SensitivityLevelService {
     /** The document, if the person can open it at its effective level (SDV-SEN-008 and audited otherwise) and it is available. */
     private Document openableDocument(UUID tenantId, String actorId, Clearance clearance, String reference,
                                       String correlationId) {
-        if (tenantId == null) throw new IllegalArgumentException("tenantId is required.");
-        if (actorId == null || actorId.isBlank()) throw new IllegalArgumentException("actorId is required.");
+        if (tenantId == null) throw new InternalCheckFailed("tenantId is required.");
+        if (actorId == null || actorId.isBlank()) throw new InternalCheckFailed("actorId is required.");
         UUID documentId = AccessRequestService.referenceOf(reference, SdvErrorCode.SEN_016, NO_DOCUMENT);
         Document document = documents.findDocumentByIdForTenant(tenantId, documentId)
                 .orElseThrow(() -> new CodedRefusal.NotFound(SdvErrorCode.SEN_016, NO_DOCUMENT));
@@ -282,7 +282,7 @@ public class SensitivityLevelService {
     }
 
     private RecordReferences.ResolvedRecord record(UUID tenantId, String reference) {
-        if (tenantId == null) throw new IllegalArgumentException("tenantId is required.");
+        if (tenantId == null) throw new InternalCheckFailed("tenantId is required.");
         return recordReferences.fromReference(tenantId, reference)
                 .orElseThrow(() -> new CodedRefusal.NotFound(SdvErrorCode.SEN_016, NO_RECORD));
     }

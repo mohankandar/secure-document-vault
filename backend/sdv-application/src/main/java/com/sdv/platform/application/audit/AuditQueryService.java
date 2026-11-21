@@ -60,7 +60,7 @@ public class AuditQueryService {
                             String actorId,
                             SearchRequest request,
                             String correlationId) {
-        if (tenantId == null) throw new IllegalArgumentException("tenantId is required.");
+        if (tenantId == null) throw new InternalCheckFailed("tenantId is required.");
         SearchRequest safe = request == null ? new SearchRequest(null, null, null, null, null, null, null, null, null, null, null, null) : request;
         int limit = safe.limit() == null ? DEFAULT_LIMIT : safe.limit();
         if (limit < 1 || limit > MAX_LIMIT) throw new IllegalArgumentException("limit must be between 1 and " + MAX_LIMIT + ".");
@@ -95,8 +95,8 @@ public class AuditQueryService {
      * file is handed back; if that record can't be written, nothing is exported (fail closed).
      */
     public AuditExport export(UUID tenantId, String actorId, ExportRequest request, String correlationId) {
-        if (tenantId == null) throw new IllegalArgumentException("tenantId is required.");
-        if (request == null) throw new IllegalArgumentException("export filters are required.");
+        if (tenantId == null) throw new InternalCheckFailed("tenantId is required.");
+        if (request == null) throw new InternalCheckFailed("export filters are required.");
         SearchRequest search = request.search() == null
                 ? new SearchRequest(null, null, null, null, null, null, null, null, null, null, null, null)
                 : request.search();

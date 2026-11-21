@@ -1,5 +1,6 @@
 package com.sdv.platform.domain.document;
 
+import com.sdv.platform.domain.error.InternalCheckFailed;
 import java.time.Instant;
 import java.util.UUID;
 
@@ -25,6 +26,6 @@ public record Document(
         /* Task 0024: the document's own level, set by the sending system (STANDARD when it sent none). Never null. */
         SensitivityLevel sensitivityLevel) {
     public Document {
-        if (sensitivityLevel == null) throw new IllegalArgumentException("A document always has a sensitivity level.");
+        if (sensitivityLevel == null) throw new InternalCheckFailed("A document always has a sensitivity level.");
     }
 }

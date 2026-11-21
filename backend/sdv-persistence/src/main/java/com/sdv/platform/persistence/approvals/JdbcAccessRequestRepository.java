@@ -84,7 +84,7 @@ public class JdbcAccessRequestRepository implements AccessRequestRepository {
     }
 
     @Override
-    public void decide(UUID tenantId, UUID requestId, AccessRequestStatus status, String decidedBy, String decidedByName,
+    public boolean decide(UUID tenantId, UUID requestId, AccessRequestStatus status, String decidedBy, String decidedByName,
                        Instant decidedAt, Instant expiresAt) {
         int updated = jdbc.update("""
                 update access_requests
@@ -99,7 +99,8 @@ public class JdbcAccessRequestRepository implements AccessRequestRepository {
                 .addValue("decidedByName", decidedByName)
                 .addValue("decidedAt", Timestamp.from(decidedAt))
                 .addValue("expiresAt", Timestamp.from(expiresAt)));
-        if (updated != 1) throw new InternalCheckFailed("The decision did not change exactly one pending request.");
+        if (updated > 1) throw new InternalCheckFailed("The decision changed more than one pending request.");
+        return updated == 1;
     }
 
     @Override

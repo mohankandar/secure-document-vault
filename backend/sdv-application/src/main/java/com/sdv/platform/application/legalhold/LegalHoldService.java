@@ -20,6 +20,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -41,6 +42,8 @@ import java.util.UUID;
 public class LegalHoldService {
     public static final String PLACED_ACTION = "LEGAL_HOLD_PLACED";
     public static final String RELEASED_ACTION = "LEGAL_HOLD_RELEASED";
+    /** Task 0037: a release refused because the hold was already released (SDV-HLD-008). */
+    public static final String RELEASE_REFUSED_ACTION = "LEGAL_HOLD_RELEASE_REFUSED";
     public static final int REASON_MIN = 3;
     public static final int REASON_MAX = 500;
     public static final int IDENTIFIER_MAX = 300;
@@ -126,24 +129,61 @@ public class LegalHoldService {
         requireActor(actorId);
         UUID holdId = parse(holdReference, SdvErrorCode.HLD_007, NO_HOLD);
         Instant now = clock.instant();
-        return transactions.execute(status -> {
-            LegalHold hold = holds.lockHold(tenantId, holdId)
-                    .orElseThrow(() -> new CodedRefusal.NotFound(SdvErrorCode.HLD_007, NO_HOLD));
-            if (!hold.active()) {
-                throw new CodedRefusal.Conflict(SdvErrorCode.HLD_008, "This legal hold was already released.");
+        AtomicReference<UUID> heldDocument = new AtomicReference<>();
+        try {
+            return transactions.execute(status -> releaseLocked(tenantId, actorId, actorDisplayName, holdId, now,
+                    correlationId, heldDocument));
+        } catch (CodedRefusal.Conflict ex) {
+            if (ex.errorCode() == SdvErrorCode.HLD_008) {
+                releaseRefused(tenantId, actorId, actorDisplayName, holdId, heldDocument.get(), ex, correlationId);
             }
-            Instant releasedAt = now.isBefore(hold.placedAt()) ? hold.placedAt() : now;
-            holds.release(tenantId, holdId, actorId, name(actorDisplayName), releasedAt);
+            throw ex;
+        }
+    }
+
+    private LegalHoldView releaseLocked(UUID tenantId, String actorId, String actorDisplayName, UUID holdId, Instant now,
+                                        String correlationId, AtomicReference<UUID> heldDocument) {
+        LegalHold hold = holds.lockHold(tenantId, holdId)
+                .orElseThrow(() -> new CodedRefusal.NotFound(SdvErrorCode.HLD_007, NO_HOLD));
+        heldDocument.set(hold.documentId());
+        if (!hold.active()) {
+            throw new CodedRefusal.Conflict(SdvErrorCode.HLD_008, "This legal hold was already released.");
+        }
+        Instant releasedAt = now.isBefore(hold.placedAt()) ? hold.placedAt() : now;
+        if (!holds.release(tenantId, holdId, actorId, name(actorDisplayName), releasedAt)) {
+            // Task 0037 (owner answer 2 to report 0036): released by someone else at the same moment.
+            throw new CodedRefusal.Conflict(SdvErrorCode.HLD_008, RELEASED_BY_SOMEONE_ELSE);
+        }
+        Map<String, Object> details = new LinkedHashMap<>();
+        details.put("holdId", holdId.toString());
+        details.put("placedAt", hold.placedAt().toString());
+        append(tenantId, actorId, actorDisplayName, RELEASED_ACTION, hold.documentId(), releasedAt, correlationId, details);
+        LegalHold released = new LegalHold(hold.holdId(), hold.tenantId(), hold.documentId(), hold.reason(),
+                hold.placedBy(), hold.placedByName(), hold.placedAt(), actorId, name(actorDisplayName), releasedAt);
+        DocumentFacts document = holds.lockDocument(tenantId, hold.documentId()).orElse(null);
+        SensitivityLevel level = document == null ? null : levels(tenantId, List.of(document)).get(hold.documentId());
+        return LegalHoldView.of(released, document, level);
+    }
+
+    static final String RELEASED_BY_SOMEONE_ELSE = "This hold was already released.";
+
+    /**
+     * Task 0037: a release refused with SDV-HLD-008 is audited on its own (the release itself was rolled back), as
+     * LEGAL_HOLD_RELEASE_REFUSED. It never stops the refusal.
+     */
+    private void releaseRefused(UUID tenantId, String actorId, String actorDisplayName, UUID holdId, UUID documentId,
+                                CodedRefusal refusal, String correlationId) {
+        try {
             Map<String, Object> details = new LinkedHashMap<>();
             details.put("holdId", holdId.toString());
-            details.put("placedAt", hold.placedAt().toString());
-            append(tenantId, actorId, actorDisplayName, RELEASED_ACTION, hold.documentId(), releasedAt, correlationId, details);
-            LegalHold released = new LegalHold(hold.holdId(), hold.tenantId(), hold.documentId(), hold.reason(),
-                    hold.placedBy(), hold.placedByName(), hold.placedAt(), actorId, name(actorDisplayName), releasedAt);
-            DocumentFacts document = holds.lockDocument(tenantId, hold.documentId()).orElse(null);
-            SensitivityLevel level = document == null ? null : levels(tenantId, List.of(document)).get(hold.documentId());
-            return LegalHoldView.of(released, document, level);
-        });
+            details.put("code", refusal.errorCode().code());
+            String safe = json.writeValueAsString(details);
+            audit.append(new AuditEvent(UUID.randomUUID(), tenantId, "USER", actorId, RELEASE_REFUSED_ACTION,
+                    documentId == null ? "LEGAL_HOLD" : "DOCUMENT", documentId == null ? holdId.toString() : documentId.toString(),
+                    clock.instant(), correlationId, AuditOutcome.DENIED, safe, actorDisplayName));
+        } catch (RuntimeException | JsonProcessingException ignored) {
+            // The refusal stands even when the audit store is unavailable.
+        }
     }
 
     private static final String NO_DOCUMENT = "No document has this reference.";
@@ -195,11 +235,11 @@ public class LegalHoldService {
     }
 
     private static void requireTenant(UUID tenantId) {
-        if (tenantId == null) throw new IllegalArgumentException("tenantId is required.");
+        if (tenantId == null) throw new InternalCheckFailed("tenantId is required.");
     }
 
     private static void requireActor(String actorId) {
-        if (actorId == null || actorId.isBlank()) throw new IllegalArgumentException("actorId is required.");
+        if (actorId == null || actorId.isBlank()) throw new InternalCheckFailed("actorId is required.");
     }
 
     /**

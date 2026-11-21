@@ -1,5 +1,7 @@
 package com.sdv.platform.security.auth.enterprise;
 
+import com.sdv.platform.domain.error.SdvErrorCode;
+import com.sdv.platform.domain.error.StartupFailure;
 import org.springframework.security.oauth2.core.OAuth2Error;
 import org.springframework.security.oauth2.core.OAuth2TokenValidator;
 import org.springframework.security.oauth2.core.OAuth2TokenValidatorResult;
@@ -14,7 +16,7 @@ final class MaximumTokenLifetimeValidator implements OAuth2TokenValidator<Jwt> {
     private final Duration maximum;
 
     MaximumTokenLifetimeValidator(Duration maximum) {
-        if (maximum == null || maximum.isZero() || maximum.isNegative()) throw new IllegalArgumentException("maximum must be positive");
+        if (maximum == null || maximum.isZero() || maximum.isNegative()) throw new StartupFailure(SdvErrorCode.SYS_005, "maximum must be positive");
         this.maximum = maximum;
     }
 

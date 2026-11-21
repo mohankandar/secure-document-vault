@@ -1,5 +1,7 @@
 package com.sdv.platform.security.auth.enterprise;
 
+import com.sdv.platform.domain.error.SdvErrorCode;
+import com.sdv.platform.domain.error.StartupFailure;
 import com.documentplatform.identity.AuthenticatedIdentity;
 import com.documentplatform.identity.IdentityClaimConfig;
 import com.documentplatform.identity.IdentityClaims;
@@ -103,7 +105,7 @@ public final class EnterpriseJwtAuthenticationConverter implements Converter<Jwt
         this.sourceIdClaim = requireClaimName(sourceIdClaim, "source-id claim");
         this.userGroupsClaim = requireClaimName(userGroupsClaim, "groups claim");
         if (this.tenantClaim.equals(this.sourceIdClaim) || this.tenantClaim.equals(this.userGroupsClaim) || this.sourceIdClaim.equals(this.userGroupsClaim)) {
-            throw new IllegalArgumentException("Enterprise JWT tenant and source-id claim names must be distinct.");
+            throw new StartupFailure(SdvErrorCode.SYS_005, "Enterprise JWT tenant and source-id claim names must be distinct.");
         }
         this.identityNormalizer = java.util.Objects.requireNonNull(identityNormalizer, "identityNormalizer");
         this.roleMapper = java.util.Objects.requireNonNull(roleMapper, "roleMapper");
@@ -191,7 +193,7 @@ public final class EnterpriseJwtAuthenticationConverter implements Converter<Jwt
 
     private static String requireClaimName(String value, String label) {
         if (value == null || value.isBlank() || value.length() > 100) {
-            throw new IllegalArgumentException("Enterprise JWT " + label + " must be configured.");
+            throw new StartupFailure(SdvErrorCode.SYS_005, "Enterprise JWT " + label + " must be configured.");
         }
         return value.trim();
     }

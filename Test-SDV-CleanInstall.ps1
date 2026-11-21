@@ -11,10 +11,20 @@
   Everything it creates is dropped at the end, also when a step fails.
 
   Steps:
+    0. Task 0037: a packaged start (no local profile) with sign-in or the key service switched off refuses to start,
+       with SDV-SYS-006 or SDV-KEY-001 and no stack trace, and never opens its port.
     1. Start Vero (no local profile, production context) against the empty database: it refuses with the "older" message.
+       With enterprise sign-in on, the Restricted Steward group check waits instead of stopping the start (SDV-SYS-012).
     2. Schema step: status, sql (to a file, changes nothing), update.
     3. Start again: it serves, as the read/write user, and the tenants table is empty (no seed data).
     4. Start again: nothing new is applied, and the start is quick.
+    5. Task 0037: start with the database unreachable, then bring it up: Vero serves without a restart. Then take it
+       away and bring it back again: readiness turns not ready and ready again. "The database" is a local TCP relay
+       (test-tools\TcpRelay.java) in front of sdv-postgres; the container itself is never stopped.
+
+  Since task 0037 a packaged start needs sign-in and a key service. The starts here use placeholder settings that
+  Vero never contacts during these steps: an issuer under the reserved .invalid domain and a key service address on
+  this computer where nothing listens. The placeholder token file holds no secret.
 
   Prerequisite: the application jar is built (.\Build-SDV-All.ps1).
 #>
@@ -23,6 +33,8 @@ param(
     [string]$Jar,
     [int]$Port = 8291,
     [int]$StartTimeoutSeconds = 120,
+    # Task 0037: the local port of the TCP relay that plays the database in step 5.
+    [int]$RelayPort = 55433,
     # Drop a scratch database and roles left by an earlier run of this script that could not clean up.
     [switch]$DropLeftover
 )
@@ -113,19 +125,101 @@ function Wait-Watching([double]$seconds) {
     $w = [System.Diagnostics.Stopwatch]::StartNew()
     while ($w.Elapsed.TotalSeconds -lt $seconds) { Watch-Outbound; Start-Sleep -Milliseconds 200 }
 }
-function Start-Vero([string]$name) {
+# Task 0037: a packaged start refuses with sign-in or the key service switched off, so these placeholders switch them on.
+# Nothing in these steps contacts them: the issuer is under the reserved .invalid domain, and nothing listens on 8299.
+$placeholderToken = Join-Path $run 'placeholder-vault-token.txt'
+Set-Content -Encoding ascii -NoNewline -Path $placeholderToken -Value 'placeholder-not-a-token'
+$packagedSettings = [ordered]@{
+    SDV_AUTH_MODE = 'enterprise-jwt'
+    SDV_AUTH_JWT_ISSUER = 'https://sign-in.invalid/realms/vero-check'
+    SDV_AUTH_JWT_JWK_SET_URI = 'https://sign-in.invalid/realms/vero-check/certs'
+    SDV_AUTH_JWT_AUDIENCE = 'vero-clean-install'
+    SDV_KEY_PROVIDER = 'vault'
+    SDV_VAULT_BASE_URL = 'http://127.0.0.1:8299'
+    SDV_VAULT_TOKEN_FILE = $placeholderToken
+}
+
+# Starts the Vero process with the scratch database and the packaged settings; $Override replaces some of them.
+function Start-VeroProcess([string]$name, [hashtable]$Override = @{}, [string]$DbUrl = $hostUrl) {
     $out = Join-Path $run "$name.out.log"; $err = Join-Path $run "$name.err.log"
-    $env:SDV_DB_URL = $hostUrl; $env:SDV_DB_USERNAME = $app; $env:SDV_DB_PASSWORD = $appPassword
-    $env:SDV_SERVER_PORT = "$Port"; $env:SDV_RETENTION_CRON = '* * * * * *'
+    $settings = [ordered]@{ SDV_DB_URL = $DbUrl; SDV_DB_USERNAME = $app; SDV_DB_PASSWORD = $appPassword
+                            SDV_SERVER_PORT = "$Port"; SDV_RETENTION_CRON = '* * * * * *' }
+    foreach ($k in $packagedSettings.Keys) { $settings[$k] = $packagedSettings[$k] }
+    foreach ($k in $Override.Keys) { $settings[$k] = $Override[$k] }
     try {
-        $watch = [System.Diagnostics.Stopwatch]::StartNew()
-        # No --spring.profiles.active: this is a customer-style (production context) start. Sign-in stays "disabled".
+        foreach ($k in $settings.Keys) { Set-Item "Env:$k" $settings[$k] }
+        # No --spring.profiles.active: this is a customer-style (packaged, production context) start.
         $script:appProcess = Start-Process -FilePath 'java' -PassThru -WindowStyle Hidden -WorkingDirectory $run `
             -ArgumentList @('-jar', "`"$jarPath`"", '--sdv.redaction.recovery-initial-delay-ms=1000') `
             -RedirectStandardOutput $out -RedirectStandardError $err
     } finally {
-        foreach ($k in 'SDV_DB_URL', 'SDV_DB_USERNAME', 'SDV_DB_PASSWORD', 'SDV_SERVER_PORT', 'SDV_RETENTION_CRON') { Remove-Item "Env:$k" -ErrorAction SilentlyContinue }
+        foreach ($k in $settings.Keys) { Remove-Item "Env:$k" -ErrorAction SilentlyContinue }
     }
+    $out
+}
+
+# Task 0037: a start that must refuse. It has to exit with an error, print the code in the failure report, never show a
+# stack trace and never answer on its port.
+function Assert-StartRefused([string]$name, [hashtable]$Override, [string]$Code) {
+    $watch = [System.Diagnostics.Stopwatch]::StartNew()
+    $out = Start-VeroProcess $name $Override
+    $answered = $false
+    while (-not $script:appProcess.HasExited -and $watch.Elapsed.TotalSeconds -lt $StartTimeoutSeconds) {
+        if ($null -ne (Get-Http '/actuator/health')) { $answered = $true }
+        Start-Sleep -Milliseconds 200
+    }
+    $exited = $script:appProcess.HasExited
+    $exitCode = if ($exited) { $script:appProcess.ExitCode } else { $null }
+    Stop-Vero
+    Assert-That $exited "Vero kept running although $Code should refuse the start ($name)"
+    Assert-That ($exitCode -ne 0) "Vero exited with 0 although $Code should refuse the start ($name)"
+    Assert-That (-not $answered) "Vero answered on port $Port before refusing ($name)"
+    $log = Get-Content -Raw $out
+    Assert-That ($log.Contains('APPLICATION FAILED TO START') -and $log -match "Description:\s+$Code ") "the failure report doesn't start with $Code ($name). See $out"
+    Assert-That ($log -match "ERROR .* $Code ") "no ERROR line with $Code ($name)"
+    Assert-That (-not ($log -match '(?m)^\s+at [a-z]+\.')) "the refused start printed a stack trace ($name)"
+    $watch.Elapsed.TotalSeconds
+}
+
+# Task 0037: "the database" for step 5, a TCP relay to sdv-postgres that the script stops and starts.
+$script:relayProcess = $null
+function Test-Port([int]$p) {
+    $c = New-Object System.Net.Sockets.TcpClient
+    try { $c.Connect('127.0.0.1', $p); return $true } catch { return $false } finally { $c.Close() }
+}
+function Start-Relay {
+    $script:relayProcess = Start-Process -FilePath 'java' -PassThru -WindowStyle Hidden -WorkingDirectory $run `
+        -ArgumentList @("`"$(Join-Path $root 'test-tools\TcpRelay.java')`"", "$RelayPort", '127.0.0.1', '5433') `
+        -RedirectStandardOutput (Join-Path $run 'relay.out.log') -RedirectStandardError (Join-Path $run 'relay.err.log')
+    $w = [System.Diagnostics.Stopwatch]::StartNew()
+    while (-not (Test-Port $RelayPort)) {
+        if ($script:relayProcess.HasExited -or $w.Elapsed.TotalSeconds -gt 60) { throw "FAIL: the TCP relay did not start on $RelayPort" }
+        Start-Sleep -Milliseconds 200
+    }
+}
+function Stop-Relay {
+    if ($script:relayProcess -and -not $script:relayProcess.HasExited) {
+        Stop-Process -Id $script:relayProcess.Id -Force
+        $script:relayProcess.WaitForExit(30000) | Out-Null
+    }
+    $script:relayProcess = $null
+}
+# Polls readiness until it has the status wanted; false when it doesn't within the time.
+function Wait-Readiness([int]$want, [int]$seconds) {
+    $w = [System.Diagnostics.Stopwatch]::StartNew()
+    while ($w.Elapsed.TotalSeconds -lt $seconds) {
+        Watch-Outbound
+        $r = Get-Http '/actuator/health/readiness'
+        if ($null -ne $r -and $r.Status -eq $want) { return $true }
+        if ($script:appProcess.HasExited) { return $false }
+        Start-Sleep -Milliseconds 500
+    }
+    $false
+}
+
+function Start-Vero([string]$name, [string]$DbUrl = $hostUrl) {
+    $watch = [System.Diagnostics.Stopwatch]::StartNew()
+    $out = Start-VeroProcess $name @{} $DbUrl
     while ($watch.Elapsed.TotalSeconds -lt $StartTimeoutSeconds) {
         if ($script:appProcess.HasExited) { throw "FAIL: Vero exited during start ($name). See $out" }
         Watch-Outbound
@@ -171,6 +265,7 @@ else {
 $state = (Invoke-Native -File 'docker' -Arguments @('inspect', '-f', '{{.State.Running}}', $container)).Out.Trim()
 Assert-That ($state -eq 'true') "$container is not running"
 Assert-That ($null -eq (Get-Http '/actuator/health')) "port $Port is already in use"
+Assert-That (-not (Test-Port $RelayPort)) "relay port $RelayPort is already in use"
 $leftover = (Invoke-Sql -Database 'postgres' -Sql "select count(*) from pg_database where datname = '$db'; select count(*) from pg_roles where rolname in ('$owner','$app');").Out -split "`n" | Where-Object { $_.Trim() } | ForEach-Object { [int]$_ }
 if (($leftover | Measure-Object -Sum).Sum -gt 0) {
     Assert-That $DropLeftover.IsPresent "$db or its scratch roles exist from an earlier run; rerun with -DropLeftover to drop them"
@@ -201,6 +296,12 @@ alter default privileges for role $owner in schema public grant select, insert, 
 "@
     Write-Step 'Create sdv_install_test, owner user and read/write app user' $w.Elapsed.TotalSeconds 'scratch only'
 
+    # ------------------------------------------------------------ 0. task 0037: packaged start, something switched off
+    $t = Assert-StartRefused 'start-0-sign-in-off' @{ SDV_AUTH_MODE = 'disabled' } 'SDV-SYS-006'
+    Write-Step '0a. Packaged start with sign-in switched off: refused' $t 'SDV-SYS-006, exit code not 0, port never answered, no stack trace'
+    $t = Assert-StartRefused 'start-0-key-service-off' @{ SDV_KEY_PROVIDER = 'disabled' } 'SDV-KEY-001'
+    Write-Step '0b. Packaged start with the key service switched off: refused' $t 'SDV-KEY-001, exit code not 0, port never answered, no stack trace'
+
     # ------------------------------------------------------------ 1. start against the empty database
     $s = Start-Vero 'start-1-empty'
     Assert-That ($s.Health.Status -eq 503) "health should be 503 DOWN on an empty database, was $($s.Health.Status)"
@@ -220,10 +321,13 @@ alter default privileges for role $owner in schema public grant select, insert, 
     Assert-That ($log.Contains($older)) 'the startup log does not contain the "older" sentence'
     Assert-That (-not ($log -match 'liquibase\.(changelog|lockservice)')) 'Liquibase ran during a production start'
     Assert-That (-not ($log -match 'RETENTION_SWEEP_FAILED')) 'the cleanup job ran against the empty database'
+    # Task 0037 (SDV-SYS-012): with enterprise sign-in, the Restricted Steward group check waits instead of stopping the start.
+    Assert-That ($log -match 'SDV-SYS-012 Start-up work waits for the database \(OLDER\): .*Restricted Steward sign-in group check') 'the group check did not say it waits'
+    Assert-That (-not ($log -match 'Application run failed|CannotCreateTransactionException')) 'the start-up work stopped the start'
     $tables = (Invoke-Sql -Database $db -Sql "select count(*) from pg_tables where schemaname = 'public';").Out.Trim()
     Assert-That ($tables -eq '0') "the production start created $tables tables; it must change nothing"
     Stop-Vero
-    Write-Step '1. Start on the empty database: refuses with "older"' $s.Seconds 'not ready (health and readiness 503 OUT_OF_SERVICE, liveness UP), API 503, 0 tables created'
+    Write-Step '1. Start on the empty database: refuses with "older"' $s.Seconds 'not ready (health and readiness 503 OUT_OF_SERVICE, liveness UP), API 503, 0 tables created, group check waits (SYS-012)'
 
     # ------------------------------------------------------------ 2. schema step
     $st = Invoke-SchemaStep @('status')
@@ -277,6 +381,7 @@ alter default privileges for role $owner in schema public grant select, insert, 
     $log = Get-Content -Raw $s.Log
     Assert-That ($log.Contains('the database matches this Vero version')) 'the startup log does not say the database matches'
     Assert-That (-not ($log -match 'RETENTION_SWEEP_FAILED|recovery sweep failed|permission denied')) 'a background job failed as the read/write user'
+    Assert-That ($log.Contains('Start-up work done: Restricted Steward sign-in group check.')) 'the group check did not run on a matching database'
     Stop-Vero
     $readsAfter = [long]((Invoke-Sql -Database $db -Sql $readsSql).Out -split "`n" | Where-Object { $_.Trim() } | Select-Object -Last 1)
     Assert-That ($readsAfter -gt $readsBefore) 'the background jobs did not read any table while Vero ran'
@@ -296,12 +401,53 @@ alter default privileges for role $owner in schema public grant select, insert, 
     $springStart = ([regex]::Match((Get-Content -Raw $s.Log), 'Started SdvApplication in ([\d.]+) seconds')).Groups[1].Value
     Write-Step '4. Start again: nothing applied' $s.Seconds "Spring start $springStart s; changelog unchanged ($($before.Split(' ')[0]) rows); status: up to date ($([math]::Round($st2.Seconds,1)) s)"
 
+    # ------------------------------------------------------------ 5. task 0037: the database away at start, then back
+    $relayUrl = "jdbc:postgresql://127.0.0.1:$RelayPort/$db"
+    $s = Start-Vero 'start-4-database-away' $relayUrl
+    $veroId = $script:appProcess.Id
+    $ready = Get-Http '/actuator/health/readiness'; $live = Get-Http '/actuator/health/liveness'
+    Assert-That ($s.Health.Status -eq 503 -and $ready.Status -eq 503) "health and readiness should be 503 while the database is away, were $($s.Health.Status) and $($ready.Status)"
+    Assert-That ($live.Status -eq 200) "liveness should stay 200 while the database is away, was $($live.Status)"
+    $gated = Get-Http '/api/v1/operations/summary'
+    $gatedBody = $gated.Body | ConvertFrom-Json
+    Assert-That ($gated.Status -eq 503 -and $gatedBody.code -eq 'SDV-SYS-014' -and $gatedBody.reference) "a request should get 503 SDV-SYS-014 with a reference while the database is away, got $($gated.Status) $($gated.Body)"
+    Assert-That ((Get-Http '/api/v1/system/info').Body -like '*UNREACHABLE*') 'system info should say UNREACHABLE'
+    $log = Get-Content -Raw $s.Log
+    Assert-That ($log -match "ERROR .* SDV-SYS-003 Vero couldn't reach its database at start\..*127\.0\.0\.1:$RelayPort") 'no SDV-SYS-003 ERROR line with the host and port'
+    Assert-That ($log -match 'SDV-SYS-012 Start-up work waits for the database \(UNREACHABLE\)') 'the start-up work did not say it waits'
+    Assert-That (-not $log.Contains($appPassword)) 'the database password is in the log'
+    Write-Step '5a. Start with the database away: up, not ready, 503 SDV-SYS-014' $s.Seconds 'readiness 503, liveness 200, SYS-003 logged with host and port, start-up work waits'
+
+    $w = [System.Diagnostics.Stopwatch]::StartNew()
+    Start-Relay
+    Assert-That (Wait-Readiness 200 120) "Vero did not become ready within 120 s of the database coming back. See $($s.Log)"
+    Assert-That (-not $script:appProcess.HasExited -and $script:appProcess.Id -eq $veroId) 'Vero was restarted'
+    $protected = Get-Http '/api/v1/operations/summary'
+    Assert-That ($protected.Status -eq 401) "with the database back a request without sign-in should get 401, got $($protected.Status)"
+    $log = Get-Content -Raw $s.Log
+    Assert-That ($log -match 'can be reached again after \d+ tries') 'the log does not say the database is back'
+    Assert-That ($log.Contains('Start-up work done: Restricted Steward sign-in group check.')) 'the group check did not run when the database came back'
+    Write-Step '5b. Database up: Vero serves without a restart' $w.Elapsed.TotalSeconds 'readiness 200, the same process, API 401 (gate open), group check ran'
+
+    $w = [System.Diagnostics.Stopwatch]::StartNew()
+    Stop-Relay
+    Assert-That (Wait-Readiness 503 60) 'readiness did not turn 503 within 60 s of the database going away'
+    Assert-That ((Get-Http '/actuator/health/liveness').Status -eq 200) 'liveness should stay 200 while the database is gone'
+    $wentAway = $w.Elapsed.TotalSeconds
+    Start-Relay
+    Assert-That (Wait-Readiness 200 60) 'readiness did not turn 200 again within 60 s of the database coming back'
+    Assert-That (-not $script:appProcess.HasExited -and $script:appProcess.Id -eq $veroId) 'Vero was restarted'
+    Write-Step '5c. Database away and back after the start: readiness 503, then 200' $w.Elapsed.TotalSeconds ("not ready after {0:N1} s, ready again, liveness 200 throughout, the same process" -f $wentAway)
+    Stop-Vero
+    Stop-Relay
+
     # ------------------------------------------------------------ no usage data out
     Assert-That ($script:outbound.Count -eq 0) ("Vero opened connections outside this computer: " + (@($script:outbound) -join ', '))
-    Write-Step 'Vero opened no connection outside this computer' 0 "$($script:connectionSamples) samples over the three starts"
+    Write-Step 'Vero opened no connection outside this computer' 0 "$($script:connectionSamples) samples over the starts"
 }
 finally {
     Stop-Vero
+    Stop-Relay
     $w = [System.Diagnostics.Stopwatch]::StartNew()
     try { Remove-Scratch; $gone = (Invoke-Sql -Database 'postgres' -Sql "select count(*) from pg_database where datname = '$db';").Out.Trim() }
     catch { Write-Host "Cleanup failed: $($_.Exception.Message). Rerun with -DropLeftover." -ForegroundColor Red; $gone = '?' }

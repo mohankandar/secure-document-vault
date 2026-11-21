@@ -13,6 +13,9 @@ import org.springframework.stereotype.Component;
  * While the database doesn't match this version Vero is up but not ready:
  * /actuator/health and /actuator/health/readiness report OUT_OF_SERVICE (503); /actuator/health/liveness stays UP,
  * so a platform that restarts dead processes leaves Vero running and showing why.
+ * <p>
+ * Task 0037: when the database couldn't be reached at start and comes back matching, readiness turns ready again
+ * without a restart.
  */
 @Component("databaseSchema")
 public class DatabaseSchemaHealthIndicator implements HealthIndicator {
@@ -22,6 +25,8 @@ public class DatabaseSchemaHealthIndicator implements HealthIndicator {
     public DatabaseSchemaHealthIndicator(DatabaseSchemaCheck check, ApplicationEventPublisher events) {
         this.check = check;
         this.events = events;
+        check.onChange(status -> AvailabilityChangeEvent.publish(events, this,
+                status.current() ? ReadinessState.ACCEPTING_TRAFFIC : ReadinessState.REFUSING_TRAFFIC));
     }
 
     @Override

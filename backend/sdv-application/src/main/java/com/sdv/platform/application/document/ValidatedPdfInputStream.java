@@ -20,7 +20,7 @@ final class ValidatedPdfInputStream extends FilterInputStream {
 
     ValidatedPdfInputStream(InputStream input, long maxBytes) {
         super(input);
-        if (input == null) throw new IllegalArgumentException("PDF input is required.");
+        if (input == null) throw new InternalCheckFailed("PDF input is required.");
         if (maxBytes <= 0) throw new IllegalArgumentException("maxBytes must be positive.");
         this.maxBytes = maxBytes;
         try {

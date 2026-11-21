@@ -31,11 +31,13 @@ management:
       show-details: never
       # /actuator/health/liveness: the process is alive. /actuator/health/readiness: Vero can take work. While the
       # database doesn't match this version Vero stays up (liveness UP) but is not ready (readiness OUT_OF_SERVICE).
+      # Task 0037: readiness also pings the database (databaseConnection), so it is DOWN while the database is gone
+      # after the start, and ready again when it answers.
       probes:
         enabled: true
       group:
         readiness:
-          include: readinessState,databaseSchema
+          include: readinessState,databaseSchema,databaseConnection
   health:
     defaults:
       enabled: true

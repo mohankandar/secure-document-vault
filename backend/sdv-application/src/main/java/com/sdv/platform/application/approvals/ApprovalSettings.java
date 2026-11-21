@@ -1,5 +1,7 @@
 package com.sdv.platform.application.approvals;
 
+import com.sdv.platform.domain.error.SdvErrorCode;
+import com.sdv.platform.domain.error.StartupFailure;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
@@ -63,7 +65,7 @@ public class ApprovalSettings {
         } catch (NumberFormatException ignored) {
             // refused below
         }
-        throw new IllegalStateException(name + " must be a whole number from 1 to " + max + ".");
+        throw new StartupFailure(SdvErrorCode.SYS_008, name + " must be a whole number from 1 to " + max + ".");
     }
 
     private static Map<UUID, Integer> perTenant(String name, String value, int max) {
@@ -71,15 +73,15 @@ public class ApprovalSettings {
         if (value == null || value.isBlank()) return Map.of();
         for (String entry : value.split(",")) {
             String[] parts = entry.strip().split("=", -1);
-            if (parts.length != 2) throw new IllegalStateException(name + " entries must be written as tenant id=number.");
+            if (parts.length != 2) throw new StartupFailure(SdvErrorCode.SYS_008, name + " entries must be written as tenant id=number.");
             UUID tenant;
             try {
                 tenant = UUID.fromString(parts[0].strip());
             } catch (IllegalArgumentException ex) {
-                throw new IllegalStateException(name + " has an entry that doesn't start with a tenant id.");
+                throw new StartupFailure(SdvErrorCode.SYS_008, name + " has an entry that doesn't start with a tenant id.");
             }
             if (result.put(tenant, number(name, parts[1], max)) != null) {
-                throw new IllegalStateException(name + " names the same tenant twice.");
+                throw new StartupFailure(SdvErrorCode.SYS_008, name + " names the same tenant twice.");
             }
         }
         return Map.copyOf(result);

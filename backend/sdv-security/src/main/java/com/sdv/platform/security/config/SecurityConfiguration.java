@@ -1,5 +1,7 @@
 package com.sdv.platform.security.config;
 
+import com.sdv.platform.domain.error.SdvErrorCode;
+import com.sdv.platform.domain.error.StartupFailure;
 import com.sdv.platform.security.auth.LocalHeaderAuthenticationFilter;
 import com.sdv.platform.security.auth.enterprise.EnterpriseJwtAuthenticationConverter;
 import org.springframework.beans.factory.ObjectProvider;
@@ -42,14 +44,14 @@ public class SecurityConfiguration {
             case "local-header" -> {
                 LocalHeaderAuthenticationFilter localFilter = localFilterProvider.getIfAvailable();
                 if (localFilter == null) {
-                    throw new IllegalStateException("sdv.auth.mode=local-header is allowed only with the local Spring profile.");
+                    throw new StartupFailure(SdvErrorCode.SYS_005, "sdv.auth.mode=local-header is allowed only with the local Spring profile.");
                 }
                 http.addFilterBefore(localFilter, AnonymousAuthenticationFilter.class);
             }
             case "enterprise-jwt" -> {
                 EnterpriseJwtAuthenticationConverter converter = enterpriseJwtConverterProvider.getIfAvailable();
                 if (converter == null) {
-                    throw new IllegalStateException("Enterprise JWT authentication is not configured.");
+                    throw new StartupFailure(SdvErrorCode.SYS_005, "Enterprise JWT authentication is not configured.");
                 }
                 http.oauth2ResourceServer(oauth2 -> oauth2
                         .authenticationEntryPoint(withErrorBody(new BearerTokenAuthenticationEntryPoint()))
@@ -59,7 +61,7 @@ public class SecurityConfiguration {
             case "disabled" -> {
                 // Fail closed: protected routes remain authenticated(), but no authentication mechanism is registered.
             }
-            default -> throw new IllegalStateException("Unsupported sdv.auth.mode: " + authMode);
+            default -> throw new StartupFailure(SdvErrorCode.SYS_005, "sdv.auth.mode (SDV_AUTH_MODE) must be enterprise-jwt, local-header (local start only) or disabled; it is \"" + authMode + "\".");
         }
         return http.build();
     }

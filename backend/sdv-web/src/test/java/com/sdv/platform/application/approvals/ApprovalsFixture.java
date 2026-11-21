@@ -299,12 +299,28 @@ final class ApprovalsFixture {
             return r != null && r.tenantId().equals(tenantId) ? Optional.of(r) : Optional.empty();
         }
 
-        @Override public synchronized void decide(UUID tenantId, UUID requestId, AccessRequestStatus status, String decidedBy,
-                                                  String decidedByName, Instant decidedAt, Instant expiresAt) {
+        /**
+         * Task 0037: when set, runs inside the next decision, after the request was read and before it is written: what
+         * another Business Admin's decision committing at that moment looks like.
+         */
+        Runnable decidedMeanwhile;
+
+        void decideMeanwhile(UUID requestId, AccessRequestStatus status, String decidedBy) {
+            decidedMeanwhile = () -> rows.put(requestId, copy(rows.get(requestId), status, decidedBy, null, world.clock.instant(),
+                    rows.get(requestId).expiresAt(), null));
+        }
+
+        /** Task 0037: as the SQL, nothing changes (false) when the request is no longer pending. */
+        @Override public synchronized boolean decide(UUID tenantId, UUID requestId, AccessRequestStatus status, String decidedBy,
+                                                     String decidedByName, Instant decidedAt, Instant expiresAt) {
+            Runnable meanwhile = decidedMeanwhile;
+            decidedMeanwhile = null;
+            if (meanwhile != null) meanwhile.run();
             AccessRequest r = rows.get(requestId);
-            if (r == null || r.status() != AccessRequestStatus.PENDING) throw new IllegalStateException("not pending");
+            if (r == null || r.status() != AccessRequestStatus.PENDING) return false;
             if (decidedBy.equals(r.requestedBy())) throw new IllegalStateException("ck_access_requests_not_own");
             rows.put(requestId, copy(r, status, decidedBy, decidedByName, decidedAt, expiresAt, null));
+            return true;
         }
 
         @Override public synchronized List<AccessRequest> expireDue(UUID tenantId, Instant now) {

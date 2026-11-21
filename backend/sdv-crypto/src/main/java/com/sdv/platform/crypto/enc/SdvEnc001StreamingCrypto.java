@@ -1,5 +1,6 @@
 package com.sdv.platform.crypto.enc;
 
+import com.sdv.platform.domain.error.InternalCheckFailed;
 import com.sdv.platform.application.port.StreamingCryptoPort;
 import com.sdv.platform.crypto.key.KeyProtectionProvider;
 import com.sdv.platform.crypto.key.ProtectedDataKey;
@@ -60,7 +61,7 @@ public class SdvEnc001StreamingCrypto implements StreamingCryptoPort {
     @Override
     public CryptoEnvelope encrypt(UUID tenantId, InputStream plaintext, OutputStream ciphertext) throws IOException {
         if (tenantId == null || plaintext == null || ciphertext == null) {
-            throw new IllegalArgumentException("tenantId, plaintext and ciphertext are required.");
+            throw new InternalCheckFailed("tenantId, plaintext and ciphertext are required.");
         }
 
         ProtectedDataKey protectedKey = keyProvider.generateDataKey(tenantId);
@@ -116,7 +117,7 @@ public class SdvEnc001StreamingCrypto implements StreamingCryptoPort {
     @Override
     public void decrypt(UUID tenantId, CryptoEnvelope envelope, InputStream ciphertext, OutputStream plaintext) throws IOException {
         if (tenantId == null || envelope == null || ciphertext == null || plaintext == null) {
-            throw new IllegalArgumentException("tenantId, envelope, ciphertext and plaintext are required.");
+            throw new InternalCheckFailed("tenantId, envelope, ciphertext and plaintext are required.");
         }
         if (!PROFILE.equals(envelope.cryptoProfile()) || envelope.cryptoVersion() != VERSION) {
             throw new IOException("Unsupported SDV crypto profile/version.");

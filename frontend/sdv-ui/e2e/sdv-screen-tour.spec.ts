@@ -1,4 +1,4 @@
-import { expect, test, type Page, type TestInfo } from '@playwright/test'
+import { expect, test, type APIRequestContext, type Page, type TestInfo } from '@playwright/test'
 import fs from 'node:fs'
 import path from 'node:path'
 
@@ -1305,7 +1305,36 @@ async function chooseLexaVault(page: Page) {
   await page.evaluate(([key, id]) => { try { window.localStorage.setItem(key, id) } catch { /* the default rule still picks it */ } }, [LAST_SOURCE_KEY, lexa!.sourceId])
 }
 
+/**
+ * Task 0037, item 7: the tour starts only once Vero is ready, the way a load balancer decides. Readiness
+ * (/actuator/health/readiness, through the UI's own proxy) is 200 when the app has started, the database matches this
+ * version and answers its ping. Right after a fresh start it is 503 or doesn't answer yet; the first tour run after
+ * PR #10 started then and once found Document Steward results still loading after 8 s. This waits for the cause to
+ * pass instead of raising any time limit of the steps themselves.
+ */
+const READY_WAIT_MS = 180_000
+async function waitForReadiness(request: APIRequestContext) {
+  const started = Date.now()
+  let last = 'no answer'
+  while (Date.now() - started < READY_WAIT_MS) {
+    try {
+      const r = await request.get('/actuator/health/readiness', { timeout: 5_000, failOnStatusCode: false })
+      if (r.status() === 200) return
+      last = `HTTP ${r.status()}`
+    } catch (e) {
+      last = e instanceof Error ? e.message.split('\n')[0] : String(e)
+    }
+    await new Promise((resolve) => setTimeout(resolve, 1_000))
+  }
+  throw new Error(`Vero was not ready after ${READY_WAIT_MS / 1000} s (last answer: ${last}). Is the backend running on 8280?`)
+}
+
 test.describe('SDV role-based screen capture', () => {
+  test.beforeAll(async ({ request }) => {
+    test.setTimeout(READY_WAIT_MS + 15_000) // the wait for readiness only; every step keeps its own limits
+    await waitForReadiness(request)
+  })
+
   test.beforeEach(async ({ page }) => {
     await openApp(page, '/')
     await chooseLexaVault(page)

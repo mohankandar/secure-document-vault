@@ -216,5 +216,35 @@ class LegalHoldPostgresTest {
                 + "and target_type='DOCUMENT' and target_id='" + A + "' and actor_id='admin' and correlation_id='corr-r'"));
         assertEquals(0, count("select count(*) from audit_events where action like 'LEGAL_HOLD_%' and safe_details::text like '%Litigation%'"));
         assertEquals(0, count("select count(*) from audit_events where tenant_id='" + T2 + "' and action like 'LEGAL_HOLD_%'"));
+
+        // 8. Task 0037: two Business Admins release C's hold at the same moment. One release happens; the other is
+        // refused with 409 SDV-HLD-008 and audited as LEGAL_HOLD_RELEASE_REFUSED. Never a 500.
+        UUID holdC = jdbc.queryForObject("select hold_id from legal_holds where document_id='" + C + "' and released_at is null",
+                new org.springframework.jdbc.core.namedparam.MapSqlParameterSource(), UUID.class);
+        java.util.concurrent.CyclicBarrier together = new java.util.concurrent.CyclicBarrier(2);
+        ExecutorService two = Executors.newFixedThreadPool(2);
+        try {
+            List<java.util.concurrent.Future<String>> outcomes = new java.util.ArrayList<>();
+            for (String admin : List.of("admin", "admin2")) {
+                outcomes.add(two.submit(() -> {
+                    together.await();
+                    try {
+                        holds.release(T1, admin, null, holdC.toString(), "corr-race-" + admin);
+                        return "RELEASED";
+                    } catch (RuntimeException ex) {
+                        return ex instanceof CodedRefusal coded ? coded.errorCode().code() : ex.toString();
+                    }
+                }));
+            }
+            List<String> got = new java.util.ArrayList<>();
+            for (var f : outcomes) got.add(f.get(30, java.util.concurrent.TimeUnit.SECONDS));
+            java.util.Collections.sort(got);
+            assertEquals(List.of("RELEASED", "SDV-HLD-008"), got);
+        } finally {
+            two.shutdownNow();
+        }
+        assertEquals(1, count("select count(*) from audit_events where tenant_id='" + T1 + "' and action='LEGAL_HOLD_RELEASED' and target_id='" + C + "'"));
+        assertEquals(1, count("select count(*) from audit_events where tenant_id='" + T1 + "' and action='LEGAL_HOLD_RELEASE_REFUSED' "
+                + "and outcome='DENIED' and target_id='" + C + "' and correlation_id like 'corr-race-%' and safe_details::text like '%SDV-HLD-008%'"));
     }
 }

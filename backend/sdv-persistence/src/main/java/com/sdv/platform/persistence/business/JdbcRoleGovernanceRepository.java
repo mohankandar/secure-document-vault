@@ -1,5 +1,6 @@
 package com.sdv.platform.persistence.business;
 
+import com.sdv.platform.domain.error.InternalCheckFailed;
 import com.sdv.platform.application.port.RoleGovernancePort;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
@@ -148,7 +149,7 @@ public class JdbcRoleGovernanceRepository implements RoleGovernancePort {
 
     static String join(List<String> values) {
         for (String value : values) {
-            if (value == null || value.contains(",")) throw new IllegalArgumentException("A stored name can't hold a comma.");
+            if (value == null || value.contains(",")) throw new InternalCheckFailed("A stored name can't hold a comma.");
         }
         return String.join(",", values);
     }

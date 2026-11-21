@@ -90,7 +90,7 @@ public class JdbcLegalHoldRepository implements LegalHoldRepository {
     }
 
     @Override
-    public void release(UUID tenantId, UUID holdId, String releasedBy, String releasedByName, Instant releasedAt) {
+    public boolean release(UUID tenantId, UUID holdId, String releasedBy, String releasedByName, Instant releasedAt) {
         int updated = jdbc.update("""
                 update legal_holds
                    set released_by=:releasedBy, released_by_display_name=:releasedByName, released_at=:releasedAt
@@ -101,7 +101,8 @@ public class JdbcLegalHoldRepository implements LegalHoldRepository {
                 .addValue("releasedBy", releasedBy)
                 .addValue("releasedByName", releasedByName)
                 .addValue("releasedAt", Timestamp.from(releasedAt)));
-        if (updated != 1) throw new InternalCheckFailed("The legal hold release did not change exactly one active hold.");
+        if (updated > 1) throw new InternalCheckFailed("The legal hold release changed more than one active hold.");
+        return updated == 1;
     }
 
     @Override

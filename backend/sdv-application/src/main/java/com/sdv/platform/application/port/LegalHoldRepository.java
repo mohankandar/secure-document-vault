@@ -22,9 +22,9 @@ public interface LegalHoldRepository {
 
     void insert(LegalHold hold);
 
-    /** Releases an active hold; fails unless exactly one active hold was released. */
+    /** Releases an active hold. Task 0037: false when no active hold changed (released at the same moment: SDV-HLD-008). */
     /** Task 0028, 0.3: releasedByName is the name from the signed-in session at the time (null when unknown). */
-    void release(UUID tenantId, UUID holdId, String releasedBy, String releasedByName, Instant releasedAt);
+    boolean release(UUID tenantId, UUID holdId, String releasedBy, String releasedByName, Instant releasedAt);
 
     /**
      * Documents whose record's primary identifier (its first business identifier in display order, as the record

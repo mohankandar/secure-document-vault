@@ -1,5 +1,6 @@
 package com.sdv.platform.application.storage;
 
+import com.sdv.platform.domain.error.InternalCheckFailed;
 import com.sdv.platform.application.port.StorageVolumeProbe;
 import com.sdv.platform.application.port.StorageVolumeRepository;
 import com.sdv.platform.domain.storage.StorageCapacitySnapshot;
@@ -21,7 +22,7 @@ public class StoragePlacementService {
     }
 
     public PlacementDecision select(UUID tenantId, long requiredBytes) {
-        if (requiredBytes < 0) throw new IllegalArgumentException("requiredBytes cannot be negative.");
+        if (requiredBytes < 0) throw new InternalCheckFailed("requiredBytes cannot be negative.");
 
         return volumes.findAll(tenantId).stream()
                 .filter(volume -> volume.state() == StorageVolumeState.ACTIVE)

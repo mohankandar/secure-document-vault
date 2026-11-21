@@ -1,5 +1,6 @@
 package com.sdv.platform.persistence.identity;
 
+import com.sdv.platform.domain.error.InternalCheckFailed;
 import com.documentplatform.identity.OidcConnectionBinding;
 import com.documentplatform.identity.OidcConnectionBindingResolver;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -59,7 +60,7 @@ public class JdbcOidcConnectionBindingRepository implements OidcConnectionBindin
                 """,id,tenantId,pid,"OIDC",name,normalizedIssuer,client,aud,null,version,Timestamp.from(now),Timestamp.from(now));
         }
         appendHistory(id,tenantId,pid,normalizedIssuer,client,aud,"DRAFT",version,"DRAFT_SAVED",changedBy,now);
-        return findById(tenantId,id).orElseThrow();
+        return findById(tenantId,id).orElseThrow(JdbcOidcConnectionBindingRepository::notReadBack);
     }
 
     @Transactional public ConnectionAdminView recordTest(UUID tenantId, UUID connectionId, long expectedConfigurationVersion, boolean passed, String message, String actor) {
@@ -71,7 +72,7 @@ public class JdbcOidcConnectionBindingRepository implements OidcConnectionBindin
                 status,Timestamp.from(now),testStatus,safeMessage,Timestamp.from(now),connectionId,tenantId,expectedConfigurationVersion);
         if(updated!=1) throw staleTest();
         appendHistory(connectionId,tenantId,current.providerId(),current.issuerUri(),current.browserClientId(),current.apiAudience(),status,expectedConfigurationVersion,passed?"TEST_PASSED":"TEST_FAILED",clean(actor),now);
-        return findById(tenantId,connectionId).orElseThrow();
+        return findById(tenantId,connectionId).orElseThrow(JdbcOidcConnectionBindingRepository::notReadBack);
     }
 
     @Transactional public ActivationResult activateValidated(UUID tenantId, UUID connectionId, long expectedConfigurationVersion, String actor) {
@@ -94,7 +95,7 @@ public class JdbcOidcConnectionBindingRepository implements OidcConnectionBindin
         String changedBy=clean(actor);
         appendHistory(active.connectionId(),tenantId,active.providerId(),active.issuerUri(),active.browserClientId(),active.apiAudience(),"DISABLED",active.configurationVersion(),"SUPERSEDED",changedBy,now);
         appendHistory(staged.connectionId(),tenantId,staged.providerId(),staged.issuerUri(),staged.browserClientId(),staged.apiAudience(),"ACTIVE",staged.configurationVersion(),"ACTIVATED",changedBy,now);
-        return new ActivationResult(findById(tenantId,staged.connectionId()).orElseThrow(), active);
+        return new ActivationResult(findById(tenantId,staged.connectionId()).orElseThrow(JdbcOidcConnectionBindingRepository::notReadBack), active);
     }
 
     @Transactional public ActivationResult rollbackToKnownGood(UUID tenantId, UUID connectionId, long expectedConfigurationVersion, String actor) {
@@ -114,7 +115,7 @@ public class JdbcOidcConnectionBindingRepository implements OidcConnectionBindin
         String changedBy=clean(actor);
         appendHistory(active.connectionId(),tenantId,active.providerId(),active.issuerUri(),active.browserClientId(),active.apiAudience(),"DISABLED",active.configurationVersion(),"ROLLBACK_SUPERSEDED",changedBy,now);
         appendHistory(candidate.connectionId(),tenantId,candidate.providerId(),candidate.issuerUri(),candidate.browserClientId(),candidate.apiAudience(),"ACTIVE",candidate.configurationVersion(),"ROLLBACK_ACTIVATED",changedBy,now);
-        return new ActivationResult(findById(tenantId,candidate.connectionId()).orElseThrow(), active);
+        return new ActivationResult(findById(tenantId,candidate.connectionId()).orElseThrow(JdbcOidcConnectionBindingRepository::notReadBack), active);
     }
 
     @Transactional public ActivationResult recoverKnownGood(UUID tenantId, UUID connectionId, long expectedConfigurationVersion, String recoveryRequestId) {
@@ -143,7 +144,7 @@ public class JdbcOidcConnectionBindingRepository implements OidcConnectionBindin
         int restored=jdbc.update("update enterprise_identity_connections set status='ACTIVE',updated_at=? where connection_id=? and tenant_id=? and configuration_version=? and status='DISABLED'",Timestamp.from(now),candidate.connectionId(),tenantId,expectedConfigurationVersion);
         if(restored!=1) throw new IllegalStateException("Recovery target changed during recovery. No change was committed.");
         appendHistory(candidate.connectionId(),tenantId,candidate.providerId(),candidate.issuerUri(),candidate.browserClientId(),candidate.apiAudience(),"ACTIVE",candidate.configurationVersion(),"RECOVERY_ACTIVATED",actor,now);
-        return new ActivationResult(findById(tenantId,candidate.connectionId()).orElseThrow(),previous);
+        return new ActivationResult(findById(tenantId,candidate.connectionId()).orElseThrow(JdbcOidcConnectionBindingRepository::notReadBack),previous);
     }
 
     @Transactional public void bootstrapIfAbsent(UUID tenantId,String providerId,URI issuer,String browserClientId,String audience) {
@@ -182,4 +183,9 @@ public class JdbcOidcConnectionBindingRepository implements OidcConnectionBindin
     private static IllegalStateException staleTest(){return new IllegalStateException("Identity configuration changed while the connection test was running. The stale test result was discarded; test the current draft again.");}
     public record ConnectionAdminView(UUID connectionId,UUID tenantId,String providerId,String providerType,String displayName,String issuerUri,String browserClientId,String apiAudience,String status,long configurationVersion,Instant createdAt,Instant updatedAt,Instant lastTestedAt,String lastTestStatus,String lastTestMessage){}
     public record ActivationResult(ConnectionAdminView active, ConnectionAdminView previousActive){}
+
+    /** Task 0037 (SDV-SYS-016): a connection written in this transaction could not be read back. */
+    private static InternalCheckFailed notReadBack() {
+        return new InternalCheckFailed("The sign-in connection just written could not be read back.");
+    }
 }

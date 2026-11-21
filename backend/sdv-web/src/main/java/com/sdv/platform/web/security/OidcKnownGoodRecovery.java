@@ -1,5 +1,7 @@
 package com.sdv.platform.web.security;
 
+import com.sdv.platform.domain.error.SdvErrorCode;
+import com.sdv.platform.domain.error.StartupFailure;
 import com.sdv.platform.persistence.identity.JdbcOidcConnectionBindingRepository;
 import com.sdv.platform.web.schema.DatabaseSchemaCheck;
 import org.slf4j.Logger;
@@ -12,7 +14,10 @@ import org.springframework.stereotype.Component;
 
 import java.util.UUID;
 
-/** Explicit one-shot operational recovery for an OIDC lockout. Disabled by default. */
+/**
+ * Explicit one-shot operational recovery for an OIDC lockout. Disabled by default.
+ * Task 0037: every refusal stops the start with SDV-SYS-011 and says which check failed.
+ */
 @Component
 @ConditionalOnProperty(name="sdv.auth.jwt.recovery.enabled", havingValue="true")
 public class OidcKnownGoodRecovery implements ApplicationRunner {
@@ -32,10 +37,24 @@ public class OidcKnownGoodRecovery implements ApplicationRunner {
     @Override public void run(ApplicationArguments args) {
         // An explicitly requested recovery must not be skipped silently, so a mismatched database stops the start.
         if(!schema.current())
-            throw new IllegalStateException("OIDC recovery is enabled but was not applied. "+schema.status().message());
+            throw new StartupFailure(SdvErrorCode.SYS_011, "OIDC recovery is enabled but was not applied. "+schema.status().message());
         if(tenantId==null||tenantId.isBlank()||connectionId==null||connectionId.isBlank()||requestId==null||requestId.isBlank()||expectedVersion<=0)
-            throw new IllegalStateException("OIDC recovery is enabled but tenant-id, connection-id, expected-version, and unique request-id are not fully configured.");
-        var result=repository.recoverKnownGood(UUID.fromString(tenantId.trim()),UUID.fromString(connectionId.trim()),expectedVersion,requestId.trim());
+            throw new StartupFailure(SdvErrorCode.SYS_011, "OIDC recovery is enabled but tenant-id, connection-id, expected-version, and unique request-id are not fully configured.");
+        UUID tenant=uuid(tenantId,"sdv.auth.jwt.recovery.tenant-id"), connection=uuid(connectionId,"sdv.auth.jwt.recovery.connection-id");
+        JdbcOidcConnectionBindingRepository.ActivationResult result;
+        try {
+            result=repository.recoverKnownGood(tenant,connection,expectedVersion,requestId.trim());
+        } catch (IllegalStateException | IllegalArgumentException ex) {
+            throw new StartupFailure(SdvErrorCode.SYS_011, ex.getMessage(), ex);
+        }
         log.warn("ENTERPRISE_IDENTITY_RECOVERY_APPLIED tenantId={} connectionId={} version={} requestId={}",tenantId.trim(),result.active().connectionId(),result.active().configurationVersion(),requestId.trim());
+    }
+
+    static UUID uuid(String value, String property) {
+        try {
+            return UUID.fromString(value.trim());
+        } catch (IllegalArgumentException ex) {
+            throw new StartupFailure(SdvErrorCode.SYS_011, property + " must be a UUID.");
+        }
     }
 }

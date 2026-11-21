@@ -1,5 +1,6 @@
 package com.sdv.platform.web.retention;
 
+import com.sdv.platform.domain.error.StartupFailure;
 import com.sdv.platform.application.retention.RetentionDeletionService;
 import org.junit.jupiter.api.Test;
 import org.springframework.scheduling.support.SimpleTriggerContext;
@@ -77,18 +78,19 @@ class RetentionNextRunTest {
     @Test
     void aTimeThatIsntHHmm_stopsTheServer() {
         for (String bad : new String[]{"2", "2:00", "02.00", "25:00", "02:60", "2am", "02:00:00", " ", ""}) {
-            IllegalStateException ex = assertThrows(IllegalStateException.class, () -> daily(bad, ZoneOffset.UTC), bad);
+            StartupFailure ex = assertThrows(StartupFailure.class, () -> daily(bad, ZoneOffset.UTC), bad);
             assertTrue(ex.getMessage().contains("sdv.retention.daily-at"), ex.getMessage());
         }
-        assertThrows(IllegalStateException.class, () -> daily(null, ZoneOffset.UTC));
+        assertThrows(StartupFailure.class, () -> daily(null, ZoneOffset.UTC));
         assertEquals(LocalTime.of(2, 0), RetentionSchedule.dailyTime(" 02:00 "));
     }
 
     @Test
     void theOldFixedDelaySettings_stopTheServerRatherThanBeingIgnored() {
-        IllegalStateException a = assertThrows(IllegalStateException.class, () -> new RetentionSchedule("02:00", "", "1000", "", ZoneOffset.UTC));
+        StartupFailure a = assertThrows(StartupFailure.class, () -> new RetentionSchedule("02:00", "", "1000", "", ZoneOffset.UTC));
         assertTrue(a.getMessage().contains("sdv.retention.initial-delay-ms"));
-        assertThrows(IllegalStateException.class, () -> new RetentionSchedule("02:00", "", "", "60000", ZoneOffset.UTC));
+        assertEquals(com.sdv.platform.domain.error.SdvErrorCode.SYS_009, a.errorCode(), "task 0037");
+        assertThrows(StartupFailure.class, () -> new RetentionSchedule("02:00", "", "", "60000", ZoneOffset.UTC));
     }
 
     @Test
@@ -96,7 +98,7 @@ class RetentionNextRunTest {
         RetentionSchedule everySecond = new RetentionSchedule("02:00", " * * * * * * ", "", "", ZoneOffset.UTC);
         assertEquals("* * * * * *", everySecond.cron());
         assertEquals(Instant.parse("2026-11-19T12:00:01Z"), everySecond.next(Instant.parse("2026-11-19T12:00:00Z")));
-        IllegalStateException ex = assertThrows(IllegalStateException.class, () -> new RetentionSchedule("02:00", "every day", "", "", ZoneOffset.UTC));
+        StartupFailure ex = assertThrows(StartupFailure.class, () -> new RetentionSchedule("02:00", "every day", "", "", ZoneOffset.UTC));
         assertTrue(ex.getMessage().contains("sdv.retention.cron"));
     }
 
