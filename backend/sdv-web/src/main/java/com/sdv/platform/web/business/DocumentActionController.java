@@ -31,34 +31,34 @@ public class DocumentActionController {
     @GetMapping("/tags")
     public List<TagView> tags(@PathVariable UUID documentId) {
         SdvPrincipal principal = require(Capability.VIEW_PDF);
-        return actions.tags(principal.tenantId(), documentId).stream().map(TagView::from).toList();
+        return actions.tags(principal.tenantId(), documentId, authorization.clearance(principal), principal.subject(), correlationId()).stream().map(TagView::from).toList();
     }
 
     @PostMapping("/tags")
     @ResponseStatus(HttpStatus.CREATED)
     public TagView addTag(@PathVariable UUID documentId, @RequestBody TagRequest request) {
         SdvPrincipal principal = require(Capability.ADD_DOCUMENT_TAG);
-        return TagView.from(actions.addTag(principal.tenantId(), documentId, request == null ? null : request.tag(), principal.subject(), correlationId()));
+        return TagView.from(actions.addTag(principal.tenantId(), documentId, request == null ? null : request.tag(), authorization.clearance(principal), principal.subject(), correlationId()));
     }
 
     @GetMapping("/comments")
     public List<CommentView> comments(@PathVariable UUID documentId) {
         SdvPrincipal principal = require(Capability.VIEW_PDF);
-        return actions.comments(principal.tenantId(), documentId).stream().map(CommentView::from).toList();
+        return actions.comments(principal.tenantId(), documentId, authorization.clearance(principal), principal.subject(), correlationId()).stream().map(CommentView::from).toList();
     }
 
     @PostMapping("/comments")
     @ResponseStatus(HttpStatus.CREATED)
     public CommentView addComment(@PathVariable UUID documentId, @RequestBody CommentRequest request) {
         SdvPrincipal principal = require(Capability.ADD_DOCUMENT_COMMENT);
-        return CommentView.from(actions.addComment(principal.tenantId(), documentId, request == null ? null : request.comment(), principal.subject(), correlationId()));
+        return CommentView.from(actions.addComment(principal.tenantId(), documentId, request == null ? null : request.comment(), authorization.clearance(principal), principal.subject(), correlationId()));
     }
 
     @PostMapping("/print-event")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void print(@PathVariable UUID documentId) {
         SdvPrincipal principal = require(Capability.PRINT_DOCUMENT);
-        actions.recordPrint(principal.tenantId(), documentId, principal.subject(), correlationId());
+        actions.recordPrint(principal.tenantId(), documentId, authorization.clearance(principal), principal.subject(), correlationId());
     }
 
     @GetMapping("/activity")
@@ -70,7 +70,8 @@ public class DocumentActionController {
                                                                @RequestParam(defaultValue = "false") boolean includeViewEvents,
                                                                @RequestParam(defaultValue = "100") int limit) {
         SdvPrincipal principal = require(Capability.SEARCH_RECORDS);
-        return actions.activity(principal.tenantId(), documentId, from, to, action, actorId, includeViewEvents, limit);
+        return actions.activity(principal.tenantId(), documentId, from, to, action, actorId, includeViewEvents, limit,
+                authorization.clearance(principal), principal.subject(), correlationId());
     }
 
     private SdvPrincipal require(Capability capability) {

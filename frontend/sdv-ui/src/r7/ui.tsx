@@ -137,12 +137,14 @@ export function Seg<T extends string>({ value, options, onChange, label }: { val
   )
 }
 
-export function Tabs({ tabs, value, onChange, label }: { tabs: { id: string; label: string; attention?: boolean }[]; value: string; onChange: (id: string) => void; label: string }) {
+/** count (task 0030): an amber pill after the label, e.g. the requests waiting ("Approvals 48"); countLabel is its spoken form. */
+export function Tabs({ tabs, value, onChange, label }: { tabs: { id: string; label: string; attention?: boolean; count?: number; countLabel?: string }[]; value: string; onChange: (id: string) => void; label: string }) {
   return (
     <div className="v-tabs" role="tablist" aria-label={label}>
       {tabs.map((t) => (
         <button key={t.id} type="button" role="tab" className="v-tab" aria-selected={t.id === value} onClick={() => onChange(t.id)}>
           {t.label}{t.attention && <span className="dot" aria-label="needs attention" />}
+          {t.count != null && t.count > 0 && <span className="v-tab-n" aria-label={t.countLabel ?? String(t.count)}>{t.count}</span>}
         </button>
       ))}
     </div>
@@ -231,12 +233,13 @@ export function Meter({ pct, warn, stop, label }: { pct: number; warn: number; s
   )
 }
 
-export function PageHead({ crumbs, title, lede, actions }: { crumbs: string[]; title: string; lede?: ReactNode; actions?: ReactNode }) {
+/** sub (task 0030): a short line beside the title instead of below it ("48 waiting · oldest 2 days"). */
+export function PageHead({ crumbs, title, lede, actions, sub }: { crumbs: string[]; title: string; lede?: ReactNode; actions?: ReactNode; sub?: ReactNode }) {
   return (
     <header className="v-pagehead">
       <div className="titles">
         <div className="crumbs">{crumbs.map((c, i) => <span key={c} className="row" style={{ gap: 6 }}>{i > 0 && <span aria-hidden>/</span>}{c}</span>)}</div>
-        <h1>{title}</h1>
+        {sub ? <div className="v-pagehead-line"><h1>{title}</h1><span className="v-pagehead-sub">{sub}</span></div> : <h1>{title}</h1>}
         {lede && <p className="lede">{lede}</p>}
       </div>
       {actions && <div className="actions">{actions}</div>}
@@ -263,4 +266,12 @@ export function TechDetails({ hint, flat, children }: { hint?: string; flat?: bo
 /** A canvas banner: bold words first, then the sentence, on one line where it fits ("**What to do:** …"). */
 export function Banner({ tone = 'warn', lead, children }: { tone?: 'warn' | 'bad' | 'ok' | 'info'; lead: ReactNode; children?: ReactNode }) {
   return <div className={`v-banner ${tone}`} role={tone === 'bad' ? 'alert' : undefined}><b>{lead}</b>{children && <> {children}</>}</div>
+}
+
+/** Task 0027 (0.4): a sensitivity level in words, for admin views that describe a document without its file name. */
+export function levelWords(level: string | null | undefined): string {
+  if (level === 'STANDARD') return 'Standard'
+  if (level === 'CONFIDENTIAL') return 'Confidential'
+  if (level === 'HIGHLY_CONFIDENTIAL') return 'Highly Confidential'
+  return 'Not known'
 }

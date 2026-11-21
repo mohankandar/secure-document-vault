@@ -68,6 +68,9 @@ sdv:
       role-mappings:
         business-user: ${SDV_AUTH_GROUP_BUSINESS_USER:}
         document-steward: ${SDV_AUTH_GROUP_DOCUMENT_STEWARD:}
+        # Task 0025: only this mapping gives RESTRICTED_STEWARD (a direct sdv_roles claim never does). Changes are
+        # audited at start for every tenant. Never held with business-admin, tenant-it-admin or platform-operations-admin.
+        restricted-steward: ${SDV_AUTH_GROUP_RESTRICTED_STEWARD:}
         business-admin: ${SDV_AUTH_GROUP_BUSINESS_ADMIN:}
         tenant-it-admin: ${SDV_AUTH_GROUP_TENANT_IT_ADMIN:}
         platform-operations-admin: ${SDV_AUTH_GROUP_PLATFORM_OPERATIONS_ADMIN:}
@@ -92,4 +95,17 @@ sdv:
     daily-at: ${SDV_RETENTION_DAILY_AT:02:00}
     # For check scripts only: a Spring cron expression that replaces daily-at when set. Leave empty.
     cron: ${SDV_RETENTION_CRON:}
+
+  # Task 0028: approvals. How long an approved Highly Confidential print or download stays usable (hours, 1-168),
+  # and how long a request may wait undecided before it expires (days, 1-90). Per tenant: tenant id=number, comma-separated.
+  approvals:
+    grant-hours: ${SDV_APPROVALS_GRANT_HOURS:24}
+    pending-days: ${SDV_APPROVALS_PENDING_DAYS:7}
+    tenant-grant-hours: ${SDV_APPROVALS_TENANT_GRANT_HOURS:}
+    tenant-pending-days: ${SDV_APPROVALS_TENANT_PENDING_DAYS:}
+
+  # Task 0032: the time zone a tenant's days are counted in ("today" in the Daily intake report) when the tenant has no
+  # setting of its own (tenants.time_zone). An IANA name such as America/New_York; an unknown name stops the server.
+  tenant-defaults:
+    time-zone: ${SDV_DEFAULT_TIME_ZONE:UTC}
 

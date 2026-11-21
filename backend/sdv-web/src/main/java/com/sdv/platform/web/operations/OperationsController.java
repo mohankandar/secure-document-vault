@@ -73,11 +73,12 @@ public class OperationsController {
             @RequestParam(required = false) Instant to,
             @RequestParam(required = false) Integer limit,
             @RequestParam(required = false) String cursor,
-            @RequestParam(required = false) String recordNumber) {
+            @RequestParam(required = false) String recordNumber,
+            @RequestParam(required = false) String sensitivityLevel) {
         SdvPrincipal principal = requireTechnicalView();
         return audit.search(principal.tenantId(), principal.subject(),
                 new AuditQueryService.SearchRequest(action, outcome, actorType, actorId, targetType, targetId,
-                        correlationId, from, to, limit, cursor, recordNumber), correlationId());
+                        correlationId, from, to, limit, cursor, recordNumber, sensitivityLevel), correlationId());
     }
 
     /**
@@ -98,11 +99,12 @@ public class OperationsController {
             @RequestParam(required = false) Instant to,
             @RequestParam(required = false) String recordNumber,
             @RequestParam(required = false) List<String> actions,
-            @RequestParam(required = false) List<String> excludeActions) {
+            @RequestParam(required = false) List<String> excludeActions,
+            @RequestParam(required = false) String sensitivityLevel) {
         SdvPrincipal principal = requireTechnicalView();
         AuditQueryService.AuditExport export = audit.export(principal.tenantId(), principal.subject(),
                 new AuditQueryService.ExportRequest(new AuditQueryService.SearchRequest(action, outcome, actorType, actorId,
-                        targetType, targetId, correlationId, from, to, null, null, recordNumber), actions, excludeActions),
+                        targetType, targetId, correlationId, from, to, null, null, recordNumber, sensitivityLevel), actions, excludeActions),
                 correlationId());
         String filename = "vero-audit-" + DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss").withZone(ZoneOffset.UTC).format(Instant.now()) + ".csv";
         return ResponseEntity.ok()

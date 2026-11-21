@@ -74,7 +74,10 @@ public final class BusinessExperienceView {
             int incompleteExpectedCount,
             int incompleteReceivedCount,
             /* An "anywhere" search only (task 0022): every field of this record that matched, best match first. */
-            List<MatchedField> matchedFields) {
+            List<MatchedField> matchedFields,
+            /* Task 0026: the highest effective level among this record's documents that this person can't open
+               (CONFIDENTIAL or HIGHLY_CONFIDENTIAL), or null when they can open them all. Counts are unchanged. */
+            String restrictedLevel) {
         public RecordSummary {
             identifiers = List.copyOf(identifiers);
             metadataPreview = List.copyOf(metadataPreview);
@@ -105,13 +108,28 @@ public final class BusinessExperienceView {
             int submissionCount,
             Instant latestSubmissionAt,
             List<DocumentSummary> documents,
-            IncompleteAttention incompleteAttention) {
+            IncompleteAttention incompleteAttention,
+            /* Task 0024, part 2: the record's own level; null when the record has none. */
+            String recordSensitivityLevel,
+            /* Task 0026: the documents this person can't open, as a reference and a level only. `documents` holds
+               only the ones they can open. */
+            List<LockedDocument> lockedDocuments,
+            /* Task 0026: as RecordSummary.restrictedLevel. */
+            String restrictedLevel) {
         public RecordView {
             identifiers = List.copyOf(identifiers);
             metadata = List.copyOf(metadata);
             documents = List.copyOf(documents);
+            lockedDocuments = lockedDocuments == null ? List.of() : List.copyOf(lockedDocuments);
         }
     }
+
+    /**
+     * Task 0026: a document this person can't open. Only its reference (the random document ID, which carries no
+     * meaning; opening it is refused with SDV-SEN-008) and its effective level. No file name, page count, dates, tags
+     * or comments.
+     */
+    public record LockedDocument(UUID documentId, String effectiveSensitivityLevel) { }
 
     public record DocumentSummary(
             UUID documentId,
@@ -123,7 +141,11 @@ public final class BusinessExperienceView {
             Instant expiresAt,
             /** null when the document was stored before page counts were kept. */
             Integer pageCount,
-            boolean redacted) { }
+            boolean redacted,
+            /** Task 0024: the document's own sensitivity level. */
+            String sensitivityLevel,
+            /** Task 0024, part 2: the higher of its own level and its record's level (SensitivityLevel.effective). */
+            String effectiveSensitivityLevel) { }
 
     public record IncompleteAttention(List<IncompleteSubmission> submissions) {
         public IncompleteAttention {

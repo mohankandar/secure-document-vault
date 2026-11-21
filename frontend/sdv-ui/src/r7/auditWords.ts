@@ -25,7 +25,7 @@ const CAPABILITY_WORDS: Record<string, string> = {
   ADD_DOCUMENT_TAG: 'tag a document', ADD_DOCUMENT_COMMENT: 'comment on a document', PERMANENT_REDACTION: 'permanently redact a document',
   CONFIGURE_ROLE_PERMISSIONS: 'change roles & permissions', CONFIGURE_RETENTION: 'change how long documents are kept',
   CONFIGURE_METADATA_SEARCH: 'change search fields', CONFIGURE_INGESTION_SOURCES: 'change sending systems',
-  CONFIGURE_STORAGE_KEY_PROVIDER: 'change storage', VIEW_TECHNICAL_FAILURES: 'see problems and the audit',
+  CONFIGURE_STORAGE_KEY_PROVIDER: 'change storage', VIEW_TECHNICAL_FAILURES: 'see problems and the audit', VIEW_INTAKE_REPORTS: 'see the reports',
 }
 
 type Sentence = (who: string, file: string, d: Record<string, unknown>, e: OpsAuditEvent) => string
@@ -42,6 +42,8 @@ export const AUDIT_SENTENCES: Record<string, Sentence> = {
   DOCUMENT_REDACTION_FAILED: (w, f) => `${w} tried to redact part of ${f}, but it failed`,
   DOCUMENT_RETENTION_DELETED: (_w, f) => `Vero deleted ${f} for good, as the keeping rule says`,
   DOCUMENT_RETENTION_DELETE_FAILED: (_w, f) => `Vero couldn't delete ${f} when its time was up`,
+  LEGAL_HOLD_PLACED: (w, f) => `${w} put ${f} on legal hold`,
+  LEGAL_HOLD_RELEASED: (w, f) => `${w} released the legal hold on ${f}`,
   BUSINESS_RECORD_OPENED: (w) => `${w} opened a record`,
   // Task 0022: a search across all fields says so ("searched all fields"); the text itself is never stored.
   BUSINESS_SEARCH: (w, _f, d) => { const what = d.anywhere === true ? 'searched all fields' : 'searched records'; return n(d.resultCount) != null ? `${w} ${what} and found ${n(d.resultCount)}` : `${w} ${what}` },
@@ -51,6 +53,14 @@ export const AUDIT_SENTENCES: Record<string, Sentence> = {
   AUTHORIZATION_DENIED: (w, _f, d) => `${w} tried to ${CAPABILITY_WORDS[String(d.capability)] ?? 'do something'} without permission`,
   SUBMISSION_CREATED: (w, _f, d) => `${w} delivered ${docs(n(d.expectedDocumentCount))}`,
   DOCUMENT_RECEIVED: (w, f) => `${w} sent ${f}`,
+  // Task 0031: an exact duplicate; nothing was stored a second time.
+  DOCUMENT_DUPLICATE_RECEIVED: (w, f) => `${w} sent ${f} again; Vero kept the copy it already had`,
+  // Task 0032: what a document was before a permanent correction; only the corrected version is kept.
+  DOCUMENT_UNCORRECTED_COPY_RECEIVED: (w) => `${w} sent an uncorrected copy of a corrected document; nothing was stored`,
+  INTAKE_REFUSED: (w, _f, d) => (d.code ? `${w} sent a delivery that Vero refused (${String(d.code)})` : `${w} sent a delivery that Vero refused`),
+  INTAKE_REPORT_EXPORTED: (w, _f, d) => (n(d.rowCount) != null ? `${w} exported the Daily intake report (${n(d.rowCount)} line${n(d.rowCount) === 1 ? '' : 's'})` : `${w} exported the Daily intake report`),
+  SENSITIVITY_REPORT_EXPORTED: (w, _f, d) => (n(d.rowCount) != null ? `${w} exported the Sensitivity report (${n(d.rowCount)} line${n(d.rowCount) === 1 ? '' : 's'})` : `${w} exported the Sensitivity report`),
+  STEWARD_NOTICE_READ: (w, _f, d) => (n(d.markedCount) != null && n(d.markedCount) !== 1 ? `${w} marked ${n(d.markedCount)} notices of corrected documents sent again as read` : `${w} marked a notice of a corrected document sent again as read`),
   DOCUMENT_AVAILABLE: (_w, f) => `${f} is stored and ready to open`,
   DOCUMENT_PROCESSING_FAILED: (_w, f) => `Vero couldn't store ${f}`,
   ROLE_CAPABILITIES_UPDATED: (w) => `${w} changed what business roles may do`,
@@ -77,7 +87,8 @@ export const AUDIT_SENTENCES: Record<string, Sentence> = {
 
 export function auditSentence(e: OpsAuditEvent): string {
   const who = actorName(e)
-  const file = e.filename || 'a document'
+  // Task 0027 (0.4): admin views never name a file; the Record column and the entry's details say which document.
+  const file = 'a document'
   const pattern = AUDIT_SENTENCES[e.action]
   return pattern ? pattern(who, file, details(e), e) : `${who} · ${humanize(e.action)}`
 }
@@ -87,10 +98,10 @@ export const RESULT_WORDS: Record<string, string> = { SUCCESS: 'Done', DENIED: '
 /** Everyday activity groups. Refused is every event the server refused, whatever its action. */
 export const ACTIVITY_GROUPS: { id: string; label: string; actions?: string[]; outcome?: string }[] = [
   { id: 'reading', label: 'Opening and reading', actions: ['DOCUMENT_VIEW_OPENED', 'DOCUMENT_PAGE_VIEWED', 'BUSINESS_RECORD_OPENED', 'BUSINESS_SEARCH', 'BUSINESS_RECENT_RECORDS_LISTED', 'AUDIT_VIEWED'] },
-  { id: 'downloads', label: 'Downloads, prints and exports', actions: ['DOCUMENT_DOWNLOADED', 'DOCUMENT_DOWNLOAD_FAILED', 'DOCUMENT_PRINTED', 'AUDIT_EXPORTED'] },
-  { id: 'changes', label: 'Changes to documents', actions: ['DOCUMENT_TAG_ADDED', 'DOCUMENT_COMMENT_ADDED', 'DOCUMENT_PERMANENTLY_REDACTED', 'DOCUMENT_REDACTION_FAILED', 'DOCUMENT_RETENTION_DELETED', 'DOCUMENT_RETENTION_DELETE_FAILED'] },
+  { id: 'downloads', label: 'Downloads, prints and exports', actions: ['DOCUMENT_DOWNLOADED', 'DOCUMENT_DOWNLOAD_FAILED', 'DOCUMENT_PRINTED', 'AUDIT_EXPORTED', 'INTAKE_REPORT_EXPORTED', 'SENSITIVITY_REPORT_EXPORTED'] },
+  { id: 'changes', label: 'Changes to documents', actions: ['DOCUMENT_TAG_ADDED', 'DOCUMENT_COMMENT_ADDED', 'DOCUMENT_PERMANENTLY_REDACTED', 'DOCUMENT_REDACTION_FAILED', 'DOCUMENT_RETENTION_DELETED', 'DOCUMENT_RETENTION_DELETE_FAILED', 'LEGAL_HOLD_PLACED', 'LEGAL_HOLD_RELEASED'] },
   { id: 'settings', label: 'Settings changes', actions: ['ROLE_CAPABILITIES_UPDATED', 'RETENTION_POLICY_UPDATED', 'METADATA_BEHAVIOR_REVISED', 'METADATA_DISPLAY_ORDER_UPDATED', 'RECORD_TITLE_FIELDS_UPDATED', 'METADATA_FIELD_CREATED', 'METADATA_FIELD_REVISED', 'SOURCE_FIELD_DEFINED', 'SOURCE_FIELD_REVISED', 'INGESTION_SOURCE_CREATED', 'INGESTION_SOURCE_UPDATED', 'STORAGE_VOLUME_CREATED', 'STORAGE_VOLUME_UPDATED', 'STORAGE_FOLDER_CHECKED', 'ENTERPRISE_IDENTITY_DRAFT_SAVED', 'ENTERPRISE_IDENTITY_CONNECTION_TESTED', 'ENTERPRISE_IDENTITY_CONNECTION_ACTIVATED', 'ENTERPRISE_IDENTITY_CONNECTION_ACTIVATION_FAILED', 'ENTERPRISE_IDENTITY_CONNECTION_ROLLED_BACK', 'ENTERPRISE_IDENTITY_CONNECTION_ROLLBACK_FAILED'] },
-  { id: 'deliveries', label: 'Deliveries', actions: ['SUBMISSION_CREATED', 'DOCUMENT_RECEIVED', 'DOCUMENT_AVAILABLE', 'DOCUMENT_PROCESSING_FAILED'] },
+  { id: 'deliveries', label: 'Deliveries', actions: ['SUBMISSION_CREATED', 'DOCUMENT_RECEIVED', 'DOCUMENT_DUPLICATE_RECEIVED', 'DOCUMENT_UNCORRECTED_COPY_RECEIVED', 'INTAKE_REFUSED', 'STEWARD_NOTICE_READ', 'DOCUMENT_AVAILABLE', 'DOCUMENT_PROCESSING_FAILED'] },
   { id: 'refused', label: 'Refused', outcome: 'DENIED' },
 ]
 

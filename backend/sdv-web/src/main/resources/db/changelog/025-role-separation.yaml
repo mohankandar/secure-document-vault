@@ -1,0 +1,8 @@
+databaseChangeLog:
+  - changeSet:
+      id: 025-role-separation
+      author: sdv
+      changes:
+        - sqlFile:
+            path: db/changelog/025-role-separation.sql
+            relativeToChangelogFile: false

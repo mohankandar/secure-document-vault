@@ -11,6 +11,7 @@ const demoRecord = process.env.SDV_DEMO_CONTRACT ?? '100000000001' // created by
 const ACCOUNT_BY_ROLE: Record<string, string> = {
   'Business User': 'Account: Maya Okafor, Business user',
   'Document Steward': 'Account: Daniel Reyes, Document steward',
+  'Restricted Steward': 'Account: Dana Ruiz, Restricted steward',
   'Business Administrator': 'Account: Priya Natarajan, Business administrator',
   'Tenant IT Administrator': 'Account: Jonas Weber, Tenant IT administrator',
   'Platform Operations Administrator': 'Account: Aiko Tanaka, Platform operations administrator',
@@ -19,6 +20,7 @@ const ACCOUNT_BY_ROLE: Record<string, string> = {
 const AREA_TAB_BY_ROLE: Record<string, string> = {
   'Business User': 'Home',
   'Document Steward': 'Home',
+  'Restricted Steward': 'Home',
   'Business Administrator': 'Business administration',
   'Tenant IT Administrator': 'Tenant IT',
   'Platform Operations Administrator': 'Platform operations',
@@ -112,7 +114,9 @@ async function businessAdminChecks(page: Page, testInfo: TestInfo) {
   const people = page.locator('table.v-table')
   await expect(people).toContainText('Name in your sign-in system')
   await expect(people).toContainText('Can change in Vero')
-  await expect(people.locator('tbody tr')).toHaveCount(4)
+  // Task 0025: Restricted steward is listed too, read-only (Fixed).
+  await expect(people.locator('tbody tr')).toHaveCount(5)
+  await expect(people.locator('tbody tr').filter({ hasText: 'RESTRICTED_STEWARD' })).toContainText('Fixed')
   await expect(people.locator('tbody')).not.toContainText(/Platform operations/i)
   await expect(page.getByText(/Claim value/)).toHaveCount(0)
 
@@ -122,13 +126,23 @@ async function businessAdminChecks(page: Page, testInfo: TestInfo) {
   await expect(page.getByText(/Baseline|PRINT_DOCUMENT|PERMANENT_REDACTION/)).toHaveCount(0)
   await expect(page.locator('table.v-table tbody tr').first()).toContainText('Always on')
   const before = await print.getAttribute('aria-checked')
-  for (const _ of [0, 1]) {
-    // Change, save, then change back and save again, so the role rules end as they started.
-    await print.click()
-    await page.getByRole('button', { name: 'Save', exact: true }).click()
-    await expect(page.getByRole('status').filter({ hasText: 'Permissions saved' }).last()).toBeVisible({ timeout: 15000 })
+  // Task 0035: the role rules as they were, put back through the API if a step below stops halfway.
+  const rolesNow = async () => (await (await page.request.get('/api/v1/admin/role-capabilities', { headers: ADMIN_HEADERS })).json() as { roles: Record<string, Record<string, boolean>> }).roles
+  const savedRoles = await rolesNow()
+  try {
+    for (const _ of [0, 1]) {
+      // Change, save, then change back and save again, so the role rules end as they started.
+      await print.click()
+      await page.getByRole('button', { name: 'Save', exact: true }).click()
+      await expect(page.getByRole('status').filter({ hasText: 'Permissions saved' }).last()).toBeVisible({ timeout: 15000 })
+    }
+    await expect(print).toHaveAttribute('aria-checked', before ?? 'false')
+  } finally {
+    if (JSON.stringify(await rolesNow()) !== JSON.stringify(savedRoles)) {
+      const r = await page.request.put('/api/v1/admin/role-capabilities', { headers: { ...ADMIN_HEADERS, 'Content-Type': 'application/json' }, data: { roles: savedRoles } })
+      expect(r.ok(), 'putting the role rules back').toBeTruthy()
+    }
   }
-  await expect(print).toHaveAttribute('aria-checked', before ?? 'false')
 
   // A card that fails to load: plain words, a reference, and Try again reloads only that card.
   let fail = true
@@ -216,7 +230,10 @@ async function searchFieldsChecks(page: Page, testInfo: TestInfo) {
   const sourceId = (sources.find((s) => s.displayName === 'LexaVault') ?? sources[0]).sourceId
   const path = (what: string) => `/api/v1/admin/metadata-sources/${sourceId}/${what}`
   const storedOrder = await (await page.request.get(path('display-order'), { headers: ADMIN_HEADERS })).json() as string[]
-  const fields = await (await page.request.get(`/api/v1/admin/ingestion-sources/${sourceId}/metadata-fields`, { headers: ADMIN_HEADERS })).json() as { fieldKey: string; displayLabel: string }[]
+  type FieldDefinition = { fieldKey: string; displayLabel: string; fieldType: string; required: boolean; businessIdentifier: boolean; searchable: boolean; normalization: string; searchMode: string; validationRulesJson: string; active: boolean }
+  const readFields = async () => (await (await page.request.get(`/api/v1/admin/ingestion-sources/${sourceId}/metadata-fields`, { headers: ADMIN_HEADERS })).json() as FieldDefinition[]).filter((f) => f.active)
+  const fields = await readFields()
+  const savedLastName = fields.find((f) => f.fieldKey === 'lastName')
   const saved = {
     // No stored order means label order (A to Z); the server only accepts a full list, so that is what is put back.
     order: storedOrder.length ? storedOrder : [...fields].sort((a, b) => a.displayLabel.localeCompare(b.displayLabel, undefined, { sensitivity: 'base' }) || a.fieldKey.localeCompare(b.fieldKey)).map((f) => f.fieldKey),
@@ -226,6 +243,15 @@ async function searchFieldsChecks(page: Page, testInfo: TestInfo) {
     for (const [what, fieldKeys] of [['display-order', saved.order], ['record-title', saved.title]] as const) {
       const r = await page.request.put(path(what), { headers: { ...ADMIN_HEADERS, 'Content-Type': 'application/json' }, data: { fieldKeys } })
       expect(r.ok(), `restoring ${what}`).toBeTruthy()
+    }
+    // Task 0035: Last Name's match too, if a step stopped between changing it and changing it back.
+    const now = (await readFields()).find((f) => f.fieldKey === 'lastName')
+    if (savedLastName && now && (now.searchMode !== savedLastName.searchMode || now.normalization !== savedLastName.normalization)) {
+      const s = savedLastName
+      const r = await page.request.put(`/api/v1/admin/ingestion-sources/${sourceId}/metadata-fields/lastName`, { headers: { ...ADMIN_HEADERS, 'Content-Type': 'application/json' }, data: {
+        displayLabel: s.displayLabel, fieldType: s.fieldType, required: s.required, businessIdentifier: s.businessIdentifier, searchable: s.searchable,
+        normalization: s.normalization, searchMode: s.searchMode, validationRules: JSON.parse(s.validationRulesJson || '{}') } })
+      expect(r.ok(), 'restoring how Last Name matches').toBeTruthy()
     }
   }
 
@@ -296,7 +322,12 @@ async function searchFieldsChecks(page: Page, testInfo: TestInfo) {
     await areaTab(page, 'Records').click()
     await waitForBusinessSearchReady(page)
     await page.getByRole('button', { name: /^Filters/ }).click()
-    const filterLabels = await page.locator('.ws-filter-fields .v-field > span').allInnerTexts()
+    // Task 0035: the panel opens only once the search fields have loaded, and the labels were read at once (report
+    // 0033: an empty list, so searchable[0] was undefined). Wait for the panel to list the moved field first.
+    await expect(page.getByRole('dialog', { name: 'Filters' })).toBeVisible({ timeout: 15000 })
+    const fieldLabel = page.locator('.ws-filter-fields .v-field > span')
+    await expect(fieldLabel.first(), 'the Filters panel lists the moved field first').toHaveText(new RegExp(`^${moved.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`), { timeout: 15000 })
+    const filterLabels = await fieldLabel.allInnerTexts()
     const searchable = order.filter((label) => filterLabels.some((t) => t.startsWith(label)))
     expect(filterLabels.map((t) => searchable.find((label) => t.startsWith(label)))).toEqual(searchable)
     expect(searchable[0]).toBe(moved)
@@ -558,11 +589,14 @@ async function problemsChecks(page: Page, testInfo: TestInfo, area: 'Platform op
     await storeRow.click()
     const panel = page.getByRole('dialog').filter({ hasText: 'What happened' })
     for (const heading of ['What happened', 'What it means', 'What you can do']) await expect(panel.getByRole('heading', { name: heading })).toBeVisible()
-    await expect(panel).toContainText(/Vero received appraisal\.pdf from LexaVault on \d+ \w+ and tried 3 times\./)
+    // Task 0027 (0.4): admin views never name a file; the document is described instead.
+    await expect(panel).toContainText(/Vero received a (\d+-page )?document from LexaVault on \d+ \w+ and tried 3 times\./)
+    await expect(panel).not.toContainText('.pdf')
     await expect(panel).toContainText('there is nothing to retry here')
     const note = panel.getByLabel('Note to copy')
     await expect(note).toContainText(`Record: Contract Number ${problemDemo.store}`)
-    await expect(note).toContainText('File: appraisal.pdf')
+    await expect(note).toContainText(/Document: received \d+ \w+.*Vero document ID [0-9a-f-]{36}/)
+    await expect(note).not.toContainText('.pdf')
     await expect(note).not.toContainText('Olivia')
     await expect(visible(page, 'DOCUMENT_FINALIZATION_FAILED')).toHaveCount(0)
     if (isDesktop(testInfo)) {
@@ -598,11 +632,11 @@ async function auditChecks(page: Page, testInfo: TestInfo) {
   await expect(list).toBeVisible({ timeout: 15000 })
   const activity = page.getByLabel('Activity')
   const sentences: [string, RegExp][] = [
-    ['Opening and reading', /opened .+\.pdf/],
-    ['Downloads, prints and exports', /downloaded .+\.pdf/],
+    ['Opening and reading', /opened a document/],
+    ['Downloads, prints and exports', /downloaded a document/],
     ['Refused', /tried to .+ without permission/],
     ['Settings changes', /changed /],
-    ['Deliveries', /delivered \d+ documents?|sent .+\.pdf/],
+    ['Deliveries', /delivered \d+ documents?|sent a document/],
   ]
   for (const [group, sentence] of sentences) {
     await activity.selectOption({ label: group })
@@ -663,7 +697,9 @@ async function auditChecks(page: Page, testInfo: TestInfo) {
   const [download] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Export', exact: true }).click()])
   await expect(page.getByRole('status').filter({ hasText: 'The export is recorded in the audit.' })).toBeVisible({ timeout: 15000 })
   const csv = parseCsv(fs.readFileSync(await download.path()).toString('utf8').replace(/^﻿/, ''))
-  expect(csv[0]).toEqual(['When (UTC)', 'What happened', 'Person', 'Record', 'Result', 'Action code'])
+  // Task 0027 (0.4): the document's ID, level, received date and pages instead of a file name.
+  expect(csv[0]).toEqual(['When (UTC)', 'What happened', 'Person', 'Record', 'Result', 'Action code', 'Document ID', 'Level', 'Received (UTC)', 'Pages'])
+  expect(csv.flat().some((cell) => cell.toLowerCase().endsWith('.pdf')), 'no file name in the export').toBeFalsy()
   const rows = csv.slice(1)
   expect(rows.length, 'exported rows').toBeGreaterThanOrEqual(onScreen.length)
   expect(rows.every((r) => r[3] === titleRecord), 'every exported row is about the filtered record').toBeTruthy()
@@ -895,7 +931,8 @@ async function captureSectionTabs(page: Page, testInfo: TestInfo, sectionsLabel:
   for (const tab of tabs) {
     // A tab may carry a status dot, which adds ' needs attention' to its accessible name.
     const escaped = tab.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-    const tabButton = tablist.getByRole('tab', { name: new RegExp(`^${escaped}( needs attention)?$`) })
+    // Task 0030: a tab may also carry a count ("Approvals 50 waiting").
+    const tabButton = tablist.getByRole('tab', { name: new RegExp(`^${escaped}( needs attention)?( \\d+ [a-z ]+)?$`) })
     await tabButton.click()
     await expect(tabButton).toHaveAttribute('aria-selected', 'true')
     await page.waitForTimeout(400)
@@ -921,15 +958,29 @@ const resultRows = (page: Page) => page.getByRole('grid', { name: 'Records' }).l
 const chip = (page: Page, text: RegExp) => page.getByRole('search').locator('.ws-chip').filter({ hasText: text })
 const clearSearch = (page: Page) => page.getByRole('button', { name: 'Clear', exact: true }).click()
 
+const resultsBusy = (page: Page) => page.getByRole('region', { name: 'Search results' }).locator('[aria-busy="true"]')
+
+/** Records is ready once the sending systems and their fields have loaded: until then the results show a loading skeleton. */
 async function waitForBusinessSearchReady(page: Page) {
   await expect(searchBox(page)).toBeVisible({ timeout: 15000 })
   await expect(page.getByRole('button', { name: /^Filters/ })).toBeVisible()
+  await expect(resultsBusy(page), 'the sending systems have loaded').toHaveCount(0, { timeout: 15000 })
 }
 
+/**
+ * Task 0035: waits for the search's own answer, then for the list to be drawn. Before, only the loading skeleton was
+ * awaited, which can be checked before the search has even started (report 0025: rows never seen for "gomez").
+ */
 async function searchFor(page: Page, value: string) {
+  const wanted = JSON.stringify(value.trim())
+  const answered = page.waitForResponse((r) => r.url().endsWith('/api/v1/business/search') && r.request().method() === 'POST'
+    && JSON.stringify(r.request().postDataJSON() ?? {}).includes(wanted), { timeout: 15000 })
+  answered.catch(() => { /* awaited below; this only stops an early failure from leaving it unhandled */ })
   await searchBox(page).fill(value)
   await searchBox(page).press('Enter')
-  await expect(page.getByRole('region', { name: 'Search results' }).locator('[aria-busy="true"]')).toHaveCount(0, { timeout: 15000 })
+  const response = await answered
+  expect(response.ok(), `the search for ${value} was answered`).toBeTruthy()
+  await expect(resultsBusy(page)).toHaveCount(0, { timeout: 15000 })
 }
 
 /** Results appear, or the test fails with the seeding help. */
@@ -1209,6 +1260,44 @@ async function searchSources(page: Page) {
   return ((await r.json()) as { sources: SchemaSource[] }).sources
 }
 
+// ---- The tour's own test record (task 0035) ----
+// The steps that make a request and decline it (tasks 0030 and 0031) used the seed's police report on 300000000008,
+// so every run added to a demo document's history. They now use this record of the loan system, which only the tour
+// uses: one Highly Confidential document, tour-check.pdf. The tour delivers it through the producer API the first time
+// and uses it again after that (a new record each run would add a record to the demo lists every time).
+const TOUR_RECORD = '399000000001'
+const TOUR_FILE = 'tour-check.pdf'
+const TOUR_PDF = path.resolve(process.cwd(), '..', '..', 'test-tools', 'fixtures', 'business-viewer-two-page.pdf')
+const DANA_HEADERS = { 'X-SDV-Tenant-Id': LOCAL_TENANT, 'X-SDV-Subject': 'local-restricted-steward', 'X-SDV-Roles': 'RESTRICTED_STEWARD', 'Content-Type': 'application/json' }
+
+/** The document ID of tour-check.pdf on the tour's own record, delivered first if it isn't there yet. */
+async function tourCheckDocument(page: Page): Promise<string> {
+  const los = (await searchSources(page)).find((s) => s.displayName === 'Loan Origination System')
+  expect(los, 'the Loan Origination System from Seed-SDV-Canvas-Demo.ps1').toBeTruthy()
+  const find = async () => {
+    const found = await (await page.request.post('/api/v1/business/search', { headers: DANA_HEADERS, data: { sourceId: los!.sourceId, criteria: { contractNumber: TOUR_RECORD }, page: 1, pageSize: 5 } })).json() as { records: { recordRef: string }[] }
+    if (!found.records.length) return null
+    const rec = await (await page.request.get('/api/v1/business/records/' + encodeURIComponent(found.records[0].recordRef), { headers: DANA_HEADERS })).json() as { documents: { documentId: string; originalFilename: string }[] }
+    return rec.documents.find((d) => d.originalFilename === TOUR_FILE)?.documentId ?? null
+  }
+  const have = await find()
+  if (have) return have
+  const producer = { 'X-SDV-Tenant-Id': LOCAL_TENANT, 'X-SDV-Source-Id': los!.sourceId, 'X-SDV-Subject': 'local-demo-producer' }
+  const key = `tour-check-${TOUR_RECORD}`
+  const sub = await page.request.post('/api/v1/ingestion/submissions', { headers: { ...producer, 'Content-Type': 'application/json' }, data: {
+    sourceSubmissionId: key, expectedDocumentCount: 1, expectedDocuments: [{ sourceDocumentId: `${key}-1` }],
+    metadata: { contractNumber: TOUR_RECORD, borrowerName: 'Tour Check (test record)', loanType: 'Auto', closingDate: '2026-12-31' } } })
+  expect(sub.ok(), `delivering the tour's own record ${TOUR_RECORD}: ${sub.status()} ${await sub.text()}`).toBeTruthy()
+  const submissionId = (await sub.json() as { submissionId: string }).submissionId
+  const pdf = Buffer.concat([fs.readFileSync(TOUR_PDF), Buffer.from(`\n%vero-tour-copy ${key}\n`)])
+  const doc = await page.request.post(`/api/v1/ingestion/submissions/${submissionId}/documents`, { headers: { ...producer,
+    'X-SDV-Source-Document-Id': `${key}-1`, 'X-SDV-Filename': TOUR_FILE, 'X-SDV-Sensitivity-Level': 'HIGHLY_CONFIDENTIAL', 'Content-Type': 'application/pdf' }, data: pdf })
+  expect(doc.ok(), `delivering ${TOUR_FILE}: ${doc.status()} ${await doc.text()}`).toBeTruthy()
+  let id: string | null = null
+  await expect.poll(async () => (id = await find()), { message: `${TOUR_FILE} is listed on ${TOUR_RECORD}`, timeout: 15000 }).not.toBeNull()
+  return id!
+}
+
 /** The tour searches LexaVault's demo records, so it chooses LexaVault the way a person does: as their last choice in this browser. */
 async function chooseLexaVault(page: Page) {
   const lexa = (await searchSources(page)).find((s) => s.displayName === 'LexaVault')
@@ -1334,6 +1423,485 @@ test.describe('SDV role-based screen capture', () => {
     await remember(null)
   })
 
+  // Task 0029: one record seen by the three business roles. Seed-SDV-Canvas-Demo.ps1 gives 300000000003 (Marcus Lee)
+  // a Highly Confidential settlement agreement, and Dana Ruiz an approved print of it and a waiting lowering. The
+  // tour opens dialogs and cancels them: it changes no level and sends no request.
+  test('Sensitivity: business user, document steward and restricted steward on one record (task 0029)', async ({ page }, testInfo) => {
+    test.skip(!isDesktop(testInfo), 'Runs once per tour (desktop only).')
+    test.setTimeout(240_000)
+    const RECORD = '300000000003'
+    const los = (await searchSources(page)).find((s) => s.displayName === 'Loan Origination System')
+    expect(los, 'the Loan Origination System from Seed-SDV-Canvas-Demo.ps1').toBeTruthy()
+    await page.evaluate(([key, id]) => window.localStorage.setItem(key, id), [LAST_SOURCE_KEY, los!.sourceId])
+    const inspector = () => page.getByRole('complementary', { name: 'Record inspector' })
+    const lockedItem = () => inspector().getByRole('button', { name: /^Restricted document, Highly Confidential/ })
+    const viewerBar = () => viewer(page).locator('.vw-bar').first()
+    const openRecord = async () => {
+      await areaTab(page, 'Records').click()
+      await waitForBusinessSearchReady(page)
+      await searchFor(page, RECORD)
+      const row = resultRows(page).filter({ hasText: RECORD }).first()
+      await expect(row).toBeVisible({ timeout: 15000 })
+      await row.click()
+      await expect(inspector()).toBeVisible({ timeout: 15000 })
+      await expect(inspector().getByText('Contract level')).toBeVisible()
+      return row
+    }
+    const openDocuments = async () => {
+      await inspector().getByRole('button', { name: /Open documents/ }).click()
+      await expect(page.getByRole('img', { name: /Document page 1/ })).toBeVisible({ timeout: 20000 })
+    }
+    const closeViewer = () => viewer(page).getByRole('button', { name: /^Back to/ }).click()
+
+    // 1. Business user: a lock on the row, a locked item that reveals nothing, no Level, no requests.
+    await selectRole(page, 'Business User')
+    const row = await openRecord()
+    await expect(row.getByRole('img', { name: /Highly Confidential/ })).toBeVisible()
+    await expect(lockedItem()).toBeVisible()
+    await expect(inspector()).not.toContainText(/settlement/i)
+    await expect(inspector().getByRole('button', { name: 'Level', exact: true })).toHaveCount(0)
+    await lockedItem().click()
+    await expect(page.getByText("You can't open this document", { exact: true }).last()).toBeVisible()
+    await capture(page, testInfo, 'sensitivity-business-user-record')
+    await openDocuments()
+    await expect(viewerBar().getByRole('button', { name: /^Level/ })).toHaveCount(0)
+    await expect(viewerBar().getByRole('button', { name: /^Request (download|print)/ })).toHaveCount(0)
+    await expect(viewer(page).getByRole('tab', { name: /^Requests/ })).toHaveCount(0)
+    await closeViewer()
+
+    // 2. Document steward: the Highly Confidential document stays locked; Level in the panel and the viewer.
+    await selectRole(page, 'Document Steward')
+    await openRecord()
+    await expect(lockedItem()).toBeVisible()
+    await inspector().getByRole('button', { name: 'Level', exact: true }).click()
+    let dialog = page.getByRole('dialog', { name: 'Change sensitivity level' })
+    await expect(dialog.getByRole('radio', { name: /^Whole contract/ })).toBeChecked()
+    await expect(dialog.getByRole('radio', { name: 'This document' })).toBeDisabled()
+    await dialog.getByRole('radio', { name: /Highly Confidential/ }).check()
+    await expect(dialog).toContainText("You won't be able to open the documents on this contract after this change.")
+    await expect(dialog.getByRole('button', { name: 'Raise contract to Highly Confidential' })).toBeDisabled() // no reason yet
+    await capture(page, testInfo, 'sensitivity-steward-level-dialog')
+    await dialog.getByRole('button', { name: 'Cancel' }).click()
+    await expect(dialog).toHaveCount(0)
+    await openDocuments()
+    await expect(viewerBar().getByRole('button', { name: /^Request (download|print)/ })).toHaveCount(0)
+    await viewerBar().getByRole('button', { name: /^Level/ }).click()
+    dialog = page.getByRole('dialog', { name: 'Change sensitivity level' })
+    await expect(dialog.getByRole('radio', { name: 'This document' })).toBeChecked()
+    await expect(dialog.getByText('Now')).toBeVisible()
+    await dialog.getByRole('button', { name: 'Cancel' }).click()
+    await expect(viewer(page).getByRole('tab', { name: /^Requests/ })).toBeVisible()
+    await closeViewer()
+
+    // 3. Restricted steward: every document opens; for the Highly Confidential one, requests instead of Download and Print.
+    await selectRole(page, 'Restricted Steward')
+    await openRecord()
+    await expect(inspector().getByRole('button', { name: /^Restricted document/ })).toHaveCount(0)
+    await expect(inspector().getByRole('button', { name: 'Level', exact: true })).toBeVisible()
+    await openDocuments()
+    await page.getByRole('navigation', { name: 'Record documents' }).getByRole('button', { name: /Settlement agreement/ }).click()
+    await expect(viewerBar()).toContainText('Highly Confidential', { timeout: 15000 })
+    await expect(viewerBar().getByRole('button', { name: 'Download', exact: true })).toHaveCount(0)
+    await expect(viewerBar().getByRole('button', { name: 'Print', exact: true })).toHaveCount(0)
+    await expect(viewerBar().getByRole('button', { name: 'Request download' })).toBeVisible()
+    await expect(viewerBar().getByRole('button', { name: /^Print \(approved, use by / })).toBeVisible({ timeout: 15000 })
+    await viewer(page).getByRole('tab', { name: /^Requests/ }).click()
+    const requests = viewer(page).getByRole('complementary', { name: 'Document information' })
+    // Task 0035: the history may also hold earlier requests (used, declined, expired), so look for the seed's two.
+    const seedHelp = 'from Seed-SDV-Canvas-Demo.ps1; if the demo data has moved on, run .\\Seed-SDV-Canvas-Demo.ps1 -Reset'
+    await expect(requests.getByRole('listitem').filter({ hasText: /^Print/ }).filter({ hasText: 'Approved · use by' }).first(), `Dana's approved print ${seedHelp}`).toBeVisible()
+    await expect(requests.getByRole('listitem').filter({ hasText: 'Lower to Confidential' }).filter({ hasText: 'Waiting for approval' }).first(), `Dana's waiting lowering ${seedHelp}`).toBeVisible()
+    await viewerBar().getByRole('button', { name: 'Request download' }).click()
+    const pop = page.getByRole('dialog', { name: 'Request a download' })
+    await expect(pop).toContainText('A Business admin approves it. Once approved, you can download this document once, within 24 hours.')
+    await expect(pop.getByRole('button', { name: 'Send request' })).toBeDisabled() // no reason yet
+    await capture(page, testInfo, 'sensitivity-restricted-steward-viewer')
+    await pop.getByRole('button', { name: 'Cancel' }).click()
+    await expect(pop).toHaveCount(0)
+    await closeViewer()
+  })
+
+  // Task 0030. Needs Seed-SDV-Canvas-Demo.ps1 (50 waiting print and download requests, a whole-contract request on
+  // 300000000002, legal holds). Changes no demo data: Dana Ruiz asks to print the tour's own document (task 0035) and
+  // a Business admin declines it, so the notice can be seen (a declined request stays in her history).
+  test('Approvals, legal holds, requester notices and the audit level filter (task 0030)', async ({ page }, testInfo) => {
+    test.skip(!isDesktop(testInfo), 'Runs once per tour (desktop only).')
+    test.setTimeout(240_000)
+    const TENANT = '11111111-1111-1111-1111-111111111111'
+    const as = (subject: string, roles: string) => ({ 'X-SDV-Tenant-Id': TENANT, 'X-SDV-Subject': subject, 'X-SDV-Roles': roles, 'Content-Type': 'application/json' })
+    const dana = as('local-restricted-steward', 'RESTRICTED_STEWARD'), priya = as('local-business-admin', 'BUSINESS_ADMIN')
+
+    // 1. Approvals: more than 10 wait, so the groups start collapsed; the whole-contract group stays open.
+    await selectRole(page, 'Business Administrator')
+    await page.evaluate(() => { window.location.hash = '#/governance/approvals' })
+    const tabs = page.getByRole('tablist', { name: 'Business administration sections' })
+    await expect(tabs.getByRole('tab', { name: /^Approvals \d+ waiting$/ })).toBeVisible({ timeout: 15000 })
+    await expect(page.getByRole('heading', { level: 1, name: 'Approvals' })).toBeVisible()
+    const list = page.getByRole('region', { name: 'Waiting requests' })
+    await expect(list).toBeVisible({ timeout: 15000 })
+    const wholeGroup = list.getByRole('group').filter({ hasText: 'Whole contract: decide on its own' }).first()
+    await expect(wholeGroup.getByRole('button', { name: /^Collapse / })).toHaveAttribute('aria-expanded', 'true')
+    await expect(wholeGroup.getByRole('checkbox', { name: 'Cannot be selected: whole contract' })).toBeDisabled()
+    await expect(wholeGroup.getByRole('button', { name: 'Review' })).toBeVisible()
+    const collapsed = list.getByRole('group').filter({ has: page.getByRole('button', { name: /^Expand / }) })
+    expect(await collapsed.count(), 'more than 10 waiting: the other groups start collapsed').toBeGreaterThan(0)
+    // Chips count by kind; a collapsed heading names count, kinds and requesters; its tick selects the whole group.
+    const chips = page.getByRole('toolbar', { name: 'Approvals filters' })
+    await expect(chips.getByRole('button', { name: /^Downloads \d+$/ })).toBeVisible()
+    const first = list.getByRole('group', { name: (await collapsed.first().getAttribute('aria-label'))!, exact: true })
+    await expect(first).toContainText(/\d+ requests? · .*(download|print|lower).* · /)
+    await first.getByRole('checkbox', { name: /^Select all on / }).check()
+    const bar = page.getByRole('region', { name: 'Selected requests' })
+    await expect(bar).toContainText(/\d+ selected · \d+ on \d+ \(.+\) · all one document/)
+    await capture(page, testInfo, 'approvals-selected')
+    await bar.getByRole('button', { name: 'Clear' }).click()
+    await expect(bar).toHaveCount(0)
+    // Nothing the board leaves out: no document ID, file name or title.
+    const text = await list.innerText()
+    expect(text).not.toMatch(/\.pdf|[0-9a-f]{8}-[0-9a-f]{4}-/i)
+    // Review of a whole-contract request, cancelled.
+    await wholeGroup.getByRole('button', { name: 'Review' }).click()
+    const review = page.getByRole('alertdialog', { name: 'Review a whole-contract request' })
+    await expect(review).toContainText('Lower to Confidential for the whole contract')
+    await review.getByRole('button', { name: 'Cancel' }).click()
+    // Self-approval: the server's refusal (SDV-APR-006) is shown in its own words. The refusal is simulated here,
+    // because no local sign-in both asks and approves; the rule itself is tested on the server (AccessRequestApprovalsTest).
+    await page.route('**/api/v1/admin/access-requests/*/approve', (route) => route.fulfill({ status: 403, contentType: 'application/json',
+      body: JSON.stringify({ code: 'SDV-APR-006', message: "You can't approve or decline your own request." }) }))
+    await first.getByRole('button', { name: /^Expand / }).click()
+    await first.getByRole('button', { name: 'Approve', exact: true }).first().click()
+    await expect(page.getByRole('alert').filter({ hasText: 'Not approved' })).toContainText("You can't approve or decline your own request. (SDV-APR-006)")
+    await page.unroute('**/api/v1/admin/access-requests/*/approve')
+
+    // 2. Legal holds: how many documents a contract number covers, never which; the holds in place with Release.
+    await tabs.getByRole('tab', { name: 'Legal holds' }).click()
+    await page.getByLabel('Contract number').fill('300000000001')
+    await expect(page.getByText(/3 documents on contract 300000000001 will be held/)).toBeVisible({ timeout: 15000 })
+    await expect(page.getByRole('button', { name: 'Place hold' })).toBeDisabled() // no reason yet
+    const held = page.getByRole('table', { name: 'Legal holds in place' })
+    await expect(held.locator('tbody tr').first()).toBeVisible()
+    expect(await held.innerText()).not.toMatch(/\.pdf/i)
+    await held.getByRole('button', { name: 'Release' }).first().click()
+    await page.getByRole('alertdialog', { name: 'Release this hold?' }).getByRole('button', { name: 'Cancel' }).click()
+    await capture(page, testInfo, 'legal-holds')
+    await tabs.getByRole('tab', { name: 'Keeping documents' }).click()
+    await expect(page.getByRole('button', { name: /^\d+ documents? on legal hold$/ })).toBeVisible({ timeout: 15000 })
+
+    // 3. A notice after a decision. Dana opens Vero (this browser starts from what is there), asks to print the
+    // tour's own document, a Business admin declines it, and the next time she opens Vero she is told; the Requests
+    // tab counts it.
+    await selectRole(page, 'Restricted Steward')
+    // The notice has read her requests once, so what is there now counts as seen.
+    await page.waitForFunction(() => Object.keys(window.localStorage).some((k) => k.startsWith('vero.requests.seen.')), undefined, { timeout: 15000 })
+    const tourDoc = await tourCheckDocument(page)
+    const asked = await page.request.post(`/api/v1/business/documents/${tourDoc}/access-requests`, { headers: dana, data: { kind: 'PRINT', reason: 'Tour check (task 0030)' } })
+    let requestId = asked.ok() ? (await asked.json() as { requestId: string }).requestId : ''
+    if (!requestId) { // one is already waiting from an earlier run that stopped
+      const mine = await (await page.request.get('/api/v1/business/access-requests', { headers: dana })).json() as { requestId: string; documentId: string; kind: string; status: string }[]
+      requestId = mine.find((r) => r.documentId === tourDoc && r.kind === 'PRINT' && r.status === 'PENDING')!.requestId
+    }
+    expect((await page.request.post(`/api/v1/admin/access-requests/${requestId}/decline`, { headers: priya })).ok()).toBeTruthy()
+    await reloadApp(page)
+    const notice = page.getByRole('status', { name: 'Your requests' })
+    await expect(notice).toContainText(`Print on ${TOUR_RECORD} declined`, { timeout: 15000 })
+    await capture(page, testInfo, 'requester-notice')
+    await notice.getByRole('button', { name: 'Dismiss' }).click()
+    await reloadApp(page)
+    await expect(page.getByRole('status', { name: 'Your requests' })).toHaveCount(0) // told once
+    const los = (await searchSources(page)).find((s) => s.displayName === 'Loan Origination System')!
+    await page.evaluate(([key, id]) => window.localStorage.setItem(key, id), [LAST_SOURCE_KEY, los.sourceId])
+    await reloadApp(page)
+    await areaTab(page, 'Records').click()
+    await waitForBusinessSearchReady(page)
+    await searchFor(page, TOUR_RECORD)
+    await resultRows(page).filter({ hasText: TOUR_RECORD }).first().click()
+    await page.getByRole('complementary', { name: 'Record inspector' }).getByRole('button', { name: /Open documents/ }).click()
+    await page.getByRole('navigation', { name: 'Record documents' }).getByRole('button', { name: /Tour check/ }).click()
+    const requestsTab = viewer(page).getByRole('tab', { name: /^Requests/ })
+    await expect(requestsTab).toHaveAccessibleName(/1 new decision$/, { timeout: 15000 })
+    await requestsTab.click()
+    await expect(requestsTab).not.toHaveAccessibleName(/new decision/)
+    await viewer(page).getByRole('button', { name: /^Back to/ }).click()
+    // Whole-contract requests show with the documents of their record, marked "Whole contract".
+    await searchFor(page, '300000000002')
+    await resultRows(page).filter({ hasText: '300000000002' }).first().click()
+    await page.getByRole('complementary', { name: 'Record inspector' }).getByRole('button', { name: /Open documents/ }).click()
+    await expect(page.getByRole('img', { name: /Document page 1/ })).toBeVisible({ timeout: 20000 })
+    await viewer(page).getByRole('tab', { name: /^Requests/ }).click()
+    await expect(viewer(page).getByRole('complementary', { name: 'Document information' }).getByRole('listitem').filter({ hasText: 'Whole contract' }).first()).toContainText('Lower contract to Confidential')
+    await viewer(page).getByRole('button', { name: /^Back to/ }).click()
+
+    // 4. Audit filter by level: only events that recorded the level; a value that names no level is refused, coded.
+    await selectRole(page, 'Platform Operations Administrator')
+    await page.evaluate(() => { window.location.hash = '#/operations/audit' })
+    const asked2 = page.waitForRequest((r) => r.url().includes('/api/v1/operations/audit-events?') && r.url().includes('sensitivityLevel=HIGHLY_CONFIDENTIAL'))
+    await page.getByLabel('Sensitivity').selectOption({ label: 'Highly Confidential' })
+    await asked2
+    const ops = as('local-platform-operations-admin', 'PLATFORM_OPERATIONS_ADMIN')
+    const hc = await (await page.request.get('/api/v1/operations/audit-events?limit=200&sensitivityLevel=HIGHLY_CONFIDENTIAL', { headers: ops })).json() as { events: { safeDetailsJson: string }[] }
+    expect(hc.events.length, 'the seed made Highly Confidential requests').toBeGreaterThan(0)
+    expect(hc.events.every((e) => /"(level|sensitivityLevel)":\s*"HIGHLY_CONFIDENTIAL"/.test(e.safeDetailsJson))).toBeTruthy()
+    const bad = await page.request.get('/api/v1/operations/audit-events?sensitivityLevel=highly', { headers: ops })
+    expect(bad.status()).toBe(400)
+    expect((await bad.json() as { code: string }).code).toBe('SDV-SEN-019')
+    await capture(page, testInfo, 'audit-highly-confidential')
+  })
+
+  // Task 0031 (section 0): "Decided recently" comes from the server (every Business admin's decisions, here one made
+  // outside this browser), the expiry note shows the tenant's own window, and an opening records the document's level.
+  test('Decided recently, the expiry note and levels on openings (task 0031)', async ({ page }, testInfo) => {
+    test.skip(!isDesktop(testInfo), 'Runs once per tour (desktop only).')
+    test.setTimeout(120_000)
+    const TENANT = '11111111-1111-1111-1111-111111111111'
+    const as = (subject: string, roles: string) => ({ 'X-SDV-Tenant-Id': TENANT, 'X-SDV-Subject': subject, 'X-SDV-Roles': roles, 'Content-Type': 'application/json' })
+    const dana = as('local-restricted-steward', 'RESTRICTED_STEWARD'), priya = as('local-business-admin', 'BUSINESS_ADMIN')
+
+    // A decision made through the API, not on this screen: the drawer must still list it. On the tour's own document
+    // (task 0035), so no demo document's history grows.
+    const tourDoc = await tourCheckDocument(page)
+    const asked = await page.request.post(`/api/v1/business/documents/${tourDoc}/access-requests`, { headers: dana, data: { kind: 'DOWNLOAD', reason: 'Tour check (task 0031)' } })
+    let requestId = asked.ok() ? (await asked.json() as { requestId: string }).requestId : ''
+    if (!requestId) { // one is already waiting from an earlier run that stopped
+      const mine = await (await page.request.get('/api/v1/business/access-requests', { headers: dana })).json() as { requestId: string; documentId: string; kind: string; status: string }[]
+      requestId = mine.find((r) => r.documentId === tourDoc && r.kind === 'DOWNLOAD' && r.status === 'PENDING')!.requestId
+    }
+    expect((await page.request.post(`/api/v1/admin/access-requests/${requestId}/decline`, { headers: priya })).ok()).toBeTruthy()
+    const decided = await (await page.request.get('/api/v1/admin/access-requests/decided', { headers: priya })).json() as { requestId: string; decision: string; decidedBy: string; reason?: string }[]
+    expect(decided[0].requestId, 'newest first').toBe(requestId)
+    expect(decided[0].decision).toBe('DECLINE')
+    expect(JSON.stringify(decided)).not.toContain('Tour check') // never a reason
+    const list = await (await page.request.get('/api/v1/admin/access-requests', { headers: priya })).json() as { pendingExpiryDays: number }
+
+    await selectRole(page, 'Business Administrator')
+    await page.evaluate(() => { window.location.hash = '#/governance/approvals' })
+    await expect(page.getByRole('region', { name: 'Waiting requests' })).toBeVisible({ timeout: 15000 })
+    await expect(page.getByText(`requests nobody decides expire after ${list.pendingExpiryDays} day${list.pendingExpiryDays === 1 ? '' : 's'}`)).toBeVisible()
+    await page.getByRole('button', { name: 'Decided recently ›' }).click()
+    const drawer = page.getByRole('dialog', { name: 'Decided recently' })
+    await expect(drawer).toContainText('Decisions by every Business admin in the last 30 days')
+    await expect(drawer.getByRole('listitem').first()).toContainText(`Declined · Download on ${TOUR_RECORD}`, { timeout: 15000 })
+    await expect(drawer.getByRole('listitem').first()).toContainText(/ · by .+ · /)
+    expect(await drawer.innerText()).not.toMatch(/Tour check|\.pdf/)
+    await capture(page, testInfo, 'approvals-decided-recently')
+
+    // An opening from now on records the document's effective level, so the audit's level filter finds it.
+    const opened = await page.request.get(`/api/v1/business/documents/${tourDoc}/viewer`, { headers: dana })
+    expect(opened.ok()).toBeTruthy()
+    const viewingId = (await opened.json() as { viewingId: string }).viewingId
+    const ops = as('local-platform-operations-admin', 'PLATFORM_OPERATIONS_ADMIN')
+    let levelOfOpening: string | null = null
+    for (const level of ['STANDARD', 'CONFIDENTIAL', 'HIGHLY_CONFIDENTIAL']) {
+      const events = await (await page.request.get(`/api/v1/operations/audit-events?limit=200&sensitivityLevel=${level}`, { headers: ops })).json() as { events: { auditEventId: string; action: string }[] }
+      if (events.events.some((e) => e.auditEventId === viewingId)) levelOfOpening = level
+    }
+    expect(levelOfOpening, 'the opening is found by the level filter under its level').not.toBeNull()
+  })
+
+  test('Reports: the Daily intake report, refusals counted, CSV and who may see it (task 0032)', async ({ page }, testInfo) => {
+    test.skip(!isDesktop(testInfo), 'Runs once per tour (desktop only).')
+    test.setTimeout(120_000)
+    const TENANT = '11111111-1111-1111-1111-111111111111'
+    const as = (subject: string, roles: string) => ({ 'X-SDV-Tenant-Id': TENANT, 'X-SDV-Subject': subject, 'X-SDV-Roles': roles })
+    const priya = as('local-business-admin', 'BUSINESS_ADMIN')
+    type Report = { from: string; to: string; today: string; timeZone: string; sendingSystems: { sourceId: string; displayName: string }[]; totals: { deliveries: number; refused: number; refusedCodes: { code: string; count: number }[] }; systems: { sourceId: string; displayName: string; totals: { refused: number } }[] }
+    const report = async (query = '') => {
+      const r = await page.request.get('/api/v1/admin/reports/intake' + query, { headers: priya })
+      expect(r.ok(), 'the Business admin reads the report').toBeTruthy()
+      return await r.json() as Report
+    }
+
+    // Business admin only: every other role gets SDV-RPT-001, for the report and its CSV.
+    for (const [subject, roles] of [['local-business-user', 'BUSINESS_USER'], ['local-document-steward', 'DOCUMENT_STEWARD'], ['local-restricted-steward', 'RESTRICTED_STEWARD'], ['local-tenant-it-admin', 'TENANT_IT_ADMIN'], ['local-platform-operations-admin', 'PLATFORM_OPERATIONS_ADMIN']]) {
+      for (const path of ['/api/v1/admin/reports/intake', '/api/v1/admin/reports/intake/export']) {
+        const refused = await page.request.get(path, { headers: as(subject, roles) })
+        expect(refused.status(), `${roles} on ${path}`).toBe(403)
+        expect((await refused.json() as { code: string }).code).toBe('SDV-RPT-001')
+      }
+    }
+    // Unclear filters are refused with their codes; intake notices are for stewards.
+    const badRange = await page.request.get('/api/v1/admin/reports/intake?from=2026-01-01&to=2026-03-01', { headers: priya })
+    expect([badRange.status(), (await badRange.json() as { code: string }).code]).toEqual([400, 'SDV-RPT-002'])
+    const badSource = await page.request.get('/api/v1/admin/reports/intake?sourceId=00000000-0000-0000-0000-000000000000', { headers: priya })
+    expect((await badSource.json() as { code: string }).code).toBe('SDV-RPT-003')
+    expect((await (await page.request.get('/api/v1/business/intake-notices', { headers: priya })).json() as { code: string }).code).toBe('SDV-INT-001')
+    expect((await page.request.get('/api/v1/business/intake-notices', { headers: as('local-document-steward', 'DOCUMENT_STEWARD') })).ok()).toBeTruthy()
+
+    // A delivery refused before any submission exists is counted, with its code and request ID. (One INTAKE_REFUSED
+    // audit event in the dev database per run; nothing is stored.)
+    const before = await report()
+    const los = before.sendingSystems.find((s) => s.displayName === 'Loan Origination System')
+    expect(los, 'the seed\'s Loan Origination System').toBeTruthy()
+    const requestId = `tour-0032-${Date.now()}`
+    const sent = await page.request.post('/api/v1/ingestion/submissions', {
+      headers: { 'X-SDV-Tenant-Id': TENANT, 'X-SDV-Source-Id': los!.sourceId, 'X-SDV-Subject': 'local-demo-producer', 'Content-Type': 'application/json' },
+      data: { sourceSubmissionId: requestId, expectedDocumentCount: 1, metadata: {}, recordSensitivityLevel: 'secret' },
+    })
+    expect(sent.status()).toBe(400)
+    expect((await sent.json() as { code: string }).code).toBe('SDV-SEN-002')
+    const after = await report()
+    expect(after.totals.refused).toBe(before.totals.refused + 1)
+    expect(after.totals.deliveries).toBe(before.totals.deliveries + 1)
+    expect(after.totals.refusedCodes.find((c) => c.code === 'SDV-SEN-002')?.count).toBe((before.totals.refusedCodes.find((c) => c.code === 'SDV-SEN-002')?.count ?? 0) + 1)
+    expect(after.systems.find((s) => s.sourceId === los!.sourceId)!.totals.refused).toBeGreaterThanOrEqual(1)
+
+    // The screen: tab last, the board's parts, counts only.
+    await selectRole(page, 'Business Administrator')
+    await page.evaluate(() => { window.location.hash = '#/governance/reports' })
+    const table = page.getByRole('region', { name: 'Deliveries by sending system' })
+    await expect(table).toBeVisible({ timeout: 15000 })
+    await expect(page.getByRole('heading', { level: 1, name: 'Reports' })).toBeVisible()
+    await expect(page.getByText('Counts only. No document contents, titles or names.')).toBeVisible()
+    // Task 0033: the Sensitivity sub-tab is there now (it was disabled in task 0032).
+    await expect(page.getByRole('tablist', { name: 'Reports' }).getByRole('tab', { name: 'Sensitivity' })).toBeEnabled()
+    await expect(page.getByText('Deliveries refused before Vero could identify the sending system (for example a failed sign-in) are not counted here.')).toBeVisible()
+    await expect(page.getByRole('button', { name: /^Day Today, / })).toBeVisible()
+    await expect(page.getByText(/ \(entity\)$/)).toHaveAttribute('title', new RegExp(after.timeZone.replace('/', '\\/')))
+    await expect(page.locator('.rpt-kpi').filter({ hasText: 'Refused at intake' }).locator('b')).toHaveText(after.totals.refused.toLocaleString('en-US'))
+    await expect(table.getByRole('row').filter({ hasText: 'All sending systems' })).toBeVisible()
+    // The Loan Origination System group: open it (if collapsed); the new refusal is its newest line, or in the CSV.
+    const toggle = table.getByRole('button', { name: /^(Expand|Collapse) Loan Origination System$/ })
+    if ((await toggle.getAttribute('aria-expanded')) === 'false') await toggle.click()
+    await expect(toggle).toHaveAttribute('aria-expanded', 'true')
+    await capture(page, testInfo, 'reports-daily-intake')
+    expect(await page.locator('.v-main').innerText()).not.toMatch(/\.pdf/i)
+    await toggle.click()
+    await expect(toggle).toHaveAttribute('aria-expanded', 'false')
+
+    // One sending system, then yesterday, then back to today.
+    await page.getByLabel('Sending system', { exact: true }).selectOption({ label: 'Loan Origination System' })
+    await expect(table.locator('tr.sys')).toHaveCount(1, { timeout: 15000 })
+    await page.getByRole('button', { name: /^Day / }).click()
+    await page.getByRole('dialog', { name: 'Choose the days' }).getByRole('button', { name: 'Yesterday' }).click()
+    await expect(page.getByRole('button', { name: /^Day Yesterday, / })).toBeVisible({ timeout: 15000 })
+    await page.getByRole('button', { name: /^Day / }).click()
+    await page.getByRole('dialog', { name: 'Choose the days' }).getByRole('button', { name: 'Today' }).click()
+    await expect(page.getByRole('button', { name: /^Day Today, / })).toBeVisible({ timeout: 15000 })
+
+    // The CSV: one line per document, with the refusal; downloaded by the screen and audited by the server.
+    const [download] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Export CSV' }).click()])
+    expect(download.suggestedFilename()).toBe(`vero-daily-intake-${after.today}.csv`)
+    const csv = fs.readFileSync(await download.path() as string, 'utf8')
+    expect(csv.split('\r\n')[0]).toBe(`﻿SHA-256 checksum,Request ID,Sending system,Primary identifier,Pages,"Received (${after.timeZone})",Received (UTC),Outcome,Refusal code`)
+    expect(csv).toContain(`"${requestId}","Loan Origination System","","",`)
+    expect(csv).toMatch(new RegExp(`"${requestId}".*"REFUSED","SDV-SEN-002"`))
+    expect(csv).not.toMatch(/\.pdf/i)
+    await expect(page.getByText('The file is saved. The export is recorded in the audit.')).toBeVisible()
+  })
+
+  test('Reports: the Sensitivity report, attempts by role, CSV and who may see it; stored steward notices (task 0033)', async ({ page }, testInfo) => {
+    test.skip(!isDesktop(testInfo), 'Runs once per tour (desktop only).')
+    test.setTimeout(120_000)
+    const TENANT = '11111111-1111-1111-1111-111111111111'
+    const as = (subject: string, roles: string) => ({ 'X-SDV-Tenant-Id': TENANT, 'X-SDV-Subject': subject, 'X-SDV-Roles': roles })
+    const priya = as('local-business-admin', 'BUSINESS_ADMIN')
+    const dee = as('local-document-steward', 'DOCUMENT_STEWARD')
+    type Sens = { from: string; to: string; today: string; timeZone: string; documents: { total: number; highlyConfidential: number }; requests: { kind: string }[]; attempts: { roles: string[]; attempts: number; people: number }[] }
+    const sens = async (query = '') => {
+      const r = await page.request.get('/api/v1/admin/reports/sensitivity' + query, { headers: priya })
+      expect(r.ok(), 'the Business admin reads the Sensitivity report').toBeTruthy()
+      return await r.json() as Sens
+    }
+    const code = async (r: { json: () => Promise<unknown>; status: () => number }) => [r.status(), (await r.json() as { code: string }).code]
+
+    // Business admin only: every other role gets SDV-RPT-001, for the report and its CSV.
+    for (const [subject, roles] of [['local-business-user', 'BUSINESS_USER'], ['local-document-steward', 'DOCUMENT_STEWARD'], ['local-restricted-steward', 'RESTRICTED_STEWARD'], ['local-tenant-it-admin', 'TENANT_IT_ADMIN'], ['local-platform-operations-admin', 'PLATFORM_OPERATIONS_ADMIN']]) {
+      for (const path of ['/api/v1/admin/reports/sensitivity', '/api/v1/admin/reports/sensitivity/export']) {
+        expect(await code(await page.request.get(path, { headers: as(subject, roles) })), `${roles} on ${path}`).toEqual([403, 'SDV-RPT-001'])
+      }
+    }
+    expect(await code(await page.request.get('/api/v1/admin/reports/sensitivity?from=2025-01-01&to=2026-11-01', { headers: priya }))).toEqual([400, 'SDV-RPT-002'])
+    expect(await code(await page.request.get('/api/v1/admin/reports/sensitivity?sourceId=00000000-0000-0000-0000-000000000000', { headers: priya }))).toEqual([400, 'SDV-RPT-003'])
+
+    // Section 0.1: notices are stored; marking needs real references of this tenant (coded otherwise).
+    const notices = await (await page.request.get('/api/v1/business/intake-notices', { headers: dee })).json() as { notices: unknown[]; unread: number }
+    expect(Array.isArray(notices.notices) && typeof notices.unread === 'number').toBeTruthy()
+    expect(await code(await page.request.post('/api/v1/business/intake-notices/read', { headers: dee, data: { noticeIds: ['00000000-0000-0000-0000-000000000000'] } }))).toEqual([404, 'SDV-INT-002'])
+    expect(await code(await page.request.post('/api/v1/business/intake-notices/read', { headers: dee, data: { noticeIds: [] } }))).toEqual([400, 'SDV-INT-003'])
+    expect(await code(await page.request.post('/api/v1/business/intake-notices/read', { headers: priya, data: { noticeIds: [] } }))).toEqual([403, 'SDV-INT-001'])
+
+    // A real attempt: a Business user tries to open the tour's own Highly Confidential document (task 0035). It is
+    // refused (SDV-SEN-008) and counted under Business user, with no name in the report. (One DOCUMENT_ACCESS_REFUSED
+    // audit event in the dev database per run.)
+    const tourDoc = await tourCheckDocument(page)
+    const before = await sens()
+    expect(await code(await page.request.get(`/api/v1/business/documents/${tourDoc}/viewer`, { headers: as('local-business-user', 'BUSINESS_USER') }))).toEqual([403, 'SDV-SEN-008'])
+    const after = await sens()
+    const businessUser = (r: Sens) => r.attempts.find((a) => a.roles.join(',') === 'BUSINESS_USER')
+    expect(businessUser(after)!.attempts).toBe((businessUser(before)?.attempts ?? 0) + 1)
+    expect(businessUser(after)!.people).toBeGreaterThanOrEqual(1)
+    expect(after.documents.highlyConfidential).toBeGreaterThanOrEqual(1)
+    expect(after.requests.map((r) => r.kind)).toEqual(['DOWNLOAD', 'PRINT', 'LOWER_LEVEL', 'LOWER_RECORD_LEVEL'])
+    expect(after.from).toBe(after.today.slice(0, 8) + '01')
+
+    // The screen: the Sensitivity sub-tab with the board's four cards, this month, counts only.
+    await selectRole(page, 'Business Administrator')
+    await page.evaluate(() => { window.location.hash = '#/governance/reports' })
+    await page.getByRole('tablist', { name: 'Reports' }).getByRole('tab', { name: 'Sensitivity' }).click()
+    const levels = page.getByRole('region', { name: 'Documents by level' })
+    await expect(levels).toBeVisible({ timeout: 15000 })
+    for (const name of ['Requests', 'Level changes', 'Attempts to open restricted documents']) await expect(page.getByRole('region', { name })).toBeVisible()
+    await expect(page.getByRole('button', { name: /^Period This month \(/ })).toBeVisible()
+    await expect(levels.getByText(/carr(y|ies) a \w+ level \(all their documents count at that level\)\. On legal hold: /)).toBeVisible()
+    const attempts = page.getByRole('region', { name: 'Attempts to open restricted documents' })
+    await expect(attempts.getByRole('row').filter({ hasText: /^Business user/ }).getByRole('cell').nth(1)).toHaveText(businessUser(after)!.attempts.toLocaleString('en-US'))
+    await expect(attempts.getByText('Who and when is in the audit trail (filter by level).')).toBeVisible()
+    await capture(page, testInfo, 'reports-sensitivity')
+    const text = await page.locator('.v-main').innerText()
+    expect(text).not.toMatch(/\.pdf/i)
+    expect(text).not.toContain('local-business-user')
+
+    // One sending system, then last month, then back to this month.
+    await page.getByLabel('Sending system', { exact: true }).selectOption({ label: 'Loan Origination System' })
+    await expect(page.getByLabel('Sending system', { exact: true })).toHaveValue(/.+/)
+    await page.getByRole('button', { name: /^Period / }).click()
+    await page.getByRole('dialog', { name: 'Choose the period' }).getByRole('button', { name: 'Last month' }).click()
+    await expect(page.getByRole('button', { name: /^Period Last month \(/ })).toBeVisible({ timeout: 15000 })
+    await expect(page.getByRole('region', { name: 'Requests' }).locator('.rpt-ch span')).toHaveText('last month')
+    await page.getByRole('button', { name: /^Period / }).click()
+    await page.getByRole('dialog', { name: 'Choose the period' }).getByRole('button', { name: 'This month' }).click()
+    await expect(page.getByRole('button', { name: /^Period This month \(/ })).toBeVisible({ timeout: 15000 })
+    await page.getByLabel('Sending system', { exact: true }).selectOption({ label: 'All' })
+
+    // The CSV: every count with its period; downloaded by the screen and audited by the server.
+    const [download] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Export CSV' }).click()])
+    expect(download.suggestedFilename()).toBe(`vero-sensitivity-${after.from}-to-${after.to}.csv`)
+    const csv = fs.readFileSync(await download.path() as string, 'utf8')
+    expect(csv.split('\r\n')[0]).toBe('﻿Section,Line,Measure,Count,From,To,Time zone,Sending system')
+    expect(csv).toContain(`"Attempts to open restricted documents","Business user","Attempts",`)
+    expect(csv).toContain(`"${after.timeZone}","All"`)
+    expect(csv).not.toMatch(/\.pdf/i)
+    await expect(page.getByText('The file is saved. The export is recorded in the audit.')).toBeVisible()
+  })
+
+  // Task 0030: approve 50 waiting requests in one go. Opt-in, because it uses up the seed's 50 waiting print and
+  // download requests (run Seed-SDV-Canvas-Demo.ps1 again afterwards to make them again).
+  test('Bulk approval of the 50 waiting print and download requests (task 0030)', async ({ page }, testInfo) => {
+    test.skip(process.env.SDV_BULK_APPROVAL_REGRESSION !== '1', 'Opt-in: set SDV_BULK_APPROVAL_REGRESSION=1 (approves the seed\'s 50 waiting requests)')
+    test.skip(!isDesktop(testInfo), 'Desktop only.')
+    test.setTimeout(180_000)
+    await selectRole(page, 'Business Administrator')
+    await page.evaluate(() => { window.location.hash = '#/governance/approvals' })
+    const list = page.getByRole('region', { name: 'Waiting requests' })
+    await expect(list).toBeVisible({ timeout: 15000 })
+    const chips = page.getByRole('toolbar', { name: 'Approvals filters' })
+    // Downloads, then Prints: each group's tick selects its requests of that kind; the selection is kept between chips.
+    for (const chip of [/^Downloads \d+$/, /^Prints \d+$/]) {
+      await chips.getByRole('button', { name: chip }).click()
+      const boxes = list.getByRole('checkbox', { name: /^Select all on / })
+      for (let i = 0; i < await boxes.count(); i++) if (await boxes.nth(i).isEnabled()) await boxes.nth(i).check()
+    }
+    const bar = page.getByRole('region', { name: 'Selected requests' })
+    await expect(bar).toContainText('50 selected')
+    await capture(page, testInfo, 'approvals-bulk-50')
+    const sent = page.waitForResponse((r) => r.url().endsWith('/api/v1/admin/access-requests/decisions') && r.request().method() === 'POST')
+    await bar.getByRole('button', { name: 'Approve 50' }).click()
+    const body = await (await sent).json() as { decided: number; notDecided: number }
+    expect(body).toEqual(expect.objectContaining({ decided: 50, notDecided: 0 }))
+    await expect(page.getByText('50 requests approved')).toBeVisible()
+    await chips.getByRole('button', { name: /^All \d+$/ }).click()
+    await expect(chips.getByRole('button', { name: /^Downloads 0$/ })).toBeVisible({ timeout: 15000 })
+  })
+
   test('Business User screens', async ({ page }, testInfo) => {
     await selectRole(page, 'Business User')
     await homeSteps(page, testInfo)
@@ -1414,7 +1982,10 @@ test.describe('SDV role-based screen capture', () => {
       'People & roles',
       'Roles & permissions',
       'Keeping documents',
+      'Legal holds',
       'Search fields',
+      'Approvals',
+      'Reports',
     ])
     await businessAdminChecks(page, testInfo)
     // Settings that change shared rules run once, on the desktop project; the tablet project only tours the screens.

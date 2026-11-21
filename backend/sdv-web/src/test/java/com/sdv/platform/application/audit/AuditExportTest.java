@@ -29,11 +29,21 @@ class AuditExportTest {
 
     private final AuditQueryPort query = mock(AuditQueryPort.class);
     private final AuditEventPort audit = mock(AuditEventPort.class);
-    private final AuditQueryService service = new AuditQueryService(query, audit, Clock.fixed(NOW, ZoneOffset.UTC));
+    private final AuditQueryService service = new AuditQueryService(query, audit,
+            // Task 0026: a real guard; with no record level every document below is Standard, so its name shows.
+            new com.sdv.platform.application.access.DocumentAccessGuard(
+                    mock(com.sdv.platform.application.port.BusinessRecordRepository.class), audit),
+            Clock.fixed(NOW, ZoneOffset.UTC));
 
-    private static AuditQueryPort.Row row(String action, String actorId, String name, String details, String record, String file, AuditOutcome outcome) {
+    static final UUID DOCUMENT = UUID.fromString("40000000-0000-0000-0000-000000000076");
+
+    /** Task 0027: a document event names its document by ID, level, received date and pages (pages null: no document). */
+    private static AuditQueryPort.Row row(String action, String actorId, String name, String details, String record, Integer pages, AuditOutcome outcome) {
         return new AuditQueryPort.Row(new AuditEvent(UUID.randomUUID(), TENANT, "USER", actorId, action, "DOCUMENT",
-                UUID.randomUUID().toString(), Instant.parse("2026-11-18T12:00:00Z"), "corr", outcome, details, name), record, file);
+                DOCUMENT.toString(), Instant.parse("2026-11-18T12:00:00Z"), "corr", outcome, details, name), record,
+                pages == null ? null : new com.sdv.platform.application.access.DocumentAccessGuard.DocumentLevelRef(DOCUMENT,
+                        UUID.randomUUID(), UUID.randomUUID(), com.sdv.platform.domain.document.SensitivityLevel.STANDARD),
+                pages == null ? null : Instant.parse("2026-11-14T09:30:00Z"), pages);
     }
 
     private static AuditQueryService.SearchRequest search(AuditOutcome outcome, String recordNumber) {
@@ -50,7 +60,7 @@ class AuditExportTest {
     @Test
     void theFileHasTheScreensSentencesAndTheExportIsRecordedWithItsFiltersAndRowCount() throws Exception {
         when(query.findRows(eq(TENANT), any(), anyInt())).thenReturn(List.of(
-                row("DOCUMENT_DOWNLOADED", "local-document-steward", "Dana Steward", null, "300000000076", "loan-agreement.pdf", AuditOutcome.SUCCESS),
+                row("DOCUMENT_DOWNLOADED", "local-document-steward", "Dana Steward", null, "300000000076", 9, AuditOutcome.SUCCESS),
                 row("AUTHORIZATION_DENIED", "old-subject", null, "{\"capability\":\"DOWNLOAD_PDF\"}", "300000000076", null, AuditOutcome.DENIED)));
 
         var export = service.export(TENANT, "local-platform-operations-admin", new AuditQueryService.ExportRequest(
@@ -60,9 +70,10 @@ class AuditExportTest {
         assertEquals(2, export.rowCount());
         List<String> lines = csvLines(export.csv());
         assertEquals(List.of(
-                "When (UTC),What happened,Person,Record,Result,Action code",
-                "\"2026-11-18T12:00:00Z\",\"Dana Steward downloaded loan-agreement.pdf\",\"Dana Steward\",\"300000000076\",\"Done\",\"DOCUMENT_DOWNLOADED\"",
-                "\"2026-11-18T12:00:00Z\",\"old-subject tried to download a document without permission\",\"old-subject\",\"300000000076\",\"Refused\",\"AUTHORIZATION_DENIED\""),
+                "When (UTC),What happened,Person,Record,Result,Action code,Document ID,Level,Received (UTC),Pages",
+                "\"2026-11-18T12:00:00Z\",\"Dana Steward downloaded a document\",\"Dana Steward\",\"300000000076\",\"Done\",\"DOCUMENT_DOWNLOADED\","
+                        + "\"40000000-0000-0000-0000-000000000076\",\"STANDARD\",\"2026-11-14T09:30:00Z\",\"9\"",
+                "\"2026-11-18T12:00:00Z\",\"old-subject tried to download a document without permission\",\"old-subject\",\"300000000076\",\"Refused\",\"AUTHORIZATION_DENIED\",\"\",\"\",\"\",\"\""),
                 lines);
 
         // The query is the list's filters plus the activity group and the hidden routine codes, over the whole period.
@@ -94,7 +105,7 @@ class AuditExportTest {
     @Test
     void moreThanTenThousandRowsIsRefusedInWordsAndNothingIsExportedOrRecorded() {
         List<AuditQueryPort.Row> many = new ArrayList<>();
-        AuditQueryPort.Row one = row("DOCUMENT_VIEW_OPENED", "a", null, null, null, "x.pdf", AuditOutcome.SUCCESS);
+        AuditQueryPort.Row one = row("DOCUMENT_VIEW_OPENED", "a", null, null, null, 3, AuditOutcome.SUCCESS);
         for (int i = 0; i < AuditQueryService.EXPORT_MAX_ROWS + 1; i++) many.add(one);
         when(query.findRows(eq(TENANT), any(), anyInt())).thenReturn(many);
 
@@ -107,7 +118,7 @@ class AuditExportTest {
     @Test
     void exactlyTenThousandRowsIsExported() {
         List<AuditQueryPort.Row> many = new ArrayList<>();
-        AuditQueryPort.Row one = row("DOCUMENT_VIEW_OPENED", "a", null, null, null, "x.pdf", AuditOutcome.SUCCESS);
+        AuditQueryPort.Row one = row("DOCUMENT_VIEW_OPENED", "a", null, null, null, 3, AuditOutcome.SUCCESS);
         for (int i = 0; i < AuditQueryService.EXPORT_MAX_ROWS; i++) many.add(one);
         when(query.findRows(eq(TENANT), any(), anyInt())).thenReturn(many);
         assertEquals(10_000, service.export(TENANT, "ops", new AuditQueryService.ExportRequest(search(null, null), null, null), "c").rowCount());
@@ -146,7 +157,7 @@ class AuditExportTest {
         var marked = java.util.Arrays.stream(AuditQueryService.class.getDeclaredConstructors())
                 .filter(c -> c.isAnnotationPresent(org.springframework.beans.factory.annotation.Autowired.class)).toList();
         assertEquals(1, marked.size());
-        assertEquals(2, marked.get(0).getParameterCount());
+        assertEquals(3, marked.get(0).getParameterCount()); // task 0026 added the document access guard
     }
 
     @Test
@@ -167,6 +178,19 @@ class AuditExportTest {
                 AuditQueryService.AuditEntry.from(row(action, "subj", "Ari Admin", details, null, null, AuditOutcome.SUCCESS)));
         assertEquals("Ari Admin opened a document", s.apply("DOCUMENT_VIEW_OPENED", null));
         assertEquals("Ari Admin loaded page 3 of a document", s.apply("DOCUMENT_PAGE_VIEWED", "{\"page\":3}"));
+        assertEquals("Ari Admin sent a document again; Vero kept the copy it already had", s.apply("DOCUMENT_DUPLICATE_RECEIVED", null));
+        // Task 0032.
+        assertEquals("Ari Admin sent an uncorrected copy of a corrected document; nothing was stored", s.apply("DOCUMENT_UNCORRECTED_COPY_RECEIVED", null));
+        assertEquals("Ari Admin sent a delivery that Vero refused (SDV-SEN-001)", s.apply("INTAKE_REFUSED", "{\"code\":\"SDV-SEN-001\"}"));
+        assertEquals("Ari Admin sent a delivery that Vero refused", s.apply("INTAKE_REFUSED", null));
+        assertEquals("Ari Admin exported the Daily intake report (1 line)", s.apply("INTAKE_REPORT_EXPORTED", "{\"rowCount\":1}"));
+        assertEquals("Ari Admin exported the Daily intake report (9 lines)", s.apply("INTAKE_REPORT_EXPORTED", "{\"rowCount\":9}"));
+        // Task 0033.
+        assertEquals("Ari Admin exported the Sensitivity report (30 lines)", s.apply("SENSITIVITY_REPORT_EXPORTED", "{\"rowCount\":30}"));
+        assertEquals("Ari Admin exported the Sensitivity report", s.apply("SENSITIVITY_REPORT_EXPORTED", null));
+        assertEquals("Ari Admin marked a notice of a corrected document sent again as read", s.apply("STEWARD_NOTICE_READ", "{\"markedCount\":1}"));
+        assertEquals("Ari Admin marked 3 notices of corrected documents sent again as read", s.apply("STEWARD_NOTICE_READ", "{\"markedCount\":3}"));
+        assertEquals("Ari Admin tried to see the reports without permission", s.apply("AUTHORIZATION_DENIED", "{\"capability\":\"VIEW_INTAKE_REPORTS\"}"));
         assertEquals("Ari Admin changed how long to keep new documents to 7 years", s.apply("RETENTION_POLICY_UPDATED", "{\"defaultRetentionDays\":2555}"));
         assertEquals("Ari Admin changed how long to keep new documents to 1,000 days", s.apply("RETENTION_POLICY_UPDATED", "{\"defaultRetentionDays\":1000}"));
         assertEquals("Ari Admin changed how long to keep new documents: keep them forever", s.apply("RETENTION_POLICY_UPDATED", "{\"indefinite\":true}"));
@@ -175,9 +199,11 @@ class AuditExportTest {
         assertEquals("Ari Admin exported the audit (1 event)", s.apply("AUDIT_EXPORTED", "{\"rowCount\":1}"));
         assertEquals("Ari Admin checked a folder for a new volume; Vero couldn't write there", s.apply("STORAGE_FOLDER_CHECKED", "{\"writable\":false}"));
         assertEquals("Ari Admin · Something new happened", s.apply("SOMETHING_NEW_HAPPENED", null));
+        assertEquals("Ari Admin put a document on legal hold", s.apply("LEGAL_HOLD_PLACED", "{\"holdId\":\"h\"}"));
+        assertEquals("Ari Admin released the legal hold on a document", s.apply("LEGAL_HOLD_RELEASED", null));
         AuditQueryService.AuditEntry system = AuditQueryService.AuditEntry.from(new AuditQueryPort.Row(new AuditEvent(UUID.randomUUID(), TENANT,
-                "SYSTEM", "retention-sweep", "DOCUMENT_RETENTION_DELETED", "DOCUMENT", "x", NOW, null, AuditOutcome.SUCCESS, null), null, "old.pdf"));
-        assertEquals("Vero deleted old.pdf for good, as the keeping rule says", AuditSentences.sentence(system));
+                "SYSTEM", "retention-sweep", "DOCUMENT_RETENTION_DELETED", "DOCUMENT", "x", NOW, null, AuditOutcome.SUCCESS, null), null));
+        assertEquals("Vero deleted a document for good, as the keeping rule says", AuditSentences.sentence(system));
         assertEquals("Vero", AuditSentences.actorName(system));
     }
 }

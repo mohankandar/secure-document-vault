@@ -2,14 +2,14 @@ import { bearerHeaders, expireOidcSession, isLocalSecurityMode, isOidcSecurityMo
 
 const LOCAL_TENANT_ID = '11111111-1111-1111-1111-111111111111'
 
-export type LocalPersona = 'admin' | 'business' | 'steward' | 'businessAdmin' | 'tenantIt' | 'platform'
+export type LocalPersona = 'admin' | 'business' | 'steward' | 'restricted' | 'businessAdmin' | 'tenantIt' | 'platform'
 
 const LOCAL_ROLE_KEY = 'sdv.r7.local-test-persona'
 export const localRoleSwitchEnabled = () => import.meta.env.DEV && window.location.hostname === 'localhost' && isLocalSecurityMode()
 export const getLocalTestPersona = (): LocalPersona | null => {
   if (!localRoleSwitchEnabled()) return null
   const value = window.sessionStorage.getItem(LOCAL_ROLE_KEY)
-  return value === 'business' || value === 'steward' || value === 'businessAdmin' || value === 'tenantIt' || value === 'platform' || value === 'admin' ? value : null
+  return value === 'business' || value === 'steward' || value === 'restricted' || value === 'businessAdmin' || value === 'tenantIt' || value === 'platform' || value === 'admin' ? value : null
 }
 export const setLocalTestPersona = (persona: LocalPersona) => {
   if (!localRoleSwitchEnabled()) return
@@ -21,9 +21,11 @@ const localHeaders = (persona: LocalPersona): Record<string, string> => {
   // Explicitly local-only testing; production and OIDC never accept a selected test identity.
   const selected = getLocalTestPersona()
   const localTestRole = import.meta.env.DEV && window.location.hostname === 'localhost' ? import.meta.env.VITE_LOCAL_TEST_ROLE : ''
-  const effectivePersona: LocalPersona = selected ?? (localTestRole === 'BUSINESS_USER' ? 'business' : localTestRole === 'BUSINESS_ADMIN' ? 'businessAdmin' : localTestRole === 'TENANT_IT_ADMIN' ? 'tenantIt' : localTestRole === 'PLATFORM_OPERATIONS_ADMIN' ? 'platform' : localTestRole === 'DOCUMENT_STEWARD' ? 'steward' : persona)
+  const effectivePersona: LocalPersona = selected ?? (localTestRole === 'BUSINESS_USER' ? 'business' : localTestRole === 'BUSINESS_ADMIN' ? 'businessAdmin' : localTestRole === 'TENANT_IT_ADMIN' ? 'tenantIt' : localTestRole === 'PLATFORM_OPERATIONS_ADMIN' ? 'platform' : localTestRole === 'DOCUMENT_STEWARD' ? 'steward' : localTestRole === 'RESTRICTED_STEWARD' ? 'restricted' : persona)
   const identity = effectivePersona === 'steward'
     ? { subject: 'local-document-steward', roles: 'DOCUMENT_STEWARD' }
+    : effectivePersona === 'restricted'
+    ? { subject: 'local-restricted-steward', roles: 'RESTRICTED_STEWARD' }
     : effectivePersona === 'business'
       ? { subject: 'local-business-user', roles: 'BUSINESS_USER' }
       : effectivePersona === 'businessAdmin'
@@ -40,8 +42,12 @@ const localHeaders = (persona: LocalPersona): Record<string, string> => {
   }
 }
 
-/** correlationId: the server's X-Correlation-Id for the failed request, when it sent one (shown to people as a reference for IT). */
-export class ApiRequestError extends Error { constructor(message: string, public readonly status: number, public readonly correlationId?: string) { super(message); this.name = 'ApiRequestError' } }
+/**
+ * correlationId: the server's X-Correlation-Id for the failed request, when it sent one (shown to people as a reference for IT).
+ * code: the refusal's stable code (docs/api/error-codes.md), e.g. SDV-SEN-008, when the server sent one.
+ */
+export class ApiRequestError extends Error { constructor(message: string, public readonly status: number, public readonly correlationId?: string, public readonly code?: string) { super(message); this.name = 'ApiRequestError' } }
+const codeOf = (body: { code?: unknown } | null) => (typeof body?.code === 'string' && /^SDV-[A-Z]{3}-\d{3}$/.test(body.code) ? body.code : undefined)
 
 async function request<T>(path: string, persona: LocalPersona, init?: RequestInit): Promise<T> {
   const enterpriseHeaders = await bearerHeaders()
@@ -57,8 +63,8 @@ async function request<T>(path: string, persona: LocalPersona, init?: RequestIni
   })
   if (!response.ok) {
     if (response.status === 401 && isOidcSecurityMode()) expireOidcSession()
-    const body = await response.json().catch(() => null) as { message?: string } | null
-    throw new ApiRequestError(body?.message ?? `HTTP ${response.status}`, response.status, response.headers.get('X-Correlation-Id') ?? undefined)
+    const body = await response.json().catch(() => null) as { message?: string; code?: unknown } | null
+    throw new ApiRequestError(body?.message ?? `HTTP ${response.status}`, response.status, response.headers.get('X-Correlation-Id') ?? undefined, codeOf(body))
   }
   if (response.status === 204) return undefined as T
   return response.json() as Promise<T>
@@ -76,8 +82,8 @@ export async function contentBinary(path: string, persona: LocalPersona): Promis
   })
   if (!response.ok) {
     if (response.status === 401 && isOidcSecurityMode()) expireOidcSession()
-    const body = await response.json().catch(() => null) as { message?: string } | null
-    throw new ApiRequestError(body?.message ?? `HTTP ${response.status}`, response.status, response.headers.get('X-Correlation-Id') ?? undefined)
+    const body = await response.json().catch(() => null) as { message?: string; code?: unknown } | null
+    throw new ApiRequestError(body?.message ?? `HTTP ${response.status}`, response.status, response.headers.get('X-Correlation-Id') ?? undefined, codeOf(body))
   }
   return response.blob()
 }
@@ -137,7 +143,15 @@ export type RecordSummary = {
   incompleteReceivedCount?: number
   /** Task 0022, an "anywhere" search only: every field that matched, best match first, with the record's own value. */
   matchedFields?: { fieldKey: string; displayLabel: string; value: string }[]
+  /** Task 0026: the highest level among this record's documents this person can't open; null when none. */
+  restrictedLevel?: SensitivityLevel | null
 }
+
+/** Task 0024/0026: a document's sensitivity level. */
+export type SensitivityLevel = 'STANDARD' | 'CONFIDENTIAL' | 'HIGHLY_CONFIDENTIAL'
+
+/** Task 0026: a document this person can't open: its reference and level only. Opening it is refused (SDV-SEN-008). */
+export type LockedDocument = { documentId: string; effectiveSensitivityLevel: SensitivityLevel }
 
 export type SearchResponse = {
   sourceId: string
@@ -160,6 +174,9 @@ export type RecordDocument = {
   pageCount?: number | null
   /** A permanent correction (redaction) has been applied. */
   redacted?: boolean
+  sensitivityLevel?: SensitivityLevel
+  /** The higher of its own level and its record's level. */
+  effectiveSensitivityLevel?: SensitivityLevel
 }
 
 export type IncompleteSubmission = {
@@ -183,4 +200,8 @@ export type BusinessRecord = {
   latestSubmissionAt: string
   documents: RecordDocument[]
   incompleteAttention: { submissions: IncompleteSubmission[] } | null
+  recordSensitivityLevel?: SensitivityLevel | null
+  /** Task 0026: documents this person can't open; they are not in `documents`. */
+  lockedDocuments?: LockedDocument[]
+  restrictedLevel?: SensitivityLevel | null
 }

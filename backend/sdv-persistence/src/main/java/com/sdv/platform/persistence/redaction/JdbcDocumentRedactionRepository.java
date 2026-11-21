@@ -3,6 +3,7 @@ package com.sdv.platform.persistence.redaction;
 import com.sdv.platform.application.port.DocumentRedactionRepository;
 import com.sdv.platform.application.redaction.RedactionOperation;
 import com.sdv.platform.domain.document.Document;
+import com.sdv.platform.domain.document.SensitivityLevel;
 import com.sdv.platform.domain.document.DocumentCryptoMetadata;
 import com.sdv.platform.domain.document.DocumentStatus;
 import com.sdv.platform.domain.document.DocumentStorageRef;
@@ -246,7 +247,8 @@ public class JdbcDocumentRedactionRepository implements DocumentRedactionReposit
                 select document_id, tenant_id, submission_id, source_id, source_document_id,
                        producer_idempotency_key, original_filename, media_type, content_sha256,
                        content_size_bytes, status, retention_days_snapshot, ingested_at, expires_at,
-                       available_at, processing_attempt_count, processing_error_code, deleted_at
+                       available_at, processing_attempt_count, processing_error_code, deleted_at,
+                       sensitivity_level
                   from documents
                 """;
     }
@@ -262,7 +264,8 @@ public class JdbcDocumentRedactionRepository implements DocumentRedactionReposit
                 rs.getTimestamp("expires_at") == null ? null : rs.getTimestamp("expires_at").toInstant(),
                 rs.getTimestamp("available_at") == null ? null : rs.getTimestamp("available_at").toInstant(),
                 rs.getInt("processing_attempt_count"), rs.getString("processing_error_code"),
-                rs.getTimestamp("deleted_at") == null ? null : rs.getTimestamp("deleted_at").toInstant());
+                rs.getTimestamp("deleted_at") == null ? null : rs.getTimestamp("deleted_at").toInstant(),
+                SensitivityLevel.valueOf(rs.getString("sensitivity_level")));
     }
 
     private static String operationSelect() {

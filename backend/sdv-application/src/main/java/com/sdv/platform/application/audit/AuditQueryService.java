@@ -2,10 +2,14 @@ package com.sdv.platform.application.audit;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.sdv.platform.application.access.DocumentAccessGuard;
 import com.sdv.platform.application.port.AuditEventPort;
 import com.sdv.platform.application.port.AuditQueryPort;
 import com.sdv.platform.domain.audit.AuditEvent;
 import com.sdv.platform.domain.audit.AuditOutcome;
+import com.sdv.platform.domain.document.SensitivityLevel;
+import com.sdv.platform.domain.error.CodedRefusal;
+import com.sdv.platform.domain.error.SdvErrorCode;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -35,17 +39,19 @@ public class AuditQueryService {
 
     private final AuditQueryPort query;
     private final AuditEventPort audit;
+    private final DocumentAccessGuard access;
     private final Clock clock;
     private final ObjectMapper json = new ObjectMapper();
 
     @Autowired
-    public AuditQueryService(AuditQueryPort query, AuditEventPort audit) {
-        this(query, audit, Clock.systemUTC());
+    public AuditQueryService(AuditQueryPort query, AuditEventPort audit, DocumentAccessGuard access) {
+        this(query, audit, access, Clock.systemUTC());
     }
 
-    AuditQueryService(AuditQueryPort query, AuditEventPort audit, Clock clock) {
+    AuditQueryService(AuditQueryPort query, AuditEventPort audit, DocumentAccessGuard access, Clock clock) {
         this.query = query;
         this.audit = audit;
+        this.access = java.util.Objects.requireNonNull(access, "access");
         this.clock = clock;
     }
 
@@ -77,7 +83,7 @@ public class AuditQueryService {
                 AuditOutcome.SUCCESS,
                 "{\"resultCount\":" + page.size() + ",\"filtered\":" + hasAnyFilter(safe) + "}"));
 
-        return new AuditPage(page.stream().map(AuditEntry::from).toList(), nextCursor, hasMore);
+        return new AuditPage(entries(tenantId, page), nextCursor, hasMore);
     }
 
     /**
@@ -101,7 +107,7 @@ public class AuditQueryService {
 
         List<AuditQueryPort.Row> rows = query.findRows(tenantId, filter(search, null, actions, excluded), EXPORT_MAX_ROWS + 1);
         if (rows.size() > EXPORT_MAX_ROWS) throw new ExportTooLargeException(EXPORT_TOO_BIG);
-        List<AuditEntry> entries = rows.stream().map(AuditEntry::from).toList();
+        List<AuditEntry> entries = entries(tenantId, rows);
         byte[] csv = AuditCsv.write(entries);
 
         Map<String, Object> details = new LinkedHashMap<>();
@@ -113,6 +119,21 @@ public class AuditQueryService {
                 "AUDIT_EXPORTED", "TENANT", tenantId.toString(), clock.instant(), correlationId,
                 AuditOutcome.SUCCESS, toJson(details)));
         return new AuditExport(csv, entries.size());
+    }
+
+    /**
+     * Task 0027 (0.4, separation rule 4): admin views never show a file name, at any level. A document event names
+     * its document by the record's primary identifier (recordNumber), the document ID, its effective level, its
+     * received date and its page count.
+     */
+    private List<AuditEntry> entries(UUID tenantId, List<AuditQueryPort.Row> rows) {
+        List<DocumentAccessGuard.DocumentLevelRef> refs = rows.stream()
+                .map(AuditQueryPort.Row::document)
+                .filter(java.util.Objects::nonNull)
+                .toList();
+        Map<UUID, SensitivityLevel> levels = refs.isEmpty() ? Map.of() : access.effectiveLevels(tenantId, refs);
+        return rows.stream().map(row -> AuditEntry.from(row,
+                row.document() == null ? null : levels.get(row.document().documentId()))).toList();
     }
 
     private static Map<String, Object> appliedFilters(SearchRequest s, Set<String> actions, Set<String> excluded) {
@@ -127,6 +148,7 @@ public class AuditQueryService {
         put(f, "from", s.from() == null ? null : s.from().toString());
         put(f, "to", s.to() == null ? null : s.to().toString());
         put(f, "recordNumber", blankToNull(s.recordNumber()));
+        put(f, "sensitivityLevel", s.sensitivityLevel() == null || s.sensitivityLevel().isEmpty() ? null : s.sensitivityLevel());
         put(f, "actions", actions == null ? null : List.copyOf(new TreeSet<>(actions)));
         put(f, "excludeActions", excluded == null || excluded.isEmpty() ? null : List.copyOf(new TreeSet<>(excluded)));
         return f;
@@ -166,6 +188,7 @@ public class AuditQueryService {
         validateLength(safe.targetId(), "targetId", 300);
         validateLength(safe.correlationId(), "correlationId", 200);
         validateLength(safe.recordNumber(), "recordNumber", 300);
+        levelFilter(safe.sensitivityLevel());
         if (safe.from() != null && safe.to() != null && safe.from().isAfter(safe.to())) {
             throw new IllegalArgumentException("from cannot be after to.");
         }
@@ -176,14 +199,16 @@ public class AuditQueryService {
                 blankToNull(safe.action()), safe.outcome(), blankToNull(safe.actorType()), blankToNull(safe.actorId()),
                 blankToNull(safe.targetType()), blankToNull(safe.targetId()), blankToNull(safe.correlationId()),
                 safe.from(), safe.to(), cursor == null ? null : cursor.occurredAt(), cursor == null ? null : cursor.auditEventId(),
-                blankToNull(safe.recordNumber() == null ? null : safe.recordNumber().strip()), actions, excluded);
+                blankToNull(safe.recordNumber() == null ? null : safe.recordNumber().strip()), actions, excluded,
+                levelFilter(safe.sensitivityLevel()));
     }
 
     private static boolean hasAnyFilter(SearchRequest request) {
         return blankToNull(request.action()) != null || request.outcome() != null || blankToNull(request.actorType()) != null
                 || blankToNull(request.actorId()) != null || blankToNull(request.targetType()) != null
                 || blankToNull(request.targetId()) != null || blankToNull(request.correlationId()) != null
-                || request.from() != null || request.to() != null || blankToNull(request.recordNumber()) != null;
+                || request.from() != null || request.to() != null || blankToNull(request.recordNumber()) != null
+                || (request.sensitivityLevel() != null && !request.sensitivityLevel().isEmpty());
     }
 
     private static void validateLength(String value, String name, int max) {
@@ -214,6 +239,10 @@ public class AuditQueryService {
 
     private record Cursor(Instant occurredAt, UUID auditEventId) { }
 
+    /**
+     * sensitivityLevel (task 0030, item 6): only events that recorded this level for their document when they
+     * happened. Exactly STANDARD, CONFIDENTIAL or HIGHLY_CONFIDENTIAL; anything else is refused with SDV-SEN-019.
+     */
     public record SearchRequest(
             String action,
             AuditOutcome outcome,
@@ -226,7 +255,25 @@ public class AuditQueryService {
             Instant to,
             Integer limit,
             String cursor,
-            String recordNumber) { }
+            String recordNumber,
+            String sensitivityLevel) {
+        public SearchRequest(String action, AuditOutcome outcome, String actorType, String actorId, String targetType,
+                             String targetId, String correlationId, Instant from, Instant to, Integer limit,
+                             String cursor, String recordNumber) {
+            this(action, outcome, actorType, actorId, targetType, targetId, correlationId, from, to, limit, cursor,
+                    recordNumber, null);
+        }
+    }
+
+    /** Null for no level filter; a level for exactly its name; a coded refusal otherwise (fail closed). */
+    static SensitivityLevel levelFilter(String value) {
+        if (value == null || value.isEmpty()) return null;
+        for (SensitivityLevel level : SensitivityLevel.values()) {
+            if (level.name().equals(value)) return level;
+        }
+        throw new CodedRefusal.BadRequest(SdvErrorCode.SEN_019,
+                "The sensitivity filter must be one of STANDARD, CONFIDENTIAL, HIGHLY_CONFIDENTIAL (exactly, in capitals); leave it out for any level.");
+    }
 
     /** The list's filters, plus the activity group's action codes and the routine codes the screen hides. */
     public record ExportRequest(SearchRequest search, List<String> actions, List<String> excludeActions) { }
@@ -251,14 +298,25 @@ public class AuditQueryService {
             String safeDetailsJson,
             /* Null for events before migration 020: show actorId. */
             String actorDisplayName,
-            /* Document events: looked up when the list is read. */
+            /* Document events: looked up when the list is read. recordNumber is the record's primary identifier. */
             String recordNumber,
-            String filename) {
-        static AuditEntry from(AuditQueryPort.Row row) {
+            /* Task 0027 (0.4): the document instead of its file name, null when the event names no stored document.
+               documentId is for support; sensitivityLevel is the effective level. */
+            UUID documentId,
+            SensitivityLevel sensitivityLevel,
+            Instant documentReceivedAt,
+            Integer documentPageCount) {
+        static AuditEntry from(AuditQueryPort.Row row, SensitivityLevel level) {
             AuditEvent event = row.event();
             return new AuditEntry(event.auditEventId(), event.actorType(), event.actorId(), event.action(),
                     event.targetType(), event.targetId(), event.occurredAt(), event.correlationId(),
-                    event.outcome(), event.safeDetailsJson(), event.actorDisplayName(), row.recordNumber(), row.filename());
+                    event.outcome(), event.safeDetailsJson(), event.actorDisplayName(), row.recordNumber(),
+                    row.document() == null ? null : row.document().documentId(), level,
+                    row.documentReceivedAt(), row.documentPageCount());
+        }
+
+        static AuditEntry from(AuditQueryPort.Row row) {
+            return from(row, null);
         }
     }
 

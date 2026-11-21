@@ -1,5 +1,6 @@
 package com.sdv.platform.application.business;
 
+import com.sdv.platform.application.access.Clearance;
 import com.sdv.platform.application.port.AuditEventPort;
 import com.sdv.platform.application.port.BusinessRecordRepository;
 import com.sdv.platform.application.port.BusinessRecordRepository.AnywhereCriterion;
@@ -16,6 +17,7 @@ import com.sdv.platform.application.port.MetadataFieldDefinitionRepository;
 import com.sdv.platform.application.port.TenantRepository;
 import com.sdv.platform.domain.audit.AuditEvent;
 import com.sdv.platform.domain.audit.AuditOutcome;
+import com.sdv.platform.domain.document.SensitivityLevel;
 import com.sdv.platform.domain.metadata.MetadataFieldDefinition;
 import com.sdv.platform.domain.metadata.MetadataFieldType;
 import com.sdv.platform.domain.metadata.MetadataNormalization;
@@ -208,6 +210,30 @@ public class BusinessExperienceService {
             Integer requestedPageSize,
             String actorId,
             String correlationId) {
+        return search(tenantId, sourceId, requestedCriteria, anywhere, createdFrom, createdTo, updatedFrom, updatedTo,
+                incompleteOnly, requestedPage, requestedPageSize, actorId, correlationId, Clearance.STANDARD_ONLY);
+    }
+
+    /**
+     * Task 0026: records come back as before (counts unchanged); each carries restrictedLevel, worked out from this
+     * clearance and each document's effective level.
+     */
+    public BusinessExperienceView.SearchResponse search(
+            UUID tenantId,
+            UUID sourceId,
+            Map<String, String> requestedCriteria,
+            String anywhere,
+            Instant createdFrom,
+            Instant createdTo,
+            Instant updatedFrom,
+            Instant updatedTo,
+            boolean incompleteOnly,
+            Integer requestedPage,
+            Integer requestedPageSize,
+            String actorId,
+            String correlationId,
+            Clearance clearance) {
+        Objects.requireNonNull(clearance, "clearance");
         requireActiveTenant(tenantId);
         IngestionSource source = requireSource(tenantId, sourceId);
 
@@ -306,12 +332,19 @@ public class BusinessExperienceService {
 
         int pageEndExclusive = Math.min(firstIndex + pageSize, ordered.size());
         List<String> titleFields = definitions.findRecordTitleFields(tenantId, sourceId);
-        List<BusinessExperienceView.RecordSummary> results = new ArrayList<>();
+        List<RecordAggregate> pageAggregates = new ArrayList<>();
         for (BusinessRecordRefCodec.RecordIdentity identity : ordered.subList(firstIndex, pageEndExclusive)) {
             RecordAggregate aggregate = aggregate(tenantId, source, identity);
-            if (!aggregate.submissions().isEmpty()) {
-                results.add(summary(aggregate, titleFields, matchedFields(aggregate, anywhereCriterion)));
-            }
+            if (!aggregate.submissions().isEmpty()) pageAggregates.add(aggregate);
+        }
+        // Task 0026: the page's record levels in one query.
+        Map<String, SensitivityLevel> recordLevels = pageAggregates.isEmpty() ? Map.of()
+                : records.findRecordSensitivityLevels(tenantId, sourceId,
+                        pageAggregates.stream().map(a -> a.identity().recordKey()).toList());
+        List<BusinessExperienceView.RecordSummary> results = new ArrayList<>();
+        for (RecordAggregate aggregate : pageAggregates) {
+            results.add(summary(aggregate, titleFields, matchedFields(aggregate, anywhereCriterion),
+                    levelOf(recordLevels, aggregate), clearance));
         }
 
         boolean hasMore = ordered.size() > firstIndex + pageSize || !exhausted;
@@ -331,6 +364,17 @@ public class BusinessExperienceService {
             String actorId,
             Integer requestedLimit,
             String correlationId) {
+        return recentRecords(tenantId, actorId, requestedLimit, correlationId, Clearance.STANDARD_ONLY);
+    }
+
+    /** Task 0026: as search, each record carries restrictedLevel for this clearance. */
+    public BusinessExperienceView.RecentRecords recentRecords(
+            UUID tenantId,
+            String actorId,
+            Integer requestedLimit,
+            String correlationId,
+            Clearance clearance) {
+        Objects.requireNonNull(clearance, "clearance");
         requireActiveTenant(tenantId);
         if (actorId == null || actorId.isBlank()) {
             throw new IllegalArgumentException("An authenticated person is required.");
@@ -373,10 +417,12 @@ public class BusinessExperienceService {
             if (source.isEmpty()) continue;
             RecordAggregate aggregate = aggregate(tenantId, source.get(), identity);
             if (aggregate.submissions().isEmpty() || aggregate.documents().isEmpty()) continue;
+            SensitivityLevel recordLevel = records.findRecordSensitivityLevel(
+                    tenantId, identity.sourceId(), identity.recordKey()).orElse(null);
             byRecord.put(entry.getKey(), new BusinessExperienceView.RecentRecord(
                     identity.sourceId(),
                     summary(aggregate, titleFieldsBySource.computeIfAbsent(identity.sourceId(),
-                            id -> definitions.findRecordTitleFields(tenantId, id))),
+                            id -> definitions.findRecordTitleFields(tenantId, id)), List.of(), recordLevel, clearance),
                     openedByRecord.get(entry.getKey())));
         }
 
@@ -393,6 +439,20 @@ public class BusinessExperienceService {
             String recordRef,
             String actorId,
             String correlationId) {
+        return record(tenantId, recordRef, actorId, correlationId, Clearance.STANDARD_ONLY);
+    }
+
+    /**
+     * Task 0026: the record and its search fields as before. Documents this clearance can't open at their effective
+     * level are listed apart (lockedDocuments) with only their reference and level.
+     */
+    public BusinessExperienceView.RecordView record(
+            UUID tenantId,
+            String recordRef,
+            String actorId,
+            String correlationId,
+            Clearance clearance) {
+        Objects.requireNonNull(clearance, "clearance");
         requireActiveTenant(tenantId);
         BusinessRecordRefCodec.RecordIdentity identity = refs.decode(recordRef);
         IngestionSource source = requireSource(tenantId, identity.sourceId());
@@ -402,8 +462,11 @@ public class BusinessExperienceService {
             throw new NoSuchElementException("Business record not found.");
         }
 
-        BusinessExperienceView.RecordView view = recordView(aggregate,
-                definitions.findRecordTitleFields(tenantId, source.sourceId()));
+        // Task 0024, part 2: the record's own level, from the same grouping as the record itself.
+        SensitivityLevel recordLevel = records.findRecordSensitivityLevel(
+                tenantId, source.sourceId(), identity.recordKey()).orElse(null);
+        BusinessExperienceView.RecordView view = recordView(aggregate, recordLevel,
+                definitions.findRecordTitleFields(tenantId, source.sourceId()), clearance);
         // submissionId is an internal reference (a UUID, never a readable value); the audit list
         // looks up the record number from it within the tenant (task 0020 item 1).
         audit.append(new AuditEvent(
@@ -413,7 +476,10 @@ public class BusinessExperienceService {
                 "{\"sourceId\":\"" + source.sourceId()
                         + "\",\"submissionId\":\"" + aggregate.submissions().getFirst().submissionId()
                         + "\",\"submissionCount\":"
-                        + view.submissionCount() + ",\"availableDocumentCount\":" + view.documents().size() + "}"));
+                        + view.submissionCount() + ",\"availableDocumentCount\":"
+                        + (view.documents().size() + view.lockedDocuments().size())
+                        + (view.lockedDocuments().isEmpty() ? "" : ",\"lockedDocumentCount\":" + view.lockedDocuments().size())
+                        + "}"));
         return view;
     }
 
@@ -573,14 +639,25 @@ public class BusinessExperienceService {
         return new RecordAggregate(source, identity, submissions, metadata, documents, expected, documentCounts);
     }
 
-    private BusinessExperienceView.RecordSummary summary(RecordAggregate aggregate, List<String> titleFields) {
-        return summary(aggregate, titleFields, List.of());
+    private static SensitivityLevel levelOf(Map<String, SensitivityLevel> recordLevels, RecordAggregate aggregate) {
+        return recordLevels == null ? null : recordLevels.get(aggregate.identity().recordKey());
+    }
+
+    /** Task 0026: the highest effective level among the record's documents this clearance can't open, or null. */
+    static String restrictedLevel(List<AvailableDocumentSnapshot> documents, SensitivityLevel recordLevel,
+                                  Clearance clearance) {
+        SensitivityLevel locked = clearance.highestLocked(documents.stream()
+                .map(document -> SensitivityLevel.effective(document.sensitivityLevel(), recordLevel))
+                .toList());
+        return locked == null ? null : locked.name();
     }
 
     private BusinessExperienceView.RecordSummary summary(
             RecordAggregate aggregate,
             List<String> titleFields,
-            List<BusinessExperienceView.MatchedField> matchedFields) {
+            List<BusinessExperienceView.MatchedField> matchedFields,
+            SensitivityLevel recordLevel,
+            Clearance clearance) {
         List<BusinessExperienceView.FieldValue> latestMetadata = latestMetadata(aggregate);
         List<BusinessExperienceView.FieldValue> identifiers = displayIdentifiers(aggregate, latestMetadata);
         List<BusinessExperienceView.FieldValue> preview = latestMetadata.stream()
@@ -607,17 +684,26 @@ public class BusinessExperienceService {
                 !open.isEmpty(),
                 expected,
                 received,
-                matchedFields);
+                matchedFields,
+                restrictedLevel(aggregate.documents(), recordLevel, clearance));
     }
 
-    private BusinessExperienceView.RecordView recordView(RecordAggregate aggregate, List<String> titleFields) {
+    private BusinessExperienceView.RecordView recordView(RecordAggregate aggregate, SensitivityLevel recordLevel,
+                                                          List<String> titleFields, Clearance clearance) {
         List<BusinessExperienceView.FieldValue> metadata = latestMetadata(aggregate);
         List<BusinessExperienceView.FieldValue> identifiers = displayIdentifiers(aggregate, metadata);
+        List<BusinessExperienceView.LockedDocument> locked = aggregate.documents().stream()
+                .filter(document -> !clearance.canOpen(SensitivityLevel.effective(document.sensitivityLevel(), recordLevel)))
+                .map(document -> new BusinessExperienceView.LockedDocument(document.documentId(),
+                        SensitivityLevel.effective(document.sensitivityLevel(), recordLevel).name()))
+                .toList();
         List<BusinessExperienceView.DocumentSummary> documents = aggregate.documents().stream()
+                .filter(document -> clearance.canOpen(SensitivityLevel.effective(document.sensitivityLevel(), recordLevel)))
                 .map(document -> new BusinessExperienceView.DocumentSummary(
                         document.documentId(), document.submissionId(), document.sourceDocumentId(),
                         document.originalFilename(), document.ingestedAt(), document.availableAt(), document.expiresAt(),
-                        document.pageCount(), document.redacted()))
+                        document.pageCount(), document.redacted(), document.sensitivityLevel().name(),
+                        SensitivityLevel.effective(document.sensitivityLevel(), recordLevel).name()))
                 .toList();
 
         Map<UUID, List<ExpectedDocumentSnapshot>> expectedBySubmission = aggregate.expected().stream()
@@ -654,7 +740,10 @@ public class BusinessExperienceService {
                 aggregate.submissions().size(),
                 aggregate.submissions().getFirst().createdAt(),
                 documents,
-                attention);
+                attention,
+                recordLevel == null ? null : recordLevel.name(),
+                locked,
+                restrictedLevel(aggregate.documents(), recordLevel, clearance));
     }
 
     /**

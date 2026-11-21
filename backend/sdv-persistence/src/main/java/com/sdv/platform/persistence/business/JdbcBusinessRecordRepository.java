@@ -1,5 +1,6 @@
 package com.sdv.platform.persistence.business;
 
+import com.sdv.platform.domain.document.SensitivityLevel;
 import com.sdv.platform.application.port.BusinessRecordRepository;
 import com.sdv.platform.domain.metadata.MetadataSearchMode;
 import com.sdv.platform.domain.submission.Submission;
@@ -283,6 +284,50 @@ public class JdbcBusinessRecordRepository implements BusinessRecordRepository {
     }
 
     @Override
+    public java.util.Optional<SensitivityLevel> findRecordSensitivityLevel(
+            UUID tenantId,
+            UUID sourceId,
+            String recordKey) {
+        return jdbc.query("""
+                select sensitivity_level
+                  from record_sensitivity_levels
+                 where tenant_id=:tenantId and source_id=:sourceId and record_key_sha256=:sha
+                """, new MapSqlParameterSource()
+                .addValue("tenantId", tenantId)
+                .addValue("sourceId", sourceId)
+                .addValue("sha", com.sdv.platform.application.business.RecordKey.sha256(recordKey)),
+                (rs, rowNum) -> SensitivityLevel.valueOf(rs.getString("sensitivity_level")))
+                .stream().findFirst();
+    }
+
+    /** Task 0026: one query for a page of records, by the unique (tenant, source, key SHA-256) index. */
+    @Override
+    public java.util.Map<String, SensitivityLevel> findRecordSensitivityLevels(
+            UUID tenantId,
+            UUID sourceId,
+            java.util.Collection<String> recordKeys) {
+        if (recordKeys.isEmpty()) return java.util.Map.of();
+        java.util.Map<String, String> keyBySha = new java.util.HashMap<>();
+        for (String key : recordKeys) {
+            keyBySha.put(com.sdv.platform.application.business.RecordKey.sha256(key), key);
+        }
+        java.util.Map<String, SensitivityLevel> levels = new java.util.HashMap<>();
+        jdbc.query("""
+                select record_key_sha256, sensitivity_level
+                  from record_sensitivity_levels
+                 where tenant_id=:tenantId and source_id=:sourceId and record_key_sha256 in (:shas)
+                """, new MapSqlParameterSource()
+                .addValue("tenantId", tenantId)
+                .addValue("sourceId", sourceId)
+                .addValue("shas", List.copyOf(keyBySha.keySet())),
+                rs -> {
+                    String key = keyBySha.get(rs.getString("record_key_sha256"));
+                    if (key != null) levels.put(key, SensitivityLevel.valueOf(rs.getString("sensitivity_level")));
+                });
+        return levels;
+    }
+
+    @Override
     public List<MetadataSnapshot> findMetadataSnapshots(
             UUID tenantId,
             UUID sourceId,
@@ -323,7 +368,7 @@ public class JdbcBusinessRecordRepository implements BusinessRecordRepository {
         if (submissionIds.isEmpty()) return List.of();
         return jdbc.query("""
                 select d.document_id, d.submission_id, d.source_document_id, d.original_filename,
-                       d.ingested_at, d.available_at, d.expires_at, d.page_count,
+                       d.ingested_at, d.available_at, d.expires_at, d.page_count, d.sensitivity_level,
                        -- Redacted: the current content is the result of a finished correction.
                        exists (select 1 from document_redaction_operations r
                                 where r.tenant_id=d.tenant_id and r.document_id=d.document_id
@@ -347,7 +392,8 @@ public class JdbcBusinessRecordRepository implements BusinessRecordRepository {
                         instant(rs, "available_at"),
                         instant(rs, "expires_at"),
                         (Integer) rs.getObject("page_count"),
-                        rs.getBoolean("redacted")));
+                        rs.getBoolean("redacted"),
+                        SensitivityLevel.valueOf(rs.getString("sensitivity_level"))));
     }
 
     @Override

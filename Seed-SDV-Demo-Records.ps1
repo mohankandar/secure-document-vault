@@ -193,7 +193,16 @@ foreach ($row in $records) {
             $uploadHeaders=SourceHeaders $SourceId 'local-demo-producer'
             $uploadHeaders['X-SDV-Source-Document-Id']=$sourceDocumentId
             $uploadHeaders['X-SDV-Filename']=$filename
-            $upload=Invoke-WebRequest -Uri "$Base/api/v1/ingestion/submissions/$submissionId/documents" -Method Post -Headers $uploadHeaders -ContentType 'application/pdf' -InFile $PdfPath -UseBasicParsing -TimeoutSec 30
+            # Task 0035: since task 0031 the same file for the same contract is an exact duplicate and is not stored
+            # again, so on an empty database only the first of a record's documents was stored. Each upload gets its
+            # own copy, as in Seed-SDV-Canvas-Demo.ps1: the sample plus a PDF comment line after its end that names
+            # this document (readers ignore it; the checksum differs).
+            $copyDir=Join-Path $PSScriptRoot '.runtime\seed-pdfs'
+            New-Item -ItemType Directory -Force -Path $copyDir | Out-Null
+            $safeDoc=$sourceDocumentId -replace '[^A-Za-z0-9._-]', '_'
+            $copy=Join-Path $copyDir "$submissionId-$safeDoc.pdf"
+            [System.IO.File]::WriteAllBytes($copy, [System.IO.File]::ReadAllBytes($PdfPath) + [System.Text.Encoding]::ASCII.GetBytes("`n%vero-demo-copy $submissionId $safeDoc`n"))
+            $upload=Invoke-WebRequest -Uri "$Base/api/v1/ingestion/submissions/$submissionId/documents" -Method Post -Headers $uploadHeaders -ContentType 'application/pdf' -InFile $copy -UseBasicParsing -TimeoutSec 30
             $body=$upload.Content | ConvertFrom-Json
             if ($body.currentStatus -ne 'AVAILABLE') { throw "Document '$filename' for $($row.contract) did not become AVAILABLE. Status: $($body.currentStatus)" }
             Ok "Uploaded AVAILABLE PDF: $filename"

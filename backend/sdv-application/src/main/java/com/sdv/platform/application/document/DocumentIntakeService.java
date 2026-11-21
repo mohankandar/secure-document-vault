@@ -1,7 +1,13 @@
 package com.sdv.platform.application.document;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.sdv.platform.application.business.RecordKey;
+import com.sdv.platform.application.business.RecordReferences;
+import com.sdv.platform.application.port.AccessRequestRepository;
 import com.sdv.platform.application.port.AuditEventPort;
 import com.sdv.platform.application.port.DocumentIntakeRepository;
+import com.sdv.platform.application.port.DocumentIntakeRepository.DuplicateReceipt;
 import com.sdv.platform.application.port.IngestionSourceRepository;
 import com.sdv.platform.application.port.StorageProvider;
 import com.sdv.platform.application.port.StreamingCryptoPort;
@@ -14,6 +20,7 @@ import com.sdv.platform.domain.document.Document;
 import com.sdv.platform.domain.document.DocumentCryptoMetadata;
 import com.sdv.platform.domain.document.DocumentStatus;
 import com.sdv.platform.domain.document.DocumentStorageRef;
+import com.sdv.platform.domain.document.SensitivityLevel;
 import com.sdv.platform.domain.source.IngestionSource;
 import com.sdv.platform.domain.source.IngestionSourceStatus;
 import com.sdv.platform.domain.storage.StorageVolume;
@@ -32,13 +39,32 @@ import java.io.OutputStream;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.EnumSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.NoSuchElementException;
+import java.util.Set;
 import java.util.Objects;
 import java.util.UUID;
 
 @Service
 public class DocumentIntakeService {
+    /** The upload header that carries the document's sensitivity level (task 0024). */
+    public static final String SENSITIVITY_FIELD = "X-SDV-Sensitivity-Level";
+    /** Task 0031: the acknowledgement of an exact duplicate, answered with the document Vero already had. */
+    public static final String DUPLICATE_ALREADY_STORED = "DUPLICATE_ALREADY_STORED";
+    public static final String DUPLICATE_ACTION = "DOCUMENT_DUPLICATE_RECEIVED";
+    /**
+     * Task 0032 (0): a file that matches what a document of the record was before a permanent corrective redaction.
+     * Treated as a duplicate of the corrected document (nothing is stored), with this event instead of
+     * DOCUMENT_DUPLICATE_RECEIVED.
+     */
+    public static final String UNCORRECTED_COPY_ACTION = "DOCUMENT_UNCORRECTED_COPY_RECEIVED";
+    /** The reason in the level-change history when a duplicate raises the document it duplicates. */
+    static final String DUPLICATE_RAISE_REASON = "Sent again by the sending system with a higher level";
+    private static final Set<DocumentStatus> GONE = EnumSet.of(DocumentStatus.EXPIRED_DELETED, DocumentStatus.RETENTION_DELETING);
+    private static final ObjectMapper JSON = new ObjectMapper();
     private final TenantRepository tenants;
     private final IngestionSourceRepository sources;
     private final SubmissionRepository submissions;
@@ -48,6 +74,8 @@ public class DocumentIntakeService {
     private final StreamingCryptoPort crypto;
     private final DocumentFinalizationService finalization;
     private final AuditEventPort audit;
+    private final RecordReferences records;
+    private final AccessRequestRepository levels;
     private final TransactionTemplate transactions;
     private final Clock clock;
 
@@ -61,9 +89,11 @@ public class DocumentIntakeService {
                                  StreamingCryptoPort crypto,
                                  DocumentFinalizationService finalization,
                                  AuditEventPort audit,
+                                 RecordReferences records,
+                                 AccessRequestRepository levels,
                                  PlatformTransactionManager transactionManager) {
         this(tenants, sources, submissions, documents, placement, storageProviders, crypto,
-                finalization, audit, new TransactionTemplate(transactionManager), Clock.systemUTC());
+                finalization, audit, records, levels, new TransactionTemplate(transactionManager), Clock.systemUTC());
     }
 
     DocumentIntakeService(TenantRepository tenants,
@@ -75,6 +105,8 @@ public class DocumentIntakeService {
                           StreamingCryptoPort crypto,
                           DocumentFinalizationService finalization,
                           AuditEventPort audit,
+                          RecordReferences records,
+                          AccessRequestRepository levels,
                           TransactionTemplate transactions,
                           Clock clock) {
         this.tenants = tenants;
@@ -86,6 +118,8 @@ public class DocumentIntakeService {
         this.crypto = crypto;
         this.finalization = finalization;
         this.audit = audit;
+        this.records = Objects.requireNonNull(records, "records");
+        this.levels = Objects.requireNonNull(levels, "levels");
         this.transactions = transactions;
         this.clock = clock;
     }
@@ -97,10 +131,13 @@ public class DocumentIntakeService {
                                    String producerIdempotencyKey,
                                    String originalFilename,
                                    String mediaType,
+                                   String sensitivityLevel,
                                    long declaredContentLength,
                                    InputStream input,
                                    String sourceSubject,
                                    String correlationId) throws IOException {
+        // Task 0024: checked first, before anything is read or stored. Missing means STANDARD; anything unknown is 400.
+        SensitivityLevel level = SensitivityLevel.fromRequest(sensitivityLevel, SENSITIVITY_FIELD);
         Tenant tenant = requireActiveTenant(tenantId);
         IngestionSource source = requireActiveSource(tenantId, sourceId);
         Submission submission = submissions.findById(tenantId, sourceId, submissionId)
@@ -124,16 +161,26 @@ public class DocumentIntakeService {
         if (existing != null) {
             ValidatedPdfInputStream replayInput = new ValidatedPdfInputStream(input, maxPdfBytes);
             replayInput.finish();
-            ensureReplayMatches(existing, filename, replayInput.sizeBytes(), replayInput.sha256());
+            ensureReplayMatches(existing, filename, replayInput.sizeBytes(), replayInput.sha256(), level);
 
             Document finalized = existing.status() == DocumentStatus.AVAILABLE
                     ? existing
                     : finalization.finalizeDocument(
                             tenantId, sourceId, submissionId, existing.documentId(), sourceSubject, correlationId);
-            boolean duplicate = documents.hasExactDuplicateContent(
-                    tenantId, sourceId, existing.contentSha256(), existing.documentId());
-            return new DocumentReceipt(finalized, "RECEIVED", true, duplicate);
+            return new DocumentReceipt(finalized, "RECEIVED", true, false);
         }
+
+        // Task 0031, case 1 for a duplicate: a retry of a delivery that was an exact duplicate gets the same answer.
+        DuplicateReceipt earlier = documents.findDuplicateReceipt(tenantId, submissionId, normalizedSourceDocumentId,
+                normalizedSourceDocumentId == null ? normalizedIdempotencyKey : null).orElse(null);
+        if (earlier != null) {
+            ValidatedPdfInputStream replayInput = new ValidatedPdfInputStream(input, maxPdfBytes);
+            replayInput.finish();
+            return duplicateReplay(tenantId, earlier, replayInput.sizeBytes(), replayInput.sha256(), level);
+        }
+
+        // Task 0031: the record this submission belongs to (grouped as search groups it), for the duplicate check.
+        String recordKey = records.ofSubmission(tenantId, sourceId, submissionId).recordKey();
 
         long placementBytes = estimateEncryptedSize(
                 declaredContentLength >= 0 ? declaredContentLength : maxPdfBytes);
@@ -165,8 +212,8 @@ public class DocumentIntakeService {
         try {
             commitResult = transactions.execute(status -> commitReceipt(
                     tenant, source, submissionId, expected, normalizedSourceDocumentId, normalizedIdempotencyKey,
-                    filename, normalizedMediaType, contentSha256, contentSizeBytes, candidateDocumentId,
-                    volume, stored, envelope, now, sourceSubject, correlationId));
+                    filename, normalizedMediaType, level, contentSha256, contentSizeBytes, candidateDocumentId,
+                    volume, stored, envelope, now, sourceSubject, correlationId, recordKey));
         } catch (RuntimeException ex) {
             safeDelete(provider, tenantId, volume, stored.objectKey());
             throw ex;
@@ -176,24 +223,51 @@ public class DocumentIntakeService {
             throw new IllegalStateException("Document receipt transaction did not return a result.");
         }
 
+        if (commitResult.duplicate() != null) {
+            // Task 0031, case 2: nothing of this delivery is kept. The encrypted object written while the checksum was
+            // worked out is removed now; no document, storage or key row was written for it.
+            safeDelete(provider, tenantId, volume, stored.objectKey());
+            return commitResult.duplicateReplay()
+                    ? duplicateReplay(tenantId, commitResult.duplicate(), contentSizeBytes, contentSha256, level)
+                    : new DocumentReceipt(commitResult.document(), DUPLICATE_ALREADY_STORED, false, true,
+                            commitResult.duplicate().sourceDocumentId());
+        }
+
         if (!commitResult.usedNewObject()) {
             safeDelete(provider, tenantId, volume, stored.objectKey());
             Document replay = commitResult.document();
-            ensureReplayMatches(replay, filename, contentSizeBytes, contentSha256);
+            ensureReplayMatches(replay, filename, contentSizeBytes, contentSha256, level);
             Document finalized = replay.status() == DocumentStatus.AVAILABLE
                     ? replay
                     : finalization.finalizeDocument(
                             tenantId, sourceId, submissionId, replay.documentId(), sourceSubject, correlationId);
-            boolean duplicate = documents.hasExactDuplicateContent(
-                    tenantId, sourceId, replay.contentSha256(), replay.documentId());
-            return new DocumentReceipt(finalized, "RECEIVED", true, duplicate);
+            return new DocumentReceipt(finalized, "RECEIVED", true, false);
         }
 
         Document finalized = finalization.finalizeDocument(
                 tenantId, sourceId, submissionId, candidateDocumentId, sourceSubject, correlationId);
-        boolean duplicate = documents.hasExactDuplicateContent(
-                tenantId, sourceId, contentSha256, candidateDocumentId);
-        return new DocumentReceipt(finalized, "RECEIVED", false, duplicate);
+        return new DocumentReceipt(finalized, "RECEIVED", false, false);
+    }
+
+    /**
+     * A retry of a delivery that was an exact duplicate: the same content and level as then, or it is refused like any
+     * retry (409; SDV-SEN-003 for another level). The file name is not compared: a duplicate keeps none.
+     */
+    private DocumentReceipt duplicateReplay(UUID tenantId, DuplicateReceipt earlier, long sizeBytes, String sha256,
+                                            SensitivityLevel level) {
+        if (earlier.contentSizeBytes() != sizeBytes || !earlier.contentSha256().equals(sha256)) {
+            throw new IllegalStateException(
+                    "The document retry identity already exists with different content or filename.");
+        }
+        if (earlier.sentLevel() != level) {
+            throw new com.sdv.platform.domain.error.CodedRefusal.Conflict(
+                    com.sdv.platform.domain.error.SdvErrorCode.SEN_003,
+                    "The document retry identity already exists with sensitivity level "
+                    + earlier.sentLevel().name() + "; send the same " + SENSITIVITY_FIELD + " when retrying.");
+        }
+        Document document = documents.findDocumentByIdForTenant(tenantId, earlier.existingDocumentId())
+                .orElseThrow(() -> new IllegalStateException("The document this delivery duplicated could not be read."));
+        return new DocumentReceipt(document, DUPLICATE_ALREADY_STORED, true, true, earlier.sourceDocumentId());
     }
 
     public List<Document> list(UUID tenantId, UUID sourceId, UUID submissionId) {
@@ -231,6 +305,7 @@ public class DocumentIntakeService {
                                        String producerIdempotencyKey,
                                        String filename,
                                        String mediaType,
+                                       SensitivityLevel sensitivityLevel,
                                        String contentSha256,
                                        long contentSizeBytes,
                                        UUID documentId,
@@ -239,16 +314,49 @@ public class DocumentIntakeService {
                                        StreamingCryptoPort.CryptoEnvelope envelope,
                                        Instant now,
                                        String sourceSubject,
-                                       String correlationId) {
+                                       String correlationId,
+                                       String recordKey) {
         Submission locked = documents.lockSubmission(tenant.tenantId(), source.sourceId(), submissionId);
 
         Document raced = findExistingIdentity(
                 tenant.tenantId(), source.sourceId(), submissionId, sourceDocumentId, producerIdempotencyKey);
-        if (raced != null) return new CommitResult(raced, false);
+        if (raced != null) return new CommitResult(raced, false, null, false);
+        String duplicateKey = sourceDocumentId == null ? producerIdempotencyKey : null;
+        DuplicateReceipt racedDuplicate = documents.findDuplicateReceipt(
+                tenant.tenantId(), submissionId, sourceDocumentId, duplicateKey).orElse(null);
+        if (racedDuplicate != null) return new CommitResult(null, false, racedDuplicate, true);
 
-        long count = documents.countDocuments(tenant.tenantId(), submissionId);
+        // Task 0031: a duplicate takes a place too, so it counts against the declared number like a document.
+        long count = documents.countReceived(tenant.tenantId(), submissionId);
         if (count >= locked.expectedDocumentCount()) {
             throw new IllegalStateException("Submission already contains its declared expected number of documents.");
+        }
+
+        // Task 0031, case 2: the same file for the same record from this sending system is already kept. The lock makes
+        // two such deliveries at once take turns; the record's submissions are read after it.
+        documents.lockDuplicateCheck(tenant.tenantId(), source.sourceId(), recordKey, contentSha256);
+        List<UUID> recordSubmissions = records.ofSubmission(tenant.tenantId(), source.sourceId(), submissionId).submissionIds();
+        Document original = documents.findDuplicateOf(
+                tenant.tenantId(), source.sourceId(), recordSubmissions, contentSha256).orElse(null);
+        AccessRequestRepository.LockedDocument lockedOriginal = original == null ? null
+                : levels.lockDocument(tenant.tenantId(), original.documentId()).orElse(null);
+        if (lockedOriginal != null && !GONE.contains(DocumentStatus.valueOf(lockedOriginal.status()))) {
+            return recordDuplicate(tenant.tenantId(), source.sourceId(), submissionId, locked, sourceDocumentId,
+                    duplicateKey, original, lockedOriginal, sensitivityLevel, contentSha256, contentSizeBytes,
+                    recordKey, now, sourceSubject, correlationId, false);
+        }
+
+        // Task 0032 (0): the file is what a document of this record was before a permanent corrective redaction. Storing
+        // it would bring the redacted content back, so it is a duplicate of the corrected document: only the corrected
+        // version is kept. Same scope as an exact duplicate (tenant, sending system, record), under the same lock.
+        Document corrected = documents.findCorrectedOriginalOf(
+                tenant.tenantId(), source.sourceId(), recordSubmissions, contentSha256).orElse(null);
+        AccessRequestRepository.LockedDocument lockedCorrected = corrected == null ? null
+                : levels.lockDocument(tenant.tenantId(), corrected.documentId()).orElse(null);
+        if (lockedCorrected != null && !GONE.contains(DocumentStatus.valueOf(lockedCorrected.status()))) {
+            return recordDuplicate(tenant.tenantId(), source.sourceId(), submissionId, locked, sourceDocumentId,
+                    duplicateKey, corrected, lockedCorrected, sensitivityLevel, contentSha256, contentSizeBytes,
+                    recordKey, now, sourceSubject, correlationId, true);
         }
 
         long aggregateLimit = effectiveMaxAggregateBytes(tenant, source);
@@ -264,7 +372,7 @@ public class DocumentIntakeService {
                 documentId, tenant.tenantId(), submissionId, source.sourceId(),
                 sourceDocumentId, storedIdempotencyKey, filename, mediaType,
                 contentSha256, contentSizeBytes, DocumentStatus.RECEIVED,
-                retentionDays, now, expiresAt, null, 0, null, null);
+                retentionDays, now, expiresAt, null, 0, null, null, sensitivityLevel);
 
         documents.insertDocument(document);
         documents.insertStorageRef(new DocumentStorageRef(
@@ -286,9 +394,95 @@ public class DocumentIntakeService {
                 "DOCUMENT_RECEIVED", "DOCUMENT", documentId.toString(), now, correlationId,
                 AuditOutcome.SUCCESS,
                 "{\"submissionId\":\"" + submissionId + "\",\"sourceId\":\"" + source.sourceId()
-                        + "\",\"contentSizeBytes\":" + contentSizeBytes + "}"));
+                        + "\",\"contentSizeBytes\":" + contentSizeBytes
+                        + ",\"sensitivityLevel\":\"" + sensitivityLevel.name() + "\"}"));
 
-        return new CommitResult(document, true);
+        return new CommitResult(document, true, null, false);
+    }
+
+    /**
+     * Task 0031, case 2: records an exact duplicate instead of a second copy, in the receipt's transaction. Its
+     * manifest slot is marked received (the duplicate row names the document it points at), the submission's progress
+     * is updated, a higher level raises the existing document (a source-system raise: level history and audit), a
+     * lower or equal one is ignored (and said in the audit event), and the arrival is audited.
+     */
+    private CommitResult recordDuplicate(UUID tenantId, UUID sourceId, UUID submissionId, Submission locked,
+                                         String sourceDocumentId, String duplicateKey, Document original,
+                                         AccessRequestRepository.LockedDocument lockedOriginal,
+                                         SensitivityLevel sentLevel, String contentSha256, long contentSizeBytes,
+                                         String recordKey, Instant now, String sourceSubject, String correlationId,
+                                         boolean uncorrectedCopy) {
+        SensitivityLevel own = lockedOriginal.ownLevel();
+        boolean raise = sentLevel.compareTo(own) > 0;
+        DuplicateReceipt receipt = new DuplicateReceipt(UUID.randomUUID(), tenantId, sourceId, submissionId,
+                sourceDocumentId, duplicateKey, original.documentId(), contentSha256, contentSizeBytes, sentLevel,
+                raise ? DuplicateReceipt.LevelOutcome.RAISED : DuplicateReceipt.LevelOutcome.KEPT, now);
+        documents.insertDuplicateReceipt(receipt);
+        if (sourceDocumentId != null) {
+            documents.markExpectedDocumentReceived(tenantId, submissionId, sourceDocumentId, null, now);
+        }
+        documents.updateSubmissionAfterReceipt(tenantId, sourceId, submissionId, locked.expectedDocumentCount(), now);
+
+        SensitivityLevel ownAfter = own;
+        if (raise) {
+            String who = sourceSubject == null || sourceSubject.isBlank() ? "SOURCE" : sourceSubject;
+            levels.updateDocumentLevel(tenantId, original.documentId(), sentLevel);
+            UUID changeId = UUID.randomUUID();
+            levels.insertLevelChange(new AccessRequestRepository.LevelChange(changeId, tenantId,
+                    AccessRequestRepository.LevelChange.Scope.DOCUMENT, original.documentId(), null, null,
+                    AccessRequestRepository.LevelChange.Direction.RAISED, own, sentLevel, DUPLICATE_RAISE_REASON,
+                    who, null, now, null));
+            Map<String, Object> raised = new LinkedHashMap<>();
+            raised.put("scope", "DOCUMENT");
+            raised.put("from", own.name());
+            raised.put("to", sentLevel.name());
+            raised.put("levelChangeId", changeId.toString());
+            raised.put("setBy", "SOURCE");
+            raised.put("duplicateId", receipt.duplicateId().toString());
+            audit.append(new AuditEvent(UUID.randomUUID(), tenantId, "SOURCE", sourceSubject,
+                    "DOCUMENT_SENSITIVITY_RAISED", "DOCUMENT", original.documentId().toString(), now, correlationId,
+                    AuditOutcome.SUCCESS, json(raised)));
+            ownAfter = sentLevel;
+        }
+        Map<String, Object> details = new LinkedHashMap<>();
+        details.put("requestId", sourceDocumentId != null ? sourceDocumentId : duplicateKey);
+        details.put("requestIdKind", sourceDocumentId != null ? "SOURCE_DOCUMENT_ID" : "IDEMPOTENCY_KEY");
+        details.put("sourceId", sourceId.toString());
+        details.put("submissionId", submissionId.toString());
+        details.put("recordKeySha256", RecordKey.sha256(recordKey));
+        details.put("contentSha256", contentSha256);
+        details.put("existingDocumentId", original.documentId().toString());
+        details.put("duplicateId", receipt.duplicateId().toString());
+        details.put("sentLevel", sentLevel.name());
+        details.put("levelOutcome", receipt.levelOutcome().name());
+        details.put("documentLevel", ownAfter.name());
+        // Task 0032 (0): an uncorrected copy is told apart by its event; its checksum is the one before correction, and
+        // the document it points at is the corrected one. The record's stewards are told (business notices).
+        if (uncorrectedCopy) details.put("correctedContentSha256", original.contentSha256());
+        UUID eventId = UUID.randomUUID();
+        audit.append(new AuditEvent(eventId, tenantId, "SOURCE", sourceSubject,
+                uncorrectedCopy ? UNCORRECTED_COPY_ACTION : DUPLICATE_ACTION,
+                "DOCUMENT", original.documentId().toString(), now, correlationId, AuditOutcome.SUCCESS, json(details)));
+        // Task 0033 (0.1): a security event, so the stewards' notice is stored, in the same transaction as the receipt.
+        if (uncorrectedCopy) {
+            documents.insertUncorrectedCopyNotice(UUID.randomUUID(), tenantId, sourceId, submissionId, eventId, now);
+        }
+        return new CommitResult(withLevel(original, ownAfter), false, receipt, false);
+    }
+
+    private static Document withLevel(Document d, SensitivityLevel level) {
+        return new Document(d.documentId(), d.tenantId(), d.submissionId(), d.sourceId(), d.sourceDocumentId(),
+                d.producerIdempotencyKey(), d.originalFilename(), d.mediaType(), d.contentSha256(), d.contentSizeBytes(),
+                d.status(), d.retentionDaysSnapshot(), d.ingestedAt(), d.expiresAt(), d.availableAt(),
+                d.processingAttemptCount(), d.processingErrorCode(), d.deletedAt(), level);
+    }
+
+    private static String json(Map<String, Object> details) {
+        try {
+            return JSON.writeValueAsString(details);
+        } catch (JsonProcessingException ex) {
+            throw new IllegalStateException("The duplicate could not be audited, so nothing was recorded.", ex);
+        }
     }
 
     private static void validateIdentityAgainstManifest(Submission submission,
@@ -329,13 +523,21 @@ public class DocumentIntakeService {
     private static void ensureReplayMatches(Document existing,
                                             String filename,
                                             long contentSizeBytes,
-                                            String contentSha256) {
+                                            String contentSha256,
+                                            SensitivityLevel sensitivityLevel) {
         if (!existing.originalFilename().equals(filename)
                 || existing.contentSizeBytes() == null
                 || existing.contentSizeBytes() != contentSizeBytes
                 || !existing.contentSha256().equals(contentSha256)) {
             throw new IllegalStateException(
                     "The document retry identity already exists with different content or filename.");
+        }
+        // A retry must repeat the level it was first sent with; the stored level is never changed by a retry.
+        if (existing.sensitivityLevel() != sensitivityLevel) {
+            throw new com.sdv.platform.domain.error.CodedRefusal.Conflict(
+                    com.sdv.platform.domain.error.SdvErrorCode.SEN_003,
+                    "The document retry identity already exists with sensitivity level "
+                    + existing.sensitivityLevel().name() + "; send the same " + SENSITIVITY_FIELD + " when retrying.");
         }
     }
 
@@ -427,5 +629,11 @@ public class DocumentIntakeService {
         }
     }
 
-    private record CommitResult(Document document, boolean usedNewObject) { }
+    /**
+     * document: the stored document, the one a retry found, or (duplicate set) the document duplicated, with its level
+     * after this delivery. duplicate: set when nothing of this delivery is kept (task 0031); duplicateReplay: the
+     * delivery was found as an earlier duplicate (a retry racing this one) rather than recorded now.
+     */
+    private record CommitResult(Document document, boolean usedNewObject, DuplicateReceipt duplicate,
+                                boolean duplicateReplay) { }
 }

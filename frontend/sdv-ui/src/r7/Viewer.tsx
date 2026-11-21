@@ -1,14 +1,16 @@
 import { useEffect, useRef, useState, type PointerEvent as RPointerEvent } from 'react'
-import { ArrowLeft, ChevronLeft, ChevronRight, Download, Eraser, Maximize2, Minus, PanelLeftClose, PanelLeftOpen, PanelRight, Plus, Printer, Search, ShieldAlert, Sparkles, X } from 'lucide-react'
+import { ArrowLeft, ChevronDown, ChevronLeft, ChevronRight, Download, Eraser, Maximize2, Minus, PanelLeftClose, PanelLeftOpen, PanelRight, Plus, Printer, Search, ShieldAlert, Sparkles, X } from 'lucide-react'
 import { useStore } from './store'
 import { BUSINESS_LIMITS, type Doc, type RecordItem, type Redaction } from './model'
 import { ApiRequestError } from '../api'
 import { failureText } from './CardError'
 import { Badge, Callout, Dialog, Drawer, Tabs, TechDetails, actorWords, auditEventLabel, fmtDate, fmtDateTime, fmtRel, fmtShortDate } from './ui'
-import { viewerMetadata, viewerPage, viewerSearch, record as fetchRecord, toRecord, documentActivity, type LiveDocumentActivity, type ViewerSearch, documentTags, documentComments, createDocumentTag, createDocumentComment, type LiveTag, type LiveComment, secureDownload, recordPrintEvent, permanentRedaction, viewerPreviews } from './liveApi'
+import { viewerMetadata, viewerPage, viewerSearch, record as fetchRecord, toRecord, documentActivity, type LiveDocumentActivity, type ViewerSearch, documentTags, documentComments, createDocumentTag, createDocumentComment, type LiveTag, type LiveComment, secureDownload, recordPrintEvent, permanentRedaction, viewerPreviews, myRequests, documentLevelHistory, LEVEL_NAMES, type MyRequest, type LevelHistoryEntry } from './liveApi'
+import { LOCKED_MESSAGE, LevelBadge, LevelDialog, RequestItem, RequestPopover, pendingOf, recordWord, validGrant, whenWords } from './Sensitivity'
+import { markViewed, unseenDecisions, useSeenRevision } from './Notices'
 
 type Zoom = 'width' | 'page' | number
-type InfoTab = 'ask' | 'details' | 'comments' | 'tags' | 'activity'
+type InfoTab = 'ask' | 'details' | 'requests' | 'comments' | 'tags' | 'activity'
 
 const showDevelopmentUtilities = import.meta.env.DEV
 
@@ -61,6 +63,9 @@ export function Viewer({ record, results, docId, onClose, recordTitle, backLabel
   const sheetRefs = useRef<(HTMLDivElement | null)[]>([])
   const drawRef = useRef<{ page: number; x0: number; y0: number; el: HTMLDivElement } | null>(null)
   const [drawing, setDrawing] = useState<Redaction | null>(null)
+  // Task 0029: Escape closes an open request or level dialog first, not the viewer.
+  const askingRef = useRef(false)
+  const levelOpenRef = useRef(false)
 
   useEffect(() => {
     let active = true
@@ -68,7 +73,8 @@ export function Viewer({ record, results, docId, onClose, recordTitle, backLabel
     canvasRef.current?.scrollTo({ top: 0 })
     setViewingId('')
     viewerMetadata(doc.id).then(m => { if(active){setViewingId(m.viewingId ?? '');setPageCount(m.pageCount)} })
-      .catch(e => {if(active)setViewerFailure(failureText('Viewer: document did not open', e))})
+      // Task 0029, item 5: a document this person can't open says only that (SDV-SEN-008), nothing about the document.
+      .catch(e => {if(active)setViewerFailure(e instanceof ApiRequestError && e.code === 'SDV-SEN-008' ? LOCKED_MESSAGE + '.' : failureText('Viewer: document did not open', e))})
       .finally(() => {if(active)setViewerLoading(false)})
     return () => {active=false}
   }, [doc.id])
@@ -116,7 +122,7 @@ export function Viewer({ record, results, docId, onClose, recordTitle, backLabel
 
   useEffect(() => {
     const k = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !review && !infoOpen && !docsOpen) { if (redacting) setRedacting(false); else onClose() }
+      if (e.key === 'Escape' && !review && !infoOpen && !docsOpen && !askingRef.current && !levelOpenRef.current) { if (redacting) setRedacting(false); else onClose() }
     }
     window.addEventListener('keydown', k)
     return () => window.removeEventListener('keydown', k)
@@ -140,6 +146,23 @@ export function Viewer({ record, results, docId, onClose, recordTitle, backLabel
   // Actions are only shown to roles that have them; the server still decides. A refusal reads in plain words.
   const failed = (title: string, e: unknown) => toast(isRefused(e) ? { tone: 'bad', ...REFUSED } : { tone: 'bad', title, detail: errorText(e) })
 
+  // Task 0029: the Steward's own requests (this document's show in Details and Requests), and the dialogs.
+  const stewardView = can('CHANGE_SENSITIVITY_LEVEL')
+  const [requests, setRequests] = useState<MyRequest[]>([])
+  const [requestsRevision, setRequestsRevision] = useState(0)
+  const refreshRequests = () => setRequestsRevision((n) => n + 1)
+  useEffect(() => {
+    if (!stewardView) { setRequests([]); return }
+    let active = true
+    myRequests().then((r) => { if (active) setRequests(r) }).catch(() => { if (active) setRequests([]) })
+    return () => { active = false }
+  }, [stewardView, doc.id, requestsRevision])
+  const [asking, setAsking] = useState<'PRINT' | 'DOWNLOAD' | null>(null)
+  const [levelOpen, setLevelOpen] = useState(false)
+  useEffect(() => { setAsking(null); setLevelOpen(false) }, [doc.id])
+  askingRef.current = !!asking
+  levelOpenRef.current = levelOpen
+
   const [actionBusy,setActionBusy] = useState(false)
   const [redactionFailure,setRedactionFailure] = useState('')
   const [renderRevision,setRenderRevision] = useState(0)
@@ -154,7 +177,7 @@ export function Viewer({ record, results, docId, onClose, recordTitle, backLabel
       window.setTimeout(()=>URL.revokeObjectURL(url),30000)
       toast({title:'Document downloaded'})
     } catch(e){failed('Download failed',e)}
-    finally{setActionBusy(false)}
+    finally{setActionBusy(false);if(highlyConfidential)refreshRequests()}
   }
   const print = async () => {
     if(actionBusy)return
@@ -177,7 +200,7 @@ export function Viewer({ record, results, docId, onClose, recordTitle, backLabel
       win.focus();win.print()
       window.setTimeout(()=>{frame.remove();urls.forEach(u=>URL.revokeObjectURL(u))},60000)
     }catch(e){failed('Print failed',e)}
-    finally{setActionBusy(false)}
+    finally{setActionBusy(false);if(highlyConfidential)refreshRequests()}
   }
   const startRedact = () => {
     if(actionBusy)return
@@ -263,6 +286,35 @@ export function Viewer({ record, results, docId, onClose, recordTitle, backLabel
 
   const title = recordTitle || record.title
   const kind = docKind(doc.filename)
+  // Task 0026: a Highly Confidential document is printed or downloaded only with an approval (SDV-SEN-009 otherwise), so
+  // Download and Print are not offered for it. A missing level is treated the same way (fail closed).
+  const mayTakeOut = doc.level === 'STANDARD' || doc.level === 'CONFIDENTIAL'
+  // Task 0029 (board Sens-Viewer): a Restricted Steward sees "Request download" and "Request print" instead; once one is
+  // approved the button reads "Download (approved, use by …)" and works once (the server uses the approval up).
+  const highlyConfidential = doc.level === 'HIGHLY_CONFIDENTIAL'
+  const mayAsk = highlyConfidential && can('REQUEST_SENSITIVE_ACCESS')
+  const grant = (kind: 'PRINT' | 'DOWNLOAD') => (mayAsk ? validGrant(requests, doc.id, kind) : null)
+  const waiting = (kind: 'PRINT' | 'DOWNLOAD') => (mayAsk ? pendingOf(requests, doc.id, kind) : null)
+  const takeOutButton = (kind: 'PRINT' | 'DOWNLOAD', extra = '') => {
+    const word = kind === 'DOWNLOAD' ? 'Download' : 'Print'
+    const Icon = kind === 'DOWNLOAD' ? Download : Printer
+    const g = grant(kind)
+    if (g) return <button type="button" className={`v-btn sm ${extra}`} disabled={actionBusy} onClick={kind === 'DOWNLOAD' ? download : print}><Icon size={16} aria-hidden />{word} (approved, use by {whenWords(g.expiresAt)})</button>
+    if (waiting(kind)) return <button type="button" className={`v-btn sm ${extra}`} disabled title="Waiting for a Business admin">{word} requested</button>
+    return <button type="button" className={`v-btn sm v-req-open ${extra}`} aria-expanded={asking === kind} aria-pressed={asking === kind} onClick={() => setAsking(asking === kind ? null : kind)}>Request {word.toLowerCase()}</button>
+  }
+  const levelChanged = (scope: 'document' | 'record', r: { outcome: string; level: NonNullable<Doc['level']>; canStillOpen: boolean }) => {
+    setLevelOpen(false)
+    if (r.outcome !== 'APPLIED') {
+      toast({ title: 'Request sent', detail: 'A Business admin approves it before the level changes.' })
+      refreshRequests(); setInfoTab('requests')
+      return
+    }
+    const stillOpen = scope === 'document' ? r.canStillOpen : (r.level !== 'HIGHLY_CONFIDENTIAL' || can('VIEW_HIGHLY_CONFIDENTIAL'))
+    toast({ title: `${scope === 'document' ? 'Document' : 'Record'} raised to ${LEVEL_NAMES[r.level]}`, detail: stillOpen ? undefined : "You can no longer open this document." })
+    void fetchRecord(record.ref).then((x) => setRecords((prev) => prev.map((y) => (y.ref === x.recordRef ? toRecord(x) : y)))).catch(() => { /* the list keeps what it showed */ })
+    if (!stillOpen) onClose()
+  }
 
   const docsNav = (inDrawer: boolean) => (
     <>
@@ -304,14 +356,20 @@ export function Viewer({ record, results, docId, onClose, recordTitle, backLabel
       <div className="vw-bar">
         <button type="button" className="v-btn quiet sm vw-back" onClick={onClose} aria-label={`Back to ${backLabel.toLowerCase()}`}><ArrowLeft size={18} aria-hidden /><span className="vw-label">{backLabel}</span></button>
         <span className="vw-sep vw-hide-sm" aria-hidden />
-        <button type="button" className="vw-title grow" style={{ border: 0, background: 'none', textAlign: 'left', cursor: 'pointer' }} onClick={() => setDocsOpen(true)} aria-label={`${kind} · ${title}. Switch document`}>
+        <button type="button" className="vw-title" style={{ border: 0, background: 'none', textAlign: 'left', cursor: 'pointer', flex: '0 1 auto', minWidth: 0 }} onClick={() => setDocsOpen(true)} aria-label={`${kind} · ${title}. Switch document`}>
           <strong className="truncate">{kind} · {title}</strong>
           <span className="truncate mono">{record.identifiers[0].value} · {doc.filename} · {docIndex + 1} of {record.docs.length} document{record.docs.length === 1 ? '' : 's'}</span>
         </button>
+        {/* Task 0029: the document's level next to its title (the effective level). */}
+        {doc.level && <span className="vw-level"><LevelBadge level={doc.level} lock={doc.level === 'HIGHLY_CONFIDENTIAL'} /></span>}
+        <span className="grow" aria-hidden />
         <div className="vw-group">
           <button type="button" className="v-btn sm" aria-pressed={findOpen} onClick={() => setFindOpen((f) => !f)} aria-label="Find in document"><Search size={16} aria-hidden /><span className="vw-label">Find</span></button>
-          {can('DOWNLOAD_CURRENT_PDF') && <button type="button" className="v-btn sm vw-hide-sm" disabled={actionBusy} onClick={download}><Download size={16} aria-hidden />Download</button>}
-          {can('PRINT_DOCUMENT') && <button type="button" className="v-btn sm vw-hide-sm" disabled={actionBusy} onClick={print}><Printer size={16} aria-hidden />Print</button>}
+          {mayTakeOut && can('DOWNLOAD_CURRENT_PDF') && <button type="button" className="v-btn sm vw-hide-sm" disabled={actionBusy} onClick={download}><Download size={16} aria-hidden />Download</button>}
+          {mayTakeOut && can('PRINT_DOCUMENT') && <button type="button" className="v-btn sm vw-hide-sm" disabled={actionBusy} onClick={print}><Printer size={16} aria-hidden />Print</button>}
+          {mayAsk && takeOutButton('DOWNLOAD', 'vw-hide-sm')}
+          {mayAsk && takeOutButton('PRINT', 'vw-hide-sm')}
+          {stewardView && <><span className="vw-sep vw-hide-sm" aria-hidden /><button type="button" className="v-btn sm" aria-haspopup="dialog" onClick={() => { setAsking(null); setLevelOpen(true) }}>Level<ChevronDown size={14} aria-hidden /></button></>}
           {can('PERMANENT_REDACTION') && <button type="button" className="v-btn sm vw-redact" disabled={actionBusy} aria-pressed={redacting} onClick={startRedact} aria-label="Redact"><Eraser size={16} aria-hidden /><span className="vw-label">Redact</span></button>}
           <button type="button" className="v-btn quiet icon vw-panel-toggle" aria-pressed={infoOpen} onClick={() => setInfoOpen(true)} aria-label="Document information"><PanelRight size={18} /></button>
         </div>
@@ -336,6 +394,8 @@ export function Viewer({ record, results, docId, onClose, recordTitle, backLabel
           ? <div className="vw-docs-rail"><button type="button" className="v-btn quiet icon sm" onClick={() => setFold(false)} aria-label="Show document list" title="Show document list"><PanelLeftOpen size={16} /></button></div>
           : <nav className="vw-docs" aria-label="Record documents">{docsNav(false)}</nav>}
         <div className="vw-stage">
+          {asking && <RequestPopover kind={asking} doc={doc} onClose={() => setAsking(null)} onSent={() => { setAsking(null); refreshRequests(); setInfoTab('requests'); toast({ title: 'Request sent', detail: 'A Business admin approves it. You will see it under Requests.' }) }} />}
+          {levelOpen && <LevelDialog record={record} doc={doc} initialScope="document" inline onClose={() => setLevelOpen(false)} onChanged={levelChanged} />}
         <div className="vw-canvas" ref={canvasRef} style={{ position: 'relative' }}>
           {viewerFailure && <div className="v-callout" role="alert">{viewerFailure}</div>}
           {viewerLoading && <div className="v-callout" role="status">Opening secure document…</div>}
@@ -372,18 +432,19 @@ export function Viewer({ record, results, docId, onClose, recordTitle, backLabel
             </div>
           )}
         </div>
-        <aside className="vw-panel" aria-label="Document information"><DocInfo doc={{...doc,pages:pageTotal}} tab={infoTab} setTab={setInfoTab} /></aside>
+        <aside className="vw-panel" aria-label="Document information"><DocInfo doc={{...doc,pages:pageTotal}} tab={infoTab} setTab={setInfoTab} requests={requests} record={record} /></aside>
       </div>
 
       {infoOpen && (
         <Drawer eyebrow={doc.kind} title="Document information" onClose={() => setInfoOpen(false)}>
-          {(can('DOWNLOAD_CURRENT_PDF') || can('PRINT_DOCUMENT')) && (
+          {mayTakeOut && (can('DOWNLOAD_CURRENT_PDF') || can('PRINT_DOCUMENT')) && (
             <div className="row wrap vw-actions-sm" style={{ gap: 8 }}>
-              {can('DOWNLOAD_CURRENT_PDF') && <button type="button" className="v-btn sm" disabled={actionBusy} onClick={download}><Download size={16} aria-hidden />Download</button>}
-              {can('PRINT_DOCUMENT') && <button type="button" className="v-btn sm" disabled={actionBusy} onClick={print}><Printer size={16} aria-hidden />Print</button>}
+              {mayTakeOut && can('DOWNLOAD_CURRENT_PDF') && <button type="button" className="v-btn sm" disabled={actionBusy} onClick={download}><Download size={16} aria-hidden />Download</button>}
+              {mayTakeOut && can('PRINT_DOCUMENT') && <button type="button" className="v-btn sm" disabled={actionBusy} onClick={print}><Printer size={16} aria-hidden />Print</button>}
             </div>
           )}
-          <DocInfo doc={{...doc,pages:pageTotal}} tab={infoTab} setTab={setInfoTab} embedded />
+          {mayAsk && <div className="row wrap vw-actions-sm" style={{ gap: 8 }}>{takeOutButton('DOWNLOAD')}{takeOutButton('PRINT')}</div>}
+          <DocInfo doc={{...doc,pages:pageTotal}} tab={infoTab} setTab={setInfoTab} requests={requests} record={record} embedded />
         </Drawer>
       )}
       {docsOpen && <Drawer eyebrow="Record documents" title={record.identifiers[0].value} onClose={() => setDocsOpen(false)}>{docsNav(true)}</Drawer>}
@@ -483,8 +544,30 @@ function RedactionReview({ doc, marks, onCancel, onApply, busy, failure }: { doc
   )
 }
 
-function DocInfo({ doc, tab, setTab, embedded }: { doc: Doc; tab: InfoTab; setTab: (t: InfoTab) => void; embedded?: boolean }) {
+function DocInfo({ doc, tab, setTab, embedded, requests, record }: { doc: Doc; tab: InfoTab; setTab: (t: InfoTab) => void; embedded?: boolean; /** task 0029: the Steward's own requests */ requests: MyRequest[]; record: RecordItem }) {
   const { can, toast } = useStore()
+  // Task 0029: who set the level. A higher record level sets it; otherwise the last change in the history (Stewards
+  // read it), or the sending system when nobody has changed it.
+  const stewardView = can('CHANGE_SENSITIVITY_LEVEL')
+  const word = recordWord(record)
+  // Task 0030 (0.3): this document's requests, and whole-contract requests for its record (marked "Whole contract").
+  const primary = record.identifiers[0]?.value
+  const mine = requests.filter((r) => r.documentId === doc.id
+    || (r.scope === 'RECORD' && !!primary && r.sourceId === record.sourceId && r.primaryIdentifier === primary))
+  // Task 0030 (item 7): decisions not looked at yet count on the Requests tab until the tab is opened.
+  const subject = useStore().liveSession?.subject ?? ''
+  useSeenRevision()
+  const unseen = stewardView && subject ? unseenDecisions(subject, mine).length : 0
+  useEffect(() => { if (tab === 'requests' && stewardView && subject) markViewed(subject, mine) }, [tab, stewardView, subject, mine.map((r) => r.requestId + r.status).join()]) // eslint-disable-line react-hooks/exhaustive-deps
+  const [history, setHistory] = useState<LevelHistoryEntry[] | null>(null)
+  useEffect(() => {
+    setHistory(null)
+    if (!stewardView) return
+    let active = true
+    documentLevelHistory(doc.id).then((h) => { if (active) setHistory(h) }).catch(() => { if (active) setHistory(null) })
+    return () => { active = false }
+  }, [stewardView, doc.id, doc.level])
+  const setBy = doc.level && doc.ownLevel && doc.level !== doc.ownLevel ? `The 's level` : history === null ? null : history[0] ? history[0].changedBy : 'Sending system'
   const [comment, setComment] = useState('')
   const [tag, setTag] = useState('')
   const [liveEvents,setLiveEvents] = useState<LiveDocumentActivity[]>([])
@@ -549,17 +632,30 @@ function DocInfo({ doc, tab, setTab, embedded }: { doc: Doc; tab: InfoTab; setTa
             <div><dt>File name</dt><dd className="mono">{doc.filename}</dd></div>
             <div><dt>Pages</dt><dd>{doc.pages || 'Not available'}</dd></div>
             <div><dt>Received</dt><dd>{fmtDateTime(doc.ingestedAt)}</dd></div>
+            {doc.level && <div><dt>Sensitivity</dt><dd><LevelBadge level={doc.level} /></dd></div>}
+            {setBy && <div><dt>Set by</dt><dd>{setBy}</dd></div>}
             {/* Keeping documents' own words: no end date means the rule keeps it forever. */}
             <div><dt>Keeping</dt><dd>{doc.expiresAt ? `Kept until ${fmtDate(doc.expiresAt)}` : 'Kept forever'}</dd></div>
             <div><dt>Protection</dt><dd>Encrypted at rest · served page-by-page to authorized sessions</dd></div>
             {doc.redacted && <div><dt>Corrections</dt><dd>Redacted (permanent)</dd></div>}
           </dl>
+          {stewardView && mine.length > 0 && (
+            <div className="stack" style={{ gap: 8 }}><h3 className="vw-h3">Your requests</h3>
+              <ul className="v-reqs">{mine.slice(0, 3).map((r) => <RequestItem key={r.requestId} r={r} word={word} />)}</ul>
+            </div>
+          )}
           <TechDetails flat hint="document and submission IDs">
             <dl className="v-kv">
               <div><dt>Document ID</dt><dd className="mono">{doc.id}</dd></div>
               <div><dt>Submission</dt><dd className="mono">{doc.submissionId}</dd></div>
             </dl>
           </TechDetails>
+        </>
+      )}
+      {tab === 'requests' && stewardView && (
+        <>
+          {mine.length === 0 ? <p className="faint">You have no requests for this document.</p>
+            : <ul className="v-reqs">{mine.map((r) => <RequestItem key={r.requestId} r={r} word={word} />)}</ul>}
         </>
       )}
       {tab === 'comments' && (
@@ -597,7 +693,7 @@ function DocInfo({ doc, tab, setTab, embedded }: { doc: Doc; tab: InfoTab; setTa
   )
   return (
     <>
-      <Tabs label="Document information" value={tab} onChange={(t) => setTab(t as InfoTab)} tabs={[...(showDevelopmentUtilities ? [{ id: 'ask', label: 'Ask' }] : []), { id: 'details', label: 'Details' }, { id: 'comments', label: `Comments${liveComments.length ? ` ${liveComments.length}` : ''}` }, { id: 'tags', label: 'Tags' }, { id: 'activity', label: 'Activity' }]} />
+      <Tabs label="Document information" value={tab} onChange={(t) => setTab(t as InfoTab)} tabs={[...(showDevelopmentUtilities ? [{ id: 'ask', label: 'Ask' }] : []), { id: 'details', label: 'Details' }, ...(stewardView ? [{ id: 'requests', label: `Requests${mine.some((r) => r.status === 'PENDING' || r.status === 'APPROVED') ? ` ${mine.filter((r) => r.status === 'PENDING' || r.status === 'APPROVED').length}` : ''}`, count: unseen, countLabel: `${unseen} new decision${unseen === 1 ? '' : 's'}` }] : []), { id: 'comments', label: `Comments${liveComments.length ? ` ${liveComments.length}` : ''}` }, { id: 'tags', label: 'Tags' }, { id: 'activity', label: 'Activity' }]} />
       {embedded ? <div className="stack-lg">{body}</div> : <div className="vw-panel-body">{body}</div>}
     </>
   )

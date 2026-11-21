@@ -1,0 +1,8 @@
+databaseChangeLog:
+  - changeSet:
+      id: 029-document-duplicate-receipts
+      author: sdv
+      changes:
+        - sqlFile:
+            path: db/changelog/029-document-duplicate-receipts.sql
+            relativeToChangelogFile: false

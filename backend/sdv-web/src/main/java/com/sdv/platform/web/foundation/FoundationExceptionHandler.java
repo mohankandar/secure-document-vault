@@ -58,13 +58,39 @@ public class FoundationExceptionHandler {
     @ExceptionHandler(IllegalArgumentException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     Map<String, Object> badRequest(IllegalArgumentException ex) {
-        return error("BAD_REQUEST", ex.getMessage());
+        return error(code(ex, "BAD_REQUEST"), ex.getMessage());
+    }
+
+    /**
+     * Task 0032: the code this handler sends for a refusal (a 4xx answer), as the sender sees it; null for anything that
+     * is not a refusal (a 5xx failure). The intake endpoints record their refusals with it (INTAKE_REFUSED).
+     */
+    public static String refusalCode(Throwable ex) {
+        if (ex instanceof com.sdv.platform.domain.error.CodedRefusal coded) return coded.errorCode().code();
+        if (ex instanceof PdfTooLargeException) return "PDF_TOO_LARGE";
+        if (ex instanceof InvalidPdfException) return "INVALID_PDF";
+        if (ex instanceof IllegalArgumentException) return "BAD_REQUEST";
+        if (ex instanceof NoSuchElementException) return "NOT_FOUND";
+        if (ex instanceof IllegalStateException) return "CONFLICT";
+        return null;
+    }
+
+    /** A refusal with a stable SDV-AREA-NNN code (docs/api/error-codes.md) sends it; others keep the generic code. */
+    private static String code(RuntimeException ex, String generic) {
+        return ex instanceof com.sdv.platform.domain.error.CodedRefusal coded ? coded.errorCode().code() : generic;
     }
 
     @ExceptionHandler(NoSuchElementException.class)
     @ResponseStatus(HttpStatus.NOT_FOUND)
     Map<String, Object> notFound(NoSuchElementException ex) {
-        return error("NOT_FOUND", ex.getMessage());
+        return error(code(ex, "NOT_FOUND"), ex.getMessage());
+    }
+
+    /** Task 0026: a coded 403 (for example SDV-SEN-008, a restricted document). Its message names nothing else. */
+    @ExceptionHandler(com.sdv.platform.domain.error.CodedRefusal.Forbidden.class)
+    @ResponseStatus(HttpStatus.FORBIDDEN)
+    Map<String, Object> codedForbidden(com.sdv.platform.domain.error.CodedRefusal.Forbidden ex) {
+        return error(ex.errorCode().code(), ex.getMessage());
     }
 
     @ExceptionHandler(AccessDeniedException.class)
@@ -82,7 +108,7 @@ public class FoundationExceptionHandler {
     @ExceptionHandler(IllegalStateException.class)
     @ResponseStatus(HttpStatus.CONFLICT)
     Map<String, Object> conflict(IllegalStateException ex) {
-        return error("CONFLICT", ex.getMessage());
+        return error(code(ex, "CONFLICT"), ex.getMessage());
     }
 
     private static Map<String, Object> error(String code, String message) {

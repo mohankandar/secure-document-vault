@@ -1,0 +1,8 @@
+databaseChangeLog:
+  - changeSet:
+      id: 027-access-requests
+      author: sdv
+      changes:
+        - sqlFile:
+            path: db/changelog/027-access-requests.sql
+            relativeToChangelogFile: false

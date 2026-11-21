@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Vero · Business administration · Legal holds</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&amp;family=IBM+Plex+Sans:wght@400;500;600;700&amp;display=swap">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{margin:0;font-family:'IBM Plex Sans',sans-serif;color:#14191c}
+.mono{font-family:'IBM Plex Mono',monospace}
+.screen{width:100%;min-width:1280px;height:820px;background:#f3f5f4;overflow:hidden;display:flex;flex-direction:column;position:relative}
+.top{height:56px;background:#fff;border-bottom:1px solid #dce1e2;display:flex;align-items:center;padding:0 20px;gap:28px;flex:none}
+.brand{font-size:21px;font-weight:700;color:#166a4f;letter-spacing:-.5px;display:flex;align-items:flex-end;gap:3px}
+.brand i{width:7px;height:7px;border-radius:50%;background:#166a4f;margin-bottom:6px;display:block}
+.nav{display:flex;gap:4px}
+.nav a{font-size:15px;color:#4a5459;padding:7px 12px;border-radius:8px;text-decoration:none}
+.nav a.on{background:#e2efe9;color:#105a42;font-weight:500}
+.grow{flex:1}
+.acct{display:flex;align-items:center;gap:10px;padding:4px 10px 4px 4px;border:1px solid #dce1e2;border-radius:10px;background:#fff}
+.av{width:30px;height:30px;border-radius:50%;background:#4a5459;color:#fff;font-size:12px;font-weight:600;display:flex;align-items:center;justify-content:center;flex:none}
+.acct .who{display:flex;flex-direction:column;line-height:1.2}
+.acct .who b{font-size:13px;font-weight:600}
+.acct .who span{font-size:12px;color:#737d82}
+svg{flex:none}
+.main{flex:1;padding:22px 32px;display:flex;flex-direction:column;gap:16px;min-width:0}
+h1{font-size:26px;font-weight:600;letter-spacing:-.3px}
+.sub{font-size:15px;color:#4a5459}
+.crumb{font-size:13px;color:#737d82}
+.card{background:#fff;border:1px solid #dce1e2;border-radius:12px}
+.btn{height:38px;border-radius:9px;border:1px solid #c3cacc;background:#fff;font-size:14px;font-weight:500;display:inline-flex;align-items:center;gap:8px;padding:0 14px;color:#14191c;white-space:nowrap;font-family:inherit}
+.btn.sm{height:32px;font-size:13px;padding:0 11px}
+.btn.primary{background:#166a4f;border-color:#166a4f;color:#fff}
+.muted{color:#737d82}
+.n{font-size:12px;font-weight:600;background:#fdf0d5;color:#8a5300;border-radius:999px;padding:1px 7px;margin-left:6px}
+.tabs2{display:flex;gap:4px;border-bottom:1px solid #dce1e2;padding:0 32px;background:#f3f5f4}
+.tabs2 a{font-size:15px;padding:10px 12px;color:#4a5459;text-decoration:none}
+.tabs2 a.on{color:#14191c;font-weight:500;box-shadow:inset 0 -2px 0 #166a4f}
+.tbl{width:100%;border-collapse:collapse;font-size:14px}
+.tbl th{font-size:12px;font-weight:500;color:#737d82;text-align:left;padding:10px 16px;border-bottom:1px solid #dce1e2}
+.tbl td{padding:12px 16px;border-bottom:1px solid #eceff0;vertical-align:middle}
+.tbl tr:last-child td{border-bottom:0}
+.lvl{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:600;border-radius:6px;padding:2px 8px;white-space:nowrap}
+.lvl.s{background:#eceff0;color:#4a5459}
+.lvl.c{background:#e6edfb;color:#1f3f80}
+.lvl.hc{background:#14191c;color:#fff}
+.sec{font-size:11px;font-weight:600;letter-spacing:.06em;color:#737d82;text-transform:uppercase}
+.field{display:flex;flex-direction:column;gap:6px}
+.field label{font-size:13px;font-weight:500}
+.inp{height:40px;border:1px solid #c3cacc;border-radius:8px;padding:0 12px;font-size:14px;font-family:inherit;color:#14191c}
+.found{display:flex;align-items:center;gap:12px;background:#f4faf7;border:1px solid #cfe5da;border-radius:9px;padding:9px 12px;font-size:14px}
+.role{display:inline-flex;align-items:center;gap:6px;padding:3px 10px 3px 8px;border:1px dashed #3b6fd4;background:#e8f0ff;border-radius:4px;font-size:12px;color:#1f3f80;font-weight:500;white-space:nowrap}
+.role b{font-size:11px;color:#3b6fd4;font-weight:600;letter-spacing:.04em}
+</style>
+</helmet>
+<div class="screen">
+  <div class="top"><div class="brand">vero<i></i></div><div class="nav"><a class="on">Business administration</a></div><div class="grow"></div>
+    <div class="acct"><div class="av">PN</div><div class="who"><b>Priya Natarajan</b><span>Acme Lending · Business admin</span></div><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#737d82" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></div></div>
+  <div style="padding:22px 32px 0;display:flex;flex-direction:column;gap:6px">
+    <div style="display:flex;justify-content:space-between;align-items:center"><span class="crumb">Business administration</span><span class="role"><b>SEEN BY</b> Business admin</span></div>
+    <h1>Legal holds</h1><div class="sub">Documents on hold are never deleted by the daily cleanup, whatever the keeping rule says.</div></div>
+  <div class="tabs2" style="margin-top:14px"><a>People &amp; roles</a><a>Roles &amp; permissions</a><a>Keeping documents</a><a class="on">Legal holds</a><a>Search fields</a><a>Approvals<span class="n">3</span></a></div>
+  <div class="main">
+    <div class="card" style="padding:18px 20px;display:flex;flex-direction:column;gap:14px">
+      <span class="sec">Put a document on hold</span>
+      <div style="display:flex;gap:14px;align-items:flex-end">
+        <div class="field" style="width:300px"><label for="did">Contract number</label><input id="did" class="inp mono" value="300000000001"></div>
+        <div class="field" style="flex:1"><label for="hr">Reason</label><input id="hr" class="inp" value="Litigation: Ellis v. Acme Lending, case 26-CV-0412"></div>
+        <button class="btn primary">Place hold</button>
+      </div>
+      <div class="found"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#105a42" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="m5 12 5 5 9-10"/></svg><span>3 documents on contract <span class="mono">300000000001</span> will be held</span><span class="muted" style="margin-left:auto">You won't see their titles or contents</span></div>
+    </div>
+    <div class="card">
+      <div style="padding:14px 18px;border-bottom:1px solid #dce1e2;display:flex;justify-content:space-between;align-items:center"><span style="font-size:15px;font-weight:600">On hold now · 4</span><span class="muted" style="font-size:13px">Released holds stay in the audit</span></div>
+      <table class="tbl"><thead><tr><th>Contract and document</th><th>Level</th><th>Received</th><th>Reason</th><th>Placed by</th><th>Since</th><th></th></tr></thead><tbody>
+        <tr><td><span class="mono">300000000001</span> <span class="muted" style="font-size:12px">· 9 pages</span></td><td><span class="lvl hc">Highly Confidential</span></td><td>14 Nov 2026</td><td>Litigation: Ellis v. Acme Lending</td><td>Priya Natarajan</td><td class="muted">Today</td><td style="text-align:right"><button class="btn sm">Release</button></td></tr>
+        <tr><td><span class="mono">100000004417</span> <span class="muted" style="font-size:12px">· 22 pages</span></td><td><span class="lvl s">Standard</span></td><td>2 Mar 2019</td><td>Regulator inquiry 2026-117</td><td>Priya Natarajan</td><td class="muted">3 Oct 2026</td><td style="text-align:right"><button class="btn sm">Release</button></td></tr>
+        <tr><td><span class="mono">100000004417</span> <span class="muted" style="font-size:12px">· 3 pages</span></td><td><span class="lvl s">Standard</span></td><td>2 Mar 2019</td><td>Regulator inquiry 2026-117</td><td>Priya Natarajan</td><td class="muted">3 Oct 2026</td><td style="text-align:right"><button class="btn sm">Release</button></td></tr>
+        <tr><td><span class="mono">300000000031</span> <span class="muted" style="font-size:12px">· 5 pages</span></td><td><span class="lvl c">Confidential</span></td><td>18 Jul 2024</td><td>HR dispute</td><td>Leo Grant</td><td class="muted">9 Aug 2026</td><td style="text-align:right"><button class="btn sm">Release</button></td></tr>
+      </tbody></table>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":820}}'>
+class Component extends DCLogic {
+renderVals() {
+return {};
+}
+}
+</script>
+</body>
+</html>

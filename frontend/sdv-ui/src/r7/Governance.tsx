@@ -6,14 +6,18 @@ import { ActionError, LoadErrorCard, toFailure, type Failure } from './CardError
 import { Badge, Banner, Callout, PageHead, Panel, Switch, Tabs } from './ui'
 import { getRolePolicy, saveRolePolicy, type RolePolicy } from './liveApi'
 import { SearchFields } from './SearchFields'
+import { Approvals, waitingSummary, type WaitingSummary } from './Approvals'
+import { LegalHolds } from './LegalHolds'
+import { pendingRequests } from './liveApi'
+import { Reports } from './Reports'
 
-export function AreaFrame({ crumbs, title, lede, actions, children, attention = [] }: { crumbs: string[]; title: string; lede: ReactNode; actions?: ReactNode; children: ReactNode; attention?: string[] }) {
+export function AreaFrame({ crumbs, title, lede, actions, children, attention = [], counts = {}, sub }: { crumbs: string[]; title: string; lede: ReactNode; actions?: ReactNode; children: ReactNode; attention?: string[]; /** task 0030: a count pill per tab id */ counts?: Record<string, { count: number; label: string }>; sub?: ReactNode }) {
   const { route, navigate } = useStore()
   return (
     <div className="v-page">
       {/* The canvas names the area only above the title; the tab is the title. */}
-      <PageHead crumbs={crumbs.slice(0, 1)} title={title} lede={lede} actions={actions} />
-      <Tabs label={`${crumbs[0]} sections`} value={route.tab} onChange={(t) => navigate(route.area, t)} tabs={AREA_TABS[route.area].map((t) => ({ ...t, attention: attention.includes(t.id) }))} />
+      <PageHead crumbs={crumbs.slice(0, 1)} title={title} lede={lede} actions={actions} sub={sub} />
+      <Tabs label={`${crumbs[0]} sections`} value={route.tab} onChange={(t) => navigate(route.area, t)} tabs={AREA_TABS[route.area].map((t) => ({ ...t, attention: attention.includes(t.id), count: counts[t.id]?.count, countLabel: counts[t.id]?.label }))} />
       <div className="v-body">{children}</div>
     </div>
   )
@@ -23,18 +27,36 @@ const LEDE: Record<string, string> = {
   access: 'The roles Vero knows, and what each one is for. People get a role in your company’s sign-in system.',
   roles: 'Choose what each business role may do with documents.',
   retention: 'How long Vero keeps documents before deleting them for good.',
+  holds: 'Documents on hold are never deleted by the daily cleanup, whatever the keeping rule says.',
   metadata: 'Which fields people can search, how they match, and what a record is called.',
+  // Task 0032, board Reports-Intake.
+  reports: 'Counts only. No document contents, titles or names.',
 }
 
 export function Governance() {
-  const { route } = useStore()
+  const { route, can } = useStore()
   const tab = AREA_TABS.governance.find((t) => t.id === route.tab)!
+  // Task 0030: the requests waiting, on the Approvals tab from every tab of the area. Every Business admin of the
+  // tenant sees the same list; the Approvals screen reports its own count when it changes.
+  const approver = can('APPROVE_SENSITIVE_ACCESS')
+  const [waiting, setWaiting] = useState<WaitingSummary | null>(null)
+  useEffect(() => {
+    if (!approver || route.tab === 'approvals') return
+    let active = true
+    pendingRequests().then((l) => { if (active) setWaiting(waitingSummary(l)) }).catch(() => { if (active) setWaiting(null) })
+    return () => { active = false }
+  }, [approver, route.tab])
+  const counts: Record<string, { count: number; label: string }> = waiting && waiting.count > 0 ? { approvals: { count: waiting.count, label: `${waiting.count} waiting` } } : {}
+  const sub = route.tab === 'approvals' && waiting ? (waiting.count === 0 ? 'Nothing waiting' : `${waiting.count} waiting${waiting.oldest ? ` · oldest ${waiting.oldest}` : ''}`) : undefined
   return (
-    <AreaFrame crumbs={['Business administration', tab.label]} title={tab.label} lede={LEDE[route.tab]}>
+    <AreaFrame crumbs={['Business administration', tab.label]} title={tab.label} lede={route.tab === 'approvals' ? undefined : LEDE[route.tab]} counts={counts} sub={sub}>
       {route.tab === 'access' && <PeopleTab />}
       {route.tab === 'roles' && <RolesTab />}
       {route.tab === 'retention' && <KeepingDocuments />}
+      {route.tab === 'holds' && <LegalHolds />}
       {route.tab === 'metadata' && <SearchFields />}
+      {route.tab === 'approvals' && <Approvals onWaiting={setWaiting} />}
+      {route.tab === 'reports' && <Reports />}
     </AreaFrame>
   )
 }
@@ -43,6 +65,7 @@ export function Governance() {
 const PEOPLE_ROLES: { name: string; purpose: string; claim: string; changeable: boolean }[] = [
   { name: 'Business user', purpose: 'Find records and read their documents', claim: 'BUSINESS_USER', changeable: true },
   { name: 'Document steward', purpose: 'Everything a business user does, plus download and permanent redaction', claim: 'DOCUMENT_STEWARD', changeable: true },
+  { name: 'Restricted steward', purpose: 'Everything a document steward does, plus highly confidential documents. Never also an admin', claim: 'RESTRICTED_STEWARD', changeable: false },
   { name: 'Business admin', purpose: 'Rules for roles, keeping documents and search fields', claim: 'BUSINESS_ADMIN', changeable: false },
   { name: 'Tenant IT', purpose: 'Storage, sign-in and the systems that send documents', claim: 'TENANT_IT_ADMIN', changeable: false },
 ]

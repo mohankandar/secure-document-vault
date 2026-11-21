@@ -28,7 +28,18 @@ public final class AuditSentences {
             Map.entry("CONFIGURE_METADATA_SEARCH", "change search fields"),
             Map.entry("CONFIGURE_INGESTION_SOURCES", "change sending systems"),
             Map.entry("CONFIGURE_STORAGE_KEY_PROVIDER", "change storage"),
+            Map.entry("VIEW_INTAKE_REPORTS", "see the reports"),
             Map.entry("VIEW_TECHNICAL_FAILURES", "see problems and the audit"));
+
+    /** Task 0026: what a refused DOCUMENT_ACCESS_REFUSED tried, in words. */
+    private static final Map<String, String> ATTEMPT_WORDS = Map.ofEntries(
+            Map.entry("OPEN", "open"), Map.entry("PAGE", "load a page of"), Map.entry("PREVIEWS", "see the pages of"),
+            Map.entry("TEXT_SEARCH", "search in"), Map.entry("TAGS", "see the tags of"), Map.entry("ADD_TAG", "tag"),
+            Map.entry("COMMENTS", "see the comments on"), Map.entry("ADD_COMMENT", "comment on"),
+            Map.entry("ACTIVITY", "see the activity of"), Map.entry("PRINT", "print"),
+            Map.entry("DOWNLOAD", "download"), Map.entry("REDACT", "redact"),
+            Map.entry("CHANGE_LEVEL", "change the level of"), Map.entry("REQUEST_ACCESS", "ask to print or download"),
+            Map.entry("LEVEL_HISTORY", "see the level history of"));
 
     private AuditSentences() { }
 
@@ -49,7 +60,8 @@ public final class AuditSentences {
 
     public static String sentence(AuditQueryService.AuditEntry e) {
         String w = actorName(e);
-        String f = e.filename() == null || e.filename().isEmpty() ? "a document" : e.filename();
+        // Task 0027 (0.4): admin views never name a file; the Record, Level, Received and Pages columns say which.
+        String f = "a document";
         JsonNode d = details(e.safeDetailsJson());
         return switch (e.action()) {
             case "DOCUMENT_VIEW_OPENED" -> w + " opened " + f;
@@ -71,9 +83,44 @@ public final class AuditSentences {
             case "AUTHORIZATION_DENIED" -> w + " tried to " + CAPABILITY_WORDS.getOrDefault(text(d, "capability"), "do something") + " without permission";
             case "SUBMISSION_CREATED" -> w + " delivered " + docs(number(d, "expectedDocumentCount"));
             case "DOCUMENT_RECEIVED" -> w + " sent " + f;
+            // Task 0031: an exact duplicate; nothing was stored a second time.
+            case "DOCUMENT_DUPLICATE_RECEIVED" -> w + " sent " + f + " again; Vero kept the copy it already had";
+            // Task 0032: what a document was before a permanent correction; only the corrected version is kept.
+            case "DOCUMENT_UNCORRECTED_COPY_RECEIVED" -> w + " sent an uncorrected copy of a corrected document; nothing was stored";
+            case "INTAKE_REFUSED" -> d.hasNonNull("code")
+                    ? w + " sent a delivery that Vero refused (" + text(d, "code") + ")" : w + " sent a delivery that Vero refused";
+            case "INTAKE_REPORT_EXPORTED" -> number(d, "rowCount") != null
+                    ? w + " exported the Daily intake report (" + number(d, "rowCount") + (number(d, "rowCount") == 1L ? " line)" : " lines)")
+                    : w + " exported the Daily intake report";
+            case "SENSITIVITY_REPORT_EXPORTED" -> number(d, "rowCount") != null
+                    ? w + " exported the Sensitivity report (" + number(d, "rowCount") + (number(d, "rowCount") == 1L ? " line)" : " lines)")
+                    : w + " exported the Sensitivity report";
+            case "STEWARD_NOTICE_READ" -> number(d, "markedCount") != null && number(d, "markedCount") != 1L
+                    ? w + " marked " + number(d, "markedCount") + " notices of corrected documents sent again as read"
+                    : w + " marked a notice of a corrected document sent again as read";
             case "DOCUMENT_AVAILABLE" -> f + " is stored and ready to open";
             case "DOCUMENT_PROCESSING_FAILED" -> "Vero couldn't store " + f;
             case "ROLE_CAPABILITIES_UPDATED" -> w + " changed what business roles may do";
+            case "ROLE_CAPABILITIES_UPDATE_REFUSED" -> w + " tried to change what a role may do; Vero refused it";
+            case "ROLE_CONFLICT_DETECTED" -> w + " signed in with roles that can't be held together; Vero gave neither";
+            case "ROLE_CONFLICT_ENDED" -> w + " signed in with roles that no longer conflict";
+            case "DOCUMENT_ACCESS_REFUSED" -> w + " tried to " + ATTEMPT_WORDS.getOrDefault(text(d, "attempt"), "use")
+                    + " " + f + ("SDV-SEN-009".equals(text(d, "code"))
+                            ? ", but that needs an approval" : ", but its level is restricted");
+            case "LEGAL_HOLD_PLACED" -> w + " put " + f + " on legal hold";
+            case "LEGAL_HOLD_RELEASED" -> w + " released the legal hold on " + f;
+            // Task 0028: level changes and approvals. Levels in words; the reason stays in the details.
+            case "DOCUMENT_SENSITIVITY_RAISED" -> w + " raised " + f + " to " + levelWords(text(d, "to"));
+            case "DOCUMENT_SENSITIVITY_LOWERED" -> w + " approved lowering " + f + " to " + levelWords(text(d, "to"));
+            case "RECORD_SENSITIVITY_RAISED" -> w + " raised a record to " + levelWords(text(d, "to"));
+            case "RECORD_SENSITIVITY_LOWERED" -> w + " approved lowering a record to " + levelWords(text(d, "to"));
+            case "ACCESS_REQUEST_CREATED" -> w + " asked " + requestWords(text(d, "kind"), text(d, "requestedLevel"), f);
+            case "ACCESS_REQUEST_APPROVED" -> w + " approved a request " + requestWords(text(d, "kind"), text(d, "requestedLevel"), f);
+            case "ACCESS_REQUEST_DECLINED" -> w + " declined a request " + requestWords(text(d, "kind"), text(d, "requestedLevel"), f);
+            case "ACCESS_REQUEST_DECISION_REFUSED" -> w + " tried to decide a request; Vero refused it";
+            case "ACCESS_REQUEST_EXPIRED" -> "A request " + requestWords(text(d, "kind"), null, f) + " expired";
+            case "SENSITIVE_ACCESS_GRANT_USED" -> w + " used an approval to " + ("DOWNLOAD".equals(text(d, "kind")) ? "download " : "print ") + f;
+            case "ROLE_GROUP_MAPPING_CHANGED" -> "The sign-in groups for " + text(d, "role") + " changed";
             case "RETENTION_POLICY_UPDATED" -> d.path("indefinite").asBoolean(false) && d.path("indefinite").isBoolean()
                     ? w + " changed how long to keep new documents: keep them forever"
                     : w + " changed how long to keep new documents to " + ruleWords(d);
@@ -122,6 +169,29 @@ public final class AuditSentences {
     private static String text(JsonNode d, String key) {
         JsonNode v = d.get(key);
         return v == null || v.isNull() ? "null" : v.asText();
+    }
+
+    /** Task 0028: a level in words, as the screens say it. */
+    private static String levelWords(String level) {
+        if (level == null) return "another level";
+        return switch (level) {
+            case "STANDARD" -> "Standard";
+            case "CONFIDENTIAL" -> "Confidential";
+            case "HIGHLY_CONFIDENTIAL" -> "Highly Confidential";
+            default -> "another level";
+        };
+    }
+
+    /** Task 0028: what a request asks for, in words ("to print a document", "to lower a record to Standard"). */
+    private static String requestWords(String kind, String requestedLevel, String document) {
+        if (kind == null) return "for approval";
+        return switch (kind) {
+            case "PRINT" -> "to print " + document;
+            case "DOWNLOAD" -> "to download " + document;
+            case "LOWER_LEVEL" -> "to lower " + document + (requestedLevel == null ? "" : " to " + levelWords(requestedLevel));
+            case "LOWER_RECORD_LEVEL" -> "to lower a record" + (requestedLevel == null ? "" : " to " + levelWords(requestedLevel));
+            default -> "for approval";
+        };
     }
 
     private static String docs(Long k) {

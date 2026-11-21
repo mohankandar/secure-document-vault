@@ -1,5 +1,7 @@
 package com.sdv.platform.application.viewer;
 
+import com.sdv.platform.application.access.Clearance;
+import com.sdv.platform.application.access.DocumentAccessGuard;
 import com.sdv.platform.application.port.AuditEventPort;
 import com.sdv.platform.application.port.PageViewAuditPort;
 import com.sdv.platform.application.port.DocumentIntakeRepository;
@@ -12,6 +14,7 @@ import com.sdv.platform.domain.document.Document;
 import com.sdv.platform.domain.document.DocumentCryptoMetadata;
 import com.sdv.platform.domain.document.DocumentStatus;
 import com.sdv.platform.domain.document.DocumentStorageRef;
+import com.sdv.platform.domain.document.SensitivityLevel;
 import com.sdv.platform.domain.storage.StorageVolume;
 import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.pdmodel.PDDocument;
@@ -62,6 +65,7 @@ public class DocumentViewerService {
     private final StreamingCryptoPort crypto;
     private final AuditEventPort audit;
     private final PageViewAuditPort pageViews;
+    private final DocumentAccessGuard access;
     private final Clock clock;
 
     /** A viewing (one DOCUMENT_VIEW_OPENED) groups page events for this long. */
@@ -74,8 +78,9 @@ public class DocumentViewerService {
             List<StorageProvider> storageProviders,
             StreamingCryptoPort crypto,
             AuditEventPort audit,
-            PageViewAuditPort pageViews) {
-        this(documents, volumes, storageProviders, crypto, audit, pageViews, Clock.systemUTC());
+            PageViewAuditPort pageViews,
+            DocumentAccessGuard access) {
+        this(documents, volumes, storageProviders, crypto, audit, pageViews, access, Clock.systemUTC());
     }
 
     DocumentViewerService(
@@ -85,6 +90,7 @@ public class DocumentViewerService {
             StreamingCryptoPort crypto,
             AuditEventPort audit,
             PageViewAuditPort pageViews,
+            DocumentAccessGuard access,
             Clock clock) {
         this.documents = documents;
         this.volumes = volumes;
@@ -92,15 +98,19 @@ public class DocumentViewerService {
         this.crypto = crypto;
         this.audit = audit;
         this.pageViews = pageViews;
+        this.access = java.util.Objects.requireNonNull(access, "access");
         this.clock = clock;
     }
 
     public ViewerMetadata metadata(
             UUID tenantId,
             UUID documentId,
+            Clearance clearance,
             String actorId,
             String correlationId) {
-        Document document = requireAvailableDocument(tenantId, documentId);
+        Viewable viewable = requireViewable(tenantId, documentId, clearance,
+                DocumentAccessGuard.Attempt.OPEN, actorId, correlationId);
+        Document document = viewable.document();
         byte[] plaintext = verifiedPlaintext(document);
         try (PDDocument pdf = load(plaintext)) {
             int pageCount = pdf.getNumberOfPages();
@@ -111,7 +121,8 @@ public class DocumentViewerService {
                     "DOCUMENT_VIEW_OPENED",
                     documentId,
                     correlationId,
-                    "{\"pageCount\":" + pageCount + "}");
+                    // Task 0031 (0.1): the effective level at the time of viewing, for the audit's level filter.
+                    "{\"pageCount\":" + pageCount + levelDetail(viewable) + "}");
             return new ViewerMetadata(document.documentId(), document.originalFilename(), pageCount, viewingId);
         } catch (IOException ex) {
             throw unavailable(ex);
@@ -123,11 +134,12 @@ public class DocumentViewerService {
     public PageImage renderPage(
             UUID tenantId,
             UUID documentId,
+            Clearance clearance,
             int pageNumber,
             double scale,
             String actorId,
             String correlationId) {
-        return renderPage(tenantId, documentId, pageNumber, scale, null, actorId, correlationId);
+        return renderPage(tenantId, documentId, clearance, pageNumber, scale, null, actorId, correlationId);
     }
 
     /**
@@ -139,6 +151,7 @@ public class DocumentViewerService {
     public PageImage renderPage(
             UUID tenantId,
             UUID documentId,
+            Clearance clearance,
             int pageNumber,
             double scale,
             UUID viewingId,
@@ -150,7 +163,8 @@ public class DocumentViewerService {
                     "scale must be between " + MIN_SCALE + " and " + MAX_SCALE + ".");
         }
 
-        Document document = requireAvailableDocument(tenantId, documentId);
+        Viewable viewable = requireViewable(tenantId, documentId, clearance, DocumentAccessGuard.Attempt.PAGE, actorId, correlationId);
+        Document document = viewable.document();
         byte[] plaintext = verifiedPlaintext(document);
         try (PDDocument pdf = load(plaintext)) {
             if (pageNumber > pdf.getNumberOfPages()) {
@@ -186,7 +200,7 @@ public class DocumentViewerService {
                 pageViews.appendPageEventOnce(new AuditEvent(
                         UUID.randomUUID(), tenantId, "USER", actorId, "DOCUMENT_PAGE_VIEWED", "DOCUMENT",
                         documentId.toString(), now, correlationId, AuditOutcome.SUCCESS,
-                        "{\"page\":" + pageNumber + ",\"scale\":" + scaleText + ",\"viewingId\":\"" + viewingId + "\"}"),
+                        "{\"page\":" + pageNumber + ",\"scale\":" + scaleText + ",\"viewingId\":\"" + viewingId + "\"" + levelDetail(viewable) + "}"),
                         viewingId, pageNumber, notBefore);
             } else {
                 appendAudit(
@@ -195,7 +209,7 @@ public class DocumentViewerService {
                         "DOCUMENT_PAGE_VIEWED",
                         documentId,
                         correlationId,
-                        "{\"page\":" + pageNumber + ",\"scale\":" + scaleText + "}");
+                        "{\"page\":" + pageNumber + ",\"scale\":" + scaleText + levelDetail(viewable) + "}");
             }
 
             return new PageImage(
@@ -217,13 +231,14 @@ public class DocumentViewerService {
      * caller's tenant, verified plaintext of the current PDF, so redactions show), the document is decrypted once per
      * request, and no audit event is written: previews belong to the DOCUMENT_VIEW_OPENED already recorded.
      */
-    public PagePreviews previews(UUID tenantId, UUID documentId, int first, int count) {
+    public PagePreviews previews(UUID tenantId, UUID documentId, int first, int count,
+                                 Clearance clearance, String actorId, String correlationId) {
         if (first < 1) throw new IllegalArgumentException("first must be at least 1.");
         if (count < 1 || count > MAX_PREVIEW_COUNT) {
             throw new IllegalArgumentException("count must be between 1 and " + MAX_PREVIEW_COUNT + ".");
         }
 
-        Document document = requireAvailableDocument(tenantId, documentId);
+        Document document = requireAvailableDocument(tenantId, documentId, clearance, DocumentAccessGuard.Attempt.PREVIEWS, actorId, correlationId);
         byte[] plaintext = verifiedPlaintext(document);
         try (PDDocument pdf = load(plaintext)) {
             int pageCount = pdf.getNumberOfPages();
@@ -268,6 +283,7 @@ public class DocumentViewerService {
             UUID tenantId,
             UUID documentId,
             String query,
+            Clearance clearance,
             String actorId,
             String correlationId) {
         String normalizedQuery = query == null ? "" : query.trim();
@@ -279,7 +295,7 @@ public class DocumentViewerService {
                     "Viewer text search query exceeds " + MAX_SEARCH_QUERY_LENGTH + " characters.");
         }
 
-        Document document = requireAvailableDocument(tenantId, documentId);
+        Document document = requireAvailableDocument(tenantId, documentId, clearance, DocumentAccessGuard.Attempt.TEXT_SEARCH, actorId, correlationId);
         byte[] plaintext = verifiedPlaintext(document);
         try (PDDocument pdf = load(plaintext)) {
             String needle = normalizedQuery.toLowerCase(Locale.ROOT);
@@ -432,14 +448,33 @@ public class DocumentViewerService {
         }
     }
 
-    private Document requireAvailableDocument(UUID tenantId, UUID documentId) {
+    /** Task 0026: the level check comes first, so a restricted document reveals nothing, not even its status. */
+    private Document requireAvailableDocument(UUID tenantId, UUID documentId, Clearance clearance,
+                                              DocumentAccessGuard.Attempt attempt, String actorId, String correlationId) {
+        return requireViewable(tenantId, documentId, clearance, attempt, actorId, correlationId).document();
+    }
+
+    /** A document the person may view, with its effective level at this moment (task 0031, 0.1). */
+    private record Viewable(Document document, SensitivityLevel level) { }
+
+    private Viewable requireViewable(UUID tenantId, UUID documentId, Clearance clearance,
+                                     DocumentAccessGuard.Attempt attempt, String actorId, String correlationId) {
         Document document = documents.findDocumentByIdForTenant(tenantId, documentId)
                 .orElseThrow(() -> new NoSuchElementException("Document not found."));
+        SensitivityLevel level = access.requireOpenable(document, clearance, attempt, actorId, correlationId);
         if (document.status() != DocumentStatus.AVAILABLE) {
             throw new IllegalStateException(
                     "Only AVAILABLE documents may be opened in the secure viewer.");
         }
-        return document;
+        return new Viewable(document, level);
+    }
+
+    /**
+     * Task 0031 (0.1): openings and page views record the effective level at the time of viewing, under the same key
+     * prints and downloads use, so the audit's level filter finds them. Events written before this have no level.
+     */
+    private static String levelDetail(Viewable viewable) {
+        return ",\"sensitivityLevel\":\"" + viewable.level().name() + "\"";
     }
 
     private StorageProvider provider(String providerId) {

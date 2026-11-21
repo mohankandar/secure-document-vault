@@ -28,6 +28,24 @@ public class AuthorizationService {
         }
     }
 
+    /** Task 0029: whether the person holds the capability, without auditing a refusal (for "one of two" checks). */
+    public boolean has(SdvPrincipal principal, Capability capability) {
+        return capabilities.has(principal, capability);
+    }
+
+    /**
+     * Task 0026: the sensitivity levels this person may open, from their effective capabilities. Nothing else in
+     * the request (headers, parameters) can change it.
+     */
+    public com.sdv.platform.application.access.Clearance clearance(SdvPrincipal principal) {
+        // Task 0033: the role names go with it, for the refusal's audit event only (attempts by role in the
+        // Sensitivity report); they decide nothing.
+        return new com.sdv.platform.application.access.Clearance(
+                capabilities.has(principal, Capability.VIEW_CONFIDENTIAL),
+                capabilities.has(principal, Capability.VIEW_HIGHLY_CONFIDENTIAL),
+                principal.roles().stream().map(Enum::name).toList());
+    }
+
     private void safeDeniedAudit(SdvPrincipal principal, Capability capability) {
         try {
             audit.append(new AuditEvent(

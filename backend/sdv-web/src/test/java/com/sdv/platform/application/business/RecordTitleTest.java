@@ -1,5 +1,6 @@
 package com.sdv.platform.application.business;
 
+import com.sdv.platform.domain.document.SensitivityLevel;
 import com.sdv.platform.application.port.AuditEventPort;
 import com.sdv.platform.application.port.BusinessRecordRepository;
 import com.sdv.platform.application.port.BusinessRecordRepository.AvailableDocumentSnapshot;
@@ -104,7 +105,7 @@ class RecordTitleTest {
         when(records.findSubmissionsByIds(eq(TENANT), eq(SOURCE), anyList())).thenReturn(List.of(
                 new Submission(SUB, TENANT, SOURCE, "src-1", 1, "sha", SubmissionStatus.COMPLETE, NOW.minusSeconds(60), NOW, null)));
         when(records.findAvailableDocuments(eq(TENANT), eq(SOURCE), anyList())).thenReturn(List.of(
-                new AvailableDocumentSnapshot(UUID.randomUUID(), SUB, "d1", "a.pdf", NOW, NOW, null, null, false)));
+                new AvailableDocumentSnapshot(UUID.randomUUID(), SUB, "d1", "a.pdf", NOW, NOW, null, null, false, SensitivityLevel.STANDARD)));
         when(records.findMatchingSubmissions(eq(TENANT), eq(SOURCE), anyList(), any(), any(), any(), any(), anyBoolean(), eq(0), anyInt()))
                 .thenReturn(List.of(new Submission(SUB, TENANT, SOURCE, "src-1", 1, "sha", SubmissionStatus.COMPLETE, NOW.minusSeconds(60), NOW, null)));
     }

@@ -18,8 +18,16 @@ public interface RetentionRepository {
 
     void insertPolicyVersion(PolicyVersion policy);
 
+    /** Due for deletion, oldest first. Task 0027: never a document with a legal hold in place. */
     List<DueDocument> findDueDocuments(int limit);
 
+    /** Task 0027: how many documents are due for deletion but on legal hold (all tenants; a count only). */
+    long countHeldDueDocuments();
+
+    /**
+     * Marks a due document as being deleted. Task 0027: never one with a legal hold in place; the caller runs it in
+     * a transaction, because it locks the document row first.
+     */
     boolean claimDueDocument(UUID tenantId, UUID documentId, Instant startedAt);
 
     void finalizeExpiredDocument(UUID tenantId, UUID documentId, Instant deletedAt, String deletionReason);

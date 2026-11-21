@@ -21,7 +21,8 @@ export const AREA_TABS: Record<AreaId, { id: string; label: string }[]> = {
   home: [{ id: 'home', label: 'Home' }],
   workspace: [{ id: 'search', label: 'Search' }],
   // Labels only; the addresses (#/governance/access …) stay the same.
-  governance: [{ id: 'access', label: 'People & roles' }, { id: 'roles', label: 'Roles & permissions' }, { id: 'retention', label: 'Keeping documents' }, { id: 'metadata', label: 'Search fields' }],
+  // Task 0030: Legal holds after Keeping documents, Approvals (boards Sens-LegalHold and Sens-Approvals). Task 0032: Reports last.
+  governance: [{ id: 'access', label: 'People & roles' }, { id: 'roles', label: 'Roles & permissions' }, { id: 'retention', label: 'Keeping documents' }, { id: 'holds', label: 'Legal holds' }, { id: 'metadata', label: 'Search fields' }, { id: 'approvals', label: 'Approvals' }, { id: 'reports', label: 'Reports' }],
   tenant: [{ id: 'storage', label: 'Storage' }, { id: 'authentication', label: 'Sign-in' }, { id: 'integrations', label: 'Integrations' }, { id: 'problems', label: 'Problems' }, { id: 'about', label: 'About' }],
   operations: [{ id: 'overview', label: 'Overview' }, { id: 'problems', label: 'Problems' }, { id: 'storage', label: 'Storage' }, { id: 'health', label: 'Health' }, { id: 'audit', label: 'Audit' }, { id: 'about', label: 'About' }],
   system: [{ id: 'foundations', label: 'Foundations' }, { id: 'components', label: 'Components' }, { id: 'states', label: 'States' }],
@@ -48,7 +49,7 @@ const AREA_ORDER: AreaId[] = ['home', 'workspace', 'governance', 'tenant', 'oper
 
 /** The role the session names first, in this order; Business user when it names none of them. */
 const primaryRole = (roles: string[]): RoleId =>
-  roles.includes('PLATFORM_OPERATIONS_ADMIN') ? 'platform' : roles.includes('TENANT_IT_ADMIN') ? 'tenantIt' : roles.includes('BUSINESS_ADMIN') ? 'businessAdmin' : roles.includes('DOCUMENT_STEWARD') ? 'steward' : 'business'
+  roles.includes('PLATFORM_OPERATIONS_ADMIN') ? 'platform' : roles.includes('TENANT_IT_ADMIN') ? 'tenantIt' : roles.includes('BUSINESS_ADMIN') ? 'businessAdmin' : roles.includes('RESTRICTED_STEWARD') ? 'restricted' : roles.includes('DOCUMENT_STEWARD') ? 'steward' : 'business'
 
 let toastSeq = 0
 

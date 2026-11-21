@@ -20,10 +20,17 @@ import java.util.UUID;
 public class DocumentIntakeController {
     private final SecurityContextFacade security;
     private final DocumentIntakeService intake;
+    private final IntakeRefusals refusals;
 
-    public DocumentIntakeController(SecurityContextFacade security, DocumentIntakeService intake) {
+    @org.springframework.beans.factory.annotation.Autowired
+    public DocumentIntakeController(SecurityContextFacade security, DocumentIntakeService intake, IntakeRefusals refusals) {
         this.security = security;
         this.intake = intake;
+        this.refusals = refusals;
+    }
+
+    public DocumentIntakeController(SecurityContextFacade security, DocumentIntakeService intake) {
+        this(security, intake, IntakeRefusals.NONE);
     }
 
     @PostMapping(consumes = "application/pdf")
@@ -32,22 +39,35 @@ public class DocumentIntakeController {
             @RequestHeader(name = "X-SDV-Source-Document-Id", required = false) String sourceDocumentId,
             @RequestHeader(name = "Idempotency-Key", required = false) String idempotencyKey,
             @RequestHeader(name = "X-SDV-Filename") String filename,
+            @RequestHeader(name = DocumentIntakeService.SENSITIVITY_FIELD, required = false) String sensitivityLevel,
+            @RequestHeader(name = RecordSensitivityGuard.HEADER, required = false) String recordSensitivityLevel,
             HttpServletRequest request) throws IOException {
         IngestionSourcePrincipal principal = security.requireIngestionSourcePrincipal();
-        DocumentReceipt receipt = intake.receive(
-                principal.tenantId(),
-                principal.sourceId(),
-                submissionId,
-                sourceDocumentId,
-                idempotencyKey,
-                filename,
-                request.getContentType(),
-                request.getContentLengthLong(),
-                request.getInputStream(),
-                principal.subject(),
-                correlationId());
+        DocumentReceipt receipt;
+        try {
+            RecordSensitivityGuard.refuseIfPresent(recordSensitivityLevel);
+            receipt = intake.receive(
+                    principal.tenantId(),
+                    principal.sourceId(),
+                    submissionId,
+                    sourceDocumentId,
+                    idempotencyKey,
+                    filename,
+                    request.getContentType(),
+                    sensitivityLevel,
+                    request.getContentLengthLong(),
+                    request.getInputStream(),
+                    principal.subject(),
+                    correlationId());
+        } catch (RuntimeException | IOException ex) {
+            // Task 0032: a refused upload is counted by the Daily intake report, with its code.
+            refusals.uploadRefused(principal, submissionId, sourceDocumentId != null && !sourceDocumentId.isBlank()
+                    ? sourceDocumentId : idempotencyKey, ex, correlationId());
+            throw ex;
+        }
 
-        HttpStatus status = receipt.idempotentReplay() ? HttpStatus.OK : HttpStatus.CREATED;
+        // Task 0031: an exact duplicate stores nothing new, so it is 200 with the existing document, like a retry.
+        HttpStatus status = receipt.idempotentReplay() || receipt.exactDuplicateContent() ? HttpStatus.OK : HttpStatus.CREATED;
         return ResponseEntity.status(status).body(DocumentReceiptResponse.from(receipt));
     }
 
@@ -81,18 +101,23 @@ public class DocumentIntakeController {
             String contentSha256,
             long contentSizeBytes,
             boolean idempotentReplay,
-            boolean exactDuplicateContent) {
+            boolean exactDuplicateContent,
+            boolean duplicate,
+            String sensitivityLevel) {
         static DocumentReceiptResponse from(DocumentReceipt receipt) {
             Document document = receipt.document();
             return new DocumentReceiptResponse(
                     document.documentId(),
-                    document.sourceDocumentId(),
+                    // Task 0031: for a duplicate, the delivery's own sourceDocumentId (the document may be another's).
+                    receipt.deliverySourceDocumentId(),
                     receipt.receiptAcknowledgement(),
                     document.status().name(),
                     document.contentSha256(),
                     document.contentSizeBytes() == null ? 0L : document.contentSizeBytes(),
                     receipt.idempotentReplay(),
-                    receipt.exactDuplicateContent());
+                    receipt.exactDuplicateContent(),
+                    receipt.exactDuplicateContent(),
+                    document.sensitivityLevel().name());
         }
     }
 
@@ -104,7 +129,8 @@ public class DocumentIntakeController {
             long contentSizeBytes,
             String contentSha256,
             int processingAttemptCount,
-            String processingErrorCode) {
+            String processingErrorCode,
+            String sensitivityLevel) {
         static DocumentSummaryResponse from(Document document) {
             return new DocumentSummaryResponse(
                     document.documentId(),
@@ -114,7 +140,8 @@ public class DocumentIntakeController {
                     document.contentSizeBytes() == null ? 0L : document.contentSizeBytes(),
                     document.contentSha256(),
                     document.processingAttemptCount(),
-                    document.processingErrorCode());
+                    document.processingErrorCode(),
+                    document.sensitivityLevel().name());
         }
     }
 }

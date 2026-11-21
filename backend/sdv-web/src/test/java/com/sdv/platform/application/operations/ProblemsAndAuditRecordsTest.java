@@ -55,12 +55,13 @@ class ProblemsAndAuditRecordsTest {
     }
 
     @Test
-    void aProblemCarriesItsRecordNumberTitleAndSendingSystem() {
+    void aProblemCarriesItsRecordNumberAndSendingSystemButNoTitle() {
         knownRecord();
         var found = resolver.resolve(TENANT, Map.of(SUB_KNOWN, SOURCE)).get(SUB_KNOWN);
         assertEquals("20000000090", found.recordNumber(), "the first identifier in display order");
         assertEquals("Member Number", found.recordNumberLabel());
-        assertEquals("Mia Patel", found.recordTitle());
+        // Task 0028, 0.1: admin views never carry the record title; the title fields are not even read.
+        verify(definitions, never()).findRecordTitleFields(any(), any());
         assertEquals("LexaVault", found.sourceName());
     }
 
@@ -70,7 +71,7 @@ class ProblemsAndAuditRecordsTest {
         resolver.resolve(TENANT, Map.of(SUB_KNOWN, SOURCE));
         verify(sources, never()).findById(argThat(t -> !TENANT.equals(t)), any());
         verify(records, never()).findMetadataSnapshots(argThat(t -> !TENANT.equals(t)), any(), anyList());
-        verify(definitions, never()).findRecordTitleFields(argThat(t -> !TENANT.equals(t)), any());
+
     }
 
     @Test
@@ -79,7 +80,7 @@ class ProblemsAndAuditRecordsTest {
         var unknown = resolver.resolve(TENANT, Map.of(SUB_UNKNOWN, SOURCE)).get(SUB_UNKNOWN);
         assertNotNull(unknown);
         assertNull(unknown.recordNumber());
-        assertNull(unknown.recordTitle());
+
         assertEquals("LexaVault", unknown.sourceName());
 
         // In the summary: a failing lookup never drops the problem itself.
@@ -87,36 +88,91 @@ class ProblemsAndAuditRecordsTest {
         when(ops.databaseAvailable()).thenReturn(true);
         when(ops.countProcessingFailures(TENANT)).thenReturn(1L);
         when(ops.findProcessingFailures(eq(TENANT), anyInt())).thenReturn(List.of(new OperationalRepository.ProcessingFailure(
-                UUID.randomUUID(), SUB_UNKNOWN, SOURCE, "DOCUMENT_FINALIZATION_FAILED", 3, Instant.now(), "appraisal.pdf")));
+                UUID.randomUUID(), SUB_UNKNOWN, SOURCE, "DOCUMENT_FINALIZATION_FAILED", 3, Instant.now(), 12,
+                com.sdv.platform.domain.document.SensitivityLevel.STANDARD)));
         TenantRepository tenants = mock(TenantRepository.class);
         Tenant tenant = mock(Tenant.class);
         when(tenant.status()).thenReturn(TenantStatus.ACTIVE);
         when(tenants.findById(TENANT)).thenReturn(Optional.of(tenant));
         ProblemRecordResolver broken = mock(ProblemRecordResolver.class);
         when(broken.resolve(any(), anyMap())).thenThrow(new IllegalStateException("lookup failed"));
-        OperationsService service = new OperationsService(ops, mock(StorageVolumeAdminService.class), mock(KeyServiceHealthProbe.class), tenants, broken);
+        OperationsService service = new OperationsService(ops, mock(StorageVolumeAdminService.class), mock(KeyServiceHealthProbe.class), tenants, broken,
+                guard());
         var summary = service.summary(TENANT);
         assertEquals(1, summary.processingFailures().size());
-        assertEquals("appraisal.pdf", summary.processingFailures().getFirst().originalFilename());
+        assertEquals(12, summary.processingFailures().getFirst().pageCount());
+        assertEquals(com.sdv.platform.domain.document.SensitivityLevel.STANDARD, summary.processingFailures().getFirst().sensitivityLevel());
         assertTrue(summary.problemRecords().isEmpty());
     }
 
+    /**
+     * Task 0028, 0.1: the Problems summary, read by IT Admins and Platform Ops, carries the record's primary identifier,
+     * its label and the sending system, and never the record title: no field named like a title, and none of the
+     * title fields' values (first and last name here) anywhere in the JSON.
+     */
     @Test
-    void theAuditListCarriesNamesRecordsAndFileNamesAndOlderEventsStillList() {
+    void theProblemsSummaryNeverCarriesARecordTitle() throws Exception {
+        knownRecord();
+        OperationalRepository ops = mock(OperationalRepository.class);
+        when(ops.databaseAvailable()).thenReturn(true);
+        when(ops.countProcessingFailures(TENANT)).thenReturn(1L);
+        when(ops.findProcessingFailures(eq(TENANT), anyInt())).thenReturn(List.of(new OperationalRepository.ProcessingFailure(
+                UUID.randomUUID(), SUB_KNOWN, SOURCE, "DOCUMENT_FINALIZATION_FAILED", 1, Instant.now(), 3,
+                com.sdv.platform.domain.document.SensitivityLevel.STANDARD)));
+        TenantRepository tenants = mock(TenantRepository.class);
+        Tenant tenant = mock(Tenant.class);
+        when(tenant.status()).thenReturn(TenantStatus.ACTIVE);
+        when(tenants.findById(TENANT)).thenReturn(Optional.of(tenant));
+        OperationsService service = new OperationsService(ops, mock(StorageVolumeAdminService.class),
+                mock(KeyServiceHealthProbe.class), tenants, resolver, guard());
+
+        var summary = service.summary(TENANT);
+        com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper().findAndRegisterModules();
+        String json = mapper.writeValueAsString(summary);
+        com.fasterxml.jackson.databind.JsonNode record = mapper.readTree(json).at("/problemRecords/" + SUB_KNOWN);
+        assertEquals(java.util.Set.of("recordNumber", "recordNumberLabel", "sourceName"),
+                new java.util.TreeSet<>(iterable(record.fieldNames())), "exactly these fields");
+        assertEquals("20000000090", record.get("recordNumber").asText());
+        assertFalse(json.toLowerCase().contains("title"), json);
+        assertFalse(json.contains("Mia"), json);
+        assertFalse(json.contains("Patel"), json);
+    }
+
+    private static java.util.List<String> iterable(java.util.Iterator<String> names) {
+        java.util.List<String> list = new java.util.ArrayList<>();
+        names.forEachRemaining(list::add);
+        return list;
+    }
+
+    /** Task 0026: a real guard; with no record level a Standard document stays Standard. */
+    private static com.sdv.platform.application.access.DocumentAccessGuard guard() {
+        return new com.sdv.platform.application.access.DocumentAccessGuard(
+                mock(com.sdv.platform.application.port.BusinessRecordRepository.class), mock(AuditEventPort.class));
+    }
+
+    @Test
+    void theAuditListCarriesNamesRecordsAndDocumentFactsAndOlderEventsStillList() {
         AuditQueryPort query = mock(AuditQueryPort.class);
         AuditEvent named = new AuditEvent(UUID.randomUUID(), TENANT, "USER", "okta|00u1", "DOCUMENT_VIEW_OPENED", "DOCUMENT",
                 UUID.randomUUID().toString(), Instant.parse("2026-11-18T12:00:00Z"), null, AuditOutcome.SUCCESS, "{}", "Maya Okafor");
         AuditEvent older = new AuditEvent(UUID.randomUUID(), TENANT, "USER", "okta|00u2", "BUSINESS_SEARCH", "INGESTION_SOURCE",
                 SOURCE.toString(), Instant.parse("2026-11-01T12:00:00Z"), null, AuditOutcome.SUCCESS, "{}");
         when(query.findRows(eq(TENANT), any(), anyInt())).thenReturn(List.of(
-                new AuditQueryPort.Row(named, "300000000090", "loan-agreement.pdf"), new AuditQueryPort.Row(older, null, null)));
-        AuditQueryService service = new AuditQueryService(query, mock(AuditEventPort.class));
+                new AuditQueryPort.Row(named, "300000000090",
+                        new com.sdv.platform.application.access.DocumentAccessGuard.DocumentLevelRef(UUID.fromString(named.targetId()),
+                                SOURCE, UUID.randomUUID(), com.sdv.platform.domain.document.SensitivityLevel.STANDARD),
+                        Instant.parse("2026-11-14T09:30:00Z"), 4), new AuditQueryPort.Row(older, null)));
+        AuditQueryService service = new AuditQueryService(query, mock(AuditEventPort.class), guard());
 
         var page = service.search(TENANT, "ops", new AuditQueryService.SearchRequest(null, null, null, null, null, null, null,
                 null, null, null, null, " 300000000090 "), "c");
         assertEquals("Maya Okafor", page.events().get(0).actorDisplayName());
         assertEquals("300000000090", page.events().get(0).recordNumber());
-        assertEquals("loan-agreement.pdf", page.events().get(0).filename());
+        assertEquals(UUID.fromString(named.targetId()), page.events().get(0).documentId());
+        assertEquals(com.sdv.platform.domain.document.SensitivityLevel.STANDARD, page.events().get(0).sensitivityLevel());
+        assertEquals(Instant.parse("2026-11-14T09:30:00Z"), page.events().get(0).documentReceivedAt());
+        assertEquals(4, page.events().get(0).documentPageCount());
+        assertNull(page.events().get(1).documentId(), "an event without a document names none");
         assertNull(page.events().get(1).actorDisplayName(), "older events have no name; screens show the subject");
         assertEquals("okta|00u2", page.events().get(1).actorId());
 

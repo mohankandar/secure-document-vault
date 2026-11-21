@@ -40,6 +40,7 @@ public class SecurePdfViewerController {
                 .body(viewer.metadata(
                         principal.tenantId(),
                         documentId,
+                        authorization.clearance(principal),
                         principal.subject(),
                         correlationId()));
     }
@@ -54,6 +55,7 @@ public class SecurePdfViewerController {
         DocumentViewerService.PageImage page = viewer.renderPage(
                 principal.tenantId(),
                 documentId,
+                authorization.clearance(principal),
                 pageNumber,
                 scale,
                 parseViewingId(viewingId),
@@ -80,7 +82,8 @@ public class SecurePdfViewerController {
         SdvPrincipal principal = requireView();
         return ResponseEntity.ok()
                 .headers(viewerHeaders())
-                .body(viewer.previews(principal.tenantId(), documentId, first, count));
+                .body(viewer.previews(principal.tenantId(), documentId, first, count,
+                        authorization.clearance(principal), principal.subject(), correlationId()));
     }
 
     @GetMapping("/search")
@@ -94,6 +97,7 @@ public class SecurePdfViewerController {
                         principal.tenantId(),
                         documentId,
                         query,
+                        authorization.clearance(principal),
                         principal.subject(),
                         correlationId()));
     }

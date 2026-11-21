@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { FailureNotice, loadFailed, type Failure } from './CardError'
-import { Drawer, TechDetails, fmtDateTime } from './ui'
+import { Drawer, TechDetails, fmtDateTime, levelWords } from './ui'
 import { fmtWhen } from './opsWords'
 import { opsAudit, opsAuditExport, type OpsAuditEvent } from './liveApi'
 import { ApiRequestError } from '../api'
@@ -34,6 +34,8 @@ export function AuditLog() {
   const [customFrom, setCustomFrom] = useState('')
   const [customTo, setCustomTo] = useState('')
   const [recordNumber, setRecordNumber] = useState('')
+  // Task 0030 (item 6): the level each event recorded for its document when it happened.
+  const [level, setLevel] = useState('')
   const [advanced, setAdvanced] = useState<Advanced>(NO_ADVANCED)
   const [moreOpen, setMoreOpen] = useState(false)
   const [includeRoutine, setIncludeRoutine] = useState(false)
@@ -48,9 +50,10 @@ export function AuditLog() {
       outcome: advanced.outcome || group?.outcome || '',
       actorId: advanced.actorId || person,
       recordNumber: recordNumber.trim(),
+      sensitivityLevel: level,
       from: range.from ?? '', to: range.to ?? '',
     }
-  }, [advanced, group, person, recordNumber, period, customFrom, customTo, query]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [advanced, group, person, recordNumber, level, period, customFrom, customTo, query]) // eslint-disable-line react-hooks/exhaustive-deps
   const remember = (rows: OpsAuditEvent[]) => setPeople((all) => { const next = { ...all }; for (const e of rows) if (e.actorType === 'USER' && !next[e.actorId]) next[e.actorId] = actorName(e); return next })
 
   // Each filter change starts a new generation; an answer for an older generation (a first page or "older events"
@@ -110,6 +113,8 @@ export function AuditLog() {
         <option value="">Person</option>{Object.entries(people).sort((a, b) => a[1].localeCompare(b[1])).map(([id, name]) => <option key={id} value={id}>{name === id ? id : `${name} (${id})`}</option>)}</select>
       <select className="v-select au-period" aria-label="Period" value={period} onChange={(e) => setPeriod(e.target.value as typeof period)}>
         <option value="today">Today</option><option value="7">Last 7 days</option><option value="30">Last 30 days</option><option value="custom">Dates…</option></select>
+      <select className="v-select au-level" aria-label="Sensitivity" value={level} onChange={(e) => setLevel(e.target.value)} title="Events that recorded this level for their document when they happened: openings, page views, downloads, prints, refused openings and requests. Older openings and page views recorded no level, so they are not found.">
+        <option value="">Any sensitivity</option><option value="CONFIDENTIAL">Confidential</option><option value="HIGHLY_CONFIDENTIAL">Highly Confidential</option></select>
       <form className="au-record" onSubmit={(e) => { e.preventDefault(); setQuery((x) => x + 1) }}>
         <input id="au-record" className="v-input mono" aria-label="Record number" inputMode="numeric" value={recordNumber} onChange={(e) => setRecordNumber(e.target.value)} placeholder="Record number" />
       </form>
@@ -148,6 +153,11 @@ export function AuditLog() {
         <div><dt>When</dt><dd>{fmtDateTime(selected.occurredAt)}</dd></div>
         <div><dt>Result</dt><dd><span className={`v-dot ${selected.outcome === 'SUCCESS' ? 'g' : 'r'}`} aria-hidden />{RESULT_WORDS[selected.outcome] ?? selected.outcome}</dd></div>
         {selected.recordNumber && <div><dt>Record</dt><dd className="mono">{selected.recordNumber}</dd></div>}
+        {selected.documentId && <>
+          <div><dt>Level</dt><dd>{levelWords(selected.sensitivityLevel)}</dd></div>
+          <div><dt>Received</dt><dd>{fmtDateTime(selected.documentReceivedAt)}</dd></div>
+          <div><dt>Pages</dt><dd>{selected.documentPageCount ?? '—'}</dd></div>
+        </>}
       </dl>
       <TechDetails flat hint="action code, actor, target, IDs">
         <dl className="v-kv">

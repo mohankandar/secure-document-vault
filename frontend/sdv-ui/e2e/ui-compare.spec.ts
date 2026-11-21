@@ -20,11 +20,12 @@ const OUT = resolve(REPO, '.runtime', 'ui-compare')
 const MAIN_CANVAS = resolve(REPO, 'docs', 'design', 'vero-ui-after.html')
 const FONTS = 'https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap'
 
-export type Board = { name: string; canvas: string; index: number; width: number; height: number }
+/** alone: the board file holds only the app frame (no label column beside it), so the window is the frame's own size. */
+export type Board = { name: string; canvas: string; index: number; width: number; height: number; alone?: boolean }
 
 async function canvasShot(page: Page, board: Board): Promise<Buffer> {
   // Room for the frame at full width beside the canvas's 360px label column: a narrower window squeezes the frame.
-  await page.setViewportSize({ width: board.width + 600, height: board.height + 200 })
+  await page.setViewportSize({ width: board.alone ? board.width : board.width + 600, height: board.height + 200 })
   await page.goto('file:///' + board.canvas.replace(/\\/g, '/'))
   await page.addStyleTag({ url: FONTS }).catch(() => undefined)
   await page.addStyleTag({ content: '.role, .tagpos { display: none !important }' })
@@ -62,7 +63,7 @@ export async function asRole(page: Page, role: string, width: number, height: nu
   await page.goto('/')
   await expect(accountButton(page)).toBeVisible({ timeout: 15000 })
   // The account button names the role in words ("Tenant IT administrator"); switch only when it is another role.
-  const ROLE_WORDS: Record<string, string> = { 'Business User': 'Business user', 'Document Steward': 'Document steward', 'Business Administrator': 'Business administrator', 'Tenant IT Administrator': 'Tenant IT administrator', 'Platform Operations Administrator': 'Platform operations administrator' }
+  const ROLE_WORDS: Record<string, string> = { 'Business User': 'Business user', 'Document Steward': 'Document steward', 'Restricted Steward': 'Restricted steward', 'Business Administrator': 'Business administrator', 'Tenant IT Administrator': 'Tenant IT administrator', 'Platform Operations Administrator': 'Platform operations administrator' }
   if (!((await accountButton(page).getAttribute('aria-label')) ?? '').endsWith(', ' + (ROLE_WORDS[role] ?? role))) {
     await accountButton(page).click()
     await Promise.all([page.waitForEvent('load'), page.getByLabel('Local test role').selectOption({ label: role })])
@@ -215,8 +216,96 @@ export const ADMIN_BOARDS: (Board & { setUp: (page: Page) => Promise<void> })[] 
   { name: 'admin-ops-health', index: 14, height: 760, setUp: adminPage(OPS, '#/operations/health', 760) },
 ].map((b) => ({ ...b, canvas: ADMIN_CANVAS, width: 1440 }))
 
+// ---- Sensitivity boards (task 0029): docs/design/sensitivity/Sens-*.dc.html, one frame each ----
+// Seed-SDV-Canvas-Demo.ps1 (task 0029): 300000000003 Marcus Lee has a Highly Confidential settlement agreement, and Dana
+// Ruiz (Restricted steward) an approved print of it; 300000000005 Wei Chen has a Confidential income statement. The
+// boards' own examples (Jordan Ellis's settlement agreement, Wei Chen's 4 documents) are data.
+const SENS = (file: string) => resolve(REPO, 'docs', 'design', 'sensitivity', file)
+const inspector = (page: Page) => page.getByRole('complementary', { name: 'Record inspector' })
+async function openRecord(page: Page, number: string) {
+  await area(page, 'Records').click()
+  await searchBox(page).fill(number)
+  await searchBox(page).press('Enter')
+  await rows(page).filter({ hasText: number }).first().click()
+  await expect(inspector(page)).toBeVisible({ timeout: 15000 })
+  await expect(inspector(page).getByText(/level$/).first()).toBeVisible()
+}
+async function openDocument(page: Page, kind: RegExp) {
+  await inspector(page).getByRole('button', { name: /Open documents/ }).click()
+  await page.getByRole('navigation', { name: 'Record documents' }).getByRole('button', { name: kind }).click()
+  await expect(page.getByRole('img', { name: /Document page 1/ })).toBeVisible({ timeout: 20000 })
+}
+
+export const SENSITIVITY_BOARDS: (Board & { setUp: (page: Page) => Promise<void> })[] = [
+  { name: 'sens-results', canvas: SENS('Sens-Results.dc.html'), index: 0, width: 1440, height: 900, alone: true, setUp: async (page) => {
+    // As the main results board: the last 30 days, so the list holds the restricted records too, with 300000000003 open.
+    await MAIN_BOARDS[1].setUp(page)
+    await expect(inspector(page).getByText(/level$/).first()).toBeVisible()
+  } },
+  { name: 'sens-viewer', canvas: SENS('Sens-Viewer.dc.html'), index: 0, width: 1440, height: 900, alone: true, setUp: async (page) => {
+    await asRole(page, 'Restricted Steward', 1440, 900)
+    await openRecord(page, INCOMPLETE)
+    await openDocument(page, /Settlement agreement/)
+    await page.getByRole('button', { name: 'Request download' }).click()
+    await page.getByLabel('Why do you need it?').fill('Outside counsel needs a copy for the hearing on 2 December.')
+    await page.waitForLoadState('networkidle')
+  } },
+  { name: 'sens-level', canvas: SENS('Sens-Level.dc.html'), index: 0, width: 1440, height: 900, alone: true, setUp: async (page) => {
+    await asRole(page, 'Document Steward', 1440, 900)
+    await openRecord(page, '300000000005')
+    await openDocument(page, /Income statement/)
+    await page.locator('.vw-bar').first().getByRole('button', { name: /^Level/ }).click()
+    const dialog = page.getByRole('dialog', { name: 'Change sensitivity level' })
+    await dialog.getByRole('radio', { name: /Whole contract/ }).check()
+    await dialog.getByRole('radio', { name: /Highly Confidential/ }).check()
+    await dialog.getByLabel('Reason').fill("Contains an employee's own loan file")
+    await page.waitForLoadState('networkidle')
+  } },
+  // Task 0030. Seed-SDV-Canvas-Demo.ps1: 50 waiting print and download requests from five demo Restricted stewards,
+  // a whole-contract request on 300000000002 and two legal holds. More than 10 wait, so the groups start collapsed;
+  // as on the board, the first group is opened and ticked, and a second (collapsed) group is ticked too.
+  { name: 'sens-approvals', canvas: SENS('Sens-Approvals.dc.html'), index: 0, width: 1440, height: 900, alone: true, setUp: async (page) => {
+    await asRole(page, BA, 1440, 900)
+    await page.evaluate(() => { window.location.hash = '#/governance/approvals' })
+    const list = page.getByRole('region', { name: 'Waiting requests' })
+    await expect(list).toBeVisible({ timeout: 15000 })
+    const groups = list.getByRole('group')
+    await groups.first().getByRole('button', { name: /^Expand / }).click()
+    await groups.first().getByRole('checkbox', { name: /^Select all on / }).check()
+    const second = groups.filter({ has: page.getByRole('button', { name: /^Expand / }) }).first()
+    if (await second.count()) await second.getByRole('checkbox', { name: /^Select all on / }).check()
+    await expect(page.getByRole('region', { name: 'Selected requests' })).toBeVisible()
+    await page.waitForLoadState('networkidle')
+  } },
+  { name: 'sens-legalhold', canvas: SENS('Sens-LegalHold.dc.html'), index: 0, width: 1440, height: 820, alone: true, setUp: async (page) => {
+    await asRole(page, BA, 1440, 820)
+    await page.evaluate(() => { window.location.hash = '#/governance/holds' })
+    await page.getByLabel('Contract number').fill(RECORD)
+    await page.getByLabel('Reason').fill('Litigation: Ellis v. Acme Lending, case 26-CV-0412')
+    await expect(page.getByText(/documents? on contract .* will be held/)).toBeVisible({ timeout: 15000 })
+    await page.waitForLoadState('networkidle')
+  } },
+  // Task 0032: the Daily intake report for today, in the tenant's time zone. The first sending system is open, the
+  // others collapsed, as on the board. Its numbers are today's real intake (data).
+  { name: 'reports-intake', canvas: SENS('Reports-Intake.dc.html'), index: 0, width: 1440, height: 900, alone: true, setUp: async (page) => {
+    await asRole(page, BA, 1440, 900)
+    await page.evaluate(() => { window.location.hash = '#/governance/reports' })
+    await expect(page.getByRole('region', { name: 'Deliveries by sending system' })).toBeVisible({ timeout: 15000 })
+    await page.waitForLoadState('networkidle')
+  } },
+  // Task 0033: the Sensitivity report for this month, all sending systems, in the tenant's time zone. Its numbers are
+  // the dev database's (data).
+  { name: 'reports-sensitivity', canvas: SENS('Reports-Sensitivity.dc.html'), index: 0, width: 1440, height: 900, alone: true, setUp: async (page) => {
+    await asRole(page, BA, 1440, 900)
+    await page.evaluate(() => { window.location.hash = '#/governance/reports' })
+    await page.getByRole('tablist', { name: 'Reports' }).getByRole('tab', { name: 'Sensitivity' }).click()
+    await expect(page.getByRole('region', { name: 'Attempts to open restricted documents' })).toBeVisible({ timeout: 15000 })
+    await page.waitForLoadState('networkidle')
+  } },
+]
+
 test.describe('Canvas comparison', () => {
-  for (const board of [...MAIN_BOARDS, ...QUICK_BOARDS, ...ADMIN_BOARDS].filter((b) => !process.env.SDV_COMPARE_ONLY || b.name.includes(process.env.SDV_COMPARE_ONLY))) {
+  for (const board of [...MAIN_BOARDS, ...QUICK_BOARDS, ...ADMIN_BOARDS, ...SENSITIVITY_BOARDS].filter((b) => !process.env.SDV_COMPARE_ONLY || b.name.includes(process.env.SDV_COMPARE_ONLY))) {
     test(board.name, async ({ page, browser }) => {
       test.setTimeout(90_000)
       const canvasPage = await browser.newPage()

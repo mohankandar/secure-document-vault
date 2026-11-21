@@ -10,7 +10,11 @@ import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Set;
 
-/** Product-specific authorization mapping. External group names remain outside the shared identity module. */
+/**
+ * Product-specific authorization mapping. External group names remain outside the shared identity module.
+ * The roles returned here are what the groups name; {@link com.sdv.platform.security.auth.RoleSeparationGuard} then
+ * withholds roles that can never be held together (task 0025), in {@link EnterpriseJwtAuthenticationConverter}.
+ */
 public final class SdvGroupRoleMapper {
     private final Map<SdvRole, Set<String>> mappings;
     private final boolean directRoleCompatibility;
@@ -36,7 +40,10 @@ public final class SdvGroupRoleMapper {
         if (roles.isEmpty() && directRoleCompatibility) {
             for (String value : groups) {
                 try {
-                    roles.add(SdvRole.valueOf(value.trim().toUpperCase(java.util.Locale.ROOT)));
+                    SdvRole direct = SdvRole.valueOf(value.trim().toUpperCase(java.util.Locale.ROOT));
+                    // Task 0025: Restricted Steward only comes from a configured group mapping, whose changes are
+                    // audited (rule 3). A direct role claim never gives it.
+                    if (direct != SdvRole.RESTRICTED_STEWARD) roles.add(direct);
                 } catch (IllegalArgumentException ignored) {
                     // Non-role customer groups are ignored in compatibility mode.
                 }

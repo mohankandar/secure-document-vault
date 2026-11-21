@@ -59,6 +59,8 @@ public class RetentionDeletionService {
     public SweepResult sweep(int limit) {
         int bounded = Math.max(1, Math.min(limit, 500));
         List<RetentionRepository.DueDocument> due = retention.findDueDocuments(bounded);
+        // Task 0027: documents on legal hold are never candidates; the run summary says how many were kept (a count).
+        long held = retention.countHeldDueDocuments();
         int completed = 0;
         int failed = 0;
         for (RetentionRepository.DueDocument candidate : due) {
@@ -68,12 +70,14 @@ public class RetentionDeletionService {
                 failed++;
             }
         }
-        return new SweepResult(due.size(), completed, failed);
+        return new SweepResult(due.size(), completed, failed, held);
     }
 
     boolean expire(UUID tenantId, UUID documentId) {
         Instant startedAt = clock.instant();
-        if (!retention.claimDueDocument(tenantId, documentId, startedAt)) return false;
+        // Task 0027: one transaction, because the claim locks the document row before it checks for a legal hold.
+        Boolean claimed = transactions.execute(status -> retention.claimDueDocument(tenantId, documentId, startedAt));
+        if (!Boolean.TRUE.equals(claimed)) return false;
 
         Document document = documents.findDocumentByIdForTenant(tenantId, documentId)
                 .orElseThrow(() -> new NoSuchElementException("Retention candidate document not found."));
@@ -155,5 +159,10 @@ public class RetentionDeletionService {
         }
     }
 
-    public record SweepResult(int candidates, int completed, int failed) { }
+    /** heldSkipped (task 0027): documents due for deletion that were kept because they are on legal hold. */
+    public record SweepResult(int candidates, int completed, int failed, long heldSkipped) {
+        public SweepResult(int candidates, int completed, int failed) {
+            this(candidates, completed, failed, 0L);
+        }
+    }
 }

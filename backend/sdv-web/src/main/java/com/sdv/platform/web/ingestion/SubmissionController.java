@@ -1,6 +1,7 @@
 package com.sdv.platform.web.ingestion;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.sdv.platform.application.document.DocumentIntakeService;
 import com.sdv.platform.application.submission.CreateSubmissionCommand;
 import com.sdv.platform.application.submission.SubmissionDetails;
 import com.sdv.platform.application.submission.SubmissionService;
@@ -24,17 +25,32 @@ import java.util.UUID;
 public class SubmissionController {
     private final SecurityContextFacade security;
     private final SubmissionService submissions;
+    private final IntakeRefusals refusals;
 
-    public SubmissionController(SecurityContextFacade security, SubmissionService submissions) {
+    @org.springframework.beans.factory.annotation.Autowired
+    public SubmissionController(SecurityContextFacade security, SubmissionService submissions, IntakeRefusals refusals) {
         this.security = security;
         this.submissions = submissions;
+        this.refusals = refusals;
+    }
+
+    public SubmissionController(SecurityContextFacade security, SubmissionService submissions) {
+        this(security, submissions, IntakeRefusals.NONE);
     }
 
     @PostMapping
     public ResponseEntity<SubmissionResponse> create(@RequestBody CreateSubmissionRequest request) {
         IngestionSourcePrincipal principal = security.requireIngestionSourcePrincipal();
-        SubmissionDetails result = submissions.create(
-                principal.tenantId(), principal.sourceId(), request.toCommand(), principal.subject(), correlationId());
+        SubmissionDetails result;
+        try {
+            result = submissions.create(
+                    principal.tenantId(), principal.sourceId(), request.toCommand(), principal.subject(), correlationId());
+        } catch (RuntimeException ex) {
+            // Task 0032: a refused delivery is counted by the Daily intake report, with its code, although no
+            // submission exists.
+            refusals.submissionRefused(principal, request.sourceSubmissionId(), ex, correlationId());
+            throw ex;
+        }
         HttpStatus status = result.idempotentReplay() ? HttpStatus.OK : HttpStatus.CREATED;
         return ResponseEntity.status(status).body(SubmissionResponse.from(result));
     }
@@ -62,9 +78,24 @@ public class SubmissionController {
             String sourceSubmissionId,
             int expectedDocumentCount,
             List<ExpectedDocumentRequest> expectedDocuments,
-            Map<String, JsonNode> metadata) {
+            Map<String, JsonNode> metadata,
+            /* Task 0024: named only so it can be refused instead of being silently ignored. */
+            JsonNode sensitivityLevel,
+            /* Task 0024, part 2: the level of the whole record; optional, exact names only. */
+            JsonNode recordSensitivityLevel) {
 
         CreateSubmissionCommand toCommand() {
+            if (sensitivityLevel != null) {
+                throw new com.sdv.platform.domain.error.CodedRefusal.BadRequest(
+                        com.sdv.platform.domain.error.SdvErrorCode.SEN_006,
+                        "sensitivityLevel is set on each document upload, with the "
+                        + DocumentIntakeService.SENSITIVITY_FIELD + " header, not on the submission.");
+            }
+            // Not a JSON string (a number, null, an object): passed on as written, so it is refused like any
+            // unknown value. The service checks the value before anything is stored.
+            String recordLevel = recordSensitivityLevel == null ? null
+                    : recordSensitivityLevel.isTextual() ? recordSensitivityLevel.textValue()
+                    : recordSensitivityLevel.toString();
             List<String> manifest = expectedDocuments == null ? List.of() : expectedDocuments.stream()
                     .map(ExpectedDocumentRequest::sourceDocumentId)
                     .toList();
@@ -77,7 +108,7 @@ public class SubmissionController {
                     values.put(key, value.isTextual() ? value.textValue() : value.asText());
                 });
             }
-            return new CreateSubmissionCommand(sourceSubmissionId, expectedDocumentCount, manifest, values);
+            return new CreateSubmissionCommand(sourceSubmissionId, expectedDocumentCount, manifest, values, recordLevel);
         }
     }
 

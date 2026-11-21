@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useStore } from './store'
 import { FailureNotice, actionFailed, loadFailed, type Failure } from './CardError'
 import { Badge, Callout, Drawer, Panel, fmtDate } from './ui'
-import { activateRetentionPolicy, getRetentionPolicy, type RetentionPolicyOverview } from './liveApi'
+import { activateRetentionPolicy, activeHolds, getRetentionPolicy, type RetentionPolicyOverview } from './liveApi'
 
 // Task 0009 Part A (finding 21): the keeping rule in words.
 // The existing API keeps days. A year is 365 days and a month 30 days, both ways: "7 years" is 2,555 days, and
@@ -34,7 +34,15 @@ const setBy = (r: { createdBy: string; createdByDisplayName?: string | null }) =
   byInstallation(r.createdBy) ? 'Set at installation' : r.createdByDisplayName?.trim() || 'A Business admin'
 
 export function KeepingDocuments() {
-  const { can, toast } = useStore()
+  const { can, toast, navigate } = useStore()
+  // Task 0030 (item 5): how many documents are on legal hold (the server lists at most 200).
+  const [held, setHeld] = useState<number | null>(null)
+  useEffect(() => {
+    if (!can('MANAGE_LEGAL_HOLD')) return
+    let active = true
+    activeHolds().then((h) => { if (active) setHeld(h.length) }).catch(() => { if (active) setHeld(null) })
+    return () => { active = false }
+  }, [can])
   const [policy, setPolicy] = useState<RetentionPolicyOverview | null>(null)
   const [error, setError] = useState<Failure | null>(null)
   const [reload, setReload] = useState(0)
@@ -99,7 +107,8 @@ export function KeepingDocuments() {
       <div className="keep-facts">
         {/* The last cleanup run is in Platform operations' retention status, which a Business admin cannot read. */}
         <section className="v-panel keep-fact" aria-label="When time is up"><h3 className="v-sec">When time is up</h3>
-          <p>Vero deletes the document for good and records it in the audit. A daily cleanup does this.</p></section>
+          <p>Vero deletes the document for good and records it in the audit. A daily cleanup does this.</p>
+          {held != null && <p className="keep-held"><button type="button" className="v-link" onClick={() => navigate('governance', 'holds')}>{held >= 200 ? '200 or more documents' : `${held} document${held === 1 ? '' : 's'}`} on legal hold</button>{held > 0 ? ': never deleted while the hold lasts.' : '.'}</p>}</section>
         <section className="v-panel keep-fact" aria-label="Changing the rule"><h3 className="v-sec">Changing the rule</h3>
           <p>A new rule applies to documents that arrive after it starts. Documents already stored keep the rule they arrived with.</p></section>
       </div>

@@ -1,0 +1,8 @@
+databaseChangeLog:
+  - changeSet:
+      id: 032-steward-notices
+      author: sdv
+      changes:
+        - sqlFile:
+            path: db/changelog/032-steward-notices.sql
+            relativeToChangelogFile: false

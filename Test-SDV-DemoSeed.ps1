@@ -13,7 +13,14 @@
        script only passes its path and never opens it.
     2. Run .\Seed-SDV-Canvas-Demo.ps1 against it and check what it made.
     3. Run it again and check that nothing changed (every table, row by row; the audit too).
-    4. With -WithTour: start a second Vite dev server on port 5193 that talks to that Vero, then run
+    4. Task 0035, the data moves on: what a person did by hand on 2026-11-21 is repeated through the API (Daniel's
+       lowering of the income statement approved, Dana's waiting lowering declined, the income statement's hold
+       released, Last Name set to "Starts with", Print turned on for Business user, LexaVault paused) and a stray
+       waiting request is added. The plain seed must not fail (it skips what it can't do and says so), and a second
+       plain run changes nothing.
+    5. Task 0035, the reset: .\Seed-SDV-Canvas-Demo.ps1 -Reset puts the seed's state back (checked item by item), and
+       a second reset changes nothing. Before step 2, the reset is refused on the empty database (no demo data).
+    6. With -WithTour: start a second Vite dev server on port 5193 that talks to that Vero, then run
        npm run ui:capture and npm run ui:compare against it.
 
   Documents delivered by the seed are stored in .runtime\seed-test\<run>\storage-a and -b (kept, like the other
@@ -88,15 +95,23 @@ try {
     $seed = Join-Path $root 'Seed-SDV-Canvas-Demo.ps1'
     $seedArgs = @{ Base = "http://localhost:$Port"; Database = $db; StorageFolder = (Join-Path $run 'storage-a'); StandbyStorageFolder = (Join-Path $run 'storage-b') }
 
+    # Task 0035: the reset refuses a database the seed has not filled.
+    $refused = $null
+    try { & $seed @seedArgs -Reset *> (Join-Path $run 'reset-0-refused.log') } catch { $refused = $_.Exception.Message }
+    Assert-That ($refused -match 'Reset refused: database .* holds no delivery of this seed') "The reset is refused on the empty database ($refused)"
+
     # ---- 2. First run ----
     & $seed @seedArgs *> (Join-Path $run 'seed-1.log')
     Pass 'Seed run 1 finished'
     $T = "'11111111-1111-1111-1111-111111111111'"
     $sources = Scalar "select string_agg(display_name || ':' || status, ', ' order by display_name) from ingestion_sources where tenant_id=$T;"
     Assert-That ($sources -eq 'LexaVault:ACTIVE, Loan Origination System:ACTIVE, Title Records:DISABLED, Tour test system 20261118181639:DISABLED') "Sending systems: $sources"
-    $contracts = Scalar "select string_agg(v.normalized_value, ',' order by v.normalized_value) from business_metadata_values v where v.tenant_id=$T and v.field_key='contractNumber';"
+    # Distinct: since tasks 0029 and 0030 some loan-system contracts have a second delivery (task 0035 fix of this check).
+    $contracts = Scalar "select string_agg(distinct v.normalized_value, ',' order by v.normalized_value) from business_metadata_values v where v.tenant_id=$T and v.field_key='contractNumber';"
     $want = '100000000001,100000000002,100000000003,300000000001,300000000002,300000000003,300000000004,300000000005,300000000006,300000000007,300000000008,300000000009,300000000076,300000000077,300000000078,300000000090,300000000092,300000000094,300000000095,300000000096'
-    Assert-That ($contracts -eq $want) '20 demo records (LexaVault 100000000001-3, 300000000076-78, 090, 092, 094-096; loan system 300000000001-9)'
+    Assert-That ($contracts -eq $want) "20 demo records (LexaVault 100000000001-3, 300000000076-78, 090, 092, 094-096; loan system 300000000001-9): $contracts"
+    $terms = Scalar "select count(*) from documents d join submissions s on s.submission_id=d.submission_id where s.source_submission_id='r3-demo-contract-100000000001';"
+    Assert-That ([int]$terms -eq 3) "100000000001 has its 3 documents (task 0035: each upload is its own copy, so none is an exact duplicate): $terms"
     $fourteen = Scalar "select d.original_filename || ':' || d.status || ':' || coalesce(d.page_count::text, '?') from documents d join submissions s on s.submission_id=d.submission_id where s.source_submission_id='demo-14-pages-300000000092';"
     Assert-That ($fourteen -eq 'loan-file.pdf:AVAILABLE:14') "The 14-page demo document on 300000000092 ($fourteen)"
     $incomplete = Scalar "select s.status || ':' || (select count(*) from documents d where d.submission_id=s.submission_id) || ' of ' || s.expected_document_count from submissions s where s.source_submission_id='demo-incomplete-300000000090';"
@@ -127,8 +142,75 @@ from information_schema.tables where table_schema='public' and table_type='BASE 
     $diff = @(Compare-Object $before $after)
     if ($diff.Count) { $diff | Format-Table -AutoSize | Out-String | Write-Host }
     Assert-That ($diff.Count -eq 0) "Seed run 2 changed nothing ($($before.Count) tables compared row by row, audit included)"
+    function Snapshot { (Scalar ($query + ';')) -split "`n" | ForEach-Object { $_.Trim() } | Sort-Object }
+    function Unchanged([string[]]$A, [string[]]$B, [string]$What) {
+        $d = @(Compare-Object $A $B)
+        if ($d.Count) { $d | Format-Table -AutoSize | Out-String | Write-Host }
+        Assert-That ($d.Count -eq 0) "$What changed nothing ($($A.Count) tables compared row by row, audit included)"
+    }
 
-    # ---- 4. Tour and compare against it ----
+    # ---- 4. Task 0035: the data moves on, as it did by hand on 2026-11-21 ----
+    $base = "http://localhost:$Port"
+    function As([string]$Subject, [string]$Roles) { @{ 'X-SDV-Tenant-Id' = '11111111-1111-1111-1111-111111111111'; 'X-SDV-Subject' = $Subject; 'X-SDV-Roles' = $Roles } }
+    function Call([string]$Method, [string]$Path, [hashtable]$H, [object]$Body = $null) {
+        $p = @{ Uri = "$base$Path"; Method = $Method; Headers = $H; UseBasicParsing = $true; TimeoutSec = 30 }
+        if ($null -ne $Body) { $p.ContentType = 'application/json'; $p.Body = ($Body | ConvertTo-Json -Depth 10) }
+        $r = Invoke-WebRequest @p
+        if ($r.Content) { $r.Content | ConvertFrom-Json }
+    }
+    $priya = As 'local-business-admin' 'BUSINESS_ADMIN'; $dana = As 'local-restricted-steward' 'RESTRICTED_STEWARD'
+    $doc = { param($k) Scalar "select document_id from documents where tenant_id=$T and source_document_id='$k';" }
+    $settlement = & $doc 'canvas-demo-300000000003-sensitivity-1'; $income = & $doc 'canvas-demo-300000000005-sensitivity-1'; $medical = & $doc 'canvas-demo-300000000008-approvals-2'
+    $danielLower = Scalar "select request_id from access_requests where requested_by='local-document-steward' and kind='LOWER_LEVEL' and document_id='$income' and status='PENDING';"
+    $danaLower = Scalar "select request_id from access_requests where requested_by='local-restricted-steward' and kind='LOWER_LEVEL' and document_id='$settlement' and status='PENDING';"
+    $null = Call 'POST' "/api/v1/admin/access-requests/$danielLower/approve" $priya
+    $null = Call 'POST' "/api/v1/admin/access-requests/$danaLower/decline" $priya
+    $incomeHold = Scalar "select hold_id from legal_holds where document_id='$income' and released_at is null;"
+    $null = Call 'POST' "/api/v1/admin/legal-holds/$incomeHold/release" $priya
+    $lexaId = Scalar "select source_id from ingestion_sources where tenant_id=$T and source_key='lexaVault';"
+    $null = Call 'PUT' "/api/v1/admin/ingestion-sources/$lexaId/metadata-fields/lastName" $priya @{ displayLabel = 'Last Name'; fieldType = 'TEXT'; required = $false; businessIdentifier = $false; searchable = $true; normalization = 'TRIM'; searchMode = 'PREFIX'; validationRules = @{} }
+    $roles = (Call 'GET' '/api/v1/admin/role-capabilities' $priya).roles
+    $roles.BUSINESS_USER.PRINT_DOCUMENT = $true
+    $null = Call 'PUT' '/api/v1/admin/role-capabilities' $priya @{ roles = $roles }
+    $it = As 'local-tenant-it' 'TENANT_IT_ADMIN'
+    $lexa = @(Call 'GET' '/api/v1/admin/ingestion-sources' $it | ForEach-Object { $_ }) | Where-Object { $_.sourceKey -eq 'lexaVault' }
+    $null = Call 'PUT' "/api/v1/admin/ingestion-sources/$lexaId" $it @{ displayName = $lexa.displayName; status = 'DISABLED'; authType = $lexa.authType; credentialReference = $lexa.credentialReference }
+    $stray = (Call 'POST' "/api/v1/business/documents/$medical/access-requests" $dana @{ kind = 'DOWNLOAD'; reason = 'Stray request (seed check)' }).requestId
+    Assert-That ((Scalar "select sensitivity_level from documents where document_id='$income';") -eq 'STANDARD') 'Moved on: the income statement was lowered to Standard (as by hand on 2026-11-21)'
+
+    & $seed @seedArgs *> (Join-Path $run 'seed-3-moved-on.log')
+    $log = Get-Content (Join-Path $run 'seed-3-moved-on.log') -Raw
+    Assert-That ($log -match "\[SKIP\] Daniel's waiting lowering: the income statement is STANDARD") 'Seed run 3 (data moved on) did not fail; it skipped Daniel''s lowering and said why'
+    Assert-That ($log -match 'step\(s\) skipped because the data has moved on') 'Seed run 3 says at the end that steps were skipped and how to reset'
+    Assert-That ((Scalar "select count(*) from access_requests where requested_by='local-restricted-steward' and kind='LOWER_LEVEL' and document_id='$settlement' and status='PENDING';") -eq '1') 'Seed run 3 made Dana''s waiting lowering again'
+    Assert-That ((Scalar "select count(*) from legal_holds where document_id='$income' and released_at is null;") -eq '1') 'Seed run 3 placed the income statement''s hold again'
+    Assert-That ((Scalar "select status from ingestion_sources where source_id='$lexaId';") -eq 'ACTIVE') 'Seed run 3 started LexaVault receiving again'
+    $before = Snapshot
+    & $seed @seedArgs *> (Join-Path $run 'seed-4-moved-on.log')
+    Unchanged $before (Snapshot) 'Seed run 4 (data still moved on)'
+
+    # ---- 5. Task 0035: the reset ----
+    & $seed @seedArgs -Reset *> (Join-Path $run 'reset-1.log')
+    Pass 'Reset run 1 finished'
+    $levels = Scalar "select string_agg(source_document_id || ':' || sensitivity_level, ',' order by source_document_id) from documents where tenant_id=$T and sensitivity_level <> 'STANDARD';"
+    $wantLevels = 'canvas-demo-300000000003-sensitivity-1:HIGHLY_CONFIDENTIAL,canvas-demo-300000000005-sensitivity-1:CONFIDENTIAL,canvas-demo-300000000007-approvals-1:HIGHLY_CONFIDENTIAL,canvas-demo-300000000007-approvals-2:HIGHLY_CONFIDENTIAL,canvas-demo-300000000008-approvals-1:HIGHLY_CONFIDENTIAL,canvas-demo-300000000008-approvals-2:HIGHLY_CONFIDENTIAL,canvas-demo-300000000009-sensitivity-1:CONFIDENTIAL'
+    Assert-That ($levels -eq $wantLevels) "Reset: document levels as the seed makes them ($levels)"
+    Assert-That ((Scalar "select string_agg(sensitivity_level, ',') from record_sensitivity_levels where tenant_id=$T and sensitivity_level <> 'STANDARD';") -eq 'HIGHLY_CONFIDENTIAL') 'Reset: only 300000000002 has a contract level (Highly Confidential)'
+    $waiting = Scalar "select string_agg(x, ', ' order by x) from (select requested_by || ' ' || kind || ' ' || count(*) x from access_requests where tenant_id=$T and status='PENDING' and expires_at > now() group by requested_by, kind) y;"
+    $wantWaiting = 'local-demo-ali-haddad DOWNLOAD 5, local-demo-ali-haddad PRINT 5, local-demo-leo-grant DOWNLOAD 5, local-demo-leo-grant PRINT 5, local-demo-mia-novak DOWNLOAD 5, local-demo-mia-novak PRINT 5, local-demo-sam-kim DOWNLOAD 5, local-demo-sam-kim PRINT 5, local-demo-tom-reed DOWNLOAD 5, local-demo-tom-reed PRINT 5, local-document-steward LOWER_LEVEL 1, local-restricted-steward LOWER_LEVEL 1, local-restricted-steward LOWER_RECORD_LEVEL 1'
+    Assert-That ($waiting -eq $wantWaiting) "Reset: only the seed's waiting requests ($waiting)"
+    Assert-That ((Scalar "select status from access_requests where request_id='$stray';") -eq 'DECLINED') 'Reset: the stray waiting request was declined'
+    $holds = Scalar "select string_agg(d.source_document_id, ',' order by d.source_document_id) from legal_holds h join documents d on d.document_id=h.document_id where h.tenant_id=$T and h.released_at is null;"
+    Assert-That ($holds -eq 'canvas-demo-300000000005-sensitivity-1,canvas-demo-300000000007-approvals-1,canvas-demo-300000000007-approvals-2') "Reset: the seed's three legal holds ($holds)"
+    Assert-That ((Scalar "select search_mode from metadata_field_definitions where source_id='$lexaId' and field_key='lastName' and active;") -eq 'PARTIAL') 'Reset: Last Name matches "Contains" again'
+    $printNow = (Call 'GET' '/api/v1/admin/role-capabilities' $priya).roles.BUSINESS_USER.PRINT_DOCUMENT
+    Assert-That (-not $printNow) 'Reset: Business user has no Print again'
+    Assert-That (-not ((Get-Content (Join-Path $run 'reset-1.log') -Raw) -match '\[SKIP\]')) 'Reset run 1 skipped nothing'
+    $before = Snapshot
+    & $seed @seedArgs -Reset *> (Join-Path $run 'reset-2.log')
+    Unchanged $before (Snapshot) 'Reset run 2'
+
+    # ---- 6. Tour and compare against it ----
     if ($WithTour) {
         if (Get-NetTCPConnection -LocalPort $UiPort -State Listen -ErrorAction SilentlyContinue) { throw "Port $UiPort is in use." }
         $env:SDV_UI_PORT = "$UiPort"; $env:SDV_API_TARGET = "http://localhost:$Port"
