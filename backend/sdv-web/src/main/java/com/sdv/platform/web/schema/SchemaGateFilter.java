@@ -1,21 +1,25 @@
 package com.sdv.platform.web.schema;
 
+import com.sdv.platform.domain.error.SdvErrorCode;
+import com.sdv.platform.web.foundation.ErrorReplies;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.util.Set;
 
 /**
  * While the database doesn't match this version, every request except health and system information gets
  * 503 with the plain sentence, before sign-in is even looked at. Runs right after the correlation-ID filter.
+ * Task 0036: the one error body, with SDV codes in place of DATABASE_OLDER, DATABASE_NEWER and DATABASE_UNREACHABLE
+ * (SDV-SYS-001, -002, -003; owner answer 0034, item 3), and the request's reference.
  */
 @Component
 @Order(Ordered.HIGHEST_PRECEDENCE + 1)
@@ -37,13 +41,14 @@ public final class SchemaGateFilter extends OncePerRequestFilter {
             return;
         }
         SchemaVersion.Status status = check.status();
-        response.setStatus(HttpServletResponse.SC_SERVICE_UNAVAILABLE);
-        response.setContentType("application/json");
-        response.setCharacterEncoding(StandardCharsets.UTF_8.name());
-        response.getWriter().write("{\"code\":\"DATABASE_" + status.state().name() + "\",\"message\":\"" + json(status.message()) + "\"}");
+        ErrorReplies.write(request, response, HttpStatus.SERVICE_UNAVAILABLE, code(status.state()).code(), status.message());
     }
 
-    private static String json(String s) {
-        return s.replace("\\", "\\\\").replace("\"", "\\\"");
+    static SdvErrorCode code(SchemaVersion.State state) {
+        return switch (state) {
+            case OLDER -> SdvErrorCode.SYS_001;
+            case NEWER -> SdvErrorCode.SYS_002;
+            case UNREACHABLE, CURRENT -> SdvErrorCode.SYS_003;
+        };
     }
 }

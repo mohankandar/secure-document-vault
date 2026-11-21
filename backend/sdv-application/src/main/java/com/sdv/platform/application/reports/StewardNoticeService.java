@@ -1,5 +1,6 @@
 package com.sdv.platform.application.reports;
 
+import com.sdv.platform.domain.error.InternalCheckFailed;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sdv.platform.application.port.AuditEventPort;
@@ -95,14 +96,14 @@ public class StewardNoticeService {
 
     static String message(String kind) {
         if ("UNCORRECTED_COPY_RECEIVED".equals(kind)) return UNCORRECTED_COPY_MESSAGE;
-        throw new IllegalStateException("A notice of an unknown kind can't be shown: " + kind);
+        throw new InternalCheckFailed("A notice of an unknown kind can't be shown: " + kind);
     }
 
     private static String json(Map<String, Object> details) {
         try {
             return JSON.writeValueAsString(details);
         } catch (JsonProcessingException ex) {
-            throw new IllegalStateException("Marking the notice read could not be audited, so it was not marked.", ex);
+            throw InternalCheckFailed.auditNotWritten("Marking the notice read could not be audited, so it was not marked.", ex);
         }
     }
 

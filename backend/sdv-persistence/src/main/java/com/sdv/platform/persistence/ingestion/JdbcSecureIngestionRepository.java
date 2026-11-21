@@ -1,5 +1,6 @@
 package com.sdv.platform.persistence.ingestion;
 
+import com.sdv.platform.domain.error.InternalCheckFailed;
 import com.sdv.platform.application.port.DocumentIntakeRepository;
 import com.sdv.platform.application.port.StorageVolumeRepository;
 import com.sdv.platform.application.port.SubmissionRepository;
@@ -49,7 +50,7 @@ public class JdbcSecureIngestionRepository implements SubmissionRepository, Stor
                 """, p);
         if (inserted == 1) return new InsertResult(candidate, true);
         Submission existing = findBySourceIdentity(candidate.tenantId(), candidate.sourceId(), candidate.sourceSubmissionId())
-                .orElseThrow(() -> new IllegalStateException("Submission idempotency conflict could not be resolved."));
+                .orElseThrow(() -> new InternalCheckFailed("Submission idempotency conflict could not be resolved."));
         return new InsertResult(existing, false);
     }
 
@@ -185,7 +186,7 @@ public class JdbcSecureIngestionRepository implements SubmissionRepository, Stor
                        updated_at=:updatedAt
                  where tenant_id=:tenantId and volume_id=:volumeId
                 """, storageVolumeParams(volume));
-        if (updated != 1) throw new IllegalStateException("Storage volume update did not affect exactly one tenant-owned row.");
+        if (updated != 1) throw new InternalCheckFailed("Storage volume update did not affect exactly one tenant-owned row.");
     }
 
 
@@ -418,7 +419,7 @@ public class JdbcSecureIngestionRepository implements SubmissionRepository, Stor
                 .addValue("submissionId", submissionId)
                 .addValue("auditEventId", auditEventId)
                 .addValue("createdAt", Timestamp.from(createdAt)));
-        if (inserted != 1) throw new IllegalStateException("The stewards' notice was not stored.");
+        if (inserted != 1) throw new InternalCheckFailed("The stewards' notice was not stored.");
     }
 
     @Override
@@ -535,7 +536,7 @@ public class JdbcSecureIngestionRepository implements SubmissionRepository, Stor
                 .addValue("documentId", documentId)
                 .addValue("receivedAt", Timestamp.from(receivedAt)));
         if (updated > 1) {
-            throw new IllegalStateException("Expected-document receipt updated more than one row.");
+            throw new InternalCheckFailed("Expected-document receipt updated more than one row.");
         }
     }
 
@@ -570,7 +571,7 @@ public class JdbcSecureIngestionRepository implements SubmissionRepository, Stor
                 .addValue("tenantId", tenantId)
                 .addValue("sourceId", sourceId)
                 .addValue("submissionId", submissionId));
-        if (updated != 1) throw new IllegalStateException("Submission receipt update did not affect exactly one tenant-owned row.");
+        if (updated != 1) throw new InternalCheckFailed("Submission receipt update did not affect exactly one tenant-owned row.");
     }
 
     @Override
@@ -620,7 +621,7 @@ public class JdbcSecureIngestionRepository implements SubmissionRepository, Stor
                 .addValue("sourceId", sourceId)
                 .addValue("submissionId", submissionId)
                 .addValue("documentId", documentId));
-        if (updated != 1) throw new IllegalStateException("Document availability transition did not affect exactly one PROCESSING row.");
+        if (updated != 1) throw new InternalCheckFailed("Document availability transition did not affect exactly one PROCESSING row.");
     }
 
     @Override
@@ -643,7 +644,7 @@ public class JdbcSecureIngestionRepository implements SubmissionRepository, Stor
                 .addValue("sourceId", sourceId)
                 .addValue("submissionId", submissionId)
                 .addValue("documentId", documentId));
-        if (updated != 1) throw new IllegalStateException("Document failure transition did not affect exactly one PROCESSING row.");
+        if (updated != 1) throw new InternalCheckFailed("Document failure transition did not affect exactly one PROCESSING row.");
     }
 
     @Override

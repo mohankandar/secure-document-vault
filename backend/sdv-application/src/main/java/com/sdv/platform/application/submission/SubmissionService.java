@@ -1,5 +1,6 @@
 package com.sdv.platform.application.submission;
 
+import com.sdv.platform.domain.error.InternalCheckFailed;
 import com.sdv.platform.application.business.RecordKey;
 import com.sdv.platform.application.port.AuditEventPort;
 import com.sdv.platform.application.port.DocumentIntakeRepository;
@@ -366,7 +367,7 @@ public class SubmissionService {
             return;
         }
         RecordSensitivityRepository.StoredRecordLevel stored = recordLevels.lockByKey(tenantId, sourceId, recordKey)
-                .orElseThrow(() -> new IllegalStateException("The record's sensitivity level could not be read."));
+                .orElseThrow(() -> new InternalCheckFailed("The record's sensitivity level could not be read."));
         if (requested.compareTo(stored.level()) > 0) {
             recordLevels.raise(tenantId, stored.recordLevelId(), requested, "SOURCE", now);
             auditRecordLevel(tenantId, sourceSubject, "RECORD_SENSITIVITY_RAISED", stored.recordLevelId(), now,
@@ -430,7 +431,7 @@ public class SubmissionService {
             if (recordLevel != null) update(digest, "recordSensitivityLevel", recordLevel.name());
             return HexFormat.of().formatHex(digest.digest());
         } catch (NoSuchAlgorithmException ex) {
-            throw new IllegalStateException("SHA-256 is unavailable.", ex);
+            throw new InternalCheckFailed("SHA-256 is unavailable.", ex);
         }
     }
 

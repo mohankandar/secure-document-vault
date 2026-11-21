@@ -78,9 +78,11 @@ class ErrorCodesDocumentedTest {
                 .andExpect(jsonPath("$.code").value("SDV-SEN-007"));
         mvc.perform(get("/plain")).andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("CONFLICT"));
         // Task 0026: a coded 403 sends exactly the code and the fixed message (and the time), nothing else.
+        // Task 0036: and the reference, so four fields.
         mvc.perform(get("/restricted")).andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("SDV-SEN-008"))
                 .andExpect(jsonPath("$.message").value("This document is restricted."))
-                .andExpect(jsonPath("$.length()").value(3));
+                .andExpect(jsonPath("$.reference").isNotEmpty())
+                .andExpect(jsonPath("$.length()").value(4));
     }
 }

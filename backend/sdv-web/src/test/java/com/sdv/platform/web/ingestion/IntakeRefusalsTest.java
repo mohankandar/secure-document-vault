@@ -62,6 +62,26 @@ class IntakeRefusalsTest {
         return event.getValue();
     }
 
+    /** Task 0036: the reference in the error body is the ID on the audit event the refusal wrote. */
+    @Test
+    void theBodysReferenceIsTheAuditEventsCorrelationId() throws Exception {
+        SecurityContextFacade security = mock(SecurityContextFacade.class);
+        when(security.requireIngestionSourcePrincipal()).thenReturn(new IngestionSourcePrincipal(TENANT, SOURCE, "loans-producer"));
+        MockMvc withFilter = MockMvcBuilders.standaloneSetup(new DocumentIntakeController(security, intake,
+                        new IntakeRefusals(audit, Clock.fixed(NOW, ZoneOffset.UTC))))
+                .setControllerAdvice(new FoundationExceptionHandler())
+                .addFilters(new com.sdv.platform.web.config.CorrelationIdFilter()).build();
+        when(intake.receive(any(), any(), any(), any(), any(), any(), any(), any(), anyLong(), any(), any(), any()))
+                .thenThrow(new CodedRefusal.BadRequest(SdvErrorCode.SEN_001, "unknown level"));
+        String body = withFilter.perform(post("/api/v1/ingestion/submissions/" + SUBMISSION + "/documents")
+                        .contentType("application/pdf").content("%PDF".getBytes(StandardCharsets.US_ASCII))
+                        .header("X-SDV-Filename", "a.pdf"))
+                .andExpect(status().isBadRequest()).andReturn().getResponse().getContentAsString();
+        String reference = new com.fasterxml.jackson.databind.ObjectMapper().readTree(body).get("reference").asText();
+        assertFalse(reference.isBlank());
+        assertEquals(reference, recorded().correlationId());
+    }
+
     @Test
     void aRefusedDeliveryIsRecordedWithItsRequestIdAndCodeAlthoughNoSubmissionExists() throws Exception {
         when(submissions.create(any(), any(), any(), any(), any()))
@@ -137,8 +157,10 @@ class IntakeRefusalsTest {
         reset(intake);
         when(intake.receive(any(), any(), any(), any(), any(), any(), any(), any(), anyLong(), any(), any(), any()))
                 .thenThrow(new java.io.UncheckedIOException(new java.io.IOException("disk")));
-        assertThrows(Exception.class, () -> mvc.perform(post("/api/v1/ingestion/submissions/" + SUBMISSION + "/documents")
-                .contentType("application/pdf").content("%PDF".getBytes(StandardCharsets.US_ASCII)).header("X-SDV-Filename", "a.pdf")));
+        // Task 0036: now answered by the last-resort handler (500, SDV-SYS-013) instead of escaping unhandled.
+        mvc.perform(post("/api/v1/ingestion/submissions/" + SUBMISSION + "/documents")
+                        .contentType("application/pdf").content("%PDF".getBytes(StandardCharsets.US_ASCII)).header("X-SDV-Filename", "a.pdf"))
+                .andExpect(status().isInternalServerError()).andExpect(jsonPath("$.code").value("SDV-SYS-013"));
         verifyNoInteractions(audit);
     }
 

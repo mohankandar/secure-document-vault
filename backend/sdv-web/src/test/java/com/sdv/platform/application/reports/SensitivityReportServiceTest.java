@@ -127,10 +127,10 @@ class SensitivityReportServiceTest {
     void whatTheRepositoryCantExplainStopsTheReport() {
         seed();
         repo.requests.add(new SensitivityReportRepository.RequestCount("SHARE", "APPROVED", 1));
-        assertThrows(IllegalStateException.class, () -> service(NY).report(TENANT, null, null, null));
+        assertThrows(com.sdv.platform.domain.error.InternalCheckFailed.class, () -> service(NY).report(TENANT, null, null, null));
         repo.requests.removeLast();
         repo.requests.add(new SensitivityReportRepository.RequestCount("PRINT", "MAYBE", 1));
-        assertThrows(IllegalStateException.class, () -> service(NY).report(TENANT, null, null, null));
+        assertThrows(com.sdv.platform.domain.error.InternalCheckFailed.class, () -> service(NY).report(TENANT, null, null, null));
     }
 
     @Test

@@ -1,12 +1,13 @@
 # Vero error codes
 
-Every refusal listed here comes back with a short, stable `code` and a plain `message`:
+Every error from Vero comes back with one body: a short, stable `code`, a plain `message`, a `reference` and the time (task 0036):
 
 ```json
-{"code": "SDV-SEN-002", "message": "recordSensitivityLevel must be one of STANDARD, CONFIDENTIAL, HIGHLY_CONFIDENTIAL (exactly, in capitals); leave it out for no record level.", "timestamp": "2026-11-20T10:00:00Z"}
+{"code": "SDV-SEN-002", "message": "recordSensitivityLevel must be one of STANDARD, CONFIDENTIAL, HIGHLY_CONFIDENTIAL (exactly, in capitals); leave it out for no record level.", "reference": "6f1c0f0e-5b7a-4c1e-9f4e-2d8a7c3b1e90", "timestamp": "2026-11-20T10:00:00Z"}
 ```
 
-- **Format:** `SDV-<AREA>-<NNN>`. `SDV` is the product. `AREA` is three letters: `SEN` sensitivity, `ROL` roles, `HLD` legal hold, `APR` approvals, `INT` intake, `RPT` reports.
+- **Reference:** the request's correlation ID, the same as the `X-Correlation-Id` response header. It is on Vero's log line for the error, and on the audit event when one was written. Give it to support.
+- **Format:** `SDV-<AREA>-<NNN>`. `SDV` is the product. `AREA` is three letters: `SEN` sensitivity, `ROL` roles, `HLD` legal hold, `APR` approvals, `INT` intake, `RPT` reports, `SYS` the server as a whole, `STO` storage.
 - **Stable:** a code never changes meaning once it is released. A code that is no longer used stays listed and is marked retired. Its number is never reused.
 - **Messages** may be reworded. Programs should read the `code`, not the message.
 - **Not yet coded:** errors that are not listed here still send a generic code (`BAD_REQUEST`, `CONFLICT`, `NOT_FOUND`, `FORBIDDEN` and so on). They get an `SDV-` code when their area is worked on. The failure catalog at the end of this file (task 0034) lists every such point and proposes its code.
@@ -415,6 +416,75 @@ Sent by the Business Admin's reports: the Daily intake report (task 0032, `GET /
 - **What the user should do:** choose fewer days, or one sending system.
 - **What support should tell the customer:** export the period in parts.
 
+## Server (SYS)
+
+Task 0036. Every error body also carries `reference`: the request's correlation ID, the same as the `X-Correlation-Id` response header. The same ID is on Vero's log line, and on the audit event when one was written. Every 5xx writes one ERROR log line with the code, the reference and the exact cause; the body holds only the plain sentence.
+
+### SDV-SYS-001: database older than this version
+
+- **HTTP status:** 503, on every request except health and system information (`/actuator/health…`, `/actuator/info`, `/api/v1/system/info`). Replaces `DATABASE_OLDER`.
+- **Meaning:** this Vero version has database changes that have not been applied yet. Vero refuses everything until they are. Nothing was read or changed.
+- **What the user should do:** wait; Vero can't be used until the database is updated. Tell the IT team if they don't already know.
+- **What support should tell the customer:** Vero was upgraded but its database wasn't. The database team runs the schema step from the install guide ("Update the database"), then restarts Vero. No data is lost.
+
+### SDV-SYS-002: database newer than this version
+
+- **HTTP status:** 503, on every request except health and system information. Replaces `DATABASE_NEWER`.
+- **Meaning:** the database was updated for a later Vero version than the one running. Nothing was read or changed.
+- **What the user should do:** wait, and tell the IT team.
+- **What support should tell the customer:** an older Vero was started after an upgrade. Start the Vero version the database was updated for. Never roll the database back by hand.
+
+### SDV-SYS-003: database unreachable at start
+
+- **HTTP status:** 503, on every request except health and system information. Replaces `DATABASE_UNREACHABLE`.
+- **Meaning:** when Vero started it couldn't read the database to check its version. Vero refuses until it is restarted.
+- **What the user should do:** try again in a few minutes. If it keeps happening, tell the IT team.
+- **What support should tell the customer:** Vero started while its database was unavailable. Check that PostgreSQL is running and reachable, then restart Vero.
+
+### SDV-SYS-013: unexpected server failure
+
+- **HTTP status:** 500. Any request; the last-resort answer for a failure no other code covers.
+- **Meaning:** something failed inside Vero that it didn't expect. Message: "Vero couldn't finish this just now. Try again. If it keeps happening, give your IT team the reference."
+- **What the user should do:** try again. If it keeps happening, give the IT team the reference.
+- **What support should tell the customer:** something failed inside Vero. Ask for the reference and the time and pass them to Vero support. Vero's log has one ERROR line with that reference, the exception class and the stack trace.
+
+### SDV-SYS-014: database failed during a request
+
+- **HTTP status:** 503. Any request that reads or writes the database.
+- **Meaning:** PostgreSQL went down, timed out or ran out of connections while Vero was answering. Message: "Vero can't reach its database just now. Try again in a few minutes."
+- **What the user should do:** try again in a few minutes. A sending system re-sends what got a 503.
+- **What support should tell the customer:** Vero lost its database for a while. Check the database server. The log line has the reference, the SQL state and the Vero method; it never holds the SQL or the values sent.
+
+### SDV-SYS-015: request malformed before Vero's code ran
+
+- **HTTP status:** 400 when the request can't be read: an ID that isn't a UUID, JSON that doesn't parse, a required header or parameter missing. A wrong method (405), a wrong content type (415), an Accept header Vero can't answer (406) and an unknown address (404) keep their own status.
+- **Meaning:** the request was refused before Vero looked at it. Nothing was stored. The message says which part, for example "Vero couldn't read this request: the submissionId is not valid." It names the field, never the value sent.
+- **What the user should do:** correct the part the message names and send it again. For a person: reload the page and try again.
+- **What support should tell the customer:** the sending program or screen sent the request in the wrong form; the message says which part. Vero logs an INFO line with the reference and the route.
+
+### SDV-SYS-016: internal check failed
+
+- **HTTP status:** 500. Any request. It used to be 409 `CONFLICT` with an internal sentence, which told the caller to change a request that was fine.
+- **Meaning:** a check inside Vero that should never fail did fail: a bug, or data changed outside Vero. Nothing was changed. Message: "Vero stopped this because something inside didn't add up. Nothing was changed. Give your IT team the reference."
+- **What the user should do:** give the IT team the reference. Trying again usually gives the same answer.
+- **What support should tell the customer:** this is a Vero fault, not the customer's. Pass the reference to Vero support. The log line has the check's own sentence and the stack trace.
+
+### SDV-SYS-017: action not done because the audit couldn't be written
+
+- **HTTP status:** 500. Any action that writes an audit event. It used to be 409 `CONFLICT`.
+- **Meaning:** Vero never acts without recording it. The record couldn't be written, so the action was not done. Message: "Vero couldn't record this action, so it wasn't done. Try again in a few minutes."
+- **What the user should do:** try again in a few minutes.
+- **What support should tell the customer:** the audit couldn't be written, so nothing happened. Check the database, then try again. The log line has the reference and the cause.
+
+## Storage (STO)
+
+### SDV-STO-001: no storage can take the document
+
+- **HTTP status:** 503. Sent by the document upload (`POST /api/v1/ingestion/submissions/{id}/documents`), corrective redaction and the storage placement preview. It used to be 409 `CONFLICT`, and intake counted it as a refusal.
+- **Meaning:** every ACTIVE storage volume is full, at its stop-write level, or can't be written or read. Nothing was stored. Message: "Vero has no storage space for new documents right now. Nothing was stored; send it again later."
+- **What the user should do:** a sending system sends the document again later. A person tells the IT team.
+- **What support should tell the customer:** Vero's storage is full. Tenant IT frees space, adds a volume, or raises the stop-write level; then senders re-send. Vero logs an ERROR line with the reference.
+
 ## Failure catalog (task 0034): proposed codes
 
 Task 0034 went through the code flow by flow and listed every point where something can fail: thrown, caught, returned or swallowed. The released codes above are unchanged. Everything below is a **proposal**: **Vero does not send these codes yet.**
@@ -454,7 +524,8 @@ Task 0034 went through the code flow by flow and listed every point where someth
 
 ### Start-up and setup (SYS)
 
-#### SDV-SYS-001 (proposed): database older than this version
+#### SDV-SYS-001 (released in task 0036): database older than this version
+- **Released:** now sent; its section is under "Server (SYS)" above. The notes below are what task 0034 found, kept for the list of lines.
 - **Where:** `SchemaGateFilter.java:43` (answer), `DatabaseSchemaCheck.java:36` (log), `SchemaVersion.java:31` (sentence).
 - **Trigger:** changesets of this version have not been applied to the database.
 - **Today:** 503 `DATABASE_OLDER` with a plain sentence, on every request except health and system information. Generic: no (own code, not in SDV form).
@@ -464,7 +535,8 @@ Task 0034 went through the code flow by flow and listed every point where someth
 - **Fix:** the database team runs the schema step (`Update-SDV-Schema.ps1`), then Vero is restarted.
 - **L1 tells the customer:** Vero was upgraded but its database wasn't. Their database team runs the schema step from the install guide, then restarts Vero. No data is lost.
 
-#### SDV-SYS-002 (proposed): database newer than this version
+#### SDV-SYS-002 (released in task 0036): database newer than this version
+- **Released:** now sent; its section is under "Server (SYS)" above. The notes below are what task 0034 found, kept for the list of lines.
 - **Where:** `SchemaGateFilter.java:43`, `DatabaseSchemaCheck.java:36`, `SchemaVersion.java:32`.
 - **Trigger:** the database has changesets this version doesn't know (an older Vero started against an upgraded database).
 - **Today:** 503 `DATABASE_NEWER`. Generic: no (own code).
@@ -474,7 +546,8 @@ Task 0034 went through the code flow by flow and listed every point where someth
 - **Fix:** start the Vero version the database was updated for.
 - **L1 tells the customer:** an older Vero was started after an upgrade. Start the newer version again; never roll the database back by hand.
 
-#### SDV-SYS-003 (proposed): database unreachable at start
+#### SDV-SYS-003 (released in task 0036): database unreachable at start
+- **Released:** now sent; its section is under "Server (SYS)" above. The notes below are what task 0034 found, kept for the list of lines.
 - **Where:** `DatabaseSchemaCheck.java:52-54` (caught; logs the JDBC exception class and message), `SchemaGateFilter.java:43`.
 - **Trigger:** PostgreSQL is down, unreachable, or refuses the user when Vero starts.
 - **Today:** 503 `DATABASE_UNREACHABLE` until Vero is **restarted**. The check runs once, so Vero stays refusing even after the database comes back. Generic: no (own code).
@@ -592,7 +665,8 @@ Task 0034 went through the code flow by flow and listed every point where someth
 - **Fix:** fix task. Skip the watcher while the database doesn't match (as the bootstrap does), and check the tenant ID with the other sign-in settings (SYS-005).
 - **L1 tells the customer:** Vero could not start because its database was unavailable. Start it again once the database is up.
 
-#### SDV-SYS-013 (proposed): unexpected server failure
+#### SDV-SYS-013 (released in task 0036): unexpected server failure
+- **Released:** now sent; its section is under "Server (SYS)" above. The notes below are what task 0034 found, kept for the list of lines.
 - **Where:** `FoundationExceptionHandler.java` (no handler for `Exception`, `IOException` or Spring's `DataAccessException`). Any failure not listed elsewhere ends here. Main callers:
   - `DocumentIntakeController.java:62-67`: storage, key service and client-disconnect `IOException`s;
   - `ControlledDownloadController`: failures after the download started.
@@ -604,7 +678,8 @@ Task 0034 went through the code flow by flow and listed every point where someth
 - **Fix:** fix task. Add a last-resort handler that sends `{code, message, reference, timestamp}` with 500, and give each recurring cause its own code.
 - **L1 tells the customer:** something failed inside Vero. Ask for the reference and pass it to Vero support with the time.
 
-#### SDV-SYS-014 (proposed): database failed during a request
+#### SDV-SYS-014 (released in task 0036): database failed during a request
+- **Released:** now sent; its section is under "Server (SYS)" above. The notes below are what task 0034 found, kept for the list of lines.
 - **Where:** every JDBC repository (`Jdbc*Repository.java`). Spring's `DataAccessException` reaches no Vero handler.
 - **Trigger:** PostgreSQL goes down, times out or runs out of connections after Vero has started.
 - **Today:** 500, generic body, same as SYS-013. Readiness stays UP, because it reports only the start-up schema check. Generic: yes.
@@ -614,7 +689,8 @@ Task 0034 went through the code flow by flow and listed every point where someth
 - **Fix:** restore the database. Fix task: map `DataAccessException` to 503 with this code, and add a database ping to readiness.
 - **L1 tells the customer:** Vero lost its database for a while. Check the database server; nothing needs re-sending unless the sender got a 503.
 
-#### SDV-SYS-015 (proposed): request malformed before Vero's code ran
+#### SDV-SYS-015 (released in task 0036): request malformed before Vero's code ran
+- **Released:** now sent; its section is under "Server (SYS)" above. The notes below are what task 0034 found, kept for the list of lines.
 - **Where:** Spring MVC, before any controller (`DefaultHandlerExceptionResolver`):
   - an `@PathVariable UUID` that isn't a UUID (every `{documentId}`, `{submissionId}`, `{sourceId}`, `{volumeId}`, `{requestId}` and `{holdId}`);
   - JSON that doesn't parse;
@@ -629,7 +705,8 @@ Task 0034 went through the code flow by flow and listed every point where someth
 - **Fix:** fix task. Handle these exceptions in `FoundationExceptionHandler`, and record intake ones as `INTAKE_REFUSED`.
 - **L1 tells the customer:** the sending program or screen sent a request in the wrong form. The message says which part.
 
-#### SDV-SYS-016 (proposed): internal check failed
+#### SDV-SYS-016 (released in task 0036): internal check failed
+- **Released:** now sent; its section is under "Server (SYS)" above. The notes below are what task 0034 found, kept for the list of lines.
 - **Where:** checks that "can't happen". Today they are `IllegalStateException` (sent as **409 `CONFLICT` with developer text**), `UnsupportedOperationException`, or a bare `orElseThrow()` (sent as **404 "No value present"**).
   - SHA-256: `BusinessExperienceService.java:873`, `RecordKey.java:51`, `:112`, `BusinessRecordRefCodec.java:38`, `ValidatedPdfInputStream.java:28`, `SubmissionService.java:433`, `StorageVolumeAdminService.java:153`, `CorrectiveRedactionService.java:412`, `:459`.
   - Row counts:
@@ -677,7 +754,8 @@ Task 0034 went through the code flow by flow and listed every point where someth
 - **Fix:** fix task. Throw a dedicated `InternalCheckFailed` (500), not `IllegalStateException`.
 - **L1 tells the customer:** this is a Vero fault, not the customer's. Pass the reference to Vero support.
 
-#### SDV-SYS-017 (proposed): action not done because the audit couldn't be written
+#### SDV-SYS-017 (released in task 0036): action not done because the audit couldn't be written
+- **Released:** now sent; its section is under "Server (SYS)" above. The notes below are what task 0034 found, kept for the list of lines.
 - **Where:** audit JSON failures: `AccessRequestService.java:577-578`, `AuditQueryService.java:164-165`, `LegalHoldService.java:163-164`, `IntakeReportService.java:355-356`, `SensitivityReportService.java:287-288`, `StewardNoticeService.java:104-105`, `SensitivityLevelService.java:335-336`, `RetentionPolicyService.java:127-128`, `RoleJson.java:25-26`, `DocumentIntakeService.java:483-484`, `ControlledDownloadService.java:212-213`, `CorrectiveRedactionService.java:428-429`, `RetentionDeletionService.java:143-144`. More often, `audit.append` itself fails with SYS-014.
 - **Trigger:** the audit store can't be written, so the action is not done (fail closed).
 - **Today:** 409 `CONFLICT` with "…could not be audited, so nothing was changed." (good words, wrong status and no code), or a generic 500. Generic: yes.
@@ -1009,7 +1087,8 @@ The watch folder and polling intake are **not in this repository**. Sending syst
 - **Fix:** retry-finalization; if it repeats, Vero support.
 - **L1 tells the customer:** pass the document ID and time to Vero support.
 
-#### SDV-STO-001 (proposed): no storage can take the document
+#### SDV-STO-001 (released in task 0036): no storage can take the document
+- **Released:** now sent; its section is under "Storage (STO)" above. The notes below are what task 0034 found, kept for the list of lines.
 - **Where:** `StoragePlacementService.java:38` (`NoWritableStorageException`); probe failures are swallowed at `:56` as "not eligible".
 - **Trigger:** every ACTIVE volume is full, at its stop-write level, unwritable, or unreadable.
 - **Today:** **409 `CONFLICT`** "No healthy ACTIVE storage volume can safely accept the requested content." That tells the sender to change the request; it is counted as a refusal. Not logged. Generic: yes.

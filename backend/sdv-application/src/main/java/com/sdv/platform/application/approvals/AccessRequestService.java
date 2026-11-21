@@ -1,5 +1,6 @@
 package com.sdv.platform.application.approvals;
 
+import com.sdv.platform.domain.error.InternalCheckFailed;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sdv.platform.application.access.Clearance;
@@ -575,7 +576,7 @@ public class AccessRequestService {
         try {
             safe = json.writeValueAsString(details);
         } catch (JsonProcessingException ex) {
-            throw new IllegalStateException("The request could not be audited, so nothing was changed.", ex);
+            throw InternalCheckFailed.auditNotWritten("The request could not be audited, so nothing was changed.", ex);
         }
         audit.append(new AuditEvent(UUID.randomUUID(), tenantId, actorType, actorId, action, targetType, targetId, at,
                 correlationId, outcome, safe, blankToNull(actorName)));

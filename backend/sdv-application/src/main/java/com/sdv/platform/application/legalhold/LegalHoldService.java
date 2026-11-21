@@ -1,5 +1,6 @@
 package com.sdv.platform.application.legalhold;
 
+import com.sdv.platform.domain.error.InternalCheckFailed;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sdv.platform.application.access.DocumentAccessGuard;
@@ -161,7 +162,7 @@ public class LegalHoldService {
         try {
             safe = json.writeValueAsString(details);
         } catch (JsonProcessingException ex) {
-            throw new IllegalStateException("The legal hold could not be audited, so nothing was changed.", ex);
+            throw InternalCheckFailed.auditNotWritten("The legal hold could not be audited, so nothing was changed.", ex);
         }
         audit.append(new AuditEvent(UUID.randomUUID(), tenantId, "USER", actorId, action, "DOCUMENT",
                 documentId.toString(), at, correlationId, AuditOutcome.SUCCESS, safe, actorDisplayName));

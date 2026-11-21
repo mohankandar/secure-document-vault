@@ -1,5 +1,6 @@
 package com.sdv.platform.application.document;
 
+import com.sdv.platform.domain.error.InternalCheckFailed;
 import java.io.FilterInputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -25,7 +26,7 @@ final class ValidatedPdfInputStream extends FilterInputStream {
         try {
             this.digest = MessageDigest.getInstance("SHA-256");
         } catch (NoSuchAlgorithmException ex) {
-            throw new IllegalStateException("SHA-256 is unavailable.", ex);
+            throw new InternalCheckFailed("SHA-256 is unavailable.", ex);
         }
     }
 

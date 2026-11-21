@@ -1,5 +1,6 @@
 package com.sdv.platform.persistence.retention;
 
+import com.sdv.platform.domain.error.InternalCheckFailed;
 import com.sdv.platform.application.port.RetentionRepository;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
@@ -29,7 +30,7 @@ public class JdbcRetentionRepository implements RetentionRepository {
                 .addValue("tenantId", tenantId)
                 .addValue("days", defaultRetentionDays)
                 .addValue("updatedAt", Timestamp.from(updatedAt)));
-        if (updated != 1) throw new IllegalStateException("Retention-policy update did not affect exactly one tenant.");
+        if (updated != 1) throw new InternalCheckFailed("Retention-policy update did not affect exactly one tenant.");
     }
 
 
@@ -236,7 +237,7 @@ public class JdbcRetentionRepository implements RetentionRepository {
                 .addValue("deletedAt", Timestamp.from(deletedAt))
                 .addValue("deletionReason", deletionReason));
         if (updated != 1) {
-            throw new IllegalStateException("Retention finalization did not update exactly one RETENTION_DELETING document.");
+            throw new InternalCheckFailed("Retention finalization did not update exactly one RETENTION_DELETING document.");
         }
     }
 

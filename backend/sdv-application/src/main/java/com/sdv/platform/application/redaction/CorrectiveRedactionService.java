@@ -1,5 +1,6 @@
 package com.sdv.platform.application.redaction;
 
+import com.sdv.platform.domain.error.InternalCheckFailed;
 import com.sdv.platform.application.access.Clearance;
 import com.sdv.platform.application.access.DocumentAccessGuard;
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -217,10 +218,10 @@ public class CorrectiveRedactionService {
     private int regionCount(String regionsJson) {
         try {
             var node = json.readTree(regionsJson);
-            if (!node.isArray()) throw new IllegalStateException("Stored redaction regions are not an array.");
+            if (!node.isArray()) throw new InternalCheckFailed("Stored redaction regions are not an array.");
             return node.size();
         } catch (JsonProcessingException ex) {
-            throw new IllegalStateException("Stored redaction regions cannot be parsed for recovery.", ex);
+            throw new InternalCheckFailed("Stored redaction regions cannot be parsed for recovery.", ex);
         }
     }
 
@@ -303,7 +304,7 @@ public class CorrectiveRedactionService {
         redactions.deletePending(expected.tenantId(), expected.operationId());
 
         Document updated = documents.findDocumentByIdForTenant(expected.tenantId(), expected.documentId())
-                .orElseThrow(() -> new IllegalStateException("Redacted document could not be reloaded."));
+                .orElseThrow(() -> new InternalCheckFailed("Redacted document could not be reloaded."));
         return new RedactionResult(expected.operationId(), expected.documentId(), updated.status().name(),
                 regionCount, updated.contentSha256(), updated.expiresAt());
     }
@@ -409,7 +410,7 @@ public class CorrectiveRedactionService {
 
     private String toJson(List<RedactionRegion> regions) {
         try { return json.writeValueAsString(regions); }
-        catch (JsonProcessingException ex) { throw new IllegalStateException("Could not serialize redaction regions.", ex); }
+        catch (JsonProcessingException ex) { throw new InternalCheckFailed("Could not serialize redaction regions.", ex); }
     }
 
     private String successAuditJson(RedactionOperation op, int regionCount) {
@@ -426,7 +427,7 @@ public class CorrectiveRedactionService {
             safe.put("retentionPreserved", true);
             return json.writeValueAsString(safe);
         } catch (JsonProcessingException ex) {
-            throw new IllegalStateException("Could not serialize redaction audit details.", ex);
+            throw InternalCheckFailed.auditNotWritten("Could not serialize redaction audit details.", ex);
         }
     }
 
@@ -456,7 +457,7 @@ public class CorrectiveRedactionService {
 
     private static String sha256(byte[] bytes) {
         try { return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes)); }
-        catch (NoSuchAlgorithmException ex) { throw new IllegalStateException("SHA-256 is unavailable.", ex); }
+        catch (NoSuchAlgorithmException ex) { throw new InternalCheckFailed("SHA-256 is unavailable.", ex); }
     }
 
     private void safeReleaseRecoveryClaim(RedactionOperation operation, UUID claimToken) {

@@ -22,16 +22,30 @@ class SchemaGateFilterTest {
     void anOlderDatabaseRefusesBusinessRequestsWithThePlainSentence() throws Exception {
         MockHttpServletResponse response = call(SchemaVersion.State.OLDER, "/api/v1/business/search");
         assertEquals(503, response.getStatus());
-        assertEquals("{\"code\":\"DATABASE_OLDER\",\"message\":\"The database is older than this Vero version. Ask your database team to run the schema step (install guide, \\\"Update the database\\\").\"}",
-                response.getContentAsString());
+        // Task 0036: SDV-SYS-001 in place of DATABASE_OLDER, with the reference (the correlation ID) and the time.
+        com.fasterxml.jackson.databind.JsonNode body = new com.fasterxml.jackson.databind.ObjectMapper().readTree(response.getContentAsString());
+        assertEquals("SDV-SYS-001", body.get("code").asText());
+        assertEquals(SchemaVersion.OLDER_MESSAGE, body.get("message").asText());
+        assertFalse(body.get("reference").asText().isBlank());
+        assertEquals(body.get("reference").asText(), response.getHeader("X-Correlation-Id"));
+        assertTrue(body.has("timestamp"));
+        assertEquals(4, body.size());
     }
 
     @Test
     void aNewerDatabaseSaysNewer() throws Exception {
         MockHttpServletResponse response = call(SchemaVersion.State.NEWER, "/api/v1/operations/summary");
         assertEquals(503, response.getStatus());
-        assertTrue(response.getContentAsString().contains("DATABASE_NEWER"));
+        assertTrue(response.getContentAsString().contains("SDV-SYS-002"));
         assertTrue(response.getContentAsString().contains("The database is newer than this Vero version."));
+    }
+
+    @Test
+    void anUnreachableDatabaseAtStartIsSys003() throws Exception {
+        MockHttpServletResponse response = call(SchemaVersion.State.UNREACHABLE, "/api/v1/operations/summary");
+        assertEquals(503, response.getStatus());
+        assertTrue(response.getContentAsString().contains("\"code\":\"SDV-SYS-003\""));
+        assertTrue(response.getContentAsString().contains("\"reference\":"));
     }
 
     @Test

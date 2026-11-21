@@ -1,5 +1,6 @@
 package com.sdv.platform.application.business;
 
+import com.sdv.platform.domain.error.InternalCheckFailed;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -48,7 +49,7 @@ public final class RecordKey {
         try {
             return IDENTIFIERS + JSON.writeValueAsString(sorted);
         } catch (JsonProcessingException ex) {
-            throw new IllegalStateException("Could not write the record key.", ex);
+            throw new InternalCheckFailed("Could not write the record key.", ex);
         }
     }
 
@@ -109,7 +110,7 @@ public final class RecordKey {
             return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
                     .digest(recordKey.getBytes(StandardCharsets.UTF_8)));
         } catch (NoSuchAlgorithmException ex) {
-            throw new IllegalStateException("SHA-256 is unavailable.", ex);
+            throw new InternalCheckFailed("SHA-256 is unavailable.", ex);
         }
     }
 }

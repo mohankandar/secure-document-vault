@@ -31,12 +31,14 @@
             "description": "Invalid producer request, including an unknown recordSensitivityLevel or a sensitivityLevel on the submission",
             "content": {"application/json": {
               "schema": {"$ref": "#/components/schemas/Error"},
-              "example": {"code": "SDV-SEN-002", "message": "recordSensitivityLevel must be one of STANDARD, CONFIDENTIAL, HIGHLY_CONFIDENTIAL (exactly, in capitals); leave it out for no record level.", "timestamp": "2026-11-20T10:00:00Z"}
+              "example": {"code": "SDV-SEN-002", "message": "recordSensitivityLevel must be one of STANDARD, CONFIDENTIAL, HIGHLY_CONFIDENTIAL (exactly, in capitals); leave it out for no record level.", "reference": "6f1c0f0e-5b7a-4c1e-9f4e-2d8a7c3b1e90", "timestamp": "2026-11-20T10:00:00Z"}
             }}
           },
           "401": {"$ref": "#/components/responses/Unauthorized"},
           "403": {"$ref": "#/components/responses/Forbidden"},
-          "409": {"$ref": "#/components/responses/Conflict"}
+          "409": {"$ref": "#/components/responses/Conflict"},
+          "500": {"$ref": "#/components/responses/ServerError"},
+          "503": {"$ref": "#/components/responses/ServiceUnavailable"}
         }
       },
       "get": {
@@ -49,7 +51,10 @@
         "responses": {
           "200": {"description": "Submission", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/SubmissionResponse"}}}},
           "401": {"$ref": "#/components/responses/Unauthorized"},
-          "404": {"$ref": "#/components/responses/NotFound"}
+          "404": {"$ref": "#/components/responses/NotFound"},
+          "400": {"$ref": "#/components/responses/BadRequest"},
+          "500": {"$ref": "#/components/responses/ServerError"},
+          "503": {"$ref": "#/components/responses/ServiceUnavailable"}
         }
       }
     },
@@ -63,7 +68,10 @@
         "responses": {
           "200": {"description": "Submission", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/SubmissionResponse"}}}},
           "401": {"$ref": "#/components/responses/Unauthorized"},
-          "404": {"$ref": "#/components/responses/NotFound"}
+          "404": {"$ref": "#/components/responses/NotFound"},
+          "400": {"$ref": "#/components/responses/BadRequest"},
+          "500": {"$ref": "#/components/responses/ServerError"},
+          "503": {"$ref": "#/components/responses/ServiceUnavailable"}
         }
       }
     },
@@ -91,13 +99,16 @@
             "description": "Invalid producer request, including an unknown X-SDV-Sensitivity-Level or any X-SDV-Record-Sensitivity-Level",
             "content": {"application/json": {
               "schema": {"$ref": "#/components/schemas/Error"},
-              "example": {"code": "SDV-SEN-001", "message": "X-SDV-Sensitivity-Level must be one of STANDARD, CONFIDENTIAL, HIGHLY_CONFIDENTIAL (exactly, in capitals); leave it out for STANDARD.", "timestamp": "2026-11-20T10:00:00Z"}
+              "example": {"code": "SDV-SEN-001", "message": "X-SDV-Sensitivity-Level must be one of STANDARD, CONFIDENTIAL, HIGHLY_CONFIDENTIAL (exactly, in capitals); leave it out for STANDARD.", "reference": "6f1c0f0e-5b7a-4c1e-9f4e-2d8a7c3b1e90", "timestamp": "2026-11-20T10:00:00Z"}
             }}
           },
           "401": {"$ref": "#/components/responses/Unauthorized"},
           "404": {"$ref": "#/components/responses/NotFound"},
           "409": {"$ref": "#/components/responses/Conflict"},
-          "413": {"$ref": "#/components/responses/PayloadTooLarge"}
+          "413": {"$ref": "#/components/responses/PayloadTooLarge"},
+          "415": {"$ref": "#/components/responses/UnsupportedMediaType"},
+          "500": {"$ref": "#/components/responses/ServerError"},
+          "503": {"$ref": "#/components/responses/ServiceUnavailable"}
         }
       },
       "get": {
@@ -109,7 +120,10 @@
         "responses": {
           "200": {"description": "Received documents", "content": {"application/json": {"schema": {"type": "array", "items": {"$ref": "#/components/schemas/DocumentSummary"}}}}},
           "401": {"$ref": "#/components/responses/Unauthorized"},
-          "404": {"$ref": "#/components/responses/NotFound"}
+          "404": {"$ref": "#/components/responses/NotFound"},
+          "400": {"$ref": "#/components/responses/BadRequest"},
+          "500": {"$ref": "#/components/responses/ServerError"},
+          "503": {"$ref": "#/components/responses/ServiceUnavailable"}
         }
       }
     },
@@ -126,7 +140,10 @@
           "200": {"description": "Current document state", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/DocumentSummary"}}}},
           "401": {"$ref": "#/components/responses/Unauthorized"},
           "404": {"$ref": "#/components/responses/NotFound"},
-          "409": {"$ref": "#/components/responses/Conflict"}
+          "409": {"$ref": "#/components/responses/Conflict"},
+          "400": {"$ref": "#/components/responses/BadRequest"},
+          "500": {"$ref": "#/components/responses/ServerError"},
+          "503": {"$ref": "#/components/responses/ServiceUnavailable"}
         }
       }
     }
@@ -238,16 +255,20 @@
       },
       "Error": {
         "type": "object",
-        "properties": {"code": {"type": "string", "description": "A stable SDV-AREA-NNN code (see docs/api/error-codes.md), or a generic code such as BAD_REQUEST or CONFLICT for errors not yet coded. Read the code, not the message."}, "message": {"type": "string"}, "timestamp": {"type": "string", "format": "date-time"}}
+        "properties": {"code": {"type": "string", "description": "A stable SDV-AREA-NNN code (see docs/api/error-codes.md), or a generic code such as BAD_REQUEST or CONFLICT for errors not yet coded. Read the code, not the message."}, "message": {"type": "string", "description": "A plain sentence for people. It never holds a stack trace, an exception class, SQL, a path, a token, a key or document content."}, "reference": {"type": "string", "description": "The request's correlation ID, the same as the X-Correlation-Id response header, the log line and any audit event. Give it to support."}, "timestamp": {"type": "string", "format": "date-time"}},
+        "required": ["code", "message", "reference", "timestamp"]
       }
     },
     "responses": {
       "BadRequest": {"description": "Invalid producer request", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
-      "Unauthorized": {"description": "Missing or invalid producer authentication"},
-      "Forbidden": {"description": "Authenticated principal is not permitted"},
+      "Unauthorized": {"description": "Missing or invalid producer authentication", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
+      "Forbidden": {"description": "Authenticated principal is not permitted", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
       "NotFound": {"description": "Tenant/source-scoped resource not found", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
       "Conflict": {"description": "Existing identity/state conflicts with this request", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
-      "PayloadTooLarge": {"description": "PDF exceeds configured limits", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}}
+      "PayloadTooLarge": {"description": "PDF exceeds configured limits", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
+      "UnsupportedMediaType": {"description": "SDV-SYS-015: the body is not the content type this operation accepts", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
+      "ServerError": {"description": "SDV-SYS-013 (unexpected), SDV-SYS-016 (internal check) or SDV-SYS-017 (audit not written). Nothing was changed; give support the reference.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
+      "ServiceUnavailable": {"description": "SDV-SYS-001 to 003 (database version or start), SDV-SYS-014 (database) or SDV-STO-001 (no storage). Send again later.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}}
     },
     "examples": {
       "CreateSubmissionTwoDocuments": {
