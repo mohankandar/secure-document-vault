@@ -191,7 +191,10 @@ Not touched: `Start-SDV-Local.ps1` and `Stop-SDV-Local.ps1` (local changes left 
 
 ## Commits (hash and message), or "not committed"
 
-See the commit on `fix/startup` (hash given to the owner in the session; a follow-up commit adds it here if wanted). Not pushed, not merged.
+- `c96a110` fix: start-up retries and readiness, start-up codes, APR-008/HLD-008 races, last SYS-016 checks (task 0037)
+- A second commit adds this hash to the report.
+
+On `fix/startup` only; not pushed, not merged.
 
 ## Not done, and why
 
