@@ -141,7 +141,7 @@ Failures on the way, all in my new tour step and all fixed:
 
 ## Commits (hash and message), or "not committed"
 
-See the commit on `feature/sensitivity-7`: "feat: approvals and legal holds for the Business admin; audit filter by level; requester notices (task 0030)". Not pushed, not merged.
+`cb17351` feat: approvals and legal holds for the Business admin; audit filter by level; requester notices (task 0030), on `feature/sensitivity-7`. Not pushed, not merged. (This line was added in a second commit.)
 
 ## Not done, and why
 
