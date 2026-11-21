@@ -1,5 +1,6 @@
 package com.sdv.platform.security.separation;
 
+import com.sdv.platform.domain.error.InternalCheckFailed;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -37,10 +38,10 @@ class RoleSeparationPolicyTest {
 
     @Test
     void badRulesAndInputAreRefused() {
-        assertThrows(IllegalArgumentException.class, () -> new RoleSeparationRule<>("X", Set.of("a"), Set.of("a")));
-        assertThrows(IllegalArgumentException.class, () -> new RoleSeparationRule<>("X", Set.of(), Set.of("a")));
-        assertThrows(IllegalArgumentException.class, () -> new RoleSeparationRule<>(" ", Set.of("a"), Set.of("b")));
-        assertThrows(IllegalArgumentException.class, () -> new RoleSeparationPolicy<>(List.of(
+        assertThrows(InternalCheckFailed.class, () -> new RoleSeparationRule<>("X", Set.of("a"), Set.of("a")));
+        assertThrows(InternalCheckFailed.class, () -> new RoleSeparationRule<>("X", Set.of(), Set.of("a")));
+        assertThrows(InternalCheckFailed.class, () -> new RoleSeparationRule<>(" ", Set.of("a"), Set.of("b")));
+        assertThrows(InternalCheckFailed.class, () -> new RoleSeparationPolicy<>(List.of(
                 new RoleSeparationRule<>("X", Set.of("a"), Set.of("b")),
                 new RoleSeparationRule<>("X", Set.of("c"), Set.of("d")))));
         assertThrows(NullPointerException.class, () -> policy.resolve(null));

@@ -1,5 +1,6 @@
 package com.sdv.platform.application.document;
 
+import com.sdv.platform.domain.error.InternalCheckFailed;
 import com.sdv.platform.domain.document.SensitivityLevel;
 import org.junit.jupiter.api.Test;
 
@@ -41,6 +42,6 @@ class SensitivityLevelTest {
         }
         assertEquals(HIGHLY_CONFIDENTIAL, SensitivityLevel.effective(STANDARD, HIGHLY_CONFIDENTIAL));
         assertEquals(HIGHLY_CONFIDENTIAL, SensitivityLevel.effective(HIGHLY_CONFIDENTIAL, CONFIDENTIAL));
-        assertThrows(IllegalArgumentException.class, () -> SensitivityLevel.effective(null, STANDARD));
+        assertThrows(InternalCheckFailed.class, () -> SensitivityLevel.effective(null, STANDARD), "task 0037: internal, SDV-SYS-016");
     }
 }

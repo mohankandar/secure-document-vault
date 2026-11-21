@@ -195,6 +195,39 @@ class AccessRequestPostgresTest {
             pool.shutdownNow();
         }
 
+        // Task 0037: two Business Admins decide the same request at the same moment. One decision happens; the other is
+        // refused with 409 SDV-APR-008 and audited (ACCESS_REQUEST_DECISION_REFUSED). Never a 500.
+        UUID decidedTwice = ask(T1, "rs-1", H2, "DOWNLOAD");
+        ExecutorService admins = Executors.newFixedThreadPool(2);
+        CountDownLatch together = new CountDownLatch(1);
+        List<Future<String>> decisions = new ArrayList<>();
+        try {
+            for (String admin : List.of("ba-1", "ba-2")) {
+                decisions.add(admins.submit(() -> {
+                    together.await();
+                    try {
+                        approvals.decide(T1, admin, null, decidedTwice.toString(),
+                                AccessRequestService.Decision.DECLINE, // declined, so no grant changes the counts below
+                                "corr-race-" + admin);
+                        return "DECIDED";
+                    } catch (RuntimeException ex) {
+                        return ex instanceof CodedRefusal coded ? coded.errorCode().code() : ex.toString();
+                    }
+                }));
+            }
+            together.countDown();
+            List<String> got = new ArrayList<>();
+            for (Future<String> d : decisions) got.add(d.get(30, java.util.concurrent.TimeUnit.SECONDS));
+            java.util.Collections.sort(got);
+            assertEquals(List.of("DECIDED", "SDV-APR-008"), got);
+        } finally {
+            admins.shutdownNow();
+        }
+        assertEquals(1, count("select count(*) from audit_events where tenant_id='" + T1 + "' and action='ACCESS_REQUEST_DECISION_REFUSED' "
+                + "and outcome='DENIED' and correlation_id like 'corr-race-%' and safe_details::text like '%SDV-APR-008%'"));
+        assertEquals(1, count("select count(*) from audit_events where tenant_id='" + T1 + "' and action in ('ACCESS_REQUEST_APPROVED','ACCESS_REQUEST_DECLINED') "
+                + "and correlation_id like 'corr-race-%'"));
+
         // An unused grant ends after 24 hours.
         UUID late = ask(T1, "rs-1", H, "DOWNLOAD");
         approvals.decide(T1, "ba-1", null, late.toString(), AccessRequestService.Decision.APPROVE, "c");

@@ -1,5 +1,6 @@
 package com.sdv.platform.security.separation;
 
+import com.sdv.platform.domain.error.InternalCheckFailed;
 import java.util.Objects;
 import java.util.Set;
 
@@ -9,11 +10,11 @@ import java.util.Set;
  */
 public record ForbiddenGrant<R, C>(String id, Set<R> roles, Set<C> capabilities) {
     public ForbiddenGrant {
-        if (id == null || id.isBlank()) throw new IllegalArgumentException("A forbidden grant needs an id.");
+        if (id == null || id.isBlank()) throw new InternalCheckFailed("A forbidden grant needs an id.");
         roles = Set.copyOf(Objects.requireNonNull(roles, "roles"));
         capabilities = Set.copyOf(Objects.requireNonNull(capabilities, "capabilities"));
         if (roles.isEmpty() || capabilities.isEmpty()) {
-            throw new IllegalArgumentException("Forbidden grant " + id + " needs roles and capabilities.");
+            throw new InternalCheckFailed("Forbidden grant " + id + " needs roles and capabilities.");
         }
     }
 

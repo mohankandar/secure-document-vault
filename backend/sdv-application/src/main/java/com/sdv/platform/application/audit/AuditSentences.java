@@ -109,6 +109,7 @@ public final class AuditSentences {
                             ? ", but that needs an approval" : ", but its level is restricted");
             case "LEGAL_HOLD_PLACED" -> w + " put " + f + " on legal hold";
             case "LEGAL_HOLD_RELEASED" -> w + " released the legal hold on " + f;
+            case "LEGAL_HOLD_RELEASE_REFUSED" -> w + " tried to release a legal hold that was already released";
             // Task 0028: level changes and approvals. Levels in words; the reason stays in the details.
             case "DOCUMENT_SENSITIVITY_RAISED" -> w + " raised " + f + " to " + levelWords(text(d, "to"));
             case "DOCUMENT_SENSITIVITY_LOWERED" -> w + " approved lowering " + f + " to " + levelWords(text(d, "to"));

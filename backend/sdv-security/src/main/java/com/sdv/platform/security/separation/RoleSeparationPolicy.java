@@ -1,5 +1,6 @@
 package com.sdv.platform.security.separation;
 
+import com.sdv.platform.domain.error.InternalCheckFailed;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
@@ -20,7 +21,7 @@ public final class RoleSeparationPolicy<R> {
         this.rules = List.copyOf(Objects.requireNonNull(rules, "rules"));
         Set<String> ids = new HashSet<>();
         for (RoleSeparationRule<R> rule : this.rules) {
-            if (!ids.add(rule.id())) throw new IllegalArgumentException("Duplicate role separation rule " + rule.id());
+            if (!ids.add(rule.id())) throw new InternalCheckFailed("Duplicate role separation rule " + rule.id());
         }
     }
 
@@ -31,7 +32,7 @@ public final class RoleSeparationPolicy<R> {
     public Resolution<R> resolve(Set<R> held) {
         Objects.requireNonNull(held, "held");
         // Set.of(...).contains(null) throws, so nulls are looked for one by one.
-        if (held.stream().anyMatch(Objects::isNull)) throw new IllegalArgumentException("Held roles must not contain null.");
+        if (held.stream().anyMatch(Objects::isNull)) throw new InternalCheckFailed("Held roles must not contain null.");
         Set<R> withheld = new LinkedHashSet<>();
         List<String> broken = new ArrayList<>();
         for (RoleSeparationRule<R> rule : rules) {

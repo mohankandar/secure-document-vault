@@ -1,0 +1,3 @@
+# Task 0037: start-up failures with an SDV code are reported with the code, the cause and what to do.
+org.springframework.boot.diagnostics.FailureAnalyzer=\
+com.sdv.platform.web.startup.StartupFailureAnalyzer

@@ -1,5 +1,6 @@
 package com.sdv.platform.application.port;
 
+import com.sdv.platform.domain.error.InternalCheckFailed;
 import com.sdv.platform.domain.document.SensitivityLevel;
 
 import java.time.Instant;
@@ -25,7 +26,7 @@ public interface RecordSensitivityRepository {
      */
     default void setLevel(UUID tenantId, UUID recordLevelId, SensitivityLevel level, String setBy, String reason,
                           Instant updatedAt) {
-        throw new UnsupportedOperationException("Record levels can't be changed here.");
+        throw new InternalCheckFailed("Record levels can't be changed here.");
     }
 
     /** How many records of this sending system have a level. */

@@ -40,12 +40,19 @@ class SchemaGateFilterTest {
         assertTrue(response.getContentAsString().contains("The database is newer than this Vero version."));
     }
 
+    /**
+     * Task 0037 (changed from task 0036's SDV-SYS-003): Vero keeps trying to reach the database, so meanwhile the answer
+     * is 503 SDV-SYS-014 with its sentence and the reference. SDV-SYS-003 stays the start-up log line.
+     */
     @Test
-    void anUnreachableDatabaseAtStartIsSys003() throws Exception {
+    void anUnreachableDatabaseAtStartIsSys014WhileVeroKeepsTrying() throws Exception {
         MockHttpServletResponse response = call(SchemaVersion.State.UNREACHABLE, "/api/v1/operations/summary");
         assertEquals(503, response.getStatus());
-        assertTrue(response.getContentAsString().contains("\"code\":\"SDV-SYS-003\""));
-        assertTrue(response.getContentAsString().contains("\"reference\":"));
+        com.fasterxml.jackson.databind.JsonNode body = new com.fasterxml.jackson.databind.ObjectMapper().readTree(response.getContentAsString());
+        assertEquals("SDV-SYS-014", body.get("code").asText());
+        assertEquals("Vero can't reach its database just now. Try again in a few minutes.", body.get("message").asText());
+        assertEquals(body.get("reference").asText(), response.getHeader("X-Correlation-Id"));
+        assertEquals(4, body.size());
     }
 
     @Test

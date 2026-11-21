@@ -1,5 +1,6 @@
 package com.sdv.platform.security.separation;
 
+import com.sdv.platform.domain.error.InternalCheckFailed;
 import java.util.Objects;
 import java.util.Set;
 
@@ -15,17 +16,17 @@ import java.util.Set;
  */
 public record RoleSeparationRule<R>(String id, Set<R> roles, Set<R> neverWith) {
     public RoleSeparationRule {
-        if (id == null || id.isBlank()) throw new IllegalArgumentException("A role separation rule needs an id.");
+        if (id == null || id.isBlank()) throw new InternalCheckFailed("A role separation rule needs an id.");
         Objects.requireNonNull(roles, "roles");
         Objects.requireNonNull(neverWith, "neverWith");
         roles = Set.copyOf(roles);
         neverWith = Set.copyOf(neverWith);
         if (roles.isEmpty() || neverWith.isEmpty()) {
-            throw new IllegalArgumentException("Role separation rule " + id + " needs roles on both sides.");
+            throw new InternalCheckFailed("Role separation rule " + id + " needs roles on both sides.");
         }
         for (R role : roles) {
             if (neverWith.contains(role)) {
-                throw new IllegalArgumentException("Role separation rule " + id + " names " + role + " on both sides.");
+                throw new InternalCheckFailed("Role separation rule " + id + " names " + role + " on both sides.");
             }
         }
     }

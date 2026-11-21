@@ -1,5 +1,7 @@
 package com.sdv.platform.web.retention;
 
+import com.sdv.platform.domain.error.SdvErrorCode;
+import com.sdv.platform.domain.error.StartupFailure;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.support.CronExpression;
@@ -46,7 +48,7 @@ public class RetentionSchedule {
 
     RetentionSchedule(String dailyAt, String cronOverride, String oldInitialDelay, String oldSweepDelay, ZoneId zone) {
         if (notBlank(oldInitialDelay) || notBlank(oldSweepDelay)) {
-            throw new IllegalStateException("sdv.retention.initial-delay-ms and sdv.retention.sweep-delay-ms "
+            throw new StartupFailure(SdvErrorCode.SYS_009, "sdv.retention.initial-delay-ms and sdv.retention.sweep-delay-ms "
                     + "(SDV_RETENTION_INITIAL_DELAY_MS, SDV_RETENTION_SWEEP_DELAY_MS) are no longer used. "
                     + "Cleanup runs once a day: remove them and set sdv.retention.daily-at (HH:mm) if 02:00 doesn't suit.");
         }
@@ -56,7 +58,7 @@ public class RetentionSchedule {
             try {
                 this.expression = CronExpression.parse(cron);
             } catch (IllegalArgumentException ex) {
-                throw new IllegalStateException("sdv.retention.cron (SDV_RETENTION_CRON) is not a cron expression Spring can read: " + ex.getMessage());
+                throw new StartupFailure(SdvErrorCode.SYS_009, "sdv.retention.cron (SDV_RETENTION_CRON) is not a cron expression Spring can read: " + ex.getMessage());
             }
         } else {
             LocalTime at = dailyTime(dailyAt);
@@ -68,12 +70,12 @@ public class RetentionSchedule {
     /** HH:mm, 24-hour, for example 02:00 or 23:30. Anything else is refused. */
     static LocalTime dailyTime(String setting) {
         if (setting == null || setting.isBlank()) {
-            throw new IllegalStateException("sdv.retention.daily-at (SDV_RETENTION_DAILY_AT) is empty. Set a time as HH:mm, for example 02:00.");
+            throw new StartupFailure(SdvErrorCode.SYS_009, "sdv.retention.daily-at (SDV_RETENTION_DAILY_AT) is empty. Set a time as HH:mm, for example 02:00.");
         }
         try {
             return LocalTime.parse(setting.trim(), HH_MM);
         } catch (DateTimeParseException ex) {
-            throw new IllegalStateException("sdv.retention.daily-at (SDV_RETENTION_DAILY_AT) must be a time as HH:mm (24-hour), for example 02:00. It is \"" + setting + "\".");
+            throw new StartupFailure(SdvErrorCode.SYS_009, "sdv.retention.daily-at (SDV_RETENTION_DAILY_AT) must be a time as HH:mm (24-hour), for example 02:00. It is \"" + setting + "\".");
         }
     }
 

@@ -1,5 +1,6 @@
 package com.sdv.platform.application.port;
 
+import com.sdv.platform.domain.error.InternalCheckFailed;
 import com.sdv.platform.domain.storage.StorageCapacitySnapshot;
 
 public interface StorageVolumeProbe {
@@ -16,7 +17,7 @@ public interface StorageVolumeProbe {
      * the result says so in plain words.
      */
     default FolderCheck check(String rootPath) {
-        throw new UnsupportedOperationException("Folder check unavailable");
+        throw new InternalCheckFailed("Folder check unavailable");
     }
 
     /** problem: a plain sentence when the folder cannot be used; null when it can. Space is null when unknown. */

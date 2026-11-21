@@ -1,5 +1,6 @@
 package com.sdv.platform.application.port;
 
+import com.sdv.platform.domain.error.InternalCheckFailed;
 import com.sdv.platform.domain.metadata.MetadataFieldDefinition;
 
 import java.time.Instant;
@@ -14,8 +15,8 @@ public interface MetadataFieldDefinitionRepository {
     void retire(UUID tenantId, UUID sourceId, String fieldKey, Instant retiredAt);
     void insert(MetadataFieldDefinition definition);
     default List<String> findDisplayOrder(UUID tenantId, UUID sourceId) { return List.of(); }
-    default void replaceDisplayOrder(UUID tenantId, UUID sourceId, List<String> fieldKeys) { throw new UnsupportedOperationException("Field order persistence unavailable"); }
+    default void replaceDisplayOrder(UUID tenantId, UUID sourceId, List<String> fieldKeys) { throw new InternalCheckFailed("Field order persistence unavailable"); }
     /** The one or two fields that name a record, in title order; empty means the default title. */
     default List<String> findRecordTitleFields(UUID tenantId, UUID sourceId) { return List.of(); }
-    default void replaceRecordTitleFields(UUID tenantId, UUID sourceId, List<String> fieldKeys) { throw new UnsupportedOperationException("Record title persistence unavailable"); }
+    default void replaceRecordTitleFields(UUID tenantId, UUID sourceId, List<String> fieldKeys) { throw new InternalCheckFailed("Record title persistence unavailable"); }
 }

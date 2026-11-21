@@ -1,5 +1,7 @@
 package com.sdv.platform.crypto.config;
 
+import com.sdv.platform.domain.error.SdvErrorCode;
+import com.sdv.platform.domain.error.StartupFailure;
 import com.sdv.platform.application.port.StreamingCryptoPort;
 import com.sdv.platform.crypto.enc.SdvEnc001StreamingCrypto;
 import com.sdv.platform.crypto.key.KeyProtectionProvider;
@@ -24,7 +26,12 @@ public class VaultCryptoConfiguration {
         String token = resolveToken(environment);
         String mount = environment.getProperty("sdv.crypto.vault.mount", "transit");
         String keyPrefix = environment.getProperty("sdv.crypto.vault.key-prefix", "sdv-tenant-");
-        return new VaultTransitKeyProtectionProvider(URI.create(baseUrl), token, mount, keyPrefix);
+        try {
+            return new VaultTransitKeyProtectionProvider(URI.create(baseUrl), token, mount, keyPrefix);
+        } catch (IllegalArgumentException ex) {
+            // The provider's own checks name the setting (address, mount, key prefix), never the token.
+            throw new StartupFailure(SdvErrorCode.SYS_007, ex.getMessage() == null ? "A Vault setting is not valid." : ex.getMessage());
+        }
     }
 
     @Bean
@@ -39,22 +46,22 @@ public class VaultCryptoConfiguration {
         boolean hasDirect = direct != null && !direct.isBlank();
         boolean hasFile = tokenFile != null && !tokenFile.isBlank();
         if (hasDirect == hasFile) {
-            throw new IllegalStateException("Configure exactly one of sdv.crypto.vault.token or sdv.crypto.vault.token-file.");
+            throw new StartupFailure(SdvErrorCode.SYS_007, "Configure exactly one of sdv.crypto.vault.token or sdv.crypto.vault.token-file.");
         }
         if (hasDirect) return direct.trim();
         try {
             String value = Files.readString(Path.of(tokenFile.trim()), StandardCharsets.UTF_8).trim();
-            if (value.isBlank()) throw new IllegalStateException("Configured SDV Vault token file is empty.");
+            if (value.isBlank()) throw new StartupFailure(SdvErrorCode.SYS_007, "Configured SDV Vault token file is empty.");
             return value;
         } catch (IOException ex) {
-            throw new IllegalStateException("Configured SDV Vault token file cannot be read.", ex);
+            throw new StartupFailure(SdvErrorCode.SYS_007, "Configured SDV Vault token file cannot be read.", ex);
         }
     }
 
     private static String required(Environment environment, String name) {
         String value = environment.getProperty(name);
         if (value == null || value.isBlank()) {
-            throw new IllegalStateException("Required SDV crypto configuration is missing: " + name);
+            throw new StartupFailure(SdvErrorCode.SYS_007, "Required SDV crypto configuration is missing: " + name);
         }
         return value;
     }

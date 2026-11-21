@@ -1,5 +1,6 @@
 package com.sdv.platform.application.reports;
 
+import com.sdv.platform.domain.error.StartupFailure;
 import com.sdv.platform.application.port.AuditEventPort;
 import com.sdv.platform.application.port.IntakeReportRepository;
 import com.sdv.platform.application.port.IntakeReportRepository.Item.Kind;
@@ -250,8 +251,9 @@ class IntakeReportServiceTest {
 
         repo.timeZone = "Mars/Olympus_Mons";
         assertEquals("SDV-RPT-004", code(() -> s.intake(TENANT, null, null, null)), "never guessed");
-        assertThrows(IllegalStateException.class, () -> service("Eastern"), "a wrong install default stops the server");
-        assertThrows(IllegalStateException.class, () -> service(" "));
+        assertEquals(com.sdv.platform.domain.error.SdvErrorCode.SYS_010, assertThrows(StartupFailure.class, () -> service("Eastern"),
+                "a wrong install default stops the server").errorCode());
+        assertThrows(StartupFailure.class, () -> service(" "));
     }
 
     @Test

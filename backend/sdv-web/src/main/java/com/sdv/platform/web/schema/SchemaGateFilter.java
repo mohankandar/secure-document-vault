@@ -41,14 +41,19 @@ public final class SchemaGateFilter extends OncePerRequestFilter {
             return;
         }
         SchemaVersion.Status status = check.status();
-        ErrorReplies.write(request, response, HttpStatus.SERVICE_UNAVAILABLE, code(status.state()).code(), status.message());
+        String message = status.reachable() ? status.message() : ErrorReplies.SYS_014_MESSAGE;
+        ErrorReplies.write(request, response, HttpStatus.SERVICE_UNAVAILABLE, code(status.state()).code(), message);
     }
 
+    /**
+     * Task 0037: while the database can't be reached Vero keeps trying, and the answer is SDV-SYS-014, the same as a
+     * database that fails during a request. SDV-SYS-003 is the start-up log line for it.
+     */
     static SdvErrorCode code(SchemaVersion.State state) {
         return switch (state) {
             case OLDER -> SdvErrorCode.SYS_001;
             case NEWER -> SdvErrorCode.SYS_002;
-            case UNREACHABLE, CURRENT -> SdvErrorCode.SYS_003;
+            case UNREACHABLE, CURRENT -> SdvErrorCode.SYS_014;
         };
     }
 }

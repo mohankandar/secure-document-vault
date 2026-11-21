@@ -165,6 +165,39 @@ class AccessRequestApprovalsTest {
         assertEquals("SDV-APR-008", code(() -> approve(ADMIN_2, request)), "decided once");
     }
 
+    /**
+     * Task 0037 (owner answer 2 to report 0036): two Business Admins decide the same request at the same moment. The
+     * second finds it pending when it reads it, but its decision changes no row. That is a refusal, not an internal
+     * fault: 409 SDV-APR-008 "Someone else already decided this request.", audited, and nothing of the second decision
+     * stays (no grant, no ACCESS_REQUEST_DECLINED event).
+     */
+    @Test
+    void twoDecisionsAtTheSameMomentGiveTheSecondApr008Audited() {
+        UUID request = ask(RS, H1, "PRINT");
+        w.requests.decideMeanwhile(request, AccessRequestStatus.APPROVED, ADMIN_2);
+        Throwable thrown = assertThrows(CodedRefusal.Conflict.class,
+                () -> w.approvals.decide(TENANT, ADMIN, "Bea Admin", request.toString(), Decision.DECLINE, "corr-race"));
+        assertEquals("SDV-APR-008", ((CodedRefusal) thrown).errorCode().code());
+        assertEquals("Someone else already decided this request.", thrown.getMessage());
+        assertEquals(AccessRequestStatus.APPROVED, w.requests.get(request).status(), "the first decision stands");
+        assertEquals(ADMIN_2, w.requests.get(request).decidedBy());
+        assertTrue(w.events("ACCESS_REQUEST_DECLINED").isEmpty(), "the refused decision wrote no event of its own");
+        AuditEvent refused = w.last(AccessRequestService.DECISION_REFUSED_ACTION);
+        assertEquals(AuditOutcome.DENIED, refused.outcome());
+        assertEquals(ADMIN, refused.actorId());
+        assertEquals("corr-race", refused.correlationId());
+        assertTrue(refused.safeDetailsJson().contains("SDV-APR-008"));
+
+        // In a bulk decision the same is one refused line; the others still go through.
+        UUID other = ask(RS, H2, "PRINT");
+        UUID raced = ask(RS, H2, "DOWNLOAD");
+        w.requests.decideMeanwhile(raced, AccessRequestStatus.DECLINED, ADMIN_2);
+        var bulk = w.approvals.decideMany(TENANT, ADMIN, null, "APPROVE", List.of(raced.toString(), other.toString()), "c");
+        assertEquals("SDV-APR-008", bulk.results().get(0).code());
+        assertEquals("REFUSED", bulk.results().get(0).outcome());
+        assertEquals("APPROVED", bulk.results().get(1).outcome());
+    }
+
     // -------------------------------------------------------------------------------- bulk
 
     @Test

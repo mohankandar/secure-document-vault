@@ -451,8 +451,8 @@ public class AccessRequestService {
                 details.put("kind", r.kind().name());
                 details.put("requestedBy", r.requestedBy());
                 if (decision == Decision.DECLINE) {
-                    requests.decide(tenantId, requestId, AccessRequestStatus.DECLINED, actorId, blankToNull(actorName), now,
-                            r.expiresAt());
+                    stillWaiting(requests.decide(tenantId, requestId, AccessRequestStatus.DECLINED, actorId, blankToNull(actorName), now,
+                            r.expiresAt()));
                     append(tenantId, "USER", actorId, actorName, DECLINED_ACTION, targetType(r), targetId(r), now,
                             correlationId, AuditOutcome.SUCCESS, details);
                     return new DecisionView(requestId, AccessRequestStatus.DECLINED, null);
@@ -461,20 +461,20 @@ public class AccessRequestService {
                 switch (r.kind()) {
                     case PRINT, DOWNLOAD -> {
                         grantEnds = now.plus(settings.grantWindow(tenantId));
-                        requests.decide(tenantId, requestId, AccessRequestStatus.APPROVED, actorId, blankToNull(actorName),
-                                now, grantEnds);
+                        stillWaiting(requests.decide(tenantId, requestId, AccessRequestStatus.APPROVED, actorId, blankToNull(actorName),
+                                now, grantEnds));
                         details.put("grantExpiresAt", grantEnds.toString());
                     }
                     case LOWER_LEVEL -> {
                         lowerDocument(r, actorId, actorName, now, correlationId);
-                        requests.decide(tenantId, requestId, AccessRequestStatus.APPROVED, actorId, blankToNull(actorName),
-                                now, r.expiresAt());
+                        stillWaiting(requests.decide(tenantId, requestId, AccessRequestStatus.APPROVED, actorId, blankToNull(actorName),
+                                now, r.expiresAt()));
                         details.put("requestedLevel", r.requestedLevel().name());
                     }
                     case LOWER_RECORD_LEVEL -> {
                         lowerRecord(r, actorId, actorName, now, correlationId);
-                        requests.decide(tenantId, requestId, AccessRequestStatus.APPROVED, actorId, blankToNull(actorName),
-                                now, r.expiresAt());
+                        stillWaiting(requests.decide(tenantId, requestId, AccessRequestStatus.APPROVED, actorId, blankToNull(actorName),
+                                now, r.expiresAt()));
                         details.put("requestedLevel", r.requestedLevel().name());
                     }
                 }
@@ -554,6 +554,16 @@ public class AccessRequestService {
             // The refusal stands even when the audit store is unavailable.
         }
     }
+
+    /**
+     * Task 0037 (owner answer 2 to report 0036): the decision changed no pending request, because another Business
+     * Admin decided it at the same moment. A refusal, not an internal fault: 409 SDV-APR-008, audited like the others.
+     */
+    private static void stillWaiting(boolean changed) {
+        if (!changed) throw new CodedRefusal.Conflict(SdvErrorCode.APR_008, DECIDED_BY_SOMEONE_ELSE);
+    }
+
+    static final String DECIDED_BY_SOMEONE_ELSE = "Someone else already decided this request.";
 
     // ------------------------------------------------------------------------------------------------ helpers
 
@@ -644,11 +654,11 @@ public class AccessRequestService {
     }
 
     private static void requireTenant(UUID tenantId) {
-        if (tenantId == null) throw new IllegalArgumentException("tenantId is required.");
+        if (tenantId == null) throw new InternalCheckFailed("tenantId is required.");
     }
 
     private static void requireActor(String actorId) {
-        if (actorId == null || actorId.isBlank()) throw new IllegalArgumentException("actorId is required.");
+        if (actorId == null || actorId.isBlank()) throw new InternalCheckFailed("actorId is required.");
     }
 
     // -------------------------------------------------------------------------------------------------- views

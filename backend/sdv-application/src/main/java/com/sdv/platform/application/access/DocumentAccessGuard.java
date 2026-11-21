@@ -1,5 +1,6 @@
 package com.sdv.platform.application.access;
 
+import com.sdv.platform.domain.error.InternalCheckFailed;
 import com.sdv.platform.application.business.RecordKey;
 import com.sdv.platform.application.port.AuditEventPort;
 import com.sdv.platform.application.port.BusinessRecordRepository;
@@ -112,7 +113,7 @@ public class DocumentAccessGuard {
     public PrintOrDownload requirePrintOrDownload(Document document, Clearance clearance, Attempt attempt,
                                                   String actorId, String correlationId, SensitiveAccessGrants.Use use) {
         if (attempt != Attempt.PRINT && attempt != Attempt.DOWNLOAD) {
-            throw new IllegalArgumentException("Only print and download need this check.");
+            throw new InternalCheckFailed("Only print and download need this check.");
         }
         Objects.requireNonNull(use, "use");
         SensitivityLevel level = requireOpenable(document, clearance, attempt, actorId, correlationId);

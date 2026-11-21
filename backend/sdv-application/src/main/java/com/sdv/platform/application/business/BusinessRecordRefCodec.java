@@ -105,7 +105,7 @@ final class BusinessRecordRefCodec {
                             .thenComparing(IdentifierPart::normalizedValue))
                     .map(part -> part.fieldKey() + "\u001f" + part.normalizedValue())
                     .reduce((left, right) -> left + "\u001e" + right)
-                    .orElseThrow();
+                    .orElseThrow(() -> new InternalCheckFailed("A record has neither business identifiers nor a submission to name it by."));
         }
 
         /** The key of this record's row in record_sensitivity_levels (task 0024, part 2). */

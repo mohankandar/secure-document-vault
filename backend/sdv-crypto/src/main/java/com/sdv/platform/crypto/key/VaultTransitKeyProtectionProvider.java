@@ -1,5 +1,6 @@
 package com.sdv.platform.crypto.key;
 
+import com.sdv.platform.domain.error.InternalCheckFailed;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.sdv.platform.application.port.KeyServiceHealthProbe;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -107,7 +108,7 @@ public class VaultTransitKeyProtectionProvider implements KeyProtectionProvider,
     }
 
     String tenantKeyName(UUID tenantId) {
-        if (tenantId == null) throw new IllegalArgumentException("tenantId is required.");
+        if (tenantId == null) throw new InternalCheckFailed("tenantId is required.");
         return keyPrefix + tenantId.toString().replace("-", "");
     }
 

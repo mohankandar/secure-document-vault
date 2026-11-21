@@ -1,5 +1,6 @@
 package com.sdv.platform.domain.document;
 
+import com.sdv.platform.domain.error.InternalCheckFailed;
 import com.sdv.platform.domain.error.CodedRefusal;
 import com.sdv.platform.domain.error.SdvErrorCode;
 
@@ -47,7 +48,7 @@ public enum SensitivityLevel {
      * {@code recordLevel} is null when the record has no level of its own.
      */
     public static SensitivityLevel effective(SensitivityLevel documentLevel, SensitivityLevel recordLevel) {
-        if (documentLevel == null) throw new IllegalArgumentException("A document always has a sensitivity level.");
+        if (documentLevel == null) throw new InternalCheckFailed("A document always has a sensitivity level.");
         return recordLevel == null ? documentLevel : higherOf(documentLevel, recordLevel);
     }
 

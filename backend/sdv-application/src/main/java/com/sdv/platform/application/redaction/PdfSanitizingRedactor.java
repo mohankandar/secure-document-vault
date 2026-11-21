@@ -1,5 +1,6 @@
 package com.sdv.platform.application.redaction;
 
+import com.sdv.platform.domain.error.InternalCheckFailed;
 import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
@@ -27,9 +28,9 @@ public class PdfSanitizingRedactor {
     static final double MAX_RENDER_PIXELS = 24_000_000d;
 
     public byte[] sanitize(byte[] sourcePdf, List<RedactionRegion> regions, long maxOutputBytes) throws IOException {
-        if (sourcePdf == null || sourcePdf.length == 0) throw new IllegalArgumentException("Source PDF is required.");
-        if (regions == null || regions.isEmpty()) throw new IllegalArgumentException("At least one redaction region is required.");
-        if (maxOutputBytes <= 0) throw new IllegalArgumentException("maxOutputBytes must be positive.");
+        if (sourcePdf == null || sourcePdf.length == 0) throw new InternalCheckFailed("Source PDF is required.");
+        if (regions == null || regions.isEmpty()) throw new InternalCheckFailed("At least one redaction region is required.");
+        if (maxOutputBytes <= 0) throw new InternalCheckFailed("maxOutputBytes must be positive.");
 
         Map<Integer, List<RedactionRegion>> byPage =
                 regions.stream().collect(Collectors.groupingBy(RedactionRegion::pageNumber));

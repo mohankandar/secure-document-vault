@@ -7,7 +7,7 @@ Every error from Vero comes back with one body: a short, stable `code`, a plain 
 ```
 
 - **Reference:** the request's correlation ID, the same as the `X-Correlation-Id` response header. It is on Vero's log line for the error, and on the audit event when one was written. Give it to support.
-- **Format:** `SDV-<AREA>-<NNN>`. `SDV` is the product. `AREA` is three letters: `SEN` sensitivity, `ROL` roles, `HLD` legal hold, `APR` approvals, `INT` intake, `RPT` reports, `SYS` the server as a whole, `STO` storage.
+- **Format:** `SDV-<AREA>-<NNN>`. `SDV` is the product. `AREA` is three letters: `SEN` sensitivity, `ROL` roles, `HLD` legal hold, `APR` approvals, `INT` intake, `RPT` reports, `SYS` the server as a whole, `STO` storage, `KEY` the key service.
 - **Stable:** a code never changes meaning once it is released. A code that is no longer used stays listed and is marked retired. Its number is never reused.
 - **Messages** may be reworded. Programs should read the `code`, not the message.
 - **Not yet coded:** errors that are not listed here still send a generic code (`BAD_REQUEST`, `CONFLICT`, `NOT_FOUND`, `FORBIDDEN` and so on). They get an `SDV-` code when their area is worked on. The failure catalog at the end of this file (task 0034) lists every such point and proposes its code.
@@ -241,7 +241,7 @@ Sent by the Business Admin's legal-hold endpoints, `/api/v1/admin/legal-holds` (
 ### SDV-HLD-008: legal hold already released
 
 - **HTTP status:** 409. Sent by release hold (`POST /api/v1/admin/legal-holds/{holdId}/release`).
-- **Meaning:** the hold was already released (perhaps by someone else a moment earlier). Nothing was changed.
+- **Meaning:** the hold was already released (perhaps by someone else a moment earlier). Nothing was changed. Task 0037: when two Business Admins release the same hold at the same moment, the second gets this code with "This hold was already released." (it used to be 500 SDV-SYS-016). Every HLD-008 refusal is audited as `LEGAL_HOLD_RELEASE_REFUSED` (outcome DENIED, with the code).
 - **What the user should do:** nothing; the hold is no longer in place. Reload the list of holds.
 - **What support should tell the customer:** the hold was already released; the audit shows who released it and when (`LEGAL_HOLD_RELEASED`). The document will be deleted at the next daily cleanup if its retention date has passed.
 
@@ -301,7 +301,7 @@ Sent by the access requests of task 0028: a Restricted steward's request to prin
 ### SDV-APR-008: the request is no longer waiting
 
 - **HTTP status:** 409. Sent by approve, decline and the bulk decision (per request).
-- **Meaning:** the request was already approved, declined or used (perhaps by another Business Admin a moment earlier), or it expired because nobody decided it in time. The message says which. Nothing was changed.
+- **Meaning:** the request was already approved, declined or used (perhaps by another Business Admin a moment earlier), or it expired because nobody decided it in time. The message says which. Nothing was changed. Task 0037: when two Business Admins decide the same request at the same moment, the second gets this code with "Someone else already decided this request." (it used to be 500 SDV-SYS-016). The refusal is audited as `ACCESS_REQUEST_DECISION_REFUSED`, like every refused decision.
 - **What the user should do:** reload the approvals list. For an expired request, the Steward asks again if it is still needed.
 - **What support should tell the customer:** the audit shows what happened to the request (`ACCESS_REQUEST_APPROVED`, `ACCESS_REQUEST_DECLINED`, `SENSITIVE_ACCESS_GRANT_USED` or `ACCESS_REQUEST_EXPIRED`).
 
@@ -420,6 +420,8 @@ Sent by the Business Admin's reports: the Daily intake report (task 0032, `GET /
 
 Task 0036. Every error body also carries `reference`: the request's correlation ID, the same as the `X-Correlation-Id` response header. The same ID is on Vero's log line, and on the audit event when one was written. Every 5xx writes one ERROR log line with the code, the reference and the exact cause; the body holds only the plain sentence.
 
+Task 0037: SYS-003 to SYS-012 are start-up codes. A start that stops prints one ERROR block, "APPLICATION FAILED TO START", with the code, the sentence, the exact cause and what to do, and no stack trace. A packaged start is any start without the `local` profile, as a customer install runs.
+
 ### SDV-SYS-001: database older than this version
 
 - **HTTP status:** 503, on every request except health and system information (`/actuator/health…`, `/actuator/info`, `/api/v1/system/info`). Replaces `DATABASE_OLDER`.
@@ -436,10 +438,73 @@ Task 0036. Every error body also carries `reference`: the request's correlation 
 
 ### SDV-SYS-003: database unreachable at start
 
-- **HTTP status:** 503, on every request except health and system information. Replaces `DATABASE_UNREACHABLE`.
-- **Meaning:** when Vero started it couldn't read the database to check its version. Vero refuses until it is restarted.
+- **HTTP status:** none since task 0037; it is the start-up log line. While the database can't be reached, requests get 503 **SDV-SYS-014** (task 0036 sent this code with 503, and Vero refused until it was restarted).
+- **Meaning:** when Vero started it couldn't reach the database to check its version. Vero keeps running and keeps trying: after 2 s, then twice as long each time, at most once a minute. As soon as the database answers, the version check runs and Vero serves (or refuses with SYS-001 or SYS-002), without a restart. Readiness (`/actuator/health/readiness`) is 503 until then; liveness stays UP.
 - **What the user should do:** try again in a few minutes. If it keeps happening, tell the IT team.
-- **What support should tell the customer:** Vero started while its database was unavailable. Check that PostgreSQL is running and reachable, then restart Vero.
+- **What support should tell the customer:** Vero started while its database was unavailable. Check that PostgreSQL is running and reachable; no restart is needed. The log has one ERROR line `SDV-SYS-003 …` with the database host and port and the SQL state, a WARN line per further try, and an INFO line when the database can be reached again.
+
+### SDV-SYS-004: bundled changelog unreadable
+
+- **HTTP status:** none; Vero doesn't start.
+- **Meaning:** the database changelog inside the Vero package is missing or damaged, so Vero can't check the database's version. The start stops with one ERROR block, "APPLICATION FAILED TO START", that holds the code, the cause and the action.
+- **What the user should do:** nothing; Vero is not running. Tell the IT team.
+- **What support should tell the customer:** the installed Vero package is damaged. Reinstall it from the release.
+
+### SDV-SYS-005: sign-in settings not valid
+
+- **HTTP status:** none; Vero doesn't start.
+- **Meaning:** a sign-in setting is wrong: `SDV_AUTH_MODE` is unknown, `local-header` is used outside a local start, an issuer, key set (JWKS) or audience setting is missing, not HTTPS or not a URI, a tenant ID setting is not a UUID, or two claim names are the same. The ERROR block names the setting (never a secret value).
+- **What the user should do:** nothing; Vero is not running. Tell the IT team.
+- **What support should tell the customer:** a sign-in setting is wrong; the log names it. Correct it and start Vero again.
+
+### SDV-SYS-006: sign-in switched off
+
+- **HTTP status:** none. With sign-in off, every request except health and system information is refused 401 (`UNAUTHORIZED` until the sign-in fix task).
+- **Meaning:** `SDV_AUTH_MODE` is `disabled` (its default). In a local start (the `local` profile) Vero starts with one WARN line `SDV-SYS-006 …` that says nobody can sign in. A packaged start (any start without the local profile, as a customer install runs) refuses to start, with an ERROR line and the ERROR block.
+- **What the user should do:** nothing; tell the IT team.
+- **What support should tell the customer:** the install is missing its sign-in setting. Set `SDV_AUTH_MODE=enterprise-jwt` and the issuer settings (install guide, "Sign-in"), then start Vero again.
+
+### SDV-SYS-007: key service settings not valid
+
+- **HTTP status:** none; Vero doesn't start.
+- **Meaning:** with `SDV_KEY_PROVIDER=vault`, the Vault address is missing, both a token and a token file are given (or neither), the token file is empty or can't be read, or the mount or key prefix is not valid. The ERROR block names the setting; it never holds the token or the token file's contents.
+- **What the user should do:** nothing; Vero is not running. Tell the IT team.
+- **What support should tell the customer:** a key service setting is wrong; the log names it. Correct it and start Vero again.
+
+### SDV-SYS-008: approval settings not valid
+
+- **HTTP status:** none; Vero doesn't start.
+- **Meaning:** `SDV_APPROVALS_GRANT_HOURS` or `SDV_APPROVALS_PENDING_DAYS` is not a whole number in its range, or a per-tenant entry isn't written `tenant id=number` or names a tenant twice. The ERROR block names the setting.
+- **What the user should do:** nothing; Vero is not running. Tell the IT team.
+- **What support should tell the customer:** an approvals setting is wrong; the log names it. Correct it and start Vero again.
+
+### SDV-SYS-009: retention schedule settings not valid
+
+- **HTTP status:** none; Vero doesn't start.
+- **Meaning:** `SDV_RETENTION_DAILY_AT` is empty or not `HH:mm`, `SDV_RETENTION_CRON` can't be read, or one of the old fixed-delay settings is still set. The ERROR block names the setting and its value (not secret).
+- **What the user should do:** nothing; Vero is not running. Tell the IT team.
+- **What support should tell the customer:** the daily cleanup time is written wrongly. Use `HH:mm`, for example `02:00`, and start Vero again.
+
+### SDV-SYS-010: install default time zone not valid
+
+- **HTTP status:** none; Vero doesn't start. (The same problem in one tenant's own setting is SDV-RPT-004.)
+- **Meaning:** `SDV_DEFAULT_TIME_ZONE` is empty or not an IANA time zone name. The ERROR block holds the value.
+- **What the user should do:** nothing; Vero is not running. Tell the IT team.
+- **What support should tell the customer:** the default time zone is written wrongly. Set an IANA name such as `America/New_York` and start Vero again.
+
+### SDV-SYS-011: sign-in recovery at start refused
+
+- **HTTP status:** none; Vero doesn't start.
+- **Meaning:** the one-time sign-in recovery (`sdv.auth.jwt.recovery.enabled=true`) was asked for and couldn't be applied: its settings are incomplete or not UUIDs, the database doesn't match, the request ID was already used, or the target isn't a disabled known-good connection. The ERROR block says which check failed.
+- **What the user should do:** nothing; Vero is not running. Tell the IT team.
+- **What support should tell the customer:** the emergency sign-in recovery could not be applied; the log says why. Correct the recovery settings, or remove them to start normally, and follow the recovery runbook.
+
+### SDV-SYS-012: start-up work needs the database
+
+- **HTTP status:** none.
+- **Meaning:** Vero does some work once at start that reads or writes the database: the Restricted Steward sign-in group check (with `enterprise-jwt`) and the sign-in connection bootstrap. Since task 0037 this work waits for the database like the rest of Vero: while the database doesn't match it doesn't run, and one WARN line `SDV-SYS-012 Start-up work waits for the database …` names it; it runs as soon as the database matches, also when the database comes back without a restart. If the work itself fails, Vero doesn't serve with it undone (fail closed): at start the start stops, and after a late recovery Vero stops, both with an ERROR line holding the code, the work's name and the cause (exception classes and SQL state only, never the SQL).
+- **What the user should do:** nothing; tell the IT team.
+- **What support should tell the customer:** Vero couldn't finish its start-up work because of the database. Check that PostgreSQL is running and reachable, then start Vero again.
 
 ### SDV-SYS-013: unexpected server failure
 
@@ -450,8 +515,8 @@ Task 0036. Every error body also carries `reference`: the request's correlation 
 
 ### SDV-SYS-014: database failed during a request
 
-- **HTTP status:** 503. Any request that reads or writes the database.
-- **Meaning:** PostgreSQL went down, timed out or ran out of connections while Vero was answering. Message: "Vero can't reach its database just now. Try again in a few minutes."
+- **HTTP status:** 503. Any request that reads or writes the database. Task 0037: also every request except health and system information while the database couldn't be reached since the start (SDV-SYS-003); Vero keeps trying.
+- **Meaning:** PostgreSQL went down, timed out or ran out of connections while Vero was answering, or hasn't answered since Vero started. Message: "Vero can't reach its database just now. Try again in a few minutes." Task 0037: readiness pings the database, so `/actuator/health/readiness` is 503 while it is gone and 200 again when it answers.
 - **What the user should do:** try again in a few minutes. A sending system re-sends what got a 503.
 - **What support should tell the customer:** Vero lost its database for a while. Check the database server. The log line has the reference, the SQL state and the Vero method; it never holds the SQL or the values sent.
 
@@ -484,6 +549,22 @@ Task 0036. Every error body also carries `reference`: the request's correlation 
 - **Meaning:** every ACTIVE storage volume is full, at its stop-write level, or can't be written or read. Nothing was stored. Message: "Vero has no storage space for new documents right now. Nothing was stored; send it again later."
 - **What the user should do:** a sending system sends the document again later. A person tells the IT team.
 - **What support should tell the customer:** Vero's storage is full. Tenant IT frees space, adds a volume, or raises the stop-write level; then senders re-send. Vero logs an ERROR line with the reference.
+
+### SDV-STO-005: storage volume settings not valid
+
+- **HTTP status:** 400. Task 0037: sent by the storage placement preview (`GET /api/v1/admin/storage-volumes/placement-preview?requiredBytes=…`) when `requiredBytes` is negative. It used to be 400 `BAD_REQUEST` with an internal sentence. The other volume settings keep `BAD_REQUEST` until the storage fix task gives them this code.
+- **Meaning:** a value Tenant IT sent for storage is missing or out of range. Nothing was changed. Message: "requiredBytes must be 0 or more."
+- **What the user should do:** correct the value the message names and try again.
+- **What support should tell the customer:** a storage setting is out of range; the message says which.
+
+## Key service (KEY)
+
+### SDV-KEY-001: encryption not set up
+
+- **HTTP status:** none yet. Task 0037 sends it in the start-up log; document actions still answer as before (`VIEWER_UNAVAILABLE`, `DOWNLOAD_UNAVAILABLE` or a 500) until the key service fix task.
+- **Meaning:** `SDV_KEY_PROVIDER` is `disabled` (its default), so no document can be stored, viewed, printed, downloaded or redacted. In a local start Vero starts with one WARN line `SDV-KEY-001 …` that names what will fail. A packaged start (any start without the local profile) refuses to start, with an ERROR line and the ERROR block.
+- **What the user should do:** nothing; tell the IT team.
+- **What support should tell the customer:** the install has no key service configured. Set `SDV_KEY_PROVIDER=vault` and the Vault settings (see the install guide), then start Vero again.
 
 ## Failure catalog (task 0034): proposed codes
 
@@ -547,6 +628,7 @@ Task 0034 went through the code flow by flow and listed every point where someth
 - **L1 tells the customer:** an older Vero was started after an upgrade. Start the newer version again; never roll the database back by hand.
 
 #### SDV-SYS-003 (released in task 0036): database unreachable at start
+- **Task 0037:** Vero now keeps trying (the "Fix task" below); requests meanwhile get SDV-SYS-014, and SYS-003 is the start-up log line.
 - **Released:** now sent; its section is under "Server (SYS)" above. The notes below are what task 0034 found, kept for the list of lines.
 - **Where:** `DatabaseSchemaCheck.java:52-54` (caught; logs the JDBC exception class and message), `SchemaGateFilter.java:43`.
 - **Trigger:** PostgreSQL is down, unreachable, or refuses the user when Vero starts.
@@ -557,7 +639,8 @@ Task 0034 went through the code flow by flow and listed every point where someth
 - **Fix:** bring the database back, then restart Vero. Fix task: re-check the database every minute while unreachable.
 - **L1 tells the customer:** Vero started while its database was unavailable. Once the database is up, restart Vero.
 
-#### SDV-SYS-004 (proposed): bundled changelog unreadable
+#### SDV-SYS-004 (released in task 0037): bundled changelog unreadable
+- **Released:** now sent (task 0037); its section is above. The notes below are what task 0034 found, kept for the list of lines.
 - **Where:** `SchemaVersion.java:75-76`.
 - **Trigger:** the changelog inside the Vero package is missing or damaged.
 - **Today:** start stops with a stack trace, "The changelog bundled with this Vero version could not be read." Generic: yes (no code).
@@ -567,7 +650,8 @@ Task 0034 went through the code flow by flow and listed every point where someth
 - **Fix:** reinstall the Vero package.
 - **L1 tells the customer:** the installed package is damaged. Reinstall it from the release.
 
-#### SDV-SYS-005 (proposed): sign-in settings not valid
+#### SDV-SYS-005 (released in task 0037): sign-in settings not valid
+- **Released:** now sent (task 0037); its section is above. The notes below are what task 0034 found, kept for the list of lines.
 - **Where:**
   - `SecurityConfiguration.java:41`, `:48`, `:55`;
   - `EnterpriseJwtConfiguration.java:101`, `:113`, `:125`, `:140`, `:143`, `:149`, `:156`;
@@ -586,7 +670,8 @@ Task 0034 went through the code flow by flow and listed every point where someth
 - **Fix:** correct the named setting.
 - **L1 tells the customer:** a sign-in setting is wrong. The log names it.
 
-#### SDV-SYS-006 (proposed): sign-in switched off
+#### SDV-SYS-006 (released in task 0037): sign-in switched off
+- **Released:** now sent (task 0037); its section is above. The notes below are what task 0034 found, kept for the list of lines.
 - **Where:** `SecurityConfiguration.java:52-54` (`SDV_AUTH_MODE` left at its default `disabled`).
 - **Trigger:** Vero is started outside the local profile without `SDV_AUTH_MODE`.
 - **Today:** Vero starts, and every request gets 401 with Spring's generic body. Nothing is logged. Generic: yes.
@@ -596,7 +681,8 @@ Task 0034 went through the code flow by flow and listed every point where someth
 - **Fix:** set `SDV_AUTH_MODE=enterprise-jwt` and the issuer settings.
 - **L1 tells the customer:** the install is missing its sign-in setting. See the install guide, "Sign-in".
 
-#### SDV-SYS-007 (proposed): key service settings not valid
+#### SDV-SYS-007 (released in task 0037): key service settings not valid
+- **Released:** now sent (task 0037); its section is above. The notes below are what task 0034 found, kept for the list of lines.
 - **Where:** `VaultCryptoConfiguration.java:42`, `:47`, `:50`, `:57`; `VaultTransitKeyProtectionProvider.java:41-44`.
 - **Trigger:** with `SDV_KEY_PROVIDER=vault`, one of these:
   - the Vault address is missing;
@@ -610,7 +696,8 @@ Task 0034 went through the code flow by flow and listed every point where someth
 - **Fix:** correct the named setting.
 - **L1 tells the customer:** the key service setting is wrong; the log names it.
 
-#### SDV-SYS-008 (proposed): approval settings not valid
+#### SDV-SYS-008 (released in task 0037): approval settings not valid
+- **Released:** now sent (task 0037); its section is above. The notes below are what task 0034 found, kept for the list of lines.
 - **Where:** `ApprovalSettings.java:66`, `:74`, `:79`, `:82` (`:63` is caught and refused at `:66`).
 - **Trigger:** one of these:
   - `SDV_APPROVALS_GRANT_HOURS` or `SDV_APPROVALS_PENDING_DAYS` is not a whole number in its range;
@@ -623,7 +710,8 @@ Task 0034 went through the code flow by flow and listed every point where someth
 - **Fix:** correct the setting.
 - **L1 tells the customer:** an approvals setting is wrong; the log names it.
 
-#### SDV-SYS-009 (proposed): retention schedule settings not valid
+#### SDV-SYS-009 (released in task 0037): retention schedule settings not valid
+- **Released:** now sent (task 0037); its section is above. The notes below are what task 0034 found, kept for the list of lines.
 - **Where:** `RetentionSchedule.java:49`, `:58-59`, `:71`, `:75-76`.
 - **Trigger:** `SDV_RETENTION_DAILY_AT` is empty or not `HH:mm`, or `SDV_RETENTION_CRON` can't be read.
 - **Today:** start stops; plain message, no code. Generic: yes.
@@ -633,7 +721,8 @@ Task 0034 went through the code flow by flow and listed every point where someth
 - **Fix:** correct the setting.
 - **L1 tells the customer:** the daily cleanup time is written wrongly; use `HH:mm`, for example `02:00`.
 
-#### SDV-SYS-010 (proposed): install default time zone not valid
+#### SDV-SYS-010 (released in task 0037): install default time zone not valid
+- **Released:** now sent (task 0037); its section is above. The notes below are what task 0034 found, kept for the list of lines.
 - **Where:** `IntakeReportService.java:101`, `:105-106`.
 - **Trigger:** `SDV_DEFAULT_TIME_ZONE` is empty or not an IANA name.
 - **Today:** start stops; plain message, no code. Generic: yes. (The same problem in one tenant's own setting is SDV-RPT-004.)
@@ -643,7 +732,8 @@ Task 0034 went through the code flow by flow and listed every point where someth
 - **Fix:** set an IANA name such as `America/New_York`.
 - **L1 tells the customer:** the default time zone is written wrongly.
 
-#### SDV-SYS-011 (proposed): sign-in recovery at start refused
+#### SDV-SYS-011 (released in task 0037): sign-in recovery at start refused
+- **Released:** now sent (task 0037); its section is above. The notes below are what task 0034 found, kept for the list of lines.
 - **Where:** `OidcKnownGoodRecovery.java:35`, `:37`, `:38` (`UUID.fromString` with no message of its own); `JdbcOidcConnectionBindingRepository.java:124`, `:126`, `:128`, `:129`, `:131`, `:136`, `:140`, `:144`.
 - **Trigger:** the recovery settings are incomplete, the database doesn't match, the request ID was already used, or the target isn't a disabled known-good connection.
 - **Today:** start stops. The messages are good except at `:38`, where a malformed ID gives Java's raw "Invalid UUID string". Generic: yes (no code).
@@ -653,12 +743,14 @@ Task 0034 went through the code flow by flow and listed every point where someth
 - **Fix:** correct the recovery settings, or remove them to start normally.
 - **L1 tells the customer:** the emergency sign-in recovery could not be applied; the log says why. Follow the recovery runbook.
 
-#### SDV-SYS-012 (proposed): start-up work needs the database
+#### SDV-SYS-012 (released in task 0037): start-up work needs the database
+- **Released:** now sent (task 0037); its section is above. The notes below are what task 0034 found, kept for the list of lines.
 - **Where:**
   - `RestrictedStewardMappingWatcher.java:35`: no schema check before it reads and writes the database;
   - `OidcConnectionBootstrap.java:29`: `UUID.fromString` on `SDV_AUTH_JWT_TENANT_ID` with no message of its own.
 - **Trigger:** with `enterprise-jwt`, Vero starts while the database is unreachable or doesn't match, or the tenant ID setting is not a UUID.
 - **Today:** likely the start stops with a raw database or UUID stack trace. That defeats the "stay up and show why" design of SYS-001 to SYS-003. Generic: yes.
+- **Confirmed (task 0037):** with `enterprise-jwt` and the database unreachable, the jar built from `release/vero-r7` at `9d8b4e6` logged "Started", then stopped with `CannotCreateTransactionException` from the watcher and exit code 1.
 - **Kind:** outside dependency down, or needs a person (tenant ID).
 - **User sees:** nothing; Vero is not running.
 - **IT admin and log:** ERROR with the code.
@@ -1128,7 +1220,8 @@ The watch folder and polling intake are **not in this repository**. Sending syst
 - **Fix:** install or configure the provider, or move the volume.
 - **L1 tells the customer:** an install problem; escalate to Vero operations.
 
-#### SDV-STO-005 (proposed): storage volume settings not valid
+#### SDV-STO-005 (released in task 0037): storage volume settings not valid
+- **Released:** now sent (task 0037); its section is above. The notes below are what task 0034 found, kept for the list of lines.
 - **Where:** `StorageVolumeAdminService.java:75`, `:76`, `:110`, `:112`, `:113`, `:166`, `:197`, `:198`, `:202`, `:203`, `:204`; `StorageAdminController.java:50`; `LocalFilesystemVolumeProbe.java:28`, `:36-37`, `:111`, `:114-115`.
 - **Trigger:** Tenant IT enters a missing, out-of-range, overlapping or unwritable value for a volume.
 - **Today:** 400 `BAD_REQUEST` with a plain message (`:37` includes the folder path Tenant IT typed). Generic: yes.
@@ -1148,7 +1241,8 @@ The watch folder and polling intake are **not in this repository**. Sending syst
 - **Fix:** none.
 - **L1 tells the customer:** reload the Storage page.
 
-#### SDV-KEY-001 (proposed): encryption not set up
+#### SDV-KEY-001 (released in task 0037): encryption not set up
+- **Released:** now sent (task 0037); its section is above. The notes below are what task 0034 found, kept for the list of lines.
 - **Where:** `DisabledCryptoConfiguration.java:29`, `:34` (`SDV_KEY_PROVIDER` left at its default `disabled`).
 - **Trigger:** a document is uploaded, viewed or downloaded with no key service configured.
 - **Today:** upload gets 500 with Spring's generic body; viewer and download get 422 `VIEWER_UNAVAILABLE` or `DOWNLOAD_UNAVAILABLE`. Nothing at start says encryption is off. Generic: yes.

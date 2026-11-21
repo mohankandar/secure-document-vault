@@ -1,5 +1,7 @@
 package com.sdv.platform.security.auth.enterprise;
 
+import com.sdv.platform.domain.error.SdvErrorCode;
+import com.sdv.platform.domain.error.StartupFailure;
 import com.documentplatform.identity.IdentityClaimConfig;
 import com.documentplatform.identity.OidcConnectionBindingResolver;
 import com.documentplatform.identity.spring.CachingOidcConnectionBindingResolver;
@@ -98,7 +100,7 @@ public class EnterpriseJwtConfiguration {
         OidcConnectionBindingResolver persistentResolver = null;
         if (persistentConnectionEnabled) {
             persistentResolver = connectionResolverProvider.getIfAvailable();
-            if (persistentResolver == null) throw new IllegalStateException("Persistent OIDC connection resolution is enabled but no resolver is available.");
+            if (persistentResolver == null) throw new StartupFailure(SdvErrorCode.SYS_005, "Persistent OIDC connection resolution is enabled but no resolver is available.");
             persistentResolver = new CachingOidcConnectionBindingResolver(persistentResolver, Duration.ofSeconds(30), 256);
         }
         return new EnterpriseJwtAuthenticationConverter(
@@ -110,7 +112,7 @@ public class EnterpriseJwtConfiguration {
     /** Task 0025: the role-conflict reporter is required; without it the server doesn't start (fail closed). */
     private static RoleConflictReporter requireReporter(ObjectProvider<RoleConflictReporter> provider) {
         RoleConflictReporter reporter = provider.getIfAvailable();
-        if (reporter == null) throw new IllegalStateException("No role-conflict reporter is available.");
+        if (reporter == null) throw new StartupFailure(SdvErrorCode.SYS_005, "No role-conflict reporter is available.");
         return reporter;
     }
 
@@ -122,7 +124,7 @@ public class EnterpriseJwtConfiguration {
         try {
             return java.util.UUID.fromString(value.trim());
         } catch (IllegalArgumentException ex) {
-            throw new IllegalStateException(property + " must be a valid UUID when configured.");
+            throw new StartupFailure(SdvErrorCode.SYS_005, property + " must be a valid UUID when configured.");
         }
     }
 
@@ -137,23 +139,23 @@ public class EnterpriseJwtConfiguration {
         try {
             uri = URI.create(text);
         } catch (IllegalArgumentException ex) {
-            throw new IllegalStateException(property + " must be an absolute HTTPS URI (HTTP is allowed only for loopback acceptance).");
+            throw new StartupFailure(SdvErrorCode.SYS_005, property + " must be an absolute HTTPS URI (HTTP is allowed only for loopback acceptance).");
         }
         if (!uri.isAbsolute() || uri.getHost() == null || uri.getUserInfo() != null || uri.getFragment() != null) {
-            throw new IllegalStateException(property + " must be an absolute HTTPS URI (HTTP is allowed only for loopback acceptance).");
+            throw new StartupFailure(SdvErrorCode.SYS_005, property + " must be an absolute HTTPS URI (HTTP is allowed only for loopback acceptance).");
         }
         boolean https = "https".equalsIgnoreCase(uri.getScheme());
         boolean loopbackHttp = "http".equalsIgnoreCase(uri.getScheme())
                 && ("127.0.0.1".equals(uri.getHost()) || "localhost".equalsIgnoreCase(uri.getHost()));
         if (!https && !loopbackHttp) {
-            throw new IllegalStateException(property + " must use HTTPS outside loopback acceptance.");
+            throw new StartupFailure(SdvErrorCode.SYS_005, property + " must use HTTPS outside loopback acceptance.");
         }
         return text;
     }
 
     private static String requireText(String value, String property) {
         if (value == null || value.isBlank()) {
-            throw new IllegalStateException(property + " is required when sdv.auth.mode=enterprise-jwt.");
+            throw new StartupFailure(SdvErrorCode.SYS_005, property + " is required when sdv.auth.mode=enterprise-jwt.");
         }
         return value.trim();
     }

@@ -1,6 +1,8 @@
 package com.sdv.platform.application.storage;
 
+import com.sdv.platform.domain.error.CodedRefusal;
 import com.sdv.platform.domain.error.InternalCheckFailed;
+import com.sdv.platform.domain.error.SdvErrorCode;
 import com.sdv.platform.application.port.AuditEventPort;
 import com.sdv.platform.application.port.StorageVolumeProbe;
 import com.sdv.platform.application.port.StorageVolumeRepository;
@@ -157,6 +159,8 @@ public class StorageVolumeAdminService {
 
     public StoragePlacementService.PlacementDecision previewPlacement(UUID tenantId, long requiredBytes) {
         requireActiveTenant(tenantId);
+        // Task 0037: the size comes from the request, so a negative one is the caller's mistake, not an internal fault.
+        if (requiredBytes < 0) throw new CodedRefusal.BadRequest(SdvErrorCode.STO_005, "requiredBytes must be 0 or more.");
         return placement.select(tenantId, requiredBytes);
     }
 

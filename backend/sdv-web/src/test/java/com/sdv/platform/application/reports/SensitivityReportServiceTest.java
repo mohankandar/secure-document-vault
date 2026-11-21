@@ -1,5 +1,6 @@
 package com.sdv.platform.application.reports;
 
+import com.sdv.platform.domain.error.StartupFailure;
 import com.sdv.platform.application.port.AuditEventPort;
 import com.sdv.platform.application.port.IntakeReportRepository;
 import com.sdv.platform.application.port.SensitivityReportRepository;
@@ -120,7 +121,7 @@ class SensitivityReportServiceTest {
         assertEquals("SDV-RPT-004", code(() -> s.report(TENANT, null, null, null)));
         assertEquals("SDV-RPT-004", code(() -> s.export(TENANT, "priya", "c", null, null, null)));
         verifyNoInteractions(audit);
-        assertThrows(IllegalStateException.class, () -> service("Not/AZone"), "a wrong install default stops the server");
+        assertThrows(StartupFailure.class, () -> service("Not/AZone"), "a wrong install default stops the server (SDV-SYS-010)");
     }
 
     @Test

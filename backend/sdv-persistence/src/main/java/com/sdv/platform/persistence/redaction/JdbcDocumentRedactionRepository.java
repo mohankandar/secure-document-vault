@@ -1,5 +1,6 @@
 package com.sdv.platform.persistence.redaction;
 
+import com.sdv.platform.domain.error.InternalCheckFailed;
 import com.sdv.platform.application.port.DocumentRedactionRepository;
 import com.sdv.platform.application.redaction.RedactionOperation;
 import com.sdv.platform.domain.document.Document;
@@ -75,10 +76,10 @@ public class JdbcDocumentRedactionRepository implements DocumentRedactionReposit
     @Override
     public List<RedactionOperation> claimStaleForRecovery(int staleAfterMinutes, int limit, UUID claimToken) {
         if (staleAfterMinutes < 1 || staleAfterMinutes > 1440) {
-            throw new IllegalArgumentException("staleAfterMinutes must be between 1 and 1440.");
+            throw new InternalCheckFailed("staleAfterMinutes must be between 1 and 1440.");
         }
         if (limit < 1 || limit > 100) {
-            throw new IllegalArgumentException("limit must be between 1 and 100.");
+            throw new InternalCheckFailed("limit must be between 1 and 100.");
         }
         MapSqlParameterSource p = new MapSqlParameterSource()
                 .addValue("staleAfterMinutes", staleAfterMinutes)

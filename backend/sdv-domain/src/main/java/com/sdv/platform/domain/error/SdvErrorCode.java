@@ -126,8 +126,29 @@ public enum SdvErrorCode {
     SYS_001("SDV-SYS-001", true),
     /** Task 0036: the database is newer than this Vero version (503). */
     SYS_002("SDV-SYS-002", true),
-    /** Task 0036: the database couldn't be read at start to check its version (503). */
+    /**
+     * Task 0036: the database couldn't be read at start to check its version. Task 0037: logged at start; Vero keeps
+     * trying, and requests meanwhile get SDV-SYS-014 (503).
+     */
     SYS_003("SDV-SYS-003"),
+    /** Task 0037: the changelog inside the Vero package can't be read; Vero doesn't start. */
+    SYS_004("SDV-SYS-004", true),
+    /** Task 0037: a sign-in setting is not valid; Vero doesn't start. */
+    SYS_005("SDV-SYS-005", true),
+    /** Task 0037: sign-in is switched off: WARN at a local start, and a packaged start refuses. */
+    SYS_006("SDV-SYS-006", true),
+    /** Task 0037: a key service setting is not valid; Vero doesn't start. */
+    SYS_007("SDV-SYS-007", true),
+    /** Task 0037: an approvals setting is not valid; Vero doesn't start. */
+    SYS_008("SDV-SYS-008", true),
+    /** Task 0037: the retention schedule setting is not valid; Vero doesn't start. */
+    SYS_009("SDV-SYS-009", true),
+    /** Task 0037: the install's default time zone is not valid; Vero doesn't start. */
+    SYS_010("SDV-SYS-010", true),
+    /** Task 0037: the explicitly requested sign-in recovery couldn't be applied; Vero doesn't start. */
+    SYS_011("SDV-SYS-011", true),
+    /** Task 0037: start-up work that needs the database failed; Vero doesn't start (or, after a late recovery, stops). */
+    SYS_012("SDV-SYS-012"),
     /** Task 0036: a failure Vero didn't expect; the last-resort answer (500). */
     SYS_013("SDV-SYS-013"),
     /** Task 0036: the database failed during a request (Spring's DataAccessException) (503). */
@@ -139,7 +160,11 @@ public enum SdvErrorCode {
     /** Task 0036: the action's audit couldn't be written, so the action was not done (500). */
     SYS_017("SDV-SYS-017"),
     /** Task 0036: no ACTIVE storage volume can take the document (503). */
-    STO_001("SDV-STO-001", true);
+    STO_001("SDV-STO-001", true),
+    /** Task 0037: the storage placement preview's size is negative (400). Other volume settings follow in their task. */
+    STO_005("SDV-STO-005"),
+    /** Task 0037: no key service is set up: WARN at a local start, and a packaged start refuses. */
+    KEY_001("SDV-KEY-001", true);
 
     private final String code;
     private final boolean needsPerson;

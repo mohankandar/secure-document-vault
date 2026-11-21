@@ -1,5 +1,7 @@
 package com.sdv.platform.web.schema;
 
+import com.sdv.platform.domain.error.SdvErrorCode;
+import com.sdv.platform.domain.error.StartupFailure;
 import liquibase.Contexts;
 import liquibase.changelog.ChangeLogParameters;
 import liquibase.changelog.ChangeSet;
@@ -30,7 +32,8 @@ public final class SchemaVersion {
 
     public static final String OLDER_MESSAGE = "The database is older than this Vero version. Ask your database team to run the schema step (install guide, \"Update the database\").";
     public static final String NEWER_MESSAGE = "The database is newer than this Vero version. Start the Vero version the database was updated for, or ask your database team which version that is.";
-    public static final String UNREACHABLE_MESSAGE = "Vero couldn't read the database to check its version. Check that PostgreSQL is running and that Vero can reach it, then start Vero again.";
+    /** Task 0037: Vero keeps trying, so no restart is needed once the database is back. */
+    public static final String UNREACHABLE_MESSAGE = "Vero can't reach its database. It keeps trying and starts serving as soon as the database answers; check that PostgreSQL is running and that Vero can reach it.";
 
     public enum State { CURRENT, OLDER, NEWER, UNREACHABLE }
 
@@ -42,6 +45,8 @@ public final class SchemaVersion {
     /** missing: shipped for production and not applied; unknown: applied but not shipped by this version at all. */
     public record Status(State state, List<Key> missing, List<Key> unknown, int applied) {
         public boolean current() { return state == State.CURRENT; }
+        /** False only while the database couldn't be read (task 0037: Vero keeps trying). */
+        public boolean reachable() { return state != State.UNREACHABLE; }
         public String message() {
             return switch (state) {
                 case CURRENT -> "The database matches this Vero version.";
@@ -73,7 +78,8 @@ public final class SchemaVersion {
             }
             return new Shipped(List.copyOf(required), Set.copyOf(all));
         } catch (Exception e) {
-            throw new IllegalStateException("The changelog bundled with this Vero version could not be read.", e);
+            throw new StartupFailure(SdvErrorCode.SYS_004, "The changelog " + MASTER + " inside the package could not be read: "
+                    + e.getClass().getSimpleName() + ".", e);
         }
     }
 

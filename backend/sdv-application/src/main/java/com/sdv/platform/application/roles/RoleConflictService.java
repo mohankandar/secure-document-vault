@@ -1,5 +1,6 @@
 package com.sdv.platform.application.roles;
 
+import com.sdv.platform.domain.error.InternalCheckFailed;
 import com.sdv.platform.application.port.AuditEventPort;
 import com.sdv.platform.application.port.RoleGovernancePort;
 import com.sdv.platform.application.port.RoleGovernancePort.RoleConflictProblem;
@@ -70,7 +71,8 @@ public class RoleConflictService {
         if (ended.isEmpty()) return;
         List<String> held = ended.stream().flatMap(p -> p.heldRoles().stream()).distinct().sorted().toList();
         List<String> withheld = ended.stream().flatMap(p -> p.withheldRoles().stream()).distinct().sorted().toList();
-        Instant firstSeen = ended.stream().map(RoleConflictProblem::firstSeenAt).min(Instant::compareTo).orElseThrow();
+        Instant firstSeen = ended.stream().map(RoleConflictProblem::firstSeenAt).min(Instant::compareTo)
+                .orElseThrow(() -> new InternalCheckFailed("An ended role conflict has no first-seen time."));
         long occurrences = ended.stream().mapToLong(RoleConflictProblem::occurrences).sum();
         String details = "{\"resolvedFrom\":" + RoleJson.quote(resolvedFrom)
                 + ",\"heldRoles\":" + RoleJson.array(held)

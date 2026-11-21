@@ -1,5 +1,7 @@
 package com.sdv.platform.application.reports;
 
+import com.sdv.platform.domain.error.SdvErrorCode;
+import com.sdv.platform.domain.error.StartupFailure;
 import com.sdv.platform.domain.error.InternalCheckFailed;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -12,7 +14,6 @@ import com.sdv.platform.application.port.IntakeReportRepository.SendingSystem;
 import com.sdv.platform.domain.audit.AuditEvent;
 import com.sdv.platform.domain.audit.AuditOutcome;
 import com.sdv.platform.domain.error.CodedRefusal;
-import com.sdv.platform.domain.error.SdvErrorCode;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -99,12 +100,12 @@ public class IntakeReportService {
     /** The install default, checked when the server starts: an unknown zone stops it. */
     static ZoneId installZone(String value) {
         if (value == null || value.isBlank()) {
-            throw new IllegalStateException("sdv.tenant-defaults.time-zone must name a time zone, for example America/New_York.");
+            throw new StartupFailure(SdvErrorCode.SYS_010, "sdv.tenant-defaults.time-zone must name a time zone, for example America/New_York.");
         }
         try {
             return ZoneId.of(value.trim());
         } catch (DateTimeException ex) {
-            throw new IllegalStateException("sdv.tenant-defaults.time-zone is not a time zone Vero knows: " + value.trim(), ex);
+            throw new StartupFailure(SdvErrorCode.SYS_010, "sdv.tenant-defaults.time-zone is not a time zone Vero knows: " + value.trim(), ex);
         }
     }
 
@@ -160,7 +161,7 @@ public class IntakeReportService {
             case DOCUMENT -> "PROCESSING_FAILED".equals(item.documentStatus()) ? "FAILED" : "ACCEPTED";
             case DUPLICATE -> "DUPLICATE_ALREADY_STORED";
             case REFUSED -> "REFUSED";
-            case DELIVERY -> throw new IllegalArgumentException("A delivery has no document line.");
+            case DELIVERY -> throw new InternalCheckFailed("A delivery has no document line.");
         };
     }
 

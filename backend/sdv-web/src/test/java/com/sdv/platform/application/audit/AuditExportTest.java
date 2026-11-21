@@ -1,5 +1,6 @@
 package com.sdv.platform.application.audit;
 
+import com.sdv.platform.domain.error.InternalCheckFailed;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sdv.platform.application.port.AuditEventPort;
@@ -138,8 +139,8 @@ class AuditExportTest {
         for (var request : bad) {
             assertThrows(IllegalArgumentException.class, () -> service.export(TENANT, "ops", request, "c"), request.toString());
         }
-        assertThrows(IllegalArgumentException.class, () -> service.export(TENANT, "ops", null, "c"));
-        assertThrows(IllegalArgumentException.class, () -> service.export(null, "ops", new AuditQueryService.ExportRequest(null, null, null), "c"));
+        assertThrows(InternalCheckFailed.class, () -> service.export(TENANT, "ops", null, "c"), "task 0037: internal, SDV-SYS-016");
+        assertThrows(InternalCheckFailed.class, () -> service.export(null, "ops", new AuditQueryService.ExportRequest(null, null, null), "c"));
         verifyNoInteractions(query, audit);
     }
 
