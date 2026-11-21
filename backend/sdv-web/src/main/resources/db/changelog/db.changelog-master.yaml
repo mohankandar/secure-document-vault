@@ -87,3 +87,6 @@ databaseChangeLog:
 
   - include:
       file: db/changelog/031-intake-report-indexes.yaml
+
+  - include:
+      file: db/changelog/032-steward-notices.yaml

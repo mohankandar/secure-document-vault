@@ -357,46 +357,60 @@ Sent by the access requests of task 0028: a Restricted steward's request to prin
 
 ### SDV-INT-001: intake notices need a Steward
 
-- **HTTP status:** 403. Sent by `GET /api/v1/business/intake-notices`.
+- **HTTP status:** 403. Sent by `GET /api/v1/business/intake-notices` and `POST /api/v1/business/intake-notices/read`.
 - **Meaning:** these notices tell Document stewards and Restricted stewards that a sending system sent an uncorrected copy of a corrected document (task 0032). Other roles don't get them. Nothing was read. The refusal is audited as `AUTHORIZATION_DENIED` (capability `CHANGE_SENSITIVITY_LEVEL`).
 - **What the user should do:** nothing; their role gets no intake notices.
 - **What support should tell the customer:** this is working as intended.
 
+### SDV-INT-002: notice not found
+
+- **HTTP status:** 404. Sent by `POST /api/v1/business/intake-notices/read`.
+- **Meaning:** one of the notices named is not a notice of this tenant (task 0033). Nothing was marked read.
+- **What the user should do:** reload Vero; the list shows the notices that are there.
+- **What support should tell the customer:** the notice may belong to another tenant, or the link was made by hand.
+
+### SDV-INT-003: no notices named, or too many
+
+- **HTTP status:** 400. Sent by `POST /api/v1/business/intake-notices/read`.
+- **Meaning:** the request named no notice, more than 100, or a reference that is not a notice ID (task 0033). Nothing was marked read.
+- **What the user should do:** mark the notices from the list in Vero.
+- **What support should tell the customer:** send `{"noticeIds": [...]}` with 1 to 100 notice IDs.
+
 ## Reports (RPT)
 
-Sent by the Business Admin's reports (task 0032): the Daily intake report (`GET /api/v1/admin/reports/intake`) and its CSV (`GET /api/v1/admin/reports/intake/export`). Both take `from` and `to` (days, `YYYY-MM-DD`, in the tenant's time zone; both left out means today) and `sourceId` (left out or empty means every sending system).
+Sent by the Business Admin's reports: the Daily intake report (task 0032, `GET /api/v1/admin/reports/intake`) and its CSV (`GET /api/v1/admin/reports/intake/export`), and the Sensitivity report (task 0033, `GET /api/v1/admin/reports/sensitivity`) and its CSV (`GET /api/v1/admin/reports/sensitivity/export`). All take `from` and `to` (days, `YYYY-MM-DD`, in the tenant's time zone; both left out means today for Daily intake and this month so far for Sensitivity) and `sourceId` (left out or empty means every sending system).
 
 ### SDV-RPT-001: reports need a Business Admin
 
-- **HTTP status:** 403. Sent by both report endpoints.
+- **HTTP status:** 403. Sent by every report endpoint.
 - **Meaning:** only a Business Admin sees the reports. Nothing was read. The refusal is audited as `AUTHORIZATION_DENIED` (capability `VIEW_INTAKE_REPORTS`).
 - **What the user should do:** ask a Business Admin.
 - **What support should tell the customer:** this is working as intended. Role membership comes from the customer's own sign-in groups.
 
 ### SDV-RPT-002: day or date range not valid
 
-- **HTTP status:** 400. Sent by both report endpoints.
-- **Meaning:** `from` or `to` is not a date written `YYYY-MM-DD`, only one of the two was sent, `to` is before `from`, or the range is longer than 31 days. Nothing was read.
-- **What the user should do:** choose one day, or a range of up to 31 days.
-- **What support should tell the customer:** one report covers at most 31 days; export several for a longer period.
+- **HTTP status:** 400. Sent by every report endpoint.
+- **Meaning:** `from` or `to` is not a date written `YYYY-MM-DD`, only one of the two was sent, `to` is before `from`, or the range is longer than 31 days (Daily intake) or 366 days (Sensitivity). Nothing was read.
+- **What the user should do:** choose one day, or a range of up to 31 days (Daily intake) or 366 days (Sensitivity).
+- **What support should tell the customer:** a Daily intake report covers at most 31 days, a Sensitivity report 366; export several for a longer period.
 
 ### SDV-RPT-003: sending system not known
 
-- **HTTP status:** 400. Sent by both report endpoints.
+- **HTTP status:** 400. Sent by every report endpoint.
 - **Meaning:** `sourceId` is not the ID of one of this tenant's sending systems. Nothing was read.
 - **What the user should do:** choose a sending system from the list, or All.
 - **What support should tell the customer:** the sending system may have been removed, or the link was made for another tenant.
 
 ### SDV-RPT-004: tenant time zone not valid
 
-- **HTTP status:** 409. Sent by both report endpoints.
+- **HTTP status:** 409. Sent by every report endpoint.
 - **Meaning:** the tenant's time zone setting (`tenants.time_zone`, or the install default `SDV_DEFAULT_TIME_ZONE` when the tenant has none) is not a time zone Vero knows, so "today" can't be worked out. Vero refuses the report rather than guess. Nothing was read.
 - **What the user should do:** tell Tenant IT.
 - **What support should tell the customer:** set the time zone to an IANA name such as `America/New_York` or `Europe/London`. A wrong install default also stops the server from starting.
 
 ### SDV-RPT-005: too much for one report
 
-- **HTTP status:** 400. Sent by both report endpoints.
+- **HTTP status:** 400. Sent by the Daily intake report and its CSV (the Sensitivity report reads counts only and never sends it).
 - **Meaning:** the range holds more than 200,000 documents, duplicates and refusals, more than one report reads at once. Nothing was returned.
 - **What the user should do:** choose fewer days, or one sending system.
 - **What support should tell the customer:** export the period in parts.

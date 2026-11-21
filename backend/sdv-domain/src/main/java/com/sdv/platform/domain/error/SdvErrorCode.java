@@ -105,9 +105,16 @@ public enum SdvErrorCode {
     APR_015("SDV-APR-015"),
     /** Task 0032: intake notices (an uncorrected copy sent again) are for Document stewards (403). */
     INT_001("SDV-INT-001"),
+    /** Task 0033: no notice of this tenant has this reference (404). */
+    INT_002("SDV-INT-002"),
+    /** Task 0033: marking notices read needs 1 to 100 notice references (400). */
+    INT_003("SDV-INT-003"),
     /** Task 0032: the Reports tab is for Business Admins only (VIEW_INTAKE_REPORTS) (403). */
     RPT_001("SDV-RPT-001"),
-    /** Task 0032: the day or date range isn't valid: not a date, the end before the start, or more than 31 days (400). */
+    /**
+     * Task 0032: the day or date range isn't valid: not a date, the end before the start, or more than 31 days (400).
+     * Task 0033: the Sensitivity report's period, more than 366 days.
+     */
     RPT_002("SDV-RPT-002"),
     /** Task 0032: the sending system isn't one of this tenant's (400). */
     RPT_003("SDV-RPT-003"),

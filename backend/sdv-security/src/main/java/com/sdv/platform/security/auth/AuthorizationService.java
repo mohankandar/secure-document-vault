@@ -38,9 +38,12 @@ public class AuthorizationService {
      * the request (headers, parameters) can change it.
      */
     public com.sdv.platform.application.access.Clearance clearance(SdvPrincipal principal) {
+        // Task 0033: the role names go with it, for the refusal's audit event only (attempts by role in the
+        // Sensitivity report); they decide nothing.
         return new com.sdv.platform.application.access.Clearance(
                 capabilities.has(principal, Capability.VIEW_CONFIDENTIAL),
-                capabilities.has(principal, Capability.VIEW_HIGHLY_CONFIDENTIAL));
+                capabilities.has(principal, Capability.VIEW_HIGHLY_CONFIDENTIAL),
+                principal.roles().stream().map(Enum::name).toList());
     }
 
     private void safeDeniedAudit(SdvPrincipal principal, Capability capability) {

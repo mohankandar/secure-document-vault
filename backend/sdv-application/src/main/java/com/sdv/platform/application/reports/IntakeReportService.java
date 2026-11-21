@@ -19,7 +19,6 @@ import org.springframework.stereotype.Service;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.DateTimeException;
-import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
@@ -40,8 +39,8 @@ import java.util.TreeMap;
 import java.util.UUID;
 
 /**
- * Task 0032: the Daily intake report of the Business Admin's Reports tab, its CSV, and the Stewards' notices of
- * uncorrected copies.
+ * Task 0032: the Daily intake report of the Business Admin's Reports tab and its CSV. The Stewards' notices of
+ * uncorrected copies are stored since task 0033 ({@link StewardNoticeService}).
  * <p>
  * <b>Counts only.</b> A line shows at most the delivery's request ID (as its sending system sent it), times, the
  * primary identifier and counts. No file name, title, other metadata or content is read.
@@ -73,8 +72,6 @@ public class IntakeReportService {
     /** Delivery lines shown per sending system; the rest are in the CSV. */
     public static final int LINES_PER_SYSTEM = 50;
     public static final String EXPORT_ACTION = "INTAKE_REPORT_EXPORTED";
-    static final Duration NOTICE_WINDOW = Duration.ofDays(30);
-    static final int NOTICE_LIMIT = 50;
     public static final String NOTICE_MESSAGE = "An uncorrected copy of a corrected document was sent again; nothing was stored";
     static final String CSV_HEADER_START = "SHA-256 checksum,Request ID,Sending system,Primary identifier,Pages,";
     private static final ObjectMapper JSON = new ObjectMapper();
@@ -167,21 +164,9 @@ public class IntakeReportService {
     }
 
     private Scope scope(UUID tenantId, String from, String to, String sourceId) {
-        ZoneId zone;
-        String zoneSource;
-        String own = reports.findTenantTimeZone(tenantId).orElse(null);
-        if (own == null) {
-            zone = installDefault;
-            zoneSource = "INSTALL_DEFAULT";
-        } else {
-            try {
-                zone = ZoneId.of(own);
-            } catch (DateTimeException ex) {
-                throw new CodedRefusal.Conflict(SdvErrorCode.RPT_004,
-                        "The tenant's time zone setting is not a time zone Vero knows, so the report can't work out its days. Ask Tenant IT to correct it.");
-            }
-            zoneSource = "TENANT";
-        }
+        TenantZone inUse = TenantZone.of(reports.findTenantTimeZone(tenantId).orElse(null), installDefault);
+        ZoneId zone = inUse.zone();
+        String zoneSource = inUse.source();
         LocalDate today = LocalDate.now(clock.withZone(zone));
         boolean noFrom = from == null || from.isBlank();
         boolean noTo = to == null || to.isBlank();
@@ -364,16 +349,6 @@ public class IntakeReportService {
         return submissionId == null ? null : "s:" + submissionId;
     }
 
-    // ------------------------------------------------------------------ notices for stewards
-
-    /** Uncorrected copies received in the last 30 days, newest first: for the record's Document stewards. */
-    public List<IntakeNotice> uncorrectedCopyNotices(UUID tenantId) {
-        return reports.findUncorrectedCopies(tenantId, clock.instant().minus(NOTICE_WINDOW), NOTICE_LIMIT).stream()
-                .map(c -> new IntakeNotice(c.noticeId(), "UNCORRECTED_COPY_RECEIVED", c.receivedAt(), c.sendingSystem(),
-                        c.primaryIdentifier(), c.primaryIdentifierLabel(), NOTICE_MESSAGE))
-                .toList();
-    }
-
     private static String json(Map<String, Object> details) {
         try {
             return JSON.writeValueAsString(details);
@@ -416,6 +391,4 @@ public class IntakeReportService {
 
     public record Export(byte[] csv, int rowCount, String filename) { }
 
-    public record IntakeNotice(UUID noticeId, String kind, Instant receivedAt, String sendingSystem,
-                               String primaryIdentifier, String primaryIdentifierLabel, String message) { }
 }

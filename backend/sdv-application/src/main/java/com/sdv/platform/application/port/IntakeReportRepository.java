@@ -9,7 +9,7 @@ import java.util.Set;
 import java.util.UUID;
 
 /**
- * Task 0032: what the Daily intake report and the Stewards' intake notices read. Counts and identifiers only: no file
+ * Task 0032: what the Daily intake report reads. Counts and identifiers only: no file
  * name, title, metadata other than the primary identifier, or content is ever selected.
  */
 public interface IntakeReportRepository {
@@ -37,8 +37,6 @@ public interface IntakeReportRepository {
     Set<String> findValuesKnownBefore(UUID tenantId, Collection<String> fieldKeys, Collection<String> normalizedValues,
                                       Instant before);
 
-    /** The uncorrected copies received since {@code since} (DOCUMENT_UNCORRECTED_COPY_RECEIVED), newest first. */
-    List<UncorrectedCopy> findUncorrectedCopies(UUID tenantId, Instant since, int limit);
 
     record SendingSystem(UUID sourceId, String displayName) { }
 
@@ -57,7 +55,4 @@ public interface IntakeReportRepository {
 
     /** value: as stored (what people see); normalizedValue: as compared; label: the field's display name. */
     record PrimaryIdentifier(String fieldKey, String value, String normalizedValue, String label) { }
-
-    record UncorrectedCopy(UUID noticeId, Instant receivedAt, UUID sourceId, String sendingSystem,
-                           String primaryIdentifier, String primaryIdentifierLabel) { }
 }

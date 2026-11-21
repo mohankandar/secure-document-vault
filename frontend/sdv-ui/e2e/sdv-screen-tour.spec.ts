@@ -1674,7 +1674,9 @@ test.describe('SDV role-based screen capture', () => {
     await expect(table).toBeVisible({ timeout: 15000 })
     await expect(page.getByRole('heading', { level: 1, name: 'Reports' })).toBeVisible()
     await expect(page.getByText('Counts only. No document contents, titles or names.')).toBeVisible()
-    await expect(page.getByRole('tablist', { name: 'Reports' }).getByRole('tab', { name: 'Sensitivity' })).toBeDisabled()
+    // Task 0033: the Sensitivity sub-tab is there now (it was disabled in task 0032).
+    await expect(page.getByRole('tablist', { name: 'Reports' }).getByRole('tab', { name: 'Sensitivity' })).toBeEnabled()
+    await expect(page.getByText('Deliveries refused before Vero could identify the sending system (for example a failed sign-in) are not counted here.')).toBeVisible()
     await expect(page.getByRole('button', { name: /^Day Today, / })).toBeVisible()
     await expect(page.getByText(/ \(entity\)$/)).toHaveAttribute('title', new RegExp(after.timeZone.replace('/', '\\/')))
     await expect(page.locator('.rpt-kpi').filter({ hasText: 'Refused at intake' }).locator('b')).toHaveText(after.totals.refused.toLocaleString('en-US'))
@@ -1705,6 +1707,95 @@ test.describe('SDV role-based screen capture', () => {
     expect(csv.split('\r\n')[0]).toBe(`﻿SHA-256 checksum,Request ID,Sending system,Primary identifier,Pages,"Received (${after.timeZone})",Received (UTC),Outcome,Refusal code`)
     expect(csv).toContain(`"${requestId}","Loan Origination System","","",`)
     expect(csv).toMatch(new RegExp(`"${requestId}".*"REFUSED","SDV-SEN-002"`))
+    expect(csv).not.toMatch(/\.pdf/i)
+    await expect(page.getByText('The file is saved. The export is recorded in the audit.')).toBeVisible()
+  })
+
+  test('Reports: the Sensitivity report, attempts by role, CSV and who may see it; stored steward notices (task 0033)', async ({ page }, testInfo) => {
+    test.skip(!isDesktop(testInfo), 'Runs once per tour (desktop only).')
+    test.setTimeout(120_000)
+    const TENANT = '11111111-1111-1111-1111-111111111111'
+    const as = (subject: string, roles: string) => ({ 'X-SDV-Tenant-Id': TENANT, 'X-SDV-Subject': subject, 'X-SDV-Roles': roles })
+    const priya = as('local-business-admin', 'BUSINESS_ADMIN')
+    const dana = as('local-restricted-steward', 'RESTRICTED_STEWARD')
+    const dee = as('local-document-steward', 'DOCUMENT_STEWARD')
+    type Sens = { from: string; to: string; today: string; timeZone: string; documents: { total: number; highlyConfidential: number }; requests: { kind: string }[]; attempts: { roles: string[]; attempts: number; people: number }[] }
+    const sens = async (query = '') => {
+      const r = await page.request.get('/api/v1/admin/reports/sensitivity' + query, { headers: priya })
+      expect(r.ok(), 'the Business admin reads the Sensitivity report').toBeTruthy()
+      return await r.json() as Sens
+    }
+    const code = async (r: { json: () => Promise<unknown>; status: () => number }) => [r.status(), (await r.json() as { code: string }).code]
+
+    // Business admin only: every other role gets SDV-RPT-001, for the report and its CSV.
+    for (const [subject, roles] of [['local-business-user', 'BUSINESS_USER'], ['local-document-steward', 'DOCUMENT_STEWARD'], ['local-restricted-steward', 'RESTRICTED_STEWARD'], ['local-tenant-it-admin', 'TENANT_IT_ADMIN'], ['local-platform-operations-admin', 'PLATFORM_OPERATIONS_ADMIN']]) {
+      for (const path of ['/api/v1/admin/reports/sensitivity', '/api/v1/admin/reports/sensitivity/export']) {
+        expect(await code(await page.request.get(path, { headers: as(subject, roles) })), `${roles} on ${path}`).toEqual([403, 'SDV-RPT-001'])
+      }
+    }
+    expect(await code(await page.request.get('/api/v1/admin/reports/sensitivity?from=2025-01-01&to=2026-11-01', { headers: priya }))).toEqual([400, 'SDV-RPT-002'])
+    expect(await code(await page.request.get('/api/v1/admin/reports/sensitivity?sourceId=00000000-0000-0000-0000-000000000000', { headers: priya }))).toEqual([400, 'SDV-RPT-003'])
+
+    // Section 0.1: notices are stored; marking needs real references of this tenant (coded otherwise).
+    const notices = await (await page.request.get('/api/v1/business/intake-notices', { headers: dee })).json() as { notices: unknown[]; unread: number }
+    expect(Array.isArray(notices.notices) && typeof notices.unread === 'number').toBeTruthy()
+    expect(await code(await page.request.post('/api/v1/business/intake-notices/read', { headers: dee, data: { noticeIds: ['00000000-0000-0000-0000-000000000000'] } }))).toEqual([404, 'SDV-INT-002'])
+    expect(await code(await page.request.post('/api/v1/business/intake-notices/read', { headers: dee, data: { noticeIds: [] } }))).toEqual([400, 'SDV-INT-003'])
+    expect(await code(await page.request.post('/api/v1/business/intake-notices/read', { headers: priya, data: { noticeIds: [] } }))).toEqual([403, 'SDV-INT-001'])
+
+    // A real attempt: a Business user tries to open the seed's Highly Confidential police report. It is refused
+    // (SDV-SEN-008) and counted under Business user, with no name in the report. (One DOCUMENT_ACCESS_REFUSED audit
+    // event in the dev database per run.)
+    const before = await sens()
+    const found = await (await page.request.post('/api/v1/business/search', { headers: dana, data: { sourceId: (await searchSources(page)).find((s) => s.displayName === 'Loan Origination System')!.sourceId, criteria: { contractNumber: '300000000008' }, page: 1, pageSize: 5 } })).json() as { records: { recordRef: string }[] }
+    const rec = await (await page.request.get('/api/v1/business/records/' + encodeURIComponent(found.records[0].recordRef), { headers: dana })).json() as { documents: { documentId: string; originalFilename: string }[] }
+    const police = rec.documents.find((d) => d.originalFilename === 'police-report.pdf')
+    expect(police, 'police-report.pdf on 300000000008 from the seed').toBeTruthy()
+    expect(await code(await page.request.get(`/api/v1/business/documents/${police!.documentId}/viewer`, { headers: as('local-business-user', 'BUSINESS_USER') }))).toEqual([403, 'SDV-SEN-008'])
+    const after = await sens()
+    const businessUser = (r: Sens) => r.attempts.find((a) => a.roles.join(',') === 'BUSINESS_USER')
+    expect(businessUser(after)!.attempts).toBe((businessUser(before)?.attempts ?? 0) + 1)
+    expect(businessUser(after)!.people).toBeGreaterThanOrEqual(1)
+    expect(after.documents.highlyConfidential).toBeGreaterThanOrEqual(1)
+    expect(after.requests.map((r) => r.kind)).toEqual(['DOWNLOAD', 'PRINT', 'LOWER_LEVEL', 'LOWER_RECORD_LEVEL'])
+    expect(after.from).toBe(after.today.slice(0, 8) + '01')
+
+    // The screen: the Sensitivity sub-tab with the board's four cards, this month, counts only.
+    await selectRole(page, 'Business Administrator')
+    await page.evaluate(() => { window.location.hash = '#/governance/reports' })
+    await page.getByRole('tablist', { name: 'Reports' }).getByRole('tab', { name: 'Sensitivity' }).click()
+    const levels = page.getByRole('region', { name: 'Documents by level' })
+    await expect(levels).toBeVisible({ timeout: 15000 })
+    for (const name of ['Requests', 'Level changes', 'Attempts to open restricted documents']) await expect(page.getByRole('region', { name })).toBeVisible()
+    await expect(page.getByRole('button', { name: /^Period This month \(/ })).toBeVisible()
+    await expect(levels.getByText(/carr(y|ies) a \w+ level \(all their documents count at that level\)\. On legal hold: /)).toBeVisible()
+    const attempts = page.getByRole('region', { name: 'Attempts to open restricted documents' })
+    await expect(attempts.getByRole('row').filter({ hasText: /^Business user/ }).getByRole('cell').nth(1)).toHaveText(businessUser(after)!.attempts.toLocaleString('en-US'))
+    await expect(attempts.getByText('Who and when is in the audit trail (filter by level).')).toBeVisible()
+    await capture(page, testInfo, 'reports-sensitivity')
+    const text = await page.locator('.v-main').innerText()
+    expect(text).not.toMatch(/\.pdf/i)
+    expect(text).not.toContain('local-business-user')
+
+    // One sending system, then last month, then back to this month.
+    await page.getByLabel('Sending system', { exact: true }).selectOption({ label: 'Loan Origination System' })
+    await expect(page.getByLabel('Sending system', { exact: true })).toHaveValue(/.+/)
+    await page.getByRole('button', { name: /^Period / }).click()
+    await page.getByRole('dialog', { name: 'Choose the period' }).getByRole('button', { name: 'Last month' }).click()
+    await expect(page.getByRole('button', { name: /^Period Last month \(/ })).toBeVisible({ timeout: 15000 })
+    await expect(page.getByRole('region', { name: 'Requests' }).locator('.rpt-ch span')).toHaveText('last month')
+    await page.getByRole('button', { name: /^Period / }).click()
+    await page.getByRole('dialog', { name: 'Choose the period' }).getByRole('button', { name: 'This month' }).click()
+    await expect(page.getByRole('button', { name: /^Period This month \(/ })).toBeVisible({ timeout: 15000 })
+    await page.getByLabel('Sending system', { exact: true }).selectOption({ label: 'All' })
+
+    // The CSV: every count with its period; downloaded by the screen and audited by the server.
+    const [download] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Export CSV' }).click()])
+    expect(download.suggestedFilename()).toBe(`vero-sensitivity-${after.from}-to-${after.to}.csv`)
+    const csv = fs.readFileSync(await download.path() as string, 'utf8')
+    expect(csv.split('\r\n')[0]).toBe('﻿Section,Line,Measure,Count,From,To,Time zone,Sending system')
+    expect(csv).toContain(`"Attempts to open restricted documents","Business user","Attempts",`)
+    expect(csv).toContain(`"${after.timeZone}","All"`)
     expect(csv).not.toMatch(/\.pdf/i)
     await expect(page.getByText('The file is saved. The export is recorded in the audit.')).toBeVisible()
   })

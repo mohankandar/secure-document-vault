@@ -479,6 +479,18 @@ class DocumentDuplicateIntakeTest {
         assertFalse(event.safeDetailsJson().contains(".pdf"), "no file name");
         assertFalse(event.safeDetailsJson().contains("300000000001"), "no contract number");
         assertTrue(events().stream().noneMatch(e -> e.action().equals("DOCUMENT_DUPLICATE_RECEIVED")));
+        // Task 0033 (0.1): the stewards' notice is stored, made from this audit event, for this record.
+        verify(documents).insertUncorrectedCopyNotice(any(UUID.class), eq(TENANT), eq(SOURCE), eq(SUBMISSION),
+                eq(event.auditEventId()), any(Instant.class));
+    }
+
+    @Test
+    void anExactDuplicateMakesNoStewardNotice() throws Exception {
+        // Task 0033 (0.1): only an uncorrected copy is a security event; an ordinary exact duplicate tells no one.
+        originalExists(SensitivityLevel.CONFIDENTIAL);
+        upload("doc-2", null, "CONFIDENTIAL").andExpect(status().isOk())
+                .andExpect(jsonPath("$.receiptAcknowledgement").value("DUPLICATE_ALREADY_STORED"));
+        verify(documents, never()).insertUncorrectedCopyNotice(any(), any(), any(), any(), any(), any());
     }
 
     @Test

@@ -293,6 +293,15 @@ export const SENSITIVITY_BOARDS: (Board & { setUp: (page: Page) => Promise<void>
     await expect(page.getByRole('region', { name: 'Deliveries by sending system' })).toBeVisible({ timeout: 15000 })
     await page.waitForLoadState('networkidle')
   } },
+  // Task 0033: the Sensitivity report for this month, all sending systems, in the tenant's time zone. Its numbers are
+  // the dev database's (data).
+  { name: 'reports-sensitivity', canvas: SENS('Reports-Sensitivity.dc.html'), index: 0, width: 1440, height: 900, alone: true, setUp: async (page) => {
+    await asRole(page, BA, 1440, 900)
+    await page.evaluate(() => { window.location.hash = '#/governance/reports' })
+    await page.getByRole('tablist', { name: 'Reports' }).getByRole('tab', { name: 'Sensitivity' }).click()
+    await expect(page.getByRole('region', { name: 'Attempts to open restricted documents' })).toBeVisible({ timeout: 15000 })
+    await page.waitForLoadState('networkidle')
+  } },
 ]
 
 test.describe('Canvas comparison', () => {

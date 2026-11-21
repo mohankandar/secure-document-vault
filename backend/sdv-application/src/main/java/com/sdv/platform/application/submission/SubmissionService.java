@@ -484,6 +484,10 @@ public class SubmissionService {
         @Override public void lockDuplicateCheck(UUID tenantId, UUID sourceId, String recordKey, String contentSha256) { throw new UnsupportedOperationException(); }
         @Override public java.util.Optional<DuplicateReceipt> findDuplicateReceipt(UUID tenantId, UUID submissionId, String sourceDocumentId, String producerIdempotencyKey) { return java.util.Optional.empty(); }
         @Override public void insertDuplicateReceipt(DuplicateReceipt receipt) { throw new UnsupportedOperationException(); }
+        @Override public void insertUncorrectedCopyNotice(UUID noticeId, UUID tenantId, UUID sourceId, UUID submissionId,
+                                                         UUID auditEventId, java.time.Instant createdAt) {
+            throw new UnsupportedOperationException();
+        }
         @Override public void insertDocument(Document document) { throw new UnsupportedOperationException(); }
         @Override public void insertStorageRef(com.sdv.platform.domain.document.DocumentStorageRef storageRef) { throw new UnsupportedOperationException(); }
         @Override public void insertCryptoMetadata(com.sdv.platform.domain.document.DocumentCryptoMetadata cryptoMetadata) { throw new UnsupportedOperationException(); }

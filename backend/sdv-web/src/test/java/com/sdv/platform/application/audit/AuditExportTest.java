@@ -185,6 +185,11 @@ class AuditExportTest {
         assertEquals("Ari Admin sent a delivery that Vero refused", s.apply("INTAKE_REFUSED", null));
         assertEquals("Ari Admin exported the Daily intake report (1 line)", s.apply("INTAKE_REPORT_EXPORTED", "{\"rowCount\":1}"));
         assertEquals("Ari Admin exported the Daily intake report (9 lines)", s.apply("INTAKE_REPORT_EXPORTED", "{\"rowCount\":9}"));
+        // Task 0033.
+        assertEquals("Ari Admin exported the Sensitivity report (30 lines)", s.apply("SENSITIVITY_REPORT_EXPORTED", "{\"rowCount\":30}"));
+        assertEquals("Ari Admin exported the Sensitivity report", s.apply("SENSITIVITY_REPORT_EXPORTED", null));
+        assertEquals("Ari Admin marked a notice of a corrected document sent again as read", s.apply("STEWARD_NOTICE_READ", "{\"markedCount\":1}"));
+        assertEquals("Ari Admin marked 3 notices of corrected documents sent again as read", s.apply("STEWARD_NOTICE_READ", "{\"markedCount\":3}"));
         assertEquals("Ari Admin tried to see the reports without permission", s.apply("AUTHORIZATION_DENIED", "{\"capability\":\"VIEW_INTAKE_REPORTS\"}"));
         assertEquals("Ari Admin changed how long to keep new documents to 7 years", s.apply("RETENTION_POLICY_UPDATED", "{\"defaultRetentionDays\":2555}"));
         assertEquals("Ari Admin changed how long to keep new documents to 1,000 days", s.apply("RETENTION_POLICY_UPDATED", "{\"defaultRetentionDays\":1000}"));

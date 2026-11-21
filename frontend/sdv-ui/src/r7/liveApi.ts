@@ -268,6 +268,31 @@ export const intakeReport = (f: IntakeFilter) => roleApi<IntakeReport>('/api/v1/
 /** One line per document; the server records the export in the audit. */
 export const intakeReportCsv = (f: IntakeFilter) => contentBinary('/api/v1/admin/reports/intake/export' + intakeQuery(f), 'businessAdmin')
 
-/** Task 0032 (0): a sending system sent an uncorrected copy of a corrected document; nothing was stored. */
+/**
+ * Task 0032 (0): a sending system sent an uncorrected copy of a corrected document; nothing was stored. Task 0033
+ * (0.1): stored on the server; each steward sees their unread ones (unread: how many in all) until they mark them read.
+ */
 export type IntakeNotice = { noticeId: string; kind: 'UNCORRECTED_COPY_RECEIVED'; receivedAt: string; sendingSystem: string | null; primaryIdentifier: string | null; primaryIdentifierLabel: string | null; message: string }
-export const intakeNotices = () => roleApi<IntakeNotice[]>('/api/v1/business/intake-notices', 'business')
+export type IntakeNotices = { notices: IntakeNotice[]; unread: number }
+export const intakeNotices = () => roleApi<IntakeNotices>('/api/v1/business/intake-notices', 'business')
+/** Marks these notices read by this person (audited). */
+export const markIntakeNoticesRead = (noticeIds: string[]) =>
+  roleApi<{ marked: number }>('/api/v1/business/intake-notices/read', 'business', { method: 'POST', body: JSON.stringify({ noticeIds }) })
+
+// ---- Task 0033: the Sensitivity report (Business admin, counts only) ----
+
+export type SensitivityRequestKind = 'DOWNLOAD' | 'PRINT' | 'LOWER_LEVEL' | 'LOWER_RECORD_LEVEL'
+export type SensitivityReport = {
+  from: string; to: string; today: string; timeZone: string; timeZoneSource: 'TENANT' | 'INSTALL_DEFAULT'; sourceId: string | null
+  primaryIdentifierLabel: string | null; sendingSystems: { sourceId: string; displayName: string }[]
+  /** Stored now, by effective level; recordsWithLevel: records (contracts) with a record level. */
+  documents: { standard: number; confidential: number; highlyConfidential: number; total: number; recordsWithLevel: number; onLegalHold: number }
+  /** Requests made in the period, by what became of them (judged now). */
+  requests: { kind: SensitivityRequestKind; approved: number; declined: number; expired: number; waiting: number }[]
+  levelChanges: { raisedBySteward: number; raisedBySendingSystem: number; lowered: number }
+  /** roles: the role names the refusals recorded; empty when none was recorded. */
+  attempts: { roles: string[]; attempts: number; people: number }[]
+}
+export const sensitivityReport = (f: IntakeFilter) => roleApi<SensitivityReport>('/api/v1/admin/reports/sensitivity' + intakeQuery(f), 'businessAdmin')
+/** Every count, one line each; the server records the export in the audit. */
+export const sensitivityReportCsv = (f: IntakeFilter) => contentBinary('/api/v1/admin/reports/sensitivity/export' + intakeQuery(f), 'businessAdmin')

@@ -459,9 +459,14 @@ public class DocumentIntakeService {
         // Task 0032 (0): an uncorrected copy is told apart by its event; its checksum is the one before correction, and
         // the document it points at is the corrected one. The record's stewards are told (business notices).
         if (uncorrectedCopy) details.put("correctedContentSha256", original.contentSha256());
-        audit.append(new AuditEvent(UUID.randomUUID(), tenantId, "SOURCE", sourceSubject,
+        UUID eventId = UUID.randomUUID();
+        audit.append(new AuditEvent(eventId, tenantId, "SOURCE", sourceSubject,
                 uncorrectedCopy ? UNCORRECTED_COPY_ACTION : DUPLICATE_ACTION,
                 "DOCUMENT", original.documentId().toString(), now, correlationId, AuditOutcome.SUCCESS, json(details)));
+        // Task 0033 (0.1): a security event, so the stewards' notice is stored, in the same transaction as the receipt.
+        if (uncorrectedCopy) {
+            documents.insertUncorrectedCopyNotice(UUID.randomUUID(), tenantId, sourceId, submissionId, eventId, now);
+        }
         return new CommitResult(withLevel(original, ownAfter), false, receipt, false);
     }
 

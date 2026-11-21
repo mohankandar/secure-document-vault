@@ -14,6 +14,7 @@ import com.sdv.platform.persistence.business.JdbcBusinessRecordRepository;
 import com.sdv.platform.persistence.foundation.JdbcFoundationRepository;
 import com.sdv.platform.persistence.ingestion.JdbcSecureIngestionRepository;
 import com.sdv.platform.persistence.reports.JdbcIntakeReportRepository;
+import com.sdv.platform.persistence.reports.JdbcStewardNoticeRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
@@ -223,15 +224,41 @@ class IntakeReportPostgresTest {
         assertEquals(0, count("select count(*) from audit_events where tenant_id='" + T0 + "' and action='DOCUMENT_DUPLICATE_RECEIVED'"));
         verify(storage, times(1)).delete(eq(T0), any(), anyString());
 
-        // The Stewards' notice: the record and the sending system, never a file.
+        // The Stewards' notice (task 0033, 0.1: stored, changeset 032): the record and the sending system, never a file,
+        // made from the audit event, in the same transaction as the receipt.
+        assertEquals(1, count("select count(*) from steward_notices n join audit_events a on a.audit_event_id=n.audit_event_id "
+                + "where n.tenant_id='" + T0 + "' and a.action='DOCUMENT_UNCORRECTED_COPY_RECEIVED' and n.kind='UNCORRECTED_COPY_RECEIVED' "
+                + "and n.source_id='" + S0 + "' and n.record_identifier='" + CONTRACT + "' and n.read_by='{}'::jsonb"));
+        assertEquals(0, count("select count(*) from steward_notices where tenant_id='" + T0 + "' and (record_identifier like '%.pdf' "
+                + "or record_identifier_label like '%.pdf')"), "no file name");
+        StewardNoticeService stewards = new StewardNoticeService(new JdbcStewardNoticeRepository(jdbc), foundation);
+        StewardNoticeService.Notices forDee = stewards.unread(T0, "dee-steward");
+        assertEquals(1, forDee.unread());
+        StewardNoticeService.Notice notice = forDee.notices().get(0);
+        assertEquals(CONTRACT, notice.primaryIdentifier());
+        assertEquals("Contract number", notice.primaryIdentifierLabel());
+        assertEquals("LexaVault", notice.sendingSystem());
+        assertEquals(IntakeReportService.NOTICE_MESSAGE, notice.message());
+        assertEquals(0, stewards.unread(T1, "dee-steward").unread(), "tenants apart");
+        // Each steward marks their own: Dee's mark leaves it unread for Rae, and a second mark keeps Dee's first time.
+        assertEquals(1, stewards.markRead(T0, "dee-steward", "corr-read", List.of(notice.noticeId())));
+        assertEquals(0, stewards.unread(T0, "dee-steward").unread());
+        assertEquals(1, stewards.unread(T0, "rae-restricted").unread());
+        String firstRead = one("select read_by->>'dee-steward' from steward_notices where notice_id='" + notice.noticeId() + "'");
+        assertEquals(0, stewards.markRead(T0, "dee-steward", "corr-read", List.of(notice.noticeId())));
+        assertEquals(firstRead, one("select read_by->>'dee-steward' from steward_notices where notice_id='" + notice.noticeId() + "'"));
+        assertEquals(1, count("select count(*) from audit_events where tenant_id='" + T0 + "' and action='STEWARD_NOTICE_READ' "
+                + "and actor_id='dee-steward' and target_id='" + notice.noticeId() + "'"), "audited once");
+        assertEquals("SDV-INT-002", assertThrows(com.sdv.platform.domain.error.CodedRefusal.NotFound.class,
+                () -> stewards.markRead(T1, "dee-steward", "c", List.of(notice.noticeId()))).errorCode().code(), "another tenant's notice");
+        // The table's checks.
+        assertThrows(RuntimeException.class, () -> sql("insert into steward_notices(notice_id, tenant_id, kind, audit_event_id, created_at) "
+                + "select gen_random_uuid(), tenant_id, 'SOMETHING_ELSE', audit_event_id, now() from audit_events where tenant_id='" + T0
+                + "' and action='STEWARD_NOTICE_READ'"), "kind");
+        assertThrows(RuntimeException.class, () -> sql("update steward_notices set read_by='[]'::jsonb where tenant_id='" + T0 + "'"), "read_by is an object");
+        assertThrows(RuntimeException.class, () -> sql("insert into steward_notices(notice_id, tenant_id, kind, audit_event_id, created_at) "
+                + "select gen_random_uuid(), tenant_id, kind, audit_event_id, now() from steward_notices where tenant_id='" + T0 + "'"), "one notice per event");
         IntakeReportService reports = new IntakeReportService(reportRepository, foundation, "UTC", Clock.fixed(now, ZoneOffset.UTC));
-        List<IntakeReportService.IntakeNotice> notices = reports.uncorrectedCopyNotices(T0);
-        assertEquals(1, notices.size());
-        assertEquals(CONTRACT, notices.get(0).primaryIdentifier());
-        assertEquals("Contract number", notices.get(0).primaryIdentifierLabel());
-        assertEquals("LexaVault", notices.get(0).sendingSystem());
-        assertEquals(IntakeReportService.NOTICE_MESSAGE, notices.get(0).message());
-        assertTrue(reports.uncorrectedCopyNotices(T1).isEmpty(), "tenants apart");
 
         // The Daily intake report counts it as a duplicate (today, in UTC: T0 has no zone of its own).
         String yesterday = java.time.LocalDate.now(ZoneOffset.UTC).minusDays(1).toString();

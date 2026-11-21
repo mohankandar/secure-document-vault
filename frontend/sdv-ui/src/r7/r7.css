@@ -1057,6 +1057,27 @@ button.ws-doc.locked { cursor: pointer; text-align: left; font: inherit; color: 
 .rpt-foot { font-size: 13px; margin: 0; }
 @media (max-width: 1100px) { .rpt-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 600px) { .rpt-kpis { grid-template-columns: 1fr; } .rpt-pop { right: auto; left: 0; } }
+/* Task 0033, board Reports-Sensitivity: two cards a row; bars for documents by level; plain count tables. */
+.rpt-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; }
+.rpt-ch { padding: 14px 18px; border-bottom: 1px solid var(--line); font-size: 15px; font-weight: 600; display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+.rpt-ch span { font-size: 12px; font-weight: 400; color: var(--ink-3); }
+.rpt-bars { padding: 16px 18px; display: flex; flex-direction: column; gap: 14px; }
+.rpt-barrow { display: grid; grid-template-columns: 170px minmax(0, 1fr) 90px; align-items: center; gap: 12px; font-size: 13px; }
+.rpt-track { height: 12px; background: var(--surface-2); border-radius: 6px; position: relative; overflow: hidden; }
+.rpt-track i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 6px; }
+.rpt-track i.s { background: #9aa3a6; }
+.rpt-track i.c { background: #3b6fd4; }
+.rpt-track i.hc { background: var(--lvl-hc-bg); }
+.rpt-num { text-align: right; font-variant-numeric: tabular-nums; }
+.rpt-small { font-size: 12px; }
+.rpt-tbl { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
+.rpt-tbl th { font-size: 12px; font-weight: 500; color: var(--ink-3); text-align: left; padding: 9px 18px; border-bottom: 1px solid var(--line); }
+.rpt-tbl td { padding: 10px 18px; border-bottom: 1px solid var(--line-soft); }
+.rpt-tbl td.r, .rpt-tbl th.r { text-align: right; }
+.rpt-tbl tr:last-child td { border-bottom: 0; }
+.rpt-cardnote { padding: 0 18px 14px; }
+.v-notice-row { display: flex; align-items: center; gap: 8px; }
+@media (max-width: 900px) { .rpt-grid { grid-template-columns: minmax(0, 1fr); } .rpt-barrow { grid-template-columns: 140px minmax(0, 1fr) 80px; } }
 
 /* Task 0032: a second notice (sent again) stacks above the first (requests). */
 .v-notice ~ .v-notice { bottom: 230px; }

@@ -3,7 +3,10 @@ package com.sdv.platform.web.reports;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sdv.platform.application.port.AuditEventPort;
 import com.sdv.platform.application.port.RoleCapabilityPolicyPort;
+import com.sdv.platform.application.port.SensitivityReportRepository;
 import com.sdv.platform.application.reports.IntakeReportService;
+import com.sdv.platform.application.reports.SensitivityReportService;
+import com.sdv.platform.application.reports.StewardNoticeService;
 import com.sdv.platform.domain.audit.AuditEvent;
 import com.sdv.platform.domain.audit.AuditOutcome;
 import com.sdv.platform.domain.error.CodedRefusal;
@@ -36,6 +39,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -45,6 +49,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * Task 0032: the Reports endpoints through the real permission check. Every role but the Business Admin is refused
  * with SDV-RPT-001 before the report is read, and each refusal is audited as AUTHORIZATION_DENIED. The intake notices
  * are for the two Steward roles (SDV-INT-001 otherwise). The service's own codes pass through with their status.
+ * Task 0033: the same for the Sensitivity report and its CSV; a Steward marks their own notices read.
  */
 class ReportsControllerTest {
     private static final UUID TENANT = UUID.fromString("11111111-1111-1111-1111-111111111111");
@@ -53,11 +58,13 @@ class ReportsControllerTest {
 
     private final AuditEventPort audit = mock(AuditEventPort.class);
     private final IntakeReportService reports = mock(IntakeReportService.class);
+    private final SensitivityReportService sensitivity = mock(SensitivityReportService.class);
+    private final StewardNoticeService notices = mock(StewardNoticeService.class);
     private final AuthorizationService authorization =
             new AuthorizationService(audit, new CapabilityPolicyService(mock(RoleCapabilityPolicyPort.class)));
     private final MockMvc mvc = MockMvcBuilders.standaloneSetup(
-                    new ReportsController(new SecurityContextFacade(), authorization, reports),
-                    new IntakeNoticeController(new SecurityContextFacade(), authorization, reports))
+                    new ReportsController(new SecurityContextFacade(), authorization, reports, sensitivity),
+                    new IntakeNoticeController(new SecurityContextFacade(), authorization, notices))
             .setControllerAdvice(new FoundationExceptionHandler())
             .setMessageConverters(new ByteArrayHttpMessageConverter(), new MappingJackson2HttpMessageConverter(JSON))
             .build();
@@ -135,20 +142,116 @@ class ReportsControllerTest {
                 .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("SDV-RPT-005"));
     }
 
+    // ------------------------------------------------------------------ task 0033: Sensitivity
+
+    @Test
+    void onlyTheBusinessAdminSeesTheSensitivityReport() throws Exception {
+        List<RequestBuilder> calls = List.of(get("/api/v1/admin/reports/sensitivity"),
+                get("/api/v1/admin/reports/sensitivity").param("from", "2026-11-01").param("to", "2026-11-21"),
+                get("/api/v1/admin/reports/sensitivity/export"));
+        for (SdvRole role : EnumSet.complementOf(EnumSet.of(SdvRole.BUSINESS_ADMIN))) {
+            for (RequestBuilder call : calls) {
+                signIn(role);
+                mvc.perform(call).andExpect(status().isForbidden())
+                        .andExpect(jsonPath("$.code").value("SDV-RPT-001"));
+            }
+        }
+        verifyNoInteractions(sensitivity);
+        ArgumentCaptor<AuditEvent> denied = ArgumentCaptor.forClass(AuditEvent.class);
+        verify(audit, times(calls.size() * (SdvRole.values().length - 1))).append(denied.capture());
+        assertTrue(denied.getAllValues().stream().allMatch(e -> e.action().equals("AUTHORIZATION_DENIED")
+                && e.targetId().equals("VIEW_INTAKE_REPORTS")));
+    }
+
+    @Test
+    void theBusinessAdminGetsTheSensitivityReportAndItsCsv() throws Exception {
+        signIn(SdvRole.BUSINESS_ADMIN);
+        when(sensitivity.report(TENANT, null, null, null)).thenReturn(new SensitivityReportService.SensitivityReport(
+                "2026-11-01", "2026-11-21", "2026-11-21", "America/New_York", "INSTALL_DEFAULT", null, "Contract number",
+                List.of(), new SensitivityReportService.Documents(5, 2, 1, 8, 1, 1),
+                List.of(new SensitivityReportService.RequestRow("DOWNLOAD", 1, 0, 0, 2)),
+                new SensitivityReportRepository.LevelChanges(3, 4, 1),
+                List.of(new SensitivityReportService.AttemptRow(List.of("BUSINESS_USER"), 7, 2))));
+        mvc.perform(get("/api/v1/admin/reports/sensitivity"))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Cache-Control", org.hamcrest.Matchers.containsString("no-store")))
+                .andExpect(jsonPath("$.documents.highlyConfidential").value(1))
+                .andExpect(jsonPath("$.requests[0].waiting").value(2))
+                .andExpect(jsonPath("$.levelChanges.raisedBySendingSystem").value(4))
+                .andExpect(jsonPath("$.attempts[0].roles[0]").value("BUSINESS_USER"))
+                .andExpect(jsonPath("$.attempts[0].people").value(2));
+
+        byte[] csv = "﻿Section,Line\r\n".getBytes(StandardCharsets.UTF_8);
+        when(sensitivity.export(eq(TENANT), eq("person-business_admin"), any(), eq("2026-11-01"), eq("2026-11-21"), isNull()))
+                .thenReturn(new SensitivityReportService.Export(csv, 31, "vero-sensitivity-2026-11-01-to-2026-11-21.csv"));
+        mvc.perform(get("/api/v1/admin/reports/sensitivity/export").param("from", "2026-11-01").param("to", "2026-11-21"))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Content-Type", org.hamcrest.Matchers.startsWith("text/csv")))
+                .andExpect(header().string("Content-Disposition", org.hamcrest.Matchers.containsString("vero-sensitivity-2026-11-01-to-2026-11-21.csv")))
+                .andExpect(header().string("Cache-Control", "no-store"))
+                .andExpect(header().string("X-SDV-Export-Rows", "31"))
+                .andExpect(content().bytes(csv));
+    }
+
+    @Test
+    void theSensitivityReportsCodesPassThroughWithTheirStatus() throws Exception {
+        signIn(SdvRole.BUSINESS_ADMIN);
+        when(sensitivity.report(any(), eq("bad"), any(), any())).thenThrow(new CodedRefusal.BadRequest(SdvErrorCode.RPT_002, "no"));
+        when(sensitivity.report(any(), isNull(), isNull(), eq("x"))).thenThrow(new CodedRefusal.BadRequest(SdvErrorCode.RPT_003, "no"));
+        when(sensitivity.export(any(), any(), any(), isNull(), isNull(), isNull())).thenThrow(new CodedRefusal.Conflict(SdvErrorCode.RPT_004, "no"));
+        mvc.perform(get("/api/v1/admin/reports/sensitivity").param("from", "bad").param("to", "2026-11-20"))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("SDV-RPT-002"));
+        mvc.perform(get("/api/v1/admin/reports/sensitivity").param("sourceId", "x"))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("SDV-RPT-003"));
+        mvc.perform(get("/api/v1/admin/reports/sensitivity/export"))
+                .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("SDV-RPT-004"));
+    }
+
+    // ------------------------------------------------------------------ notices (task 0032; stored since 0033)
+
     @Test
     void intakeNoticesAreForTheTwoStewardRoles() throws Exception {
         Set<SdvRole> stewards = EnumSet.of(SdvRole.DOCUMENT_STEWARD, SdvRole.RESTRICTED_STEWARD);
+        String body = "{\"noticeIds\":[\"" + UUID.randomUUID() + "\"]}";
         for (SdvRole role : EnumSet.complementOf(EnumSet.copyOf(stewards))) {
             signIn(role);
             mvc.perform(get("/api/v1/business/intake-notices")).andExpect(status().isForbidden())
                     .andExpect(jsonPath("$.code").value("SDV-INT-001"));
+            mvc.perform(post("/api/v1/business/intake-notices/read").contentType("application/json").content(body))
+                    .andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("SDV-INT-001"));
         }
-        verifyNoInteractions(reports);
-        when(reports.uncorrectedCopyNotices(TENANT)).thenReturn(List.of());
+        verifyNoInteractions(notices);
         for (SdvRole role : stewards) {
+            String subject = "person-" + role.name().toLowerCase();
+            when(notices.unread(TENANT, subject)).thenReturn(new StewardNoticeService.Notices(List.of(), 0));
             signIn(role);
-            mvc.perform(get("/api/v1/business/intake-notices")).andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(0));
+            mvc.perform(get("/api/v1/business/intake-notices")).andExpect(status().isOk())
+                    .andExpect(jsonPath("$.notices.length()").value(0)).andExpect(jsonPath("$.unread").value(0));
+            verify(notices).unread(TENANT, subject);
         }
-        verify(reports, times(2)).uncorrectedCopyNotices(TENANT);
+    }
+
+    @Test
+    void aStewardMarksTheirOwnNoticesRead() throws Exception {
+        UUID one = UUID.randomUUID();
+        signIn(SdvRole.DOCUMENT_STEWARD);
+        when(notices.markRead(eq(TENANT), eq("person-document_steward"), any(), eq(List.of(one)))).thenReturn(1);
+        mvc.perform(post("/api/v1/business/intake-notices/read").contentType("application/json")
+                        .content("{\"noticeIds\":[\"" + one + "\"]}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.marked").value(1));
+        // A reference that is not a UUID is refused with a code, before the service is asked.
+        mvc.perform(post("/api/v1/business/intake-notices/read").contentType("application/json")
+                        .content("{\"noticeIds\":[\"not-a-notice\"]}"))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("SDV-INT-003"));
+        when(notices.markRead(any(), any(), any(), isNull()))
+                .thenThrow(new CodedRefusal.BadRequest(SdvErrorCode.INT_003, "no"));
+        mvc.perform(post("/api/v1/business/intake-notices/read").contentType("application/json").content("{}"))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("SDV-INT-003"));
+        UUID other = UUID.randomUUID();
+        doThrow(new CodedRefusal.NotFound(SdvErrorCode.INT_002, "no"))
+                .when(notices).markRead(any(), any(), any(), eq(List.of(other)));
+        mvc.perform(post("/api/v1/business/intake-notices/read").contentType("application/json")
+                        .content("{\"noticeIds\":[\"" + other + "\"]}"))
+                .andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("SDV-INT-002"));
     }
 }

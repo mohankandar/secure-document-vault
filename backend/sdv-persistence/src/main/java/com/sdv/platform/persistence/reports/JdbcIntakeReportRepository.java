@@ -29,7 +29,7 @@ import java.util.UUID;
 public class JdbcIntakeReportRepository implements IntakeReportRepository {
     private static final int CHUNK = 1000;
     /** The primary identifier of submission s: its first non-blank business identifier, in display order. */
-    static final String PRIMARY_IDENTIFIER = """
+    public static final String PRIMARY_IDENTIFIER = """
             left join lateral (
                 select v.field_key, v.stored_value, v.normalized_value, f.display_label
                   from business_metadata_values v
@@ -174,29 +174,6 @@ public class JdbcIntakeReportRepository implements IntakeReportRepository {
                     .addValue("before", Timestamp.from(before)), String.class));
         }
         return known;
-    }
-
-    @Override
-    public List<UncorrectedCopy> findUncorrectedCopies(UUID tenantId, Instant since, int limit) {
-        return jdbc.query("""
-                select a.audit_event_id, a.occurred_at, src.source_id, src.display_name,
-                       pid.stored_value, pid.display_label
-                  from audit_events a
-                  left join ingestion_sources src
-                    on src.tenant_id=a.tenant_id and src.source_id=cast(a.safe_details ->> 'sourceId' as uuid)
-                  left join submissions s
-                    on s.tenant_id=a.tenant_id and s.submission_id=cast(a.safe_details ->> 'submissionId' as uuid)
-                """ + PRIMARY_IDENTIFIER + """
-                 where a.tenant_id=:tenantId and a.action='DOCUMENT_UNCORRECTED_COPY_RECEIVED' and a.occurred_at >= :since
-                 order by a.occurred_at desc, a.audit_event_id
-                 limit :limit
-                """, new MapSqlParameterSource()
-                .addValue("tenantId", tenantId)
-                .addValue("since", Timestamp.from(since))
-                .addValue("limit", limit), (rs, row) -> new UncorrectedCopy(
-                rs.getObject("audit_event_id", UUID.class), rs.getTimestamp("occurred_at").toInstant(),
-                rs.getObject("source_id", UUID.class), rs.getString("display_name"),
-                rs.getString("stored_value"), rs.getString("display_label")));
     }
 
     private static <T> List<List<T>> chunks(List<T> all) {

@@ -263,28 +263,15 @@ class IntakeReportServiceTest {
         verifyNoInteractions(audit);
     }
 
-    @Test
-    void stewardsNoticesSayNothingWasStored() {
-        UUID id = UUID.randomUUID();
-        repo.copies.add(new IntakeReportRepository.UncorrectedCopy(id, NOW.minusSeconds(60), LV, "LexaVault", "300000000001", "Contract number"));
-        List<IntakeReportService.IntakeNotice> notices = service(NY).uncorrectedCopyNotices(TENANT);
-        assertEquals(1, notices.size());
-        assertEquals("An uncorrected copy of a corrected document was sent again; nothing was stored", notices.get(0).message());
-        assertEquals("300000000001", notices.get(0).primaryIdentifier());
-        assertEquals(NOW.minus(IntakeReportService.NOTICE_WINDOW), repo.copiesSince);
-    }
-
     /** The repository in memory: the same filters as the SQL (tenant implied, range, sending system, order, limit). */
     static final class FakeReports implements IntakeReportRepository {
         String timeZone;
         boolean overflow;
-        Instant copiesSince;
         final List<SendingSystem> systems = new ArrayList<>();
         final List<Item> items = new ArrayList<>();
         final Map<UUID, PrimaryIdentifier> pids = new HashMap<>();
         final Map<UUID, Instant> created = new LinkedHashMap<>();
         final Map<UUID, String> requestIds = new HashMap<>();
-        final List<UncorrectedCopy> copies = new ArrayList<>();
 
         void system(UUID id, String name) { systems.add(new SendingSystem(id, name)); }
 
@@ -344,12 +331,6 @@ class IntakeReportServiceTest {
                 if (at.isBefore(before) && fieldKeys.contains(p.fieldKey()) && values.contains(p.normalizedValue())) known.add(p.normalizedValue());
             });
             return known;
-        }
-
-        @Override
-        public List<UncorrectedCopy> findUncorrectedCopies(UUID tenantId, Instant since, int limit) {
-            copiesSince = since;
-            return List.copyOf(copies);
         }
     }
 }

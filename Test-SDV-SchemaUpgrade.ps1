@@ -1,8 +1,9 @@
 <#
 .SYNOPSIS
   Repeatable upgrade check for task 0024: a database at an earlier schema moves to this version's schema with its data
-  unchanged. -From 030 (the default, task 0032) starts at 029 and checks changesets 030 (the tenant time zone) and 031
-  (the report indexes); -From 031 starts at 030 and checks 031; -From 029 starts at 028 and checks changeset 029 (exact
+  unchanged. -From 032 (the default, task 0033) starts at 031 and checks changeset 032 (the stewards' notices);
+  -From 030 starts at 029 and checks changesets 030 (the tenant time zone), 031 (the report indexes) and 032;
+  -From 031 starts at 030 and checks 031 and 032; -From 029 starts at 028 and checks changeset 029 (exact
   duplicates) and then 030 and 031;
   -From 028 starts at 027 and checks changeset 028 (the level-change history) and then 029;
   -From 027 starts at 026 and checks changeset 027 (access requests, hold names) and then 028;
@@ -41,6 +42,9 @@
        service's duplicate path, the received counts and the table's checks. For 030: tenants.time_zone exists, is null for every
        tenant and its check refuses padded, blank and long values. For 031: the three report indexes exist and are valid, and
        IntakeReportPostgresTest runs the uncorrected-copy check (task 0032, section 0) and the Daily intake report's SQL.
+       For 032 (task 0033): steward_notices exists, an uncorrected copy received before became one unread notice (the
+       audit event is unchanged), its checks refuse bad rows, IntakeReportPostgresTest writes and reads the stored
+       notices (read per person), and SensitivityReportPostgresTest runs the Sensitivity report's SQL.
        Always: every other column of every row is unchanged, no other
        table changed, status is up to date.
 
@@ -50,8 +54,8 @@
 param(
     [string]$Jar,
     # The first changeset the upgrade applies; the scratch database is built up to the one before it.
-    [ValidateSet('023', '024', '025', '026', '027', '028', '029', '030', '031')]
-    [string]$From = '030',
+    [ValidateSet('023', '024', '025', '026', '027', '028', '029', '030', '031', '032')]
+    [string]$From = '032',
     # Drop a scratch database and role left by an earlier run of this script that could not clean up.
     [switch]$DropLeftover
 )
@@ -63,7 +67,7 @@ $db = 'sdv_schema_test'
 $owner = 'sdv_schema_owner'
 $hostUrl = 'jdbc:postgresql://localhost:5433/' + $db
 # In order. The upgrade applies every changeset from -From on.
-$checked = @('022-retention-policy-creator-name', '023-document-sensitivity-level', '024-record-sensitivity-levels', '025-role-separation', '026-legal-holds', '027-access-requests', '028-sensitivity-level-changes', '029-document-duplicate-receipts', '030-tenant-time-zone', '031-intake-report-indexes')
+$checked = @('022-retention-policy-creator-name', '023-document-sensitivity-level', '024-record-sensitivity-levels', '025-role-separation', '026-legal-holds', '027-access-requests', '028-sensitivity-level-changes', '029-document-duplicate-receipts', '030-tenant-time-zone', '031-intake-report-indexes', '032-steward-notices')
 $start = [array]::IndexOf(($checked | ForEach-Object { $_.Substring(0, 3) }), $From)
 $newChangesets = @($checked[$start..($checked.Count - 1)])
 $newChangeset = $newChangesets[0]
@@ -77,6 +81,9 @@ $has028 = $newChangesets -contains '028-sensitivity-level-changes'
 $has029 = $newChangesets -contains '029-document-duplicate-receipts'
 $has030 = $newChangesets -contains '030-tenant-time-zone'
 $has031 = $newChangesets -contains '031-intake-report-indexes'
+$has032 = $newChangesets -contains '032-steward-notices'
+# Task 0033: an uncorrected copy received at the previous version, which 032 must turn into one stored notice.
+$oldCopyEvent = '50000000-0000-0000-0000-0000000000c1'
 $reportIndexes = @('idx_submissions_tenant_created', 'idx_documents_tenant_ingested', 'idx_audit_events_redaction_old_sha')
 $roleTables = @('role_conflict_problems', 'role_group_mappings_seen', 'role_mapping_notices')
 $run = Join-Path $root ('.runtime\schema-upgrade\' + (Get-Date -Format 'yyyyMMdd-HHmmss'))
@@ -147,7 +154,7 @@ function Invoke-SchemaStep([string[]]$StepArgs) {
 $otherTablesSql = @"
 select string_agg(t.relname || '=' || (xpath('/row/c/text()', query_to_xml(format('select count(*) || '':'' || coalesce(md5(string_agg(x::text, ''|'' order by x::text)), '''') as c from %I x', t.relname), false, true, '')))[1]::text, ',' order by t.relname)
   from pg_stat_user_tables t
- where t.relname not in ('documents', 'record_sensitivity_levels', 'role_conflict_problems', 'role_group_mappings_seen', 'role_mapping_notices', 'legal_holds', 'access_requests', 'sensitivity_level_changes', 'document_duplicate_receipts', 'tenants', 'databasechangelog', 'databasechangeloglock');
+ where t.relname not in ('documents', 'record_sensitivity_levels', 'role_conflict_problems', 'role_group_mappings_seen', 'role_mapping_notices', 'legal_holds', 'access_requests', 'sensitivity_level_changes', 'document_duplicate_receipts', 'tenants', 'steward_notices', 'databasechangelog', 'databasechangeloglock');
 "@
 # Task 0032: tenants with every column it had before 030 (030 adds time_zone, null for every existing tenant).
 $tenantsOldColumnsSql = "select count(*) || ':' || md5(string_agg((to_jsonb(x) - 'time_zone')::text, '|' order by x.tenant_id)) from tenants x;"
@@ -168,6 +175,8 @@ $hasHoldTableSql = "select count(*) from information_schema.tables where table_n
 $hasRequestTableSql = "select count(*) from information_schema.tables where table_name = 'access_requests';"
 $hasChangeTableSql = "select count(*) from information_schema.tables where table_name = 'sensitivity_level_changes';"
 $hasDuplicateTableSql = "select count(*) from information_schema.tables where table_name = 'document_duplicate_receipts';"
+$hasNoticeTableSql = "select count(*) from information_schema.tables where table_name = 'steward_notices';"
+$noticeTableBefore = if ($has032) { '0' } else { '1' }
 $changeTableBefore = if ($has028) { '0' } else { '1' }
 $requestTableBefore = if ($has027) { '0' } else { '1' }
 $holdTableBefore = if ($has026) { '0' } else { '1' }
@@ -229,9 +238,11 @@ revoke all on database $db from public;
     Assert-That ((Get-Value $hasChangeTableSql) -eq $changeTableBefore) "sensitivity_level_changes should $(if ($has028) { 'not ' })exist at the previous version"
     Assert-That ((Get-Value $hasDuplicateTableSql) -eq $duplicateTableBefore) "document_duplicate_receipts should $(if ($has029) { 'not ' })exist at the previous version"
     Assert-That ((Get-Value $hasTimeZoneSql) -eq $(if ($has030) { '0' } else { '1' })) "tenants.time_zone should $(if ($has030) { 'not ' })exist at the previous version"
-    Assert-That ((Get-Value $reportIndexesSql) -eq '0') 'the report indexes already exist at the previous version'
+    $indexesBefore = if ($has031) { '0' } else { '3' }
+    Assert-That ((Get-Value $reportIndexesSql) -eq $indexesBefore) "the report indexes should $(if ($has031) { 'not ' })exist at the previous version"
+    Assert-That ((Get-Value $hasNoticeTableSql) -eq $noticeTableBefore) "steward_notices should $(if ($has032) { 'not ' })exist at the previous version"
     $prevCount = Get-Value 'select count(*) from databasechangelog;'
-    $missing = @(); if ($has023) { $missing += 'no sensitivity_level' }; if ($has024) { $missing += 'no record_sensitivity_levels' }; if ($has025) { $missing += 'no role tables' }; if ($has026) { $missing += 'no legal_holds' }; if ($has027) { $missing += 'no access_requests' }; if ($has028) { $missing += 'no sensitivity_level_changes' }; if ($has029) { $missing += 'no document_duplicate_receipts' }; if ($has030) { $missing += 'no tenants.time_zone' }; $missing += 'no report indexes'
+    $missing = @(); if ($has023) { $missing += 'no sensitivity_level' }; if ($has024) { $missing += 'no record_sensitivity_levels' }; if ($has025) { $missing += 'no role tables' }; if ($has026) { $missing += 'no legal_holds' }; if ($has027) { $missing += 'no access_requests' }; if ($has028) { $missing += 'no sensitivity_level_changes' }; if ($has029) { $missing += 'no document_duplicate_receipts' }; if ($has030) { $missing += 'no tenants.time_zone' }; if ($has031) { $missing += 'no report indexes' }; if ($has032) { $missing += 'no steward_notices' }
     Write-Step "1. Previous version (changesets up to $($lastPrevious.Substring(0, 3)))" $w.Elapsed.TotalSeconds "$prevCount changesets, last $last, $($missing -join ', ')"
 
     # ------------------------------------------------------------ 2. data at the previous version
@@ -252,6 +263,10 @@ values ('40000000-0000-0000-0000-000000000001', '10000000-0000-0000-0000-0000000
     if (-not $has023) {
         # The level column exists already: give the documents different levels, which 024 must leave alone.
         $null = Invoke-Sql -Database $db -AsOwner -Sql "update documents set sensitivity_level = 'CONFIDENTIAL' where source_document_id = 'd1'; update documents set sensitivity_level = 'HIGHLY_CONFIDENTIAL' where source_document_id = 'd2';"
+    }
+    # Task 0033: an uncorrected copy received before 032 (task 0032 kept it in the audit only); 032 makes it a notice.
+    if ($has032) {
+        $null = Invoke-Sql -Database $db -AsOwner -Sql "insert into audit_events(audit_event_id, tenant_id, actor_type, actor_id, action, target_type, target_id, occurred_at, outcome, safe_details) values ('$oldCopyEvent', '10000000-0000-0000-0000-000000000001', 'SOURCE', 'loans-producer', 'DOCUMENT_UNCORRECTED_COPY_RECEIVED', 'DOCUMENT', '40000000-0000-0000-0000-000000000001', now() - interval '2 days', 'SUCCESS', jsonb_build_object('sourceId', '20000000-0000-0000-0000-000000000001', 'submissionId', '30000000-0000-0000-0000-000000000001'));"
     }
     # Task 0028: with legal_holds already there, a released hold placed before 027 must keep every column it had.
     $holdsOldColumnsSql = "select count(*) || ':' || coalesce(md5(string_agg(row(hold_id, tenant_id, document_id, reason, placed_by, placed_at, released_by, released_at)::text, '|' order by hold_id)), '') from legal_holds;"
@@ -347,6 +362,12 @@ values ('40000000-0000-0000-0000-000000000001', '10000000-0000-0000-0000-0000000
             Assert-That ($upgradeText.Contains("create index concurrently $c")) "the reviewable SQL lacks create index concurrently $c"
         }
     }
+    if ($has032) {
+        foreach ($c in @('create table steward_notices', 'fk_steward_notices_source', 'ck_steward_notices_kind', 'ck_steward_notices_read_by',
+                'uq_steward_notices_event', 'idx_steward_notices_tenant_created', 'insert into steward_notices')) {
+            Assert-That ($upgradeText.Contains($c)) "the reviewable SQL lacks $c"
+        }
+    }
     Assert-That (-not ($upgradeText -match "::$lastPrevious::")) 'the reviewable SQL repeats an already applied changeset'
     Assert-That ((Get-Value $hasColumnSql) -eq $hasColumn) 'sql changed the database (documents)'
     Assert-That ((Get-Value $hasTableSql) -eq $recordTableBefore) 'sql changed the database (record_sensitivity_levels)'
@@ -356,7 +377,8 @@ values ('40000000-0000-0000-0000-000000000001', '10000000-0000-0000-0000-0000000
     Assert-That ((Get-Value $hasChangeTableSql) -eq $changeTableBefore) 'sql changed the database (sensitivity_level_changes)'
     Assert-That ((Get-Value $hasDuplicateTableSql) -eq $duplicateTableBefore) 'sql changed the database (document_duplicate_receipts)'
     Assert-That ((Get-Value $hasTimeZoneSql) -eq $(if ($has030) { '0' } else { '1' })) 'sql changed the database (tenants.time_zone)'
-    Assert-That ((Get-Value $reportIndexesSql) -eq '0') 'sql changed the database (report indexes)'
+    Assert-That ((Get-Value $reportIndexesSql) -eq $indexesBefore) 'sql changed the database (report indexes)'
+    Assert-That ((Get-Value $hasNoticeTableSql) -eq $noticeTableBefore) 'sql changed the database (steward_notices)'
     Write-Step '3b. Schema step sql (the SQL to review)' $sq.Seconds "only $($newChangesets.ForEach({ $_.Substring(0, 3) }) -join ' and '); database unchanged"
 
     $up = Invoke-SchemaStep @('update')
@@ -557,25 +579,44 @@ rollback;
         Write-Step '4j. After 031: report indexes' $w.Elapsed.TotalSeconds 'three indexes, valid; the old-checksum index is partial'
         $w = [System.Diagnostics.Stopwatch]::StartNew()
     }
-    if ($has027 -or $has028 -or $has029 -or $has030 -or $has031) {
+    if ($has032) {
+        Assert-That ((Get-Value $hasNoticeTableSql) -eq '1') 'steward_notices was not created'
+        # The uncorrected copy received before became exactly one notice, unread by everyone, for its sending system.
+        $notice = Get-Value "select count(*) || ' ' || coalesce(min(kind), '-') || ' ' || coalesce(min(source_id::text), '-') || ' ' || coalesce(min(read_by::text), '-') || ' ' || bool_and(created_at = (select occurred_at from audit_events where audit_event_id = '$oldCopyEvent')) from steward_notices where audit_event_id = '$oldCopyEvent';"
+        Assert-That ($notice -eq '1 UNCORRECTED_COPY_RECEIVED 20000000-0000-0000-0000-000000000001 {} true') "the earlier uncorrected copy should be one unread notice at its time: $notice"
+        Assert-That ((Get-Value 'select count(*) from steward_notices;') -eq '1') 'only uncorrected copies become notices'
+        foreach ($bad in @(
+                "insert into steward_notices(notice_id, tenant_id, kind, audit_event_id, created_at) values (gen_random_uuid(), '10000000-0000-0000-0000-000000000001', 'OTHER', '$oldCopyEvent', now());",
+                "insert into steward_notices(notice_id, tenant_id, kind, audit_event_id, created_at) values (gen_random_uuid(), '10000000-0000-0000-0000-000000000001', 'UNCORRECTED_COPY_RECEIVED', '$oldCopyEvent', now());",
+                "insert into steward_notices(notice_id, tenant_id, kind, audit_event_id, created_at) values (gen_random_uuid(), '10000000-0000-0000-0000-000000000001', 'UNCORRECTED_COPY_RECEIVED', gen_random_uuid(), now());",
+                "update steward_notices set read_by = '[]'::jsonb;",
+                "update steward_notices set record_identifier = ' ';")) {
+            $r = Invoke-Sql -Database $db -AsOwner -AllowFailure -Sql $bad
+            Assert-That ($r.Code -ne 0) "steward_notices should refuse: $bad"
+        }
+        Write-Step '4k. After 032: steward_notices' $w.Elapsed.TotalSeconds 'the earlier uncorrected copy is one unread notice; checks refuse a bad kind, a second notice, an unknown event, a bad read_by'
+        $w = [System.Diagnostics.Stopwatch]::StartNew()
+    }
+    if ($has027 -or $has028 -or $has029 -or $has030 -or $has031 -or $has032) {
 
         # The application's own repositories and services against this database: holds and the retention cleanup
         # (LegalHoldPostgresTest), requests, grants, expiry and the table's checks (AccessRequestPostgresTest), exact
-        # duplicates (DuplicateIntakePostgresTest), uncorrected copies and the Daily intake report (IntakeReportPostgresTest). The scratch owner's password goes to the child process only, as
+        # duplicates (DuplicateIntakePostgresTest), uncorrected copies, stored notices and the Daily intake report (IntakeReportPostgresTest),
+        # the Sensitivity report (SensitivityReportPostgresTest). The scratch owner's password goes to the child process only, as
         # SDV_IT_JDBC_PASSWORD.
         $w = [System.Diagnostics.Stopwatch]::StartNew()
         $mvn = (Get-Command mvn.cmd -ErrorAction Stop).Source
         $it = Invoke-Native -File $mvn -Arguments @('-o', '-f', (Join-Path $root 'backend\pom.xml'), '-pl', 'sdv-web', '-am', 'test',
-            '-Dtest=LegalHoldPostgresTest,AccessRequestPostgresTest,DuplicateIntakePostgresTest,IntakeReportPostgresTest', '-Dsurefire.failIfNoSpecifiedTests=false') -Environment @{
+            '-Dtest=LegalHoldPostgresTest,AccessRequestPostgresTest,DuplicateIntakePostgresTest,IntakeReportPostgresTest,SensitivityReportPostgresTest', '-Dsurefire.failIfNoSpecifiedTests=false') -Environment @{
             SDV_IT_JDBC_URL = $hostUrl; SDV_IT_JDBC_USER = $owner; SDV_IT_JDBC_PASSWORD = $ownerPassword }
-        foreach ($test in @('legalhold.LegalHoldPostgresTest', 'approvals.AccessRequestPostgresTest', 'document.DuplicateIntakePostgresTest', 'reports.IntakeReportPostgresTest')) {
+        foreach ($test in @('legalhold.LegalHoldPostgresTest', 'approvals.AccessRequestPostgresTest', 'document.DuplicateIntakePostgresTest', 'reports.IntakeReportPostgresTest', 'reports.SensitivityReportPostgresTest')) {
             $itLine = ($it.Out -split "`n" | Where-Object { $_ -match ('Tests run: .* in com\.sdv\.platform\.application\.' + [regex]::Escape($test)) } | Select-Object -First 1)
             if ($it.Code -ne 0 -or -not $itLine -or $itLine -notmatch 'Tests run: 1, Failures: 0, Errors: 0, Skipped: 0') {
                 $it.Out | Set-Content -Encoding utf8 (Join-Path $run 'postgres-tests.log')
                 throw "FAIL: $test did not pass (exit $($it.Code)): $(if ($itLine) { $itLine.Trim() } else { 'no result line' }). Log: $run\postgres-tests.log"
             }
         }
-        Write-Step '4f. Holds, requests, grants, duplicates and reports on PostgreSQL' $w.Elapsed.TotalSeconds 'holds and cleanup; grants, expiry, level history, duplicates, uncorrected copies, the intake report, checks'
+        Write-Step '4f. Holds, requests, grants, duplicates and reports on PostgreSQL' $w.Elapsed.TotalSeconds 'holds and cleanup; grants, expiry, level history, duplicates, uncorrected copies, stored notices, the intake and Sensitivity reports, checks'
         $w = [System.Diagnostics.Stopwatch]::StartNew()
     }
     Write-Step '4. After: nothing else changed' $w.Elapsed.TotalSeconds 'other document columns and every other table unchanged'

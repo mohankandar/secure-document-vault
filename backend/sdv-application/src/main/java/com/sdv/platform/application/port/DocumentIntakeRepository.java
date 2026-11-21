@@ -63,6 +63,14 @@ public interface DocumentIntakeRepository {
     void insertDuplicateReceipt(DuplicateReceipt receipt);
 
     /**
+     * Task 0033 (0.1): the stored notice for the record's Document and Restricted stewards that an uncorrected copy of
+     * a corrected document was received (steward_notices). It names the record by its sending system and primary
+     * identifier (read from the submission), and the audit event it comes from.
+     */
+    void insertUncorrectedCopyNotice(UUID noticeId, UUID tenantId, UUID sourceId, UUID submissionId, UUID auditEventId,
+                                     Instant createdAt);
+
+    /**
      * One duplicate delivery (document_duplicate_receipts). Exactly one of sourceDocumentId and producerIdempotencyKey
      * is set. sentLevel: the document level it carried; levelOutcome: RAISED when that raised the existing document,
      * KEPT when it was lower or equal and ignored.

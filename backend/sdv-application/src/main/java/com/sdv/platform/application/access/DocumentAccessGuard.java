@@ -93,7 +93,7 @@ public class DocumentAccessGuard {
         Objects.requireNonNull(clearance, "clearance");
         SensitivityLevel level = effectiveLevel(document);
         if (!clearance.canOpen(level)) {
-            refuse(document, level, attempt, SdvErrorCode.SEN_008, actorId, correlationId);
+            refuse(document, level, attempt, SdvErrorCode.SEN_008, clearance, actorId, correlationId);
             throw new CodedRefusal.Forbidden(SdvErrorCode.SEN_008, RESTRICTED_MESSAGE);
         }
         return level;
@@ -124,7 +124,7 @@ public class DocumentAccessGuard {
             // A grant that can't be read or used is no grant (fail closed).
         }
         if (grant == null) {
-            refuse(document, level, attempt, SdvErrorCode.SEN_009, actorId, correlationId);
+            refuse(document, level, attempt, SdvErrorCode.SEN_009, clearance, actorId, correlationId);
             throw new CodedRefusal.Forbidden(SdvErrorCode.SEN_009, APPROVAL_NEEDED_MESSAGE);
         }
         return new PrintOrDownload(level, grant);
@@ -172,15 +172,23 @@ public class DocumentAccessGuard {
         return result;
     }
 
+    /**
+     * Task 0033: the event also names the person's roles when they are known (role names, sorted), so the Sensitivity
+     * report can count attempts by role. Role names are fixed enum names, never free text.
+     */
     private void refuse(Document document, SensitivityLevel level, Attempt attempt, SdvErrorCode code,
-                        String actorId, String correlationId) {
+                        Clearance clearance, String actorId, String correlationId) {
         try {
+            String roles = clearance.roles().isEmpty() ? ""
+                    : ",\"roles\":[" + clearance.roles().stream()
+                    .filter(r -> r.matches("[A-Z_]{1,80}"))
+                    .map(r -> "\"" + r + "\"").collect(Collectors.joining(",")) + "]";
             audit.append(new AuditEvent(
                     UUID.randomUUID(), document.tenantId(), "USER", actorId,
                     REFUSED_ACTION, "DOCUMENT", document.documentId().toString(),
                     clock.instant(), correlationId, AuditOutcome.DENIED,
                     "{\"level\":\"" + level.name() + "\",\"attempt\":\"" + attempt.name()
-                            + "\",\"code\":\"" + code.code() + "\"}"));
+                            + "\",\"code\":\"" + code.code() + "\"" + roles + "}"));
         } catch (RuntimeException ignored) {
             // The refusal stands even when the audit store is unavailable (fail closed).
         }

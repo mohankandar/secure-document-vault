@@ -400,6 +400,28 @@ public class JdbcSecureIngestionRepository implements SubmissionRepository, Stor
     }
 
     @Override
+    public void insertUncorrectedCopyNotice(UUID noticeId, UUID tenantId, UUID sourceId, UUID submissionId,
+                                            UUID auditEventId, Instant createdAt) {
+        // The record is named as the notice shows it: its primary identifier (the first non-blank business
+        // identifier in display order, as the Daily intake report), read from the submission. Never a file or title.
+        int inserted = jdbc.update("""
+                insert into steward_notices(notice_id, tenant_id, kind, source_id, record_identifier,
+                                            record_identifier_label, audit_event_id, created_at)
+                select :noticeId, :tenantId, 'UNCORRECTED_COPY_RECEIVED', :sourceId, nullif(btrim(pid.stored_value), ''),
+                       pid.display_label, :auditEventId, :createdAt
+                  from (select 1) one
+                  left join submissions s on s.tenant_id=:tenantId and s.submission_id=:submissionId
+                """ + com.sdv.platform.persistence.reports.JdbcIntakeReportRepository.PRIMARY_IDENTIFIER, new MapSqlParameterSource()
+                .addValue("noticeId", noticeId)
+                .addValue("tenantId", tenantId)
+                .addValue("sourceId", sourceId)
+                .addValue("submissionId", submissionId)
+                .addValue("auditEventId", auditEventId)
+                .addValue("createdAt", Timestamp.from(createdAt)));
+        if (inserted != 1) throw new IllegalStateException("The stewards' notice was not stored.");
+    }
+
+    @Override
     public void insertDocument(Document document) {
         jdbc.update("""
                 insert into documents(

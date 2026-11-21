@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react'
 import { Bell, X } from 'lucide-react'
 import { useStore } from './store'
 import { whenWords } from './Sensitivity'
-import { LEVEL_NAMES, intakeNotices, myRequests, type IntakeNotice, type MyRequest } from './liveApi'
+import { ApiRequestError } from '../api'
+import { LEVEL_NAMES, intakeNotices, markIntakeNoticesRead, myRequests, type IntakeNotices as IntakeNoticeList, type MyRequest } from './liveApi'
 
 /**
  * Task 0030 (item 7): in-app notices for requesters. When a request is approved, declined or expires, the requester
@@ -98,40 +99,51 @@ export function RequestNotices() {
   )
 }
 
+
 /**
  * Task 0032 (0): Document stewards are told when a sending system sent an uncorrected copy of a corrected document
- * (nothing was stored; only the corrected version is kept). From the server's last 30 days; each notice is shown once
- * per person in this browser. The first time Vero opens in a browser, nothing older is announced (as above).
+ * (nothing was stored; only the corrected version is kept). Task 0033 (0.1): a security event, so the notices are
+ * stored on the server, not in this browser. Each steward sees every notice they haven't marked read, wherever they
+ * sign in, until they mark it read ("Mark as read", recorded in the audit). Dismissing only hides the box until Vero is
+ * opened again.
  */
-const INTAKE_KEY = (subject: string) => 'vero.intake.seen.' + subject
 export function IntakeNotices() {
   const { can, liveSession } = useStore()
   const subject = liveSession?.subject ?? ''
   const steward = can('CHANGE_SENSITIVITY_LEVEL')
-  const [news, setNews] = useState<IntakeNotice[]>([])
+  const [data, setData] = useState<IntakeNoticeList | null>(null)
+  const [hidden, setHidden] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [problem, setProblem] = useState<string | null>(null)
+  const [reload, setReload] = useState(0)
   useEffect(() => {
     if (!steward || !subject) return
     let active = true
-    intakeNotices().then((ns) => {
-      if (!active) return
-      let seenUpTo: string | null = null
-      try { seenUpTo = window.localStorage.getItem(INTAKE_KEY(subject)) } catch { /* storage unavailable */ }
-      const latestAt = ns.reduce((m, x) => (x.receivedAt > m ? x.receivedAt : m), seenUpTo ?? '')
-      const fresh = seenUpTo == null ? [] : ns.filter((x) => x.receivedAt > seenUpTo!)
-      try { window.localStorage.setItem(INTAKE_KEY(subject), latestAt) } catch { /* shown again next time */ }
-      if (fresh.length) setNews(fresh)
-    }).catch(() => { /* no notice: nothing was stored either way */ })
+    intakeNotices().then((ns) => { if (active) setData(ns) }).catch(() => { /* no notice now; it stays unread on the server */ })
     return () => { active = false }
-  }, [steward, subject])
-  if (!news.length) return null
-  const shown = news.slice(0, 4)
+  }, [steward, subject, reload])
+  if (hidden || !data || !data.notices.length) return null
+  const shown = data.notices.slice(0, 4)
+  const more = data.unread - shown.length
+  const markRead = async (ids: string[]) => {
+    setBusy(true); setProblem(null)
+    try { await markIntakeNoticesRead(ids); setReload((x) => x + 1) }
+    catch (e) { setProblem(e instanceof ApiRequestError && e.code ? `${e.message} (${e.code})` : 'Vero couldn’t mark it as read. Try again.') }
+    finally { setBusy(false) }
+  }
   return (
     <section className="v-notice" role="status" aria-label="Sent again">
-      <header><Bell size={16} aria-hidden /><strong className="grow">{news.length === 1 ? 'A corrected document was sent again' : `${news.length} corrected documents were sent again`}</strong>
-        <button type="button" className="v-btn quiet icon sm" aria-label="Dismiss" onClick={() => setNews([])}><X size={16} /></button></header>
-      <ul>{shown.map((x) => <li key={x.noticeId}><b>{x.primaryIdentifier ? `${x.primaryIdentifierLabel ?? 'Record'} ${x.primaryIdentifier}` : 'A record'}</b>{x.sendingSystem ? ` · ${x.sendingSystem}` : ''} · {whenWords(x.receivedAt)}</li>)}</ul>
-      {news.length > shown.length && <span className="faint">and {news.length - shown.length} more.</span>}
-      <span className="faint">{shown[0].message}.</span>
+      <header><Bell size={16} aria-hidden /><strong className="grow">{data.unread === 1 ? 'A corrected document was sent again' : `${n(data.unread)} corrected documents were sent again`}</strong>
+        <button type="button" className="v-btn quiet icon sm" aria-label="Dismiss" title="Hide until Vero is opened again" onClick={() => setHidden(true)}><X size={16} /></button></header>
+      <ul>{shown.map((x) => <li key={x.noticeId} className="v-notice-row">
+        <span className="grow"><b>{x.primaryIdentifier ? `${x.primaryIdentifierLabel ?? 'Record'} ${x.primaryIdentifier}` : 'A record'}</b>{x.sendingSystem ? ` · ${x.sendingSystem}` : ''} · {whenWords(x.receivedAt)}</span>
+        <button type="button" className="v-btn xs quiet" disabled={busy} onClick={() => void markRead([x.noticeId])}>Mark as read</button>
+      </li>)}</ul>
+      {more > 0 && <span className="faint">and {n(more)} more.</span>}
+      <span className="faint">{shown[0].message}. Each steward sees this until they mark it read.</span>
+      {problem && <span role="alert" className="rpt-bad">{problem}</span>}
+      {shown.length > 1 && <div><button type="button" className="v-btn sm" disabled={busy} onClick={() => void markRead(shown.map((x) => x.noticeId))}>Mark {shown.length === data.unread ? 'all' : `these ${shown.length}`} as read</button></div>}
     </section>
   )
 }
+const n = (v: number) => v.toLocaleString('en-US')
