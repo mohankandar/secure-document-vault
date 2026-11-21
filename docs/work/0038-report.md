@@ -107,7 +107,10 @@ Backend only. No schema change, and no dependency added or upgraded.
 
 ## Commits (hash and message), or "not committed"
 
-See the commit on `fix/sign-in` with the message "fix: sign-in codes and answers…". Its hash is in the follow-up commit. Nothing was pushed or merged.
+- `fe441ef` fix: sign-in codes and answers, AUT-001..009, ROL-006, IDP-007, sign-in keys in readiness (task 0038)
+- A follow-up commit that writes this hash into the report.
+
+Both are on `fix/sign-in` only. Nothing was pushed or merged.
 
 ## Not done, and why
 
