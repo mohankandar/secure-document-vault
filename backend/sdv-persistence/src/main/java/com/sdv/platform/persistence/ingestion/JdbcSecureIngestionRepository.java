@@ -317,6 +317,34 @@ public class JdbcSecureIngestionRepository implements SubmissionRepository, Stor
     }
 
     @Override
+    public Optional<Document> findCorrectedOriginalOf(UUID tenantId, UUID sourceId,
+                                                      java.util.Collection<UUID> submissionIds, String contentSha256) {
+        if (submissionIds == null || submissionIds.isEmpty() || contentSha256 == null) return Optional.empty();
+        // The checksums before correction come from the redactions' audit events (idx_audit_events_redaction_old_sha,
+        // changeset 031). Their target is always the document's ID.
+        return jdbc.query(documentSelect() + """
+                 where tenant_id=:tenantId and source_id=:sourceId and submission_id in (:submissionIds)
+                   and deleted_at is null
+                   and status not in ('EXPIRED_DELETED','RETENTION_DELETING')
+                   and content_sha256 is distinct from :sha
+                   and document_id in (
+                       select cast(a.target_id as uuid)
+                         from audit_events a
+                        where a.tenant_id=:tenantId
+                          and a.action='DOCUMENT_PERMANENTLY_REDACTED'
+                          and a.target_type='DOCUMENT'
+                          and a.outcome='SUCCESS'
+                          and (a.safe_details ->> 'oldContentSha256')=:sha)
+                 order by ingested_at, document_id
+                 limit 1
+                """, new MapSqlParameterSource()
+                .addValue("tenantId", tenantId)
+                .addValue("sourceId", sourceId)
+                .addValue("submissionIds", List.copyOf(submissionIds))
+                .addValue("sha", contentSha256), documentMapper()).stream().findFirst();
+    }
+
+    @Override
     public void lockDuplicateCheck(UUID tenantId, UUID sourceId, String recordKey, String contentSha256) {
         jdbc.queryForObject("select pg_advisory_xact_lock(hashtextextended(:key, 0))",
                 new MapSqlParameterSource("key",

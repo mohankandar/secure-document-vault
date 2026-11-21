@@ -1620,6 +1620,95 @@ test.describe('SDV role-based screen capture', () => {
     expect(levelOfOpening, 'the opening is found by the level filter under its level').not.toBeNull()
   })
 
+  test('Reports: the Daily intake report, refusals counted, CSV and who may see it (task 0032)', async ({ page }, testInfo) => {
+    test.skip(!isDesktop(testInfo), 'Runs once per tour (desktop only).')
+    test.setTimeout(120_000)
+    const TENANT = '11111111-1111-1111-1111-111111111111'
+    const as = (subject: string, roles: string) => ({ 'X-SDV-Tenant-Id': TENANT, 'X-SDV-Subject': subject, 'X-SDV-Roles': roles })
+    const priya = as('local-business-admin', 'BUSINESS_ADMIN')
+    type Report = { from: string; to: string; today: string; timeZone: string; sendingSystems: { sourceId: string; displayName: string }[]; totals: { deliveries: number; refused: number; refusedCodes: { code: string; count: number }[] }; systems: { sourceId: string; displayName: string; totals: { refused: number } }[] }
+    const report = async (query = '') => {
+      const r = await page.request.get('/api/v1/admin/reports/intake' + query, { headers: priya })
+      expect(r.ok(), 'the Business admin reads the report').toBeTruthy()
+      return await r.json() as Report
+    }
+
+    // Business admin only: every other role gets SDV-RPT-001, for the report and its CSV.
+    for (const [subject, roles] of [['local-business-user', 'BUSINESS_USER'], ['local-document-steward', 'DOCUMENT_STEWARD'], ['local-restricted-steward', 'RESTRICTED_STEWARD'], ['local-tenant-it-admin', 'TENANT_IT_ADMIN'], ['local-platform-operations-admin', 'PLATFORM_OPERATIONS_ADMIN']]) {
+      for (const path of ['/api/v1/admin/reports/intake', '/api/v1/admin/reports/intake/export']) {
+        const refused = await page.request.get(path, { headers: as(subject, roles) })
+        expect(refused.status(), `${roles} on ${path}`).toBe(403)
+        expect((await refused.json() as { code: string }).code).toBe('SDV-RPT-001')
+      }
+    }
+    // Unclear filters are refused with their codes; intake notices are for stewards.
+    const badRange = await page.request.get('/api/v1/admin/reports/intake?from=2026-01-01&to=2026-03-01', { headers: priya })
+    expect([badRange.status(), (await badRange.json() as { code: string }).code]).toEqual([400, 'SDV-RPT-002'])
+    const badSource = await page.request.get('/api/v1/admin/reports/intake?sourceId=00000000-0000-0000-0000-000000000000', { headers: priya })
+    expect((await badSource.json() as { code: string }).code).toBe('SDV-RPT-003')
+    expect((await (await page.request.get('/api/v1/business/intake-notices', { headers: priya })).json() as { code: string }).code).toBe('SDV-INT-001')
+    expect((await page.request.get('/api/v1/business/intake-notices', { headers: as('local-document-steward', 'DOCUMENT_STEWARD') })).ok()).toBeTruthy()
+
+    // A delivery refused before any submission exists is counted, with its code and request ID. (One INTAKE_REFUSED
+    // audit event in the dev database per run; nothing is stored.)
+    const before = await report()
+    const los = before.sendingSystems.find((s) => s.displayName === 'Loan Origination System')
+    expect(los, 'the seed\'s Loan Origination System').toBeTruthy()
+    const requestId = `tour-0032-${Date.now()}`
+    const sent = await page.request.post('/api/v1/ingestion/submissions', {
+      headers: { 'X-SDV-Tenant-Id': TENANT, 'X-SDV-Source-Id': los!.sourceId, 'X-SDV-Subject': 'local-demo-producer', 'Content-Type': 'application/json' },
+      data: { sourceSubmissionId: requestId, expectedDocumentCount: 1, metadata: {}, recordSensitivityLevel: 'secret' },
+    })
+    expect(sent.status()).toBe(400)
+    expect((await sent.json() as { code: string }).code).toBe('SDV-SEN-002')
+    const after = await report()
+    expect(after.totals.refused).toBe(before.totals.refused + 1)
+    expect(after.totals.deliveries).toBe(before.totals.deliveries + 1)
+    expect(after.totals.refusedCodes.find((c) => c.code === 'SDV-SEN-002')?.count).toBe((before.totals.refusedCodes.find((c) => c.code === 'SDV-SEN-002')?.count ?? 0) + 1)
+    expect(after.systems.find((s) => s.sourceId === los!.sourceId)!.totals.refused).toBeGreaterThanOrEqual(1)
+
+    // The screen: tab last, the board's parts, counts only.
+    await selectRole(page, 'Business Administrator')
+    await page.evaluate(() => { window.location.hash = '#/governance/reports' })
+    const table = page.getByRole('region', { name: 'Deliveries by sending system' })
+    await expect(table).toBeVisible({ timeout: 15000 })
+    await expect(page.getByRole('heading', { level: 1, name: 'Reports' })).toBeVisible()
+    await expect(page.getByText('Counts only. No document contents, titles or names.')).toBeVisible()
+    await expect(page.getByRole('tablist', { name: 'Reports' }).getByRole('tab', { name: 'Sensitivity' })).toBeDisabled()
+    await expect(page.getByRole('button', { name: /^Day Today, / })).toBeVisible()
+    await expect(page.getByText(/ \(entity\)$/)).toHaveAttribute('title', new RegExp(after.timeZone.replace('/', '\\/')))
+    await expect(page.locator('.rpt-kpi').filter({ hasText: 'Refused at intake' }).locator('b')).toHaveText(after.totals.refused.toLocaleString('en-US'))
+    await expect(table.getByRole('row').filter({ hasText: 'All sending systems' })).toBeVisible()
+    // The Loan Origination System group: open it (if collapsed); the new refusal is its newest line, or in the CSV.
+    const toggle = table.getByRole('button', { name: /^(Expand|Collapse) Loan Origination System$/ })
+    if ((await toggle.getAttribute('aria-expanded')) === 'false') await toggle.click()
+    await expect(toggle).toHaveAttribute('aria-expanded', 'true')
+    await capture(page, testInfo, 'reports-daily-intake')
+    expect(await page.locator('.v-main').innerText()).not.toMatch(/\.pdf/i)
+    await toggle.click()
+    await expect(toggle).toHaveAttribute('aria-expanded', 'false')
+
+    // One sending system, then yesterday, then back to today.
+    await page.getByLabel('Sending system', { exact: true }).selectOption({ label: 'Loan Origination System' })
+    await expect(table.locator('tr.sys')).toHaveCount(1, { timeout: 15000 })
+    await page.getByRole('button', { name: /^Day / }).click()
+    await page.getByRole('dialog', { name: 'Choose the days' }).getByRole('button', { name: 'Yesterday' }).click()
+    await expect(page.getByRole('button', { name: /^Day Yesterday, / })).toBeVisible({ timeout: 15000 })
+    await page.getByRole('button', { name: /^Day / }).click()
+    await page.getByRole('dialog', { name: 'Choose the days' }).getByRole('button', { name: 'Today' }).click()
+    await expect(page.getByRole('button', { name: /^Day Today, / })).toBeVisible({ timeout: 15000 })
+
+    // The CSV: one line per document, with the refusal; downloaded by the screen and audited by the server.
+    const [download] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Export CSV' }).click()])
+    expect(download.suggestedFilename()).toBe(`vero-daily-intake-${after.today}.csv`)
+    const csv = fs.readFileSync(await download.path() as string, 'utf8')
+    expect(csv.split('\r\n')[0]).toBe(`﻿SHA-256 checksum,Request ID,Sending system,Primary identifier,Pages,"Received (${after.timeZone})",Received (UTC),Outcome,Refusal code`)
+    expect(csv).toContain(`"${requestId}","Loan Origination System","","",`)
+    expect(csv).toMatch(new RegExp(`"${requestId}".*"REFUSED","SDV-SEN-002"`))
+    expect(csv).not.toMatch(/\.pdf/i)
+    await expect(page.getByText('The file is saved. The export is recorded in the audit.')).toBeVisible()
+  })
+
   // Task 0030: approve 50 waiting requests in one go. Opt-in, because it uses up the seed's 50 waiting print and
   // download requests (run Seed-SDV-Canvas-Demo.ps1 again afterwards to make them again).
   test('Bulk approval of the 50 waiting print and download requests (task 0030)', async ({ page }, testInfo) => {
@@ -1732,6 +1821,7 @@ test.describe('SDV role-based screen capture', () => {
       'Legal holds',
       'Search fields',
       'Approvals',
+      'Reports',
     ])
     await businessAdminChecks(page, testInfo)
     // Settings that change shared rules run once, on the desktop project; the tablet project only tours the screens.

@@ -35,7 +35,7 @@ class FinalRoleMatrixTest {
         EXPECTED.put(SdvRole.BUSINESS_ADMIN, EnumSet.of(
                 Capability.CONFIGURE_METADATA_SEARCH, Capability.CONFIGURE_RETENTION,
                 Capability.CONFIGURE_BUSINESS_LIMITS, Capability.CONFIGURE_ROLE_PERMISSIONS,
-                Capability.APPROVE_SENSITIVE_ACCESS, Capability.MANAGE_LEGAL_HOLD));
+                Capability.APPROVE_SENSITIVE_ACCESS, Capability.MANAGE_LEGAL_HOLD, Capability.VIEW_INTAKE_REPORTS));
         EXPECTED.put(SdvRole.TENANT_IT_ADMIN, EnumSet.of(
                 Capability.CONFIGURE_INGESTION_SOURCES, Capability.CONFIGURE_TENANT_AUTH,
                 Capability.CONFIGURE_STORAGE_KEY_PROVIDER, Capability.VIEW_TECHNICAL_FAILURES));
@@ -77,6 +77,7 @@ class FinalRoleMatrixTest {
         rows.put("3.4 Request print / download of Highly Confidential", new Object[]{Capability.REQUEST_SENSITIVE_ACCESS, "001000"});
         rows.put("3.4 Approve or decline requests", new Object[]{Capability.APPROVE_SENSITIVE_ACCESS, "000100"});
         rows.put("3.4 Place and release legal holds", new Object[]{Capability.MANAGE_LEGAL_HOLD, "000100"});
+        rows.put("Task 0032: Reports tab, seen by Business admin only", new Object[]{Capability.VIEW_INTAKE_REPORTS, "000100"});
         List<SdvRole> columns = List.of(SdvRole.BUSINESS_USER, SdvRole.DOCUMENT_STEWARD, SdvRole.RESTRICTED_STEWARD,
                 SdvRole.BUSINESS_ADMIN, SdvRole.TENANT_IT_ADMIN, SdvRole.PLATFORM_OPERATIONS_ADMIN);
         assertEquals(EnumSet.allOf(SdvRole.class), EnumSet.copyOf(columns), "every role has a column");
@@ -119,7 +120,8 @@ class FinalRoleMatrixTest {
                         Capability.CONFIGURE_BUSINESS_LIMITS,
                         Capability.CONFIGURE_ROLE_PERMISSIONS,
                         Capability.APPROVE_SENSITIVE_ACCESS,
-                        Capability.MANAGE_LEGAL_HOLD),
+                        Capability.MANAGE_LEGAL_HOLD,
+                        Capability.VIEW_INTAKE_REPORTS),
                 RoleCapabilities.capabilities(EnumSet.of(SdvRole.BUSINESS_ADMIN)));
 
         assertEquals(
@@ -147,7 +149,8 @@ class FinalRoleMatrixTest {
                         Capability.CONFIGURE_BUSINESS_LIMITS,
                         Capability.CONFIGURE_ROLE_PERMISSIONS,
                         Capability.APPROVE_SENSITIVE_ACCESS,
-                        Capability.MANAGE_LEGAL_HOLD),
+                        Capability.MANAGE_LEGAL_HOLD,
+                        Capability.VIEW_INTAKE_REPORTS),
                 RoleCapabilities.capabilities(EnumSet.of(
                         SdvRole.BUSINESS_USER,
                         SdvRole.BUSINESS_ADMIN)));

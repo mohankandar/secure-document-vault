@@ -102,7 +102,19 @@ public enum SdvErrorCode {
     /** Task 0028: the document isn't available, so it can't be printed or downloaded (409). */
     APR_014("SDV-APR-014"),
     /** Task 0028: a person's own requests are listed for Stewards only (CHANGE_SENSITIVITY_LEVEL) (403). */
-    APR_015("SDV-APR-015");
+    APR_015("SDV-APR-015"),
+    /** Task 0032: intake notices (an uncorrected copy sent again) are for Document stewards (403). */
+    INT_001("SDV-INT-001"),
+    /** Task 0032: the Reports tab is for Business Admins only (VIEW_INTAKE_REPORTS) (403). */
+    RPT_001("SDV-RPT-001"),
+    /** Task 0032: the day or date range isn't valid: not a date, the end before the start, or more than 31 days (400). */
+    RPT_002("SDV-RPT-002"),
+    /** Task 0032: the sending system isn't one of this tenant's (400). */
+    RPT_003("SDV-RPT-003"),
+    /** Task 0032: the tenant's time zone setting isn't a time zone Vero knows, so "today" can't be worked out (409). */
+    RPT_004("SDV-RPT-004"),
+    /** Task 0032: the range holds more lines than one report reads; choose fewer days or one sending system (400). */
+    RPT_005("SDV-RPT-005");
 
     private final String code;
 

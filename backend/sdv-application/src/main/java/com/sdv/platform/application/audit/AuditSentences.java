@@ -28,6 +28,7 @@ public final class AuditSentences {
             Map.entry("CONFIGURE_METADATA_SEARCH", "change search fields"),
             Map.entry("CONFIGURE_INGESTION_SOURCES", "change sending systems"),
             Map.entry("CONFIGURE_STORAGE_KEY_PROVIDER", "change storage"),
+            Map.entry("VIEW_INTAKE_REPORTS", "see the reports"),
             Map.entry("VIEW_TECHNICAL_FAILURES", "see problems and the audit"));
 
     /** Task 0026: what a refused DOCUMENT_ACCESS_REFUSED tried, in words. */
@@ -84,6 +85,13 @@ public final class AuditSentences {
             case "DOCUMENT_RECEIVED" -> w + " sent " + f;
             // Task 0031: an exact duplicate; nothing was stored a second time.
             case "DOCUMENT_DUPLICATE_RECEIVED" -> w + " sent " + f + " again; Vero kept the copy it already had";
+            // Task 0032: what a document was before a permanent correction; only the corrected version is kept.
+            case "DOCUMENT_UNCORRECTED_COPY_RECEIVED" -> w + " sent an uncorrected copy of a corrected document; nothing was stored";
+            case "INTAKE_REFUSED" -> d.hasNonNull("code")
+                    ? w + " sent a delivery that Vero refused (" + text(d, "code") + ")" : w + " sent a delivery that Vero refused";
+            case "INTAKE_REPORT_EXPORTED" -> number(d, "rowCount") != null
+                    ? w + " exported the Daily intake report (" + number(d, "rowCount") + (number(d, "rowCount") == 1L ? " line)" : " lines)")
+                    : w + " exported the Daily intake report";
             case "DOCUMENT_AVAILABLE" -> f + " is stored and ready to open";
             case "DOCUMENT_PROCESSING_FAILED" -> "Vero couldn't store " + f;
             case "ROLE_CAPABILITIES_UPDATED" -> w + " changed what business roles may do";

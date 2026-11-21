@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Bell, X } from 'lucide-react'
 import { useStore } from './store'
 import { whenWords } from './Sensitivity'
-import { LEVEL_NAMES, myRequests, type MyRequest } from './liveApi'
+import { LEVEL_NAMES, intakeNotices, myRequests, type IntakeNotice, type MyRequest } from './liveApi'
 
 /**
  * Task 0030 (item 7): in-app notices for requesters. When a request is approved, declined or expires, the requester
@@ -94,6 +94,44 @@ export function RequestNotices() {
       <ul>{shown.map((r) => <li key={r.requestId}><b>{noticeLine(r)}</b></li>)}</ul>
       {news.length > shown.length && <span className="faint">and {news.length - shown.length} more.</span>}
       <span className="faint">Open the document to see it under Requests.</span>
+    </section>
+  )
+}
+
+/**
+ * Task 0032 (0): Document stewards are told when a sending system sent an uncorrected copy of a corrected document
+ * (nothing was stored; only the corrected version is kept). From the server's last 30 days; each notice is shown once
+ * per person in this browser. The first time Vero opens in a browser, nothing older is announced (as above).
+ */
+const INTAKE_KEY = (subject: string) => 'vero.intake.seen.' + subject
+export function IntakeNotices() {
+  const { can, liveSession } = useStore()
+  const subject = liveSession?.subject ?? ''
+  const steward = can('CHANGE_SENSITIVITY_LEVEL')
+  const [news, setNews] = useState<IntakeNotice[]>([])
+  useEffect(() => {
+    if (!steward || !subject) return
+    let active = true
+    intakeNotices().then((ns) => {
+      if (!active) return
+      let seenUpTo: string | null = null
+      try { seenUpTo = window.localStorage.getItem(INTAKE_KEY(subject)) } catch { /* storage unavailable */ }
+      const latestAt = ns.reduce((m, x) => (x.receivedAt > m ? x.receivedAt : m), seenUpTo ?? '')
+      const fresh = seenUpTo == null ? [] : ns.filter((x) => x.receivedAt > seenUpTo!)
+      try { window.localStorage.setItem(INTAKE_KEY(subject), latestAt) } catch { /* shown again next time */ }
+      if (fresh.length) setNews(fresh)
+    }).catch(() => { /* no notice: nothing was stored either way */ })
+    return () => { active = false }
+  }, [steward, subject])
+  if (!news.length) return null
+  const shown = news.slice(0, 4)
+  return (
+    <section className="v-notice" role="status" aria-label="Sent again">
+      <header><Bell size={16} aria-hidden /><strong className="grow">{news.length === 1 ? 'A corrected document was sent again' : `${news.length} corrected documents were sent again`}</strong>
+        <button type="button" className="v-btn quiet icon sm" aria-label="Dismiss" onClick={() => setNews([])}><X size={16} /></button></header>
+      <ul>{shown.map((x) => <li key={x.noticeId}><b>{x.primaryIdentifier ? `${x.primaryIdentifierLabel ?? 'Record'} ${x.primaryIdentifier}` : 'A record'}</b>{x.sendingSystem ? ` · ${x.sendingSystem}` : ''} · {whenWords(x.receivedAt)}</li>)}</ul>
+      {news.length > shown.length && <span className="faint">and {news.length - shown.length} more.</span>}
+      <span className="faint">{shown[0].message}.</span>
     </section>
   )
 }

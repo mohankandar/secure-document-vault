@@ -31,7 +31,8 @@ public final class AuditCsv {
         return out.toString().getBytes(StandardCharsets.UTF_8);
     }
 
-    static String cell(String value) {
+    /** Task 0032: also used by the Daily intake CSV, with the same formula guard. */
+    public static String cell(String value) {
         String v = value == null ? "" : value;
         if (!v.isEmpty() && "=+-@\t\r".indexOf(v.charAt(0)) >= 0) v = "'" + v;
         return "\"" + v.replace("\"", "\"\"") + "\"";

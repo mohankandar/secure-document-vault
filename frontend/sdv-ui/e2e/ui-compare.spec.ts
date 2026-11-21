@@ -285,6 +285,14 @@ export const SENSITIVITY_BOARDS: (Board & { setUp: (page: Page) => Promise<void>
     await expect(page.getByText(/documents? on contract .* will be held/)).toBeVisible({ timeout: 15000 })
     await page.waitForLoadState('networkidle')
   } },
+  // Task 0032: the Daily intake report for today, in the tenant's time zone. The first sending system is open, the
+  // others collapsed, as on the board. Its numbers are today's real intake (data).
+  { name: 'reports-intake', canvas: SENS('Reports-Intake.dc.html'), index: 0, width: 1440, height: 900, alone: true, setUp: async (page) => {
+    await asRole(page, BA, 1440, 900)
+    await page.evaluate(() => { window.location.hash = '#/governance/reports' })
+    await expect(page.getByRole('region', { name: 'Deliveries by sending system' })).toBeVisible({ timeout: 15000 })
+    await page.waitForLoadState('networkidle')
+  } },
 ]
 
 test.describe('Canvas comparison', () => {

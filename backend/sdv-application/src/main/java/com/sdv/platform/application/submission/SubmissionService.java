@@ -480,6 +480,7 @@ public class SubmissionService {
         @Override public long sumContentBytes(UUID tenantId, UUID submissionId) { return 0L; }
         @Override public long countReceived(UUID tenantId, UUID submissionId) { return 0L; }
         @Override public java.util.Optional<Document> findDuplicateOf(UUID tenantId, UUID sourceId, java.util.Collection<UUID> submissionIds, String contentSha256) { return java.util.Optional.empty(); }
+        @Override public java.util.Optional<Document> findCorrectedOriginalOf(UUID tenantId, UUID sourceId, java.util.Collection<UUID> submissionIds, String contentSha256) { return java.util.Optional.empty(); }
         @Override public void lockDuplicateCheck(UUID tenantId, UUID sourceId, String recordKey, String contentSha256) { throw new UnsupportedOperationException(); }
         @Override public java.util.Optional<DuplicateReceipt> findDuplicateReceipt(UUID tenantId, UUID submissionId, String sourceDocumentId, String producerIdempotencyKey) { return java.util.Optional.empty(); }
         @Override public void insertDuplicateReceipt(DuplicateReceipt receipt) { throw new UnsupportedOperationException(); }

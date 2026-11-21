@@ -41,6 +41,16 @@ public interface DocumentIntakeRepository {
     Optional<Document> findDuplicateOf(UUID tenantId, UUID sourceId, Collection<UUID> submissionIds, String contentSha256);
 
     /**
+     * Task 0032 (0): the corrected document an arriving file is an uncorrected copy of. One of this sending system's
+     * documents, in one of these submissions (the record's), not deleted or being deleted, that had this SHA-256
+     * checksum before a permanent corrective redaction. That checksum is kept in the redaction's audit event
+     * (DOCUMENT_PERMANENTLY_REDACTED, oldContentSha256), so every earlier correction counts. The oldest when there are
+     * several.
+     */
+    Optional<Document> findCorrectedOriginalOf(UUID tenantId, UUID sourceId, Collection<UUID> submissionIds,
+                                               String contentSha256);
+
+    /**
      * Held until the transaction ends: two deliveries of the same file for the same record can't both decide that
      * nothing is stored yet, so one is stored and the other becomes its duplicate.
      */

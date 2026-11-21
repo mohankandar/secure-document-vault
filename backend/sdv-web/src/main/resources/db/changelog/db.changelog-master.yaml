@@ -81,3 +81,9 @@ databaseChangeLog:
 
   - include:
       file: db/changelog/029-document-duplicate-receipts.yaml
+
+  - include:
+      file: db/changelog/030-tenant-time-zone.yaml
+
+  - include:
+      file: db/changelog/031-intake-report-indexes.yaml

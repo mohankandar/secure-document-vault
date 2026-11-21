@@ -4,7 +4,7 @@ import { AREA_TABS, StoreProvider, useStore } from './store'
 import { type AreaId, type RoleId } from './model'
 import { opSummary } from './liveApi'
 import { Toasts } from './ui'
-import { RequestNotices } from './Notices'
+import { IntakeNotices, RequestNotices } from './Notices'
 import { getLocalTestPersona, localRoleSwitchEnabled, setLocalTestPersona, type LocalPersona, type SessionInfo } from '../api'
 import { endOidcSession, isLocalSecurityMode } from '../auth'
 import { Workspace } from './Workspace'
@@ -181,7 +181,7 @@ function ShellInner() {
   const localPersona: LocalPersona | null = localMode ? (getLocalTestPersona() ?? role.id) : null
   const person = accountPerson(liveSession, heldRoles.map((r) => r.id), localPersona)
 
-  const allowed = (route.area === 'system' && showDevelopmentUtilities) || ((route.area === 'workspace' || route.area === 'home') && !!liveSession?.capabilities.includes('SEARCH_RECORDS')) || (route.area === 'governance' && !!liveSession && ['CONFIGURE_ROLE_PERMISSIONS','CONFIGURE_RETENTION','CONFIGURE_METADATA_SEARCH','CONFIGURE_BUSINESS_LIMITS','APPROVE_SENSITIVE_ACCESS','MANAGE_LEGAL_HOLD'].some(c=>liveSession.capabilities.includes(c))) || (route.area === 'tenant' && !!liveSession?.capabilities.includes('CONFIGURE_INGESTION_SOURCES')) || (route.area === 'operations' && !!liveSession?.capabilities.includes('VIEW_TECHNICAL_FAILURES'))
+  const allowed = (route.area === 'system' && showDevelopmentUtilities) || ((route.area === 'workspace' || route.area === 'home') && !!liveSession?.capabilities.includes('SEARCH_RECORDS')) || (route.area === 'governance' && !!liveSession && ['CONFIGURE_ROLE_PERMISSIONS','CONFIGURE_RETENTION','CONFIGURE_METADATA_SEARCH','CONFIGURE_BUSINESS_LIMITS','APPROVE_SENSITIVE_ACCESS','MANAGE_LEGAL_HOLD','VIEW_INTAKE_REPORTS'].some(c=>liveSession.capabilities.includes(c))) || (route.area === 'tenant' && !!liveSession?.capabilities.includes('CONFIGURE_INGESTION_SOURCES')) || (route.area === 'operations' && !!liveSession?.capabilities.includes('VIEW_TECHNICAL_FAILURES'))
   return (
     <div className="r7">
       <div className="v-app">
@@ -234,6 +234,7 @@ function ShellInner() {
       {palette && <Palette onClose={() => setPalette(false)} />}
       <Toasts />
       <RequestNotices />
+      <IntakeNotices />
     </div>
   )
 }

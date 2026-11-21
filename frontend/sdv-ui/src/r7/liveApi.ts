@@ -248,3 +248,26 @@ export const holdDocuments = (identifier: string) => roleApi<HoldDocument[]>('/a
 export const activeHolds = () => roleApi<LegalHold[]>('/api/v1/admin/legal-holds', 'businessAdmin')
 export const placeHold = (documentId: string, reason: string) => roleApi<LegalHold>('/api/v1/admin/legal-holds', 'businessAdmin', { method: 'POST', body: JSON.stringify({ documentId, reason }) })
 export const releaseHold = (holdId: string) => roleApi<LegalHold>('/api/v1/admin/legal-holds/' + encodeURIComponent(holdId) + '/release', 'businessAdmin', { method: 'POST' })
+
+// ---- Task 0032: the Business admin's Reports tab (Daily intake) and the Stewards' intake notices ----
+
+/** A delivery line: its request ID as the sending system sent it, its first time, its record's primary identifier, counts. */
+export type IntakeDeliveryLine = { requestId: string | null; receivedAt: string; receivedLocal: string; primaryIdentifier: string | null; documents: number; pages: number; duplicates: number; refused: number; refusedCodes: string[]; failed: number }
+export type IntakeSystemTotals = { deliveries: number; contracts: number; documents: number; pages: number; duplicates: number; refused: number; failed: number }
+/** deliveries: the first linesPerSystem; moreDeliveries: the rest, which are in the CSV. */
+export type IntakeSystemBlock = { sourceId: string; displayName: string; totals: IntakeSystemTotals; deliveries: IntakeDeliveryLine[]; moreDeliveries: number }
+export type IntakeTotals = { deliveries: number; sendingSystems: number; documents: number; pages: number; duplicates: number; contracts: number; newContracts: number; updatedContracts: number; refused: number; refusedCodes: { code: string; count: number }[]; failed: number }
+/**
+ * Counts only: no title, file name or name. from/to/today are days in the tenant's time zone (timeZone, an IANA name);
+ * timeZoneSource says whether the tenant set it or the install default applies.
+ */
+export type IntakeReport = { from: string; to: string; today: string; timeZone: string; timeZoneSource: 'TENANT' | 'INSTALL_DEFAULT'; sourceId: string | null; primaryIdentifierLabel: string | null; sendingSystems: { sourceId: string; displayName: string }[]; totals: IntakeTotals; systems: IntakeSystemBlock[]; linesPerSystem: number }
+export type IntakeFilter = { from?: string; to?: string; sourceId?: string }
+const intakeQuery = (f: IntakeFilter) => { const p = new URLSearchParams(); if (f.from) p.set('from', f.from); if (f.to) p.set('to', f.to); if (f.sourceId) p.set('sourceId', f.sourceId); const s = p.toString(); return s ? '?' + s : '' }
+export const intakeReport = (f: IntakeFilter) => roleApi<IntakeReport>('/api/v1/admin/reports/intake' + intakeQuery(f), 'businessAdmin')
+/** One line per document; the server records the export in the audit. */
+export const intakeReportCsv = (f: IntakeFilter) => contentBinary('/api/v1/admin/reports/intake/export' + intakeQuery(f), 'businessAdmin')
+
+/** Task 0032 (0): a sending system sent an uncorrected copy of a corrected document; nothing was stored. */
+export type IntakeNotice = { noticeId: string; kind: 'UNCORRECTED_COPY_RECEIVED'; receivedAt: string; sendingSystem: string | null; primaryIdentifier: string | null; primaryIdentifierLabel: string | null; message: string }
+export const intakeNotices = () => roleApi<IntakeNotice[]>('/api/v1/business/intake-notices', 'business')

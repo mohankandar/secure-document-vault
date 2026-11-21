@@ -1,7 +1,9 @@
 <#
 .SYNOPSIS
   Repeatable upgrade check for task 0024: a database at an earlier schema moves to this version's schema with its data
-  unchanged. -From 029 (the default, task 0031) starts at 028 and checks changeset 029 (exact duplicates);
+  unchanged. -From 030 (the default, task 0032) starts at 029 and checks changesets 030 (the tenant time zone) and 031
+  (the report indexes); -From 031 starts at 030 and checks 031; -From 029 starts at 028 and checks changeset 029 (exact
+  duplicates) and then 030 and 031;
   -From 028 starts at 027 and checks changeset 028 (the level-change history) and then 029;
   -From 027 starts at 026 and checks changeset 027 (access requests, hold names) and then 028;
   -From 026 starts at 025 and checks changeset 026 (legal holds) and then 027; -From 025
@@ -36,7 +38,10 @@
        exists and is empty, an access request made before keeps every column, and AccessRequestPostgresTest also writes
        and reads the history and checks its table. For 029: document_duplicate_receipts exists and is empty, a level
        change made before keeps every column, and DuplicateIntakePostgresTest runs the duplicate lookup, the intake
-       service's duplicate path, the received counts and the table's checks. Always: every other column of every row is unchanged, no other
+       service's duplicate path, the received counts and the table's checks. For 030: tenants.time_zone exists, is null for every
+       tenant and its check refuses padded, blank and long values. For 031: the three report indexes exist and are valid, and
+       IntakeReportPostgresTest runs the uncorrected-copy check (task 0032, section 0) and the Daily intake report's SQL.
+       Always: every other column of every row is unchanged, no other
        table changed, status is up to date.
 
   Prerequisite: the application jar is built (.\Build-SDV-All.ps1).
@@ -45,8 +50,8 @@
 param(
     [string]$Jar,
     # The first changeset the upgrade applies; the scratch database is built up to the one before it.
-    [ValidateSet('023', '024', '025', '026', '027', '028', '029')]
-    [string]$From = '029',
+    [ValidateSet('023', '024', '025', '026', '027', '028', '029', '030', '031')]
+    [string]$From = '030',
     # Drop a scratch database and role left by an earlier run of this script that could not clean up.
     [switch]$DropLeftover
 )
@@ -58,7 +63,7 @@ $db = 'sdv_schema_test'
 $owner = 'sdv_schema_owner'
 $hostUrl = 'jdbc:postgresql://localhost:5433/' + $db
 # In order. The upgrade applies every changeset from -From on.
-$checked = @('022-retention-policy-creator-name', '023-document-sensitivity-level', '024-record-sensitivity-levels', '025-role-separation', '026-legal-holds', '027-access-requests', '028-sensitivity-level-changes', '029-document-duplicate-receipts')
+$checked = @('022-retention-policy-creator-name', '023-document-sensitivity-level', '024-record-sensitivity-levels', '025-role-separation', '026-legal-holds', '027-access-requests', '028-sensitivity-level-changes', '029-document-duplicate-receipts', '030-tenant-time-zone', '031-intake-report-indexes')
 $start = [array]::IndexOf(($checked | ForEach-Object { $_.Substring(0, 3) }), $From)
 $newChangesets = @($checked[$start..($checked.Count - 1)])
 $newChangeset = $newChangesets[0]
@@ -70,6 +75,9 @@ $has026 = $newChangesets -contains '026-legal-holds'
 $has027 = $newChangesets -contains '027-access-requests'
 $has028 = $newChangesets -contains '028-sensitivity-level-changes'
 $has029 = $newChangesets -contains '029-document-duplicate-receipts'
+$has030 = $newChangesets -contains '030-tenant-time-zone'
+$has031 = $newChangesets -contains '031-intake-report-indexes'
+$reportIndexes = @('idx_submissions_tenant_created', 'idx_documents_tenant_ingested', 'idx_audit_events_redaction_old_sha')
 $roleTables = @('role_conflict_problems', 'role_group_mappings_seen', 'role_mapping_notices')
 $run = Join-Path $root ('.runtime\schema-upgrade\' + (Get-Date -Format 'yyyyMMdd-HHmmss'))
 New-Item -ItemType Directory -Force -Path $run | Out-Null
@@ -139,8 +147,13 @@ function Invoke-SchemaStep([string[]]$StepArgs) {
 $otherTablesSql = @"
 select string_agg(t.relname || '=' || (xpath('/row/c/text()', query_to_xml(format('select count(*) || '':'' || coalesce(md5(string_agg(x::text, ''|'' order by x::text)), '''') as c from %I x', t.relname), false, true, '')))[1]::text, ',' order by t.relname)
   from pg_stat_user_tables t
- where t.relname not in ('documents', 'record_sensitivity_levels', 'role_conflict_problems', 'role_group_mappings_seen', 'role_mapping_notices', 'legal_holds', 'access_requests', 'sensitivity_level_changes', 'document_duplicate_receipts', 'databasechangelog', 'databasechangeloglock');
+ where t.relname not in ('documents', 'record_sensitivity_levels', 'role_conflict_problems', 'role_group_mappings_seen', 'role_mapping_notices', 'legal_holds', 'access_requests', 'sensitivity_level_changes', 'document_duplicate_receipts', 'tenants', 'databasechangelog', 'databasechangeloglock');
 "@
+# Task 0032: tenants with every column it had before 030 (030 adds time_zone, null for every existing tenant).
+$tenantsOldColumnsSql = "select count(*) || ':' || md5(string_agg((to_jsonb(x) - 'time_zone')::text, '|' order by x.tenant_id)) from tenants x;"
+$hasTimeZoneSql = "select count(*) from information_schema.columns where table_name = 'tenants' and column_name = 'time_zone';"
+$reportIndexesSql = "select count(*) from pg_indexes where indexname in ('" + ($reportIndexes -join "', '") + "');"
+$duplicateTableBefore = if ($has029) { '0' } else { '1' }
 $levelColumn = if ($has023) { '' } else { ', sensitivity_level' }
 $documentsOldColumnsSql = @"
 select count(*) || ':' || md5(string_agg(row(document_id, tenant_id, submission_id, source_id, source_document_id, producer_idempotency_key,
@@ -214,9 +227,11 @@ revoke all on database $db from public;
     Assert-That ((Get-Value $hasHoldTableSql) -eq $holdTableBefore) "legal_holds should $(if ($has026) { 'not ' })exist at the previous version"
     Assert-That ((Get-Value $hasRequestTableSql) -eq $requestTableBefore) "access_requests should $(if ($has027) { 'not ' })exist at the previous version"
     Assert-That ((Get-Value $hasChangeTableSql) -eq $changeTableBefore) "sensitivity_level_changes should $(if ($has028) { 'not ' })exist at the previous version"
-    Assert-That ((Get-Value $hasDuplicateTableSql) -eq '0') 'document_duplicate_receipts already exists at the previous version'
+    Assert-That ((Get-Value $hasDuplicateTableSql) -eq $duplicateTableBefore) "document_duplicate_receipts should $(if ($has029) { 'not ' })exist at the previous version"
+    Assert-That ((Get-Value $hasTimeZoneSql) -eq $(if ($has030) { '0' } else { '1' })) "tenants.time_zone should $(if ($has030) { 'not ' })exist at the previous version"
+    Assert-That ((Get-Value $reportIndexesSql) -eq '0') 'the report indexes already exist at the previous version'
     $prevCount = Get-Value 'select count(*) from databasechangelog;'
-    $missing = @(); if ($has023) { $missing += 'no sensitivity_level' }; if ($has024) { $missing += 'no record_sensitivity_levels' }; if ($has025) { $missing += 'no role tables' }; if ($has026) { $missing += 'no legal_holds' }; if ($has027) { $missing += 'no access_requests' }; if ($has028) { $missing += 'no sensitivity_level_changes' }; $missing += 'no document_duplicate_receipts'
+    $missing = @(); if ($has023) { $missing += 'no sensitivity_level' }; if ($has024) { $missing += 'no record_sensitivity_levels' }; if ($has025) { $missing += 'no role tables' }; if ($has026) { $missing += 'no legal_holds' }; if ($has027) { $missing += 'no access_requests' }; if ($has028) { $missing += 'no sensitivity_level_changes' }; if ($has029) { $missing += 'no document_duplicate_receipts' }; if ($has030) { $missing += 'no tenants.time_zone' }; $missing += 'no report indexes'
     Write-Step "1. Previous version (changesets up to $($lastPrevious.Substring(0, 3)))" $w.Elapsed.TotalSeconds "$prevCount changesets, last $last, $($missing -join ', ')"
 
     # ------------------------------------------------------------ 2. data at the previous version
@@ -261,9 +276,11 @@ values ('40000000-0000-0000-0000-000000000001', '10000000-0000-0000-0000-0000000
     }
     $docsBefore = Get-Value $documentsOldColumnsSql
     $othersBefore = Get-Value $otherTablesSql
+    $tenantsBefore = Get-Value $tenantsOldColumnsSql
+    Assert-That ($tenantsBefore -match '^[1-9][0-9]*:[0-9a-f]{32}$') "tenants fingerprint looks wrong: $tenantsBefore"
     # The fingerprints must really hold the rows, or "unchanged" below would prove nothing.
     Assert-That ($docsBefore -match '^4:[0-9a-f]{32}$') "documents fingerprint looks wrong: $docsBefore"
-    Assert-That ($othersBefore -match '(^|,)tenants=1:[0-9a-f]{32}(,|$)' -and $othersBefore -match '(^|,)submissions=1:[0-9a-f]{32}(,|$)' -and $othersBefore -match '(^|,)ingestion_sources=1:[0-9a-f]{32}(,|$)') "table fingerprints look wrong: $othersBefore"
+    Assert-That ($othersBefore -match '(^|,)submissions=1:[0-9a-f]{32}(,|$)' -and $othersBefore -match '(^|,)ingestion_sources=1:[0-9a-f]{32}(,|$)') "table fingerprints look wrong: $othersBefore"
     $levelsNote = if ($has023) { '' } else { '; levels CONFIDENTIAL, HIGHLY_CONFIDENTIAL, STANDARD, STANDARD' }
     Write-Step '2. Data at the previous version' $w.Elapsed.TotalSeconds "4 documents (available, received, failed, deleted)$levelsNote"
 
@@ -320,6 +337,16 @@ values ('40000000-0000-0000-0000-000000000001', '10000000-0000-0000-0000-0000000
             Assert-That ($upgradeText.Contains($c)) "the reviewable SQL lacks $c"
         }
     }
+    if ($has030) {
+        foreach ($c in @('add column time_zone', 'ck_tenants_time_zone')) {
+            Assert-That ($upgradeText.Contains($c)) "the reviewable SQL lacks $c"
+        }
+    }
+    if ($has031) {
+        foreach ($c in $reportIndexes) {
+            Assert-That ($upgradeText.Contains("create index concurrently $c")) "the reviewable SQL lacks create index concurrently $c"
+        }
+    }
     Assert-That (-not ($upgradeText -match "::$lastPrevious::")) 'the reviewable SQL repeats an already applied changeset'
     Assert-That ((Get-Value $hasColumnSql) -eq $hasColumn) 'sql changed the database (documents)'
     Assert-That ((Get-Value $hasTableSql) -eq $recordTableBefore) 'sql changed the database (record_sensitivity_levels)'
@@ -327,7 +354,9 @@ values ('40000000-0000-0000-0000-000000000001', '10000000-0000-0000-0000-0000000
     Assert-That ((Get-Value $hasHoldTableSql) -eq $holdTableBefore) 'sql changed the database (legal_holds)'
     Assert-That ((Get-Value $hasRequestTableSql) -eq $requestTableBefore) 'sql changed the database (access_requests)'
     Assert-That ((Get-Value $hasChangeTableSql) -eq $changeTableBefore) 'sql changed the database (sensitivity_level_changes)'
-    Assert-That ((Get-Value $hasDuplicateTableSql) -eq '0') 'sql changed the database (document_duplicate_receipts)'
+    Assert-That ((Get-Value $hasDuplicateTableSql) -eq $duplicateTableBefore) 'sql changed the database (document_duplicate_receipts)'
+    Assert-That ((Get-Value $hasTimeZoneSql) -eq $(if ($has030) { '0' } else { '1' })) 'sql changed the database (tenants.time_zone)'
+    Assert-That ((Get-Value $reportIndexesSql) -eq '0') 'sql changed the database (report indexes)'
     Write-Step '3b. Schema step sql (the SQL to review)' $sq.Seconds "only $($newChangesets.ForEach({ $_.Substring(0, 3) }) -join ' and '); database unchanged"
 
     $up = Invoke-SchemaStep @('update')
@@ -338,6 +367,7 @@ values ('40000000-0000-0000-0000-000000000001', '10000000-0000-0000-0000-0000000
     $w = [System.Diagnostics.Stopwatch]::StartNew()
     Assert-That ((Get-Value $documentsOldColumnsSql) -eq $docsBefore) 'a document column that existed before changed'
     Assert-That ((Get-Value $otherTablesSql) -eq $othersBefore) 'a table other than documents and record_sensitivity_levels changed'
+    Assert-That ((Get-Value $tenantsOldColumnsSql) -eq $tenantsBefore) 'a tenant column that existed before changed'
     if ($has023) {
         $levels = Get-Value "select string_agg(sensitivity_level, ',' order by document_id) from documents;"
         Assert-That ($levels -eq 'STANDARD,STANDARD,STANDARD,STANDARD') "every existing document should be STANDARD, got $levels"
@@ -505,25 +535,47 @@ rollback;
         Write-Step '4h. After 029: document_duplicate_receipts' $w.Elapsed.TotalSeconds "empty$(if (-not $has028) { '; the older level change unchanged' })"
         $w = [System.Diagnostics.Stopwatch]::StartNew()
     }
-    if ($has027 -or $has028 -or $has029) {
+    if ($has030) {
+        Assert-That ((Get-Value $hasTimeZoneSql) -eq '1') 'tenants.time_zone was not created'
+        $column = Get-Value "select is_nullable || ' ' || data_type || ' ' || character_maximum_length || ' ' || coalesce(column_default, 'no default') from information_schema.columns where table_name = 'tenants' and column_name = 'time_zone';"
+        Assert-That ($column -eq 'YES character varying 64 no default') "time_zone should be a nullable varchar(64) without a default; is $column"
+        Assert-That ((Get-Value 'select count(*) from tenants where time_zone is not null;') -eq '0') 'every existing tenant should keep the install default (time_zone null)'
+        foreach ($bad in @("' UTC'", "'UTC '", "''", "repeat('x', 65)")) {
+            $r = Invoke-Sql -Database $db -AsOwner -AllowFailure -Sql "update tenants set time_zone = $bad where tenant_id = '10000000-0000-0000-0000-000000000001';"
+            Assert-That ($r.Code -ne 0) "the time_zone check should refuse $bad"
+        }
+        $null = Invoke-Sql -Database $db -AsOwner -Sql "update tenants set time_zone = 'America/New_York' where tenant_id = '10000000-0000-0000-0000-000000000001'; update tenants set time_zone = null where tenant_id = '10000000-0000-0000-0000-000000000001';"
+        Write-Step '4i. After 030: tenants.time_zone' $w.Elapsed.TotalSeconds 'nullable, null for every tenant; check refuses padded, blank and long values'
+        $w = [System.Diagnostics.Stopwatch]::StartNew()
+    }
+    if ($has031) {
+        Assert-That ((Get-Value $reportIndexesSql) -eq '3') 'the three report indexes were not created'
+        $invalid = Get-Value ("select count(*) from pg_index i join pg_class c on c.oid = i.indexrelid where not i.indisvalid and c.relname in ('" + ($reportIndexes -join "', '") + "');")
+        Assert-That ($invalid -eq '0') 'a report index is INVALID (an interrupted concurrent build)'
+        $partial = Get-Value "select indexdef from pg_indexes where indexname = 'idx_audit_events_redaction_old_sha';"
+        Assert-That ($partial -match "oldContentSha256" -and $partial -match "DOCUMENT_PERMANENTLY_REDACTED") "the redaction index should be on oldContentSha256, for redactions only: $partial"
+        Write-Step '4j. After 031: report indexes' $w.Elapsed.TotalSeconds 'three indexes, valid; the old-checksum index is partial'
+        $w = [System.Diagnostics.Stopwatch]::StartNew()
+    }
+    if ($has027 -or $has028 -or $has029 -or $has030 -or $has031) {
 
         # The application's own repositories and services against this database: holds and the retention cleanup
         # (LegalHoldPostgresTest), requests, grants, expiry and the table's checks (AccessRequestPostgresTest), exact
-        # duplicates (DuplicateIntakePostgresTest). The scratch owner's password goes to the child process only, as
+        # duplicates (DuplicateIntakePostgresTest), uncorrected copies and the Daily intake report (IntakeReportPostgresTest). The scratch owner's password goes to the child process only, as
         # SDV_IT_JDBC_PASSWORD.
         $w = [System.Diagnostics.Stopwatch]::StartNew()
         $mvn = (Get-Command mvn.cmd -ErrorAction Stop).Source
         $it = Invoke-Native -File $mvn -Arguments @('-o', '-f', (Join-Path $root 'backend\pom.xml'), '-pl', 'sdv-web', '-am', 'test',
-            '-Dtest=LegalHoldPostgresTest,AccessRequestPostgresTest,DuplicateIntakePostgresTest', '-Dsurefire.failIfNoSpecifiedTests=false') -Environment @{
+            '-Dtest=LegalHoldPostgresTest,AccessRequestPostgresTest,DuplicateIntakePostgresTest,IntakeReportPostgresTest', '-Dsurefire.failIfNoSpecifiedTests=false') -Environment @{
             SDV_IT_JDBC_URL = $hostUrl; SDV_IT_JDBC_USER = $owner; SDV_IT_JDBC_PASSWORD = $ownerPassword }
-        foreach ($test in @('legalhold.LegalHoldPostgresTest', 'approvals.AccessRequestPostgresTest', 'document.DuplicateIntakePostgresTest')) {
+        foreach ($test in @('legalhold.LegalHoldPostgresTest', 'approvals.AccessRequestPostgresTest', 'document.DuplicateIntakePostgresTest', 'reports.IntakeReportPostgresTest')) {
             $itLine = ($it.Out -split "`n" | Where-Object { $_ -match ('Tests run: .* in com\.sdv\.platform\.application\.' + [regex]::Escape($test)) } | Select-Object -First 1)
             if ($it.Code -ne 0 -or -not $itLine -or $itLine -notmatch 'Tests run: 1, Failures: 0, Errors: 0, Skipped: 0') {
                 $it.Out | Set-Content -Encoding utf8 (Join-Path $run 'postgres-tests.log')
                 throw "FAIL: $test did not pass (exit $($it.Code)): $(if ($itLine) { $itLine.Trim() } else { 'no result line' }). Log: $run\postgres-tests.log"
             }
         }
-        Write-Step '4f. Holds, requests, grants and duplicates on PostgreSQL' $w.Elapsed.TotalSeconds 'holds and cleanup; grant used once (also racing), expiry, self-decision refused, level history, duplicates, checks'
+        Write-Step '4f. Holds, requests, grants, duplicates and reports on PostgreSQL' $w.Elapsed.TotalSeconds 'holds and cleanup; grants, expiry, level history, duplicates, uncorrected copies, the intake report, checks'
         $w = [System.Diagnostics.Stopwatch]::StartNew()
     }
     Write-Step '4. After: nothing else changed' $w.Elapsed.TotalSeconds 'other document columns and every other table unchanged'

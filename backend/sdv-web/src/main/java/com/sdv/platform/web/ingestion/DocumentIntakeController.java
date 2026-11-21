@@ -20,10 +20,17 @@ import java.util.UUID;
 public class DocumentIntakeController {
     private final SecurityContextFacade security;
     private final DocumentIntakeService intake;
+    private final IntakeRefusals refusals;
 
-    public DocumentIntakeController(SecurityContextFacade security, DocumentIntakeService intake) {
+    @org.springframework.beans.factory.annotation.Autowired
+    public DocumentIntakeController(SecurityContextFacade security, DocumentIntakeService intake, IntakeRefusals refusals) {
         this.security = security;
         this.intake = intake;
+        this.refusals = refusals;
+    }
+
+    public DocumentIntakeController(SecurityContextFacade security, DocumentIntakeService intake) {
+        this(security, intake, IntakeRefusals.NONE);
     }
 
     @PostMapping(consumes = "application/pdf")
@@ -36,20 +43,28 @@ public class DocumentIntakeController {
             @RequestHeader(name = RecordSensitivityGuard.HEADER, required = false) String recordSensitivityLevel,
             HttpServletRequest request) throws IOException {
         IngestionSourcePrincipal principal = security.requireIngestionSourcePrincipal();
-        RecordSensitivityGuard.refuseIfPresent(recordSensitivityLevel);
-        DocumentReceipt receipt = intake.receive(
-                principal.tenantId(),
-                principal.sourceId(),
-                submissionId,
-                sourceDocumentId,
-                idempotencyKey,
-                filename,
-                request.getContentType(),
-                sensitivityLevel,
-                request.getContentLengthLong(),
-                request.getInputStream(),
-                principal.subject(),
-                correlationId());
+        DocumentReceipt receipt;
+        try {
+            RecordSensitivityGuard.refuseIfPresent(recordSensitivityLevel);
+            receipt = intake.receive(
+                    principal.tenantId(),
+                    principal.sourceId(),
+                    submissionId,
+                    sourceDocumentId,
+                    idempotencyKey,
+                    filename,
+                    request.getContentType(),
+                    sensitivityLevel,
+                    request.getContentLengthLong(),
+                    request.getInputStream(),
+                    principal.subject(),
+                    correlationId());
+        } catch (RuntimeException | IOException ex) {
+            // Task 0032: a refused upload is counted by the Daily intake report, with its code.
+            refusals.uploadRefused(principal, submissionId, sourceDocumentId != null && !sourceDocumentId.isBlank()
+                    ? sourceDocumentId : idempotencyKey, ex, correlationId());
+            throw ex;
+        }
 
         // Task 0031: an exact duplicate stores nothing new, so it is 200 with the existing document, like a retry.
         HttpStatus status = receipt.idempotentReplay() || receipt.exactDuplicateContent() ? HttpStatus.OK : HttpStatus.CREATED;

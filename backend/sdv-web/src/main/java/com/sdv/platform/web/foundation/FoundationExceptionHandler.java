@@ -61,6 +61,20 @@ public class FoundationExceptionHandler {
         return error(code(ex, "BAD_REQUEST"), ex.getMessage());
     }
 
+    /**
+     * Task 0032: the code this handler sends for a refusal (a 4xx answer), as the sender sees it; null for anything that
+     * is not a refusal (a 5xx failure). The intake endpoints record their refusals with it (INTAKE_REFUSED).
+     */
+    public static String refusalCode(Throwable ex) {
+        if (ex instanceof com.sdv.platform.domain.error.CodedRefusal coded) return coded.errorCode().code();
+        if (ex instanceof PdfTooLargeException) return "PDF_TOO_LARGE";
+        if (ex instanceof InvalidPdfException) return "INVALID_PDF";
+        if (ex instanceof IllegalArgumentException) return "BAD_REQUEST";
+        if (ex instanceof NoSuchElementException) return "NOT_FOUND";
+        if (ex instanceof IllegalStateException) return "CONFLICT";
+        return null;
+    }
+
     /** A refusal with a stable SDV-AREA-NNN code (docs/api/error-codes.md) sends it; others keep the generic code. */
     private static String code(RuntimeException ex, String generic) {
         return ex instanceof com.sdv.platform.domain.error.CodedRefusal coded ? coded.errorCode().code() : generic;

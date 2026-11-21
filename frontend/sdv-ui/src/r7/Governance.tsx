@@ -9,6 +9,7 @@ import { SearchFields } from './SearchFields'
 import { Approvals, waitingSummary, type WaitingSummary } from './Approvals'
 import { LegalHolds } from './LegalHolds'
 import { pendingRequests } from './liveApi'
+import { Reports } from './Reports'
 
 export function AreaFrame({ crumbs, title, lede, actions, children, attention = [], counts = {}, sub }: { crumbs: string[]; title: string; lede: ReactNode; actions?: ReactNode; children: ReactNode; attention?: string[]; /** task 0030: a count pill per tab id */ counts?: Record<string, { count: number; label: string }>; sub?: ReactNode }) {
   const { route, navigate } = useStore()
@@ -28,6 +29,8 @@ const LEDE: Record<string, string> = {
   retention: 'How long Vero keeps documents before deleting them for good.',
   holds: 'Documents on hold are never deleted by the daily cleanup, whatever the keeping rule says.',
   metadata: 'Which fields people can search, how they match, and what a record is called.',
+  // Task 0032, board Reports-Intake.
+  reports: 'Counts only. No document contents, titles or names.',
 }
 
 export function Governance() {
@@ -53,6 +56,7 @@ export function Governance() {
       {route.tab === 'holds' && <LegalHolds />}
       {route.tab === 'metadata' && <SearchFields />}
       {route.tab === 'approvals' && <Approvals onWaiting={setWaiting} />}
+      {route.tab === 'reports' && <Reports />}
     </AreaFrame>
   )
 }

@@ -25,17 +25,32 @@ import java.util.UUID;
 public class SubmissionController {
     private final SecurityContextFacade security;
     private final SubmissionService submissions;
+    private final IntakeRefusals refusals;
 
-    public SubmissionController(SecurityContextFacade security, SubmissionService submissions) {
+    @org.springframework.beans.factory.annotation.Autowired
+    public SubmissionController(SecurityContextFacade security, SubmissionService submissions, IntakeRefusals refusals) {
         this.security = security;
         this.submissions = submissions;
+        this.refusals = refusals;
+    }
+
+    public SubmissionController(SecurityContextFacade security, SubmissionService submissions) {
+        this(security, submissions, IntakeRefusals.NONE);
     }
 
     @PostMapping
     public ResponseEntity<SubmissionResponse> create(@RequestBody CreateSubmissionRequest request) {
         IngestionSourcePrincipal principal = security.requireIngestionSourcePrincipal();
-        SubmissionDetails result = submissions.create(
-                principal.tenantId(), principal.sourceId(), request.toCommand(), principal.subject(), correlationId());
+        SubmissionDetails result;
+        try {
+            result = submissions.create(
+                    principal.tenantId(), principal.sourceId(), request.toCommand(), principal.subject(), correlationId());
+        } catch (RuntimeException ex) {
+            // Task 0032: a refused delivery is counted by the Daily intake report, with its code, although no
+            // submission exists.
+            refusals.submissionRefused(principal, request.sourceSubmissionId(), ex, correlationId());
+            throw ex;
+        }
         HttpStatus status = result.idempotentReplay() ? HttpStatus.OK : HttpStatus.CREATED;
         return ResponseEntity.status(status).body(SubmissionResponse.from(result));
     }

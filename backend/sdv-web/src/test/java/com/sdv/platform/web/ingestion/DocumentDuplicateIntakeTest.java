@@ -422,4 +422,93 @@ class DocumentDuplicateIntakeTest {
             verify(documents, never()).insertDuplicateReceipt(any());
         }
     }
+
+    // ------------------------------------------------------- task 0032 (0): a corrected document sent again
+
+    /** The record's document after a permanent correction: its checksum now is another; SHA is what it was before. */
+    private static final String CORRECTED_SHA = "c".repeat(64);
+
+    private Document corrected(SensitivityLevel level, DocumentStatus status) {
+        return new Document(ORIGINAL, TENANT, EARLIER_SUBMISSION, SOURCE, "first-delivery", null, "contract.pdf",
+                "application/pdf", CORRECTED_SHA, 900L, status, null, NOW.minusSeconds(86_400), null,
+                NOW.minusSeconds(86_000), 1, null, null, level);
+    }
+
+    private void correctedExists(SensitivityLevel level, String lockedStatus) {
+        when(documents.findCorrectedOriginalOf(TENANT, SOURCE, List.of(EARLIER_SUBMISSION, SUBMISSION), SHA))
+                .thenReturn(Optional.of(corrected(level, DocumentStatus.AVAILABLE)));
+        when(levels.lockDocument(TENANT, ORIGINAL)).thenReturn(Optional.of(
+                new AccessRequestRepository.LockedDocument(ORIGINAL, lockedStatus, level)));
+        when(documents.findDocumentByIdForTenant(TENANT, ORIGINAL)).thenReturn(Optional.of(corrected(level, DocumentStatus.AVAILABLE)));
+    }
+
+    @Test
+    void anUncorrectedCopyOfACorrectedDocumentIsNotStoredAndIsAnsweredWithTheCorrectedDocument() throws Exception {
+        correctedExists(SensitivityLevel.CONFIDENTIAL, "AVAILABLE");
+
+        upload("doc-2", null, "CONFIDENTIAL").andExpect(status().isOk())
+                .andExpect(jsonPath("$.documentId").value(ORIGINAL.toString()))
+                .andExpect(jsonPath("$.sourceDocumentId").value("doc-2"))
+                .andExpect(jsonPath("$.receiptAcknowledgement").value("DUPLICATE_ALREADY_STORED"))
+                .andExpect(jsonPath("$.duplicate").value(true))
+                .andExpect(jsonPath("$.idempotentReplay").value(false))
+                // The corrected version is what Vero keeps: its checksum, not the arrival's.
+                .andExpect(jsonPath("$.contentSha256").value(CORRECTED_SHA));
+
+        // The original after correction is not stored: no document, storage or key row, and the bytes are removed.
+        nothingStored();
+        verify(storage).delete(TENANT, volume, "tmp-object");
+        // Same scope as an exact duplicate (tenant, sending system, record's submissions), under the same lock.
+        verify(documents).lockDuplicateCheck(TENANT, SOURCE, RECORD_KEY, SHA);
+        verify(documents).findCorrectedOriginalOf(TENANT, SOURCE, List.of(EARLIER_SUBMISSION, SUBMISSION), SHA);
+        // The corrected document is unchanged (same level: nothing raised).
+        verify(levels, never()).updateDocumentLevel(any(), any(), any());
+
+        DuplicateReceipt receipt = recordedDuplicate();
+        assertEquals(ORIGINAL, receipt.existingDocumentId());
+        assertEquals(SHA, receipt.contentSha256(), "the arrival's checksum, so a retry finds it and the report counts it");
+        assertEquals("doc-2", receipt.sourceDocumentId());
+        verify(documents).markExpectedDocumentReceived(eq(TENANT), eq(SUBMISSION), eq("doc-2"), isNull(), any(Instant.class));
+
+        AuditEvent event = only("DOCUMENT_UNCORRECTED_COPY_RECEIVED");
+        assertEquals("SOURCE", event.actorType());
+        assertEquals(ORIGINAL.toString(), event.targetId());
+        assertTrue(event.safeDetailsJson().contains("\"contentSha256\":\"" + SHA + "\""), event.safeDetailsJson());
+        assertTrue(event.safeDetailsJson().contains("\"correctedContentSha256\":\"" + CORRECTED_SHA + "\""), event.safeDetailsJson());
+        assertTrue(event.safeDetailsJson().contains("\"duplicateId\":\"" + receipt.duplicateId() + "\""));
+        assertFalse(event.safeDetailsJson().contains(".pdf"), "no file name");
+        assertFalse(event.safeDetailsJson().contains("300000000001"), "no contract number");
+        assertTrue(events().stream().noneMatch(e -> e.action().equals("DOCUMENT_DUPLICATE_RECEIVED")));
+    }
+
+    @Test
+    void anUncorrectedCopyWithAHigherLevelRaisesTheCorrectedDocumentLikeAnyDuplicate() throws Exception {
+        correctedExists(SensitivityLevel.STANDARD, "AVAILABLE");
+        upload("doc-2", null, "HIGHLY_CONFIDENTIAL").andExpect(status().isOk())
+                .andExpect(jsonPath("$.receiptAcknowledgement").value("DUPLICATE_ALREADY_STORED"))
+                .andExpect(jsonPath("$.sensitivityLevel").value("HIGHLY_CONFIDENTIAL"));
+        verify(levels).updateDocumentLevel(TENANT, ORIGINAL, SensitivityLevel.HIGHLY_CONFIDENTIAL);
+        only("DOCUMENT_SENSITIVITY_RAISED");
+        only("DOCUMENT_UNCORRECTED_COPY_RECEIVED");
+        nothingStored();
+    }
+
+    @Test
+    void anExactDuplicateIsFoundFirstAndAGoneCorrectedDocumentNoLongerCounts() throws Exception {
+        // The exact duplicate wins: the corrected lookup isn't needed.
+        originalExists(SensitivityLevel.STANDARD);
+        upload("doc-2", null, null).andExpect(status().isOk());
+        verify(documents, never()).findCorrectedOriginalOf(any(), any(), any(), any());
+        only("DOCUMENT_DUPLICATE_RECEIVED");
+
+        // A corrected document deleted, or being deleted, by the cleanup before its row was locked: stored as new.
+        reset(documents);
+        setUp();
+        clearInvocations(audit, storage);
+        correctedExists(SensitivityLevel.STANDARD, "RETENTION_DELETING");
+        upload("doc-3", null, null).andExpect(status().isCreated())
+                .andExpect(jsonPath("$.receiptAcknowledgement").value("RECEIVED"));
+        verify(documents).insertDocument(any());
+        verify(documents, never()).insertDuplicateReceipt(any());
+    }
 }

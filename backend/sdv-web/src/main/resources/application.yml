@@ -104,3 +104,8 @@ sdv:
     tenant-grant-hours: ${SDV_APPROVALS_TENANT_GRANT_HOURS:}
     tenant-pending-days: ${SDV_APPROVALS_TENANT_PENDING_DAYS:}
 
+  # Task 0032: the time zone a tenant's days are counted in ("today" in the Daily intake report) when the tenant has no
+  # setting of its own (tenants.time_zone). An IANA name such as America/New_York; an unknown name stops the server.
+  tenant-defaults:
+    time-zone: ${SDV_DEFAULT_TIME_ZONE:UTC}
+

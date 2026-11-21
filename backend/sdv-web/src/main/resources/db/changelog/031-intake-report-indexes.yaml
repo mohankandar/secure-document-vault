@@ -1,0 +1,12 @@
+databaseChangeLog:
+  - changeSet:
+      id: 031-intake-report-indexes
+      author: sdv
+      # CREATE INDEX CONCURRENTLY cannot run inside a transaction.
+      runInTransaction: false
+      changes:
+        - sqlFile:
+            path: db/changelog/031-intake-report-indexes.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true

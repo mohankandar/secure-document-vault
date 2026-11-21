@@ -1019,3 +1019,45 @@ button.ws-doc.locked { cursor: pointer; text-align: left; font: inherit; color: 
 .keep-held { margin-top: 6px; }
 .keep-held .v-link { color: var(--primary-soft-ink); font-weight: 500; }
 .au-level { min-width: 170px; }
+
+/* Task 0032, board Reports-Intake: the Business admin's Reports tab (Daily intake). */
+.rpt-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.rpt-subtabs { display: flex; gap: 6px; }
+.rpt-subtabs button { font: inherit; font-size: 14px; padding: 6px 12px; border-radius: 8px; color: var(--ink-2); background: transparent; border: 1px solid transparent; cursor: pointer; }
+.rpt-subtabs button.on { background: var(--surface); border-color: var(--line); color: var(--ink); font-weight: 500; }
+.rpt-subtabs button:disabled { cursor: not-allowed; }
+.rpt-chip { height: 34px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--surface); font: inherit; font-size: 13px; display: inline-flex; align-items: center; gap: 8px; padding: 0 12px; color: var(--ink); cursor: pointer; white-space: nowrap; }
+.rpt-chip b { font-weight: 500; color: var(--ink-3); }
+.rpt-chip svg { color: var(--ink-2); }
+.rpt-select { position: relative; }
+.rpt-select select { appearance: none; border: 0; background: transparent; font: inherit; color: inherit; padding: 0 2px 0 0; cursor: pointer; max-width: 220px; field-sizing: content; }
+.rpt-zone { font-size: 12px; }
+.rpt-daywrap { position: relative; }
+.rpt-pop { position: absolute; z-index: 20; top: 40px; right: 0; width: 300px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; box-shadow: var(--shadow-2); padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+.rpt-field { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--ink-2); }
+.rpt-field input { height: 34px; border: 1px solid var(--line-strong); border-radius: var(--radius-input); padding: 0 8px; font: inherit; font-size: 13px; color: var(--ink); background: var(--surface); }
+.rpt-kpis { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; }
+.rpt-kpi { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.rpt-kpi span { font-size: 12px; color: var(--ink-3); }
+.rpt-kpi b { font-size: 26px; font-weight: 600; letter-spacing: -0.3px; font-variant-numeric: tabular-nums; }
+.rpt-kpi i { font-style: normal; font-size: 12px; color: var(--ink-2); }
+.rpt-kpi.bad b, .rpt-bad { color: var(--danger); }
+.rpt-card { overflow-x: auto; }
+.rpt-table { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
+.rpt-table th { font-size: 12px; font-weight: 500; color: var(--ink-3); text-align: right; padding: 9px 14px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.rpt-table th:first-child, .rpt-table td:first-child { text-align: left; }
+.rpt-table td { padding: 9px 14px; border-bottom: 1px solid var(--line-soft); text-align: right; white-space: nowrap; }
+.rpt-table tr.sys td { background: color-mix(in oklab, var(--surface-2) 50%, var(--surface)); font-weight: 600; }
+.rpt-table tr.tot td { font-weight: 600; border-top: 1px solid var(--line); border-bottom: 0; }
+.rpt-table td.rpt-note { text-align: left; font-size: 12px; }
+.rpt-sys { display: inline-flex; align-items: center; gap: 8px; }
+.rpt-tg { min-height: 26px; height: 26px; padding: 0 8px; }
+.rpt-codes { display: inline-flex; gap: 4px; justify-content: flex-end; }
+.rpt-code { font-family: var(--font-mono); font-size: 12px; background: var(--danger-soft); color: var(--danger); border-radius: 4px; padding: 1px 5px; }
+.rpt-foot { font-size: 13px; margin: 0; }
+@media (max-width: 1100px) { .rpt-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 600px) { .rpt-kpis { grid-template-columns: 1fr; } .rpt-pop { right: auto; left: 0; } }
+
+/* Task 0032: a second notice (sent again) stacks above the first (requests). */
+.v-notice ~ .v-notice { bottom: 230px; }
+@media (max-width: 900px) { .v-notice ~ .v-notice { bottom: 290px; } }

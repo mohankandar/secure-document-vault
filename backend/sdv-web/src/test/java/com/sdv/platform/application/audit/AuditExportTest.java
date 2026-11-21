@@ -179,6 +179,13 @@ class AuditExportTest {
         assertEquals("Ari Admin opened a document", s.apply("DOCUMENT_VIEW_OPENED", null));
         assertEquals("Ari Admin loaded page 3 of a document", s.apply("DOCUMENT_PAGE_VIEWED", "{\"page\":3}"));
         assertEquals("Ari Admin sent a document again; Vero kept the copy it already had", s.apply("DOCUMENT_DUPLICATE_RECEIVED", null));
+        // Task 0032.
+        assertEquals("Ari Admin sent an uncorrected copy of a corrected document; nothing was stored", s.apply("DOCUMENT_UNCORRECTED_COPY_RECEIVED", null));
+        assertEquals("Ari Admin sent a delivery that Vero refused (SDV-SEN-001)", s.apply("INTAKE_REFUSED", "{\"code\":\"SDV-SEN-001\"}"));
+        assertEquals("Ari Admin sent a delivery that Vero refused", s.apply("INTAKE_REFUSED", null));
+        assertEquals("Ari Admin exported the Daily intake report (1 line)", s.apply("INTAKE_REPORT_EXPORTED", "{\"rowCount\":1}"));
+        assertEquals("Ari Admin exported the Daily intake report (9 lines)", s.apply("INTAKE_REPORT_EXPORTED", "{\"rowCount\":9}"));
+        assertEquals("Ari Admin tried to see the reports without permission", s.apply("AUTHORIZATION_DENIED", "{\"capability\":\"VIEW_INTAKE_REPORTS\"}"));
         assertEquals("Ari Admin changed how long to keep new documents to 7 years", s.apply("RETENTION_POLICY_UPDATED", "{\"defaultRetentionDays\":2555}"));
         assertEquals("Ari Admin changed how long to keep new documents to 1,000 days", s.apply("RETENTION_POLICY_UPDATED", "{\"defaultRetentionDays\":1000}"));
         assertEquals("Ari Admin changed how long to keep new documents: keep them forever", s.apply("RETENTION_POLICY_UPDATED", "{\"indefinite\":true}"));

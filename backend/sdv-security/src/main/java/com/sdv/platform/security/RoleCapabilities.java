@@ -25,7 +25,7 @@ public final class RoleCapabilities {
         MAPPING.put(SdvRole.BUSINESS_ADMIN, EnumSet.of(
                 Capability.CONFIGURE_METADATA_SEARCH, Capability.CONFIGURE_RETENTION,
                 Capability.CONFIGURE_BUSINESS_LIMITS, Capability.CONFIGURE_ROLE_PERMISSIONS,
-                Capability.APPROVE_SENSITIVE_ACCESS, Capability.MANAGE_LEGAL_HOLD));
+                Capability.APPROVE_SENSITIVE_ACCESS, Capability.MANAGE_LEGAL_HOLD, Capability.VIEW_INTAKE_REPORTS));
         MAPPING.put(SdvRole.TENANT_IT_ADMIN, EnumSet.of(
                 Capability.CONFIGURE_INGESTION_SOURCES, Capability.CONFIGURE_TENANT_AUTH,
                 Capability.CONFIGURE_STORAGE_KEY_PROVIDER, Capability.VIEW_TECHNICAL_FAILURES));

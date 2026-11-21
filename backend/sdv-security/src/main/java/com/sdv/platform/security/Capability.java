@@ -27,5 +27,7 @@ public enum Capability {
     REQUEST_SENSITIVE_ACCESS,
     /** Approve or refuse such a request. */
     APPROVE_SENSITIVE_ACCESS,
-    MANAGE_LEGAL_HOLD
+    MANAGE_LEGAL_HOLD,
+    /** Task 0032: the Reports tab (Daily intake): counts only, never contents, titles or names. Business Admin only. */
+    VIEW_INTAKE_REPORTS
 }

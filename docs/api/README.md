@@ -65,4 +65,8 @@ For an exact duplicate (case 2):
 
 The record is the same grouping as for record levels (above): the submissions of one sending system that share the same identifier values. The same file sent by another sending system, or under another record, is stored normally; no flag is set.
 
+**A corrected document sent again** (task 0032). A Document steward may permanently correct (redact) a document; its checksum then changes. If the sending system later sends the original, uncorrected file again for the same record, Vero treats it as case 2 for the corrected document: nothing is stored (so the redacted content does not come back), and the answer is the same `200` with the corrected document's `documentId` and `receiptAcknowledgement: DUPLICATE_ALREADY_STORED`. The checksum is compared with every checksum the record's documents had before a correction. The arrival is recorded and audited as `DOCUMENT_UNCORRECTED_COPY_RECEIVED`, and the record's Document stewards are told ("An uncorrected copy of a corrected document was sent again; nothing was stored"). The same scope applies: tenant, sending system and record. The rules above (its place in the submission, levels, retries, deleted documents) apply in the same way.
+
+**Refusals are counted.** Each refused submission or upload (any `4xx` answer once the sending system is known) is recorded with the code it got (audit event `INTAKE_REFUSED`, with the request ID as sent but no file name or content), so the Business admin's Daily intake report counts it, also when no submission was created.
+
 The sample under `samples/third-party-producer/` demonstrates the contract with raw HTTP calls only.

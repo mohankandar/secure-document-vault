@@ -55,6 +55,12 @@ public class DocumentIntakeService {
     /** Task 0031: the acknowledgement of an exact duplicate, answered with the document Vero already had. */
     public static final String DUPLICATE_ALREADY_STORED = "DUPLICATE_ALREADY_STORED";
     public static final String DUPLICATE_ACTION = "DOCUMENT_DUPLICATE_RECEIVED";
+    /**
+     * Task 0032 (0): a file that matches what a document of the record was before a permanent corrective redaction.
+     * Treated as a duplicate of the corrected document (nothing is stored), with this event instead of
+     * DOCUMENT_DUPLICATE_RECEIVED.
+     */
+    public static final String UNCORRECTED_COPY_ACTION = "DOCUMENT_UNCORRECTED_COPY_RECEIVED";
     /** The reason in the level-change history when a duplicate raises the document it duplicates. */
     static final String DUPLICATE_RAISE_REASON = "Sent again by the sending system with a higher level";
     private static final Set<DocumentStatus> GONE = EnumSet.of(DocumentStatus.EXPIRED_DELETED, DocumentStatus.RETENTION_DELETING);
@@ -337,7 +343,20 @@ public class DocumentIntakeService {
         if (lockedOriginal != null && !GONE.contains(DocumentStatus.valueOf(lockedOriginal.status()))) {
             return recordDuplicate(tenant.tenantId(), source.sourceId(), submissionId, locked, sourceDocumentId,
                     duplicateKey, original, lockedOriginal, sensitivityLevel, contentSha256, contentSizeBytes,
-                    recordKey, now, sourceSubject, correlationId);
+                    recordKey, now, sourceSubject, correlationId, false);
+        }
+
+        // Task 0032 (0): the file is what a document of this record was before a permanent corrective redaction. Storing
+        // it would bring the redacted content back, so it is a duplicate of the corrected document: only the corrected
+        // version is kept. Same scope as an exact duplicate (tenant, sending system, record), under the same lock.
+        Document corrected = documents.findCorrectedOriginalOf(
+                tenant.tenantId(), source.sourceId(), recordSubmissions, contentSha256).orElse(null);
+        AccessRequestRepository.LockedDocument lockedCorrected = corrected == null ? null
+                : levels.lockDocument(tenant.tenantId(), corrected.documentId()).orElse(null);
+        if (lockedCorrected != null && !GONE.contains(DocumentStatus.valueOf(lockedCorrected.status()))) {
+            return recordDuplicate(tenant.tenantId(), source.sourceId(), submissionId, locked, sourceDocumentId,
+                    duplicateKey, corrected, lockedCorrected, sensitivityLevel, contentSha256, contentSizeBytes,
+                    recordKey, now, sourceSubject, correlationId, true);
         }
 
         long aggregateLimit = effectiveMaxAggregateBytes(tenant, source);
@@ -391,7 +410,8 @@ public class DocumentIntakeService {
                                          String sourceDocumentId, String duplicateKey, Document original,
                                          AccessRequestRepository.LockedDocument lockedOriginal,
                                          SensitivityLevel sentLevel, String contentSha256, long contentSizeBytes,
-                                         String recordKey, Instant now, String sourceSubject, String correlationId) {
+                                         String recordKey, Instant now, String sourceSubject, String correlationId,
+                                         boolean uncorrectedCopy) {
         SensitivityLevel own = lockedOriginal.ownLevel();
         boolean raise = sentLevel.compareTo(own) > 0;
         DuplicateReceipt receipt = new DuplicateReceipt(UUID.randomUUID(), tenantId, sourceId, submissionId,
@@ -436,7 +456,11 @@ public class DocumentIntakeService {
         details.put("sentLevel", sentLevel.name());
         details.put("levelOutcome", receipt.levelOutcome().name());
         details.put("documentLevel", ownAfter.name());
-        audit.append(new AuditEvent(UUID.randomUUID(), tenantId, "SOURCE", sourceSubject, DUPLICATE_ACTION,
+        // Task 0032 (0): an uncorrected copy is told apart by its event; its checksum is the one before correction, and
+        // the document it points at is the corrected one. The record's stewards are told (business notices).
+        if (uncorrectedCopy) details.put("correctedContentSha256", original.contentSha256());
+        audit.append(new AuditEvent(UUID.randomUUID(), tenantId, "SOURCE", sourceSubject,
+                uncorrectedCopy ? UNCORRECTED_COPY_ACTION : DUPLICATE_ACTION,
                 "DOCUMENT", original.documentId().toString(), now, correlationId, AuditOutcome.SUCCESS, json(details)));
         return new CommitResult(withLevel(original, ownAfter), false, receipt, false);
     }
