@@ -21,10 +21,15 @@
     5. Task 0037: start with the database unreachable, then bring it up: Vero serves without a restart. Then take it
        away and bring it back again: readiness turns not ready and ready again. "The database" is a local TCP relay
        (test-tools\TcpRelay.java) in front of sdv-postgres; the container itself is never stopped.
+    6. Task 0038: start with the sign-in hub's keys away: readiness 503, a signed-in request 503 SDV-AUT-004. Then
+       bring the keys back: ready again without a restart, and the same request gets 401 SDV-AUT-006 (no sign-in
+       connection is set up). "The sign-in hub" is a local key set (test-tools\KeySetServer.java) with a test key made
+       for the run.
 
-  Since task 0037 a packaged start needs sign-in and a key service. The starts here use placeholder settings that
-  Vero never contacts during these steps: an issuer under the reserved .invalid domain and a key service address on
-  this computer where nothing listens. The placeholder token file holds no secret.
+  Since task 0037 a packaged start needs sign-in and a key service. The starts here use placeholder settings: an issuer
+  under the reserved .invalid domain (never contacted), and a key service address on this computer where nothing
+  listens. The placeholder token file holds no secret. Task 0038: readiness fetches the sign-in keys, so the key set
+  address is the local KeySetServer; its test key and token are made for the run and deleted at the end.
 
   Prerequisite: the application jar is built (.\Build-SDV-All.ps1).
 #>
@@ -35,6 +40,8 @@ param(
     [int]$StartTimeoutSeconds = 120,
     # Task 0037: the local port of the TCP relay that plays the database in step 5.
     [int]$RelayPort = 55433,
+    # Task 0038: the local port of the stand-in sign-in hub's key set (step 6 stops and starts it).
+    [int]$KeysPort = 55434,
     # Drop a scratch database and roles left by an earlier run of this script that could not clean up.
     [switch]$DropLeftover
 )
@@ -89,9 +96,9 @@ function Invoke-Sql {
     $r
 }
 
-function Get-Http([string]$Path) {
+function Get-Http([string]$Path, [hashtable]$Headers = @{}) {
     try {
-        $r = Invoke-WebRequest -UseBasicParsing -Uri ("http://localhost:$Port" + $Path) -TimeoutSec 5
+        $r = Invoke-WebRequest -UseBasicParsing -Uri ("http://localhost:$Port" + $Path) -Headers $Headers -TimeoutSec 5
         # Windows PowerShell returns bytes for content types it doesn't know (the actuator's vnd.spring-boot JSON).
         $content = if ($r.Content -is [byte[]]) { [System.Text.Encoding]::UTF8.GetString($r.Content) } else { $r.Content }
         return [pscustomobject]@{ Status = [int]$r.StatusCode; Body = $content }
@@ -132,7 +139,7 @@ Set-Content -Encoding ascii -NoNewline -Path $placeholderToken -Value 'placehold
 $packagedSettings = [ordered]@{
     SDV_AUTH_MODE = 'enterprise-jwt'
     SDV_AUTH_JWT_ISSUER = 'https://sign-in.invalid/realms/vero-check'
-    SDV_AUTH_JWT_JWK_SET_URI = 'https://sign-in.invalid/realms/vero-check/certs'
+    SDV_AUTH_JWT_JWK_SET_URI = "http://127.0.0.1:$KeysPort/certs"
     SDV_AUTH_JWT_AUDIENCE = 'vero-clean-install'
     SDV_KEY_PROVIDER = 'vault'
     SDV_VAULT_BASE_URL = 'http://127.0.0.1:8299'
@@ -204,6 +211,29 @@ function Stop-Relay {
     }
     $script:relayProcess = $null
 }
+# Task 0038: the stand-in sign-in hub. Readiness fetches its key set; step 6 stops and starts it. The key file and the
+# token file are made for this run only and deleted at the end.
+$script:keysProcess = $null
+$keyFile = Join-Path $run 'test-signing-key.txt'
+$tokenFile = Join-Path $run 'test-token.txt'
+function Start-KeyServer {
+    $script:keysProcess = Start-Process -FilePath 'java' -PassThru -WindowStyle Hidden -WorkingDirectory $run `
+        -ArgumentList @("`"$(Join-Path $root 'test-tools\KeySetServer.java')`"", "$KeysPort", "`"$keyFile`"", "`"$tokenFile`"",
+                        $packagedSettings.SDV_AUTH_JWT_ISSUER, $packagedSettings.SDV_AUTH_JWT_AUDIENCE) `
+        -RedirectStandardOutput (Join-Path $run 'keys.out.log') -RedirectStandardError (Join-Path $run 'keys.err.log')
+    $w = [System.Diagnostics.Stopwatch]::StartNew()
+    while (-not (Test-Port $KeysPort)) {
+        if ($script:keysProcess.HasExited -or $w.Elapsed.TotalSeconds -gt 60) { throw "FAIL: the key set server did not start on $KeysPort" }
+        Start-Sleep -Milliseconds 200
+    }
+}
+function Stop-KeyServer {
+    if ($script:keysProcess -and -not $script:keysProcess.HasExited) {
+        Stop-Process -Id $script:keysProcess.Id -Force
+        $script:keysProcess.WaitForExit(30000) | Out-Null
+    }
+    $script:keysProcess = $null
+}
 # Polls readiness until it has the status wanted; false when it doesn't within the time.
 function Wait-Readiness([int]$want, [int]$seconds) {
     $w = [System.Diagnostics.Stopwatch]::StartNew()
@@ -266,6 +296,7 @@ $state = (Invoke-Native -File 'docker' -Arguments @('inspect', '-f', '{{.State.R
 Assert-That ($state -eq 'true') "$container is not running"
 Assert-That ($null -eq (Get-Http '/actuator/health')) "port $Port is already in use"
 Assert-That (-not (Test-Port $RelayPort)) "relay port $RelayPort is already in use"
+Assert-That (-not (Test-Port $KeysPort)) "key set port $KeysPort is already in use"
 $leftover = (Invoke-Sql -Database 'postgres' -Sql "select count(*) from pg_database where datname = '$db'; select count(*) from pg_roles where rolname in ('$owner','$app');").Out -split "`n" | Where-Object { $_.Trim() } | ForEach-Object { [int]$_ }
 if (($leftover | Measure-Object -Sum).Sum -gt 0) {
     Assert-That $DropLeftover.IsPresent "$db or its scratch roles exist from an earlier run; rerun with -DropLeftover to drop them"
@@ -295,6 +326,9 @@ grant usage on schema public to $app;
 alter default privileges for role $owner in schema public grant select, insert, update, delete on tables to $app;
 "@
     Write-Step 'Create sdv_install_test, owner user and read/write app user' $w.Elapsed.TotalSeconds 'scratch only'
+    $w = [System.Diagnostics.Stopwatch]::StartNew()
+    Start-KeyServer
+    Write-Step 'Start the stand-in sign-in key set (task 0038)' $w.Elapsed.TotalSeconds "http://127.0.0.1:$KeysPort/certs, test key for this run"
 
     # ------------------------------------------------------------ 0. task 0037: packaged start, something switched off
     $t = Assert-StartRefused 'start-0-sign-in-off' @{ SDV_AUTH_MODE = 'disabled' } 'SDV-SYS-006'
@@ -441,6 +475,41 @@ alter default privileges for role $owner in schema public grant select, insert, 
     Stop-Vero
     Stop-Relay
 
+    # ------------------------------------------------------------ 6. task 0038: the sign-in hub's keys away, then back
+    $token = (Get-Content -Raw $tokenFile).Trim()
+    $signature = $token.Substring($token.LastIndexOf('.') + 1)
+    $signedIn = @{ Authorization = "Bearer $token" }
+    Stop-KeyServer
+    $s = Start-Vero 'start-5-sign-in-keys-away'
+    $veroId = $script:appProcess.Id
+    Assert-That (Wait-Readiness 503 30) "readiness should be 503 while the sign-in keys can't be fetched. See $($s.Log)"
+    Assert-That ((Get-Http '/actuator/health/liveness').Status -eq 200) 'liveness should stay 200 while the sign-in keys are away'
+    $away = Get-Http '/api/v1/operations/summary' $signedIn
+    $awayBody = $away.Body | ConvertFrom-Json
+    Assert-That ($away.Status -eq 503 -and $awayBody.code -eq 'SDV-AUT-004' -and $awayBody.reference) "a signed-in request should get 503 SDV-AUT-004 with a reference while the keys are away, got $($away.Status) $($away.Body)"
+    $anonymous = Get-Http '/api/v1/operations/summary'
+    Assert-That ($anonymous.Status -eq 401 -and ($anonymous.Body | ConvertFrom-Json).code -eq 'SDV-AUT-001') "a request without sign-in should get 401 SDV-AUT-001, got $($anonymous.Status) $($anonymous.Body)"
+    $log = Get-Content -Raw $s.Log
+    Assert-That ($log -match "WARN .*code=SDV-AUT-004 The sign-in keys at 127\.0\.0\.1:$KeysPort can't be fetched") 'no readiness WARN line with SDV-AUT-004 and the key set host'
+    Assert-That ($log -match "ERROR .*code=SDV-AUT-004 reference=$([regex]::Escape($awayBody.reference)) .*127\.0\.0\.1:$KeysPort") 'no ERROR line with SDV-AUT-004, the reference and the key set host'
+    Write-Step '6a. Start with the sign-in keys away: not ready, 503 SDV-AUT-004' $s.Seconds 'readiness 503, liveness 200, signed-in request 503 AUT-004 with reference, no token 401 AUT-001, WARN and ERROR lines with the host'
+
+    $w = [System.Diagnostics.Stopwatch]::StartNew()
+    Start-KeyServer
+    Assert-That (Wait-Readiness 200 60) "Vero did not become ready within 60 s of the sign-in keys coming back. See $($s.Log)"
+    Assert-That (-not $script:appProcess.HasExited -and $script:appProcess.Id -eq $veroId) 'Vero was restarted'
+    $back = Get-Http '/api/v1/operations/summary' $signedIn
+    $backBody = $back.Body | ConvertFrom-Json
+    Assert-That ($back.Status -eq 401 -and $backBody.code -eq 'SDV-AUT-006') "with the keys back the token is checked and no connection is set up: 401 SDV-AUT-006 expected, got $($back.Status) $($back.Body)"
+    $log = Get-Content -Raw $s.Log
+    Assert-That ($log -match "Sign-in keys at 127\.0\.0\.1:$KeysPort can be fetched again") 'the log does not say the sign-in keys are back'
+    Assert-That ($log -match "WARN .*code=SDV-AUT-006 reference=$([regex]::Escape($backBody.reference))") 'no WARN line with SDV-AUT-006 and the reference'
+    Assert-That (-not $log.Contains($signature)) 'the token is in the log'
+    foreach ($b in @($away.Body, $anonymous.Body, $back.Body)) { Assert-That (-not $b.Contains($signature) -and -not $b.Contains('clean-install-person')) 'an answer holds token content' }
+    Write-Step '6b. Sign-in keys back: ready without a restart' $w.Elapsed.TotalSeconds 'readiness 200, the same process, the token checked: 401 SDV-AUT-006 (no connection), no token content in answers or log'
+    Stop-Vero
+    Stop-KeyServer
+
     # ------------------------------------------------------------ no usage data out
     Assert-That ($script:outbound.Count -eq 0) ("Vero opened connections outside this computer: " + (@($script:outbound) -join ', '))
     Write-Step 'Vero opened no connection outside this computer' 0 "$($script:connectionSamples) samples over the starts"
@@ -448,6 +517,8 @@ alter default privileges for role $owner in schema public grant select, insert, 
 finally {
     Stop-Vero
     Stop-Relay
+    Stop-KeyServer
+    Remove-Item -Force -ErrorAction SilentlyContinue -Path $keyFile, $tokenFile
     $w = [System.Diagnostics.Stopwatch]::StartNew()
     try { Remove-Scratch; $gone = (Invoke-Sql -Database 'postgres' -Sql "select count(*) from pg_database where datname = '$db';").Out.Trim() }
     catch { Write-Host "Cleanup failed: $($_.Exception.Message). Rerun with -DropLeftover." -ForegroundColor Red; $gone = '?' }

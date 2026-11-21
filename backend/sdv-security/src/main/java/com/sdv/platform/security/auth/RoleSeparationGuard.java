@@ -39,12 +39,12 @@ public final class RoleSeparationGuard {
                                   RoleConflictReporter.Source source, Set<SdvRole> held) {
         RoleSeparationPolicy.Resolution<SdvRole> resolution = policy.resolve(held);
         if (resolution.conflicted()) {
-            if (reporter == null) throw new RefusedException(NOT_RECORDED);
+            if (reporter == null) throw new RefusedException(SdvErrorCode.ROL_005, NOT_RECORDED);
             try {
                 reporter.report(new RoleConflictReporter.RoleConflict(tenantId, subject, displayName, source,
                         resolution.held(), resolution.withheld(), resolution.brokenRules()));
             } catch (RuntimeException ex) {
-                throw new RefusedException(NOT_RECORDED);
+                throw new RefusedException(SdvErrorCode.ROL_005, NOT_RECORDED);
             }
         } else if (reporter != null && !held.isEmpty()) {
             // Task 0026, carry-over 3: a conflict this person had has ended. Not recording it never refuses the
@@ -56,15 +56,34 @@ public final class RoleSeparationGuard {
             }
         }
         if (resolution.granted().isEmpty()) {
-            throw new RefusedException(resolution.conflicted() ? NO_ROLE_LEFT : NO_ROLE);
+            throw resolution.conflicted()
+                    ? new RefusedException(SdvErrorCode.ROL_004, NO_ROLE_LEFT)
+                    : new RefusedException(SdvErrorCode.AUT_007, NO_ROLE);
         }
         return EnumSet.copyOf(resolution.granted());
     }
 
-    /** The sign-in is refused. The message names no group and no role. */
+    /** The sign-in is refused. The message names no group and no role. Task 0038: with its code (ROL-004, ROL-005, AUT-007). */
     public static final class RefusedException extends RuntimeException {
-        public RefusedException(String message) {
+        private final SdvErrorCode errorCode;
+
+        public RefusedException(SdvErrorCode errorCode, String message) {
             super(message);
+            this.errorCode = errorCode;
+        }
+
+        public SdvErrorCode errorCode() {
+            return errorCode;
+        }
+
+        /** Task 0038: the sign-in's 401 answer: the code and its fixed sentence (no group, no role, no account). */
+        public SignInAnswer answer() {
+            String sentence = switch (errorCode) {
+                case ROL_004 -> SignInAnswer.ROLES_NEVER_TOGETHER;
+                case ROL_005 -> SignInAnswer.CONFLICT_NOT_RECORDED;
+                default -> SignInAnswer.NO_ROLE;
+            };
+            return SignInAnswer.of(401, errorCode, sentence, "role separation: " + errorCode.code());
         }
     }
 }

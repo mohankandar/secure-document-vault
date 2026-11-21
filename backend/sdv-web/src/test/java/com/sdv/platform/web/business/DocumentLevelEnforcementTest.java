@@ -191,7 +191,7 @@ class DocumentLevelEnforcementTest {
             actions = new DocumentActionController(security, authorization, new DocumentActionService(documents, tags,
                     comments, mock(BusinessActivityQueryPort.class), audit, guard));
             // Past the level check, the redaction looks up the tenant; this world's redaction has none, so an
-            // allowed redaction stops there ("Tenant not found.") before anything is changed.
+            // allowed redaction stops there (task 0038: SDV-AUT-009, was "Tenant not found.") before anything is changed.
             redaction = new CorrectiveRedactionController(security, authorization, new CorrectiveRedactionService(
                     mock(TenantRepository.class), sources, documents, mock(DocumentRedactionRepository.class),
                     mock(StorageVolumeRepository.class), mock(StoragePlacementService.class), List.of(),
@@ -254,7 +254,7 @@ class DocumentLevelEnforcementTest {
         // Allowed past every check: the mocked storage, or the redaction's missing tenant, stops it afterwards.
         if (thrown instanceof DocumentViewerUnavailableException
                 || thrown instanceof DocumentDownloadUnavailableException
-                || (thrown instanceof java.util.NoSuchElementException && "Tenant not found.".equals(thrown.getMessage()))) {
+                || (thrown instanceof CodedRefusal.Forbidden tenant && tenant.errorCode() == SdvErrorCode.AUT_009)) {
             return Outcome.ALLOWED;
         }
         throw new AssertionError("unexpected " + thrown, thrown);

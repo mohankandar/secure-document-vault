@@ -1,5 +1,7 @@
 package com.sdv.platform.application.source;
 
+import com.sdv.platform.application.access.ActiveTenant;
+
 import com.sdv.platform.application.port.AuditEventPort;
 import com.sdv.platform.application.port.IngestionSourceRepository;
 import com.sdv.platform.application.port.TenantRepository;
@@ -56,11 +58,7 @@ public class IngestionSourceAdminService {
      * A sending system's own limit can only lower it; intake always uses the smaller of the two.
      */
     public SourceLimits standardLimits(UUID tenantId) {
-        var tenant = tenants.findById(tenantId)
-                .orElseThrow(() -> new NoSuchElementException("Tenant not found."));
-        if (tenant.status() != TenantStatus.ACTIVE) {
-            throw new IllegalStateException("Tenant is not active.");
-        }
+        var tenant = ActiveTenant.require(tenants, tenantId);
         var g = tenant.guardrails();
         return new SourceLimits(g.maxPdfBytes(), g.maxPagesPerPdf(), g.maxDocumentsPerSubmission(),
                 g.maxAggregateSubmissionBytes(), g.incompleteAttentionHours());
@@ -121,11 +119,7 @@ public class IngestionSourceAdminService {
     }
 
     private void requireActiveTenant(UUID tenantId) {
-        var tenant = tenants.findById(tenantId)
-                .orElseThrow(() -> new NoSuchElementException("Tenant not found."));
-        if (tenant.status() != TenantStatus.ACTIVE) {
-            throw new IllegalStateException("Tenant is not active.");
-        }
+        var tenant = ActiveTenant.require(tenants, tenantId);
     }
 
     private static void validateSourceKey(String value) {

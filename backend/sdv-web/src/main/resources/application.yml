@@ -33,11 +33,12 @@ management:
       # database doesn't match this version Vero stays up (liveness UP) but is not ready (readiness OUT_OF_SERVICE).
       # Task 0037: readiness also pings the database (databaseConnection), so it is DOWN while the database is gone
       # after the start, and ready again when it answers.
+      # Task 0038: with enterprise-jwt, readiness also fetches the sign-in hub's keys (signInKeys, SDV-AUT-004).
       probes:
         enabled: true
       group:
         readiness:
-          include: readinessState,databaseSchema,databaseConnection
+          include: readinessState,databaseSchema,databaseConnection,signInKeys
   health:
     defaults:
       enabled: true

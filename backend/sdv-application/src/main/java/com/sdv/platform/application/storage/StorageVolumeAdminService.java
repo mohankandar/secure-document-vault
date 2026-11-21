@@ -1,5 +1,7 @@
 package com.sdv.platform.application.storage;
 
+import com.sdv.platform.application.access.ActiveTenant;
+
 import com.sdv.platform.domain.error.CodedRefusal;
 import com.sdv.platform.domain.error.InternalCheckFailed;
 import com.sdv.platform.domain.error.SdvErrorCode;
@@ -187,9 +189,7 @@ public class StorageVolumeAdminService {
     }
 
     private Tenant requireActiveTenant(UUID tenantId) {
-        Tenant tenant = tenants.findById(tenantId)
-                .orElseThrow(() -> new NoSuchElementException("Tenant not found."));
-        if (tenant.status() != TenantStatus.ACTIVE) throw new IllegalStateException("Tenant is not active.");
+        Tenant tenant = ActiveTenant.require(tenants, tenantId);
         return tenant;
     }
 

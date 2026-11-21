@@ -9,13 +9,12 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.Customizer;
+import org.springframework.security.config.ObjectPostProcessor;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
-import org.springframework.security.oauth2.server.resource.web.BearerTokenAuthenticationEntryPoint;
-import org.springframework.security.oauth2.server.resource.web.access.BearerTokenAccessDeniedHandler;
+import org.springframework.security.oauth2.server.resource.web.authentication.BearerTokenAuthenticationFilter;
 import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.security.web.SecurityFilterChain;
-import org.springframework.security.web.access.AccessDeniedHandler;
 import org.springframework.security.web.authentication.AnonymousAuthenticationFilter;
 
 @Configuration
@@ -25,13 +24,16 @@ public class SecurityConfiguration {
                                                ObjectProvider<LocalHeaderAuthenticationFilter> localFilterProvider,
                                                ObjectProvider<EnterpriseJwtAuthenticationConverter> enterpriseJwtConverterProvider,
                                                @Value("${sdv.auth.mode:disabled}") String authMode) throws Exception {
+        String mode = authMode == null ? "disabled" : authMode.trim().toLowerCase(java.util.Locale.ROOT);
+        // Task 0038: every refused sign-in gets a coded answer (SignInAnswers), in every mode.
+        AuthenticationEntryPoint entryPoint = SignInAnswers.entryPoint(mode);
         http
                 .csrf(csrf -> csrf.disable())
                 .cors(Customizer.withDefaults())
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .exceptionHandling(exceptions -> exceptions
-                        .authenticationEntryPoint((request, response, exception) -> response.sendError(401, "Authentication is required."))
-                        .accessDeniedHandler((request, response, exception) -> response.sendError(403, "Access is denied.")))
+                        .authenticationEntryPoint(entryPoint)
+                        .accessDeniedHandler(SignInAnswers.accessDeniedHandler()))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/actuator/health", "/actuator/health/liveness", "/actuator/health/readiness", "/actuator/info", "/api/v1/system/info", "/error").permitAll()
                         .anyRequest().authenticated())
@@ -39,7 +41,6 @@ public class SecurityConfiguration {
                 .formLogin(form -> form.disable())
                 .logout(logout -> logout.disable());
 
-        String mode = authMode == null ? "disabled" : authMode.trim().toLowerCase(java.util.Locale.ROOT);
         switch (mode) {
             case "local-header" -> {
                 LocalHeaderAuthenticationFilter localFilter = localFilterProvider.getIfAvailable();
@@ -54,12 +55,14 @@ public class SecurityConfiguration {
                     throw new StartupFailure(SdvErrorCode.SYS_005, "Enterprise JWT authentication is not configured.");
                 }
                 http.oauth2ResourceServer(oauth2 -> oauth2
-                        .authenticationEntryPoint(withErrorBody(new BearerTokenAuthenticationEntryPoint()))
-                        .accessDeniedHandler(withErrorBody(new BearerTokenAccessDeniedHandler()))
+                        .authenticationEntryPoint(entryPoint)
+                        .accessDeniedHandler(SignInAnswers.accessDeniedHandler())
+                        .withObjectPostProcessor(bearerFailures(entryPoint))
                         .jwt(jwt -> jwt.jwtAuthenticationConverter(converter)));
             }
             case "disabled" -> {
                 // Fail closed: protected routes remain authenticated(), but no authentication mechanism is registered.
+                // Task 0038: their 401 is SDV-SYS-006, which says sign-in is switched off.
             }
             default -> throw new StartupFailure(SdvErrorCode.SYS_005, "sdv.auth.mode (SDV_AUTH_MODE) must be enterprise-jwt, local-header (local start only) or disabled; it is \"" + authMode + "\".");
         }
@@ -67,21 +70,16 @@ public class SecurityConfiguration {
     }
 
     /**
-     * Task 0036: Spring's bearer-token answers set the status and the WWW-Authenticate header but send no body. This
-     * keeps both and then hands the answer to /error, which writes Vero's one error body with the reference.
+     * Task 0038: Spring's bearer filter answers a failure that isn't the caller's (the sign-in hub's keys can't be
+     * fetched) by rethrowing it, which became a 500. Vero's failure handler answers it 503 SDV-AUT-004.
      */
-    public static AuthenticationEntryPoint withErrorBody(AuthenticationEntryPoint delegate) {
-        return (request, response, exception) -> {
-            delegate.commence(request, response, exception);
-            if (!response.isCommitted()) response.sendError(response.getStatus());
-        };
-    }
-
-    /** Task 0036: as {@link #withErrorBody(AuthenticationEntryPoint)}, for a refused bearer token's 403. */
-    public static AccessDeniedHandler withErrorBody(AccessDeniedHandler delegate) {
-        return (request, response, exception) -> {
-            delegate.handle(request, response, exception);
-            if (!response.isCommitted()) response.sendError(response.getStatus());
+    static ObjectPostProcessor<BearerTokenAuthenticationFilter> bearerFailures(AuthenticationEntryPoint entryPoint) {
+        return new ObjectPostProcessor<>() {
+            @Override
+            public <O extends BearerTokenAuthenticationFilter> O postProcess(O filter) {
+                filter.setAuthenticationFailureHandler(SignInAnswers.bearerFailureHandler(entryPoint));
+                return filter;
+            }
         };
     }
 }

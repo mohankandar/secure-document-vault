@@ -53,10 +53,38 @@ public enum SdvErrorCode {
     ROL_002("SDV-ROL-002"),
     /** Task 0025: a role-permission override names a capability that can't be changed in Roles & permissions. */
     ROL_003("SDV-ROL-003"),
-    /** Task 0025: a sign-in was refused because its roles can never be held together and no other role was left. */
-    ROL_004("SDV-ROL-004"),
-    /** Task 0025: a sign-in was refused because its role conflict couldn't be recorded. */
-    ROL_005("SDV-ROL-005"),
+    /**
+     * Task 0025: a sign-in was refused because its roles can never be held together and no other role was left.
+     * Task 0038: sent as the code of the sign-in's 401 body; INFO line.
+     */
+    ROL_004("SDV-ROL-004", false, true),
+    /** Task 0025: a sign-in was refused because its role conflict couldn't be recorded. Task 0038: as ROL-004. */
+    ROL_005("SDV-ROL-005", false, true),
+    /** Task 0038: the person's role doesn't include this action (403). INFO line with the capability. */
+    ROL_006("SDV-ROL-006", false, true),
+    /** Task 0038: no sign-in at all, or the session ended (401). INFO line. */
+    AUT_001("SDV-AUT-001", false, true),
+    /** Task 0038: a person's sign-in on a sending system's address, or the other way round (403). INFO line. */
+    AUT_002("SDV-AUT-002", false, true),
+    /** Task 0038: the token wasn't accepted: expired, forged, another issuer or audience, too long a life (401). INFO. */
+    AUT_003("SDV-AUT-003", false, true),
+    /** Task 0038: the sign-in hub's signing keys can't be fetched, so no token can be checked (503). ERROR line. */
+    AUT_004("SDV-AUT-004", true),
+    /** Task 0038: the token lacks a claim Vero needs, or a claim isn't usable (401). WARN with the claim's name. */
+    AUT_005("SDV-AUT-005", true),
+    /** Task 0038: no ACTIVE sign-in connection matches the token's issuer and audience (401). WARN with the host. */
+    AUT_006("SDV-AUT-006", true),
+    /** Task 0038: signed in, but no login group gives a Vero role (401). INFO line. */
+    AUT_007("SDV-AUT-007", false, true),
+    /** Task 0038: the local test sign-in headers are missing or not valid; local start only (401). INFO line. */
+    AUT_008("SDV-AUT-008", false, true),
+    /** Task 0038: the sign-in's organisation is unknown or suspended; one answer for both (403). WARN with which. */
+    AUT_009("SDV-AUT-009", true),
+    /**
+     * Task 0038: a second ACTIVE sign-in connection for the same provider, issuer and audience: refused when it is
+     * saved or activated (409, WARN), and 500 with an ERROR line at sign-in if two are found anyway.
+     */
+    IDP_007("SDV-IDP-007", true),
     /** Task 0027: finding, placing, releasing or listing legal holds needs MANAGE_LEGAL_HOLD (Business Admin) (403). */
     HLD_001("SDV-HLD-001"),
     /** Task 0027: a legal hold's reason is missing, shorter than 3 or longer than 500 characters (400). */
@@ -135,7 +163,10 @@ public enum SdvErrorCode {
     SYS_004("SDV-SYS-004", true),
     /** Task 0037: a sign-in setting is not valid; Vero doesn't start. */
     SYS_005("SDV-SYS-005", true),
-    /** Task 0037: sign-in is switched off: WARN at a local start, and a packaged start refuses. */
+    /**
+     * Task 0037: sign-in is switched off: WARN at a local start, and a packaged start refuses. Task 0038: also the
+     * code of the 401 every request gets while sign-in is off.
+     */
     SYS_006("SDV-SYS-006", true),
     /** Task 0037: a key service setting is not valid; Vero doesn't start. */
     SYS_007("SDV-SYS-007", true),
@@ -168,14 +199,20 @@ public enum SdvErrorCode {
 
     private final String code;
     private final boolean needsPerson;
+    private final boolean loggedAtInfo;
 
     SdvErrorCode(String code) {
         this(code, false);
     }
 
     SdvErrorCode(String code, boolean needsPerson) {
+        this(code, needsPerson, false);
+    }
+
+    SdvErrorCode(String code, boolean needsPerson, boolean loggedAtInfo) {
         this.code = code;
         this.needsPerson = needsPerson;
+        this.loggedAtInfo = loggedAtInfo;
     }
 
     public String code() {
@@ -188,5 +225,14 @@ public enum SdvErrorCode {
      */
     public boolean needsPerson() {
         return needsPerson;
+    }
+
+    /**
+     * Task 0038: an expected refusal that still gets one INFO line with the reference and its exact cause (the sign-in
+     * and role refusals), so IT can match a reference a person gives them. Other refusals that need no person are not
+     * logged; they are audited where the action is.
+     */
+    public boolean loggedAtInfo() {
+        return loggedAtInfo;
     }
 }

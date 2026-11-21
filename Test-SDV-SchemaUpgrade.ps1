@@ -602,14 +602,14 @@ rollback;
         # The application's own repositories and services against this database: holds and the retention cleanup
         # (LegalHoldPostgresTest), requests, grants, expiry and the table's checks (AccessRequestPostgresTest), exact
         # duplicates (DuplicateIntakePostgresTest), uncorrected copies, stored notices and the Daily intake report (IntakeReportPostgresTest),
-        # the Sensitivity report (SensitivityReportPostgresTest). The scratch owner's password goes to the child process only, as
+        # the Sensitivity report (SensitivityReportPostgresTest), one ACTIVE sign-in connection per issuer (SignInConnectionPostgresTest, task 0038). The scratch owner's password goes to the child process only, as
         # SDV_IT_JDBC_PASSWORD.
         $w = [System.Diagnostics.Stopwatch]::StartNew()
         $mvn = (Get-Command mvn.cmd -ErrorAction Stop).Source
         $it = Invoke-Native -File $mvn -Arguments @('-o', '-f', (Join-Path $root 'backend\pom.xml'), '-pl', 'sdv-web', '-am', 'test',
-            '-Dtest=LegalHoldPostgresTest,AccessRequestPostgresTest,DuplicateIntakePostgresTest,IntakeReportPostgresTest,SensitivityReportPostgresTest', '-Dsurefire.failIfNoSpecifiedTests=false') -Environment @{
+            '-Dtest=LegalHoldPostgresTest,AccessRequestPostgresTest,DuplicateIntakePostgresTest,IntakeReportPostgresTest,SensitivityReportPostgresTest,SignInConnectionPostgresTest', '-Dsurefire.failIfNoSpecifiedTests=false') -Environment @{
             SDV_IT_JDBC_URL = $hostUrl; SDV_IT_JDBC_USER = $owner; SDV_IT_JDBC_PASSWORD = $ownerPassword }
-        foreach ($test in @('legalhold.LegalHoldPostgresTest', 'approvals.AccessRequestPostgresTest', 'document.DuplicateIntakePostgresTest', 'reports.IntakeReportPostgresTest', 'reports.SensitivityReportPostgresTest')) {
+        foreach ($test in @('legalhold.LegalHoldPostgresTest', 'approvals.AccessRequestPostgresTest', 'document.DuplicateIntakePostgresTest', 'reports.IntakeReportPostgresTest', 'reports.SensitivityReportPostgresTest', 'identity.SignInConnectionPostgresTest')) {
             $itLine = ($it.Out -split "`n" | Where-Object { $_ -match ('Tests run: .* in com\.sdv\.platform\.application\.' + [regex]::Escape($test)) } | Select-Object -First 1)
             if ($it.Code -ne 0 -or -not $itLine -or $itLine -notmatch 'Tests run: 1, Failures: 0, Errors: 0, Skipped: 0') {
                 $it.Out | Set-Content -Encoding utf8 (Join-Path $run 'postgres-tests.log')

@@ -1,5 +1,7 @@
 package com.sdv.platform.application.submission;
 
+import com.sdv.platform.application.access.ActiveTenant;
+
 import com.sdv.platform.domain.error.InternalCheckFailed;
 import com.sdv.platform.application.business.RecordKey;
 import com.sdv.platform.application.port.AuditEventPort;
@@ -241,9 +243,7 @@ public class SubmissionService {
     }
 
     private Tenant requireActiveTenant(UUID tenantId) {
-        Tenant tenant = tenants.findById(tenantId)
-                .orElseThrow(() -> new NoSuchElementException("Tenant not found."));
-        if (tenant.status() != TenantStatus.ACTIVE) throw new IllegalStateException("Tenant is not active.");
+        Tenant tenant = ActiveTenant.require(tenants, tenantId);
         return tenant;
     }
 

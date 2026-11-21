@@ -1,5 +1,7 @@
 package com.sdv.platform.application.operations;
 
+import com.sdv.platform.application.access.ActiveTenant;
+
 import com.sdv.platform.application.port.KeyServiceHealthProbe;
 import com.sdv.platform.application.port.OperationalRepository;
 import com.sdv.platform.application.port.TenantRepository;
@@ -173,9 +175,7 @@ public class OperationsService {
     }
 
     private void requireActiveTenant(UUID tenantId) {
-        var tenant = tenants.findById(tenantId)
-                .orElseThrow(() -> new java.util.NoSuchElementException("Tenant not found."));
-        if (tenant.status() != TenantStatus.ACTIVE) throw new IllegalStateException("Tenant is not active.");
+        var tenant = ActiveTenant.require(tenants, tenantId);
     }
 
     private ComponentHealth databaseHealth(Instant now) {
