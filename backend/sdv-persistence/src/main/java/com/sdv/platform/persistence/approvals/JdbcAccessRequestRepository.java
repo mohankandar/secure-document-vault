@@ -188,6 +188,19 @@ public class JdbcAccessRequestRepository implements AccessRequestRepository {
     }
 
     @Override
+    public List<AccessRequest> findDecidedSince(UUID tenantId, Instant since, int limit) {
+        return jdbc.query("select " + COLUMNS + """
+                  from access_requests
+                 where tenant_id=:tenantId and decided_at is not null and decided_at>=:since
+                 order by decided_at desc, request_id
+                 limit :limit
+                """, new MapSqlParameterSource()
+                .addValue("tenantId", tenantId)
+                .addValue("since", Timestamp.from(since))
+                .addValue("limit", limit), (rs, row) -> request(rs));
+    }
+
+    @Override
     public List<DocumentFacts> findDocumentFacts(UUID tenantId, Collection<UUID> documentIds) {
         if (documentIds.isEmpty()) return List.of();
         return jdbc.query("""

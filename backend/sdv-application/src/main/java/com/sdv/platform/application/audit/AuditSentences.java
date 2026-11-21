@@ -82,6 +82,8 @@ public final class AuditSentences {
             case "AUTHORIZATION_DENIED" -> w + " tried to " + CAPABILITY_WORDS.getOrDefault(text(d, "capability"), "do something") + " without permission";
             case "SUBMISSION_CREATED" -> w + " delivered " + docs(number(d, "expectedDocumentCount"));
             case "DOCUMENT_RECEIVED" -> w + " sent " + f;
+            // Task 0031: an exact duplicate; nothing was stored a second time.
+            case "DOCUMENT_DUPLICATE_RECEIVED" -> w + " sent " + f + " again; Vero kept the copy it already had";
             case "DOCUMENT_AVAILABLE" -> f + " is stored and ready to open";
             case "DOCUMENT_PROCESSING_FAILED" -> "Vero couldn't store " + f;
             case "ROLE_CAPABILITIES_UPDATED" -> w + " changed what business roles may do";

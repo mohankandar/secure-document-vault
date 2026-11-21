@@ -14,6 +14,7 @@ import com.sdv.platform.domain.document.Document;
 import com.sdv.platform.domain.document.DocumentCryptoMetadata;
 import com.sdv.platform.domain.document.DocumentStatus;
 import com.sdv.platform.domain.document.DocumentStorageRef;
+import com.sdv.platform.domain.document.SensitivityLevel;
 import com.sdv.platform.domain.storage.StorageVolume;
 import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.pdmodel.PDDocument;
@@ -107,8 +108,9 @@ public class DocumentViewerService {
             Clearance clearance,
             String actorId,
             String correlationId) {
-        Document document = requireAvailableDocument(tenantId, documentId, clearance,
+        Viewable viewable = requireViewable(tenantId, documentId, clearance,
                 DocumentAccessGuard.Attempt.OPEN, actorId, correlationId);
+        Document document = viewable.document();
         byte[] plaintext = verifiedPlaintext(document);
         try (PDDocument pdf = load(plaintext)) {
             int pageCount = pdf.getNumberOfPages();
@@ -119,7 +121,8 @@ public class DocumentViewerService {
                     "DOCUMENT_VIEW_OPENED",
                     documentId,
                     correlationId,
-                    "{\"pageCount\":" + pageCount + "}");
+                    // Task 0031 (0.1): the effective level at the time of viewing, for the audit's level filter.
+                    "{\"pageCount\":" + pageCount + levelDetail(viewable) + "}");
             return new ViewerMetadata(document.documentId(), document.originalFilename(), pageCount, viewingId);
         } catch (IOException ex) {
             throw unavailable(ex);
@@ -160,7 +163,8 @@ public class DocumentViewerService {
                     "scale must be between " + MIN_SCALE + " and " + MAX_SCALE + ".");
         }
 
-        Document document = requireAvailableDocument(tenantId, documentId, clearance, DocumentAccessGuard.Attempt.PAGE, actorId, correlationId);
+        Viewable viewable = requireViewable(tenantId, documentId, clearance, DocumentAccessGuard.Attempt.PAGE, actorId, correlationId);
+        Document document = viewable.document();
         byte[] plaintext = verifiedPlaintext(document);
         try (PDDocument pdf = load(plaintext)) {
             if (pageNumber > pdf.getNumberOfPages()) {
@@ -196,7 +200,7 @@ public class DocumentViewerService {
                 pageViews.appendPageEventOnce(new AuditEvent(
                         UUID.randomUUID(), tenantId, "USER", actorId, "DOCUMENT_PAGE_VIEWED", "DOCUMENT",
                         documentId.toString(), now, correlationId, AuditOutcome.SUCCESS,
-                        "{\"page\":" + pageNumber + ",\"scale\":" + scaleText + ",\"viewingId\":\"" + viewingId + "\"}"),
+                        "{\"page\":" + pageNumber + ",\"scale\":" + scaleText + ",\"viewingId\":\"" + viewingId + "\"" + levelDetail(viewable) + "}"),
                         viewingId, pageNumber, notBefore);
             } else {
                 appendAudit(
@@ -205,7 +209,7 @@ public class DocumentViewerService {
                         "DOCUMENT_PAGE_VIEWED",
                         documentId,
                         correlationId,
-                        "{\"page\":" + pageNumber + ",\"scale\":" + scaleText + "}");
+                        "{\"page\":" + pageNumber + ",\"scale\":" + scaleText + levelDetail(viewable) + "}");
             }
 
             return new PageImage(
@@ -447,14 +451,30 @@ public class DocumentViewerService {
     /** Task 0026: the level check comes first, so a restricted document reveals nothing, not even its status. */
     private Document requireAvailableDocument(UUID tenantId, UUID documentId, Clearance clearance,
                                               DocumentAccessGuard.Attempt attempt, String actorId, String correlationId) {
+        return requireViewable(tenantId, documentId, clearance, attempt, actorId, correlationId).document();
+    }
+
+    /** A document the person may view, with its effective level at this moment (task 0031, 0.1). */
+    private record Viewable(Document document, SensitivityLevel level) { }
+
+    private Viewable requireViewable(UUID tenantId, UUID documentId, Clearance clearance,
+                                     DocumentAccessGuard.Attempt attempt, String actorId, String correlationId) {
         Document document = documents.findDocumentByIdForTenant(tenantId, documentId)
                 .orElseThrow(() -> new NoSuchElementException("Document not found."));
-        access.requireOpenable(document, clearance, attempt, actorId, correlationId);
+        SensitivityLevel level = access.requireOpenable(document, clearance, attempt, actorId, correlationId);
         if (document.status() != DocumentStatus.AVAILABLE) {
             throw new IllegalStateException(
                     "Only AVAILABLE documents may be opened in the secure viewer.");
         }
-        return document;
+        return new Viewable(document, level);
+    }
+
+    /**
+     * Task 0031 (0.1): openings and page views record the effective level at the time of viewing, under the same key
+     * prints and downloads use, so the audit's level filter finds them. Events written before this have no level.
+     */
+    private static String levelDetail(Viewable viewable) {
+        return ",\"sensitivityLevel\":\"" + viewable.level().name() + "\"";
     }
 
     private StorageProvider provider(String providerId) {

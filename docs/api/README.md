@@ -44,4 +44,25 @@ A record (a contract, a patient file) can have a level of its own. A record is t
 
 Each sensitivity refusal above has a stable `code` in the error body, `SDV-SEN-001` to `SDV-SEN-007`. For example, an unknown `X-SDV-Sensitivity-Level` returns `SDV-SEN-001`, where it used to return `BAD_REQUEST`. [error-codes.md](error-codes.md) lists every code with its meaning, what to do, and what support tells the customer. Read the code, not the message.
 
+## Sending the same document again
+
+Vero tells three cases apart.
+
+| Case | What Vero does | Answer |
+|---|---|---|
+| 1. A retry of the same delivery: the same `sourceDocumentId` in the same submission (or the same `Idempotency-Key`, when there is no `sourceDocumentId`) | Nothing new is stored. | `200`, the original document, `receiptAcknowledgement: RECEIVED`, `idempotentReplay: true` |
+| 2. **An exact duplicate**: the same file (same SHA-256 checksum) from the same sending system, for the same record, in a new delivery (another `sourceDocumentId` or `Idempotency-Key`, in this submission or another one of the record) | No second copy is stored. The arrival is recorded and written to the audit trail. | `200`, the `documentId` of the document Vero already has, `receiptAcknowledgement: DUPLICATE_ALREADY_STORED`, `duplicate: true` |
+| 3. Anything else: another file (the same paper scanned again has another checksum), or the same file for another record | Stored as a new document. | `201`, `receiptAcknowledgement: RECEIVED`, `duplicate: false` |
+
+For an exact duplicate (case 2):
+- Treat it as delivered. Don't retry it and don't raise an alert.
+- It takes its place in the submission. If the submission listed it in `expectedDocuments`, that entry becomes `RECEIVED`, and `progress.receivedCount` counts it ("2 of 4 received").
+- It still needs a place: in a submission that has already received all its expected documents, it is refused like any other upload.
+- If it carries a higher `X-SDV-Sensitivity-Level` than the document Vero has, that document is raised to it, and the raise is audited as made by the sending system. A lower or equal level is ignored (and noted in the audit trail). The answer's `sensitivityLevel` is the document's level after this.
+- A retry of the duplicate delivery itself is case 1: the same answer again, with `idempotentReplay: true`. It must send the same file and the same level, or it is refused with `409` (`SDV-SEN-003` for another level).
+- If the earlier document has been deleted (or is being deleted) by the retention rules, the new file is stored as a new document.
+- `exactDuplicateContent` has the same value as `duplicate`. Before task 0031 it was `true` when a second copy had been stored; that no longer happens.
+
+The record is the same grouping as for record levels (above): the submissions of one sending system that share the same identifier values. The same file sent by another sending system, or under another record, is stored normally; no flag is set.
+
 The sample under `samples/third-party-producer/` demonstrates the contract with raw HTTP calls only.

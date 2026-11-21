@@ -86,7 +86,7 @@
         },
         "responses": {
           "201": {"description": "Document durably received", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/DocumentReceipt"}}}},
-          "200": {"description": "Idempotent upload replay", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/DocumentReceipt"}}}},
+          "200": {"description": "Nothing new stored: a retry of the same delivery (idempotentReplay true, receiptAcknowledgement RECEIVED), or an exact duplicate (receiptAcknowledgement DUPLICATE_ALREADY_STORED, duplicate true): the same file (same SHA-256) for the same record from the same sending system in a new delivery. Treat both as delivered; do not retry.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/DocumentReceipt"}}}},
           "400": {
             "description": "Invalid producer request, including an unknown X-SDV-Sensitivity-Level or any X-SDV-Record-Sensitivity-Level",
             "content": {"application/json": {
@@ -205,15 +205,16 @@
       "DocumentReceipt": {
         "type": "object",
         "properties": {
-          "documentId": {"type": "string", "format": "uuid"},
-          "sourceDocumentId": {"type": ["string", "null"]},
-          "receiptAcknowledgement": {"type": "string"},
-          "currentStatus": {"type": "string"},
+          "documentId": {"type": "string", "format": "uuid", "description": "The stored document. For an exact duplicate, the document SDV already had (it may belong to an earlier submission)."},
+          "sourceDocumentId": {"type": ["string", "null"], "description": "The sourceDocumentId this upload was sent with."},
+          "receiptAcknowledgement": {"type": "string", "enum": ["RECEIVED", "DUPLICATE_ALREADY_STORED"], "description": "RECEIVED: stored (201), or a retry of a stored delivery (200). DUPLICATE_ALREADY_STORED: an exact duplicate; nothing was stored again (200)."},
+          "currentStatus": {"type": "string", "description": "The status of the document named by documentId."},
           "contentSha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
           "contentSizeBytes": {"type": "integer", "minimum": 0},
-          "idempotentReplay": {"type": "boolean"},
-          "exactDuplicateContent": {"type": "boolean"},
-          "sensitivityLevel": {"$ref": "#/components/schemas/SensitivityLevel"}
+          "idempotentReplay": {"type": "boolean", "description": "True for a retry of the same delivery (same sourceDocumentId, or Idempotency-Key when there is none), including a retry of a delivery that was an exact duplicate."},
+          "duplicate": {"type": "boolean", "description": "True only with DUPLICATE_ALREADY_STORED."},
+          "exactDuplicateContent": {"type": "boolean", "description": "Same value as duplicate; kept for producers that read it."},
+          "sensitivityLevel": {"$ref": "#/components/schemas/SensitivityLevel", "description": "The document's own level. A duplicate with a higher level raises the existing document's level; a lower or equal one is ignored."}
         }
       },
       "SensitivityLevel": {

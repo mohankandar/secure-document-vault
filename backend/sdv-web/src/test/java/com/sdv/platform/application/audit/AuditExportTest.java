@@ -178,6 +178,7 @@ class AuditExportTest {
                 AuditQueryService.AuditEntry.from(row(action, "subj", "Ari Admin", details, null, null, AuditOutcome.SUCCESS)));
         assertEquals("Ari Admin opened a document", s.apply("DOCUMENT_VIEW_OPENED", null));
         assertEquals("Ari Admin loaded page 3 of a document", s.apply("DOCUMENT_PAGE_VIEWED", "{\"page\":3}"));
+        assertEquals("Ari Admin sent a document again; Vero kept the copy it already had", s.apply("DOCUMENT_DUPLICATE_RECEIVED", null));
         assertEquals("Ari Admin changed how long to keep new documents to 7 years", s.apply("RETENTION_POLICY_UPDATED", "{\"defaultRetentionDays\":2555}"));
         assertEquals("Ari Admin changed how long to keep new documents to 1,000 days", s.apply("RETENTION_POLICY_UPDATED", "{\"defaultRetentionDays\":1000}"));
         assertEquals("Ari Admin changed how long to keep new documents: keep them forever", s.apply("RETENTION_POLICY_UPDATED", "{\"indefinite\":true}"));

@@ -113,7 +113,7 @@ export function AuditLog() {
         <option value="">Person</option>{Object.entries(people).sort((a, b) => a[1].localeCompare(b[1])).map(([id, name]) => <option key={id} value={id}>{name === id ? id : `${name} (${id})`}</option>)}</select>
       <select className="v-select au-period" aria-label="Period" value={period} onChange={(e) => setPeriod(e.target.value as typeof period)}>
         <option value="today">Today</option><option value="7">Last 7 days</option><option value="30">Last 30 days</option><option value="custom">Dates…</option></select>
-      <select className="v-select au-level" aria-label="Sensitivity" value={level} onChange={(e) => setLevel(e.target.value)} title="Events that recorded this level for their document: downloads, prints, refused openings and requests">
+      <select className="v-select au-level" aria-label="Sensitivity" value={level} onChange={(e) => setLevel(e.target.value)} title="Events that recorded this level for their document when they happened: openings, page views, downloads, prints, refused openings and requests. Older openings and page views recorded no level, so they are not found.">
         <option value="">Any sensitivity</option><option value="CONFIDENTIAL">Confidential</option><option value="HIGHLY_CONFIDENTIAL">Highly Confidential</option></select>
       <form className="au-record" onSubmit={(e) => { e.preventDefault(); setQuery((x) => x + 1) }}>
         <input id="au-record" className="v-input mono" aria-label="Record number" inputMode="numeric" value={recordNumber} onChange={(e) => setRecordNumber(e.target.value)} placeholder="Record number" />

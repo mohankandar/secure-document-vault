@@ -218,9 +218,16 @@ export type RequestPosition = { index: number; of: number }
  */
 export type PendingRequest = PendingLevels & { requestId: string; kind: AccessRequestKind; scope: 'DOCUMENT' | 'RECORD'; primaryIdentifier: string | null; primaryIdentifierLabel: string | null; receivedAt: string | null; pageCount: number | null; documentCount: number | null; position: RequestPosition | null; requester: string; reason: string; requestedAt: string; documentId: string | null }
 export type PendingGroup = { primaryIdentifier: string | null; primaryIdentifierLabel: string | null; requests: PendingRequest[] }
-export type PendingList = { groups: PendingGroup[]; requestCount: number }
+/** pendingExpiryDays (task 0031, 0.3): how long a request may wait undecided in this tenant. */
+export type PendingList = { groups: PendingGroup[]; requestCount: number; pendingExpiryDays: number }
 /** Oldest first, grouped by the record's primary identifier. Every Business admin of the tenant sees the same list. */
 export const pendingRequests = () => roleApi<PendingList>('/api/v1/admin/access-requests', 'businessAdmin')
+/**
+ * Task 0031 (0.2): a decision by any Business admin of the tenant, for "Decided recently" (last 30 days, at most 50,
+ * newest first). Never the reason or the requester. decidedBy: the admin's name, or their sign-in subject.
+ */
+export type DecidedRequest = { requestId: string; kind: AccessRequestKind; scope: 'DOCUMENT' | 'RECORD'; requestedLevel: SensitivityLevel | null; primaryIdentifier: string | null; primaryIdentifierLabel: string | null; decision: 'APPROVE' | 'DECLINE'; decidedBy: string; decidedAt: string }
+export const decidedRecently = () => roleApi<DecidedRequest[]>('/api/v1/admin/access-requests/decided', 'businessAdmin')
 export type DecisionResult = { requestId: string; status: AccessRequestStatus; grantExpiresAt: string | null }
 export const decideRequest = (requestId: string, decision: 'approve' | 'decline') =>
   roleApi<DecisionResult>('/api/v1/admin/access-requests/' + encodeURIComponent(requestId) + '/' + decision, 'businessAdmin', { method: 'POST' })

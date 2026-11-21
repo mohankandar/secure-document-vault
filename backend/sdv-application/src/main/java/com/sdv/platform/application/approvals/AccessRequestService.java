@@ -287,7 +287,44 @@ public class AccessRequestService {
                 .map(e -> new PendingGroup(e.getKey().isEmpty() ? null : e.getKey(), labels.get(e.getKey()),
                         List.copyOf(e.getValue())))
                 .toList();
-        return new PendingList(groups, views.size());
+        // Task 0031 (0.3): the tenant's own window, so the screen's expiry note is never a guess.
+        return new PendingList(groups, views.size(), settings.pendingWindow(tenantId).toDays());
+    }
+
+    /** How far back "Decided recently" looks, and the most it lists. */
+    static final java.time.Duration DECIDED_WINDOW = java.time.Duration.ofDays(30);
+    static final int DECIDED_LIMIT = 50;
+
+    /**
+     * Task 0031 (0.2): the last decisions by every Business Admin of the tenant (the last {@link #DECIDED_WINDOW},
+     * at most {@link #DECIDED_LIMIT}), newest first: who decided, kind, scope, the record's primary identifier, the
+     * decision and when. Never the reason or the requester.
+     */
+    public List<DecidedView> decidedRecently(UUID tenantId) {
+        requireTenant(tenantId);
+        List<AccessRequest> rows = requests.findDecidedSince(tenantId, clock.instant().minus(DECIDED_WINDOW), DECIDED_LIMIT);
+        List<UUID> documentIds = rows.stream().map(AccessRequest::documentId).filter(Objects::nonNull).distinct().toList();
+        Map<UUID, DocumentFacts> facts = new HashMap<>();
+        if (!documentIds.isEmpty()) requests.findDocumentFacts(tenantId, documentIds).forEach(f -> facts.put(f.documentId(), f));
+        Map<String, Optional<AccessRequestRepository.PrimaryIdentifier>> recordIds = new HashMap<>();
+        List<DecidedView> views = new ArrayList<>();
+        for (AccessRequest r : rows) {
+            AccessRequestRepository.PrimaryIdentifier id;
+            if (r.kind().scope() == AccessRequestKind.Scope.DOCUMENT) {
+                DocumentFacts f = facts.get(r.documentId());
+                id = f == null || f.primaryIdentifier() == null ? null
+                        : new AccessRequestRepository.PrimaryIdentifier(f.primaryIdentifier(), f.primaryIdentifierLabel());
+            } else {
+                id = recordIds.computeIfAbsent(r.sourceId() + "|" + r.recordKey(), k -> recordIdentifier(tenantId, r))
+                        .orElse(null);
+            }
+            String decider = r.decidedByName() == null || r.decidedByName().isBlank() ? r.decidedBy() : r.decidedByName();
+            views.add(new DecidedView(r.requestId(), r.kind(), r.kind().scope(), r.requestedLevel(),
+                    id == null ? null : id.value(), id == null ? null : id.label(),
+                    r.status() == AccessRequestStatus.DECLINED ? Decision.DECLINE : Decision.APPROVE,
+                    decider, r.decidedAt()));
+        }
+        return List.copyOf(views);
     }
 
     private PendingRequestView documentView(UUID tenantId, AccessRequest r, DocumentFacts f, SensitivityLevel level,
@@ -703,7 +740,17 @@ public class AccessRequestService {
 
     public record PendingGroup(String primaryIdentifier, String primaryIdentifierLabel, List<PendingRequestView> requests) { }
 
-    public record PendingList(List<PendingGroup> groups, int requestCount) { }
+    /** pendingExpiryDays (task 0031, 0.3): how long a request may wait undecided in this tenant. */
+    public record PendingList(List<PendingGroup> groups, int requestCount, long pendingExpiryDays) { }
+
+    /**
+     * Task 0031 (0.2): one decision as "Decided recently" shows it. decidedBy is the deciding Business Admin's name,
+     * or their sign-in subject when none was known. requestedLevel is the level a lowering asked for (null otherwise).
+     * The primary identifier and its label are null when the record can't be found any more.
+     */
+    public record DecidedView(UUID requestId, AccessRequestKind kind, AccessRequestKind.Scope scope,
+                              SensitivityLevel requestedLevel, String primaryIdentifier, String primaryIdentifierLabel,
+                              Decision decision, String decidedBy, Instant decidedAt) { }
 
     public record DecisionView(UUID requestId, AccessRequestStatus status, Instant grantExpiresAt) { }
 

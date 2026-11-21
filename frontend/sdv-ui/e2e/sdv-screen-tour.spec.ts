@@ -1568,6 +1568,58 @@ test.describe('SDV role-based screen capture', () => {
     await capture(page, testInfo, 'audit-highly-confidential')
   })
 
+  // Task 0031 (section 0): "Decided recently" comes from the server (every Business admin's decisions, here one made
+  // outside this browser), the expiry note shows the tenant's own window, and an opening records the document's level.
+  test('Decided recently, the expiry note and levels on openings (task 0031)', async ({ page }, testInfo) => {
+    test.skip(!isDesktop(testInfo), 'Runs once per tour (desktop only).')
+    test.setTimeout(120_000)
+    const TENANT = '11111111-1111-1111-1111-111111111111'
+    const as = (subject: string, roles: string) => ({ 'X-SDV-Tenant-Id': TENANT, 'X-SDV-Subject': subject, 'X-SDV-Roles': roles, 'Content-Type': 'application/json' })
+    const dana = as('local-restricted-steward', 'RESTRICTED_STEWARD'), priya = as('local-business-admin', 'BUSINESS_ADMIN')
+
+    // A decision made through the API, not on this screen: the drawer must still list it.
+    const found = await (await page.request.post('/api/v1/business/search', { headers: dana, data: { sourceId: (await searchSources(page)).find((s) => s.displayName === 'Loan Origination System')!.sourceId, criteria: { contractNumber: '300000000008' }, page: 1, pageSize: 5 } })).json() as { records: { recordRef: string }[] }
+    const rec = await (await page.request.get('/api/v1/business/records/' + encodeURIComponent(found.records[0].recordRef), { headers: dana })).json() as { documents: { documentId: string; originalFilename: string }[] }
+    const police = rec.documents.find((d) => d.originalFilename === 'police-report.pdf')
+    expect(police, 'police-report.pdf on 300000000008 from the seed').toBeTruthy()
+    const asked = await page.request.post(`/api/v1/business/documents/${police!.documentId}/access-requests`, { headers: dana, data: { kind: 'DOWNLOAD', reason: 'Tour check (task 0031)' } })
+    let requestId = asked.ok() ? (await asked.json() as { requestId: string }).requestId : ''
+    if (!requestId) { // one is already waiting from an earlier run that stopped
+      const mine = await (await page.request.get('/api/v1/business/access-requests', { headers: dana })).json() as { requestId: string; documentId: string; kind: string; status: string }[]
+      requestId = mine.find((r) => r.documentId === police!.documentId && r.kind === 'DOWNLOAD' && r.status === 'PENDING')!.requestId
+    }
+    expect((await page.request.post(`/api/v1/admin/access-requests/${requestId}/decline`, { headers: priya })).ok()).toBeTruthy()
+    const decided = await (await page.request.get('/api/v1/admin/access-requests/decided', { headers: priya })).json() as { requestId: string; decision: string; decidedBy: string; reason?: string }[]
+    expect(decided[0].requestId, 'newest first').toBe(requestId)
+    expect(decided[0].decision).toBe('DECLINE')
+    expect(JSON.stringify(decided)).not.toContain('Tour check') // never a reason
+    const list = await (await page.request.get('/api/v1/admin/access-requests', { headers: priya })).json() as { pendingExpiryDays: number }
+
+    await selectRole(page, 'Business Administrator')
+    await page.evaluate(() => { window.location.hash = '#/governance/approvals' })
+    await expect(page.getByRole('region', { name: 'Waiting requests' })).toBeVisible({ timeout: 15000 })
+    await expect(page.getByText(`requests nobody decides expire after ${list.pendingExpiryDays} day${list.pendingExpiryDays === 1 ? '' : 's'}`)).toBeVisible()
+    await page.getByRole('button', { name: 'Decided recently ›' }).click()
+    const drawer = page.getByRole('dialog', { name: 'Decided recently' })
+    await expect(drawer).toContainText('Decisions by every Business admin in the last 30 days')
+    await expect(drawer.getByRole('listitem').first()).toContainText('Declined · Download on 300000000008', { timeout: 15000 })
+    await expect(drawer.getByRole('listitem').first()).toContainText(/ · by .+ · /)
+    expect(await drawer.innerText()).not.toMatch(/Tour check|\.pdf/)
+    await capture(page, testInfo, 'approvals-decided-recently')
+
+    // An opening from now on records the document's effective level, so the audit's level filter finds it.
+    const opened = await page.request.get(`/api/v1/business/documents/${police!.documentId}/viewer`, { headers: dana })
+    expect(opened.ok()).toBeTruthy()
+    const viewingId = (await opened.json() as { viewingId: string }).viewingId
+    const ops = as('local-platform-operations-admin', 'PLATFORM_OPERATIONS_ADMIN')
+    let levelOfOpening: string | null = null
+    for (const level of ['STANDARD', 'CONFIDENTIAL', 'HIGHLY_CONFIDENTIAL']) {
+      const events = await (await page.request.get(`/api/v1/operations/audit-events?limit=200&sensitivityLevel=${level}`, { headers: ops })).json() as { events: { auditEventId: string; action: string }[] }
+      if (events.events.some((e) => e.auditEventId === viewingId)) levelOfOpening = level
+    }
+    expect(levelOfOpening, 'the opening is found by the level filter under its level').not.toBeNull()
+  })
+
   // Task 0030: approve 50 waiting requests in one go. Opt-in, because it uses up the seed's 50 waiting print and
   // download requests (run Seed-SDV-Canvas-Demo.ps1 again afterwards to make them again).
   test('Bulk approval of the 50 waiting print and download requests (task 0030)', async ({ page }, testInfo) => {

@@ -360,6 +360,13 @@ final class ApprovalsFixture {
                     .limit(limit).toList();
         }
 
+        @Override public List<AccessRequest> findDecidedSince(UUID tenantId, Instant since, int limit) {
+            return rows.values().stream()
+                    .filter(r -> r.tenantId().equals(tenantId) && r.decidedAt() != null && !r.decidedAt().isBefore(since))
+                    .sorted(Comparator.comparing(AccessRequest::decidedAt).reversed())
+                    .limit(limit).toList();
+        }
+
         @Override public List<DocumentFacts> findDocumentFacts(UUID tenantId, Collection<UUID> documentIds) {
             if (!TENANT.equals(tenantId)) return List.of();
             return documentIds.stream().map(world.documents::get).filter(Objects::nonNull)

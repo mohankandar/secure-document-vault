@@ -51,7 +51,8 @@ public class DocumentIntakeController {
                 principal.subject(),
                 correlationId());
 
-        HttpStatus status = receipt.idempotentReplay() ? HttpStatus.OK : HttpStatus.CREATED;
+        // Task 0031: an exact duplicate stores nothing new, so it is 200 with the existing document, like a retry.
+        HttpStatus status = receipt.idempotentReplay() || receipt.exactDuplicateContent() ? HttpStatus.OK : HttpStatus.CREATED;
         return ResponseEntity.status(status).body(DocumentReceiptResponse.from(receipt));
     }
 
@@ -86,17 +87,20 @@ public class DocumentIntakeController {
             long contentSizeBytes,
             boolean idempotentReplay,
             boolean exactDuplicateContent,
+            boolean duplicate,
             String sensitivityLevel) {
         static DocumentReceiptResponse from(DocumentReceipt receipt) {
             Document document = receipt.document();
             return new DocumentReceiptResponse(
                     document.documentId(),
-                    document.sourceDocumentId(),
+                    // Task 0031: for a duplicate, the delivery's own sourceDocumentId (the document may be another's).
+                    receipt.deliverySourceDocumentId(),
                     receipt.receiptAcknowledgement(),
                     document.status().name(),
                     document.contentSha256(),
                     document.contentSizeBytes() == null ? 0L : document.contentSizeBytes(),
                     receipt.idempotentReplay(),
+                    receipt.exactDuplicateContent(),
                     receipt.exactDuplicateContent(),
                     document.sensitivityLevel().name());
         }

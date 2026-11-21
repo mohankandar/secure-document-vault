@@ -277,21 +277,98 @@ public class JdbcSecureIngestionRepository implements SubmissionRepository, Stor
         return total == null ? 0L : total;
     }
 
+    /**
+     * Task 0031: a submission's exact duplicates, added to its documents wherever "received" is counted. The argument
+     * is the alias (or table name) of the submissions row in the surrounding query.
+     */
+    public static String duplicatesOfSubmission(String submissionAlias) {
+        return "(select count(*) from document_duplicate_receipts x where x.tenant_id=" + submissionAlias
+                + ".tenant_id and x.submission_id=" + submissionAlias + ".submission_id)";
+    }
+
     @Override
-    public boolean hasExactDuplicateContent(UUID tenantId, UUID sourceId, String contentSha256, UUID excludingDocumentId) {
+    public long countReceived(UUID tenantId, UUID submissionId) {
         Long count = jdbc.queryForObject("""
-                select count(*)
-                  from documents
-                 where tenant_id=:tenantId
-                   and source_id=:sourceId
-                   and content_sha256=:sha
-                   and document_id<>:documentId
+                select (select count(*) from documents where tenant_id=:tenantId and submission_id=:submissionId)
+                     + (select count(*) from document_duplicate_receipts where tenant_id=:tenantId and submission_id=:submissionId)
+                """,
+                new MapSqlParameterSource().addValue("tenantId", tenantId).addValue("submissionId", submissionId),
+                Long.class);
+        return count == null ? 0L : count;
+    }
+
+    @Override
+    public Optional<Document> findDuplicateOf(UUID tenantId, UUID sourceId, java.util.Collection<UUID> submissionIds,
+                                              String contentSha256) {
+        if (submissionIds == null || submissionIds.isEmpty() || contentSha256 == null) return Optional.empty();
+        // Uses idx_documents_fingerprint (tenant_id, content_sha256). A deleted document, or one being deleted, is no
+        // longer kept, so the new file is stored again.
+        return jdbc.query(documentSelect() + """
+                 where tenant_id=:tenantId and source_id=:sourceId and submission_id in (:submissionIds)
+                   and content_sha256=:sha and deleted_at is null
+                   and status not in ('EXPIRED_DELETED','RETENTION_DELETING')
+                 order by ingested_at, document_id
+                 limit 1
                 """, new MapSqlParameterSource()
                 .addValue("tenantId", tenantId)
                 .addValue("sourceId", sourceId)
-                .addValue("sha", contentSha256)
-                .addValue("documentId", excludingDocumentId), Long.class);
-        return count != null && count > 0;
+                .addValue("submissionIds", List.copyOf(submissionIds))
+                .addValue("sha", contentSha256), documentMapper()).stream().findFirst();
+    }
+
+    @Override
+    public void lockDuplicateCheck(UUID tenantId, UUID sourceId, String recordKey, String contentSha256) {
+        jdbc.queryForObject("select pg_advisory_xact_lock(hashtextextended(:key, 0))",
+                new MapSqlParameterSource("key",
+                        "sdv-duplicate:" + tenantId + ":" + sourceId + ":" + recordKey + ":" + contentSha256),
+                Object.class);
+    }
+
+    @Override
+    public Optional<DuplicateReceipt> findDuplicateReceipt(UUID tenantId, UUID submissionId, String sourceDocumentId,
+                                                           String producerIdempotencyKey) {
+        if (sourceDocumentId == null && producerIdempotencyKey == null) return Optional.empty();
+        String which = sourceDocumentId != null ? "source_document_id=:id" : "producer_idempotency_key=:id";
+        return jdbc.query("""
+                select duplicate_id, tenant_id, source_id, submission_id, source_document_id, producer_idempotency_key,
+                       existing_document_id, content_sha256, content_size_bytes, sent_level, level_outcome, received_at
+                  from document_duplicate_receipts
+                 where tenant_id=:tenantId and submission_id=:submissionId and\s""" + which,
+                new MapSqlParameterSource()
+                        .addValue("tenantId", tenantId)
+                        .addValue("submissionId", submissionId)
+                        .addValue("id", sourceDocumentId != null ? sourceDocumentId : producerIdempotencyKey),
+                (rs, row) -> new DuplicateReceipt(
+                        rs.getObject("duplicate_id", UUID.class), rs.getObject("tenant_id", UUID.class),
+                        rs.getObject("source_id", UUID.class), rs.getObject("submission_id", UUID.class),
+                        rs.getString("source_document_id"), rs.getString("producer_idempotency_key"),
+                        rs.getObject("existing_document_id", UUID.class), rs.getString("content_sha256"),
+                        rs.getLong("content_size_bytes"), SensitivityLevel.valueOf(rs.getString("sent_level")),
+                        DuplicateReceipt.LevelOutcome.valueOf(rs.getString("level_outcome")),
+                        rs.getTimestamp("received_at").toInstant())).stream().findFirst();
+    }
+
+    @Override
+    public void insertDuplicateReceipt(DuplicateReceipt r) {
+        jdbc.update("""
+                insert into document_duplicate_receipts(
+                    duplicate_id, tenant_id, source_id, submission_id, source_document_id, producer_idempotency_key,
+                    existing_document_id, content_sha256, content_size_bytes, sent_level, level_outcome, received_at)
+                values (:id, :tenantId, :sourceId, :submissionId, :sourceDocumentId, :idempotencyKey,
+                    :existingDocumentId, :sha, :size, :sentLevel, :levelOutcome, :receivedAt)
+                """, new MapSqlParameterSource()
+                .addValue("id", r.duplicateId())
+                .addValue("tenantId", r.tenantId())
+                .addValue("sourceId", r.sourceId())
+                .addValue("submissionId", r.submissionId())
+                .addValue("sourceDocumentId", r.sourceDocumentId())
+                .addValue("idempotencyKey", r.producerIdempotencyKey())
+                .addValue("existingDocumentId", r.existingDocumentId())
+                .addValue("sha", r.contentSha256())
+                .addValue("size", r.contentSizeBytes())
+                .addValue("sentLevel", r.sentLevel().name())
+                .addValue("levelOutcome", r.levelOutcome().name())
+                .addValue("receivedAt", Timestamp.from(r.receivedAt())));
     }
 
     @Override
@@ -418,7 +495,7 @@ public class JdbcSecureIngestionRepository implements SubmissionRepository, Stor
                                              UUID submissionId,
                                              int expectedDocumentCount,
                                              Instant activityAt) {
-        long received = countDocuments(tenantId, submissionId);
+        long received = countReceived(tenantId, submissionId);
         Long specificallyMissing = jdbc.queryForObject("""
                 select count(*)
                   from submission_expected_documents
@@ -534,7 +611,9 @@ public class JdbcSecureIngestionRepository implements SubmissionRepository, Stor
                    and last_activity_at <= :cutoff
                    and (select count(*) from documents d
                          where d.tenant_id=submissions.tenant_id
-                           and d.submission_id=submissions.submission_id) < expected_document_count
+                           and d.submission_id=submissions.submission_id)
+                       +\s""" + duplicatesOfSubmission("submissions") + """
+                        < expected_document_count
                 """, new MapSqlParameterSource()
                 .addValue("tenantId", tenantId)
                 .addValue("sourceId", sourceId)

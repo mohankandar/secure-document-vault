@@ -254,7 +254,9 @@ public class JdbcOperationalRepository implements AuditQueryPort, OperationalRep
                                 * interval '1 hour')
                            <= cast(:now as timestamptz)
                        and (select count(*) from documents d
-                             where d.tenant_id=s.tenant_id and d.submission_id=s.submission_id) < s.expected_document_count
+                             where d.tenant_id=s.tenant_id and d.submission_id=s.submission_id)
+                         + (select count(*) from document_duplicate_receipts x
+                             where x.tenant_id=s.tenant_id and x.submission_id=s.submission_id) < s.expected_document_count
                      )
                    )
                 """, attentionParams(tenantId, now), Long.class);
@@ -269,7 +271,9 @@ public class JdbcOperationalRepository implements AuditQueryPort, OperationalRep
                        least(t.incomplete_attention_hours,
                              coalesce(src.incomplete_attention_hours, t.incomplete_attention_hours)) as attention_hours,
                        (select count(*) from documents d
-                         where d.tenant_id=s.tenant_id and d.submission_id=s.submission_id) as received_count
+                         where d.tenant_id=s.tenant_id and d.submission_id=s.submission_id)
+                       + (select count(*) from document_duplicate_receipts x
+                         where x.tenant_id=s.tenant_id and x.submission_id=s.submission_id) as received_count
                   from submissions s
                   join ingestion_sources src on src.tenant_id=s.tenant_id and src.source_id=s.source_id
                   join tenants t on t.tenant_id=s.tenant_id
@@ -284,7 +288,9 @@ public class JdbcOperationalRepository implements AuditQueryPort, OperationalRep
                                 * interval '1 hour')
                            <= cast(:now as timestamptz)
                        and (select count(*) from documents d
-                             where d.tenant_id=s.tenant_id and d.submission_id=s.submission_id) < s.expected_document_count
+                             where d.tenant_id=s.tenant_id and d.submission_id=s.submission_id)
+                         + (select count(*) from document_duplicate_receipts x
+                             where x.tenant_id=s.tenant_id and x.submission_id=s.submission_id) < s.expected_document_count
                      )
                    )
                  order by s.last_activity_at, s.submission_id

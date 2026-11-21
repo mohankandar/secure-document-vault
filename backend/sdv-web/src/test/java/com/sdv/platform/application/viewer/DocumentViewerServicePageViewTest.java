@@ -80,12 +80,16 @@ class DocumentViewerServicePageViewTest {
     private final StorageVolumeRepository volumes = mock(StorageVolumeRepository.class);
     private final StorageProvider provider = mock(StorageProvider.class);
     private final StreamingCryptoPort crypto = mock(StreamingCryptoPort.class);
+    private final com.sdv.platform.application.access.DocumentAccessGuard guard =
+            mock(com.sdv.platform.application.access.DocumentAccessGuard.class);
     private final DocumentViewerService service = new DocumentViewerService(
-            documents, volumes, List.of(provider), crypto, audit, pageViews,
-            mock(com.sdv.platform.application.access.DocumentAccessGuard.class), Clock.fixed(NOW, ZoneOffset.UTC));
+            documents, volumes, List.of(provider), crypto, audit, pageViews, guard, Clock.fixed(NOW, ZoneOffset.UTC));
 
     @BeforeEach
     void setUp() throws Exception {
+        org.mockito.Mockito.when(guard.requireOpenable(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                        org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(com.sdv.platform.domain.document.SensitivityLevel.STANDARD);
         byte[] plaintext;
         try (PDDocument pdf = new PDDocument(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
             for (int i = 0; i < 3; i++) pdf.addPage(new PDPage(PDRectangle.LETTER));
@@ -121,6 +125,22 @@ class DocumentViewerServicePageViewTest {
 
     private UUID open(UUID documentId, String actor) {
         return service.metadata(TENANT, documentId, ALL, actor, "c").viewingId();
+    }
+
+    /** Task 0031 (0.1): the effective level the guard worked out at the time of viewing is in both events. */
+    @Test
+    void openingsAndPageViewsRecordTheEffectiveLevelAtTheTimeOfViewing() {
+        org.mockito.Mockito.when(guard.requireOpenable(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                        org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(com.sdv.platform.domain.document.SensitivityLevel.HIGHLY_CONFIDENTIAL);
+        UUID viewing = open(DOC, "steward");
+        service.renderPage(TENANT, DOC, ALL, 1, 1.0, viewing, "steward", "c");
+        service.renderPage(TENANT, DOC, ALL, 2, 1.0, null, "steward", "c");
+        assertEquals(3, events.size());
+        for (var event : events) {
+            assertTrue(event.safeDetailsJson().contains("\"sensitivityLevel\":\"HIGHLY_CONFIDENTIAL\""),
+                    event.action() + " " + event.safeDetailsJson());
+        }
     }
 
     @Test

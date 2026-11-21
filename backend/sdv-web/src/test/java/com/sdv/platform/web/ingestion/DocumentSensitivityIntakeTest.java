@@ -78,6 +78,8 @@ class DocumentSensitivityIntakeTest {
     private final DocumentFinalizationService finalization = mock(DocumentFinalizationService.class);
     private final AuditEventPort audit = mock(AuditEventPort.class);
     private final SubmissionService submissionService = mock(SubmissionService.class);
+    private final com.sdv.platform.application.business.RecordReferences records = mock(com.sdv.platform.application.business.RecordReferences.class);
+    private final com.sdv.platform.application.port.AccessRequestRepository levels = mock(com.sdv.platform.application.port.AccessRequestRepository.class);
     private MockMvc mvc;
 
     @BeforeEach
@@ -85,7 +87,7 @@ class DocumentSensitivityIntakeTest {
         SecurityContextFacade security = mock(SecurityContextFacade.class);
         when(security.requireIngestionSourcePrincipal()).thenReturn(new IngestionSourcePrincipal(TENANT, SOURCE, "producer"));
         DocumentIntakeService intake = new DocumentIntakeService(tenants, sources, submissions, documents, placement,
-                List.of(storage), crypto, finalization, audit, mock(PlatformTransactionManager.class));
+                List.of(storage), crypto, finalization, audit, records, levels, mock(PlatformTransactionManager.class));
         mvc = MockMvcBuilders.standaloneSetup(
                         new DocumentIntakeController(security, intake),
                         new SubmissionController(security, submissionService))
@@ -99,6 +101,8 @@ class DocumentSensitivityIntakeTest {
         Submission submission = new Submission(SUBMISSION, TENANT, SOURCE, "sub-1", 5, "sha", SubmissionStatus.OPEN, NOW, NOW, null);
         when(submissions.findById(TENANT, SOURCE, SUBMISSION)).thenReturn(Optional.of(submission));
         when(documents.lockSubmission(TENANT, SOURCE, SUBMISSION)).thenReturn(submission);
+        when(records.ofSubmission(TENANT, SOURCE, SUBMISSION)).thenReturn(new com.sdv.platform.application.business.RecordReferences.ResolvedRecord(
+                SOURCE, "submission:" + SUBMISSION, List.of(SUBMISSION)));
 
         StorageVolume volume = new StorageVolume(UUID.randomUUID(), TENANT, "LOCAL_FILESYSTEM", "primary-a", "/tmp",
                 StorageVolumeState.values()[0], 1, 80, 95, NOW, NOW);

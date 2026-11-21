@@ -133,7 +133,15 @@ function Deliver([string]$SourceId, [string]$SubKey, [hashtable]$Metadata, [stri
         if ([int]$have -eq 0) {
             $h = SourceHeaders $SourceId; $h['X-SDV-Source-Document-Id'] = $d.id; $h['X-SDV-Filename'] = $d.file
             if ($d.ContainsKey('level') -and $d.level) { $h['X-SDV-Sensitivity-Level'] = $d.level }
-            $null = Invoke-WebRequest -Uri "$Base/api/v1/ingestion/submissions/$submissionId/documents" -Method Post -Headers $h -ContentType 'application/pdf' -InFile $d.path -UseBasicParsing -TimeoutSec 60
+            # Task 0031: the same file for the same contract is an exact duplicate and is not stored again. The demo
+            # uses one sample PDF for many documents, so each upload gets its own copy: the sample plus a PDF comment
+            # line after its end that names this delivery (readers ignore it; the checksum differs).
+            $copyDir = Join-Path $PSScriptRoot '.runtime\seed-pdfs'
+            New-Item -ItemType Directory -Force -Path $copyDir | Out-Null
+            $copy = Join-Path $copyDir ("$submissionId-" + ($d.id -replace '[^A-Za-z0-9._-]', '_') + '.pdf')
+            $bytes = [System.IO.File]::ReadAllBytes($d.path) + [System.Text.Encoding]::ASCII.GetBytes("`n%vero-demo-copy $submissionId $($d.id -replace '[^A-Za-z0-9._-]', '_')`n")
+            [System.IO.File]::WriteAllBytes($copy, $bytes)
+            $null = Invoke-WebRequest -Uri "$Base/api/v1/ingestion/submissions/$submissionId/documents" -Method Post -Headers $h -ContentType 'application/pdf' -InFile $copy -UseBasicParsing -TimeoutSec 60
         }
     }
     $submissionId

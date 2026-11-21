@@ -119,4 +119,60 @@ class ApprovalsScreenSupportTest {
         assertEquals(AccessRequestStatus.APPROVED, after.status());
         assertEquals(w.clock.instant(), after.decidedAt());
     }
+
+    /** Task 0031 (0.2): "Decided recently" lists every Business admin's decisions, newest first, without reasons. */
+    @Test
+    void decidedRecentlyListsTheDecisionsOfEveryBusinessAdminWithoutReasons() throws Exception {
+        UUID old = ask(RS, H1, "DOWNLOAD");
+        w.approvals.decide(TENANT, ADMIN, "Bea Admin", old.toString(), Decision.DECLINE, "c");
+        w.clock.advance(Duration.ofDays(31));
+        UUID print = ask(RS, H1, "PRINT");
+        UUID download = ask("rs-2", H2, "DOWNLOAD");
+        w.recordLevels.put(recordKey(CONTRACT_B), SensitivityLevel.CONFIDENTIAL);
+        UUID record = w.levels.requestLowerRecord(TENANT, RS, "Rae Restricted", RESTRICTED, recordRef(CONTRACT_B), "STANDARD",
+                "Closed", "c").requestId();
+        UUID waiting = ask("rs-3", H2, "PRINT");
+        w.approvals.decide(TENANT, ADMIN, "Bea Admin", print.toString(), Decision.APPROVE, "c");
+        w.clock.advance(Duration.ofMinutes(1));
+        w.approvals.decide(TENANT, ADMIN_2, "Ben Admin", download.toString(), Decision.DECLINE, "c");
+        w.clock.advance(Duration.ofMinutes(1));
+        w.approvals.decide(TENANT, ADMIN_2, null, record.toString(), Decision.APPROVE, "c");
+
+        var decided = w.approvals.decidedRecently(TENANT);
+        assertEquals(List.of(record, download, print), decided.stream().map(AccessRequestService.DecidedView::requestId).toList(),
+                "newest first; the one decided 31 days ago and the one still waiting are not listed");
+        assertFalse(decided.stream().anyMatch(d -> d.requestId().equals(old) || d.requestId().equals(waiting)));
+        var wholeRecord = decided.getFirst();
+        assertEquals(AccessRequestKind.Scope.RECORD, wholeRecord.scope());
+        assertEquals(CONTRACT_B, wholeRecord.primaryIdentifier());
+        assertEquals(Decision.APPROVE, wholeRecord.decision());
+        assertEquals(ADMIN_2, wholeRecord.decidedBy(), "the sign-in subject when no name was known");
+        assertEquals(SensitivityLevel.STANDARD, wholeRecord.requestedLevel());
+        assertEquals("Ben Admin", decided.get(1).decidedBy());
+        assertEquals(Decision.DECLINE, decided.get(1).decision());
+        assertEquals(CONTRACT_A, decided.get(2).primaryIdentifier());
+        assertEquals("Bea Admin", decided.get(2).decidedBy(), "each admin's own decisions");
+
+        // A used or expired approval is still an approval in this list.
+        w.clock.advance(Duration.ofHours(25));
+        assertEquals(Decision.APPROVE, w.approvals.decidedRecently(TENANT).stream()
+                .filter(d -> d.requestId().equals(print)).findFirst().orElseThrow().decision());
+
+        JsonNode row = JSON.readTree(JSON.writeValueAsString(decided)).get(0);
+        Set<String> keys = new TreeSet<>();
+        for (Iterator<String> it = row.fieldNames(); it.hasNext(); ) keys.add(it.next());
+        assertEquals(new TreeSet<>(List.of("requestId", "kind", "scope", "requestedLevel", "primaryIdentifier",
+                "primaryIdentifierLabel", "decision", "decidedBy", "decidedAt")), keys, "no reason, requester or file name");
+        String json = JSON.writeValueAsString(decided);
+        assertFalse(json.contains("Hearing bundle") || json.contains("Closed") || json.contains("Rae") || json.contains(".pdf"), json);
+    }
+
+    /** Task 0031 (0.3): the approvals list carries the tenant's own pending-expiry window. */
+    @Test
+    void theApprovalsListCarriesTheTenantsPendingExpiryWindow() {
+        assertEquals(7, w.approvals.pending(TENANT, null, null, "c").pendingExpiryDays(), "the default");
+        w.settings = new ApprovalSettings("24", "7", "", TENANT + "=3");
+        w.build();
+        assertEquals(3, w.approvals.pending(TENANT, null, null, "c").pendingExpiryDays());
+    }
 }

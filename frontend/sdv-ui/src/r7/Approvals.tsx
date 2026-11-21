@@ -5,7 +5,7 @@ import { useStore } from './store'
 import { FailureNotice, loadFailed, type Failure } from './CardError'
 import { Callout, Dialog, Drawer, Switch, fmtDate } from './ui'
 import { refusalText, whenWords } from './Sensitivity'
-import { BULK_MAX, LEVEL_NAMES, approvalLevelNote, decideMany, decideRequest, pendingRequests, type BulkItem, type PendingList, type PendingRequest } from './liveApi'
+import { BULK_MAX, LEVEL_NAMES, approvalLevelNote, decideMany, decideRequest, decidedRecently, pendingRequests, type BulkItem, type DecidedRequest, type PendingList, type PendingRequest } from './liveApi'
 
 /**
  * Task 0030 (S9a part 2), board Sens-Approvals: the Business admin's approvals. One line per request, grouped by the
@@ -61,11 +61,6 @@ export function kindsOf(requests: PendingRequest[]): string {
 const and = (parts: string[]) => parts.length <= 1 ? parts.join('') : `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}`
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`
 
-/** What a decision made here was, for "Decided recently" (this browser tab only; see the report's question). */
-type Decided = { at: string; decision: 'Approved' | 'Declined'; what: string; identifier: string; requester: string }
-const DECIDED_KEY = 'vero.approvals.decided'
-const readDecided = (): Decided[] => { try { return JSON.parse(window.sessionStorage.getItem(DECIDED_KEY) ?? '[]') as Decided[] } catch { return [] } }
-const remember = (items: Decided[]) => { try { window.sessionStorage.setItem(DECIDED_KEY, JSON.stringify([...items, ...readDecided()].slice(0, 100))) } catch { /* the list lasts for this page only */ } }
 
 export function Approvals({ onWaiting }: { onWaiting: (w: WaitingSummary) => void }) {
   const { can, toast } = useStore()
@@ -82,6 +77,16 @@ export function Approvals({ onWaiting }: { onWaiting: (w: WaitingSummary) => voi
   const [review, setReview] = useState<PendingRequest | null>(null)
   const [showAll, setShowAll] = useState(false)
   const [recentOpen, setRecentOpen] = useState(false)
+  // Task 0031 (0.2): "Decided recently" comes from the server: every Business admin's decisions, not this tab's.
+  const [recent, setRecent] = useState<DecidedRequest[] | null>(null)
+  const [recentError, setRecentError] = useState<Failure | null>(null)
+  useEffect(() => {
+    if (!recentOpen) return
+    let active = true
+    setRecent(null); setRecentError(null)
+    decidedRecently().then((r) => { if (active) setRecent(r) }).catch((e) => { if (active) setRecentError(loadFailed('Recent decisions did not load', e)) })
+    return () => { active = false }
+  }, [recentOpen, reload])
 
   useEffect(() => {
     let active = true
@@ -125,7 +130,6 @@ export function Approvals({ onWaiting }: { onWaiting: (w: WaitingSummary) => voi
     } finally {
       const done = results.filter((r) => r.outcome === 'APPROVED' || r.outcome === 'DECLINED')
       const refused = results.filter((r) => r.outcome === 'REFUSED' || r.outcome === 'FAILED')
-      remember(done.map((d) => decidedOf(byId.get(d.requestId), d.outcome === 'APPROVED')).filter((x): x is Decided => !!x))
       if (done.length) toast({ tone: 'ok', title: `${plural(done.length, 'request')} ${decision === 'APPROVE' ? 'approved' : 'declined'}`, detail: 'Each requester sees it under Requests the next time they open Vero.' })
       if (refused.length) setProblems({ title: `${plural(refused.length, 'request')} ${refused.length === 1 ? 'was' : 'were'} not ${decision === 'APPROVE' ? 'approved' : 'declined'}`, lines: refused.map((r) => {
         const req = byId.get(r.requestId)
@@ -141,7 +145,6 @@ export function Approvals({ onWaiting }: { onWaiting: (w: WaitingSummary) => voi
     setBusy(true); setProblems(null)
     try {
       await decideRequest(r.requestId, decision)
-      remember([decidedOf(r, decision === 'approve')!])
       toast({ tone: 'ok', title: decision === 'approve' ? 'Approved' : 'Declined', detail: `${kindWords(r)} on ${r.primaryIdentifier ?? 'a record'} for ${r.requester}.` })
       setReview(null)
     } catch (e) {
@@ -154,7 +157,6 @@ export function Approvals({ onWaiting }: { onWaiting: (w: WaitingSummary) => voi
   const tickedByGroup = new Map<string, PendingRequest[]>()
   for (const r of ticked) { const g = groupOf.get(r.requestId) ?? '—'; tickedByGroup.set(g, [...(tickedByGroup.get(g) ?? []), r]) }
   const summary = and([...tickedByGroup.entries()].map(([g, rs]) => `${rs.length} on ${g} (${kindsOf(rs)})`))
-  const recent = recentOpen ? readDecided() : []
 
   return <>
     <div className="apr-toolbar" role="toolbar" aria-label="Approvals filters">
@@ -208,7 +210,7 @@ export function Approvals({ onWaiting }: { onWaiting: (w: WaitingSummary) => voi
       </section>}
 
     <div className="apr-foot">
-      <span>Showing {grouped ? shownGroups.length : groups.length} of {plural(list.groups.length, 'contract')} · {plural(total, 'request')} · requests nobody decides expire after 7 days and the requester is told
+      <span>Showing {grouped ? shownGroups.length : groups.length} of {plural(list.groups.length, 'contract')} · {plural(total, 'request')} · requests nobody decides expire after {plural(list.pendingExpiryDays, 'day')} and the requester is told
         {grouped && groups.length > shownGroups.length && <> · <button type="button" className="v-link" onClick={() => setShowAll(true)}>Show all contracts</button></>}</span>
       <button type="button" className="v-link" onClick={() => setRecentOpen(true)}>Decided recently ›</button>
     </div>
@@ -229,15 +231,20 @@ export function Approvals({ onWaiting }: { onWaiting: (w: WaitingSummary) => voi
     </Dialog>}
 
     {recentOpen && <Drawer eyebrow="Approvals" title="Decided recently" onClose={() => setRecentOpen(false)}>
-      <p className="faint">Decisions made on this screen since you opened Vero in this tab.</p>
-      {recent.length === 0 ? <p className="muted">Nothing decided here yet.</p> : <ul className="apr-recent">{recent.map((d, i) => <li key={i}>
-        <b>{d.decision}</b> · {d.what} on <span className="mono">{d.identifier}</span><span className="faint"> · {d.requester} · {whenWords(d.at)}</span></li>)}</ul>}
+      <p className="faint">Decisions by every Business admin in the last 30 days, newest first (at most 50).</p>
+      {recentError ? <FailureNotice failure={recentError} loadTitle="Recent decisions didn't load" onRetry={() => setReload((x) => x + 1)} />
+        : !recent ? <p className="muted">Reading recent decisions…</p>
+        : recent.length === 0 ? <p className="muted">Nothing decided in the last 30 days.</p>
+        : <ul className="apr-recent">{recent.map((d) => <li key={d.requestId}>
+        <b>{d.decision === 'APPROVE' ? 'Approved' : 'Declined'}</b> · {decidedWords(d)} on <span className="mono">{d.primaryIdentifier ?? '—'}</span><span className="faint"> · by {d.decidedBy} · {whenWords(d.decidedAt)}</span></li>)}</ul>}
     </Drawer>}
   </>
 }
 
-function decidedOf(r: PendingRequest | undefined, approved: boolean): Decided | null {
-  return r ? { at: new Date().toISOString(), decision: approved ? 'Approved' : 'Declined', what: kindWords(r), identifier: r.primaryIdentifier ?? '—', requester: r.requester } : null
+/** "Download", "Lower to Standard (whole contract)": a decided request in words. */
+function decidedWords(d: DecidedRequest): string {
+  const what = d.kind === 'PRINT' ? 'Print' : d.kind === 'DOWNLOAD' ? 'Download' : `Lower to ${d.requestedLevel ? LEVEL_NAMES[d.requestedLevel] : 'a lower level'}`
+  return d.scope === 'RECORD' ? `${what} (whole contract)` : what
 }
 
 /** One request on one line, as on the board. identifier: shown when the list isn't grouped by contract. */

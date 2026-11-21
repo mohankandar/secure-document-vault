@@ -55,6 +55,13 @@ public class ApprovalsController {
         return noStore(requests.pending(p.tenantId(), kind, requester, MDC.get("correlationId")));
     }
 
+    /** Task 0031 (0.2): recent decisions by every Business Admin of the tenant, newest first (no reasons). */
+    @GetMapping("/decided")
+    public ResponseEntity<List<AccessRequestService.DecidedView>> decided() {
+        SdvPrincipal p = requireApprover();
+        return noStore(requests.decidedRecently(p.tenantId()));
+    }
+
     @PostMapping("/{requestId}/approve")
     public ResponseEntity<AccessRequestService.DecisionView> approve(@PathVariable String requestId) {
         SdvPrincipal p = requireApprover();

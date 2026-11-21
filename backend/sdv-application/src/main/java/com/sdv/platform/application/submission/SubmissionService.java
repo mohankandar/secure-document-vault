@@ -199,7 +199,8 @@ public class SubmissionService {
 
         SubmissionProgress progress = null;
         if (effective.status() != SubmissionStatus.COMPLETE) {
-            int received = documentList.size();
+            // Task 0031: an exact duplicate fills its place too ("2 of 4 received"), though no second copy is stored.
+            int received = (int) documents.countReceived(effective.tenantId(), effective.submissionId());
             List<String> missingIds = expectedDocuments.stream()
                     .filter(item -> item.state() == ExpectedDocumentState.EXPECTED)
                     .map(SubmissionExpectedDocument::sourceDocumentId)
@@ -477,7 +478,11 @@ public class SubmissionService {
         }
         @Override public long countDocuments(UUID tenantId, UUID submissionId) { return 0L; }
         @Override public long sumContentBytes(UUID tenantId, UUID submissionId) { return 0L; }
-        @Override public boolean hasExactDuplicateContent(UUID tenantId, UUID sourceId, String contentSha256, UUID excludingDocumentId) { return false; }
+        @Override public long countReceived(UUID tenantId, UUID submissionId) { return 0L; }
+        @Override public java.util.Optional<Document> findDuplicateOf(UUID tenantId, UUID sourceId, java.util.Collection<UUID> submissionIds, String contentSha256) { return java.util.Optional.empty(); }
+        @Override public void lockDuplicateCheck(UUID tenantId, UUID sourceId, String recordKey, String contentSha256) { throw new UnsupportedOperationException(); }
+        @Override public java.util.Optional<DuplicateReceipt> findDuplicateReceipt(UUID tenantId, UUID submissionId, String sourceDocumentId, String producerIdempotencyKey) { return java.util.Optional.empty(); }
+        @Override public void insertDuplicateReceipt(DuplicateReceipt receipt) { throw new UnsupportedOperationException(); }
         @Override public void insertDocument(Document document) { throw new UnsupportedOperationException(); }
         @Override public void insertStorageRef(com.sdv.platform.domain.document.DocumentStorageRef storageRef) { throw new UnsupportedOperationException(); }
         @Override public void insertCryptoMetadata(com.sdv.platform.domain.document.DocumentCryptoMetadata cryptoMetadata) { throw new UnsupportedOperationException(); }

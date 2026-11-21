@@ -49,6 +49,12 @@ public interface AccessRequestRepository {
     /** This person's own requests, newest first. */
     List<AccessRequest> findByRequester(UUID tenantId, String requestedBy, int limit);
 
+    /**
+     * Task 0031 (0.2): requests any Business Admin of the tenant decided at or after {@code since}, newest decision
+     * first (whatever happened to them afterwards: used or expired).
+     */
+    List<AccessRequest> findDecidedSince(UUID tenantId, Instant since, int limit);
+
     /** The documents' facts a Business Admin may see, plus what the server needs to work out levels and records. */
     List<DocumentFacts> findDocumentFacts(UUID tenantId, Collection<UUID> documentIds);
 

@@ -78,7 +78,7 @@ class ApprovalsControllerTest {
     }
 
     private static List<RequestBuilder> approvals() {
-        return List.of(get("/api/v1/admin/access-requests"),
+        return List.of(get("/api/v1/admin/access-requests"), get("/api/v1/admin/access-requests/decided"),
                 post("/api/v1/admin/access-requests/" + REQUEST + "/approve"),
                 post("/api/v1/admin/access-requests/" + REQUEST + "/decline"),
                 post("/api/v1/admin/access-requests/decisions").contentType(MediaType.APPLICATION_JSON)
@@ -105,7 +105,7 @@ class ApprovalsControllerTest {
             for (RequestBuilder request : approvals()) refused(role, request, "SDV-APR-005");
         }
         verifyNoInteractions(requests);
-        assertDenied("APPROVE_SENSITIVE_ACCESS", 4 * (SdvRole.values().length - 1));
+        assertDenied("APPROVE_SENSITIVE_ACCESS", approvals().size() * (SdvRole.values().length - 1));
     }
 
     @Test
@@ -174,9 +174,16 @@ class ApprovalsControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.results[0].code").value("SDV-APR-009"))
                 .andExpect(jsonPath("$.notDecided").value(1));
-        when(requests.pending(TENANT, "PRINT", "Rae", null)).thenReturn(new AccessRequestService.PendingList(List.of(), 0));
+        when(requests.pending(TENANT, "PRINT", "Rae", null)).thenReturn(new AccessRequestService.PendingList(List.of(), 0, 7));
         mvc.perform(get("/api/v1/admin/access-requests").param("kind", "PRINT").param("requester", "Rae"))
-                .andExpect(status().isOk()).andExpect(jsonPath("$.requestCount").value(0));
+                .andExpect(status().isOk()).andExpect(jsonPath("$.requestCount").value(0))
+                .andExpect(jsonPath("$.pendingExpiryDays").value(7));
+        when(requests.decidedRecently(TENANT)).thenReturn(List.of(new AccessRequestService.DecidedView(REQUEST,
+                com.sdv.platform.application.approvals.AccessRequestKind.PRINT, com.sdv.platform.application.approvals.AccessRequestKind.Scope.DOCUMENT,
+                null, "300000000001", "Contract number", AccessRequestService.Decision.APPROVE, "Bea Admin", java.time.Instant.parse("2026-11-20T10:00:00Z"))));
+        mvc.perform(get("/api/v1/admin/access-requests/decided")).andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].decidedBy").value("Bea Admin")).andExpect(jsonPath("$[0].decision").value("APPROVE"))
+                .andExpect(jsonPath("$[0].reason").doesNotExist());
 
         signIn(SdvRole.DOCUMENT_STEWARD);
         when(levels.raiseDocument(eq(TENANT), eq("person-document_steward"), eq("Pat Person"), any(), eq(DOCUMENT.toString()),
