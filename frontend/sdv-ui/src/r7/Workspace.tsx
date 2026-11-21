@@ -3,7 +3,8 @@ import { AlertTriangle, ArrowRight, ChevronDown, ChevronUp, Lock, Search, Slider
 import type { SensitivityLevel } from '../api'
 import { useStore } from './store'
 import type { RecordItem, Source } from './model'
-import { schema, search, record, toSource, toSummary, toRecord, documentActivity, recentRecords as loadRecentRecords, RECENT_LIMIT, SEARCH_PAGE_SIZE, type LiveDocumentActivity } from './liveApi'
+import { LOCKED_MESSAGE, LevelBadge, LevelDialog, RecordLevelBox } from './Sensitivity'
+import { schema, search, record, record as loadRecord, toSource, toSummary, toRecord, documentActivity, recentRecords as loadRecentRecords, RECENT_LIMIT, SEARCH_PAGE_SIZE, type LiveDocumentActivity } from './liveApi'
 import { LoadErrorCard, failureText, loadFailed, type Failure } from './CardError'
 import { Badge, Callout, Drawer, Empty, Skeleton, actorWords, auditEventLabel, fmtDate, fmtRel, fmtShortDate } from './ui'
 import { Viewer } from './Viewer'
@@ -471,7 +472,10 @@ function ResultsTable({ results, summaries, selectedRef, onOpen, source, needle 
 }
 
 function RecordPanelBody({ record, summary, onOpen, source, action, needle }: { record: RecordItem; summary?: Summary; onOpen: (id: string) => void; source?: Source; /** Shown after Details (the wide panel's Open documents) */ action?: ReactNode; /** "anywhere" text: marked in Details (task 0022) */ needle?: string }) {
-  const { can } = useStore()
+  const { can, toast, setRecords } = useStore()
+  // Task 0029: the Level dialog for the whole record (Stewards only), and the record reloaded after a change.
+  const [levelOpen, setLevelOpen] = useState(false)
+  const reloadRecord = () => loadRecord(record.ref).then((r) => setRecords((prev) => prev.map((x) => (x.ref === r.recordRef ? toRecord(r) : x)))).catch(() => { /* the panel keeps what it showed */ })
   // Details: the record's fields in the sending system's own order, without its identifiers; dates as "30 Sep 2026".
   const idLabels = new Set(record.identifiers.map((i) => i.label))
   const details = orderedPreview(record.metadata.filter((m) => !idLabels.has(m.label)), source)
@@ -496,6 +500,8 @@ function RecordPanelBody({ record, summary, onOpen, source, action, needle }: { 
   return (
     <>
       <div className={`ws-ids${record.identifiers.length > 2 ? " wrap" : ""}`}>{record.identifiers.map((i) => <div key={i.label}><span>{i.label}</span><strong title={i.value}>{i.value}</strong></div>)}</div>
+      {/* Task 0029, board Sens-Results: the record's own level; Level for Document and Restricted stewards only (hidden for others). */}
+      <RecordLevelBox record={record} action={can('CHANGE_SENSITIVITY_LEVEL') ? <button type="button" className="v-btn sm" onClick={() => setLevelOpen(true)} disabled={record.recordLevel === undefined}>Level</button> : undefined} />
       {(inc || summary?.incomplete) && (
         inc && inc.expected > 0 ? (
           <Callout tone="warn" title={`${inc.received} of ${inc.expected} documents received`}>
@@ -521,14 +527,15 @@ function RecordPanelBody({ record, summary, onOpen, source, action, needle }: { 
             {/* Task 0026: a document this person can't open shows only that it is restricted and its level. */}
             {locked.map((d) => (
               <li key={d.id}>
-                <div className="ws-doc locked" aria-label={`Restricted document, ${LEVEL_WORDS[d.level]}. You can't open this document.`}>
+                <button type="button" className="ws-doc locked" aria-label={`Restricted document, ${LEVEL_WORDS[d.level]}. ${LOCKED_MESSAGE}.`}
+                  onClick={() => toast({ tone: 'bad', title: LOCKED_MESSAGE })}>
                   <span className="lsheet" aria-hidden><Lock size={14} /></span>
                   <span className="grow" style={{ minWidth: 0 }}>
                     <strong>Restricted</strong>
                     <span>You can't open this document</span>
                   </span>
-                  <span className={`ws-level ${d.level === 'HIGHLY_CONFIDENTIAL' ? 'hc' : 'c'}`}>{LEVEL_WORDS[d.level]}</span>
-                </div>
+                  <LevelBadge level={d.level} />
+                </button>
               </li>
             ))}
           </ul>
@@ -553,6 +560,14 @@ function RecordPanelBody({ record, summary, onOpen, source, action, needle }: { 
         {liveEvents.length > 3 && <button type="button" className="v-btn quiet sm" style={{ alignSelf: 'flex-start' }} onClick={() => setMore((m) => !m)}>{more ? <ChevronUp size={14} aria-hidden /> : <ChevronDown size={14} aria-hidden />}{more ? 'Show less' : 'Show more'}</button>}
       </div>
       {!can('VIEW_PDF') && <Callout tone="warn" title="Viewing isn't assigned"><AlertTriangle size={0} aria-hidden />Your role can find this record but not open its documents.</Callout>}
+      {levelOpen && <LevelDialog record={record} initialScope="record" onClose={() => setLevelOpen(false)}
+        onChanged={(_, r) => {
+          setLevelOpen(false)
+          toast(r.outcome === 'APPLIED'
+            ? { title: `Level raised to ${LEVEL_WORDS[r.level]}`, detail: r.canStillOpen ? undefined : "You can no longer open this record's documents." }
+            : { title: 'Request sent', detail: 'A Business admin approves it before the level changes.' })
+          void reloadRecord()
+        }} />}
     </>
   )
 }

@@ -58,7 +58,9 @@ import java.util.UUID;
  * The Business Admin never sees a title, file name, other case fields or content: only what {@link PendingRequestView}
  * holds. Every request, decision, refused decision and expiry is audited; a change and its audit event are written in
  * one transaction. The request's free-text reason is not copied into the request and decision events (it stays in
- * access_requests, which IT Admins don't read); a level change's own event carries it, as the task asks.
+ * access_requests, which IT Admins don't read). Task 0029 (0.4): neither does a level change's event; an approved
+ * lowering writes a row of the level-change history (sensitivity_level_changes) with the reason, the approver as who
+ * changed it and the request it came from, and its event names that row (levelChangeId).
  */
 @Service
 public class AccessRequestService {
@@ -258,11 +260,15 @@ public class AccessRequestService {
     private PendingRequestView documentView(UUID tenantId, AccessRequest r, DocumentFacts f, SensitivityLevel level,
                                             Map<String, List<AvailableDocumentSnapshot>> cache) {
         if (f == null) {
-            return PendingRequestView.of(r, null, null, null, null, null, null, null);
+            return PendingRequestView.of(r, null, null, null, null, null, null, null, Levels.UNKNOWN);
         }
         Position position = null;
+        SensitivityLevel recordLevel = null;
+        boolean recordLevelKnown = false;
         try {
             RecordReferences.ResolvedRecord record = recordReferences.ofSubmission(tenantId, f.sourceId(), f.submissionId());
+            recordLevel = records.findRecordSensitivityLevel(tenantId, f.sourceId(), record.recordKey()).orElse(null);
+            recordLevelKnown = true;
             List<AvailableDocumentSnapshot> onRecord = cache.computeIfAbsent(f.sourceId() + "|" + record.recordKey(),
                     k -> records.findAvailableDocuments(tenantId, f.sourceId(), record.submissionIds()));
             position = position(r.documentId(), onRecord);
@@ -270,12 +276,12 @@ public class AccessRequestService {
             // The position is a help for telling documents apart; without it the request is still listed.
         }
         return PendingRequestView.of(r, f.primaryIdentifier(), f.primaryIdentifierLabel(), f.receivedAt(), f.pageCount(),
-                null, position, level);
+                null, position, level, recordLevelKnown ? Levels.ofDocument(r, f.ownLevel(), recordLevel, level) : Levels.UNKNOWN);
     }
 
     private PendingRequestView recordView(UUID tenantId, AccessRequest r, Map<String, List<AvailableDocumentSnapshot>> cache) {
         Optional<RecordReferences.ResolvedRecord> record = recordReferences.fromKey(tenantId, r.sourceId(), r.recordKey());
-        if (record.isEmpty()) return PendingRequestView.of(r, null, null, null, null, 0, null, null);
+        if (record.isEmpty()) return PendingRequestView.of(r, null, null, null, null, 0, null, null, Levels.UNKNOWN);
         RecordReferences.ResolvedRecord found = record.get();
         AccessRequestRepository.PrimaryIdentifier identifier = found.submissionIds().stream()
                 .map(id -> requests.findPrimaryIdentifier(tenantId, id))
@@ -284,7 +290,8 @@ public class AccessRequestService {
                 k -> records.findAvailableDocuments(tenantId, r.sourceId(), found.submissionIds())).size();
         SensitivityLevel level = records.findRecordSensitivityLevel(tenantId, r.sourceId(), r.recordKey()).orElse(null);
         return PendingRequestView.of(r, identifier == null ? null : identifier.value(),
-                identifier == null ? null : identifier.label(), null, null, count, null, level);
+                identifier == null ? null : identifier.label(), null, null, count, null, level,
+                new Levels(null, level, null, null));
     }
 
     /**
@@ -418,10 +425,16 @@ public class AccessRequestService {
             throw noLongerApplies();
         }
         requests.updateDocumentLevel(r.tenantId(), r.documentId(), r.requestedLevel());
+        UUID changeId = UUID.randomUUID();
+        requests.insertLevelChange(new AccessRequestRepository.LevelChange(changeId, r.tenantId(),
+                AccessRequestRepository.LevelChange.Scope.DOCUMENT, r.documentId(), null, null,
+                AccessRequestRepository.LevelChange.Direction.LOWERED, document.ownLevel(), r.requestedLevel(),
+                r.reason(), actorId, blankToNull(actorName), now, r.requestId()));
         Map<String, Object> details = new LinkedHashMap<>();
+        details.put("scope", "DOCUMENT");
         details.put("from", document.ownLevel().name());
         details.put("to", r.requestedLevel().name());
-        details.put("reason", r.reason());
+        details.put("levelChangeId", changeId.toString());
         details.put("accessRequestId", r.requestId().toString());
         details.put("requestedBy", r.requestedBy());
         append(r.tenantId(), "USER", actorId, actorName, DOCUMENT_LOWERED_ACTION, "DOCUMENT", r.documentId().toString(),
@@ -433,10 +446,16 @@ public class AccessRequestService {
                 .orElseThrow(AccessRequestService::noLongerApplies);
         if (stored.level().compareTo(r.requestedLevel()) <= 0) throw noLongerApplies();
         recordLevels.setLevel(r.tenantId(), stored.recordLevelId(), r.requestedLevel(), actorId, r.reason(), now);
+        UUID changeId = UUID.randomUUID();
+        requests.insertLevelChange(new AccessRequestRepository.LevelChange(changeId, r.tenantId(),
+                AccessRequestRepository.LevelChange.Scope.RECORD, null, r.sourceId(), r.recordKey(),
+                AccessRequestRepository.LevelChange.Direction.LOWERED, stored.level(), r.requestedLevel(),
+                r.reason(), actorId, blankToNull(actorName), now, r.requestId()));
         Map<String, Object> details = new LinkedHashMap<>();
+        details.put("scope", "RECORD");
         details.put("from", stored.level().name());
         details.put("to", r.requestedLevel().name());
-        details.put("reason", r.reason());
+        details.put("levelChangeId", changeId.toString());
         details.put("accessRequestId", r.requestId().toString());
         details.put("requestedBy", r.requestedBy());
         details.put("sourceId", r.sourceId().toString());
@@ -590,6 +609,11 @@ public class AccessRequestService {
      * content. receivedAt and pageCount are the document's (document requests); documentCount is the record's
      * (whole-record requests). level is the document's effective level, or the record's level. documentId is for
      * support only: the screen doesn't show it.
+     * <p>Task 0029 (0.5), so an approver isn't misled by a lowering: ownLevel is the document's own level and
+     * recordLevel its record's level (null when the record has none). For a document lowering, levelAfter is the
+     * effective level once approved, and accessUnchanged is true when that is still the level now: the record keeps
+     * the document where it is, so who can open it won't change. For a whole-record request recordLevel is the
+     * record's level and the other three are null. All four are null when they can't be worked out.
      */
     public record PendingRequestView(
             UUID requestId,
@@ -606,12 +630,29 @@ public class AccessRequestService {
             String requester,
             String reason,
             Instant requestedAt,
-            UUID documentId) {
+            UUID documentId,
+            SensitivityLevel ownLevel,
+            SensitivityLevel recordLevel,
+            SensitivityLevel levelAfter,
+            Boolean accessUnchanged) {
         static PendingRequestView of(AccessRequest r, String identifier, String label, Instant receivedAt, Integer pages,
-                                     Integer documentCount, Position position, SensitivityLevel level) {
+                                     Integer documentCount, Position position, SensitivityLevel level, Levels levels) {
             return new PendingRequestView(r.requestId(), r.kind(), r.kind().scope(), identifier, label, receivedAt, pages,
                     documentCount, position, level, r.requestedLevel(), r.requesterShown(), r.reason(), r.requestedAt(),
-                    r.documentId());
+                    r.documentId(), levels.own(), levels.record(), levels.after(), levels.accessUnchanged());
+        }
+    }
+
+    /** Task 0029 (0.5): the levels behind a waiting request (see {@link PendingRequestView}). */
+    record Levels(SensitivityLevel own, SensitivityLevel record, SensitivityLevel after, Boolean accessUnchanged) {
+        static final Levels UNKNOWN = new Levels(null, null, null, null);
+
+        static Levels ofDocument(AccessRequest r, SensitivityLevel own, SensitivityLevel record, SensitivityLevel effective) {
+            if (r.kind() != AccessRequestKind.LOWER_LEVEL || r.requestedLevel() == null || effective == null) {
+                return new Levels(own, record, null, null);
+            }
+            SensitivityLevel after = SensitivityLevel.effective(r.requestedLevel(), record);
+            return new Levels(own, record, after, after == effective);
         }
     }
 

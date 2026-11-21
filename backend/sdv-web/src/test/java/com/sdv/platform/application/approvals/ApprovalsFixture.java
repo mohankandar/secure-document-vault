@@ -385,6 +385,31 @@ final class ApprovalsFixture {
             world.withLevel(documentId, level);
         }
 
+        /** Task 0029 (0.4): the level-change history, newest last. */
+        final List<LevelChange> changes = new CopyOnWriteArrayList<>();
+
+        /** Newest first: by time, and among changes at the same time the one written last first. */
+        private java.util.stream.Stream<LevelChange> reversed() {
+            List<LevelChange> all = new ArrayList<>(changes);
+            java.util.Collections.reverse(all);
+            return all.stream();
+        }
+
+        @Override public void insertLevelChange(LevelChange change) {
+            changes.add(change);
+        }
+
+        @Override public List<LevelChange> findDocumentLevelChanges(UUID tenantId, UUID documentId, int limit) {
+            return reversed().filter(c -> c.tenantId().equals(tenantId) && documentId.equals(c.documentId()))
+                    .sorted(Comparator.comparing(LevelChange::changedAt).reversed()).limit(limit).toList();
+        }
+
+        @Override public List<LevelChange> findRecordLevelChanges(UUID tenantId, UUID sourceId, String recordKey, int limit) {
+            return reversed().filter(c -> c.tenantId().equals(tenantId) && c.scope() == LevelChange.Scope.RECORD
+                            && sourceId.equals(c.sourceId()) && recordKey.equals(c.recordKey()))
+                    .sorted(Comparator.comparing(LevelChange::changedAt).reversed()).limit(limit).toList();
+        }
+
         private static AccessRequest copy(AccessRequest r, AccessRequestStatus status, String decidedBy, String decidedByName,
                                           Instant decidedAt, Instant expiresAt, Instant usedAt) {
             return new AccessRequest(r.requestId(), r.tenantId(), r.kind(), r.documentId(), r.sourceId(), r.recordKey(),

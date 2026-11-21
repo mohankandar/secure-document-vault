@@ -12,11 +12,14 @@ import org.springframework.http.CacheControl;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+
+import java.util.List;
 
 /**
  * Task 0028 (S5): a Steward (CHANGE_SENSITIVITY_LEVEL) raises a level, or asks for it to be lowered, for one document
@@ -33,6 +36,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/v1/business")
 public class SensitivityLevelController {
     static final String REFUSED = "Only a Steward can change a sensitivity level.";
+    static final String HISTORY_REFUSED = "Only a Steward or a Business admin can see the level history.";
 
     private final SecurityContextFacade security;
     private final AuthorizationService authorization;
@@ -79,6 +83,39 @@ public class SensitivityLevelController {
         LevelRequest r = safe(request);
         return noStore(HttpStatus.CREATED, levels.requestLowerRecord(p.tenantId(), p.subject(), p.displayName(),
                 authorization.clearance(p), recordRef, r.level(), r.reason(), MDC.get("correlationId")));
+    }
+
+    /**
+     * Task 0029 (0.4): a document's level changes with their reasons, newest first. Stewards (who must be able to open
+     * the document) and Business Admins; anyone else is refused with SDV-SEN-018.
+     */
+    @GetMapping("/documents/{documentId}/sensitivity/history")
+    public ResponseEntity<List<SensitivityLevelService.HistoryEntry>> documentHistory(@PathVariable String documentId) {
+        SdvPrincipal p = requireHistoryReader();
+        boolean businessAdmin = authorization.has(p, Capability.APPROVE_SENSITIVE_ACCESS);
+        return noStore(HttpStatus.OK, levels.documentHistory(p.tenantId(), p.subject(), authorization.clearance(p),
+                businessAdmin, documentId, MDC.get("correlationId")));
+    }
+
+    /** Task 0029 (0.4): a record's level changes with their reasons, newest first. Same readers as above. */
+    @GetMapping("/records/{recordRef}/sensitivity/history")
+    public ResponseEntity<List<SensitivityLevelService.HistoryEntry>> recordHistory(@PathVariable String recordRef) {
+        SdvPrincipal p = requireHistoryReader();
+        return noStore(HttpStatus.OK, levels.recordHistory(p.tenantId(), recordRef));
+    }
+
+    private SdvPrincipal requireHistoryReader() {
+        SdvPrincipal principal = security.requirePrincipal();
+        if (authorization.has(principal, Capability.CHANGE_SENSITIVITY_LEVEL)
+                || authorization.has(principal, Capability.APPROVE_SENSITIVE_ACCESS)) {
+            return principal;
+        }
+        try {
+            authorization.require(principal, Capability.CHANGE_SENSITIVITY_LEVEL); // audits the refusal
+        } catch (AccessDeniedException ex) {
+            // refused below
+        }
+        throw new CodedRefusal.Forbidden(SdvErrorCode.SEN_018, HISTORY_REFUSED);
     }
 
     private SdvPrincipal requireSteward() {

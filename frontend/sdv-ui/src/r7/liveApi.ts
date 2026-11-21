@@ -51,7 +51,7 @@ export function toSummary(r: RecordSummary, sourceId:string):RecordItem {
 export function toRecord(r: BusinessRecord):RecordItem {
   const ids=fields(r.identifiers)
   const docs:Doc[]=r.documents.map(d=>({id:d.documentId,submissionId:d.submissionId,filename:d.originalFilename,kind:d.originalFilename,pages:d.pageCount ?? 0,redacted:!!d.redacted,
-    ingestedAt:d.ingestedAt,expiresAt:d.expiresAt || '',level:d.effectiveSensitivityLevel ?? d.sensitivityLevel}))
+    ingestedAt:d.ingestedAt,expiresAt:d.expiresAt || '',level:d.effectiveSensitivityLevel ?? d.sensitivityLevel,ownLevel:d.sensitivityLevel}))
   // Task 0026: documents this person can't open come apart, with only a reference and a level.
   const locked=(r.lockedDocuments ?? []).map(d=>({id:d.documentId,level:d.effectiveSensitivityLevel}))
   // A record can have several incomplete submissions: add up the counts and list every missing document.
@@ -59,7 +59,8 @@ export function toRecord(r: BusinessRecord):RecordItem {
   const incomplete=open.length?{expectedCount:open.reduce((n,s)=>n+s.expectedCount,0),receivedCount:open.reduce((n,s)=>n+s.receivedCount,0),missing:open.flatMap(s=>s.missingSourceDocumentIds ?? [])}:null
   return {ref:r.recordRef,sourceId:r.sourceId,identifiers:ids,metadata:fields(r.metadata),
     title:recordName(r.title,ids,r.recordRef),updatedAt:r.latestSubmissionAt,
-    incomplete:incomplete?{expected:incomplete.expectedCount,received:incomplete.receivedCount,missing:incomplete.missing}:null,docs,locked}
+    incomplete:incomplete?{expected:incomplete.expectedCount,received:incomplete.receivedCount,missing:incomplete.missing}:null,docs,locked,
+    recordLevel:r.recordSensitivityLevel ?? null}
 }
 
 /** viewingId: this opening's ID; page requests send it back so each page is recorded once per viewing. */
@@ -163,3 +164,43 @@ export const createStorageVolume=(v:{displayName:string;rootPath:string;state:st
 export type FolderCheck={normalizedRootPath:string;writable:boolean;usableBytes:number|null;totalBytes:number|null;problem:string|null}
 export const checkStorageFolder=(rootPath:string)=>roleApi<FolderCheck>('/api/v1/admin/storage-volumes/check','tenantIt',{method:'POST',body:JSON.stringify({rootPath})})
 export const updateStorageVolume=(id:string,v:{displayName:string;state:string;priority:number;warningPercent:number;stopWritePercent:number})=>roleApi<LiveStorageVolume>('/api/v1/admin/storage-volumes/'+encodeURIComponent(id),'tenantIt',{method:'PUT',body:JSON.stringify(v)})
+
+// ---- Task 0029: sensitivity levels and requests (the server side is task 0028) ----
+
+/** A raise applies at once (APPLIED, the new level); a lowering is a request (REQUESTED, the level stays). */
+export type LevelChangeResult = { outcome: 'APPLIED' | 'REQUESTED'; level: SensitivityLevel; canStillOpen: boolean; requestId: string | null; requestExpiresAt: string | null }
+export type LevelScope = 'document' | 'record'
+const levelPath = (scope: LevelScope, id: string) => '/api/v1/business/' + (scope === 'document' ? 'documents/' : 'records/') + encodeURIComponent(id) + '/sensitivity'
+export const raiseLevel = (scope: LevelScope, id: string, level: SensitivityLevel, reason: string) =>
+  roleApi<LevelChangeResult>(levelPath(scope, id) + '/raise', 'business', { method: 'POST', body: JSON.stringify({ level, reason }) })
+export const askToLowerLevel = (scope: LevelScope, id: string, level: SensitivityLevel, reason: string) =>
+  roleApi<LevelChangeResult>(levelPath(scope, id) + '/lower-request', 'business', { method: 'POST', body: JSON.stringify({ level, reason }) })
+
+export type AccessRequestKind = 'PRINT' | 'DOWNLOAD' | 'LOWER_LEVEL' | 'LOWER_RECORD_LEVEL'
+export type AccessRequestStatus = 'PENDING' | 'APPROVED' | 'DECLINED' | 'USED' | 'EXPIRED'
+/**
+ * One of the signed-in Steward's own requests. expiresAt: while PENDING, when it expires undecided; once a print or
+ * download is APPROVED, when its one use must happen by. A whole-record request names no document.
+ */
+export type MyRequest = { requestId: string; kind: AccessRequestKind; scope: 'DOCUMENT' | 'RECORD'; status: AccessRequestStatus; documentId: string | null; requestedLevel: SensitivityLevel | null; reason: string; requestedAt: string; decidedAt: string | null; expiresAt: string; usedAt: string | null }
+/** Stewards only (a Business user is refused with SDV-APR-015, so the screens don't ask). */
+export const myRequests = () => roleApi<MyRequest[]>('/api/v1/business/access-requests', 'business')
+/** A Restricted Steward asks to print or download one Highly Confidential document once. */
+export const requestPrintOrDownload = (documentId: string, kind: 'PRINT' | 'DOWNLOAD', reason: string) =>
+  roleApi<MyRequest>('/api/v1/business/documents/' + encodeURIComponent(documentId) + '/access-requests', 'business', { method: 'POST', body: JSON.stringify({ kind, reason }) })
+
+/** Task 0029 (0.4): one level change with its reason, for Stewards and Business admins. from is null for a record's first level. */
+export type LevelHistoryEntry = { changeId: string; scope: 'DOCUMENT' | 'RECORD'; direction: 'RAISED' | 'LOWERED'; from: SensitivityLevel | null; to: SensitivityLevel; reason: string; changedBy: string; changedAt: string; accessRequestId: string | null }
+export const documentLevelHistory = (documentId: string) => roleApi<LevelHistoryEntry[]>(levelPath('document', documentId) + '/history', 'business')
+export const recordLevelHistory = (recordRef: string) => roleApi<LevelHistoryEntry[]>(levelPath('record', recordRef) + '/history', 'business')
+
+/**
+ * Task 0029 (0.5): the level fields of a waiting request on the approvals list (the Approvals screen is task 0030).
+ * ownLevel: the document's own level; recordLevel: its record's (null when none); levelAfter: the effective level once
+ * a document lowering is approved; accessUnchanged: true when that is still the level now.
+ */
+export type PendingLevels = { level: SensitivityLevel | null; requestedLevel: SensitivityLevel | null; ownLevel: SensitivityLevel | null; recordLevel: SensitivityLevel | null; levelAfter: SensitivityLevel | null; accessUnchanged: boolean | null }
+/** The approver's note for a lowering that changes nothing for who can open the document; null otherwise. */
+export const approvalLevelNote = (r: PendingLevels, recordWord = 'contract') =>
+  r.accessUnchanged === true && r.recordLevel ? `The ${recordWord} stays at ${LEVEL_NAMES[r.recordLevel]}, so who can open it won't change` : null
+export const LEVEL_NAMES: Record<SensitivityLevel, string> = { STANDARD: 'Standard', CONFIDENTIAL: 'Confidential', HIGHLY_CONFIDENTIAL: 'Highly Confidential' }

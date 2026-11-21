@@ -35,9 +35,11 @@ public class LocalHeaderAuthenticationFilter extends OncePerRequestFilter {
      * checked on a developer machine. This filter exists only in the local profile with local-header sign-in; any other
      * subject stays unnamed, and the name is never taken from a request header.
      * Task 0018: the names (and emails) of the approved canvas's people, so a local screen looks like the canvas.
+     * Task 0029: Dana Ruiz (Legal), the canvas's Restricted Steward (local-restricted-steward).
      */
     static final Map<String, String> LOCAL_TEST_NAMES = Map.of(
             "local-document-steward", "Daniel Reyes",
+            "local-restricted-steward", "Dana Ruiz",
             "local-business-user", "Maya Okafor",
             "local-business-admin", "Priya Natarajan",
             "local-tenant-it-admin", "Jonas Weber",
@@ -49,6 +51,7 @@ public class LocalHeaderAuthenticationFilter extends OncePerRequestFilter {
     /** The same people's work emails (display only, local profile only). */
     static final Map<String, String> LOCAL_TEST_EMAILS = Map.of(
             "local-document-steward", "daniel.reyes@acmelending.com",
+            "local-restricted-steward", "dana.ruiz@acmelending.com",
             "local-business-user", "maya.okafor@acmelending.com",
             "local-business-admin", "priya.natarajan@acmelending.com",
             "local-tenant-it-admin", "jonas.weber@acmelending.com",

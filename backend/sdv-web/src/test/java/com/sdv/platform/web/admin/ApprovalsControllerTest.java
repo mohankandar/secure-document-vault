@@ -119,6 +119,30 @@ class ApprovalsControllerTest {
     }
 
     @Test
+    void onlyStewardsAndBusinessAdminsReadTheLevelHistory() throws Exception {
+        // Task 0029 (0.4): the reasons are in the history, so IT and Operations admins and Business users are refused.
+        Set<SdvRole> readers = EnumSet.of(SdvRole.DOCUMENT_STEWARD, SdvRole.RESTRICTED_STEWARD, SdvRole.BUSINESS_ADMIN);
+        List<RequestBuilder> reads = List.of(get("/api/v1/business/documents/" + DOCUMENT + "/sensitivity/history"),
+                get("/api/v1/business/records/abc/sensitivity/history"));
+        for (SdvRole role : EnumSet.complementOf(EnumSet.copyOf(readers))) {
+            for (RequestBuilder request : reads) refused(role, request, "SDV-SEN-018");
+        }
+        verifyNoInteractions(levels);
+        assertDenied("CHANGE_SENSITIVITY_LEVEL", 2 * (SdvRole.values().length - 3));
+
+        when(levels.documentHistory(any(), any(), any(), anyBoolean(), any(), any())).thenReturn(List.of());
+        when(levels.recordHistory(any(), any())).thenReturn(List.of());
+        for (SdvRole role : readers) {
+            signIn(role);
+            for (RequestBuilder request : reads) mvc.perform(request).andExpect(status().isOk());
+        }
+        // Only the Business Admin reads a document's history without having to open the document.
+        verify(levels).documentHistory(eq(TENANT), eq("person-business_admin"), any(), eq(true), eq(DOCUMENT.toString()), any());
+        verify(levels).documentHistory(eq(TENANT), eq("person-document_steward"), any(), eq(false), eq(DOCUMENT.toString()), any());
+        verify(levels).documentHistory(eq(TENANT), eq("person-restricted_steward"), any(), eq(false), eq(DOCUMENT.toString()), any());
+    }
+
+    @Test
     void onlyTheRestrictedStewardAsksToPrintOrDownloadAndOnlyStewardsListTheirOwn() throws Exception {
         for (SdvRole role : EnumSet.complementOf(EnumSet.of(SdvRole.RESTRICTED_STEWARD))) {
             refused(role, post("/api/v1/business/documents/" + DOCUMENT + "/access-requests")

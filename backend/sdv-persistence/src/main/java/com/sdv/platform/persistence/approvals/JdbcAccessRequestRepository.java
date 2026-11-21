@@ -250,6 +250,80 @@ public class JdbcAccessRequestRepository implements AccessRequestRepository {
         if (updated != 1) throw new IllegalStateException("The document's level could not be changed.");
     }
 
+    static final String CHANGE_COLUMNS = """
+            change_id, tenant_id, scope, document_id, source_id, record_key, direction, from_level, to_level, reason,
+            changed_by, changed_by_display_name, changed_at, access_request_id
+            """;
+
+    @Override
+    public void insertLevelChange(LevelChange c) {
+        boolean record = c.scope() == LevelChange.Scope.RECORD;
+        jdbc.update("insert into sensitivity_level_changes(" + CHANGE_COLUMNS + ", record_key_sha256) values ("
+                + ":changeId, :tenantId, :scope, :documentId, :sourceId, :recordKey, :direction, :fromLevel, :toLevel,"
+                + " :reason, :changedBy, :changedByName, :changedAt, :accessRequestId, :sha)", new MapSqlParameterSource()
+                .addValue("changeId", c.changeId())
+                .addValue("tenantId", c.tenantId())
+                .addValue("scope", c.scope().name())
+                .addValue("documentId", c.documentId())
+                .addValue("sourceId", c.sourceId())
+                .addValue("recordKey", c.recordKey())
+                .addValue("sha", record && c.recordKey() != null ? RecordKey.sha256(c.recordKey()) : null)
+                .addValue("direction", c.direction().name())
+                .addValue("fromLevel", c.from() == null ? null : c.from().name())
+                .addValue("toLevel", c.to().name())
+                .addValue("reason", c.reason())
+                .addValue("changedBy", c.changedBy())
+                .addValue("changedByName", c.changedByName())
+                .addValue("changedAt", Timestamp.from(c.changedAt()))
+                .addValue("accessRequestId", c.accessRequestId()));
+    }
+
+    @Override
+    public List<LevelChange> findDocumentLevelChanges(UUID tenantId, UUID documentId, int limit) {
+        return jdbc.query("select " + CHANGE_COLUMNS + """
+                  from sensitivity_level_changes
+                 where tenant_id=:tenantId and document_id=:documentId
+                 order by changed_at desc, change_id
+                 limit :limit
+                """, new MapSqlParameterSource()
+                .addValue("tenantId", tenantId)
+                .addValue("documentId", documentId)
+                .addValue("limit", limit), (rs, rowNum) -> change(rs));
+    }
+
+    @Override
+    public List<LevelChange> findRecordLevelChanges(UUID tenantId, UUID sourceId, String recordKey, int limit) {
+        return jdbc.query("select " + CHANGE_COLUMNS + """
+                  from sensitivity_level_changes
+                 where tenant_id=:tenantId and scope='RECORD' and source_id=:sourceId and record_key_sha256=:sha
+                 order by changed_at desc, change_id
+                 limit :limit
+                """, new MapSqlParameterSource()
+                .addValue("tenantId", tenantId)
+                .addValue("sourceId", sourceId)
+                .addValue("sha", RecordKey.sha256(recordKey))
+                .addValue("limit", limit), (rs, rowNum) -> change(rs));
+    }
+
+    private static LevelChange change(ResultSet rs) throws SQLException {
+        String from = rs.getString("from_level");
+        return new LevelChange(
+                rs.getObject("change_id", UUID.class),
+                rs.getObject("tenant_id", UUID.class),
+                LevelChange.Scope.valueOf(rs.getString("scope")),
+                rs.getObject("document_id", UUID.class),
+                rs.getObject("source_id", UUID.class),
+                rs.getString("record_key"),
+                LevelChange.Direction.valueOf(rs.getString("direction")),
+                from == null ? null : SensitivityLevel.valueOf(from),
+                SensitivityLevel.valueOf(rs.getString("to_level")),
+                rs.getString("reason"),
+                rs.getString("changed_by"),
+                rs.getString("changed_by_display_name"),
+                instant(rs, "changed_at"),
+                rs.getObject("access_request_id", UUID.class));
+    }
+
     private static MapSqlParameterSource grant(UUID tenantId, UUID documentId, String requestedBy, AccessRequestKind kind,
                                                Instant now) {
         return new MapSqlParameterSource()

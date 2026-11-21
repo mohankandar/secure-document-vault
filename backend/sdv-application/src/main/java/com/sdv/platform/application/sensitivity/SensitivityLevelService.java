@@ -45,8 +45,11 @@ import java.util.UUID;
  *       Confidential documents) may ask to lower only from Confidential.</li>
  * </ul>
  * A document must be one the person can open (refused with SDV-SEN-008 otherwise, and audited). A record needs no
- * opening: its level applies to all its documents. Each change is audited with who, when, from, to and the reason,
- * in the same transaction as the change.
+ * opening: its level applies to all its documents. Each change is audited with who, when, scope, from and to, in the
+ * same transaction as the change. Task 0029 (0.4): the reason is not in the audit (IT Admins read it, and a reason is
+ * free text that may hold names). It is kept in the level-change history (sensitivity_level_changes), which the audit
+ * event names (levelChangeId) and which Stewards and Business Admins read ({@link #documentHistory},
+ * {@link #recordHistory}).
  */
 @Service
 public class SensitivityLevelService {
@@ -114,11 +117,17 @@ public class SensitivityLevelService {
                         "A raise must go to a level higher than the document's level now (" + current.name() + ").");
             }
             documentLevels.updateDocumentLevel(tenantId, document.documentId(), target);
+            UUID changeId = UUID.randomUUID();
+            documentLevels.insertLevelChange(new AccessRequestRepository.LevelChange(changeId, tenantId,
+                    AccessRequestRepository.LevelChange.Scope.DOCUMENT, document.documentId(), null, null,
+                    AccessRequestRepository.LevelChange.Direction.RAISED, locked.ownLevel(), target, why, actorId,
+                    blankToNull(actorName), now, null));
             Map<String, Object> details = new LinkedHashMap<>();
+            details.put("scope", "DOCUMENT");
             details.put("from", locked.ownLevel().name());
             details.put("to", target.name());
             details.put("effectiveBefore", current.name());
-            details.put("reason", why);
+            details.put("levelChangeId", changeId.toString());
             append(tenantId, actorId, actorName, DOCUMENT_RAISED_ACTION, "DOCUMENT", document.documentId().toString(),
                     now, correlationId, details);
             SensitivityLevel after = SensitivityLevel.effective(target, recordLevel);
@@ -174,10 +183,16 @@ public class SensitivityLevelService {
                 recordLevelId = stored.recordLevelId();
                 recordLevels.setLevel(tenantId, recordLevelId, target, actorId, why, now);
             }
+            UUID changeId = UUID.randomUUID();
+            documentLevels.insertLevelChange(new AccessRequestRepository.LevelChange(changeId, tenantId,
+                    AccessRequestRepository.LevelChange.Scope.RECORD, null, record.sourceId(), record.recordKey(),
+                    AccessRequestRepository.LevelChange.Direction.RAISED, from, target, why, actorId,
+                    blankToNull(actorName), now, null));
             Map<String, Object> details = new LinkedHashMap<>();
+            details.put("scope", "RECORD");
             details.put("from", from == null ? null : from.name());
             details.put("to", target.name());
-            details.put("reason", why);
+            details.put("levelChangeId", changeId.toString());
             details.put("sourceId", record.sourceId().toString());
             details.put("submissionId", record.submissionIds().getFirst().toString());
             append(tenantId, actorId, actorName, RECORD_RAISED_ACTION, "RECORD_SENSITIVITY", recordLevelId.toString(),
@@ -203,6 +218,51 @@ public class SensitivityLevelService {
                 current, target, why, correlationId);
         return new LevelChange(LevelChange.Outcome.REQUESTED, current, clearance.canOpen(current),
                 request.requestId(), request.expiresAt());
+    }
+
+    // ------------------------------------------------------------------------------------------------ history
+
+    /** The most history rows one read returns. */
+    public static final int HISTORY_LIMIT = 100;
+
+    /**
+     * Task 0029 (0.4): a document's level changes with their reasons, newest first. A Steward must be able to open the
+     * document (SDV-SEN-008 and audited otherwise); a Business Admin (who approves lowerings and already reads their
+     * reasons) reads it without opening the document. The web layer checks that the person is one of the two.
+     */
+    public List<HistoryEntry> documentHistory(UUID tenantId, String actorId, Clearance clearance, boolean businessAdmin,
+                                              String documentReference, String correlationId) {
+        if (tenantId == null) throw new IllegalArgumentException("tenantId is required.");
+        UUID documentId = AccessRequestService.referenceOf(documentReference, SdvErrorCode.SEN_016, NO_DOCUMENT);
+        Document document = documents.findDocumentByIdForTenant(tenantId, documentId)
+                .orElseThrow(() -> new CodedRefusal.NotFound(SdvErrorCode.SEN_016, NO_DOCUMENT));
+        if (!businessAdmin) {
+            access.requireOpenable(document, clearance, DocumentAccessGuard.Attempt.LEVEL_HISTORY, actorId, correlationId);
+        }
+        return documentLevels.findDocumentLevelChanges(tenantId, documentId, HISTORY_LIMIT).stream()
+                .map(HistoryEntry::of).toList();
+    }
+
+    /** Task 0029 (0.4): a record's level changes with their reasons, newest first. */
+    public List<HistoryEntry> recordHistory(UUID tenantId, String recordReference) {
+        RecordReferences.ResolvedRecord record = record(tenantId, recordReference);
+        return documentLevels.findRecordLevelChanges(tenantId, record.sourceId(), record.recordKey(), HISTORY_LIMIT)
+                .stream().map(HistoryEntry::of).toList();
+    }
+
+    /**
+     * One change as Stewards and Business Admins see it. changedBy is the person's name, or their sign-in subject when
+     * none was known. accessRequestId names the approved request of a lowering.
+     */
+    public record HistoryEntry(UUID changeId, AccessRequestRepository.LevelChange.Scope scope,
+                               AccessRequestRepository.LevelChange.Direction direction, SensitivityLevel from,
+                               SensitivityLevel to, String reason, String changedBy, Instant changedAt,
+                               UUID accessRequestId) {
+        static HistoryEntry of(AccessRequestRepository.LevelChange c) {
+            String who = c.changedByName() == null || c.changedByName().isBlank() ? c.changedBy() : c.changedByName();
+            return new HistoryEntry(c.changeId(), c.scope(), c.direction(), c.from(), c.to(), c.reason(), who,
+                    c.changedAt(), c.accessRequestId());
+        }
     }
 
     // ------------------------------------------------------------------------------------------------ helpers
@@ -247,6 +307,10 @@ public class SensitivityLevelService {
             throw new CodedRefusal.Forbidden(SdvErrorCode.SEN_015,
                     "A Steward can ask to lower a level only from Confidential.");
         }
+    }
+
+    private static String blankToNull(String value) {
+        return value == null || value.isBlank() ? null : value.strip();
     }
 
     private static SensitivityLevel level(String text) {

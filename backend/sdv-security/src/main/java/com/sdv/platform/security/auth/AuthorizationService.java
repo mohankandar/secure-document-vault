@@ -28,6 +28,11 @@ public class AuthorizationService {
         }
     }
 
+    /** Task 0029: whether the person holds the capability, without auditing a refusal (for "one of two" checks). */
+    public boolean has(SdvPrincipal principal, Capability capability) {
+        return capabilities.has(principal, capability);
+    }
+
     /**
      * Task 0026: the sensitivity levels this person may open, from their effective capabilities. Nothing else in
      * the request (headers, parameters) can change it.

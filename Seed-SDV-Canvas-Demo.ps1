@@ -111,13 +111,16 @@ function SetSourceStatus([object]$Source, [string]$Status) {
     Api 'PUT' "/api/v1/admin/ingestion-sources/$($Source.sourceId)" $it @{ displayName = $Source.displayName; status = $Status; authType = $Source.authType; credentialReference = $Source.credentialReference }
 }
 # One delivery through the producer API, found again by its own delivery ID; documents already there are skipped.
-# Documents: @{ id; file; path }. Expected: the source document IDs the delivery announces.
-function Deliver([string]$SourceId, [string]$SubKey, [hashtable]$Metadata, [string[]]$Expected, [object[]]$Documents, [string]$Label) {
+# Documents: @{ id; file; path } and, task 0029, an optional level (sent as X-SDV-Sensitivity-Level). Expected: the source
+# document IDs the delivery announces. RecordLevel (task 0029): the whole record's level, sent with the submission.
+function Deliver([string]$SourceId, [string]$SubKey, [hashtable]$Metadata, [string[]]$Expected, [object[]]$Documents, [string]$Label, [string]$RecordLevel = '') {
     $submissionId = Db "select submission_id from submissions where tenant_id='$Tenant' and source_id='$SourceId' and source_submission_id=$(Lit $SubKey) limit 1;"
     if ([string]::IsNullOrWhiteSpace($submissionId)) {
-        $s = Api 'POST' '/api/v1/ingestion/submissions' (SourceHeaders $SourceId) @{
+        $body = @{
             sourceSubmissionId = $SubKey; expectedDocumentCount = $Expected.Count; expectedDocuments = @($Expected | ForEach-Object { @{ sourceDocumentId = $_ } }); metadata = $Metadata
         }
+        if ($RecordLevel) { $body.recordSensitivityLevel = $RecordLevel }
+        $s = Api 'POST' '/api/v1/ingestion/submissions' (SourceHeaders $SourceId) $body
         $submissionId = [string]$s.submissionId
         Ok "Record $Label"
     }
@@ -125,6 +128,7 @@ function Deliver([string]$SourceId, [string]$SubKey, [hashtable]$Metadata, [stri
         $have = Db "select count(*) from documents where tenant_id='$Tenant' and submission_id='$submissionId' and source_document_id=$(Lit $d.id);"
         if ([int]$have -eq 0) {
             $h = SourceHeaders $SourceId; $h['X-SDV-Source-Document-Id'] = $d.id; $h['X-SDV-Filename'] = $d.file
+            if ($d.ContainsKey('level') -and $d.level) { $h['X-SDV-Sensitivity-Level'] = $d.level }
             $null = Invoke-WebRequest -Uri "$Base/api/v1/ingestion/submissions/$submissionId/documents" -Method Post -Headers $h -ContentType 'application/pdf' -InFile $d.path -UseBasicParsing -TimeoutSec 60
         }
     }
@@ -285,4 +289,81 @@ EnsureField ([string]$tour.sourceId) 'policyNumber' 'Policy number' 'TEXT' $fals
 EnsureField ([string]$tour.sourceId) 'holderName' 'Holder name' 'TEXT' $false $false 'TRIM' 'EXACT' $false
 $null = SetSourceStatus $tour 'DISABLED'
 Ok 'Sending system: Tour test system 20261118181639 (paused, nothing to search)'
+
+# ---- Task 0029: sensitivity demo (boards Sens-Results, Sens-Viewer, Sens-Level) ----
+# New deliveries on four Loan Origination System records, each a second submission of the same contract, so the
+# existing documents (and what the tour and the other boards use) stay as they are:
+#   300000000003 Marcus Lee: settlement-agreement.pdf, Highly Confidential;
+#   300000000005 Wei Chen and 300000000009 Noah Kim: income-statement.pdf and credit-report.pdf, Confidential;
+#   300000000002 Priya Shah: the whole contract Highly Confidential (court-order.pdf, its own level Standard).
+# Then requests in each state, by Dana Ruiz (Restricted steward, local-restricted-steward) and Daniel Reyes (Document
+# steward), decided by Priya Natarajan (Business admin). Each state is made only when it is missing, so a second run
+# changes nothing. An approval lasts 24 hours and a waiting request 7 days: after that a run makes a new one.
+$restricted = Headers 'local-restricted-steward' 'RESTRICTED_STEWARD'
+$approver = Headers 'local-business-admin' 'BUSINESS_ADMIN'
+$sensitive = @(
+    @{ n = '300000000003'; who = 'Marcus Lee'; type = 'Mortgage'; closing = '2026-09-30'; file = 'settlement-agreement.pdf'; level = 'HIGHLY_CONFIDENTIAL' },
+    @{ n = '300000000005'; who = 'Wei Chen'; type = 'Mortgage'; closing = '2026-08-28'; file = 'income-statement.pdf'; level = 'CONFIDENTIAL' },
+    @{ n = '300000000009'; who = 'Noah Kim'; type = 'Auto'; closing = '2026-12-04'; file = 'credit-report.pdf'; level = 'CONFIDENTIAL' },
+    @{ n = '300000000002'; who = 'Priya Shah'; type = 'Auto'; closing = '2026-10-02'; file = 'court-order.pdf'; level = ''; record = 'HIGHLY_CONFIDENTIAL' }
+)
+$sensitiveDocs = @{}
+foreach ($r in $sensitive) {
+    $subKey = "canvas-demo-$($r.n)-sensitivity"
+    $recordLevel = ''; if ($r.ContainsKey('record')) { $recordLevel = $r.record }
+    $sid = Deliver $LosId $subKey @{ contractNumber = $r.n; borrowerName = $r.who; loanType = $r.type; closingDate = $r.closing } @("$subKey-1") @(@{ id = "$subKey-1"; file = $r.file; path = $PdfPath; level = $r.level }) "$($r.n) $($r.who) ($($r.file))" $recordLevel
+    $sensitiveDocs[$r.n] = Db "select document_id from documents where tenant_id='$Tenant' and submission_id='$sid' and source_document_id='$subKey-1' limit 1;"
+    if (-not $sensitiveDocs[$r.n]) { throw "Demo document $subKey-1 was not stored." }
+}
+$levels = Db "select string_agg(d.sensitivity_level, ',' order by d.source_document_id) from documents d where d.tenant_id='$Tenant' and d.source_document_id like 'canvas-demo-3000000000%-sensitivity-1';"
+Ok "Sensitivity demo documents: $levels; 300000000002 Highly Confidential as a whole contract"
+
+$hc = $sensitiveDocs['300000000003']; $income = $sensitiveDocs['300000000005']; $court = $sensitiveDocs['300000000002']
+# Reading the lists first lets Vero mark requests whose time is up as expired, so the counts below are current.
+$null = ApiList '/api/v1/business/access-requests' $restricted
+$null = ApiList '/api/v1/business/access-requests' $steward
+function Requests([string]$Who, [string]$Where) { [int](Db "select count(*) from access_requests where tenant_id='$Tenant' and requested_by='$Who' and $Where;") }
+function Ask([hashtable]$As, [string]$Doc, [string]$Kind, [string]$Reason) {
+    (Api 'POST' "/api/v1/business/documents/$Doc/access-requests" $As @{ kind = $Kind; reason = $Reason }).requestId
+}
+function AskLower([hashtable]$As, [string]$Doc, [string]$Level, [string]$Reason) {
+    (Api 'POST' "/api/v1/business/documents/$Doc/sensitivity/lower-request" $As @{ level = $Level; reason = $Reason }).requestId
+}
+function Decide([string]$Id, [string]$Decision) { $null = Api 'POST' "/api/v1/admin/access-requests/$Id/$Decision" $approver }
+$rs = 'local-restricted-steward'; $ds = 'local-document-steward'
+# Approved: Dana may print the settlement agreement once, within 24 hours (the viewer board's "Print, approved").
+if ((Requests $rs "kind='PRINT' and document_id='$hc' and status in ('APPROVED','PENDING') and expires_at > now()") -eq 0) {
+    Decide (Ask $restricted $hc 'PRINT' 'Board pack for legal review') 'approve'
+}
+# Waiting: Dana asks to lower the settlement agreement to Confidential.
+if ((Requests $rs "kind='LOWER_LEVEL' and document_id='$hc' and status='PENDING'") -eq 0) {
+    $null = AskLower $restricted $hc 'CONFIDENTIAL' 'Case closed'
+}
+# Declined: Dana's download of the court order.
+if ((Requests $rs "status='DECLINED'") -eq 0) {
+    $id = Db "select request_id from access_requests where tenant_id='$Tenant' and requested_by='$rs' and kind='DOWNLOAD' and document_id='$court' and status='PENDING' limit 1;"
+    if (-not $id) { $id = Ask $restricted $court 'DOWNLOAD' 'Copy for the insurer' }
+    Decide $id 'decline'
+}
+# Used: Dana's print of the court order, approved and printed once.
+if ((Requests $rs "status='USED'") -eq 0) {
+    $id = Db "select request_id from access_requests where tenant_id='$Tenant' and requested_by='$rs' and kind='PRINT' and document_id='$court' and status in ('PENDING','APPROVED') limit 1;"
+    if (-not $id) { $id = Ask $restricted $court 'PRINT' 'Hearing on 2 December' }
+    if ((Db "select status from access_requests where request_id='$id';") -eq 'PENDING') { Decide $id 'approve' }
+    $null = Api 'POST' "/api/v1/business/documents/$court/print-event" $restricted
+}
+# Expired: a request nobody decided in 7 days. Made now and dated back eight days (local demo data only), then the
+# list read marks it expired, as Vero would.
+if ((Requests $rs "status='EXPIRED'") -eq 0) {
+    $id = Db "select request_id from access_requests where tenant_id='$Tenant' and requested_by='$rs' and kind='LOWER_LEVEL' and document_id='$income' and status='PENDING' limit 1;"
+    if (-not $id) { $id = AskLower $restricted $income 'STANDARD' 'Not sensitive after all' }
+    $null = Db "update access_requests set requested_at = now() - interval '8 days', expires_at = now() - interval '1 day' where request_id='$id' and status='PENDING';"
+    $null = ApiList '/api/v1/business/access-requests' $restricted
+}
+# Waiting: Daniel (Document steward) asks to lower the income statement to Standard.
+if ((Requests $ds "kind='LOWER_LEVEL' and document_id='$income' and status='PENDING'") -eq 0) {
+    $null = AskLower $steward $income 'STANDARD' 'Marked by mistake'
+}
+$states = Db "select string_agg(status || ' ' || n, ', ' order by status) from (select status, count(*) n from access_requests where tenant_id='$Tenant' and requested_by in ('$rs','$ds') group by status) x;"
+Ok "Demo requests by Dana Ruiz and Daniel Reyes: $states"
 Write-Host 'Demo data ready.' -ForegroundColor Green

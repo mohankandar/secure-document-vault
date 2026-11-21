@@ -45,7 +45,7 @@ public class DocumentAccessGuard {
      * and REQUEST_ACCESS (ask to print or download).
      */
     public enum Attempt { OPEN, PAGE, PREVIEWS, TEXT_SEARCH, TAGS, ADD_TAG, COMMENTS, ADD_COMMENT, ACTIVITY, PRINT, DOWNLOAD, REDACT,
-        CHANGE_LEVEL, REQUEST_ACCESS }
+        CHANGE_LEVEL, REQUEST_ACCESS, LEVEL_HISTORY }
 
     private final BusinessRecordRepository records;
     private final AuditEventPort audit;

@@ -1,0 +1,8 @@
+databaseChangeLog:
+  - changeSet:
+      id: 028-sensitivity-level-changes
+      author: sdv
+      changes:
+        - sqlFile:
+            path: db/changelog/028-sensitivity-level-changes.sql
+            relativeToChangelogFile: false

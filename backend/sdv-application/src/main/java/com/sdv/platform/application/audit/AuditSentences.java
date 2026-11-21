@@ -37,7 +37,8 @@ public final class AuditSentences {
             Map.entry("COMMENTS", "see the comments on"), Map.entry("ADD_COMMENT", "comment on"),
             Map.entry("ACTIVITY", "see the activity of"), Map.entry("PRINT", "print"),
             Map.entry("DOWNLOAD", "download"), Map.entry("REDACT", "redact"),
-            Map.entry("CHANGE_LEVEL", "change the level of"), Map.entry("REQUEST_ACCESS", "ask to print or download"));
+            Map.entry("CHANGE_LEVEL", "change the level of"), Map.entry("REQUEST_ACCESS", "ask to print or download"),
+            Map.entry("LEVEL_HISTORY", "see the level history of"));
 
     private AuditSentences() { }
 

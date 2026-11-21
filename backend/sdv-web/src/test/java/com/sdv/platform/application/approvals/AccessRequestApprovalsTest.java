@@ -242,6 +242,22 @@ class AccessRequestApprovalsTest {
     }
 
     @Test
+    void aLoweringUnderAHigherRecordLevelSaysWhoCanOpenItWontChange() {
+        // Task 0029 (0.5): C1 is Confidential; its contract is then raised to Confidential too. Lowering C1 to Standard
+        // changes only its own level: the contract keeps it Confidential.
+        UUID lowerC = w.levels.requestLowerDocument(TENANT, STEWARD_ID, null, STEWARD, C1.toString(), "STANDARD",
+                "Mistake", "c").requestId();
+        w.recordLevels.put(recordKey(CONTRACT_A), SensitivityLevel.CONFIDENTIAL);
+        var row = w.approvals.pending(TENANT, "LOWER_LEVEL", null, "c").groups().getFirst().requests().getFirst();
+        assertEquals(lowerC, row.requestId());
+        assertEquals(SensitivityLevel.CONFIDENTIAL, row.level(), "effective level");
+        assertEquals(SensitivityLevel.CONFIDENTIAL, row.ownLevel(), "the document's own level");
+        assertEquals(SensitivityLevel.CONFIDENTIAL, row.recordLevel());
+        assertEquals(SensitivityLevel.CONFIDENTIAL, row.levelAfter(), "the contract stays at Confidential");
+        assertEquals(Boolean.TRUE, row.accessUnchanged(), "so who can open it won't change");
+    }
+
+    @Test
     void theApprovalsListRevealsNothingBeyondWhatTheTaskLists() throws Exception {
         UUID p1 = ask(RS, H1, "PRINT");
         w.clock.advance(Duration.ofMinutes(1));
@@ -278,6 +294,15 @@ class AccessRequestApprovalsTest {
         assertNull(c1.position(), "C1 can be told apart without it");
         assertEquals(SensitivityLevel.CONFIDENTIAL, c1.level());
         assertEquals(SensitivityLevel.STANDARD, c1.requestedLevel());
+        // Task 0029 (0.5): both levels. C1 is Confidential on its own and its record has no level, so lowering it
+        // changes who can open it.
+        assertEquals(SensitivityLevel.CONFIDENTIAL, c1.ownLevel());
+        assertNull(c1.recordLevel());
+        assertEquals(SensitivityLevel.STANDARD, c1.levelAfter());
+        assertEquals(Boolean.FALSE, c1.accessUnchanged());
+        assertEquals(SensitivityLevel.HIGHLY_CONFIDENTIAL, h1.ownLevel());
+        assertNull(h1.levelAfter(), "a print request changes no level");
+        assertNull(h1.accessUnchanged());
 
         var record = list.groups().get(1).requests().getFirst();
         assertEquals(lowerB, record.requestId());
@@ -291,7 +316,8 @@ class AccessRequestApprovalsTest {
         JsonNode first = JSON.readTree(json).at("/groups/0/requests/0");
         assertEquals(new TreeSet<>(List.of("requestId", "kind", "scope", "primaryIdentifier", "primaryIdentifierLabel",
                 "receivedAt", "pageCount", "documentCount", "position", "level", "requestedLevel", "requester", "reason",
-                "requestedAt", "documentId")), keys(first), "exactly these fields");
+                "requestedAt", "documentId", "ownLevel", "recordLevel", "levelAfter", "accessUnchanged")), keys(first),
+                "exactly these fields (task 0029 0.5 adds the four level fields)");
         assertEquals(new TreeSet<>(List.of("primaryIdentifier", "primaryIdentifierLabel", "requests")),
                 keys(JSON.readTree(json).at("/groups/0")));
         String lower = json.toLowerCase();

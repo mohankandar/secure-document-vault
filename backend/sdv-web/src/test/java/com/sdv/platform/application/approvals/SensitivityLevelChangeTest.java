@@ -2,7 +2,10 @@ package com.sdv.platform.application.approvals;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.sdv.platform.application.access.Clearance;
 import com.sdv.platform.application.access.DocumentAccessGuard;
+import com.sdv.platform.application.port.AccessRequestRepository;
+import com.sdv.platform.application.sensitivity.SensitivityLevelService;
 import com.sdv.platform.application.sensitivity.SensitivityLevelService.LevelChange;
 import com.sdv.platform.domain.audit.AuditEvent;
 import com.sdv.platform.domain.audit.AuditOutcome;
@@ -13,6 +16,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.function.Executable;
 
 import java.time.Duration;
+import java.util.List;
 
 import static com.sdv.platform.application.approvals.ApprovalsFixture.*;
 import static org.junit.jupiter.api.Assertions.*;
@@ -52,7 +56,19 @@ class SensitivityLevelChangeTest {
         assertEquals(S1.toString(), event.targetId());
         assertEquals("STANDARD", details(event).get("from").asText(), "from");
         assertEquals("CONFIDENTIAL", details(event).get("to").asText(), "to");
-        assertEquals("Contains salary details", details(event).get("reason").asText(), "the reason, trimmed");
+        // Task 0029 (0.4): the reason is in the level-change history, not in the audit; the event names the row.
+        assertFalse(event.safeDetailsJson().contains("salary"), "no reason in the audit");
+        assertEquals("DOCUMENT", details(event).get("scope").asText(), "scope");
+        var history = w.requests.changes.getLast();
+        assertEquals(history.changeId().toString(), details(event).get("levelChangeId").asText(), "names its history row");
+        assertEquals("Contains salary details", history.reason(), "the reason, trimmed");
+        assertEquals(AccessRequestRepository.LevelChange.Direction.RAISED, history.direction());
+        assertEquals(SensitivityLevel.STANDARD, history.from());
+        assertEquals(SensitivityLevel.CONFIDENTIAL, history.to());
+        assertEquals(STEWARD_ID, history.changedBy());
+        assertEquals("Sam Steward", history.changedByName());
+        assertEquals(START, history.changedAt());
+        assertNull(history.accessRequestId());
         assertEquals(AuditOutcome.SUCCESS, event.outcome());
 
         // Only higher than now: the same level or a lower one is refused, and nothing changes.
@@ -138,7 +154,7 @@ class SensitivityLevelChangeTest {
         assertEquals("SDV-SEN-014", code(() -> w.levels.requestLowerDocument(TENANT, RS, null, RESTRICTED,
                 C1.toString(), "HIGHLY_CONFIDENTIAL", "Up is not down", "c")));
 
-        // The Business Admin approves: now it applies, audited with who, when, from, to and the reason.
+        // The Business Admin approves: now it applies, audited with who, when, from and to; the reason is in the history.
         w.clock.advance(Duration.ofHours(2));
         var decided = w.approvals.decide(TENANT, ADMIN, "Bea Admin", asked.requestId().toString(),
                 AccessRequestService.Decision.APPROVE, "corr-3");
@@ -150,9 +166,35 @@ class SensitivityLevelChangeTest {
         assertEquals(START.plus(Duration.ofHours(2)), lowered.occurredAt());
         assertEquals("CONFIDENTIAL", details(lowered).get("from").asText());
         assertEquals("STANDARD", details(lowered).get("to").asText());
-        assertEquals("Was marked by mistake", details(lowered).get("reason").asText());
+        assertFalse(lowered.safeDetailsJson().contains("mistake"), "no reason in the audit");
+        var loweredRow = w.requests.changes.getLast();
+        assertEquals(loweredRow.changeId().toString(), details(lowered).get("levelChangeId").asText());
+        assertEquals("Was marked by mistake", loweredRow.reason());
+        assertEquals(AccessRequestRepository.LevelChange.Direction.LOWERED, loweredRow.direction());
+        assertEquals(ADMIN, loweredRow.changedBy(), "the approver made it apply");
+        assertEquals(asked.requestId(), loweredRow.accessRequestId(), "the request it came from");
+        // Stewards and Business Admins read the history, newest first.
+        var read = w.levels.documentHistory(TENANT, STEWARD_ID, STEWARD, false, C1.toString(), "c");
+        assertEquals(1, read.size());
+        assertEquals("Was marked by mistake", read.getFirst().reason());
+        assertEquals("Bea Admin", read.getFirst().changedBy(), "the name when known");
+        assertEquals(1, w.levels.documentHistory(TENANT, ADMIN, new Clearance(false, false), true, C1.toString(), "c").size(),
+                "a Business Admin reads it without opening the document");
         assertEquals(STEWARD_ID, details(lowered).get("requestedBy").asText());
         assertEquals(ADMIN, w.last("ACCESS_REQUEST_APPROVED").actorId());
+    }
+
+    @Test
+    void theDocumentHistoryNeedsTheDocumentOpenableForAStewardAndAKnownDocument() {
+        // Task 0029 (0.4): a Steward who can't open a Highly Confidential document can't read its reasons either.
+        int before = w.events.size();
+        assertEquals("SDV-SEN-008", code(() -> w.levels.documentHistory(TENANT, STEWARD_ID, STEWARD, false, H1.toString(), "c")));
+        assertEquals("DOCUMENT_ACCESS_REFUSED", w.events.get(before).action(), "the refusal is audited");
+        assertTrue(w.levels.documentHistory(TENANT, RS, RESTRICTED, false, H1.toString(), "c").isEmpty(),
+                "no change yet");
+        assertEquals("SDV-SEN-016", code(() -> w.levels.documentHistory(TENANT, ADMIN, USER, true, "nope", "c")));
+        assertEquals("SDV-SEN-016", code(() -> w.levels.documentHistory(OTHER_TENANT, ADMIN, USER, true, H1.toString(), "c")),
+                "another tenant's document is unknown");
     }
 
     @Test
@@ -192,7 +234,10 @@ class SensitivityLevelChangeTest {
         assertEquals(STEWARD_ID, event.actorId());
         assertTrue(details(event).get("from").isNull(), "from no level");
         assertEquals("CONFIDENTIAL", details(event).get("to").asText());
-        assertEquals("Litigation", details(event).get("reason").asText());
+        assertFalse(event.safeDetailsJson().contains("Litigation"), "no reason in the audit");
+        assertEquals("RECORD", details(event).get("scope").asText());
+        assertEquals("Litigation", w.requests.changes.getLast().reason());
+        assertNull(w.requests.changes.getLast().from(), "a first record level comes from none");
         assertEquals(SUB_B.toString(), details(event).get("submissionId").asText(), "so the audit list finds the record");
         // Its documents are now Confidential: a Business User is locked out of S2.
         assertEquals("SDV-SEN-008", code(() -> w.guard.requireOpenable(w.documents.get(S2), USER,
@@ -211,7 +256,11 @@ class SensitivityLevelChangeTest {
         AuditEvent lowered = w.last("RECORD_SENSITIVITY_LOWERED");
         assertEquals("HIGHLY_CONFIDENTIAL", details(lowered).get("from").asText());
         assertEquals("STANDARD", details(lowered).get("to").asText());
-        assertEquals("Case closed", details(lowered).get("reason").asText());
+        assertFalse(lowered.safeDetailsJson().contains("Case closed"), "no reason in the audit");
+        var recordHistory = w.levels.recordHistory(TENANT, ref);
+        assertEquals(List.of("Case closed", "Worse", "Litigation"),
+                recordHistory.stream().map(SensitivityLevelService.HistoryEntry::reason).toList(), "newest first");
+        assertEquals(details(lowered).get("levelChangeId").asText(), recordHistory.getFirst().changeId().toString());
 
         assertEquals("SDV-SEN-016", code(() -> w.levels.raiseRecord(TENANT, STEWARD_ID, null, STEWARD, "not-a-ref",
                 "CONFIDENTIAL", "Reason", "c")));

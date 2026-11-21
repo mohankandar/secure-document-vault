@@ -31,6 +31,7 @@ const AREA_META: Record<AreaId, { label: string; tab: string; short: string; Ico
 const ROLE_LABEL: Record<RoleId, string> = {
   business: 'Business user',
   steward: 'Document steward',
+  restricted: 'Restricted steward',
   businessAdmin: 'Business administrator',
   tenantIt: 'Tenant IT administrator',
   platform: 'Platform operations administrator',
@@ -39,12 +40,13 @@ const ROLE_LABEL: Record<RoleId, string> = {
 const LOCAL_NAME: Record<LocalPersona, string> = {
   business: 'Local business user',
   steward: 'Local document steward',
+  restricted: 'Local restricted steward',
   businessAdmin: 'Local business administrator',
   tenantIt: 'Local Tenant IT administrator',
   platform: 'Local platform operations administrator',
   admin: 'Local administrator',
 }
-const LOCAL_INITIALS: Record<LocalPersona, string> = { business: 'BU', steward: 'DS', businessAdmin: 'BA', tenantIt: 'IT', platform: 'PO', admin: 'LA' }
+const LOCAL_INITIALS: Record<LocalPersona, string> = { business: 'BU', steward: 'DS', restricted: 'RS', businessAdmin: 'BA', tenantIt: 'IT', platform: 'PO', admin: 'LA' }
 
 const initialsOf = (name: string) => {
   const words = name.trim().split(/\s+/).filter((w) => /^\p{L}/u.test(w))
@@ -71,13 +73,14 @@ export function accountPerson(session: SessionInfo | null, roleIds: RoleId[], lo
 const LOCAL_ROLE_OPTIONS: { value: LocalPersona; label: string }[] = [
   { value: 'business', label: 'Business User' },
   { value: 'steward', label: 'Document Steward' },
+  { value: 'restricted', label: 'Restricted Steward' },
   { value: 'businessAdmin', label: 'Business Administrator' },
   { value: 'tenantIt', label: 'Tenant IT Administrator' },
   { value: 'platform', label: 'Platform Operations Administrator' },
   { value: 'admin', label: 'Local Administrator (Tenant IT + Business admin)' },
 ]
 const switchLocalRole = (selected: LocalPersona) => {
-  const area = selected === 'business' || selected === 'steward' ? 'home' : selected === 'businessAdmin' || selected === 'admin' ? 'governance' : selected === 'tenantIt' ? 'tenant' : 'operations'
+  const area = selected === 'business' || selected === 'steward' || selected === 'restricted' ? 'home' : selected === 'businessAdmin' || selected === 'admin' ? 'governance' : selected === 'tenantIt' ? 'tenant' : 'operations'
   setLocalTestPersona(selected)
   // Reload discards previous persona's documents, cached queries, and pending component state.
   window.history.replaceState(null, '', '#/' + area + '/' + (area === 'home' ? 'home' : area === 'governance' ? 'access' : area === 'tenant' ? 'storage' : 'overview'))

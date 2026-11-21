@@ -61,6 +61,18 @@ public interface AccessRequestRepository {
     /** Sets a document's own level; fails unless exactly one row changed. */
     void updateDocumentLevel(UUID tenantId, UUID documentId, SensitivityLevel level);
 
+    /**
+     * Task 0029 (0.4): one row of the level-change history (sensitivity_level_changes), written in the same
+     * transaction as the change. The reason lives here, not in the audit.
+     */
+    void insertLevelChange(LevelChange change);
+
+    /** A document's level changes, newest first. */
+    List<LevelChange> findDocumentLevelChanges(UUID tenantId, UUID documentId, int limit);
+
+    /** A record's level changes, newest first. */
+    List<LevelChange> findRecordLevelChanges(UUID tenantId, UUID sourceId, String recordKey, int limit);
+
     record AccessRequest(
             UUID requestId,
             UUID tenantId,
@@ -99,4 +111,28 @@ public interface AccessRequestRepository {
     record PrimaryIdentifier(String value, String label) { }
 
     record LockedDocument(UUID documentId, String status, SensitivityLevel ownLevel) { }
+
+    /**
+     * Task 0029 (0.4): one level change. scope DOCUMENT names documentId; scope RECORD names sourceId and recordKey.
+     * from is null only for a record's first level. accessRequestId names the approved request of a lowering.
+     */
+    record LevelChange(
+            UUID changeId,
+            UUID tenantId,
+            Scope scope,
+            UUID documentId,
+            UUID sourceId,
+            String recordKey,
+            Direction direction,
+            SensitivityLevel from,
+            SensitivityLevel to,
+            String reason,
+            String changedBy,
+            String changedByName,
+            Instant changedAt,
+            UUID accessRequestId) {
+        public enum Scope { DOCUMENT, RECORD }
+
+        public enum Direction { RAISED, LOWERED }
+    }
 }

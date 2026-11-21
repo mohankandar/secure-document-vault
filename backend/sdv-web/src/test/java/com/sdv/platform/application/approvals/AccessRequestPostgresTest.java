@@ -259,11 +259,20 @@ class AccessRequestPostgresTest {
         assertEquals(3, recordRow.documentCount());
         assertEquals("SDV-APR-009", approvals.decideMany(T1, "ba-1", null, "APPROVE", List.of(lowerRecord.toString()), "c")
                 .results().getFirst().code());
+        clock.advance(Duration.ofMinutes(5)); // the lowering comes after the raise, so the history has an order
         approvals.decide(T1, "ba-1", null, lowerRecord.toString(), AccessRequestService.Decision.APPROVE, "c");
         assertEquals(SensitivityLevel.STANDARD, recordLevels.lockByKey(T1, S1, key).orElseThrow().level());
         assertEquals("Closed", one("select reason from record_sensitivity_levels where tenant_id='" + T1 + "'"));
-        assertEquals(1, count("select count(*) from audit_events where tenant_id='" + T1 + "' and action='RECORD_SENSITIVITY_LOWERED'"
-                + " and safe_details->>'reason' = 'Closed'"));
+        // Task 0029 (0.4): the reasons are in the level-change history, never in the audit; each event names its row.
+        assertEquals(0, count("select count(*) from audit_events where tenant_id='" + T1 + "' and action like '%_SENSITIVITY_%'"
+                + " and safe_details->>'reason' is not null"), "no level-change event carries a reason");
+        assertEquals(1, count("select count(*) from audit_events e join sensitivity_level_changes c"
+                + " on c.change_id::text = e.safe_details->>'levelChangeId' where e.tenant_id='" + T1 + "'"
+                + " and e.action='RECORD_SENSITIVITY_LOWERED' and c.reason='Closed' and c.direction='LOWERED'"
+                + " and c.access_request_id is not null and c.changed_by='ba-1'"));
+        assertEquals(List.of("Closed", "Litigation"), levels.recordHistory(T1, ref).stream()
+                .map(SensitivityLevelService.HistoryEntry::reason).toList(), "the record's history, newest first");
+        assertEquals(0, count("select count(*) from sensitivity_level_changes where tenant_id='" + T2 + "'"), "tenants apart");
         assertEquals(0, count("select count(*) from audit_events where tenant_id='" + T1 + "' and action like 'ACCESS_REQUEST_%'"
                 + " and safe_details::text like '%Court bundle%'"), "request reasons stay out of the audit");
 
@@ -288,6 +297,27 @@ class AccessRequestPostgresTest {
         for (String[] row : bad) {
             Exception thrown = assertThrows(org.springframework.dao.DataIntegrityViolationException.class,
                     () -> sql(base + "'" + UUID.randomUUID() + "', '" + T1 + "', " + row[1] + ")"), row[0]);
+            assertTrue(thrown.getMessage().contains(row[0]), row[0] + ": " + thrown.getMessage());
+        }
+
+        // Task 0029 (0.4): the level-change history's checks.
+        String changes = "insert into sensitivity_level_changes(change_id, tenant_id, scope, document_id, source_id, record_key, "
+                + "record_key_sha256, direction, from_level, to_level, reason, changed_by, changed_at, access_request_id) values (";
+        String[][] badChanges = {
+                {"ck_level_changes_scope", "'FOLDER', '" + H + "', null, null, null, 'RAISED', 'STANDARD', 'CONFIDENTIAL', 'Reason', 'x', now(), null"},
+                {"ck_level_changes_target", "'DOCUMENT', null, null, null, null, 'RAISED', 'STANDARD', 'CONFIDENTIAL', 'Reason', 'x', now(), null"},
+                {"ck_level_changes_target", "'RECORD', null, '" + S1 + "', 'k', 'wrong', 'RAISED', null, 'CONFIDENTIAL', 'Reason', 'x', now(), null"},
+                {"ck_level_changes_direction", "'DOCUMENT', '" + H + "', null, null, null, 'SIDEWAYS', 'STANDARD', 'CONFIDENTIAL', 'Reason', 'x', now(), null"},
+                {"ck_level_changes_levels", "'DOCUMENT', '" + H + "', null, null, null, 'RAISED', 'STANDARD', 'SECRET', 'Reason', 'x', now(), null"},
+                {"ck_level_changes_from", "'DOCUMENT', '" + H + "', null, null, null, 'RAISED', null, 'CONFIDENTIAL', 'Reason', 'x', now(), null"},
+                {"ck_level_changes_request", "'DOCUMENT', '" + H + "', null, null, null, 'LOWERED', 'CONFIDENTIAL', 'STANDARD', 'Reason', 'x', now(), null"},
+                {"ck_level_changes_reason", "'DOCUMENT', '" + H + "', null, null, null, 'RAISED', 'STANDARD', 'CONFIDENTIAL', ' ab ', 'x', now(), null"},
+                {"ck_level_changes_changed_by", "'DOCUMENT', '" + H + "', null, null, null, 'RAISED', 'STANDARD', 'CONFIDENTIAL', 'Reason', '', now(), null"},
+                {"fk_level_changes_document", "'DOCUMENT', '" + X + "', null, null, null, 'RAISED', 'STANDARD', 'CONFIDENTIAL', 'Reason', 'x', now(), null"},
+        };
+        for (String[] row : badChanges) {
+            Exception thrown = assertThrows(org.springframework.dao.DataIntegrityViolationException.class,
+                    () -> sql(changes + "'" + UUID.randomUUID() + "', '" + T1 + "', " + row[1] + ")"), row[0]);
             assertTrue(thrown.getMessage().contains(row[0]), row[0] + ": " + thrown.getMessage());
         }
 

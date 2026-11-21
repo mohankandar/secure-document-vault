@@ -11,6 +11,7 @@ const demoRecord = process.env.SDV_DEMO_CONTRACT ?? '100000000001' // created by
 const ACCOUNT_BY_ROLE: Record<string, string> = {
   'Business User': 'Account: Maya Okafor, Business user',
   'Document Steward': 'Account: Daniel Reyes, Document steward',
+  'Restricted Steward': 'Account: Dana Ruiz, Restricted steward',
   'Business Administrator': 'Account: Priya Natarajan, Business administrator',
   'Tenant IT Administrator': 'Account: Jonas Weber, Tenant IT administrator',
   'Platform Operations Administrator': 'Account: Aiko Tanaka, Platform operations administrator',
@@ -19,6 +20,7 @@ const ACCOUNT_BY_ROLE: Record<string, string> = {
 const AREA_TAB_BY_ROLE: Record<string, string> = {
   'Business User': 'Home',
   'Document Steward': 'Home',
+  'Restricted Steward': 'Home',
   'Business Administrator': 'Business administration',
   'Tenant IT Administrator': 'Tenant IT',
   'Platform Operations Administrator': 'Platform operations',
@@ -1339,6 +1341,102 @@ test.describe('SDV role-based screen capture', () => {
     await capture(page, testInfo, 'home-nothing-delivered')
     await page.unrouteAll({ behavior: 'ignoreErrors' })
     await remember(null)
+  })
+
+  // Task 0029: one record seen by the three business roles. Seed-SDV-Canvas-Demo.ps1 gives 300000000003 (Marcus Lee)
+  // a Highly Confidential settlement agreement, and Dana Ruiz an approved print of it and a waiting lowering. The
+  // tour opens dialogs and cancels them: it changes no level and sends no request.
+  test('Sensitivity: business user, document steward and restricted steward on one record (task 0029)', async ({ page }, testInfo) => {
+    test.skip(!isDesktop(testInfo), 'Runs once per tour (desktop only).')
+    test.setTimeout(240_000)
+    const RECORD = '300000000003'
+    const los = (await searchSources(page)).find((s) => s.displayName === 'Loan Origination System')
+    expect(los, 'the Loan Origination System from Seed-SDV-Canvas-Demo.ps1').toBeTruthy()
+    await page.evaluate(([key, id]) => window.localStorage.setItem(key, id), [LAST_SOURCE_KEY, los!.sourceId])
+    const inspector = () => page.getByRole('complementary', { name: 'Record inspector' })
+    const lockedItem = () => inspector().getByRole('button', { name: /^Restricted document, Highly Confidential/ })
+    const viewerBar = () => viewer(page).locator('.vw-bar').first()
+    const openRecord = async () => {
+      await areaTab(page, 'Records').click()
+      await waitForBusinessSearchReady(page)
+      await searchFor(page, RECORD)
+      const row = resultRows(page).filter({ hasText: RECORD }).first()
+      await expect(row).toBeVisible({ timeout: 15000 })
+      await row.click()
+      await expect(inspector()).toBeVisible({ timeout: 15000 })
+      await expect(inspector().getByText('Contract level')).toBeVisible()
+      return row
+    }
+    const openDocuments = async () => {
+      await inspector().getByRole('button', { name: /Open documents/ }).click()
+      await expect(page.getByRole('img', { name: /Document page 1/ })).toBeVisible({ timeout: 20000 })
+    }
+    const closeViewer = () => viewer(page).getByRole('button', { name: /^Back to/ }).click()
+
+    // 1. Business user: a lock on the row, a locked item that reveals nothing, no Level, no requests.
+    await selectRole(page, 'Business User')
+    const row = await openRecord()
+    await expect(row.getByRole('img', { name: /Highly Confidential/ })).toBeVisible()
+    await expect(lockedItem()).toBeVisible()
+    await expect(inspector()).not.toContainText(/settlement/i)
+    await expect(inspector().getByRole('button', { name: 'Level', exact: true })).toHaveCount(0)
+    await lockedItem().click()
+    await expect(page.getByText("You can't open this document", { exact: true }).last()).toBeVisible()
+    await capture(page, testInfo, 'sensitivity-business-user-record')
+    await openDocuments()
+    await expect(viewerBar().getByRole('button', { name: /^Level/ })).toHaveCount(0)
+    await expect(viewerBar().getByRole('button', { name: /^Request (download|print)/ })).toHaveCount(0)
+    await expect(viewer(page).getByRole('tab', { name: /^Requests/ })).toHaveCount(0)
+    await closeViewer()
+
+    // 2. Document steward: the Highly Confidential document stays locked; Level in the panel and the viewer.
+    await selectRole(page, 'Document Steward')
+    await openRecord()
+    await expect(lockedItem()).toBeVisible()
+    await inspector().getByRole('button', { name: 'Level', exact: true }).click()
+    let dialog = page.getByRole('dialog', { name: 'Change sensitivity level' })
+    await expect(dialog.getByRole('radio', { name: /^Whole contract/ })).toBeChecked()
+    await expect(dialog.getByRole('radio', { name: 'This document' })).toBeDisabled()
+    await dialog.getByRole('radio', { name: /Highly Confidential/ }).check()
+    await expect(dialog).toContainText("You won't be able to open the documents on this contract after this change.")
+    await expect(dialog.getByRole('button', { name: 'Raise contract to Highly Confidential' })).toBeDisabled() // no reason yet
+    await capture(page, testInfo, 'sensitivity-steward-level-dialog')
+    await dialog.getByRole('button', { name: 'Cancel' }).click()
+    await expect(dialog).toHaveCount(0)
+    await openDocuments()
+    await expect(viewerBar().getByRole('button', { name: /^Request (download|print)/ })).toHaveCount(0)
+    await viewerBar().getByRole('button', { name: /^Level/ }).click()
+    dialog = page.getByRole('dialog', { name: 'Change sensitivity level' })
+    await expect(dialog.getByRole('radio', { name: 'This document' })).toBeChecked()
+    await expect(dialog.getByText('Now')).toBeVisible()
+    await dialog.getByRole('button', { name: 'Cancel' }).click()
+    await expect(viewer(page).getByRole('tab', { name: /^Requests/ })).toBeVisible()
+    await closeViewer()
+
+    // 3. Restricted steward: every document opens; for the Highly Confidential one, requests instead of Download and Print.
+    await selectRole(page, 'Restricted Steward')
+    await openRecord()
+    await expect(inspector().getByRole('button', { name: /^Restricted document/ })).toHaveCount(0)
+    await expect(inspector().getByRole('button', { name: 'Level', exact: true })).toBeVisible()
+    await openDocuments()
+    await page.getByRole('navigation', { name: 'Record documents' }).getByRole('button', { name: /Settlement agreement/ }).click()
+    await expect(viewerBar()).toContainText('Highly Confidential', { timeout: 15000 })
+    await expect(viewerBar().getByRole('button', { name: 'Download', exact: true })).toHaveCount(0)
+    await expect(viewerBar().getByRole('button', { name: 'Print', exact: true })).toHaveCount(0)
+    await expect(viewerBar().getByRole('button', { name: 'Request download' })).toBeVisible()
+    await expect(viewerBar().getByRole('button', { name: /^Print \(approved, use by / })).toBeVisible({ timeout: 15000 })
+    await viewer(page).getByRole('tab', { name: /^Requests/ }).click()
+    const requests = viewer(page).getByRole('complementary', { name: 'Document information' })
+    await expect(requests.getByRole('listitem').filter({ hasText: /^Print/ })).toContainText('Approved · use by')
+    await expect(requests.getByRole('listitem').filter({ hasText: 'Lower to Confidential' })).toContainText('Waiting for approval')
+    await viewerBar().getByRole('button', { name: 'Request download' }).click()
+    const pop = page.getByRole('dialog', { name: 'Request a download' })
+    await expect(pop).toContainText('A Business admin approves it. Once approved, you can download this document once, within 24 hours.')
+    await expect(pop.getByRole('button', { name: 'Send request' })).toBeDisabled() // no reason yet
+    await capture(page, testInfo, 'sensitivity-restricted-steward-viewer')
+    await pop.getByRole('button', { name: 'Cancel' }).click()
+    await expect(pop).toHaveCount(0)
+    await closeViewer()
   })
 
   test('Business User screens', async ({ page }, testInfo) => {

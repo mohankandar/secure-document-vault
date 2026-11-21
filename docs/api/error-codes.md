@@ -133,6 +133,13 @@ Every refusal listed here comes back with a short, stable `code` and a plain `me
 - **What the user should do:** wait until the document is available, or, if it was deleted, nothing.
 - **What support should tell the customer:** a document's level is changed once it is stored and available. A deleted document is gone.
 
+### SDV-SEN-018: the level history needs a Steward or a Business admin
+
+- **HTTP status:** 403. Sent by `GET /api/v1/business/documents/{id}/sensitivity/history` and `GET /api/v1/business/records/{recordRef}/sensitivity/history`. (An unknown document or record gets SDV-SEN-016; a Steward who can't open the document gets SDV-SEN-008.)
+- **Meaning:** the level history holds the reasons people gave for changing a level. Only Document stewards, Restricted stewards and Business admins can read it. The refusal is recorded in the audit.
+- **What the user should do:** ask a Steward or a Business admin if you need to know why a level changed.
+- **What support should tell the customer:** the reasons are kept out of the audit on purpose (they are free text and may hold names), so IT admins can't read them either. A Steward or Business admin of the organization can.
+
 ## Roles (ROL)
 
 ### SDV-ROL-001: permission a role may never have

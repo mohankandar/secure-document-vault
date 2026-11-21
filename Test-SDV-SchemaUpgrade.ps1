@@ -1,7 +1,8 @@
 <#
 .SYNOPSIS
   Repeatable upgrade check for task 0024: a database at an earlier schema moves to this version's schema with its data
-  unchanged. -From 027 (the default, task 0028) starts at 026 and checks changeset 027 (access requests, hold names);
+  unchanged. -From 028 (the default, task 0029) starts at 027 and checks changeset 028 (the level-change history);
+  -From 027 starts at 026 and checks changeset 027 (access requests, hold names) and then 028;
   -From 026 starts at 025 and checks changeset 026 (legal holds) and then 027; -From 025
   starts at 024 and checks changeset 025 (the role tables) and then 026; -From 024
   starts at 023 and checks 024 (record sensitivity levels) and then 025; -From 023 starts at 022 and checks 023 (the
@@ -30,7 +31,9 @@
        exists and is empty, its checks refuse bad rows, and LegalHoldPostgresTest runs the application's legal-hold and
        retention code against the scratch database (held documents kept, released ones deleted, races, tenants). For 027:
        access_requests exists and is empty, a hold placed before keeps its columns and gets no names, and
-       AccessRequestPostgresTest runs requests, grants, expiry and the table's checks. Always: every other column of every row is unchanged, no other
+       AccessRequestPostgresTest runs requests, grants, expiry and the table's checks. For 028: sensitivity_level_changes
+       exists and is empty, an access request made before keeps every column, and AccessRequestPostgresTest also writes
+       and reads the history and checks its table. Always: every other column of every row is unchanged, no other
        table changed, status is up to date.
 
   Prerequisite: the application jar is built (.\Build-SDV-All.ps1).
@@ -39,8 +42,8 @@
 param(
     [string]$Jar,
     # The first changeset the upgrade applies; the scratch database is built up to the one before it.
-    [ValidateSet('023', '024', '025', '026', '027')]
-    [string]$From = '027',
+    [ValidateSet('023', '024', '025', '026', '027', '028')]
+    [string]$From = '028',
     # Drop a scratch database and role left by an earlier run of this script that could not clean up.
     [switch]$DropLeftover
 )
@@ -52,7 +55,7 @@ $db = 'sdv_schema_test'
 $owner = 'sdv_schema_owner'
 $hostUrl = 'jdbc:postgresql://localhost:5433/' + $db
 # In order. The upgrade applies every changeset from -From on.
-$checked = @('022-retention-policy-creator-name', '023-document-sensitivity-level', '024-record-sensitivity-levels', '025-role-separation', '026-legal-holds', '027-access-requests')
+$checked = @('022-retention-policy-creator-name', '023-document-sensitivity-level', '024-record-sensitivity-levels', '025-role-separation', '026-legal-holds', '027-access-requests', '028-sensitivity-level-changes')
 $start = [array]::IndexOf(($checked | ForEach-Object { $_.Substring(0, 3) }), $From)
 $newChangesets = @($checked[$start..($checked.Count - 1)])
 $newChangeset = $newChangesets[0]
@@ -62,6 +65,7 @@ $has024 = $newChangesets -contains '024-record-sensitivity-levels'
 $has025 = $newChangesets -contains '025-role-separation'
 $has026 = $newChangesets -contains '026-legal-holds'
 $has027 = $newChangesets -contains '027-access-requests'
+$has028 = $newChangesets -contains '028-sensitivity-level-changes'
 $roleTables = @('role_conflict_problems', 'role_group_mappings_seen', 'role_mapping_notices')
 $run = Join-Path $root ('.runtime\schema-upgrade\' + (Get-Date -Format 'yyyyMMdd-HHmmss'))
 New-Item -ItemType Directory -Force -Path $run | Out-Null
@@ -131,7 +135,7 @@ function Invoke-SchemaStep([string[]]$StepArgs) {
 $otherTablesSql = @"
 select string_agg(t.relname || '=' || (xpath('/row/c/text()', query_to_xml(format('select count(*) || '':'' || coalesce(md5(string_agg(x::text, ''|'' order by x::text)), '''') as c from %I x', t.relname), false, true, '')))[1]::text, ',' order by t.relname)
   from pg_stat_user_tables t
- where t.relname not in ('documents', 'record_sensitivity_levels', 'role_conflict_problems', 'role_group_mappings_seen', 'role_mapping_notices', 'legal_holds', 'access_requests', 'databasechangelog', 'databasechangeloglock');
+ where t.relname not in ('documents', 'record_sensitivity_levels', 'role_conflict_problems', 'role_group_mappings_seen', 'role_mapping_notices', 'legal_holds', 'access_requests', 'sensitivity_level_changes', 'databasechangelog', 'databasechangeloglock');
 "@
 $levelColumn = if ($has023) { '' } else { ', sensitivity_level' }
 $documentsOldColumnsSql = @"
@@ -145,6 +149,8 @@ $hasTableSql = "select count(*) from information_schema.tables where table_name 
 $hasRoleTablesSql = "select count(*) from information_schema.tables where table_name in ('role_conflict_problems', 'role_group_mappings_seen', 'role_mapping_notices');"
 $hasHoldTableSql = "select count(*) from information_schema.tables where table_name = 'legal_holds';"
 $hasRequestTableSql = "select count(*) from information_schema.tables where table_name = 'access_requests';"
+$hasChangeTableSql = "select count(*) from information_schema.tables where table_name = 'sensitivity_level_changes';"
+$requestTableBefore = if ($has027) { '0' } else { '1' }
 $holdTableBefore = if ($has026) { '0' } else { '1' }
 $roleTablesBefore = if ($has025) { '0' } else { '3' }
 $recordTableBefore = if ($has024) { '0' } else { '1' }
@@ -200,9 +206,10 @@ revoke all on database $db from public;
     Assert-That ((Get-Value $hasTableSql) -eq $recordTableBefore) "record_sensitivity_levels should $(if ($has024) { 'not ' })exist at the previous version"
     Assert-That ((Get-Value $hasRoleTablesSql) -eq $roleTablesBefore) "the role tables should $(if ($has025) { 'not ' })exist at the previous version"
     Assert-That ((Get-Value $hasHoldTableSql) -eq $holdTableBefore) "legal_holds should $(if ($has026) { 'not ' })exist at the previous version"
-    Assert-That ((Get-Value $hasRequestTableSql) -eq '0') 'access_requests already exists at the previous version'
+    Assert-That ((Get-Value $hasRequestTableSql) -eq $requestTableBefore) "access_requests should $(if ($has027) { 'not ' })exist at the previous version"
+    Assert-That ((Get-Value $hasChangeTableSql) -eq '0') 'sensitivity_level_changes already exists at the previous version'
     $prevCount = Get-Value 'select count(*) from databasechangelog;'
-    $missing = @(); if ($has023) { $missing += 'no sensitivity_level' }; if ($has024) { $missing += 'no record_sensitivity_levels' }; if ($has025) { $missing += 'no role tables' }; if ($has026) { $missing += 'no legal_holds' }; $missing += 'no access_requests'
+    $missing = @(); if ($has023) { $missing += 'no sensitivity_level' }; if ($has024) { $missing += 'no record_sensitivity_levels' }; if ($has025) { $missing += 'no role tables' }; if ($has026) { $missing += 'no legal_holds' }; if ($has027) { $missing += 'no access_requests' }; $missing += 'no sensitivity_level_changes'
     Write-Step "1. Previous version (changesets up to $($lastPrevious.Substring(0, 3)))" $w.Elapsed.TotalSeconds "$prevCount changesets, last $last, $($missing -join ', ')"
 
     # ------------------------------------------------------------ 2. data at the previous version
@@ -230,6 +237,13 @@ values ('40000000-0000-0000-0000-000000000001', '10000000-0000-0000-0000-0000000
         $null = Invoke-Sql -Database $db -AsOwner -Sql "insert into legal_holds(hold_id, tenant_id, document_id, reason, placed_by, placed_at, released_by, released_at) values ('80000000-0000-0000-0000-0000000000f1', '10000000-0000-0000-0000-000000000001', '40000000-0000-0000-0000-000000000001', 'Litigation', 'admin', now() - interval '1 day', 'admin', now());"
         $holdsBefore = Get-Value $holdsOldColumnsSql
         Assert-That ($holdsBefore -match '^1:[0-9a-f]{32}$') "legal_holds fingerprint looks wrong: $holdsBefore"
+    }
+    # Task 0029: with access_requests already there, a request made before 028 must keep every column it had.
+    $requestsOldColumnsSql = "select count(*) || ':' || coalesce(md5(string_agg(x::text, '|' order by x.request_id)), '') from access_requests x;"
+    if (-not $has027) {
+        $null = Invoke-Sql -Database $db -AsOwner -Sql "insert into access_requests(request_id, tenant_id, kind, document_id, requested_level, reason, requested_by, requested_at, status, expires_at) values ('90000000-0000-0000-0000-0000000000a1', '10000000-0000-0000-0000-000000000001', 'LOWER_LEVEL', '40000000-0000-0000-0000-000000000001', 'STANDARD', 'Marked by mistake', 'steward', now(), 'PENDING', now() + interval '7 days');"
+        $requestsBefore = Get-Value $requestsOldColumnsSql
+        Assert-That ($requestsBefore -match '^1:[0-9a-f]{32}$') "access_requests fingerprint looks wrong: $requestsBefore"
     }
     $docsBefore = Get-Value $documentsOldColumnsSql
     $othersBefore = Get-Value $otherTablesSql
@@ -278,12 +292,19 @@ values ('40000000-0000-0000-0000-000000000001', '10000000-0000-0000-0000-0000000
             Assert-That ($upgradeText.Contains($c)) "the reviewable SQL lacks $c"
         }
     }
+    if ($has028) {
+        foreach ($c in @('create table sensitivity_level_changes', 'ck_level_changes_target', 'ck_level_changes_from', 'ck_level_changes_request',
+                'ck_level_changes_reason', 'fk_level_changes_document', 'idx_level_changes_document', 'idx_level_changes_record')) {
+            Assert-That ($upgradeText.Contains($c)) "the reviewable SQL lacks $c"
+        }
+    }
     Assert-That (-not ($upgradeText -match "::$lastPrevious::")) 'the reviewable SQL repeats an already applied changeset'
     Assert-That ((Get-Value $hasColumnSql) -eq $hasColumn) 'sql changed the database (documents)'
     Assert-That ((Get-Value $hasTableSql) -eq $recordTableBefore) 'sql changed the database (record_sensitivity_levels)'
     Assert-That ((Get-Value $hasRoleTablesSql) -eq $roleTablesBefore) 'sql changed the database (role tables)'
     Assert-That ((Get-Value $hasHoldTableSql) -eq $holdTableBefore) 'sql changed the database (legal_holds)'
-    Assert-That ((Get-Value $hasRequestTableSql) -eq '0') 'sql changed the database (access_requests)'
+    Assert-That ((Get-Value $hasRequestTableSql) -eq $requestTableBefore) 'sql changed the database (access_requests)'
+    Assert-That ((Get-Value $hasChangeTableSql) -eq '0') 'sql changed the database (sensitivity_level_changes)'
     Write-Step '3b. Schema step sql (the SQL to review)' $sq.Seconds "only $($newChangesets.ForEach({ $_.Substring(0, 3) }) -join ' and '); database unchanged"
 
     $up = Invoke-SchemaStep @('update')
@@ -437,6 +458,20 @@ rollback;
             Assert-That ((Get-Value "select count(*) from legal_holds where placed_by_display_name is null and released_by_display_name is null;") -eq '1') 'an older hold should have no names'
         }
         Write-Step '4e. After 027: access_requests and hold names' $w.Elapsed.TotalSeconds "empty; hold name columns nullable$(if (-not $has026) { '; the older hold unchanged, no names' })"
+        $w = [System.Diagnostics.Stopwatch]::StartNew()
+    }
+    if ($has028) {
+        Assert-That ((Get-Value $hasChangeTableSql) -eq '1') 'sensitivity_level_changes was not created'
+        Assert-That ((Get-Value 'select count(*) from sensitivity_level_changes;') -eq '0') 'sensitivity_level_changes should start empty'
+        $nullable = Get-Value "select string_agg(column_name || ':' || is_nullable, ',' order by ordinal_position) from information_schema.columns where table_name = 'sensitivity_level_changes';"
+        Assert-That ($nullable -eq 'change_id:NO,tenant_id:NO,scope:NO,document_id:YES,source_id:YES,record_key:YES,record_key_sha256:YES,direction:NO,from_level:YES,to_level:NO,reason:NO,changed_by:NO,changed_by_display_name:YES,changed_at:NO,access_request_id:YES') "unexpected columns: $nullable"
+        if (-not $has027) {
+            Assert-That ((Get-Value $requestsOldColumnsSql) -eq $requestsBefore) 'an access request made before 028 changed'
+        }
+        Write-Step '4g. After 028: sensitivity_level_changes' $w.Elapsed.TotalSeconds "empty$(if (-not $has027) { '; the older access request unchanged' })"
+        $w = [System.Diagnostics.Stopwatch]::StartNew()
+    }
+    if ($has027 -or $has028) {
 
         # The application's own repositories and services against this database: holds and the retention cleanup
         # (LegalHoldPostgresTest), requests, grants, expiry and the table's checks (AccessRequestPostgresTest). The
@@ -453,7 +488,7 @@ rollback;
                 throw "FAIL: $test did not pass (exit $($it.Code)): $(if ($itLine) { $itLine.Trim() } else { 'no result line' }). Log: $run\postgres-tests.log"
             }
         }
-        Write-Step '4f. Holds, requests and grants on PostgreSQL' $w.Elapsed.TotalSeconds 'holds and cleanup; grant used once (also racing), expiry, self-decision refused, checks'
+        Write-Step '4f. Holds, requests and grants on PostgreSQL' $w.Elapsed.TotalSeconds 'holds and cleanup; grant used once (also racing), expiry, self-decision refused, level history, checks'
         $w = [System.Diagnostics.Stopwatch]::StartNew()
     }
     Write-Step '4. After: nothing else changed' $w.Elapsed.TotalSeconds 'other document columns and every other table unchanged'
