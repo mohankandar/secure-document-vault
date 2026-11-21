@@ -252,7 +252,10 @@ Not touched:
 
 ## Commits (hash and message), or "not committed"
 
-COMMIT_PLACEHOLDER
+- `2f82fc1` docs: failure catalog from the code, with proposed codes (task 0034)
+- A second commit adds this hash to the report.
+
+On `docs/failure-catalog` only; not pushed, not merged.
 
 ## Not done, and why
 
