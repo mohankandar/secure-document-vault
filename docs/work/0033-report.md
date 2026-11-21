@@ -261,7 +261,7 @@ As in Part 1. The board's "Raised by a sending system (contract level)" now read
 
 ### Commits
 
-See the commit that adds this section, on `feature/reports-2`. Not pushed, not merged.
+`2272d07` feat: Sensitivity report counts first contract levels from deliveries and only open attempts (task 0033, part 2), on `feature/reports-2`. Not pushed, not merged. (This line was added in a second commit.)
 
 ### Not done, and why
 
