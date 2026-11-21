@@ -178,7 +178,7 @@ New or extended:
 
 ## Commits (hash and message), or "not committed"
 
-Added in a second commit, as in earlier reports.
+`507876d` feat: sensitivity screens for stewards and business users; level-change history (task 0029), on `feature/sensitivity-6`. Not pushed, not merged. (This line was added in a second commit.)
 
 ## Not done, and why
 
