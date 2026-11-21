@@ -19,6 +19,8 @@ import java.util.regex.Pattern;
 public final class CorrelationIdFilter extends OncePerRequestFilter {
     public static final String HEADER = "X-Correlation-Id";
     public static final String MDC_KEY = "correlationId";
+    /** Task 0036: the same ID as a request attribute, so the /error dispatch (after the MDC is cleared) still has it. */
+    public static final String REFERENCE_ATTRIBUTE = CorrelationIdFilter.class.getName() + ".reference";
 
     private static final Pattern SAFE = Pattern.compile("[A-Za-z0-9._:-]{1,128}");
 
@@ -30,6 +32,7 @@ public final class CorrelationIdFilter extends OncePerRequestFilter {
 
         String correlationId = resolveCorrelationId(request.getHeader(HEADER));
         MDC.put(MDC_KEY, correlationId);
+        request.setAttribute(REFERENCE_ATTRIBUTE, correlationId);
         response.setHeader(HEADER, correlationId);
 
         try {

@@ -1,5 +1,6 @@
 package com.sdv.platform.application.audit;
 
+import com.sdv.platform.domain.error.InternalCheckFailed;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sdv.platform.application.access.DocumentAccessGuard;
@@ -162,7 +163,7 @@ public class AuditQueryService {
         try {
             return json.writeValueAsString(value);
         } catch (JsonProcessingException ex) {
-            throw new IllegalStateException("The export could not be recorded, so nothing was exported.", ex);
+            throw InternalCheckFailed.auditNotWritten("The export could not be recorded, so nothing was exported.", ex);
         }
     }
 

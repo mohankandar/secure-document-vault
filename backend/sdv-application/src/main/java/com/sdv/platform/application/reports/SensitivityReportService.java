@@ -1,5 +1,6 @@
 package com.sdv.platform.application.reports;
 
+import com.sdv.platform.domain.error.InternalCheckFailed;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sdv.platform.application.audit.AuditCsv;
@@ -153,13 +154,13 @@ public class SensitivityReportService {
         KINDS.forEach(k -> byKind.put(k, new long[4]));
         for (RequestCount c : sensitivity.countRequests(tenantId, source, scope.start(), scope.end(), clock.instant())) {
             long[] row = byKind.get(c.kind());
-            if (row == null) throw new IllegalStateException("A request of an unknown kind can't be counted: " + c.kind());
+            if (row == null) throw new InternalCheckFailed("A request of an unknown kind can't be counted: " + c.kind());
             int column = switch (c.outcome()) {
                 case "APPROVED" -> 0;
                 case "DECLINED" -> 1;
                 case "EXPIRED" -> 2;
                 case "WAITING" -> 3;
-                default -> throw new IllegalStateException("A request outcome Vero doesn't know: " + c.outcome());
+                default -> throw new InternalCheckFailed("A request outcome Vero doesn't know: " + c.outcome());
             };
             row[column] += c.count();
         }
@@ -260,7 +261,7 @@ public class SensitivityReportService {
             case "PRINT" -> "Print";
             case "LOWER_LEVEL" -> "Lower level (one document)";
             case "LOWER_RECORD_LEVEL" -> "Lower level (whole " + singular(records) + ")";
-            default -> throw new IllegalStateException("A request kind Vero doesn't know: " + kind);
+            default -> throw new InternalCheckFailed("A request kind Vero doesn't know: " + kind);
         };
     }
 
@@ -285,7 +286,7 @@ public class SensitivityReportService {
         try {
             return JSON.writeValueAsString(details);
         } catch (JsonProcessingException ex) {
-            throw new IllegalStateException("The export could not be audited, so it was not made.", ex);
+            throw InternalCheckFailed.auditNotWritten("The export could not be audited, so it was not made.", ex);
         }
     }
 

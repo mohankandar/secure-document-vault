@@ -209,7 +209,7 @@ alter default privileges for role $owner in schema public grant select, insert, 
     $older = 'The database is older than this Vero version. Ask your database team to run the schema step (install guide, "Update the database").'
     Assert-That ($info.databaseSchema.message -eq $older) 'system info message differs from the agreed sentence'
     $gated = Get-Http '/api/v1/operations/summary'
-    Assert-That ($gated.Status -eq 503 -and $gated.Body -like '*DATABASE_OLDER*') "a protected request should get 503 DATABASE_OLDER, got $($gated.Status)"
+    Assert-That ($gated.Status -eq 503 -and $gated.Body -like '*SDV-SYS-001*') "a protected request should get 503 SDV-SYS-001 (was DATABASE_OLDER before task 0036), got $($gated.Status)"
     Wait-Watching 3   # let the background jobs' 1 s initial delay pass: they must stay off
     # Up but not ready: health and readiness OUT_OF_SERVICE (503), liveness UP (200).
     $health = Get-Http '/actuator/health'; $ready = Get-Http '/actuator/health/readiness'; $live = Get-Http '/actuator/health/liveness'

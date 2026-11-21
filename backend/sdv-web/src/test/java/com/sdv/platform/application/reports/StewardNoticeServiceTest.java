@@ -93,7 +93,7 @@ class StewardNoticeServiceTest {
     @Test
     void aNoticeOfAKindVeroDoesntKnowIsNotShownAsSomethingElse() {
         repo.notices.add(new StewardNoticeRepository.StoredNotice(UUID.randomUUID(), "SOMETHING", NOW, null, null, null, null));
-        assertThrows(IllegalStateException.class, () -> service.unread(TENANT, "dee"));
+        assertThrows(com.sdv.platform.domain.error.InternalCheckFailed.class, () -> service.unread(TENANT, "dee"));
     }
 
     private static String code(org.junit.jupiter.api.function.Executable call) {

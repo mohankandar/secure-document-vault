@@ -1,5 +1,6 @@
 package com.sdv.platform.application.download;
 
+import com.sdv.platform.domain.error.InternalCheckFailed;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sdv.platform.application.access.Clearance;
@@ -210,7 +211,7 @@ public class ControlledDownloadService {
             if (grantId != null) safe.put("accessRequestId", grantId.toString());
             return json.writeValueAsString(safe);
         } catch (JsonProcessingException ex) {
-            throw new IllegalStateException("Could not serialize download audit details.", ex);
+            throw InternalCheckFailed.auditNotWritten("Could not serialize download audit details.", ex);
         }
     }
 

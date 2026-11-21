@@ -1,5 +1,6 @@
 package com.sdv.platform.persistence.business;
 
+import com.sdv.platform.domain.error.InternalCheckFailed;
 import com.sdv.platform.application.business.RecordKey;
 import com.sdv.platform.application.port.RecordSensitivityRepository;
 import com.sdv.platform.domain.document.SensitivityLevel;
@@ -72,7 +73,7 @@ public class JdbcRecordSensitivityRepository implements RecordSensitivityReposit
                 .addValue("level", level.name())
                 .addValue("setBy", setBy)
                 .addValue("updatedAt", Timestamp.from(updatedAt)));
-        if (updated != 1) throw new IllegalStateException("The record's sensitivity level could not be raised.");
+        if (updated != 1) throw new InternalCheckFailed("The record's sensitivity level could not be raised.");
     }
 
     @Override
@@ -89,7 +90,7 @@ public class JdbcRecordSensitivityRepository implements RecordSensitivityReposit
                 .addValue("setBy", setBy)
                 .addValue("reason", reason)
                 .addValue("updatedAt", Timestamp.from(updatedAt)));
-        if (updated != 1) throw new IllegalStateException("The record's sensitivity level could not be changed.");
+        if (updated != 1) throw new InternalCheckFailed("The record's sensitivity level could not be changed.");
     }
 
     @Override

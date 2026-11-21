@@ -1,5 +1,6 @@
 package com.sdv.platform.application.retention;
 
+import com.sdv.platform.domain.error.InternalCheckFailed;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sdv.platform.application.port.AuditEventPort;
@@ -141,7 +142,7 @@ public class RetentionDeletionService {
             safe.put("metadataTombstoneRetained", true);
             return json.writeValueAsString(safe);
         } catch (JsonProcessingException ex) {
-            throw new IllegalStateException("Could not serialize retention deletion audit details.", ex);
+            throw InternalCheckFailed.auditNotWritten("Could not serialize retention deletion audit details.", ex);
         }
     }
 

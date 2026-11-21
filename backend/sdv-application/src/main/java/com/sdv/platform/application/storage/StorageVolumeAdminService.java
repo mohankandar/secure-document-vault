@@ -1,5 +1,6 @@
 package com.sdv.platform.application.storage;
 
+import com.sdv.platform.domain.error.InternalCheckFailed;
 import com.sdv.platform.application.port.AuditEventPort;
 import com.sdv.platform.application.port.StorageVolumeProbe;
 import com.sdv.platform.application.port.StorageVolumeRepository;
@@ -150,7 +151,7 @@ public class StorageVolumeAdminService {
             return java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256")
                     .digest(value.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
         } catch (java.security.NoSuchAlgorithmException ex) {
-            throw new IllegalStateException("SHA-256 is unavailable.", ex);
+            throw new InternalCheckFailed("SHA-256 is unavailable.", ex);
         }
     }
 

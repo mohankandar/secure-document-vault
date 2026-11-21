@@ -1,5 +1,6 @@
 package com.sdv.platform.persistence.reports;
 
+import com.sdv.platform.domain.error.InternalCheckFailed;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -75,7 +76,7 @@ public class JdbcSensitivityReportRepository implements SensitivityReportReposit
             try {
                 parsed = RecordKey.parse(level.key());
             } catch (RuntimeException ex) {
-                throw new IllegalStateException("A record level names a record key that can't be read, so the documents "
+                throw new InternalCheckFailed("A record level names a record key that can't be read, so the documents "
                         + "can't be counted by level.", ex);
             }
             rec++;
@@ -267,7 +268,7 @@ public class JdbcSensitivityReportRepository implements SensitivityReportReposit
             case "STANDARD" -> 0;
             case "CONFIDENTIAL" -> 1;
             case "HIGHLY_CONFIDENTIAL" -> 2;
-            default -> throw new IllegalStateException("A record level isn't one of the three: " + level);
+            default -> throw new InternalCheckFailed("A record level isn't one of the three: " + level);
         };
     }
 
@@ -288,7 +289,7 @@ public class JdbcSensitivityReportRepository implements SensitivityReportReposit
         try {
             return JSON.writeValueAsString(value);
         } catch (JsonProcessingException ex) {
-            throw new IllegalStateException("The record levels could not be passed to the count.", ex);
+            throw new InternalCheckFailed("The record levels could not be passed to the count.", ex);
         }
     }
 }

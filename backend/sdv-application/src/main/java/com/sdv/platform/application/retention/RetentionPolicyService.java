@@ -1,5 +1,6 @@
 package com.sdv.platform.application.retention;
 
+import com.sdv.platform.domain.error.InternalCheckFailed;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sdv.platform.application.port.AuditEventPort;
@@ -88,7 +89,7 @@ public class RetentionPolicyService {
 
     private RetentionPolicyOverview overview(UUID tenantId) {
         RetentionRepository.PolicyVersion current = retention.findCurrentPolicy(tenantId)
-                .orElseThrow(() -> new IllegalStateException("Current retention policy history is unavailable."));
+                .orElseThrow(() -> new InternalCheckFailed("Current retention policy history is unavailable."));
         List<PolicyVersion> history = retention.findPolicyHistory(tenantId, 50).stream()
                 .map(RetentionPolicyService::toView)
                 .toList();
@@ -125,7 +126,7 @@ public class RetentionPolicyService {
             safe.put("policyVersion", version);
             return json.writeValueAsString(safe);
         } catch (JsonProcessingException ex) {
-            throw new IllegalStateException("Could not serialize retention-policy audit details.", ex);
+            throw InternalCheckFailed.auditNotWritten("Could not serialize retention-policy audit details.", ex);
         }
     }
 

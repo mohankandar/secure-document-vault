@@ -1,5 +1,6 @@
 package com.sdv.platform.application.business;
 
+import com.sdv.platform.domain.error.InternalCheckFailed;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -35,7 +36,7 @@ final class BusinessRecordRefCodec {
             return Base64.getUrlEncoder().withoutPadding()
                     .encodeToString(JSON.writeValueAsBytes(root));
         } catch (Exception ex) {
-            throw new IllegalStateException("Could not encode business-record reference.", ex);
+            throw new InternalCheckFailed("Could not encode business-record reference.", ex);
         }
     }
 

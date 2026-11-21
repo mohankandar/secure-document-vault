@@ -1,5 +1,6 @@
 package com.sdv.platform.persistence.legalhold;
 
+import com.sdv.platform.domain.error.InternalCheckFailed;
 import com.sdv.platform.application.port.LegalHoldRepository;
 import com.sdv.platform.domain.document.SensitivityLevel;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
@@ -100,7 +101,7 @@ public class JdbcLegalHoldRepository implements LegalHoldRepository {
                 .addValue("releasedBy", releasedBy)
                 .addValue("releasedByName", releasedByName)
                 .addValue("releasedAt", Timestamp.from(releasedAt)));
-        if (updated != 1) throw new IllegalStateException("The legal hold release did not change exactly one active hold.");
+        if (updated != 1) throw new InternalCheckFailed("The legal hold release did not change exactly one active hold.");
     }
 
     @Override

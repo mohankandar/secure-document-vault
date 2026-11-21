@@ -121,15 +121,47 @@ public enum SdvErrorCode {
     /** Task 0032: the tenant's time zone setting isn't a time zone Vero knows, so "today" can't be worked out (409). */
     RPT_004("SDV-RPT-004"),
     /** Task 0032: the range holds more lines than one report reads; choose fewer days or one sending system (400). */
-    RPT_005("SDV-RPT-005");
+    RPT_005("SDV-RPT-005"),
+    /** Task 0036: the database is older than this Vero version; every request but health gets 503 until updated. */
+    SYS_001("SDV-SYS-001", true),
+    /** Task 0036: the database is newer than this Vero version (503). */
+    SYS_002("SDV-SYS-002", true),
+    /** Task 0036: the database couldn't be read at start to check its version (503). */
+    SYS_003("SDV-SYS-003"),
+    /** Task 0036: a failure Vero didn't expect; the last-resort answer (500). */
+    SYS_013("SDV-SYS-013"),
+    /** Task 0036: the database failed during a request (Spring's DataAccessException) (503). */
+    SYS_014("SDV-SYS-014"),
+    /** Task 0036: the request couldn't be read before Vero's own code ran (Spring MVC refused it) (400). */
+    SYS_015("SDV-SYS-015"),
+    /** Task 0036: an internal check failed (InternalCheckFailed) (500). */
+    SYS_016("SDV-SYS-016"),
+    /** Task 0036: the action's audit couldn't be written, so the action was not done (500). */
+    SYS_017("SDV-SYS-017"),
+    /** Task 0036: no ACTIVE storage volume can take the document (503). */
+    STO_001("SDV-STO-001", true);
 
     private final String code;
+    private final boolean needsPerson;
 
     SdvErrorCode(String code) {
+        this(code, false);
+    }
+
+    SdvErrorCode(String code, boolean needsPerson) {
         this.code = code;
+        this.needsPerson = needsPerson;
     }
 
     public String code() {
         return code;
+    }
+
+    /**
+     * Task 0036: the failure catalog marks this code "needs a person": a setting, a group or data must be fixed by
+     * someone before it can succeed. A refusal (4xx) with such a code is logged at WARN; a 5xx is always ERROR.
+     */
+    public boolean needsPerson() {
+        return needsPerson;
     }
 }

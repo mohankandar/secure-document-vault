@@ -1,5 +1,6 @@
 package com.sdv.platform.persistence.approvals;
 
+import com.sdv.platform.domain.error.InternalCheckFailed;
 import com.sdv.platform.application.approvals.AccessRequestKind;
 import com.sdv.platform.application.approvals.AccessRequestStatus;
 import com.sdv.platform.application.business.RecordKey;
@@ -98,7 +99,7 @@ public class JdbcAccessRequestRepository implements AccessRequestRepository {
                 .addValue("decidedByName", decidedByName)
                 .addValue("decidedAt", Timestamp.from(decidedAt))
                 .addValue("expiresAt", Timestamp.from(expiresAt)));
-        if (updated != 1) throw new IllegalStateException("The decision did not change exactly one pending request.");
+        if (updated != 1) throw new InternalCheckFailed("The decision did not change exactly one pending request.");
     }
 
     @Override
@@ -260,7 +261,7 @@ public class JdbcAccessRequestRepository implements AccessRequestRepository {
                 .addValue("tenantId", tenantId)
                 .addValue("documentId", documentId)
                 .addValue("level", level.name()));
-        if (updated != 1) throw new IllegalStateException("The document's level could not be changed.");
+        if (updated != 1) throw new InternalCheckFailed("The document's level could not be changed.");
     }
 
     static final String CHANGE_COLUMNS = """

@@ -1,5 +1,6 @@
 package com.sdv.platform.application.business;
 
+import com.sdv.platform.domain.error.InternalCheckFailed;
 import com.sdv.platform.application.access.Clearance;
 import com.sdv.platform.application.port.AuditEventPort;
 import com.sdv.platform.application.port.BusinessRecordRepository;
@@ -870,7 +871,7 @@ public class BusinessExperienceService {
                     MessageDigest.getInstance("SHA-256")
                             .digest(value.getBytes(StandardCharsets.UTF_8)));
         } catch (NoSuchAlgorithmException ex) {
-            throw new IllegalStateException("SHA-256 is unavailable.", ex);
+            throw new InternalCheckFailed("SHA-256 is unavailable.", ex);
         }
     }
 

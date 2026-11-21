@@ -1,5 +1,6 @@
 package com.sdv.platform.application.sensitivity;
 
+import com.sdv.platform.domain.error.InternalCheckFailed;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sdv.platform.application.access.Clearance;
@@ -174,7 +175,7 @@ public class SensitivityLevelService {
                 } else {
                     // A delivery set a first level at the same moment: compare with that one instead.
                     stored = recordLevels.lockByKey(tenantId, record.sourceId(), record.recordKey())
-                            .orElseThrow(() -> new IllegalStateException("The record's level could not be read."));
+                            .orElseThrow(() -> new InternalCheckFailed("The record's level could not be read."));
                 }
             }
             SensitivityLevel from = stored == null ? null : stored.level();
@@ -333,7 +334,7 @@ public class SensitivityLevelService {
         try {
             safe = json.writeValueAsString(details);
         } catch (JsonProcessingException ex) {
-            throw new IllegalStateException("The level change could not be audited, so nothing was changed.", ex);
+            throw InternalCheckFailed.auditNotWritten("The level change could not be audited, so nothing was changed.", ex);
         }
         audit.append(new AuditEvent(UUID.randomUUID(), tenantId, "USER", actorId, action, targetType, targetId, at,
                 correlationId, AuditOutcome.SUCCESS, safe,

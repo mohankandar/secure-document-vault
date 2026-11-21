@@ -1,5 +1,6 @@
 package com.sdv.platform.application.document;
 
+import com.sdv.platform.domain.error.InternalCheckFailed;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sdv.platform.application.business.RecordKey;
@@ -220,7 +221,7 @@ public class DocumentIntakeService {
         }
         if (commitResult == null) {
             safeDelete(provider, tenantId, volume, stored.objectKey());
-            throw new IllegalStateException("Document receipt transaction did not return a result.");
+            throw new InternalCheckFailed("Document receipt transaction did not return a result.");
         }
 
         if (commitResult.duplicate() != null) {
@@ -266,7 +267,7 @@ public class DocumentIntakeService {
                     + earlier.sentLevel().name() + "; send the same " + SENSITIVITY_FIELD + " when retrying.");
         }
         Document document = documents.findDocumentByIdForTenant(tenantId, earlier.existingDocumentId())
-                .orElseThrow(() -> new IllegalStateException("The document this delivery duplicated could not be read."));
+                .orElseThrow(() -> new InternalCheckFailed("The document this delivery duplicated could not be read."));
         return new DocumentReceipt(document, DUPLICATE_ALREADY_STORED, true, true, earlier.sourceDocumentId());
     }
 
@@ -481,7 +482,7 @@ public class DocumentIntakeService {
         try {
             return JSON.writeValueAsString(details);
         } catch (JsonProcessingException ex) {
-            throw new IllegalStateException("The duplicate could not be audited, so nothing was recorded.", ex);
+            throw InternalCheckFailed.auditNotWritten("The duplicate could not be audited, so nothing was recorded.", ex);
         }
     }
 

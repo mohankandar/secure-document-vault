@@ -1,5 +1,6 @@
 package com.sdv.platform.persistence.foundation;
 
+import com.sdv.platform.domain.error.InternalCheckFailed;
 import com.sdv.platform.application.port.AuditEventPort;
 import com.sdv.platform.application.port.IngestionSourceRepository;
 import com.sdv.platform.application.port.MetadataFieldDefinitionRepository;
@@ -101,7 +102,7 @@ public class JdbcFoundationRepository implements TenantRepository, IngestionSour
                        updated_at = :updatedAt
                  where tenant_id = :tenantId and source_id = :sourceId
                 """, p);
-        if (updated != 1) throw new IllegalStateException("Tenant-scoped ingestion source update affected " + updated + " rows.");
+        if (updated != 1) throw new InternalCheckFailed("Tenant-scoped ingestion source update affected " + updated + " rows.");
     }
 
 
@@ -179,7 +180,7 @@ public class JdbcFoundationRepository implements TenantRepository, IngestionSour
                    set active=false, retired_at=:retiredAt
                  where tenant_id=:tenantId and source_id=:sourceId and field_key=:fieldKey and active=true
                 """, p);
-        if (updated > 1) throw new IllegalStateException("More than one current metadata definition existed.");
+        if (updated > 1) throw new InternalCheckFailed("More than one current metadata definition existed.");
     }
 
     @Override

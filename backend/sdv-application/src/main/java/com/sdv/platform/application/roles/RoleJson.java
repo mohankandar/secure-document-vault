@@ -1,5 +1,6 @@
 package com.sdv.platform.application.roles;
 
+import com.sdv.platform.domain.error.InternalCheckFailed;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -23,7 +24,7 @@ final class RoleJson {
         try {
             return JSON.writeValueAsString(value);
         } catch (JsonProcessingException ex) {
-            throw new IllegalStateException("Audit details could not be written.", ex);
+            throw InternalCheckFailed.auditNotWritten("Audit details could not be written.", ex);
         }
     }
 }

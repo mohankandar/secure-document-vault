@@ -1,5 +1,6 @@
 package com.sdv.platform.application.reports;
 
+import com.sdv.platform.domain.error.InternalCheckFailed;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sdv.platform.application.audit.AuditCsv;
@@ -353,7 +354,7 @@ public class IntakeReportService {
         try {
             return JSON.writeValueAsString(details);
         } catch (JsonProcessingException ex) {
-            throw new IllegalStateException("The export could not be audited, so it was not made.", ex);
+            throw InternalCheckFailed.auditNotWritten("The export could not be audited, so it was not made.", ex);
         }
     }
 
