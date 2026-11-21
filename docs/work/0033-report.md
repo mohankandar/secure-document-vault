@@ -173,7 +173,7 @@ Tests changed because the behaviour changed (not to make them pass):
 
 ## Commits (hash and message), or "not committed"
 
-Committed on `feature/reports-2`: "feat: Reports › Sensitivity; stewards' notices stored and marked read per person; roles on refused openings (task 0033)". The hash is in the second commit, as before. Not pushed, not merged.
+`ff7f2a2` feat: Reports › Sensitivity; stewards' notices stored and marked read per person; roles on refused openings (task 0033), on `feature/reports-2`. Not pushed, not merged. (This line was added in a second commit.)
 
 ## Not done, and why
 
