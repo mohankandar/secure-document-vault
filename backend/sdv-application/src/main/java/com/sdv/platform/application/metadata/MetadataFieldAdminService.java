@@ -1,5 +1,7 @@
 package com.sdv.platform.application.metadata;
 
+import com.sdv.platform.application.access.ActiveTenant;
+
 import com.sdv.platform.application.port.AuditEventPort;
 import com.sdv.platform.application.port.IngestionSourceRepository;
 import com.sdv.platform.application.port.MetadataFieldDefinitionRepository;
@@ -264,9 +266,7 @@ public class MetadataFieldAdminService {
     }
 
     private void requireSource(UUID tenantId, UUID sourceId) {
-        var tenant = tenants.findById(tenantId)
-                .orElseThrow(() -> new NoSuchElementException("Tenant not found."));
-        if (tenant.status() != TenantStatus.ACTIVE) throw new IllegalStateException("Tenant is not active.");
+        var tenant = ActiveTenant.require(tenants, tenantId);
         sources.findById(tenantId, sourceId)
                 .orElseThrow(() -> new NoSuchElementException("Ingestion source not found."));
     }

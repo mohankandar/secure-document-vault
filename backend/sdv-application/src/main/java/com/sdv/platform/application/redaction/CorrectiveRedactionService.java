@@ -1,5 +1,7 @@
 package com.sdv.platform.application.redaction;
 
+import com.sdv.platform.application.access.ActiveTenant;
+
 import com.sdv.platform.domain.error.InternalCheckFailed;
 import com.sdv.platform.application.access.Clearance;
 import com.sdv.platform.application.access.DocumentAccessGuard;
@@ -110,8 +112,7 @@ public class CorrectiveRedactionService {
             throw new IllegalStateException("Only AVAILABLE documents may be permanently redacted.");
         }
 
-        Tenant tenant = tenants.findById(tenantId)
-                .orElseThrow(() -> new NoSuchElementException("Tenant not found."));
+        Tenant tenant = ActiveTenant.require(tenants, tenantId);
         IngestionSource source = sources.findById(tenantId, current.sourceId())
                 .orElseThrow(() -> new NoSuchElementException("Ingestion source not found."));
 

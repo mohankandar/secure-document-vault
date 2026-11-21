@@ -5,7 +5,6 @@ import com.sdv.platform.domain.audit.AuditEvent;
 import com.sdv.platform.domain.audit.AuditOutcome;
 import com.sdv.platform.security.Capability;
 import org.slf4j.MDC;
-import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
@@ -24,7 +23,8 @@ public class AuthorizationService {
     public void require(SdvPrincipal principal, Capability capability) {
         if (!capabilities.has(principal, capability)) {
             safeDeniedAudit(principal, capability);
-            throw new AccessDeniedException("Required capability is not granted: " + capability.name());
+            // Task 0038: SDV-ROL-006, with the action in plain words.
+            throw new CapabilityDenied(capability);
         }
     }
 

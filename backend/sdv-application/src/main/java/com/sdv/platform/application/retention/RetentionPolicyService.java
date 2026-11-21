@@ -1,5 +1,7 @@
 package com.sdv.platform.application.retention;
 
+import com.sdv.platform.application.access.ActiveTenant;
+
 import com.sdv.platform.domain.error.InternalCheckFailed;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -41,8 +43,7 @@ public class RetentionPolicyService {
     }
 
     public RetentionPolicyOverview current(UUID tenantId) {
-        tenants.findById(tenantId)
-                .orElseThrow(() -> new NoSuchElementException("Tenant not found."));
+        ActiveTenant.require(tenants, tenantId);
         return overview(tenantId);
     }
 
@@ -66,8 +67,7 @@ public class RetentionPolicyService {
             throw new IllegalArgumentException("defaultRetentionDays must be positive or null for indefinite retention.");
         }
 
-        var beforeTenant = tenants.findById(tenantId)
-                .orElseThrow(() -> new NoSuchElementException("Tenant not found."));
+        var beforeTenant = ActiveTenant.require(tenants, tenantId);
         Integer previousDays = beforeTenant.guardrails().defaultRetentionDays();
         Instant now = clock.instant();
 

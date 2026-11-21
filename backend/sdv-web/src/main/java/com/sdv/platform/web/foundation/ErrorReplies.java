@@ -66,6 +66,9 @@ public final class ErrorReplies {
             "Vero couldn't record this action, so it wasn't done. Try again in a few minutes.";
     static final String STO_001_MESSAGE =
             "Vero has no storage space for new documents right now. Nothing was stored; send it again later.";
+    /** Task 0038: two ACTIVE sign-in connections match one sign-in (data changed outside Vero). */
+    static final String IDP_007_SIGN_IN_MESSAGE =
+            "Vero can't sign you in because its sign-in setup is inconsistent. Your IT team has been told.";
 
     private ErrorReplies() { }
 
@@ -82,8 +85,12 @@ public final class ErrorReplies {
      */
     public static Reply failure(Throwable ex) {
         if (ex instanceof InternalCheckFailed check) {
-            return new Reply(HttpStatus.INTERNAL_SERVER_ERROR, check.errorCode(),
-                    check.errorCode() == SdvErrorCode.SYS_017 ? SYS_017_MESSAGE : SYS_016_MESSAGE);
+            String message = switch (check.errorCode()) {
+                case SYS_017 -> SYS_017_MESSAGE;
+                case IDP_007 -> IDP_007_SIGN_IN_MESSAGE;
+                default -> SYS_016_MESSAGE;
+            };
+            return new Reply(HttpStatus.INTERNAL_SERVER_ERROR, check.errorCode(), message);
         }
         if (ex instanceof NoWritableStorageException storage) {
             return new Reply(HttpStatus.SERVICE_UNAVAILABLE, storage.errorCode(), STO_001_MESSAGE);
@@ -223,6 +230,37 @@ public final class ErrorReplies {
             LOG.info("code={} reference={} status={} route={} reason={}", reply.code(), reference, status, route,
                     cause == null ? "-" : cause.getClass().getSimpleName());
         }
+    }
+
+    /**
+     * Task 0038: one line for a coded answer, with its exact cause ({@code detail}), which the caller never sees:
+     * ERROR for a 5xx; WARN for a code that needs a person; INFO for an expected refusal the catalog wants logged
+     * ({@link SdvErrorCode#loggedAtInfo()}, the sign-in and role refusals); nothing for other refusals.
+     */
+    static void logCoded(HttpServletRequest request, HttpStatusCode status, String code, String detail) {
+        SdvErrorCode known = known(code);
+        String reference = reference(request);
+        String route = route(request);
+        String reason = detail == null || detail.isBlank() ? "-" : detail;
+        if (status.is5xxServerError()) {
+            LOG.error("code={} reference={} status={} route={} cause={}", code, reference, status.value(), route, reason);
+        } else if (known != null && known.needsPerson()) {
+            LOG.warn("code={} reference={} status={} route={} reason={}", code, reference, status.value(), route, reason);
+        } else if (known != null && known.loggedAtInfo()) {
+            LOG.info("code={} reference={} status={} route={} reason={}", code, reference, status.value(), route, reason);
+        }
+    }
+
+    /** Task 0038: logs and writes a coded answer whose exact cause is known (a refusal, or a sign-in answer). */
+    public static void answerCoded(HttpServletRequest request, HttpServletResponse response, HttpStatusCode status,
+                                   String code, String message, String detail) throws IOException {
+        logCoded(request, status, code, detail);
+        write(request, response, status, code, message);
+    }
+
+    private static SdvErrorCode known(String code) {
+        for (SdvErrorCode candidate : SdvErrorCode.values()) if (candidate.code().equals(code)) return candidate;
+        return null;
     }
 
     /** For a database failure: the exception classes, the SQL state, and the first Vero method on the stack. */

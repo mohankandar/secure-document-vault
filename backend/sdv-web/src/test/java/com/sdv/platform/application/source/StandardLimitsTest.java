@@ -39,8 +39,12 @@ class StandardLimitsTest {
     @Test
     void anInactiveOrUnknownTenantIsRefused() {
         tenant(TenantStatus.SUSPENDED, TenantGuardrails.defaults());
-        assertThrows(IllegalStateException.class, () -> service.standardLimits(TENANT));
+        // Task 0038: one answer for both (SDV-AUT-009), so it never tells whether the tenant exists.
+        var suspended = assertThrows(com.sdv.platform.domain.error.CodedRefusal.Forbidden.class, () -> service.standardLimits(TENANT));
         when(tenants.findById(TENANT)).thenReturn(Optional.empty());
-        assertThrows(NoSuchElementException.class, () -> service.standardLimits(TENANT));
+        var unknown = assertThrows(com.sdv.platform.domain.error.CodedRefusal.Forbidden.class, () -> service.standardLimits(TENANT));
+        assertEquals(com.sdv.platform.domain.error.SdvErrorCode.AUT_009, suspended.errorCode());
+        assertEquals(suspended.errorCode(), unknown.errorCode());
+        assertEquals(suspended.getMessage(), unknown.getMessage());
     }
 }

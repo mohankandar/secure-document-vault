@@ -1,8 +1,6 @@
 package com.sdv.platform.security.auth.enterprise;
 
 import com.sdv.platform.security.SdvRole;
-import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
-import org.springframework.security.oauth2.core.OAuth2Error;
 
 import java.util.EnumMap;
 import java.util.EnumSet;
@@ -50,9 +48,9 @@ public final class SdvGroupRoleMapper {
             }
         }
         if (roles.isEmpty()) {
-            throw new OAuth2AuthenticationException(
-                    new OAuth2Error("invalid_token"),
-                    "Authenticated identity has no mapped SDV role.");
+            // Task 0038: SDV-AUT-007. The log names no group: the groups are the person's, from the token.
+            throw new SignInRefusedException(com.sdv.platform.domain.error.SdvErrorCode.AUT_007,
+                    com.sdv.platform.security.auth.SignInAnswer.NO_ROLE, "no login group maps to a Vero role");
         }
         return roles;
     }

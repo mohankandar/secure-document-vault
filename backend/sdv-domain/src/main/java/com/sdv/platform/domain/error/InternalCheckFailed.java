@@ -31,6 +31,14 @@ public final class InternalCheckFailed extends RuntimeException {
         return new InternalCheckFailed(SdvErrorCode.SYS_017, check, cause);
     }
 
+    /**
+     * Task 0038 (SDV-IDP-007): more than one ACTIVE sign-in connection matches one issuer, audience and provider, so
+     * Vero can't tell which organisation a sign-in belongs to. Data changed outside Vero; answered 500.
+     */
+    public static InternalCheckFailed ambiguousSignInConnection(String check) {
+        return new InternalCheckFailed(SdvErrorCode.IDP_007, check, null);
+    }
+
     public SdvErrorCode errorCode() {
         return errorCode;
     }

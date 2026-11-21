@@ -83,19 +83,18 @@ public class LocalHeaderAuthenticationFilter extends OncePerRequestFilter {
         boolean anyLocalHeader = tenantText != null || subject != null || rolesText != null || sourceText != null;
         if (anyLocalHeader) {
             if (tenantText == null || subject == null || subject.isBlank()) {
-                response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Tenant and subject local SDV authentication headers are required.");
+                refuse(request, response, TENANT_HEADER + " and " + SUBJECT_HEADER + " are required");
                 return;
             }
             if ((rolesText == null || rolesText.isBlank()) == (sourceText == null || sourceText.isBlank())) {
-                response.sendError(HttpServletResponse.SC_UNAUTHORIZED,
-                        "Local SDV authentication must identify exactly one user-role principal or ingestion-source principal.");
+                refuse(request, response, "send exactly one of " + ROLES_HEADER + " or " + SOURCE_HEADER);
                 return;
             }
 
             try {
-                UUID tenantId = UUID.fromString(tenantText);
+                UUID tenantId = uuid(tenantText, TENANT_HEADER);
                 if (sourceText != null && !sourceText.isBlank()) {
-                    UUID sourceId = UUID.fromString(sourceText.trim());
+                    UUID sourceId = uuid(sourceText.trim(), SOURCE_HEADER);
                     IngestionSourcePrincipal principal = new IngestionSourcePrincipal(tenantId, sourceId, subject.trim());
                     var authentication = new UsernamePasswordAuthenticationToken(
                             principal, null, List.of(new SimpleGrantedAuthority("SDV_INGESTION_SOURCE")));
@@ -105,9 +104,9 @@ public class LocalHeaderAuthenticationFilter extends OncePerRequestFilter {
                     Arrays.stream(rolesText.split(","))
                             .map(String::trim)
                             .filter(value -> !value.isEmpty())
-                            .map(SdvRole::valueOf)
+                            .map(LocalHeaderAuthenticationFilter::role)
                             .forEach(named::add);
-                    if (named.isEmpty()) throw new IllegalArgumentException("At least one SDV role is required.");
+                    if (named.isEmpty()) throw new InvalidHeader(ROLES_HEADER + " names no role");
 
                     String displayName = LOCAL_TEST_NAMES.get(subject.trim());
                     // Task 0025, rule 1: the same separation as a sign-in through login groups.
@@ -116,7 +115,9 @@ public class LocalHeaderAuthenticationFilter extends OncePerRequestFilter {
                         roles = separationGuard.apply(tenantId, subject.trim(), displayName,
                                 RoleConflictReporter.Source.LOCAL_SIGN_IN, named);
                     } catch (RoleSeparationGuard.RefusedException refused) {
-                        response.sendError(HttpServletResponse.SC_UNAUTHORIZED, refused.getMessage());
+                        SignInAnswer answer = refused.answer();
+                        answer.attachTo(request);
+                        response.sendError(answer.status(), answer.code().code());
                         return;
                     }
 
@@ -128,12 +129,42 @@ public class LocalHeaderAuthenticationFilter extends OncePerRequestFilter {
                     var authentication = new UsernamePasswordAuthenticationToken(principal, null, authorities);
                     SecurityContextHolder.getContext().setAuthentication(authentication);
                 }
-            } catch (IllegalArgumentException ex) {
-                response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Invalid local SDV authentication headers.");
+            } catch (InvalidHeader ex) {
+                refuse(request, response, ex.getMessage());
                 return;
             }
         }
 
         filterChain.doFilter(request, response);
+    }
+
+    /** Task 0038 (SDV-AUT-008): 401 with the sentence naming which header is wrong (never its value). */
+    private static void refuse(HttpServletRequest request, HttpServletResponse response, String which) throws IOException {
+        SignInAnswer answer = SignInAnswer.of(HttpServletResponse.SC_UNAUTHORIZED, com.sdv.platform.domain.error.SdvErrorCode.AUT_008,
+                SignInAnswer.LOCAL_HEADERS_PREFIX + which + ".", which);
+        answer.attachTo(request);
+        response.sendError(answer.status(), answer.code().code());
+    }
+
+    private static UUID uuid(String value, String header) {
+        try {
+            return UUID.fromString(value);
+        } catch (IllegalArgumentException ex) {
+            throw new InvalidHeader(header + " is not a UUID");
+        }
+    }
+
+    private static SdvRole role(String name) {
+        try {
+            return SdvRole.valueOf(name);
+        } catch (IllegalArgumentException ex) {
+            throw new InvalidHeader(ROLES_HEADER + " names a role Vero doesn't have");
+        }
+    }
+
+    private static final class InvalidHeader extends RuntimeException {
+        InvalidHeader(String which) {
+            super(which);
+        }
     }
 }

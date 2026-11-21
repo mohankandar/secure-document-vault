@@ -1,5 +1,7 @@
 package com.sdv.platform.application.business;
 
+import com.sdv.platform.application.access.ActiveTenant;
+
 import com.sdv.platform.domain.error.InternalCheckFailed;
 import com.sdv.platform.application.access.Clearance;
 import com.sdv.platform.application.port.AuditEventPort;
@@ -836,11 +838,7 @@ public class BusinessExperienceService {
     }
 
     private void requireActiveTenant(UUID tenantId) {
-        var tenant = tenants.findById(tenantId)
-                .orElseThrow(() -> new NoSuchElementException("Tenant not found."));
-        if (tenant.status() != TenantStatus.ACTIVE) {
-            throw new IllegalStateException("Tenant is not active.");
-        }
+        var tenant = ActiveTenant.require(tenants, tenantId);
     }
 
     private IngestionSource requireSource(UUID tenantId, UUID sourceId) {

@@ -52,7 +52,8 @@ public class EnterpriseJwtConfiguration {
         } else {
             decoder.setJwtValidator(new DelegatingOAuth2TokenValidator<>(issuerAndTime, audienceValidator));
         }
-        return decoder;
+        // Task 0038: "the sign-in hub's keys can't be fetched" is told apart from a wrong token (SDV-AUT-004).
+        return new SignInKeysAwareJwtDecoder(decoder, normalizedJwkSetUri);
     }
 
     @Bean

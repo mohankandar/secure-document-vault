@@ -12,11 +12,11 @@ import com.sdv.platform.security.auth.IngestionSourcePrincipal;
 import com.sdv.platform.security.auth.RoleConflictReporter;
 import com.sdv.platform.security.auth.RoleSeparationGuard;
 import com.sdv.platform.security.auth.SdvPrincipal;
+import com.sdv.platform.security.auth.SignInAnswer;
 import org.springframework.core.convert.converter.Converter;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
-import org.springframework.security.oauth2.core.OAuth2Error;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.server.resource.authentication.AbstractOAuth2TokenAuthenticationToken;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
@@ -120,11 +120,12 @@ public final class EnterpriseJwtAuthenticationConverter implements Converter<Jwt
             if (sourceText != null) {
                 // Machine-to-machine source identities stay tenant-explicit and do not inherit
                 // the human OIDC connection's tenant binding.
-                UUID tenantId = UUID.fromString(requiredStringClaim(jwt, tenantClaim, 100));
+                UUID tenantId = uuidClaim(requiredStringClaim(jwt, tenantClaim, 100), tenantClaim);
                 if (!IdentityClaims.values(jwt.getClaim(userGroupsClaim)).isEmpty()) {
-                    throw invalid("Enterprise JWT must identify exactly one SDV user principal or ingestion-source principal.");
+                    throw claims("both claim=" + sourceIdClaim + " and claim=" + userGroupsClaim
+                            + " are present; a token is a person or a sending system, not both");
                 }
-                UUID sourceId = UUID.fromString(sourceText);
+                UUID sourceId = uuidClaim(sourceText, sourceIdClaim);
                 IngestionSourcePrincipal principal = new IngestionSourcePrincipal(tenantId, sourceId, subject);
                 return new UsernamePasswordAuthenticationToken(
                         principal, null, List.of(new SimpleGrantedAuthority("SDV_INGESTION_SOURCE")));
@@ -139,7 +140,9 @@ public final class EnterpriseJwtAuthenticationConverter implements Converter<Jwt
                 roles = separationGuard.apply(tenantId, identity.subject(), identity.displayName(),
                         RoleConflictReporter.Source.LOGIN_GROUPS, named);
             } catch (RoleSeparationGuard.RefusedException ex) {
-                throw invalid(ex.getMessage());
+                // Task 0038: ROL-004, ROL-005 or AUT-007, with its fixed sentence. The log names no subject or group.
+                var answer = ex.answer();
+                throw new SignInRefusedException(answer.code(), answer.message(), "tenant=" + tenantId + " " + answer.logDetail());
             }
             // Name and email are display-only; they come from the claims configured for the shared normalizer
             // (defaults: "name" and "email") and never influence roles or tenant.
@@ -151,44 +154,61 @@ public final class EnterpriseJwtAuthenticationConverter implements Converter<Jwt
         } catch (OAuth2AuthenticationException ex) {
             throw ex;
         } catch (IllegalArgumentException ex) {
-            throw invalid("Enterprise JWT contains invalid SDV identity claims.");
+            // The shared normalizer refused a claim; its message can hold a claim's value, so only the class is logged.
+            throw claims("the identity claims could not be read (" + ex.getClass().getSimpleName() + ")");
         }
     }
 
 
     private UUID resolveHumanTenant(Jwt jwt) {
         if (connectionResolver != null) {
-            if (jwt.getIssuer() == null) throw invalid("Enterprise JWT issuer is required for persisted tenant resolution.");
-            var binding = connectionResolver.findActive(providerId, URI.create(jwt.getIssuer().toString()), audience);
+            if (jwt.getIssuer() == null) throw claims("claim=iss is missing");
+            URI issuer = URI.create(jwt.getIssuer().toString());
+            var binding = connectionResolver.findActive(providerId, issuer, audience);
             if (binding.isPresent()) return binding.get().tenantId();
-            throw invalid("No ACTIVE persisted OIDC connection matches the authenticated issuer/provider/audience.");
+            // The issuer was already checked against Vero's own issuer setting, so its host is Vero's setting too.
+            throw new SignInRefusedException(SdvErrorCode.AUT_006, SignInAnswer.NO_CONNECTION,
+                    "no ACTIVE sign-in connection for issuer host=" + issuer.getHost() + " provider=" + providerId
+                            + " audience=" + audience);
         }
         if (configuredHumanTenantId != null) return configuredHumanTenantId;
-        return UUID.fromString(requiredStringClaim(jwt, tenantClaim, 100));
+        return uuidClaim(requiredStringClaim(jwt, tenantClaim, 100), tenantClaim);
     }
 
     private static String requiredSubject(Jwt jwt) {
         String subject = jwt.getSubject();
-        if (subject == null || subject.isBlank() || subject.length() > 300) {
-            throw invalid("Enterprise JWT subject is required.");
-        }
+        if (subject == null || subject.isBlank()) throw claims("claim=sub is missing");
+        if (subject.length() > 300) throw claims("claim=sub is longer than 300 characters");
         return subject.trim();
     }
 
     private static String requiredStringClaim(Jwt jwt, String name, int maxLength) {
         String value = optionalStringClaim(jwt, name, maxLength);
-        if (value == null) throw invalid("Enterprise JWT is missing a required SDV identity claim.");
+        if (value == null) throw claims("claim=" + name + " is missing");
         return value;
     }
 
     private static String optionalStringClaim(Jwt jwt, String name, int maxLength) {
         Object raw = jwt.getClaim(name);
         if (raw == null) return null;
-        if (!(raw instanceof String text)) throw invalid("Enterprise JWT SDV identity claim must be a string.");
+        if (!(raw instanceof String text)) throw claims("claim=" + name + " is not a string");
         String value = text.trim();
         if (value.isEmpty()) return null;
-        if (value.length() > maxLength) throw invalid("Enterprise JWT SDV identity claim is too long.");
+        if (value.length() > maxLength) throw claims("claim=" + name + " is longer than " + maxLength + " characters");
         return value;
+    }
+
+    private static UUID uuidClaim(String value, String name) {
+        try {
+            return UUID.fromString(value);
+        } catch (IllegalArgumentException ex) {
+            throw claims("claim=" + name + " is not a UUID");
+        }
+    }
+
+    /** Task 0038 (SDV-AUT-005): the log detail names the claim, never its value. */
+    private static SignInRefusedException claims(String detail) {
+        return new SignInRefusedException(SdvErrorCode.AUT_005, SignInAnswer.CLAIMS_NOT_USABLE, detail);
     }
 
     private static String requireClaimName(String value, String label) {
@@ -198,7 +218,4 @@ public final class EnterpriseJwtAuthenticationConverter implements Converter<Jwt
         return value.trim();
     }
 
-    private static OAuth2AuthenticationException invalid(String description) {
-        return new OAuth2AuthenticationException(new OAuth2Error("invalid_token"), description);
-    }
 }

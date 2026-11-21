@@ -7,7 +7,7 @@ Every error from Vero comes back with one body: a short, stable `code`, a plain 
 ```
 
 - **Reference:** the request's correlation ID, the same as the `X-Correlation-Id` response header. It is on Vero's log line for the error, and on the audit event when one was written. Give it to support.
-- **Format:** `SDV-<AREA>-<NNN>`. `SDV` is the product. `AREA` is three letters: `SEN` sensitivity, `ROL` roles, `HLD` legal hold, `APR` approvals, `INT` intake, `RPT` reports, `SYS` the server as a whole, `STO` storage, `KEY` the key service.
+- **Format:** `SDV-<AREA>-<NNN>`. `SDV` is the product. `AREA` is three letters: `SEN` sensitivity, `ROL` roles, `AUT` sign-in, `IDP` sign-in connections, `HLD` legal hold, `APR` approvals, `INT` intake, `RPT` reports, `SYS` the server as a whole, `STO` storage, `KEY` the key service.
 - **Stable:** a code never changes meaning once it is released. A code that is no longer used stays listed and is marked retired. Its number is never reused.
 - **Messages** may be reworded. Programs should read the `code`, not the message.
 - **Not yet coded:** errors that are not listed here still send a generic code (`BAD_REQUEST`, `CONFLICT`, `NOT_FOUND`, `FORBIDDEN` and so on). They get an `SDV-` code when their area is worked on. The failure catalog at the end of this file (task 0034) lists every such point and proposes its code.
@@ -173,17 +173,100 @@ Every error from Vero comes back with one body: a short, stable `code`, a plain 
 
 ### SDV-ROL-004: sign-in with roles that can never be held together
 
-- **HTTP status:** 401 at sign-in. The code starts the error description of the refused sign-in (there is no JSON body at sign-in).
+- **HTTP status:** 401 at sign-in. Task 0038: with the one error body and the message "The roles from this sign-in can never be held together, so none of them were given. Ask your IT team to correct your sign-in groups." (before, the code started the error description and there was no body). One INFO line with the reference.
 - **Meaning:** the person's sign-in groups give Restricted Steward together with Business Admin, Tenant IT Admin or Platform Operations. Vero gives neither of the conflicting roles, and here no other role was left, so the sign-in was refused. The conflict is recorded for the Tenant IT Admin (`GET /api/v1/admin/role-conflicts`) and audited as `ROLE_CONFLICT_DETECTED`. When the person has other roles too, they sign in with those only and get no error.
 - **What the user should do:** ask your IT team to take you out of one of the two groups.
 - **What support should tell the customer:** someone is in the sign-in group for Restricted Steward and in an admin group at the same time. Vero never allows that. Their IT team must remove the person from one of the groups; the role conflict list names the person.
 
 ### SDV-ROL-005: role conflict could not be recorded
 
-- **HTTP status:** 401 at sign-in. The code starts the error description of the refused sign-in.
+- **HTTP status:** 401 at sign-in. Task 0038: with the one error body and the message "Vero couldn't record a role conflict in this sign-in, so the sign-in was refused. Try again in a few minutes." One INFO line with the reference.
 - **Meaning:** the sign-in named roles that can never be held together, and Vero could not record the conflict (for example the database was unavailable). A conflict is never left unrecorded, so the sign-in was refused.
 - **What the user should do:** try again in a few minutes. If it keeps happening, ask your IT team to take you out of one of the two groups.
 - **What support should tell the customer:** Vero could not write to its database at that moment. Check the server's health. The person is also in two groups that can't be held together; their IT team should fix that too.
+
+### SDV-ROL-006: the role doesn't include this action
+
+- **HTTP status:** 403. Task 0038: every capability check that has no code of its own: viewer, download, print, tags, comments, activity, redaction, search, records, Operations, Audit, storage, sending systems, fields, retention policy, Roles & permissions, role conflicts, Identity settings and session. It used to be 403 `FORBIDDEN`. The areas with their own code keep it (SEN-010, HLD-001, APR-001/005/015, INT-001, RPT-001).
+- **Meaning:** the person is signed in, but none of their roles has the permission for this action. Nothing was read or changed. Message: "Your role doesn't include <the action in plain words>. Ask someone who has it.", for example "Your role doesn't include managing legal holds." The refusal is audited as `AUTHORIZATION_DENIED` with the capability, and Vero logs one INFO line with the reference and the capability.
+- **What the user should do:** ask someone who has the role, or ask your IT team whether you should have it.
+- **What support should tell the customer:** working as intended. Roles come from the customer's sign-in groups; their IT team changes the person's groups if the person should have the action.
+
+## Sign-in (AUT)
+
+Task 0038. A sign-in Vero refuses gets the one error body. The message is a fixed sentence: it never says whether an account exists and never holds anything from the token. Vero's log has one line with the code, the reference and the exact cause (a claim's name, a host, a reason class; never a claim's value or the token): INFO for an expected refusal, WARN when a person must fix something, ERROR for a 5xx. A refused bearer token keeps its `WWW-Authenticate: Bearer error="invalid_token"` header; its `error_description` is the code only.
+
+### SDV-AUT-001: not signed in
+
+- **HTTP status:** 401. Any address except health and system information, when the request carries no sign-in. It used to be 401 `UNAUTHORIZED` (or Spring's 401 with no body).
+- **Meaning:** no token, or the session has ended. Message: "Please sign in again." The screen sends the person to sign in. One INFO line.
+- **What the user should do:** sign in again.
+- **What support should tell the customer:** the session ended; the person signs in again. Nothing is wrong.
+
+### SDV-AUT-002: wrong kind of sign-in for this address
+
+- **HTTP status:** 403. It used to be 401 `UNAUTHORIZED`, which told the caller to sign in again, which can't help.
+- **Meaning:** a person's sign-in was used on a sending system's address (`/api/v1/ingestion/…`): "This address is for sending systems only."; or a sending system's sign-in on a person's address: "This address is for people, not sending systems." Nothing was read or stored. One INFO line names which kind of sign-in came.
+- **What the user should do:** a sending system signs in with its own client (client credentials), not a person's account.
+- **What support should tell the customer:** the program signed in as the wrong kind of user. Its setup must use the sending system's own client from the sign-in service.
+
+### SDV-AUT-003: token not accepted
+
+- **HTTP status:** 401 (400 when the `Authorization` header itself is malformed, as before).
+- **Meaning:** the token is expired or not yet valid, its signature doesn't match the sign-in hub's keys, it was issued by another issuer or for another audience, its lifetime is longer than Vero allows, or it isn't a token at all. Message: "Please sign in again." One INFO line with the reason class (expired, signature, issuer, audience, lifetime, malformed); never the token or its times.
+- **What the user should do:** sign in again.
+- **What support should tell the customer:** the sign-in expired or wasn't issued for Vero. If everyone gets it, their IT team checks the sign-in hub's issuer and audience settings for Vero against `SDV_AUTH_JWT_ISSUER` and `SDV_AUTH_JWT_AUDIENCE`.
+
+### SDV-AUT-004: sign-in hub's keys can't be fetched
+
+- **HTTP status:** 503. Any signed-in request while the sign-in hub's signing keys (`SDV_AUTH_JWT_JWK_SET_URI`) can't be fetched. Confirmed by test (task 0038): before, Spring rethrew the failure and Vero answered 500 SDV-SYS-013, which said nothing about the sign-in hub.
+- **Meaning:** the sign-in hub (for example Keycloak) is down or unreachable from Vero, so no sign-in can be checked. Message: "Vero can't check sign-ins right now because the sign-in service isn't answering. Try again in a few minutes." One ERROR line with the reference and the key set's host. Readiness (`/actuator/health/readiness`) fetches the keys too: it is 503 while they can't be fetched (one WARN line `code=SDV-AUT-004 …` with the host) and 200 again on its own when they can (one INFO line). Liveness stays UP.
+- **What the user should do:** try again in a few minutes.
+- **What support should tell the customer:** their sign-in service is unavailable, or Vero's server can't reach it; nobody can sign in to Vero until it is back. Check the sign-in hub and the network path to the key set's host the log names. No restart of Vero is needed.
+
+### SDV-AUT-005: sign-in claims not usable
+
+- **HTTP status:** 401. It used to be 401 with Vero's English description.
+- **Meaning:** the token was checked, but a claim Vero needs is missing, isn't text, is too long, or isn't a UUID (the subject, the tenant or the sending system), or one token claims to be both a person and a sending system. Message: "Your sign-in is missing details Vero needs. Your IT team can fix this." One WARN line names the claim, never its value.
+- **What the user should do:** tell your IT team.
+- **What support should tell the customer:** the sign-in hub isn't sending a detail Vero needs; the log names the claim. Their IT team adds or corrects the claim mapper in the sign-in hub.
+
+### SDV-AUT-006: no sign-in connection for this issuer
+
+- **HTTP status:** 401. It used to be 401 with "No ACTIVE persisted OIDC connection matches…".
+- **Meaning:** the token is good, but no ACTIVE sign-in connection in Vero matches its issuer and audience, so Vero can't tell which organisation it belongs to. Message: "Vero isn't set up to accept this sign-in. Your IT team can fix this." One WARN line with the issuer's host, the provider and the audience.
+- **What the user should do:** tell your IT team.
+- **What support should tell the customer:** the sign-in connection isn't active in Vero. Tenant IT checks Identity settings (activate the tested connection, or roll back to the previous one).
+
+### SDV-AUT-007: no Vero role from the sign-in groups
+
+- **HTTP status:** 401. It used to be 401 with "Authenticated identity has no mapped SDV role.".
+- **Meaning:** the person signed in, but none of their sign-in groups gives a Vero role. Message: "You're signed in, but you don't have access to Vero. Ask your IT team to add you to a Vero group." It says nothing about other accounts. One INFO line with the reference; not the person's groups, subject or name.
+- **What the user should do:** ask your IT team to add you to a Vero group.
+- **What support should tell the customer:** the person needs to be in one of the Vero sign-in groups (the `sdv.auth.jwt.role-mappings.*` settings name them).
+
+### SDV-AUT-008: local test sign-in headers not valid
+
+- **HTTP status:** 401. Only in a local start with `SDV_AUTH_MODE=local-header` (a developer machine).
+- **Meaning:** an `X-SDV-*` test sign-in header is missing or malformed. Message: "Local sign-in headers are not valid: <which>.", for example "X-SDV-Tenant-Id is not a UUID". It names the header, never the value sent. One INFO line.
+- **What the user should do:** send the headers the local guide lists.
+- **What support should tell the customer:** not used by customers.
+
+### SDV-AUT-009: organisation not found or not active
+
+- **HTTP status:** 403, the same for both. It used to be 404 "Tenant not found." or 409 "Tenant is not active.", which told the caller whether the tenant exists.
+- **Meaning:** the sign-in names a tenant that doesn't exist in Vero or is suspended. Message: "Your organisation's Vero account isn't available. Contact your IT team." The answer is identical for both, apart from the reference and the time, so it never tells an outsider which tenants exist. One WARN line with the tenant ID and whether it was missing or suspended. Sent by the intake, the business screens, fields, Operations, sending systems, storage, retention and redaction, where Vero looks up the tenant.
+- **What the user should do:** contact your IT team.
+- **What support should tell the customer:** their organisation's Vero account is suspended or the sign-in hub sends the wrong tenant. The log line says which. Escalate to Vero operations to reactivate the tenant, or correct the sign-in hub's tenant claim.
+
+## Sign-in connections (IDP)
+
+### SDV-IDP-007: more than one active sign-in connection
+
+- **HTTP status:** 409 when Tenant IT saves a sign-in connection draft (`PUT /api/v1/admin/enterprise-identity/draft`), activates it or rolls back to it while another tenant's ACTIVE connection already has the same issuer, audience and provider. 500 at sign-in if two such ACTIVE connections are found anyway (data changed by hand). Task 0038: confirmed by test that two ACTIVE rows made every sign-in for that issuer a 500 SDV-SYS-013; the database's unique index (`uq_sdv_eic_active_binding`) normally prevents them, and an activation it stops is now this code (it would have been 503 SDV-SYS-014).
+- **Meaning:** one issuer, audience and provider can belong to one organisation only, or a sign-in can't tell which organisation it is for. At save: "Another organisation's active sign-in connection in Vero already uses this issuer and audience, so this one can't be saved or used. Give Vero an audience of your own in your sign-in service, or contact Vero operations." Nothing was saved; the answer names no other organisation, and the WARN line names the other tenant. At sign-in: "Vero can't sign you in because its sign-in setup is inconsistent. Your IT team has been told." with one ERROR line naming the issuer and both tenants.
+- **What the user should do:** Tenant IT gives Vero its own audience (client) in the sign-in service, or contacts Vero operations. At sign-in: tell your IT team.
+- **What support should tell the customer:** two organisations are set up with the same sign-in issuer and audience. Vero operations disables all but one connection (recovery runbook) and the other organisation uses its own audience.
 
 ## Legal hold (HLD)
 
@@ -459,7 +542,7 @@ Task 0037: SYS-003 to SYS-012 are start-up codes. A start that stops prints one 
 
 ### SDV-SYS-006: sign-in switched off
 
-- **HTTP status:** none. With sign-in off, every request except health and system information is refused 401 (`UNAUTHORIZED` until the sign-in fix task).
+- **HTTP status:** 401 since task 0038: with sign-in off, every request except health and system information is refused 401 with this code and the message "Sign-in is switched off for Vero, so nobody can sign in yet. Your IT team has been told." (it was `UNAUTHORIZED`). Each such refusal writes one WARN line with the reference.
 - **Meaning:** `SDV_AUTH_MODE` is `disabled` (its default). In a local start (the `local` profile) Vero starts with one WARN line `SDV-SYS-006 …` that says nobody can sign in. A packaged start (any start without the local profile, as a customer install runs) refuses to start, with an ERROR line and the ERROR block.
 - **What the user should do:** nothing; tell the IT team.
 - **What support should tell the customer:** the install is missing its sign-in setting. Set `SDV_AUTH_MODE=enterprise-jwt` and the issuer settings (install guide, "Sign-in"), then start Vero again.
@@ -859,7 +942,8 @@ Task 0034 went through the code flow by flow and listed every point where someth
 
 ### Sign-in (AUT, ROL)
 
-#### SDV-AUT-001 (proposed): not signed in
+#### SDV-AUT-001 (released in task 0038): not signed in
+- **Released:** now sent (task 0038); its section is above. The notes below are what task 0034 found, kept for the list of lines.
 - **Where:**
   - `SecurityConfiguration.java:27` (entry point);
   - `SecurityContextFacade.java:30`;
@@ -872,7 +956,8 @@ Task 0034 went through the code flow by flow and listed every point where someth
 - **Fix:** none; the person signs in.
 - **L1 tells the customer:** the session ended. Sign in again.
 
-#### SDV-AUT-002 (proposed): wrong kind of sign-in for this address
+#### SDV-AUT-002 (released in task 0038): wrong kind of sign-in for this address
+- **Released:** now sent (task 0038); its section is above. The notes below are what task 0034 found, kept for the list of lines.
 - **Where:** `SecurityContextFacade.java:12` (a sending system's token on a person's endpoint) and `:21` (a person's token on an intake endpoint).
 - **Trigger:** a person's token is used on `/api/v1/ingestion/…`, or a sending system's token on a person's endpoint.
 - **Today:** **401** `UNAUTHORIZED` "Authentication is required.". That is wrong: the caller is signed in, and retrying sign-in won't help. Generic: yes.
@@ -882,7 +967,8 @@ Task 0034 went through the code flow by flow and listed every point where someth
 - **Fix:** the sending system uses its own client credentials.
 - **L1 tells the customer:** the program signed in as the wrong kind of user. Its setup must use the sending system's own client.
 
-#### SDV-AUT-003 (proposed): token not accepted
+#### SDV-AUT-003 (released in task 0038): token not accepted
+- **Released:** now sent (task 0038); its section is above. The notes below are what task 0034 found, kept for the list of lines.
 - **Where:** Spring's resource server (signature, expiry, issuer, audience) and `MaximumTokenLifetimeValidator.java`. Answer: `WWW-Authenticate: Bearer error="invalid_token", error_description=…`.
 - **Trigger:** an expired, forged or wrongly issued token, or one with too long a lifetime.
 - **Today:** 401 with Spring's English description. Not logged. Generic: yes.
@@ -892,7 +978,8 @@ Task 0034 went through the code flow by flow and listed every point where someth
 - **Fix:** sign in again. If it happens to everyone, check the sign-in hub's issuer and audience settings.
 - **L1 tells the customer:** the sign-in has expired, or wasn't issued for Vero. If everyone sees it, their IT team checks the sign-in hub's settings for Vero.
 
-#### SDV-AUT-004 (proposed): sign-in hub's keys can't be fetched
+#### SDV-AUT-004 (released in task 0038): sign-in hub's keys can't be fetched
+- **Released:** now sent (task 0038); its section is above. The notes below are what task 0034 found, kept for the list of lines.
 - **Where:** Spring's JWKS fetch (`SDV_AUTH_JWT_JWK_SET_URI`). It is not checked at start.
 - **Trigger:** the sign-in hub (Keycloak) is down or unreachable when Vero needs its keys.
 - **Today:** from the code, this becomes a 401 `invalid_token` or a 500, depending on Spring's handling (to confirm with a test). Either way, nothing says the sign-in hub is down. Generic: yes.
@@ -902,7 +989,8 @@ Task 0034 went through the code flow by flow and listed every point where someth
 - **Fix:** bring the sign-in hub back. Fix task: add the JWKS fetch to the health checks.
 - **L1 tells the customer:** their sign-in service is unavailable; nobody can sign in to Vero until it is back.
 
-#### SDV-AUT-005 (proposed): sign-in claims not usable
+#### SDV-AUT-005 (released in task 0038): sign-in claims not usable
+- **Released:** now sent (task 0038); its section is above. The notes below are what task 0034 found, kept for the list of lines.
 - **Where:** `EnterpriseJwtAuthenticationConverter.java:121`, `:123`, `:125`, `:152`, `:171`, `:178`, `:185`, `:188`. There are 7 descriptions: subject missing, claim missing or not a string, claim too long, tenant or source not a UUID, both a user and a source in one token.
 - **Trigger:** the sign-in hub sends a token without the claims Vero needs.
 - **Today:** 401 `invalid_token` with Vero's English description. Not logged. Generic: yes.
@@ -912,7 +1000,8 @@ Task 0034 went through the code flow by flow and listed every point where someth
 - **Fix:** add the claim mapper in the sign-in hub.
 - **L1 tells the customer:** the sign-in hub isn't sending a detail Vero needs; the log names it.
 
-#### SDV-AUT-006 (proposed): no sign-in connection for this issuer
+#### SDV-AUT-006 (released in task 0038): no sign-in connection for this issuer
+- **Released:** now sent (task 0038); its section is above. The notes below are what task 0034 found, kept for the list of lines.
 - **Where:** `EnterpriseJwtAuthenticationConverter.java:159`, `:162`.
 - **Trigger:** the token's issuer or audience matches no ACTIVE connection set up by Tenant IT.
 - **Today:** 401 `invalid_token`, "No ACTIVE persisted OIDC connection matches…". Generic: yes.
@@ -922,7 +1011,8 @@ Task 0034 went through the code flow by flow and listed every point where someth
 - **Fix:** Tenant IT activates the connection (Identity settings).
 - **L1 tells the customer:** the sign-in connection isn't active in Vero. Tenant IT checks Identity settings.
 
-#### SDV-AUT-007 (proposed): no Vero role from the sign-in groups
+#### SDV-AUT-007 (released in task 0038): no Vero role from the sign-in groups
+- **Released:** now sent (task 0038); its section is above. The notes below are what task 0034 found, kept for the list of lines.
 - **Where:** `SdvGroupRoleMapper.java:53`, `RoleSeparationGuard.java:59` (`NO_ROLE`).
 - **Trigger:** the person is in none of the mapped groups.
 - **Today:** 401 `invalid_token`, "Authenticated identity has no mapped SDV role." Generic: yes.
@@ -932,7 +1022,8 @@ Task 0034 went through the code flow by flow and listed every point where someth
 - **Fix:** add the person to a mapped group.
 - **L1 tells the customer:** the person needs to be in one of the Vero sign-in groups.
 
-#### SDV-AUT-008 (proposed): local test sign-in headers not valid
+#### SDV-AUT-008 (released in task 0038): local test sign-in headers not valid
+- **Released:** now sent (task 0038); its section is above. The notes below are what task 0034 found, kept for the list of lines.
 - **Where:** `LocalHeaderAuthenticationFilter.java:86`, `:90`, `:110`, `:131-132`. Local profile only.
 - **Trigger:** a missing or malformed `X-SDV-*` header on a developer machine.
 - **Today:** 401 from `sendError` with Spring's generic body. Generic: yes.
@@ -942,7 +1033,8 @@ Task 0034 went through the code flow by flow and listed every point where someth
 - **Fix:** send the headers the local guide lists.
 - **L1 tells the customer:** not used by customers.
 
-#### SDV-AUT-009 (proposed): organisation not found or not active
+#### SDV-AUT-009 (released in task 0038): organisation not found or not active
+- **Released:** now sent (task 0038); its section is above. The notes below are what task 0034 found, kept for the list of lines.
 - **Where:** "Tenant not found." (404) and "Tenant is not active." (409):
   - `DocumentIntakeService.java:546-547`, `SubmissionService.java:244-245`;
   - `BusinessExperienceService.java:839`, `:841`;
@@ -960,7 +1052,8 @@ Task 0034 went through the code flow by flow and listed every point where someth
 - **Fix:** reactivate the tenant, or correct the sign-in hub's tenant claim.
 - **L1 tells the customer:** their organisation's Vero account is suspended or misconfigured. Escalate to Vero operations.
 
-#### SDV-ROL-006 (proposed): the role doesn't include this action
+#### SDV-ROL-006 (released in task 0038): the role doesn't include this action
+- **Released:** now sent (task 0038); its section is above. The notes below are what task 0034 found, kept for the list of lines.
 - **Where:**
   - `AuthorizationService.java:27`, answered by `FoundationExceptionHandler.java:98` (`FORBIDDEN`, "The authenticated principal does not have the required capability.");
   - `SecurityConfiguration.java:28` ("Access is denied.").
@@ -1660,7 +1753,8 @@ The released RPT codes cover the reports. Gaps: internal checks in the Sensitivi
 - **Fix:** correct the issuer, or open the network path.
 - **L1 tells the customer:** Vero couldn't reach their sign-in service from its server; check the address and the firewall.
 
-#### SDV-IDP-007 (proposed): more than one active sign-in connection
+#### SDV-IDP-007 (released in task 0038): more than one active sign-in connection
+- **Released:** now sent (task 0038); its section is above. The notes below are what task 0034 found, kept for the list of lines.
 - **Where:** `JdbcOidcConnectionBindingRepository.java:28` (read at every sign-in, from `EnterpriseJwtAuthenticationConverter.java:160`).
 - **Trigger:** data changed by hand so that two connections are active for one issuer.
 - **Today:** `IllegalStateException`. The sign-in converter catches only `IllegalArgumentException`, so this is likely a 500 at every sign-in, with Spring's body. Generic: yes.
@@ -1819,7 +1913,7 @@ These failures are caught and not passed on. Each is safe as it is, but most lea
 | Vault Transit, the key service (`SDV_VAULT_BASE_URL`) | Upload, finishing, viewer, download, redaction | **Settings only.** | `VaultCryptoConfiguration` checks the address and the token settings. **Not reachability.** With `SDV_KEY_PROVIDER` at its default `disabled`, Vero starts and every document action fails (KEY-001). Operations probes `sys/health` on demand. Not in readiness. |
 | Vault token (env or token file, in the secret store) | Key service | **Read once.** | Read at start; empty or unreadable stops the start. Never re-read, so an expired token fails every document action until restart (KEY-003). |
 | Storage volumes (local folders) | Upload, finishing, viewer, download, redaction, retention | **No.** | Checked per upload (`StoragePlacementService`), on Operations and Storage, and by the capacity banner. Not in readiness. |
-| Sign-in hub: issuer and JWKS (`SDV_AUTH_JWT_*`, Keycloak `lexa-keycloak`) | Every signed-in request | **Settings only.** | `EnterpriseJwtConfiguration` checks the form of the settings (HTTPS, UUID). JWKS is first fetched at the first sign-in (AUT-004). With `SDV_AUTH_MODE` at its default `disabled`, Vero starts and refuses everyone (SYS-006). |
+| Sign-in hub: issuer and JWKS (`SDV_AUTH_JWT_*`, Keycloak `lexa-keycloak`) | Every signed-in request | **Settings only.** | `EnterpriseJwtConfiguration` checks the form of the settings (HTTPS, UUID). JWKS is first fetched at the first sign-in (AUT-004). Task 0038: readiness fetches the keys (signInKeys), and a sign-in while they can't be fetched is 503 AUT-004. With `SDV_AUTH_MODE` at its default `disabled`, Vero starts and refuses everyone (SYS-006). |
 | Issuer discovery (`/.well-known/openid-configuration`) | Identity settings, Test | No | Only when Tenant IT presses Test (IDP-006). |
 | Install settings (approvals, retention time, default time zone, recovery) | Start | **Yes.** | Each stops the start when wrong (SYS-007 to 011). |
 | Bundled changelog | Schema check | **Yes.** | SYS-004. |

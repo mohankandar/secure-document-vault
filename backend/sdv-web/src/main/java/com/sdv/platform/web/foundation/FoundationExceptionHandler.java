@@ -7,6 +7,7 @@ import com.sdv.platform.application.download.DocumentDownloadUnavailableExceptio
 import com.sdv.platform.application.viewer.DocumentViewerUnavailableException;
 import com.sdv.platform.application.redaction.RedactionFailedException;
 import com.sdv.platform.domain.error.CodedRefusal;
+import com.sdv.platform.domain.error.SdvErrorCode;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.http.HttpStatus;
@@ -59,7 +60,7 @@ public class FoundationExceptionHandler {
 
     @ExceptionHandler(IllegalArgumentException.class)
     void badRequest(IllegalArgumentException ex, HttpServletRequest rq, HttpServletResponse rs) throws IOException {
-        refuse(rq, rs, HttpStatus.BAD_REQUEST, code(ex, "BAD_REQUEST"), ex.getMessage());
+        refuse(rq, rs, HttpStatus.BAD_REQUEST, code(ex, "BAD_REQUEST"), ex.getMessage(), detail(ex));
     }
 
     /**
@@ -84,28 +85,45 @@ public class FoundationExceptionHandler {
 
     @ExceptionHandler(NoSuchElementException.class)
     void notFound(NoSuchElementException ex, HttpServletRequest rq, HttpServletResponse rs) throws IOException {
-        refuse(rq, rs, HttpStatus.NOT_FOUND, code(ex, "NOT_FOUND"), ex.getMessage());
+        refuse(rq, rs, HttpStatus.NOT_FOUND, code(ex, "NOT_FOUND"), ex.getMessage(), detail(ex));
     }
 
     /** Task 0026: a coded 403 (for example SDV-SEN-008, a restricted document). Its message names nothing else. */
     @ExceptionHandler(CodedRefusal.Forbidden.class)
     void codedForbidden(CodedRefusal.Forbidden ex, HttpServletRequest rq, HttpServletResponse rs) throws IOException {
-        refuse(rq, rs, HttpStatus.FORBIDDEN, ex.errorCode().code(), ex.getMessage());
+        refuse(rq, rs, HttpStatus.FORBIDDEN, ex, ex.getMessage());
     }
 
+    /**
+     * Task 0038: SDV-ROL-006, the role doesn't include this action (the action in plain words, from the refusal). An
+     * uncoded AccessDeniedException gets the same code with the general sentence.
+     */
     @ExceptionHandler(AccessDeniedException.class)
     void forbidden(AccessDeniedException ex, HttpServletRequest rq, HttpServletResponse rs) throws IOException {
-        refuse(rq, rs, HttpStatus.FORBIDDEN, "FORBIDDEN", "The authenticated principal does not have the required capability.");
+        if (ex instanceof CodedRefusal coded) {
+            refuse(rq, rs, HttpStatus.FORBIDDEN, coded, ex.getMessage());
+        } else {
+            ErrorReplies.answerCoded(rq, rs, HttpStatus.FORBIDDEN, SdvErrorCode.ROL_006.code(),
+                    "Your role doesn't include this action. Ask someone who has it.", "uncoded refusal");
+        }
     }
 
+    /** Task 0038: no sign-in reached the controller: 401 SDV-AUT-001. */
     @ExceptionHandler(AuthenticationCredentialsNotFoundException.class)
     void unauthorized(AuthenticationCredentialsNotFoundException ex, HttpServletRequest rq, HttpServletResponse rs) throws IOException {
-        refuse(rq, rs, HttpStatus.UNAUTHORIZED, "UNAUTHORIZED", "Authentication is required.");
+        ErrorReplies.answerCoded(rq, rs, HttpStatus.UNAUTHORIZED, SdvErrorCode.AUT_001.code(), "Please sign in again.",
+                "no Vero sign-in on the request");
+    }
+
+    /** Task 0038: a coded 401 (SDV-AUT-001). */
+    @ExceptionHandler(CodedRefusal.Unauthorized.class)
+    void codedUnauthorized(CodedRefusal.Unauthorized ex, HttpServletRequest rq, HttpServletResponse rs) throws IOException {
+        refuse(rq, rs, HttpStatus.UNAUTHORIZED, ex, ex.getMessage());
     }
 
     @ExceptionHandler(IllegalStateException.class)
     void conflict(IllegalStateException ex, HttpServletRequest rq, HttpServletResponse rs) throws IOException {
-        refuse(rq, rs, HttpStatus.CONFLICT, code(ex, "CONFLICT"), ex.getMessage());
+        refuse(rq, rs, HttpStatus.CONFLICT, code(ex, "CONFLICT"), ex.getMessage(), detail(ex));
     }
 
     /**
@@ -125,13 +143,26 @@ public class FoundationExceptionHandler {
 
     private static void refuse(HttpServletRequest rq, HttpServletResponse rs, HttpStatusCode status, String code, String message)
             throws IOException {
+        refuse(rq, rs, status, code, message, null);
+    }
+
+    private static void refuse(HttpServletRequest rq, HttpServletResponse rs, HttpStatusCode status, CodedRefusal coded,
+                               String message) throws IOException {
+        refuse(rq, rs, status, coded.errorCode().code(), message, coded.logDetail());
+    }
+
+    /**
+     * A refusal whose code the catalog marks "needs a person" gets a WARN line with the reference; task 0038: an
+     * expected sign-in or role refusal gets an INFO line. The line holds the refusal's log detail (the exact cause),
+     * which is never sent.
+     */
+    private static void refuse(HttpServletRequest rq, HttpServletResponse rs, HttpStatusCode status, String code,
+                               String message, String detail) throws IOException {
         String text = message == null ? "The request was refused." : message;
-        // A refusal whose code the catalog marks "needs a person" gets a WARN line with the reference.
-        for (com.sdv.platform.domain.error.SdvErrorCode known : com.sdv.platform.domain.error.SdvErrorCode.values()) {
-            if (known.code().equals(code) && known.needsPerson()) {
-                ErrorReplies.log(rq, new ErrorReplies.Reply(status, code, text, true), null);
-            }
-        }
-        ErrorReplies.write(rq, rs, status, code, text);
+        ErrorReplies.answerCoded(rq, rs, status, code, text, detail);
+    }
+
+    private static String detail(RuntimeException ex) {
+        return ex instanceof CodedRefusal coded ? coded.logDetail() : null;
     }
 }

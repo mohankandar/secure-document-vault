@@ -8,7 +8,6 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sdv.platform.application.storage.NoWritableStorageException;
 import com.sdv.platform.domain.error.InternalCheckFailed;
-import com.sdv.platform.security.config.SecurityConfiguration;
 import com.sdv.platform.web.config.CorrelationIdFilter;
 import jakarta.servlet.RequestDispatcher;
 import org.junit.jupiter.api.AfterEach;
@@ -21,7 +20,6 @@ import org.springframework.jdbc.BadSqlGrammarException;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.security.authentication.BadCredentialsException;
-import org.springframework.security.oauth2.server.resource.web.BearerTokenAuthenticationEntryPoint;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
@@ -216,7 +214,8 @@ class ErrorPlumbingTest {
             controller.error(request, response);
             assertEquals(status, response.getStatus());
             JsonNode body = json.readTree(response.getContentAsString());
-            assertEquals(status == 401 ? "UNAUTHORIZED" : "FORBIDDEN", body.get("code").asText());
+            // Task 0038: a bare 401 is SDV-AUT-001 and a bare 403 SDV-ROL-006 (were UNAUTHORIZED and FORBIDDEN).
+            assertEquals(status == 401 ? "SDV-AUT-001" : "SDV-ROL-006", body.get("code").asText());
             assertEquals("ref-" + status, body.get("reference").asText());
             assertEquals(4, body.size());
         }
@@ -237,10 +236,11 @@ class ErrorPlumbingTest {
     void aRefusedBearerTokenKeepsItsHeaderAndGoesToTheErrorPage() throws Exception {
         MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/v1/business/search");
         MockHttpServletResponse response = new MockHttpServletResponse();
-        SecurityConfiguration.withErrorBody(new BearerTokenAuthenticationEntryPoint())
+        // Task 0038: Vero's entry point replaces withErrorBody(BearerTokenAuthenticationEntryPoint).
+        com.sdv.platform.security.config.SignInAnswers.entryPoint("enterprise-jwt")
                 .commence(request, response, new BadCredentialsException("bad token"));
         assertEquals(401, response.getStatus());
-        assertNotNull(response.getHeader("WWW-Authenticate"), "Spring's bearer header is kept");
+        assertEquals("Bearer", response.getHeader("WWW-Authenticate"), "a bearer header is kept");
         assertTrue(response.isCommitted(), "sendError hands the answer to /error, which writes the body");
     }
 }
