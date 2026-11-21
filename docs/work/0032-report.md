@@ -197,7 +197,7 @@ No existing test was changed to make it pass.
 
 ## Commits (hash and message), or "not committed"
 
-See the commit on `feature/reports-1`. Not pushed, not merged.
+`c930860` feat: Reports tab with the Daily intake report; uncorrected copies of corrected documents kept out; intake refusals counted (task 0032), on `feature/reports-1`. Not pushed, not merged. (This line was added in a second commit.)
 
 ## Not done, and why
 
