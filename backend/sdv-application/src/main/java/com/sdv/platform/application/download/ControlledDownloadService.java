@@ -1,6 +1,7 @@
 package com.sdv.platform.application.download;
 
 import com.sdv.platform.application.document.DocumentRefusals;
+import com.sdv.platform.domain.error.CodedFault;
 import com.sdv.platform.domain.error.CodedRefusal;
 import com.sdv.platform.domain.error.InternalCheckFailed;
 import com.sdv.platform.domain.error.SdvErrorCode;
@@ -205,8 +206,18 @@ public class ControlledDownloadService {
         safeFailureAudit(document, actorId, correlationId, code, cause, bytes, grantId, grantId != null && !givenBack);
         String grant = grantId == null ? "none" : givenBack ? "given back" : partSent ? "used" : "used (give back failed)";
         String detail = "document=" + document.documentId() + " step=" + step + " bytesSent=" + bytes + " grant=" + grant;
-        return new DocumentDownloadUnavailableException(code, partSent ? STOPPED_MESSAGE : UNVERIFIED_MESSAGE, detail,
-                cause);
+        // Owner answer 1 to report 0043: before the first byte, 503 for storage or the key service, 500 for a failed
+        // check. After it the answer has started; 422 is kept for the rare case it can still be written.
+        int status = partSent ? CodedFault.UNPROCESSABLE
+                : ex instanceof DocumentDownloadUnavailableException d ? d.httpStatus()
+                : statusOf(step);
+        return new DocumentDownloadUnavailableException(code, status, partSent ? STOPPED_MESSAGE : UNVERIFIED_MESSAGE,
+                detail, cause);
+    }
+
+    /** SDV-DOC-007's status from its step: a failed check is 500, storage or the key service is 503. */
+    private static int statusOf(String step) {
+        return step.startsWith("check failed") ? CodedFault.INTERNAL : CodedFault.UNAVAILABLE;
     }
 
     private void verifyEncryptedObject(
@@ -230,8 +241,8 @@ public class ControlledDownloadService {
         } catch (DocumentDownloadUnavailableException ex) {
             throw ex;
         } catch (IOException | RuntimeException ex) {
-            throw new DocumentDownloadUnavailableException(SdvErrorCode.DOC_007, UNVERIFIED_MESSAGE,
-                    "document=" + documentId + " step=storage read failed", ex);
+            throw new DocumentDownloadUnavailableException(SdvErrorCode.DOC_007, CodedFault.UNAVAILABLE,
+                    UNVERIFIED_MESSAGE, "document=" + documentId + " step=storage read failed", ex);
         }
     }
 
@@ -315,9 +326,9 @@ public class ControlledDownloadService {
     static final String CHANGED_MESSAGE = "This document was just changed. Open it again and download the new version.";
     static final String STOPPED_MESSAGE = "The download didn't finish.";
 
-    /** Task 0043: SDV-DOC-007, nothing was sent; the step goes to the log line only. */
+    /** Task 0043: SDV-DOC-007, nothing was sent (500 for a failed check, else 503); the step goes to the log only. */
     private static DocumentDownloadUnavailableException unverified(UUID documentId, String step) {
-        return new DocumentDownloadUnavailableException(SdvErrorCode.DOC_007, UNVERIFIED_MESSAGE,
+        return new DocumentDownloadUnavailableException(SdvErrorCode.DOC_007, statusOf(step), UNVERIFIED_MESSAGE,
                 "document=" + documentId + " step=" + step);
     }
 

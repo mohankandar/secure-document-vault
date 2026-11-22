@@ -11,6 +11,7 @@ import com.sdv.platform.application.document.DocumentRefusals;
 import com.sdv.platform.application.download.DocumentDownloadUnavailableException;
 import com.sdv.platform.application.viewer.DocumentViewerUnavailableException;
 import com.sdv.platform.domain.document.DocumentStatus;
+import com.sdv.platform.domain.error.CodedFault;
 import com.sdv.platform.domain.error.CodedRefusal;
 import com.sdv.platform.domain.error.SdvErrorCode;
 import com.sdv.platform.web.config.CorrelationIdFilter;
@@ -33,8 +34,9 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 
 /**
  * Task 0043, items 1 and 2: the DOC and SCH answers carry their code, a catalog sentence and the reference, never the
- * cause; each writes one log line with the reference and the exact cause: ERROR for Vero's own failures (also when
- * answered 422), WARN for SDV-DOC-005 and -008, INFO for the "not there" refusals.
+ * cause; each writes one log line with the reference and the exact cause: ERROR for Vero's own failures, WARN for
+ * SDV-DOC-005 and -008, INFO for the "not there" refusals. Owner answer 1 to report 0043: Vero's own faults are 503
+ * (storage, key service) or 500 (failed check), never with Retry-After; what belongs to the document stays 422.
  */
 class DocumentCodesAnswerTest {
     private static final UUID DOC = UUID.fromString("dddddddd-0043-0000-0000-000000000001");
@@ -47,19 +49,31 @@ class DocumentCodesAnswerTest {
         @GetMapping("/doc-001") void missing() { throw DocumentRefusals.notFound(DOC); }
         @GetMapping("/doc-002") void notYet() { throw DocumentRefusals.notAvailable(DOC, DocumentStatus.REDACTION_PROCESSING); }
         @GetMapping("/doc-003") void unreadable() {
-            throw new DocumentViewerUnavailableException(SdvErrorCode.DOC_003, "Vero couldn't read this document from "
-                    + "storage. Try again later.", "document=" + DOC + " step=storage read failed",
+            throw new DocumentViewerUnavailableException(SdvErrorCode.DOC_003, CodedFault.UNAVAILABLE, "Vero couldn't "
+                    + "read this document from storage. Try again later.", "document=" + DOC + " step=storage read failed",
                     new IOException("disk at C:\\vault failed"));
         }
+        @GetMapping("/doc-004") void checkFailed() {
+            throw new DocumentViewerUnavailableException(SdvErrorCode.DOC_004, CodedFault.INTERNAL, "This document's "
+                    + "stored copy didn't pass Vero's check, so it isn't shown.", "document=" + DOC + " check=fingerprint", null);
+        }
+        @GetMapping("/doc-004-large") void tooLarge() {
+            throw new DocumentViewerUnavailableException(SdvErrorCode.DOC_004, CodedFault.UNPROCESSABLE,
+                    "This document is too large to view here.", "document=" + DOC + " check=too large", null);
+        }
         @GetMapping("/doc-005") void cantDraw() {
-            throw new DocumentViewerUnavailableException(SdvErrorCode.DOC_005, "Vero can't draw this page.",
-                    "document=" + DOC + " at=page 3");
+            throw new DocumentViewerUnavailableException(SdvErrorCode.DOC_005, CodedFault.UNPROCESSABLE,
+                    "Vero can't draw this page.", "document=" + DOC + " at=page 3", null);
         }
         @GetMapping("/doc-006") void badPage() { throw new CodedRefusal.BadRequest(SdvErrorCode.DOC_006, "page must be at least 1."); }
         @GetMapping("/doc-007") void unverified() {
-            throw new DocumentDownloadUnavailableException(SdvErrorCode.DOC_007, "Vero couldn't verify this document, so "
-                    + "it wasn't downloaded.", "document=" + DOC + " step=key service or decryption failed bytesSent=0 "
-                    + "grant=given back");
+            throw new DocumentDownloadUnavailableException(SdvErrorCode.DOC_007, CodedFault.UNAVAILABLE, "Vero couldn't "
+                    + "verify this document, so it wasn't downloaded.", "document=" + DOC + " step=key service or "
+                    + "decryption failed bytesSent=0 grant=given back");
+        }
+        @GetMapping("/doc-007-check") void unverifiedCheck() {
+            throw new DocumentDownloadUnavailableException(SdvErrorCode.DOC_007, CodedFault.INTERNAL, "Vero couldn't "
+                    + "verify this document, so it wasn't downloaded.", "document=" + DOC + " step=check failed: size");
         }
         @GetMapping("/doc-008") void changed() {
             throw new CodedRefusal.Conflict(SdvErrorCode.DOC_008, "This document was just changed.", "document=" + DOC);
@@ -108,8 +122,8 @@ class DocumentCodesAnswerTest {
     }
 
     @Test
-    void vero_sOwnFailuresAre422WithAnErrorLineHoldingTheCause() throws Exception {
-        JsonNode body = answer("/doc-003", 422, "SDV-DOC-003");
+    void vero_sOwnFailuresAre503Or500WithAnErrorLineHoldingTheCause() throws Exception {
+        JsonNode body = answer("/doc-003", 503, "SDV-DOC-003");
         assertEquals("Vero couldn't read this document from storage. Try again later.", body.get("message").asText());
         String line = oneLine("SDV-DOC-003", Level.ERROR, body.get("reference").asText()).getFormattedMessage();
         assertTrue(line.contains("document=" + DOC), line);
@@ -117,9 +131,24 @@ class DocumentCodesAnswerTest {
         assertTrue(line.contains("exception=java.io.IOException"), line);
         assertFalse(line.contains("C:\\vault"), "never the exception's own text: " + line);
 
-        body = answer("/doc-007", 422, "SDV-DOC-007");
+        body = answer("/doc-007", 503, "SDV-DOC-007");
         line = oneLine("SDV-DOC-007", Level.ERROR, body.get("reference").asText()).getFormattedMessage();
         assertTrue(line.contains("grant=given back"), line);
+
+        body = answer("/doc-004", 500, "SDV-DOC-004");
+        oneLine("SDV-DOC-004", Level.ERROR, body.get("reference").asText());
+        answer("/doc-007-check", 500, "SDV-DOC-007");
+        answer("/doc-004-large", 422, "SDV-DOC-004");
+    }
+
+    /** Owner answer 1 to report 0043: a 503 here is not the busy answer: no Retry-After, not counted as busy. */
+    @Test
+    void theStorageAnswerIs503WithoutRetryAfter() throws Exception {
+        long busyBefore = ErrorReplies.busyAnswers().count().sinceStart();
+        MvcResult result = mvc.perform(get("/doc-003")).andReturn();
+        assertEquals(503, result.getResponse().getStatus());
+        assertNull(result.getResponse().getHeader("Retry-After"));
+        assertEquals(busyBefore, ErrorReplies.busyAnswers().count().sinceStart());
     }
 
     @Test

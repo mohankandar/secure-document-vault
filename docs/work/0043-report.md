@@ -113,3 +113,63 @@ Not pushed, not merged. No PR opened.
 ## Suggested next step
 
 Owner runs `.\Seed-SDV-Canvas-Demo.ps1 -Reset` (and the tour if wanted), reviews the branch, and merges `fix/viewing` through a PR.
+
+## Owner answers, item 1: status changes (2026-11-22)
+
+Outcome: **DONE.** Answers 2 to 4 needed no change.
+
+### What was done
+
+The owner approved these status changes.
+
+| Code | Cause | Status before | Status now |
+|---|---|---|---|
+| SDV-DOC-003 | The stored copy can't be read (storage details, volume, provider, storage, key service) | 422 | **503** |
+| SDV-DOC-004 | The stored copy fails its check | 422 | **500** |
+| SDV-DOC-004 | Too large to view here | 422 | 422 |
+| SDV-DOC-005 | A page can't be drawn | 422 | 422 |
+| SDV-DOC-007 | Storage or the key service failed before anything was sent | 422 | **503** |
+| SDV-DOC-007 | A check failed before anything was sent | 422 | **500** |
+| SDV-DOC-009 | The download stopped part-way | 422 | 422 (the answer has usually started anyway) |
+
+- `CodedFault` now carries its status, and only 422, 500 or 503 are allowed. The handler answers with that status. Log levels are unchanged.
+- None of these 503 answers carries `Retry-After`, and they are not counted as busy answers. Only SDV-SYS-018 does that.
+- Missing size metadata in the viewer is now SDV-DOC-003 (503), like the other missing storage details. It was SDV-DOC-004. The download already treated it that way.
+- The screens read the code, not the status, so they didn't change. Nothing in `frontend/` or the tour looks at these statuses.
+- Catalog: the HTTP status lines of DOC-003, 004, 005 and 007 are updated, and the DOC introduction states the rule.
+
+### Commands run and results
+
+| Command | Result |
+|---|---|
+| `.\stop-local.cmd` | Stopped |
+| `.\Build-SDV-All.ps1` | **BUILD SUCCESS**, exit 0. Tests: sdv-application 24, sdv-security 50, sdv-storage 2, sdv-crypto 4, sdv-web 500 (8 skipped: the PostgreSQL tests). 0 failures |
+| `.\Test-SDV-SchemaUpgrade.ps1` | **PASS** in 53 s |
+| `.\Test-SDV-CleanInstall.ps1` | **PASS** in 117 s |
+| `.\start-local.cmd` | Started |
+| `npm run ui:capture` | **25 passed, 0 failed, 11 skipped** (5.8 min) |
+
+`Seed-SDV-Canvas-Demo.ps1 -Reset` was not run again.
+
+### Tests
+
+- `DocumentCodesAnswerTest`: the expected statuses changed from 422 to 503 or 500, as the owner answer says. Added: DOC-004 at 500, too large at 422, DOC-007 for a check at 500. A new test checks that the 503 carries no `Retry-After` and doesn't count as busy (now 5 tests).
+- `DocumentViewerCodesTest`: every fault assertion now also checks the status. The missing-size-metadata case now expects DOC-003.
+- `DownloadGrantFirstByteTest`: the key-service and storage failures are checked at 503 and DOC-009 at 422. A new test shows a stored copy that fails its check before sending is DOC-007 at 500 and uses no grant (now 10 tests).
+
+### Files changed
+
+- `CodedFault.java`, `DocumentViewerUnavailableException.java`, `DocumentDownloadUnavailableException.java`
+- `DocumentViewerService.java`, `ControlledDownloadService.java`, `FoundationExceptionHandler.java`
+- The three tests above
+- `docs/api/error-codes.md`, `docs/work/0043-task.md` (with the owner answers), this report
+
+No schema change, no new dependency, no file deleted.
+
+### Commits
+
+The status change is one commit, together with `0043-task.md` and this report. Not pushed, not merged.
+
+### Suggested next step
+
+Review and merge `fix/viewing` through a PR.

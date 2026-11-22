@@ -47,14 +47,15 @@ public class FoundationExceptionHandler {
 
     /**
      * Task 0043: the viewer or a download couldn't finish (SDV-DOC-003, -004, -005, -007, -009; they were
-     * VIEWER_UNAVAILABLE and DOWNLOAD_UNAVAILABLE). Still 422; one line at the code's level (ERROR, WARN for DOC-005)
-     * with the reference and the exact cause. A download that stopped part-way has a committed answer: nothing more
-     * is written, but the line is.
+     * VIEWER_UNAVAILABLE and DOWNLOAD_UNAVAILABLE), answered with the fault's own status (owner answer 1 to report
+     * 0043): 503 storage or key service, 500 a failed check, 422 what belongs to the document. No Retry-After. One line
+     * at the code's level (ERROR, WARN for DOC-005) with the reference and the exact cause. A download that stopped
+     * part-way has a committed answer: nothing more is written, but the line is.
      */
     @ExceptionHandler(CodedFault.class)
     void documentFault(CodedFault ex, HttpServletRequest rq, HttpServletResponse rs) throws IOException {
         String cause = ex.getCause() == null ? "" : " exception=" + ex.getCause().getClass().getName();
-        answerCoded(rq, rs, HttpStatus.UNPROCESSABLE_ENTITY, ex.errorCode().code(), ex.getMessage(),
+        answerCoded(rq, rs, HttpStatus.valueOf(ex.httpStatus()), ex.errorCode().code(), ex.getMessage(),
                 (ex.logDetail() == null ? "-" : ex.logDetail()) + cause);
     }
 

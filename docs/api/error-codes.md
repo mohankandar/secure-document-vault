@@ -783,7 +783,7 @@ Task 0037: SYS-003 to SYS-012 are start-up codes. A start that stops prints one 
 
 Task 0043. Sent by the viewer (`GET /api/v1/business/documents/{id}/viewer`, `…/viewer/pages/{n}`, `…/viewer/previews`, `…/viewer/search`), download (`…/download`), print (`…/print-event`), tags and comments (`…/tags`, `…/comments`) and a document's activity (`…/activity`). They replace `VIEWER_UNAVAILABLE` and `DOWNLOAD_UNAVAILABLE`, which covered every cause with one code and were never logged (owner answer 3 to report 0034). The level check still comes first: a restricted document gets SDV-SEN-008, never one of these.
 
-Every one writes one log line with the reference and the exact cause: ERROR for SDV-DOC-003, -004, -007 and -009; WARN for -005 and -008; INFO for -001 and -002; DEBUG for -006 and -010. The 422 answers keep their status (a status change was not among the approved ones); their line is ERROR or WARN all the same.
+Every one writes one log line with the reference and the exact cause: ERROR for SDV-DOC-003, -004, -007 and -009; WARN for -005 and -008; INFO for -001 and -002; DEBUG for -006 and -010. Statuses (owner answer 1 to report 0043): Vero's own faults are not the caller's mistake, so storage or the key service is 503 (SDV-DOC-003, and SDV-DOC-007 for those causes) and a failed check is 500 (SDV-DOC-004, and SDV-DOC-007 for a check). What belongs to the document itself stays 422: too large to view (SDV-DOC-004) and can't be drawn (SDV-DOC-005). None of these 503 answers carries `Retry-After`; only the busy answer (SDV-SYS-018) does.
 
 **Highly Confidential grants (owner answer 4 to report 0034).** A one-time print or download grant counts as used when the first byte is sent. A download takes the grant just before it decrypts, so two downloads racing on one grant can't both start. If it then fails before any byte is handed to the answer (storage, the key service, a check), the grant is given back (audited `SENSITIVE_ACCESS_GRANT_RETURNED`) and can be used once more. Once part of the file has left, it stays used. Print follows the same rule: the screen prints only after Vero has recorded the print, so a print that can't be recorded gives its grant back.
 
@@ -803,21 +803,21 @@ Every one writes one log line with the reference and the exact cause: ERROR for 
 
 ### SDV-DOC-003: the viewer can't read the stored copy
 
-- **HTTP status:** 422.
+- **HTTP status:** 503 (it was 422 until owner answer 1 to report 0043). No `Retry-After`.
 - **Meaning:** the viewer couldn't read the document: its storage details or its storage volume are missing, the storage provider isn't installed, storage couldn't be read, or the key service failed. The message is "Vero couldn't read this document from storage. Try again later." ERROR line with the reference, the document ID and which step failed. Nothing was shown.
 - **What the user should do:** try again later. If it keeps happening, give the IT team the reference.
 - **What support should tell the customer:** a storage or key service problem. Tenant IT checks Storage on Operations and the key service; the log line with the reference names the step.
 
 ### SDV-DOC-004: the stored copy failed its check before viewing
 
-- **HTTP status:** 422.
+- **HTTP status:** 500 when the stored copy fails its check; 422 for "too large to view here", which belongs to the document (owner answer 1 to report 0043; both were 422).
 - **Meaning:** the stored copy no longer matches what Vero stored: its encrypted size or fingerprint, a decryption check, or the decrypted size, PDF header or fingerprint. The message is "This document's stored copy didn't pass Vero's check, so it isn't shown." A document too large for the in-memory viewer gets the same code with "This document is too large to view here." ERROR line with the reference, the document ID and which check. Nothing was shown.
 - **What the user should do:** give the IT team the reference. For the size case, download it if the role allows.
 - **What support should tell the customer:** escalate to Vero support with the reference; the copy may be damaged and may need restoring from backup.
 
 ### SDV-DOC-005: the document can't be drawn
 
-- **HTTP status:** 422.
+- **HTTP status:** 422 (unchanged: a property of the document, not a fault; owner answer 1 to report 0043).
 - **Meaning:** the stored copy passed its checks, but the PDF can't be loaded or a page can't be drawn as an image. The message is "Vero can't draw this page. Download it if your role allows, or tell your IT team." WARN line with the reference, the document ID and the page.
 - **What the user should do:** download it if the role allows, or tell the IT team.
 - **What support should tell the customer:** the file is stored safely, but the viewer can't draw it. Send Vero support the document ID.
@@ -831,7 +831,7 @@ Every one writes one log line with the reference and the exact cause: ERROR for 
 
 ### SDV-DOC-007: download can't be verified
 
-- **HTTP status:** 422.
+- **HTTP status:** 503 when storage or the key service failed, 500 when a check failed (owner answer 1 to report 0043; it was 422). No `Retry-After`.
 - **Meaning:** before anything was sent, the stored copy was missing, couldn't be read, or failed its size or fingerprint check, or the key service failed. The message is "Vero couldn't verify this document, so it wasn't downloaded." Audited `DOCUMENT_DOWNLOAD_FAILED` with the code; a Highly Confidential grant was given back. ERROR line with the reference, the document ID, which step and the grant's state.
 - **What the user should do:** try again later; give the IT team the reference if it keeps happening. A Highly Confidential approval is still good.
 - **What support should tell the customer:** as SDV-DOC-003 or SDV-DOC-004; the log line says which step.

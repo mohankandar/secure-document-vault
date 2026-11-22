@@ -107,9 +107,11 @@ class DocumentViewerCodesTest {
         viewer.metadata(TENANT, DOC, Clearance.ALL, "steward", "c");
     }
 
-    private static DocumentViewerUnavailableException fault(String code, Executable call) {
+    /** The code and, owner answer 1 to report 0043, the status: 503 storage or key service, 500 a failed check, 422 the document itself. */
+    private static DocumentViewerUnavailableException fault(String code, int status, Executable call) {
         DocumentViewerUnavailableException ex = assertThrows(DocumentViewerUnavailableException.class, call);
         assertEquals(code, ex.errorCode().code(), ex.logDetail());
+        assertEquals(status, ex.httpStatus(), ex.logDetail());
         assertTrue(ex.logDetail().contains("document=" + DOC), ex.logDetail());
         return ex;
     }
@@ -123,43 +125,44 @@ class DocumentViewerCodesTest {
     @Test
     void theStoredCopyThatCantBeReadIsDoc003WithTheStep() throws Exception {
         when(provider.open(eq(TENANT), any(), eq("obj"))).thenThrow(new IOException("volume offline"));
-        assertTrue(fault("SDV-DOC-003", this::open).logDetail().contains("storage could not be opened"));
+        assertTrue(fault("SDV-DOC-003", 503, this::open).logDetail().contains("storage could not be opened"));
 
         when(provider.open(eq(TENANT), any(), eq("obj"))).thenAnswer(i -> new FilterInputStream(
                 new java.io.ByteArrayInputStream(CIPHERTEXT)) {
             @Override public int read(byte[] b, int off, int len) throws IOException { throw new IOException("bad sector"); }
         });
-        DocumentViewerUnavailableException read = fault("SDV-DOC-003", this::open);
+        DocumentViewerUnavailableException read = fault("SDV-DOC-003", 503, this::open);
         assertTrue(read.logDetail().contains("storage read failed"), read.logDetail());
         assertEquals("Vero couldn't read this document from storage. Try again later.", read.getMessage());
 
         when(provider.open(eq(TENANT), any(), eq("obj"))).thenAnswer(i -> new java.io.ByteArrayInputStream(CIPHERTEXT));
         doThrow(new IllegalStateException("key service unreachable")).when(crypto).decrypt(eq(TENANT), any(), any(), any());
-        assertTrue(fault("SDV-DOC-003", this::open).logDetail().contains("key service"));
+        assertTrue(fault("SDV-DOC-003", 503, this::open).logDetail().contains("key service"));
 
         when(documents.findStorageRef(TENANT, DOC)).thenReturn(Optional.empty());
-        assertTrue(fault("SDV-DOC-003", this::open).logDetail().contains("storage metadata missing"));
+        assertTrue(fault("SDV-DOC-003", 503, this::open).logDetail().contains("storage metadata missing"));
     }
 
     @Test
     void aStoredCopyThatFailsItsCheckIsDoc004WithWhichCheck() throws Exception {
         document("0".repeat(64), plaintext.length, DocumentStatus.AVAILABLE);
-        DocumentViewerUnavailableException fingerprint = fault("SDV-DOC-004", this::open);
+        DocumentViewerUnavailableException fingerprint = fault("SDV-DOC-004", 500, this::open);
         assertTrue(fingerprint.logDetail().contains("decrypted fingerprint does not match"), fingerprint.logDetail());
         assertEquals("This document's stored copy didn't pass Vero's check, so it isn't shown.", fingerprint.getMessage());
 
         document(sha(plaintext), plaintext.length, DocumentStatus.AVAILABLE);
         when(documents.findStorageRef(TENANT, DOC)).thenReturn(Optional.of(
                 new DocumentStorageRef(DOC, TENANT, "LOCAL_FILESYSTEM", VOLUME, "obj", CIPHERTEXT.length, "f".repeat(64))));
-        assertTrue(fault("SDV-DOC-004", this::open).logDetail().contains("encrypted fingerprint no longer matches"));
+        assertTrue(fault("SDV-DOC-004", 500, this::open).logDetail().contains("encrypted fingerprint no longer matches"));
 
         when(documents.findStorageRef(TENANT, DOC)).thenReturn(Optional.of(
                 new DocumentStorageRef(DOC, TENANT, "LOCAL_FILESYSTEM", VOLUME, "obj", CIPHERTEXT.length, sha(CIPHERTEXT))));
         doThrow(new IOException("chunk authentication failed")).when(crypto).decrypt(eq(TENANT), any(), any(), any());
-        assertTrue(fault("SDV-DOC-004", this::open).logDetail().contains("decryption check failed"));
+        assertTrue(fault("SDV-DOC-004", 500, this::open).logDetail().contains("decryption check failed"));
 
         document(sha(plaintext), Integer.MAX_VALUE, DocumentStatus.AVAILABLE);
-        assertEquals("This document is too large to view here.", fault("SDV-DOC-004", this::open).getMessage());
+        assertEquals("This document is too large to view here.", fault("SDV-DOC-004", 422, this::open).getMessage(),
+                "too large stays 422 (owner answer 1 to report 0043)");
     }
 
     @Test
@@ -167,9 +170,9 @@ class DocumentViewerCodesTest {
         byte[] notAPdf = "%PDF-not really a pdf".getBytes(StandardCharsets.US_ASCII);
         document(sha(notAPdf), notAPdf.length, DocumentStatus.AVAILABLE);
         decryptsTo(notAPdf);
-        DocumentViewerUnavailableException drawn = fault("SDV-DOC-005", this::open);
+        DocumentViewerUnavailableException drawn = fault("SDV-DOC-005", 422, this::open);
         assertTrue(drawn.logDetail().contains("at=open"), drawn.logDetail());
-        assertEquals("SDV-DOC-005", fault("SDV-DOC-005",
+        assertEquals("SDV-DOC-005", fault("SDV-DOC-005", 422,
                 () -> viewer.renderPage(TENANT, DOC, Clearance.ALL, 1, 1.0, "s", "c")).errorCode().code());
     }
 

@@ -138,6 +138,7 @@ class DownloadGrantFirstByteTest {
         DocumentDownloadUnavailableException keyDown = assertThrows(DocumentDownloadUnavailableException.class,
                 () -> download("key-down"));
         assertEquals("SDV-DOC-007", keyDown.errorCode().code());
+        assertEquals(503, keyDown.httpStatus(), "the key service: 503 (owner answer 1 to report 0043)");
         assertEquals("Vero couldn't verify this document, so it wasn't downloaded.", keyDown.getMessage());
         assertTrue(keyDown.logDetail().contains("grant=given back"), keyDown.logDetail());
         assertTrue(keyDown.logDetail().contains("bytesSent=0"), keyDown.logDetail());
@@ -155,8 +156,10 @@ class DownloadGrantFirstByteTest {
         // Storage can't be opened on the second read: also before the first byte.
         crypto.failBeforeWriting = false;
         storage.failOpenAfter = 1;
-        assertEquals("SDV-DOC-007", assertThrows(DocumentDownloadUnavailableException.class,
-                () -> download("storage-down")).errorCode().code());
+        DocumentDownloadUnavailableException storageDown = assertThrows(DocumentDownloadUnavailableException.class,
+                () -> download("storage-down"));
+        assertEquals("SDV-DOC-007", storageDown.errorCode().code());
+        assertEquals(503, storageDown.httpStatus(), "storage: 503");
         assertEquals(AccessRequestStatus.APPROVED, status(request), "given back again");
 
         // The grant still works, once.
@@ -175,6 +178,7 @@ class DownloadGrantFirstByteTest {
         DocumentDownloadUnavailableException stopped = assertThrows(DocumentDownloadUnavailableException.class,
                 () -> download("part-way"));
         assertEquals("SDV-DOC-009", stopped.errorCode().code());
+        assertEquals(422, stopped.httpStatus(), "unchanged; the answer has started anyway");
         assertEquals("The download didn't finish.", stopped.getMessage());
         assertTrue(stopped.logDetail().contains("grant=used"), stopped.logDetail());
         assertEquals(AccessRequestStatus.USED, status(request), "part of the file left: the grant is used");
@@ -196,6 +200,22 @@ class DownloadGrantFirstByteTest {
         assertEquals("SDV-DOC-009", stopped.errorCode().code());
         assertTrue(stopped.logDetail().contains("check failed: decrypted fingerprint does not match"), stopped.logDetail());
         assertEquals(AccessRequestStatus.USED, status(request));
+    }
+
+    /** Owner answer 1 to report 0043: a stored copy that fails its check before anything is sent is DOC-007, 500. */
+    @Test
+    void aStoredCopyThatFailsItsCheckBeforeSendingIs500AndUsesNoGrant() {
+        UUID request = approvedDownload();
+        when(w.intake.findStorageRef(TENANT, HD)).thenReturn(Optional.of(
+                new DocumentStorageRef(HD, TENANT, "TEST", VOLUME, "obj", CIPHER.length, "0".repeat(64))));
+        DocumentDownloadUnavailableException unverified = assertThrows(DocumentDownloadUnavailableException.class,
+                () -> download("bad-fingerprint"));
+        assertEquals("SDV-DOC-007", unverified.errorCode().code());
+        assertEquals(500, unverified.httpStatus());
+        assertTrue(unverified.logDetail().contains("check failed: encrypted fingerprint no longer matches"),
+                unverified.logDetail());
+        assertEquals(AccessRequestStatus.APPROVED, status(request), "checked before the grant is taken");
+        assertTrue(failure().safeDetailsJson().contains("SDV-DOC-007"));
     }
 
     @Test

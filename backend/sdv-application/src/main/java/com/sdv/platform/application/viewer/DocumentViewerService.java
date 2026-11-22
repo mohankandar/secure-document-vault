@@ -16,6 +16,7 @@ import com.sdv.platform.domain.document.DocumentCryptoMetadata;
 import com.sdv.platform.domain.document.DocumentStatus;
 import com.sdv.platform.domain.document.DocumentStorageRef;
 import com.sdv.platform.domain.document.SensitivityLevel;
+import com.sdv.platform.domain.error.CodedFault;
 import com.sdv.platform.domain.error.CodedRefusal;
 import com.sdv.platform.domain.error.SdvErrorCode;
 import com.sdv.platform.domain.storage.StorageVolume;
@@ -404,11 +405,13 @@ public class DocumentViewerService {
 
         Long expectedSize = document.contentSizeBytes();
         if (expectedSize == null || expectedSize <= 0) {
-            throw checkFailed(documentId, "size metadata missing", null);
+            throw unreadable(documentId, "size metadata missing", null);
         }
         if (expectedSize > Integer.MAX_VALUE - 8L) {
-            throw new DocumentViewerUnavailableException(SdvErrorCode.DOC_004, TOO_LARGE_MESSAGE,
-                    "document=" + documentId + " check=too large for the in-memory viewer bytes=" + expectedSize);
+            // Owner answer 1 to report 0043: a property of the document, not a fault: stays 422.
+            throw new DocumentViewerUnavailableException(SdvErrorCode.DOC_004, CodedFault.UNPROCESSABLE,
+                    TOO_LARGE_MESSAGE,
+                    "document=" + documentId + " check=too large for the in-memory viewer bytes=" + expectedSize, null);
         }
 
         FixedPlaintextBuffer plaintext;
@@ -554,21 +557,21 @@ public class DocumentViewerService {
         return new CodedRefusal.BadRequest(SdvErrorCode.DOC_006, message);
     }
 
-    /** Task 0043: SDV-DOC-003, the stored copy can't be read; the step goes to the log line only. */
+    /** Task 0043: SDV-DOC-003 (503), the stored copy can't be read; the step goes to the log line only. */
     private static DocumentViewerUnavailableException unreadable(UUID documentId, String step, Throwable cause) {
-        return new DocumentViewerUnavailableException(SdvErrorCode.DOC_003, UNREADABLE_MESSAGE,
+        return new DocumentViewerUnavailableException(SdvErrorCode.DOC_003, CodedFault.UNAVAILABLE, UNREADABLE_MESSAGE,
                 "document=" + documentId + " step=" + step, cause);
     }
 
-    /** Task 0043: SDV-DOC-004, the stored copy failed a check; which check goes to the log line only. */
+    /** Task 0043: SDV-DOC-004 (500), the stored copy failed a check; which check goes to the log line only. */
     private static DocumentViewerUnavailableException checkFailed(UUID documentId, String check, Throwable cause) {
-        return new DocumentViewerUnavailableException(SdvErrorCode.DOC_004, CHECK_FAILED_MESSAGE,
+        return new DocumentViewerUnavailableException(SdvErrorCode.DOC_004, CodedFault.INTERNAL, CHECK_FAILED_MESSAGE,
                 "document=" + documentId + " check=" + check, cause);
     }
 
-    /** Task 0043: SDV-DOC-005, the PDF or a page can't be drawn (the file itself passed its checks). */
+    /** Task 0043: SDV-DOC-005 (422), the PDF or a page can't be drawn (the file itself passed its checks). */
     private static DocumentViewerUnavailableException cantDraw(UUID documentId, String where, IOException ex) {
-        return new DocumentViewerUnavailableException(SdvErrorCode.DOC_005, CANT_DRAW_MESSAGE,
+        return new DocumentViewerUnavailableException(SdvErrorCode.DOC_005, CodedFault.UNPROCESSABLE, CANT_DRAW_MESSAGE,
                 "document=" + documentId + " at=" + where, ex);
     }
 
