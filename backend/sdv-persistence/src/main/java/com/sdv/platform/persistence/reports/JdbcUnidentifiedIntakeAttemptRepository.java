@@ -1,6 +1,10 @@
 package com.sdv.platform.persistence.reports;
 
 import com.sdv.platform.application.port.UnidentifiedIntakeAttemptRepository;
+import com.sdv.platform.domain.error.SdvErrorCode;
+import com.sdv.platform.domain.error.StartupFailure;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.stereotype.Repository;
@@ -19,7 +23,7 @@ import java.util.UUID;
  * <p>
  * Task 0039 part 2 (changeset 034): one row per tenant, caller address, method, address, status and code per UTC
  * minute. A request is added to its minute's row (attempt_count + 1, last_seen_at); only a request with a new key
- * writes a row, and only then are rows older than 30 days removed. Past {@link #MAX_ROWS_PER_MINUTE} rows in a minute,
+ * writes a row, and only then are rows older than 30 days removed. Past the limit of rows in a minute (a setting),
  * new keys get the caller address {@link #MANY_CALLERS}. The unique index uq_unidentified_intake_attempts_minute
  * keeps it one row when two requests race ("insert ... on conflict ... do update").
  */
@@ -36,9 +40,42 @@ public class JdbcUnidentifiedIntakeAttemptRepository implements UnidentifiedInta
             """.formatted(STORED_TENANT);
 
     private final NamedParameterJdbcTemplate jdbc;
+    private final int maxRowsPerMinute;
 
+    /** With the default limit of {@link #DEFAULT_MAX_ROWS_PER_MINUTE} rows a minute. */
     public JdbcUnidentifiedIntakeAttemptRepository(NamedParameterJdbcTemplate jdbc) {
+        this(jdbc, String.valueOf(DEFAULT_MAX_ROWS_PER_MINUTE));
+    }
+
+    /**
+     * Task 0040 (owner answer 1 to report 0039 part 2): the limit is a setting,
+     * sdv.problems.unidentified-attempts.max-rows-per-minute (SDV_UNIDENTIFIED_ATTEMPTS_MAX_ROWS_PER_MINUTE), a whole
+     * number from 1 to {@link #MAX_ROWS_PER_MINUTE_LIMIT}, default 100. Anything else stops the start (SDV-SYS-005,
+     * like SDV_TRUSTED_PROXIES, the other setting for recording unidentified attempts).
+     */
+    @Autowired
+    public JdbcUnidentifiedIntakeAttemptRepository(
+            NamedParameterJdbcTemplate jdbc,
+            @Value("${sdv.problems.unidentified-attempts.max-rows-per-minute:" + DEFAULT_MAX_ROWS_PER_MINUTE + "}")
+            String maxRowsPerMinute) {
         this.jdbc = jdbc;
+        this.maxRowsPerMinute = limit(maxRowsPerMinute);
+    }
+
+    /** The limit in force, for tests and the start log. */
+    public int maxRowsPerMinute() {
+        return maxRowsPerMinute;
+    }
+
+    static int limit(String value) {
+        String v = value == null ? "" : value.strip();
+        if (v.matches("[1-9][0-9]{0,4}")) {
+            int parsed = Integer.parseInt(v);
+            if (parsed <= MAX_ROWS_PER_MINUTE_LIMIT) return parsed;
+        }
+        throw new StartupFailure(SdvErrorCode.SYS_005, "sdv.problems.unidentified-attempts.max-rows-per-minute"
+                + " (SDV_UNIDENTIFIED_ATTEMPTS_MAX_ROWS_PER_MINUTE) must be a whole number from 1 to "
+                + MAX_ROWS_PER_MINUTE_LIMIT + "; it is \"" + (v.length() > 20 ? v.substring(0, 20) : v) + "\".");
     }
 
     @Override
@@ -61,7 +98,7 @@ public class JdbcUnidentifiedIntakeAttemptRepository implements UnidentifiedInta
         Long rows = jdbc.queryForObject("""
                 select count(*) from unidentified_intake_attempts where occurred_at >= :minute and occurred_at < :minuteEnd
                 """, p, Long.class);
-        if (rows != null && rows >= MAX_ROWS_PER_MINUTE && !Objects.equals(a.callerAddress(), MANY_CALLERS)) {
+        if (rows != null && rows >= maxRowsPerMinute && !Objects.equals(a.callerAddress(), MANY_CALLERS)) {
             p.addValue("caller", MANY_CALLERS);
             if (addToRow(p)) return;
         }

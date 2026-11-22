@@ -126,3 +126,10 @@ sdv:
   tenant-defaults:
     time-zone: ${SDV_DEFAULT_TIME_ZONE:UTC}
 
+  # Task 0040: unidentified intake attempts (Problems) are one row per key per minute; past this many rows in a minute,
+  # new caller addresses share one "(many addresses)" row. A whole number from 1 to 10000; anything else stops the
+  # start (SDV-SYS-005).
+  problems:
+    unidentified-attempts:
+      max-rows-per-minute: ${SDV_UNIDENTIFIED_ATTEMPTS_MAX_ROWS_PER_MINUTE:100}
+

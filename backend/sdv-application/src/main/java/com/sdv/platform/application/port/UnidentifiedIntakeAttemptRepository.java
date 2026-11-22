@@ -18,15 +18,18 @@ import java.util.UUID;
  * <p>
  * Task 0039 part 2 (owner answer 2 to report 0039, changeset 034): one row per tenant, caller address, method, address
  * called, status and code <b>per minute</b> (UTC), with a count and the last time, instead of one row per request.
- * A minute that already has {@link #MAX_ROWS_PER_MINUTE} rows adds new keys to one row per key with the caller
- * address {@link #MANY_CALLERS}, so requests from very many addresses can't grow the table without bound either.
+ * A minute that already has the limit of rows (setting sdv.problems.unidentified-attempts.max-rows-per-minute,
+ * SDV_UNIDENTIFIED_ATTEMPTS_MAX_ROWS_PER_MINUTE, default {@link #DEFAULT_MAX_ROWS_PER_MINUTE}; task 0040) adds new keys
+ * to one row per key with the caller address {@link #MANY_CALLERS}, so requests from very many addresses can't grow the table without bound either.
  */
 public interface UnidentifiedIntakeAttemptRepository {
     /** How long attempts are kept. Older ones are removed when a new row is written. */
     int KEEP_DAYS = 30;
-    /** Rows per minute before new caller addresses are counted together. */
-    int MAX_ROWS_PER_MINUTE = 100;
-    /** The caller address of the row that counts the callers past {@link #MAX_ROWS_PER_MINUTE} in a minute. */
+    /** Rows per minute before new caller addresses are counted together, unless the setting says otherwise. */
+    int DEFAULT_MAX_ROWS_PER_MINUTE = 100;
+    /** The largest limit the setting may give (task 0040), so the table stays bounded. */
+    int MAX_ROWS_PER_MINUTE_LIMIT = 10_000;
+    /** The caller address of the row that counts the callers past the limit in a minute. */
     String MANY_CALLERS = "(many addresses)";
 
     /**
