@@ -99,7 +99,7 @@ public class BusinessExperienceController {
             Integer pageSize,
             Integer limit) {
         public SearchRequest {
-            if (sourceId == null) throw new IllegalArgumentException("sourceId is required.");
+            if (sourceId == null) throw new com.sdv.platform.domain.error.CodedRefusal.BadRequest(com.sdv.platform.domain.error.SdvErrorCode.SCH_001, "sourceId is required.");
         }
     }
 }

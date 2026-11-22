@@ -43,6 +43,11 @@ class BusinessRecordRefCodecTest {
 
     @Test
     void malformedReferenceFailsClosed() {
-        assertThrows(IllegalArgumentException.class, () -> codec.decode("not-valid-base64***"));
+        var ex = assertThrows(IllegalArgumentException.class, () -> codec.decode("not-valid-base64***"));
+        // Task 0043: SDV-SCH-002, with the same sentence as a record that is not found.
+        assertEquals("SDV-SCH-002", ((com.sdv.platform.domain.error.CodedRefusal) ex).errorCode().code());
+        assertEquals(RecordRefusals.MESSAGE, ex.getMessage());
+        assertEquals("SDV-SCH-002", ((com.sdv.platform.domain.error.CodedRefusal) assertThrows(IllegalArgumentException.class,
+                () -> RecordKey.parse("nonsense"))).errorCode().code());
     }
 }

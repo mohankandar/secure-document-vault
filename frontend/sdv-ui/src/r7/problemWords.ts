@@ -2,9 +2,40 @@
 // The server's processing error codes come from DocumentFinalizationService.classify; a code not listed here
 // falls back to "Vero couldn't store this file (code X)."
 
-import type { SensitivityLevel } from '../api'
+import { ApiRequestError, type SensitivityLevel } from '../api'
 
 export type ProblemKind = 'store' | 'stuck' | 'missing'
+
+/**
+ * Task 0043: what the viewer, print and download show for each SDV-DOC code, in the catalog's words
+ * (docs/api/error-codes.md, "Viewing, print and download (DOC)"). They replace VIEWER_UNAVAILABLE and
+ * DOWNLOAD_UNAVAILABLE. `fault` marks Vero's own failures: the screen adds the reference for IT. The server's own
+ * text is never shown.
+ */
+export const DOCUMENT_PROBLEM_WORDS: Record<string, { text: string; fault?: true }> = {
+  'SDV-DOC-001': { text: 'This document isn’t there any more, or the link is wrong. Open the record again from search.' },
+  'SDV-DOC-002': { text: 'This document can’t be opened yet. It may still be being stored or corrected. Try again in a few minutes.' },
+  'SDV-DOC-003': { text: 'Vero couldn’t read this document from storage. Try again later.', fault: true },
+  'SDV-DOC-004': { text: 'This document’s stored copy didn’t pass Vero’s check, so it isn’t shown.', fault: true },
+  'SDV-DOC-005': { text: 'Vero can’t draw this page. Download it if your role allows, or tell your IT team.', fault: true },
+  'SDV-DOC-006': { text: 'Vero couldn’t show that part of the document. Reload it and try again.' },
+  'SDV-DOC-007': { text: 'Vero couldn’t verify this document, so it wasn’t downloaded.', fault: true },
+  'SDV-DOC-008': { text: 'This document was just changed. Open it again and download the new version.' },
+  'SDV-DOC-009': { text: 'The download didn’t finish.', fault: true },
+  'SDV-DOC-010': { text: 'A tag can be up to 80 characters and a comment up to 2,000. Neither can be empty.' },
+}
+
+/**
+ * Task 0043: the sentence for a document action's failure: the catalog's words, the reference for Vero's own
+ * failures, and the code. Null when the error carries no DOC code (the caller then shows its usual words).
+ */
+export function documentProblemText(error: unknown): string | null {
+  if (!(error instanceof ApiRequestError) || !error.code) return null
+  const words = DOCUMENT_PROBLEM_WORDS[error.code]
+  if (!words) return null
+  const ref = words.fault && error.correlationId ? ` Ref ${error.correlationId}.` : ''
+  return `${words.text}${ref} (${error.code})`
+}
 
 /** Code → what happened (short, for the list) and the cause (for the detail). */
 export const PROCESSING_ERROR_WORDS: Record<string, { short: string; cause: string }> = {

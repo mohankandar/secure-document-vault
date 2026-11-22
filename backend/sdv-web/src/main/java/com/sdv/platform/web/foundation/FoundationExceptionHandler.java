@@ -3,9 +3,8 @@ package com.sdv.platform.web.foundation;
 import com.sdv.platform.application.audit.AuditQueryService;
 import com.sdv.platform.application.document.InvalidPdfException;
 import com.sdv.platform.application.document.PdfTooLargeException;
-import com.sdv.platform.application.download.DocumentDownloadUnavailableException;
-import com.sdv.platform.application.viewer.DocumentViewerUnavailableException;
 import com.sdv.platform.application.redaction.RedactionFailedException;
+import com.sdv.platform.domain.error.CodedFault;
 import com.sdv.platform.domain.error.CodedRefusal;
 import com.sdv.platform.domain.error.SdvErrorCode;
 import com.sdv.platform.web.ingestion.IntakeRefusals;
@@ -46,19 +45,22 @@ public class FoundationExceptionHandler {
         this.intake = Objects.requireNonNull(intake, "intake");
     }
 
-    @ExceptionHandler(DocumentDownloadUnavailableException.class)
-    void downloadUnavailable(DocumentDownloadUnavailableException ex, HttpServletRequest rq, HttpServletResponse rs) throws IOException {
-        refuse(rq, rs, HttpStatus.UNPROCESSABLE_ENTITY, "DOWNLOAD_UNAVAILABLE", "The current document cannot be downloaded securely right now.");
+    /**
+     * Task 0043: the viewer or a download couldn't finish (SDV-DOC-003, -004, -005, -007, -009; they were
+     * VIEWER_UNAVAILABLE and DOWNLOAD_UNAVAILABLE). Still 422; one line at the code's level (ERROR, WARN for DOC-005)
+     * with the reference and the exact cause. A download that stopped part-way has a committed answer: nothing more
+     * is written, but the line is.
+     */
+    @ExceptionHandler(CodedFault.class)
+    void documentFault(CodedFault ex, HttpServletRequest rq, HttpServletResponse rs) throws IOException {
+        String cause = ex.getCause() == null ? "" : " exception=" + ex.getCause().getClass().getName();
+        answerCoded(rq, rs, HttpStatus.UNPROCESSABLE_ENTITY, ex.errorCode().code(), ex.getMessage(),
+                (ex.logDetail() == null ? "-" : ex.logDetail()) + cause);
     }
 
     @ExceptionHandler(RedactionFailedException.class)
     void redactionFailed(RedactionFailedException ex, HttpServletRequest rq, HttpServletResponse rs) throws IOException {
         refuse(rq, rs, HttpStatus.UNPROCESSABLE_ENTITY, "REDACTION_FAILED", "Corrective redaction could not complete safely.");
-    }
-
-    @ExceptionHandler(DocumentViewerUnavailableException.class)
-    void viewerUnavailable(DocumentViewerUnavailableException ex, HttpServletRequest rq, HttpServletResponse rs) throws IOException {
-        refuse(rq, rs, HttpStatus.UNPROCESSABLE_ENTITY, "VIEWER_UNAVAILABLE", "The document cannot be viewed securely right now.");
     }
 
     /** Task 0039: SDV-INT-014 (it was PDF_TOO_LARGE), with the limit in the message and the log line. */

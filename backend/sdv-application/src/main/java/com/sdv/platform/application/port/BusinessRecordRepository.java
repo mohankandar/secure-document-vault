@@ -149,7 +149,7 @@ public interface BusinessRecordRepository {
             boolean ignoreCase) {
         public AnywhereField {
             normalizedVariants = List.copyOf(normalizedVariants);
-            if (normalizedVariants.isEmpty()) throw new IllegalArgumentException("An anywhere field needs a value.");
+            if (normalizedVariants.isEmpty()) throw new com.sdv.platform.domain.error.CodedRefusal.BadRequest(com.sdv.platform.domain.error.SdvErrorCode.SCH_001, "An anywhere field needs a value.");
         }
 
         /** Exact keeps capitals. */
@@ -163,7 +163,7 @@ public interface BusinessRecordRepository {
     record AnywhereCriterion(List<AnywhereField> fields) {
         public AnywhereCriterion {
             fields = List.copyOf(fields);
-            if (fields.isEmpty()) throw new IllegalArgumentException("An anywhere search needs at least one field.");
+            if (fields.isEmpty()) throw new com.sdv.platform.domain.error.CodedRefusal.BadRequest(com.sdv.platform.domain.error.SdvErrorCode.SCH_001, "An anywhere search needs at least one field.");
         }
     }
 

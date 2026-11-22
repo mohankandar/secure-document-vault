@@ -46,6 +46,13 @@ public interface AccessRequestRepository {
      */
     Optional<UUID> useGrant(UUID tenantId, UUID documentId, String requestedBy, AccessRequestKind kind, Instant now);
 
+    /**
+     * Task 0043: gives a used grant back: USED becomes APPROVED again and its use time is cleared; its use window
+     * (expires_at) is unchanged. Only this grant, of this person, document and kind, and only while it is USED. True
+     * when it changed.
+     */
+    boolean giveBackGrant(UUID tenantId, UUID requestId, UUID documentId, String requestedBy, AccessRequestKind kind);
+
     /** PENDING requests, oldest first. kinds: null or empty for all; requester: matches the subject or the name exactly. */
     List<AccessRequest> findPending(UUID tenantId, Collection<AccessRequestKind> kinds, String requester, int limit);
 

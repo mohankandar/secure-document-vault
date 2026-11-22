@@ -81,7 +81,16 @@ public final class RecordKey {
      */
     public record Parsed(List<Part> identifiers, UUID submissionId) { }
 
+    /** Task 0043: a key that can't be read is SDV-SCH-002 (400); the exact cause goes to the log line. */
     public static Parsed parse(String recordKey) {
+        try {
+            return read(recordKey);
+        } catch (IllegalArgumentException ex) {
+            throw RecordRefusals.invalid(ex.getMessage());
+        }
+    }
+
+    private static Parsed read(String recordKey) {
         if (recordKey == null) throw new IllegalArgumentException("A record key is required.");
         if (recordKey.startsWith(SUBMISSION)) {
             return new Parsed(List.of(), UUID.fromString(recordKey.substring(SUBMISSION.length())));

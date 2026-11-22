@@ -27,6 +27,8 @@ import java.util.UUID;
 @Component
 public class SensitiveAccessGrantStore implements SensitiveAccessGrants {
     public static final String GRANT_USED_ACTION = "SENSITIVE_ACCESS_GRANT_USED";
+    /** Task 0043: a used grant given back because nothing left Vero. */
+    public static final String GRANT_RETURNED_ACTION = "SENSITIVE_ACCESS_GRANT_RETURNED";
     public static final String EXPIRED_ACTION = "ACCESS_REQUEST_EXPIRED";
 
     private final AccessRequestRepository requests;
@@ -67,6 +69,33 @@ public class SensitiveAccessGrantStore implements SensitiveAccessGrants {
                     "{\"accessRequestId\":\"" + requestId + "\",\"kind\":\"" + kind.name() + "\"}")));
             return used;
         });
+    }
+
+    /**
+     * Task 0043: the grant is approved and unused again, with its audit event, in one transaction. Only a grant that is
+     * USED by this person for this document and kind; anything else changes nothing (false).
+     */
+    @Override
+    public boolean giveBack(UUID tenantId, UUID documentId, String actorId, DocumentAccessGuard.Attempt attempt,
+                            UUID grantId, String reason, String correlationId) {
+        if (tenantId == null || documentId == null || grantId == null || actorId == null || actorId.isBlank()) return false;
+        AccessRequestKind kind = switch (attempt) {
+            case PRINT -> AccessRequestKind.PRINT;
+            case DOWNLOAD -> AccessRequestKind.DOWNLOAD;
+            default -> null;
+        };
+        if (kind == null) return false;
+        String why = reason == null || !reason.matches("[a-z ]{1,60}") ? "failed before anything was sent" : reason;
+        Boolean returned = transactions.execute(status -> {
+            boolean back = requests.giveBackGrant(tenantId, grantId, documentId, actorId, kind);
+            if (back) {
+                audit.append(new AuditEvent(UUID.randomUUID(), tenantId, "USER", actorId, GRANT_RETURNED_ACTION,
+                        "DOCUMENT", documentId.toString(), clock.instant(), correlationId, AuditOutcome.SUCCESS,
+                        "{\"accessRequestId\":\"" + grantId + "\",\"kind\":\"" + kind.name() + "\",\"reason\":\"" + why + "\"}"));
+            }
+            return back;
+        });
+        return Boolean.TRUE.equals(returned);
     }
 
     /**

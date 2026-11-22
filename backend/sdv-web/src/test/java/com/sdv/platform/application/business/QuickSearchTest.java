@@ -245,6 +245,7 @@ class QuickSearchTest {
         for (String text : List.of("", " ", "p", "  p  ", "x".repeat(101), " " + "x".repeat(101) + " ")) {
             var ex = assertThrows(IllegalArgumentException.class, () -> anywhere(text), "'" + text + "'");
             assertEquals("Search text must be 2 to 100 characters.", ex.getMessage());
+            assertEquals("SDV-SCH-001", ((com.sdv.platform.domain.error.CodedRefusal) ex).errorCode().code(), "task 0043");
         }
         verifyNoInteractions(audit);
         found();

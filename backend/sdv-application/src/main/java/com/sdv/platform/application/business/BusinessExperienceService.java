@@ -2,7 +2,9 @@ package com.sdv.platform.application.business;
 
 import com.sdv.platform.application.access.ActiveTenant;
 
+import com.sdv.platform.domain.error.CodedRefusal;
 import com.sdv.platform.domain.error.InternalCheckFailed;
+import com.sdv.platform.domain.error.SdvErrorCode;
 import com.sdv.platform.application.access.Clearance;
 import com.sdv.platform.application.port.AuditEventPort;
 import com.sdv.platform.application.port.BusinessRecordRepository;
@@ -243,32 +245,32 @@ public class BusinessExperienceService {
         String anywhereText = anywhere == null ? null : anywhere.trim();
         if (anywhereText != null
                 && (anywhereText.length() < ANYWHERE_MIN_LENGTH || anywhereText.length() > ANYWHERE_MAX_LENGTH)) {
-            throw new IllegalArgumentException("Search text must be " + ANYWHERE_MIN_LENGTH + " to "
+            throw new CodedRefusal.BadRequest(SdvErrorCode.SCH_001, "Search text must be " + ANYWHERE_MIN_LENGTH + " to "
                     + ANYWHERE_MAX_LENGTH + " characters.");
         }
 
         int page = requestedPage == null ? 1 : requestedPage;
         int pageSize = requestedPageSize == null ? DEFAULT_LIMIT : requestedPageSize;
         if (page < 1 || page > MAX_PAGE) {
-            throw new IllegalArgumentException("Search page must be between 1 and " + MAX_PAGE + ".");
+            throw new CodedRefusal.BadRequest(SdvErrorCode.SCH_001, "Search page must be between 1 and " + MAX_PAGE + ".");
         }
         if (pageSize < 1 || pageSize > MAX_LIMIT) {
-            throw new IllegalArgumentException("Search page size must be between 1 and " + MAX_LIMIT + ".");
+            throw new CodedRefusal.BadRequest(SdvErrorCode.SCH_001, "Search page size must be between 1 and " + MAX_LIMIT + ".");
         }
 
         Map<String, String> safeCriteria = requestedCriteria == null ? Map.of() : requestedCriteria;
         if (safeCriteria.isEmpty() && anywhereText == null && !incompleteOnly
                 && createdFrom == null && createdTo == null && updatedFrom == null && updatedTo == null) {
-            throw new IllegalArgumentException("At least one configured metadata field, anywhere text, common date filter or incompleteOnly is required.");
+            throw new CodedRefusal.BadRequest(SdvErrorCode.SCH_001, "At least one configured metadata field, anywhere text, common date filter or incompleteOnly is required.");
         }
         if (createdFrom != null && createdTo != null && createdFrom.isAfter(createdTo)) {
-            throw new IllegalArgumentException("dateFrom cannot be after dateTo.");
+            throw new CodedRefusal.BadRequest(SdvErrorCode.SCH_001, "dateFrom cannot be after dateTo.");
         }
         if (updatedFrom != null && updatedTo != null && updatedFrom.isAfter(updatedTo)) {
-            throw new IllegalArgumentException("lastUpdatedFrom cannot be after lastUpdatedTo.");
+            throw new CodedRefusal.BadRequest(SdvErrorCode.SCH_001, "lastUpdatedFrom cannot be after lastUpdatedTo.");
         }
         if (safeCriteria.size() > MAX_CRITERIA) {
-            throw new IllegalArgumentException("At most " + MAX_CRITERIA + " search fields may be combined.");
+            throw new CodedRefusal.BadRequest(SdvErrorCode.SCH_001, "At most " + MAX_CRITERIA + " search fields may be combined.");
         }
 
         Map<String, MetadataFieldDefinition> current = definitions.findCurrent(tenantId, sourceId).stream()
@@ -380,11 +382,11 @@ public class BusinessExperienceService {
         Objects.requireNonNull(clearance, "clearance");
         requireActiveTenant(tenantId);
         if (actorId == null || actorId.isBlank()) {
-            throw new IllegalArgumentException("An authenticated person is required.");
+            throw new CodedRefusal.BadRequest(SdvErrorCode.SCH_003, "An authenticated person is required.");
         }
         int limit = requestedLimit == null ? RECENT_DEFAULT_LIMIT : requestedLimit;
         if (limit < 1 || limit > RECENT_MAX_LIMIT) {
-            throw new IllegalArgumentException("limit must be between 1 and " + RECENT_MAX_LIMIT + ".");
+            throw new CodedRefusal.BadRequest(SdvErrorCode.SCH_003, "limit must be between 1 and " + RECENT_MAX_LIMIT + ".");
         }
 
         List<RecentDocumentView> views = records.findRecentlyViewedDocuments(
@@ -458,11 +460,13 @@ public class BusinessExperienceService {
         Objects.requireNonNull(clearance, "clearance");
         requireActiveTenant(tenantId);
         BusinessRecordRefCodec.RecordIdentity identity = refs.decode(recordRef);
-        IngestionSource source = requireSource(tenantId, identity.sourceId());
+        // Task 0043: a reference to another tenant's sending system is "not found" (SDV-SCH-002), like any other.
+        IngestionSource source = sources.findById(tenantId, identity.sourceId())
+                .orElseThrow(() -> RecordRefusals.notFound("sending system not of this tenant"));
 
         RecordAggregate aggregate = aggregate(tenantId, source, identity);
         if (aggregate.submissions().isEmpty()) {
-            throw new NoSuchElementException("Business record not found.");
+            throw RecordRefusals.notFound("no submission left for the reference");
         }
 
         // Task 0024, part 2: the record's own level, from the same grouping as the record itself.
@@ -494,19 +498,19 @@ public class BusinessExperienceService {
             String rawValue) {
         MetadataFieldDefinition field = current.get(fieldKey);
         if (field == null || !field.searchable()) {
-            throw new IllegalArgumentException(
+            throw new CodedRefusal.BadRequest(SdvErrorCode.SCH_001,
                     "Search field '" + fieldKey + "' is not currently exposed for this source.");
         }
         if (rawValue == null || rawValue.isBlank()) {
-            throw new IllegalArgumentException("Search value for '" + fieldKey + "' is required.");
+            throw new CodedRefusal.BadRequest(SdvErrorCode.SCH_001, "Search value for '" + fieldKey + "' is required.");
         }
         if (rawValue.length() > MAX_QUERY_VALUE_LENGTH) {
-            throw new IllegalArgumentException("Search value for '" + fieldKey + "' is too long.");
+            throw new CodedRefusal.BadRequest(SdvErrorCode.SCH_001, "Search value for '" + fieldKey + "' is too long.");
         }
 
         List<String> variants = normalizedVariants(tenantId, sourceId, field, rawValue);
         if (variants.isEmpty()) {
-            throw new IllegalArgumentException(
+            throw new CodedRefusal.BadRequest(SdvErrorCode.SCH_001,
                     "Search value for '" + fieldKey + "' is empty after configured normalization.");
         }
         return new SearchCriterion(fieldKey, field.searchMode(), variants, exactIgnoresCase(field));

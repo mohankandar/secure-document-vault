@@ -19,6 +19,16 @@ public interface SensitiveAccessGrants {
     Optional<UUID> grant(UUID tenantId, UUID documentId, String actorId, DocumentAccessGuard.Attempt attempt, Use use,
                          String correlationId);
 
+    /**
+     * Task 0043: gives a used grant back (it is approved and unused again, inside the same use window), audited, when
+     * nothing left Vero: a download that failed before its first byte, or a print that wasn't recorded. Only the grant
+     * this person used for this document and kind. True when it was given back. No grants, nothing to give back.
+     */
+    default boolean giveBack(UUID tenantId, UUID documentId, String actorId, DocumentAccessGuard.Attempt attempt,
+                             UUID grantId, String reason, String correlationId) {
+        return false;
+    }
+
     /** No grants at all: every Highly Confidential print and download is refused. */
     SensitiveAccessGrants NONE = (tenantId, documentId, actorId, attempt, use, correlationId) -> Optional.empty();
 }

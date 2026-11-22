@@ -2,6 +2,7 @@ package com.sdv.platform.application.viewer;
 
 import com.sdv.platform.application.access.Clearance;
 import com.sdv.platform.application.access.DocumentAccessGuard;
+import com.sdv.platform.application.document.DocumentRefusals;
 import com.sdv.platform.application.port.AuditEventPort;
 import com.sdv.platform.application.port.PageViewAuditPort;
 import com.sdv.platform.application.port.DocumentIntakeRepository;
@@ -15,6 +16,8 @@ import com.sdv.platform.domain.document.DocumentCryptoMetadata;
 import com.sdv.platform.domain.document.DocumentStatus;
 import com.sdv.platform.domain.document.DocumentStorageRef;
 import com.sdv.platform.domain.document.SensitivityLevel;
+import com.sdv.platform.domain.error.CodedRefusal;
+import com.sdv.platform.domain.error.SdvErrorCode;
 import com.sdv.platform.domain.storage.StorageVolume;
 import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.pdmodel.PDDocument;
@@ -45,7 +48,6 @@ import java.util.Base64;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Locale;
-import java.util.NoSuchElementException;
 import java.util.UUID;
 
 @Service
@@ -125,7 +127,7 @@ public class DocumentViewerService {
                     "{\"pageCount\":" + pageCount + levelDetail(viewable) + "}");
             return new ViewerMetadata(document.documentId(), document.originalFilename(), pageCount, viewingId);
         } catch (IOException ex) {
-            throw unavailable(ex);
+            throw cantDraw(documentId, "open", ex);
         } finally {
             Arrays.fill(plaintext, (byte) 0);
         }
@@ -157,9 +159,9 @@ public class DocumentViewerService {
             UUID viewingId,
             String actorId,
             String correlationId) {
-        if (pageNumber < 1) throw new IllegalArgumentException("page must be at least 1.");
+        if (pageNumber < 1) throw invalid("page must be at least 1.");
         if (!Double.isFinite(scale) || scale < MIN_SCALE || scale > MAX_SCALE) {
-            throw new IllegalArgumentException(
+            throw invalid(
                     "scale must be between " + MIN_SCALE + " and " + MAX_SCALE + ".");
         }
 
@@ -168,7 +170,7 @@ public class DocumentViewerService {
         byte[] plaintext = verifiedPlaintext(document);
         try (PDDocument pdf = load(plaintext)) {
             if (pageNumber > pdf.getNumberOfPages()) {
-                throw new IllegalArgumentException(
+                throw invalid(
                         "page exceeds the document page count of " + pdf.getNumberOfPages() + ".");
             }
 
@@ -179,7 +181,7 @@ public class DocumentViewerService {
             double heightPixels = (box.getHeight() / 72.0d) * dpi;
             if (widthPixels <= 0 || heightPixels <= 0
                     || widthPixels * heightPixels > MAX_RENDER_PIXELS) {
-                throw new IllegalArgumentException(
+                throw invalid(
                         "Requested viewer zoom exceeds the safe rendering dimensions for this page.");
             }
 
@@ -219,7 +221,7 @@ public class DocumentViewerService {
                     pageNumber,
                     pdf.getNumberOfPages());
         } catch (IOException ex) {
-            throw unavailable(ex);
+            throw cantDraw(documentId, "page " + pageNumber, ex);
         } finally {
             Arrays.fill(plaintext, (byte) 0);
         }
@@ -233,9 +235,9 @@ public class DocumentViewerService {
      */
     public PagePreviews previews(UUID tenantId, UUID documentId, int first, int count,
                                  Clearance clearance, String actorId, String correlationId) {
-        if (first < 1) throw new IllegalArgumentException("first must be at least 1.");
+        if (first < 1) throw invalid("first must be at least 1.");
         if (count < 1 || count > MAX_PREVIEW_COUNT) {
-            throw new IllegalArgumentException("count must be between 1 and " + MAX_PREVIEW_COUNT + ".");
+            throw invalid("count must be between 1 and " + MAX_PREVIEW_COUNT + ".");
         }
 
         Document document = requireAvailableDocument(tenantId, documentId, clearance, DocumentAccessGuard.Attempt.PREVIEWS, actorId, correlationId);
@@ -243,7 +245,7 @@ public class DocumentViewerService {
         try (PDDocument pdf = load(plaintext)) {
             int pageCount = pdf.getNumberOfPages();
             if (first > pageCount) {
-                throw new IllegalArgumentException("first exceeds the document page count of " + pageCount + ".");
+                throw invalid("first exceeds the document page count of " + pageCount + ".");
             }
             int last = Math.min(pageCount, first + count - 1);
             PDFRenderer renderer = new PDFRenderer(pdf);
@@ -273,7 +275,7 @@ public class DocumentViewerService {
             }
             return new PagePreviews(document.documentId(), pageCount, first, previews);
         } catch (IOException ex) {
-            throw unavailable(ex);
+            throw cantDraw(documentId, "previews from page " + first, ex);
         } finally {
             Arrays.fill(plaintext, (byte) 0);
         }
@@ -288,10 +290,10 @@ public class DocumentViewerService {
             String correlationId) {
         String normalizedQuery = query == null ? "" : query.trim();
         if (normalizedQuery.isEmpty()) {
-            throw new IllegalArgumentException("Viewer text search query is required.");
+            throw invalid("Viewer text search query is required.");
         }
         if (normalizedQuery.length() > MAX_SEARCH_QUERY_LENGTH) {
-            throw new IllegalArgumentException(
+            throw invalid(
                     "Viewer text search query exceeds " + MAX_SEARCH_QUERY_LENGTH + " characters.");
         }
 
@@ -379,31 +381,34 @@ public class DocumentViewerService {
                     matches,
                     highlights);
         } catch (IOException ex) {
-            throw unavailable(ex);
+            throw cantDraw(documentId, "text search", ex);
         } finally {
             Arrays.fill(plaintext, (byte) 0);
         }
     }
 
+    /**
+     * Task 0043: each cause has its own code (it was one VIEWER_UNAVAILABLE): storage metadata, the volume, the
+     * storage provider, reading storage or the key service is SDV-DOC-003; a size or fingerprint that no longer
+     * matches, a decryption check, or a document too big for the in-memory viewer is SDV-DOC-004.
+     */
     private byte[] verifiedPlaintext(Document document) {
-        DocumentStorageRef storageRef = documents.findStorageRef(
-                        document.tenantId(), document.documentId())
-                .orElseThrow(() -> new DocumentViewerUnavailableException(
-                        "Secure viewer storage metadata is unavailable."));
-        DocumentCryptoMetadata cryptoMetadata = documents.findCryptoMetadata(
-                        document.tenantId(), document.documentId())
-                .orElseThrow(() -> new DocumentViewerUnavailableException(
-                        "Secure viewer crypto metadata is unavailable."));
-        StorageVolume volume = volumes.findById(
-                        document.tenantId(), storageRef.storageVolumeId())
-                .orElseThrow(() -> new DocumentViewerUnavailableException(
-                        "Secure viewer storage volume is unavailable."));
-        StorageProvider provider = provider(storageRef.providerId());
+        UUID documentId = document.documentId();
+        DocumentStorageRef storageRef = documents.findStorageRef(document.tenantId(), documentId)
+                .orElseThrow(() -> unreadable(documentId, "storage metadata missing", null));
+        DocumentCryptoMetadata cryptoMetadata = documents.findCryptoMetadata(document.tenantId(), documentId)
+                .orElseThrow(() -> unreadable(documentId, "crypto metadata missing", null));
+        StorageVolume volume = volumes.findById(document.tenantId(), storageRef.storageVolumeId())
+                .orElseThrow(() -> unreadable(documentId, "storage volume missing", null));
+        StorageProvider provider = provider(documentId, storageRef.providerId());
 
         Long expectedSize = document.contentSizeBytes();
-        if (expectedSize == null || expectedSize <= 0 || expectedSize > Integer.MAX_VALUE - 8L) {
-            throw new DocumentViewerUnavailableException(
-                    "Document size is outside the secure in-memory viewer boundary.");
+        if (expectedSize == null || expectedSize <= 0) {
+            throw checkFailed(documentId, "size metadata missing", null);
+        }
+        if (expectedSize > Integer.MAX_VALUE - 8L) {
+            throw new DocumentViewerUnavailableException(SdvErrorCode.DOC_004, TOO_LARGE_MESSAGE,
+                    "document=" + documentId + " check=too large for the in-memory viewer bytes=" + expectedSize);
         }
 
         FixedPlaintextBuffer plaintext;
@@ -412,8 +417,13 @@ public class DocumentViewerService {
                     Math.toIntExact(expectedSize),
                     document.contentSha256());
 
-            try (InputStream raw = provider.open(
-                    document.tenantId(), volume, storageRef.objectKey());
+            InputStream opened;
+            try {
+                opened = provider.open(document.tenantId(), volume, storageRef.objectKey());
+            } catch (IOException | RuntimeException ex) {
+                throw unreadable(documentId, "storage could not be opened", ex);
+            }
+            try (InputStream raw = new StorageReadStream(opened);
                  DigestingCountingInputStream encrypted = new DigestingCountingInputStream(raw)) {
                 StreamingCryptoPort.CryptoEnvelope envelope =
                         new StreamingCryptoPort.CryptoEnvelope(
@@ -430,21 +440,26 @@ public class DocumentViewerService {
 
                 if (encrypted.count() != storageRef.encryptedSizeBytes()) {
                     plaintext.destroy();
-                    throw new DocumentViewerUnavailableException(
-                            "Encrypted object size no longer matches committed custody metadata.");
+                    throw checkFailed(documentId, "encrypted size no longer matches", null);
                 }
                 if (!encrypted.sha256().equals(storageRef.integrityValue())) {
                     plaintext.destroy();
-                    throw new DocumentViewerUnavailableException(
-                            "Encrypted object integrity no longer matches committed custody metadata.");
+                    throw checkFailed(documentId, "encrypted fingerprint no longer matches", null);
                 }
             }
             return plaintext.take();
         } catch (DocumentViewerUnavailableException ex) {
             throw ex;
-        } catch (IOException | RuntimeException ex) {
-            throw new DocumentViewerUnavailableException(
-                    "The document cannot be securely reconstructed for viewing.", ex);
+        } catch (StorageReadFailed ex) {
+            throw unreadable(documentId, "storage read failed", ex.getCause());
+        } catch (CheckFailed ex) {
+            throw checkFailed(documentId, ex.getMessage(), null);
+        } catch (IOException ex) {
+            // The decryption's own checks: header, chunk authentication, final marker.
+            throw checkFailed(documentId, "decryption check failed", ex);
+        } catch (RuntimeException ex) {
+            // The key service, or anything else in decryption that isn't a check.
+            throw unreadable(documentId, "key service or decryption failed", ex);
         }
     }
 
@@ -460,11 +475,10 @@ public class DocumentViewerService {
     private Viewable requireViewable(UUID tenantId, UUID documentId, Clearance clearance,
                                      DocumentAccessGuard.Attempt attempt, String actorId, String correlationId) {
         Document document = documents.findDocumentByIdForTenant(tenantId, documentId)
-                .orElseThrow(() -> new NoSuchElementException("Document not found."));
+                .orElseThrow(() -> DocumentRefusals.notFound(documentId));
         SensitivityLevel level = access.requireOpenable(document, clearance, attempt, actorId, correlationId);
         if (document.status() != DocumentStatus.AVAILABLE) {
-            throw new IllegalStateException(
-                    "Only AVAILABLE documents may be opened in the secure viewer.");
+            throw DocumentRefusals.notAvailable(documentId, document.status());
         }
         return new Viewable(document, level);
     }
@@ -477,12 +491,11 @@ public class DocumentViewerService {
         return ",\"sensitivityLevel\":\"" + viewable.level().name() + "\"";
     }
 
-    private StorageProvider provider(String providerId) {
+    private StorageProvider provider(UUID documentId, String providerId) {
         return storageProviders.stream()
                 .filter(candidate -> candidate.providerId().equals(providerId))
                 .findFirst()
-                .orElseThrow(() -> new DocumentViewerUnavailableException(
-                        "Configured storage provider is unavailable."));
+                .orElseThrow(() -> unreadable(documentId, "storage provider not installed", null));
     }
 
     private static PDDocument load(byte[] plaintext) throws IOException {
@@ -529,9 +542,73 @@ public class DocumentViewerService {
         return count;
     }
 
-    private static DocumentViewerUnavailableException unavailable(IOException ex) {
-        return new DocumentViewerUnavailableException(
-                "The document cannot be securely rendered right now.", ex);
+    static final String UNREADABLE_MESSAGE = "Vero couldn't read this document from storage. Try again later.";
+    static final String CHECK_FAILED_MESSAGE =
+            "This document's stored copy didn't pass Vero's check, so it isn't shown.";
+    static final String TOO_LARGE_MESSAGE = "This document is too large to view here.";
+    static final String CANT_DRAW_MESSAGE =
+            "Vero can't draw this page. Download it if your role allows, or tell your IT team.";
+
+    /** Task 0043: SDV-DOC-006, a viewer request that isn't valid (400); the message says what. */
+    private static CodedRefusal.BadRequest invalid(String message) {
+        return new CodedRefusal.BadRequest(SdvErrorCode.DOC_006, message);
+    }
+
+    /** Task 0043: SDV-DOC-003, the stored copy can't be read; the step goes to the log line only. */
+    private static DocumentViewerUnavailableException unreadable(UUID documentId, String step, Throwable cause) {
+        return new DocumentViewerUnavailableException(SdvErrorCode.DOC_003, UNREADABLE_MESSAGE,
+                "document=" + documentId + " step=" + step, cause);
+    }
+
+    /** Task 0043: SDV-DOC-004, the stored copy failed a check; which check goes to the log line only. */
+    private static DocumentViewerUnavailableException checkFailed(UUID documentId, String check, Throwable cause) {
+        return new DocumentViewerUnavailableException(SdvErrorCode.DOC_004, CHECK_FAILED_MESSAGE,
+                "document=" + documentId + " check=" + check, cause);
+    }
+
+    /** Task 0043: SDV-DOC-005, the PDF or a page can't be drawn (the file itself passed its checks). */
+    private static DocumentViewerUnavailableException cantDraw(UUID documentId, String where, IOException ex) {
+        return new DocumentViewerUnavailableException(SdvErrorCode.DOC_005, CANT_DRAW_MESSAGE,
+                "document=" + documentId + " at=" + where, ex);
+    }
+
+    /** Task 0043: reading the stored copy failed (not the key service, not a check). */
+    private static final class StorageReadFailed extends IOException {
+        StorageReadFailed(IOException cause) {
+            super("storage read failed", cause);
+        }
+    }
+
+    /** Task 0043: the decrypted copy failed a size, header or fingerprint check. */
+    private static final class CheckFailed extends IOException {
+        CheckFailed(String check) {
+            super(check);
+        }
+    }
+
+    /** Task 0043: marks a failure reading the stored copy, so the code and the log line can say which step failed. */
+    private static final class StorageReadStream extends FilterInputStream {
+        StorageReadStream(InputStream input) {
+            super(input);
+        }
+
+        @Override
+        public int read() throws IOException {
+            try {
+                return super.read();
+            } catch (IOException ex) {
+                throw new StorageReadFailed(ex);
+            }
+        }
+
+        @Override
+        public int read(byte[] b, int off, int len) throws IOException {
+            try {
+                return super.read(b, off, len);
+            } catch (IOException ex) {
+                throw new StorageReadFailed(ex);
+            }
+        }
     }
 
     /** viewingId: the ID of this opening's DOCUMENT_VIEW_OPENED event; page requests send it back. */
@@ -597,7 +674,7 @@ public class DocumentViewerService {
         @Override
         public void write(int b) throws IOException {
             if (position >= data.length) {
-                throw new IOException("Decrypted PDF exceeded committed plaintext size.");
+                throw new CheckFailed("decrypted size larger than stored");
             }
             data[position++] = (byte) b;
             digest.update((byte) b);
@@ -606,7 +683,7 @@ public class DocumentViewerService {
         @Override
         public void write(byte[] b, int off, int len) throws IOException {
             if (len < 0 || position > data.length - len) {
-                throw new IOException("Decrypted PDF exceeded committed plaintext size.");
+                throw new CheckFailed("decrypted size larger than stored");
             }
             System.arraycopy(b, off, data, position, len);
             digest.update(b, off, len);
@@ -615,19 +692,19 @@ public class DocumentViewerService {
 
         void finish() throws IOException {
             if (position != data.length) {
-                throw new IOException("Decrypted PDF size does not match committed plaintext size.");
+                throw new CheckFailed("decrypted size does not match");
             }
             if (data.length < PDF_MAGIC.length) {
-                throw new IOException("Decrypted content is not a complete PDF.");
+                throw new CheckFailed("decrypted content is not a complete PDF");
             }
             for (int i = 0; i < PDF_MAGIC.length; i++) {
                 if (data[i] != PDF_MAGIC[i]) {
-                    throw new IOException("Decrypted content no longer has the committed PDF header.");
+                    throw new CheckFailed("decrypted content has no PDF header");
                 }
             }
             String actualSha = HexFormat.of().formatHex(digest.digest());
             if (expectedSha256 == null || !actualSha.equals(expectedSha256)) {
-                throw new IOException("Decrypted PDF fingerprint does not match committed custody metadata.");
+                throw new CheckFailed("decrypted fingerprint does not match");
             }
         }
 

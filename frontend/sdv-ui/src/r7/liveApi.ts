@@ -1,4 +1,4 @@
-import { roleApi, contentBinary, type SessionInfo, type SearchSchema, type SearchResponse, type BusinessRecord, type RecordSummary, type SearchSource, type SensitivityLevel } from '../api'
+import { roleApi, contentBinary, contentDownload, type SessionInfo, type SearchSchema, type SearchResponse, type BusinessRecord, type RecordSummary, type SearchSource, type SensitivityLevel } from '../api'
 import type { Field, Source, RecordItem, Doc } from './model'
 
 export const session = () => roleApi<SessionInfo>('/api/v1/session', 'business')
@@ -88,7 +88,8 @@ export const documentComments = (id:string) => roleApi<LiveComment[]>(documentPa
 export const createDocumentTag = (id:string,tag:string) => roleApi<LiveTag>(documentPath(id)+'/tags','business',{method:'POST',body:JSON.stringify({tag})})
 export const createDocumentComment = (id:string,comment:string) => roleApi<LiveComment>(documentPath(id)+'/comments','business',{method:'POST',body:JSON.stringify({comment})})
 
-export const secureDownload = (id:string) => contentBinary('/api/v1/business/documents/'+encodeURIComponent(id)+'/download','business')
+/** Task 0043: checked for being complete; a short file fails with SDV-DOC-009. */
+export const secureDownload = (id:string) => contentDownload('/api/v1/business/documents/'+encodeURIComponent(id)+'/download','business')
 export const recordPrintEvent = (id:string) => roleApi<void>('/api/v1/business/documents/'+encodeURIComponent(id)+'/print-event','business',{method:'POST'})
 export type CorrectionRegion = {pageNumber:number;x:number;y:number;width:number;height:number}
 export const permanentRedaction = (id:string,reason:string,regions:CorrectionRegion[]) =>
