@@ -20,17 +20,10 @@ import java.util.UUID;
 public class DocumentIntakeController {
     private final SecurityContextFacade security;
     private final DocumentIntakeService intake;
-    private final IntakeRefusals refusals;
-
-    @org.springframework.beans.factory.annotation.Autowired
-    public DocumentIntakeController(SecurityContextFacade security, DocumentIntakeService intake, IntakeRefusals refusals) {
-        this.security = security;
-        this.intake = intake;
-        this.refusals = refusals;
-    }
 
     public DocumentIntakeController(SecurityContextFacade security, DocumentIntakeService intake) {
-        this(security, intake, IntakeRefusals.NONE);
+        this.security = security;
+        this.intake = intake;
     }
 
     @PostMapping(consumes = "application/pdf")
@@ -42,29 +35,23 @@ public class DocumentIntakeController {
             @RequestHeader(name = DocumentIntakeService.SENSITIVITY_FIELD, required = false) String sensitivityLevel,
             @RequestHeader(name = RecordSensitivityGuard.HEADER, required = false) String recordSensitivityLevel,
             HttpServletRequest request) throws IOException {
+        // Task 0032: a refused upload is counted by the Daily intake report, with its code. Task 0039: Vero's error
+        // handler records it (IntakeRefusals), also when Spring refused it before this method ran.
         IngestionSourcePrincipal principal = security.requireIngestionSourcePrincipal();
-        DocumentReceipt receipt;
-        try {
-            RecordSensitivityGuard.refuseIfPresent(recordSensitivityLevel);
-            receipt = intake.receive(
-                    principal.tenantId(),
-                    principal.sourceId(),
-                    submissionId,
-                    sourceDocumentId,
-                    idempotencyKey,
-                    filename,
-                    request.getContentType(),
-                    sensitivityLevel,
-                    request.getContentLengthLong(),
-                    request.getInputStream(),
-                    principal.subject(),
-                    correlationId());
-        } catch (RuntimeException | IOException ex) {
-            // Task 0032: a refused upload is counted by the Daily intake report, with its code.
-            refusals.uploadRefused(principal, submissionId, sourceDocumentId != null && !sourceDocumentId.isBlank()
-                    ? sourceDocumentId : idempotencyKey, ex, correlationId());
-            throw ex;
-        }
+        RecordSensitivityGuard.refuseIfPresent(recordSensitivityLevel);
+        DocumentReceipt receipt = intake.receive(
+                principal.tenantId(),
+                principal.sourceId(),
+                submissionId,
+                sourceDocumentId,
+                idempotencyKey,
+                filename,
+                request.getContentType(),
+                sensitivityLevel,
+                request.getContentLengthLong(),
+                request.getInputStream(),
+                principal.subject(),
+                correlationId());
 
         // Task 0031: an exact duplicate stores nothing new, so it is 200 with the existing document, like a retry.
         HttpStatus status = receipt.idempotentReplay() || receipt.exactDuplicateContent() ? HttpStatus.OK : HttpStatus.CREATED;

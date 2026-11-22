@@ -1,0 +1,8 @@
+databaseChangeLog:
+  - changeSet:
+      id: 034-unidentified-intake-attempt-counts
+      author: sdv
+      changes:
+        - sqlFile:
+            path: db/changelog/034-unidentified-intake-attempt-counts.sql
+            relativeToChangelogFile: false

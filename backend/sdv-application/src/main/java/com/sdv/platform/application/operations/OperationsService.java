@@ -5,6 +5,7 @@ import com.sdv.platform.application.access.ActiveTenant;
 import com.sdv.platform.application.port.KeyServiceHealthProbe;
 import com.sdv.platform.application.port.OperationalRepository;
 import com.sdv.platform.application.port.TenantRepository;
+import com.sdv.platform.application.port.UnidentifiedIntakeAttemptRepository;
 import com.sdv.platform.application.storage.StorageVolumeAdminService;
 import com.sdv.platform.application.storage.StorageVolumeView;
 import com.sdv.platform.domain.storage.StorageCapacitySnapshot;
@@ -23,6 +24,8 @@ public class OperationsService {
     private static final int INCIDENT_LIMIT = 100;
     private static final Duration PROCESSING_STUCK_AFTER = Duration.ofMinutes(15);
     private static final Duration TRANSITION_STUCK_AFTER = Duration.ofMinutes(10);
+    private static final Duration UNIDENTIFIED_DAYS = Duration.ofDays(7);
+    private static final int UNIDENTIFIED_LIMIT = 50;
 
     private final OperationalRepository repository;
     private final StorageVolumeAdminService storage;
@@ -30,20 +33,34 @@ public class OperationsService {
     private final TenantRepository tenants;
     private final ProblemRecordResolver problemRecords;
     private final com.sdv.platform.application.access.DocumentAccessGuard access;
+    private final UnidentifiedIntakeAttemptRepository unidentified;
     private final Clock clock = Clock.systemUTC();
 
+    /** Without unidentified intake attempts (for tests that build the service by hand): that list stays empty. */
     public OperationsService(OperationalRepository repository,
                              StorageVolumeAdminService storage,
                              KeyServiceHealthProbe keyHealth,
                              TenantRepository tenants,
                              ProblemRecordResolver problemRecords,
                              com.sdv.platform.application.access.DocumentAccessGuard access) {
+        this(repository, storage, keyHealth, tenants, problemRecords, access, null);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public OperationsService(OperationalRepository repository,
+                             StorageVolumeAdminService storage,
+                             KeyServiceHealthProbe keyHealth,
+                             TenantRepository tenants,
+                             ProblemRecordResolver problemRecords,
+                             com.sdv.platform.application.access.DocumentAccessGuard access,
+                             UnidentifiedIntakeAttemptRepository unidentified) {
         this.repository = repository;
         this.storage = storage;
         this.keyHealth = keyHealth;
         this.tenants = tenants;
         this.problemRecords = problemRecords;
         this.access = java.util.Objects.requireNonNull(access, "access");
+        this.unidentified = unidentified;
     }
 
     public CapacityBanner capacityBanner(UUID tenantId) {
@@ -103,7 +120,7 @@ public class OperationsService {
         return new OperationsSummary(full.overallStatus(), full.observedAt(), full.application(), full.database(),
                 full.keyService(), full.dataObservations(), full.storageVolumes(), full.processingFailureCount(), failures,
                 full.stuckDocumentCount(), stuck, full.attentionSubmissionCount(), full.attentionSubmissions(),
-                full.problemRecords());
+                full.problemRecords(), full.unidentifiedIntakeAttemptCount(), full.unidentifiedIntakeAttempts());
     }
 
     private OperationsSummary summaryWithoutLevels(UUID tenantId) {
@@ -129,8 +146,17 @@ public class OperationsService {
                 () -> repository.countAttentionSubmissions(tenantId, now),
                 () -> repository.findAttentionSubmissions(tenantId, now, INCIDENT_LIMIT));
 
+        // Task 0039: intake attempts with no known sending system (a failed sign-in, for example), the last 7 days.
+        Instant attemptsSince = now.minus(UNIDENTIFIED_DAYS);
+        IncidentResult<UnidentifiedIntakeAttemptRepository.Attempt> attempts = unidentified == null
+                ? new IncidentResult<>(0L, List.of(), OperationalDataObservation.available("unidentified-intake-attempts"))
+                : incidentSection("unidentified-intake-attempts",
+                        () -> unidentified.count(tenantId, attemptsSince),
+                        () -> unidentified.findRecent(tenantId, attemptsSince, UNIDENTIFIED_LIMIT));
+
         List<OperationalDataObservation> observations = List.of(
-                storageRead.observation(), failures.observation(), stuck.observation(), incomplete.observation());
+                storageRead.observation(), failures.observation(), stuck.observation(), incomplete.observation(),
+                attempts.observation());
 
         boolean dataDegraded = observations.stream().anyMatch(OperationalDataObservation::degraded);
         boolean storageCritical = storageRead.items().stream()
@@ -157,7 +183,7 @@ public class OperationsService {
 
         return new OperationsSummary(overall, now, application, database, key, observations, storageRead.items(),
                 failures.count(), failures.items(), stuck.count(), stuck.items(), incomplete.count(), incomplete.items(),
-                records);
+                records, attempts.count(), attempts.items());
     }
 
     private static boolean positive(Long value) {
@@ -285,7 +311,13 @@ public class OperationsService {
             Long attentionSubmissionCount,
             List<OperationalRepository.AttentionSubmission> attentionSubmissions,
             /* Keyed by submission ID: the record and sending system behind each problem. */
-            java.util.Map<UUID, ProblemRecordResolver.ProblemRecord> problemRecords) {
+            java.util.Map<UUID, ProblemRecordResolver.ProblemRecord> problemRecords,
+            /*
+             * Task 0039: intake attempts with no known sending system in the last 7 days (this tenant's and those
+             * with no tenant), newest first, at most 50: time, caller's address, Vero address, code, reference.
+             */
+            Long unidentifiedIntakeAttemptCount,
+            List<UnidentifiedIntakeAttemptRepository.Attempt> unidentifiedIntakeAttempts) {
         public OperationsSummary {
             dataObservations = List.copyOf(dataObservations);
             storageVolumes = List.copyOf(storageVolumes);
@@ -293,6 +325,7 @@ public class OperationsService {
             stuckDocuments = List.copyOf(stuckDocuments);
             attentionSubmissions = List.copyOf(attentionSubmissions);
             problemRecords = java.util.Map.copyOf(problemRecords);
+            unidentifiedIntakeAttempts = List.copyOf(unidentifiedIntakeAttempts);
         }
     }
 }

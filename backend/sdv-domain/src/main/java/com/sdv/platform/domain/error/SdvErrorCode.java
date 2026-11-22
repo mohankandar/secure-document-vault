@@ -62,8 +62,11 @@ public enum SdvErrorCode {
     ROL_005("SDV-ROL-005", false, true),
     /** Task 0038: the person's role doesn't include this action (403). INFO line with the capability. */
     ROL_006("SDV-ROL-006", false, true),
-    /** Task 0038: no sign-in at all, or the session ended (401). INFO line. */
-    AUT_001("SDV-AUT-001", false, true),
+    /**
+     * Task 0038: no sign-in at all, or the session ended (401). Task 0039 (owner answer to report 0038, 1): a DEBUG
+     * line, not INFO, since every request without a sign-in would write one.
+     */
+    AUT_001("SDV-AUT-001", false, Log.DEBUG),
     /** Task 0038: a person's sign-in on a sending system's address, or the other way round (403). INFO line. */
     AUT_002("SDV-AUT-002", false, true),
     /** Task 0038: the token wasn't accepted: expired, forged, another issuer or audience, too long a life (401). INFO. */
@@ -137,6 +140,36 @@ public enum SdvErrorCode {
     INT_002("SDV-INT-002"),
     /** Task 0033: marking notices read needs 1 to 100 notice references (400). */
     INT_003("SDV-INT-003"),
+    /** Task 0039: no submission of this sending system has this ID (404). INFO line. */
+    INT_004("SDV-INT-004", false, true),
+    /** Task 0039: the token's sending system isn't one of the tenant's, or Tenant IT paused it (403). WARN line. */
+    INT_005("SDV-INT-005", true),
+    /** Task 0039: no submission body, a count below 1, or a required text missing or too long (400). INFO line. */
+    INT_006("SDV-INT-006", false, true),
+    /** Task 0039: the list of expected documents isn't valid: over the limit, over the count, an ID twice (400). */
+    INT_007("SDV-INT-007", false, true),
+    /** Task 0039: a metadata field the sending system doesn't have, a required one missing, null or no scalar (400). */
+    INT_008("SDV-INT-008", false, true),
+    /** Task 0039: a metadata value breaks its field's type, pattern, range or length (400). INFO: field and rule. */
+    INT_009("SDV-INT-009", false, true),
+    /** Task 0039: a field's own stored rule can't be used: Vero's setup, not the sender's request (500). ERROR line. */
+    INT_010("SDV-INT-010", true),
+    /** Task 0039: the same sourceSubmissionId was sent again with different content (409). INFO line. */
+    INT_011("SDV-INT-011", false, true),
+    /** Task 0039: the upload names no document ID, or one not in the submission's complete list (400). INFO line. */
+    INT_012("SDV-INT-012", false, true),
+    /** Task 0039: the upload's file name, a text header or its content type isn't valid (400). INFO: the header. */
+    INT_013("SDV-INT-013", false, true),
+    /** Task 0039: the PDF is bigger than the tenant's or the sending system's limit (413). INFO with the limit. */
+    INT_014("SDV-INT-014", false, true),
+    /** Task 0039: the body is empty, cut short or doesn't start with a PDF header (400). INFO line. */
+    INT_015("SDV-INT-015", false, true),
+    /** Task 0039: the submission already has its documents (409), or this one takes it over its total size (400). */
+    INT_016("SDV-INT-016", false, true),
+    /** Task 0039: the same document ID was sent again with different content or file name (409). INFO line. */
+    INT_017("SDV-INT-017", false, true),
+    /** Task 0039: retry-finalization of an unknown document (404), or of one in a state it can't be (409). INFO. */
+    INT_018("SDV-INT-018", false, true),
     /** Task 0032: the Reports tab is for Business Admins only (VIEW_INTAKE_REPORTS) (403). */
     RPT_001("SDV-RPT-001"),
     /**
@@ -197,22 +230,29 @@ public enum SdvErrorCode {
     /** Task 0037: no key service is set up: WARN at a local start, and a packaged start refuses. */
     KEY_001("SDV-KEY-001", true);
 
+    /** Task 0039: the line an expected refusal (no person must act) gets: none, DEBUG or INFO. */
+    private enum Log { NONE, DEBUG, INFO }
+
     private final String code;
     private final boolean needsPerson;
-    private final boolean loggedAtInfo;
+    private final Log refusalLog;
 
     SdvErrorCode(String code) {
         this(code, false);
     }
 
     SdvErrorCode(String code, boolean needsPerson) {
-        this(code, needsPerson, false);
+        this(code, needsPerson, Log.NONE);
     }
 
     SdvErrorCode(String code, boolean needsPerson, boolean loggedAtInfo) {
+        this(code, needsPerson, loggedAtInfo ? Log.INFO : Log.NONE);
+    }
+
+    SdvErrorCode(String code, boolean needsPerson, Log refusalLog) {
         this.code = code;
         this.needsPerson = needsPerson;
-        this.loggedAtInfo = loggedAtInfo;
+        this.refusalLog = refusalLog;
     }
 
     public String code() {
@@ -233,6 +273,11 @@ public enum SdvErrorCode {
      * logged; they are audited where the action is.
      */
     public boolean loggedAtInfo() {
-        return loggedAtInfo;
+        return refusalLog == Log.INFO;
+    }
+
+    /** Task 0039: an expected refusal logged at DEBUG only (SDV-AUT-001: a line per request without a sign-in). */
+    public boolean loggedAtDebug() {
+        return refusalLog == Log.DEBUG;
     }
 }

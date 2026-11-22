@@ -22,8 +22,9 @@ public interface IntakeReportRepository {
 
     /**
      * What happened at intake in [from, to), oldest first, at most {@code limit} items: deliveries created
-     * (submissions), documents stored, exact duplicates (task 0031, also uncorrected copies), and refusals
-     * (INTAKE_REFUSED audit events). sourceId null: every sending system.
+     * (submissions), documents stored, exact duplicates (task 0031, also uncorrected copies), refusals
+     * (INTAKE_REFUSED audit events) and, task 0039, intake requests that failed on Vero's side (INTAKE_FAILED, a 5xx).
+     * sourceId null: every sending system.
      */
     List<Item> findItems(UUID tenantId, UUID sourceId, Instant from, Instant to, int limit);
 
@@ -44,13 +45,14 @@ public interface IntakeReportRepository {
      * One thing that happened. kind DELIVERY: a submission was created (no document); DOCUMENT: a document was stored
      * (status says whether it failed after receipt); DUPLICATE: an exact duplicate (or an uncorrected copy) was
      * acknowledged and not stored; REFUSED: a delivery or upload was refused (refusalCode), with submissionId null when
-     * it was refused before a submission existed. requestId: the delivery's ID as its sending system sent it
-     * (source_submission_id). contentSha256 and pages: of the document (for a duplicate, the arrival's checksum and the
-     * kept document's pages); null for DELIVERY and REFUSED.
+     * it was refused before a submission existed; FAILED (task 0039): an intake request that failed on Vero's side
+     * (refusalCode holds the code the sender got, for example SDV-SYS-014). requestId: the delivery's ID as its sending
+     * system sent it (source_submission_id). contentSha256 and pages: of the document (for a duplicate, the arrival's
+     * checksum and the kept document's pages); null for DELIVERY, REFUSED and FAILED.
      */
     record Item(Kind kind, UUID itemId, UUID sourceId, UUID submissionId, String requestId, String contentSha256,
                 Integer pages, Instant at, String documentStatus, String refusalCode) {
-        public enum Kind { DELIVERY, DOCUMENT, DUPLICATE, REFUSED }
+        public enum Kind { DELIVERY, DOCUMENT, DUPLICATE, REFUSED, FAILED }
     }
 
     /** value: as stored (what people see); normalizedValue: as compared; label: the field's display name. */

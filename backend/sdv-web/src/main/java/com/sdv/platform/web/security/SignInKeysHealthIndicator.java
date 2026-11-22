@@ -90,10 +90,10 @@ public class SignInKeysHealthIndicator implements HealthIndicator {
         }
         if (lastUp) {
             LOG.warn("code={} The sign-in keys at {} can't be fetched ({}); no sign-in can be checked and readiness is "
-                    + "DOWN until they can.", SdvErrorCode.AUT_004.code(), host, reason);
+                    + "not ready until they can.", SdvErrorCode.AUT_004.code(), host, reason);
         }
         lastUp = false;
-        return Health.down().withDetail("code", SdvErrorCode.AUT_004.code()).withDetail("host", host)
+        return Health.status(com.sdv.platform.web.schema.ReadinessOnly.NOT_READY).withDetail("code", SdvErrorCode.AUT_004.code()).withDetail("host", host)
                 .withDetail("reason", reason).build();
     }
 

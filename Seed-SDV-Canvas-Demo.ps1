@@ -71,16 +71,25 @@
 param(
     [string]$Base = 'http://localhost:8280',
     [ValidatePattern('^sdv(_[a-z0-9_]+)?$')][string]$Database = 'sdv',
-    [string]$PdfPath = (Join-Path $PSScriptRoot 'test-tools\fixtures\business-viewer-two-page.pdf'),
-    [string]$FourteenPagePdfPath = (Join-Path $PSScriptRoot 'scripts\demo-files\loan-file-14-pages.pdf'),
-    [string]$StorageFolder = (Join-Path $PSScriptRoot '.runtime\demo-storage'),
-    [string]$StandbyStorageFolder = (Join-Path $PSScriptRoot '.runtime\demo-storage-b'),
+    # Task 0039 part 2: empty means the default under the script's folder. Windows PowerShell 5.1 leaves $PSScriptRoot
+    # empty in parameter defaults under powershell.exe -File, so the defaults are filled in below, not here.
+    [string]$PdfPath = '',
+    [string]$FourteenPagePdfPath = '',
+    [string]$StorageFolder = '',
+    [string]$StandbyStorageFolder = '',
     # Task 0035: put the demo data back to the seed's known state first (see the description).
     [switch]$Reset
 )
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
+
+$ScriptFolder = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Path }
+if (-not $ScriptFolder) { throw 'The folder of Seed-SDV-Canvas-Demo.ps1 could not be found; pass -PdfPath, -FourteenPagePdfPath, -StorageFolder and -StandbyStorageFolder.' }
+if (-not $PdfPath) { $PdfPath = Join-Path $ScriptFolder 'test-tools\fixtures\business-viewer-two-page.pdf' }
+if (-not $FourteenPagePdfPath) { $FourteenPagePdfPath = Join-Path $ScriptFolder 'scripts\demo-files\loan-file-14-pages.pdf' }
+if (-not $StorageFolder) { $StorageFolder = Join-Path $ScriptFolder '.runtime\demo-storage' }
+if (-not $StandbyStorageFolder) { $StandbyStorageFolder = Join-Path $ScriptFolder '.runtime\demo-storage-b' }
 
 if ($Base -notmatch '^http://(localhost|127\.0\.0\.1)[:/]') { throw 'The canvas demo data is for the local development stack only.' }
 foreach ($f in @($PdfPath, $FourteenPagePdfPath)) { if (-not (Test-Path -LiteralPath $f -PathType Leaf)) { throw "Demo PDF not found: $f" } }
@@ -165,7 +174,7 @@ function Deliver([string]$SourceId, [string]$SubKey, [hashtable]$Metadata, [stri
             # Task 0031: the same file for the same contract is an exact duplicate and is not stored again. The demo
             # uses one sample PDF for many documents, so each upload gets its own copy: the sample plus a PDF comment
             # line after its end that names this delivery (readers ignore it; the checksum differs).
-            $copyDir = Join-Path $PSScriptRoot '.runtime\seed-pdfs'
+            $copyDir = Join-Path $ScriptFolder '.runtime\seed-pdfs'
             New-Item -ItemType Directory -Force -Path $copyDir | Out-Null
             $copy = Join-Path $copyDir ("$submissionId-" + ($d.id -replace '[^A-Za-z0-9._-]', '_') + '.pdf')
             $bytes = [System.IO.File]::ReadAllBytes($d.path) + [System.Text.Encoding]::ASCII.GetBytes("`n%vero-demo-copy $submissionId $($d.id -replace '[^A-Za-z0-9._-]', '_')`n")
@@ -237,7 +246,7 @@ EnsureField $LexaId 'serviceEntity' 'Service Entity' 'TEXT' $true $true 'TRIM' '
 EnsureField $LexaId 'firstName' 'First Name' 'TEXT' $false $false 'TRIM' 'EXACT'
 EnsureField $LexaId 'lastName' 'Last Name' 'TEXT' $false $false 'TRIM' 'PARTIAL'
 EnsureField $LexaId 'loanType' 'Loan Type' 'TEXT' $false $false 'TRIM' 'EXACT'
-$recordSeed = Join-Path $PSScriptRoot 'Seed-SDV-Demo-Records.ps1'
+$recordSeed = Join-Path $ScriptFolder 'Seed-SDV-Demo-Records.ps1'
 $seedArgs = @{ Base = $Base; Database = $Database; SourceDisplayName = 'LexaVault'; PdfPath = $PdfPath }
 & $recordSeed @seedArgs
 & $recordSeed @seedArgs -FreshTestData -Count 3

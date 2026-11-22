@@ -74,6 +74,10 @@ final class SignInTestKit {
     static final AtomicReference<Function<URI, Optional<OidcConnectionBinding>>> CONNECTIONS =
             new AtomicReference<>(SignInTestKit::bound);
 
+    /** Task 0039: the tenant's status as the per-request tenant check reads it; null: no such tenant. */
+    static final AtomicReference<com.sdv.platform.domain.tenant.TenantStatus> TENANT_STATUS =
+            new AtomicReference<>(com.sdv.platform.domain.tenant.TenantStatus.ACTIVE);
+
     private SignInTestKit() { }
 
     static Optional<OidcConnectionBinding> bound(URI issuer) {
@@ -219,6 +223,16 @@ final class SignInTestKit {
         }
 
         @Bean Probe probe() { return new Probe(); }
+
+        /** Task 0039: the per-request tenant check; each test sets the tenant's status in TENANT_STATUS (0 s cache). */
+        @Bean com.sdv.platform.application.access.ActiveTenantCache tenantCheck() {
+            return new com.sdv.platform.application.access.ActiveTenantCache(tenantId -> {
+                var status = TENANT_STATUS.get();
+                return status == null || !TENANT.equals(tenantId) ? Optional.empty()
+                        : Optional.of(new com.sdv.platform.domain.tenant.Tenant(TENANT, "acme", "Acme", status,
+                                com.sdv.platform.domain.tenant.TenantGuardrails.defaults(), Instant.EPOCH, Instant.EPOCH));
+            }, 0);
+        }
 
         @Bean FoundationExceptionHandler errors() { return new FoundationExceptionHandler(); }
     }

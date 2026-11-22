@@ -24,7 +24,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Task 0038 (SDV-AUT-004): readiness reports whether the sign-in hub's keys can be fetched, against a real loopback
- * key set: up, then unreachable (DOWN with the code and the host, one WARN), then back (UP, one INFO).
+ * key set: up, then unreachable (NOT_READY, task 0039, with the code and the host, one WARN), then back (UP, one INFO).
  */
 class SignInKeysHealthIndicatorTest {
     private ListAppender<ILoggingEvent> logs;
@@ -76,11 +76,11 @@ class SignInKeysHealthIndicatorTest {
 
         answer.set(503);
         Health down = indicator.health();
-        assertEquals(Status.DOWN, down.getStatus());
+        assertEquals(com.sdv.platform.web.schema.ReadinessOnly.NOT_READY, down.getStatus());
         assertEquals("SDV-AUT-004", down.getDetails().get("code"));
         assertEquals("127.0.0.1:" + hub.getAddress().getPort(), down.getDetails().get("host"));
         assertEquals("HTTP 503", down.getDetails().get("reason"));
-        assertEquals(Status.DOWN, indicator.health().getStatus());
+        assertEquals(com.sdv.platform.web.schema.ReadinessOnly.NOT_READY, indicator.health().getStatus());
 
         answer.set(200);
         assertEquals(Status.UP, indicator.health().getStatus());
@@ -97,7 +97,7 @@ class SignInKeysHealthIndicatorTest {
             closed = socket.getLocalPort();
         }
         Health unreachable = jwt("http://127.0.0.1:" + closed + "/certs").health();
-        assertEquals(Status.DOWN, unreachable.getStatus());
+        assertEquals(com.sdv.platform.web.schema.ReadinessOnly.NOT_READY, unreachable.getStatus());
         assertEquals("ConnectException", unreachable.getDetails().get("reason"));
         assertEquals("the answer is not a key set", jwt(url("/not-keys")).health().getDetails().get("reason"));
         assertEquals("no key set address is set", jwt("").health().getDetails().get("reason"));
@@ -112,7 +112,7 @@ class SignInKeysHealthIndicatorTest {
         long started = System.nanoTime();
         Health health = slow.health();
         assertTrue(Duration.ofNanos(System.nanoTime() - started).toMillis() < 2_000, "the probe isn't held up");
-        assertEquals(Status.DOWN, health.getStatus());
+        assertEquals(com.sdv.platform.web.schema.ReadinessOnly.NOT_READY, health.getStatus());
         assertEquals("no answer within 200 ms", health.getDetails().get("reason"));
         slow.stop();
     }

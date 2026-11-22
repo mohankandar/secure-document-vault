@@ -57,15 +57,15 @@ public class DatabaseConnectionHealthIndicator implements HealthIndicator {
         Future<Boolean> f = ping();
         try {
             boolean ok = f.get(wait.toMillis(), TimeUnit.MILLISECONDS);
-            return ok ? Health.up().build() : Health.down().withDetail("reason", "the database didn't answer the ping").build();
+            return ok ? Health.up().build() : Health.status(ReadinessOnly.NOT_READY).withDetail("reason", "the database didn't answer the ping").build();
         } catch (TimeoutException ex) {
-            return Health.down().withDetail("reason", "no answer within " + wait.toMillis() + " ms").build();
+            return Health.status(ReadinessOnly.NOT_READY).withDetail("reason", "no answer within " + wait.toMillis() + " ms").build();
         } catch (ExecutionException ex) {
             Throwable cause = ex.getCause() == null ? ex : ex.getCause();
-            return Health.down().withDetail("reason", cause.getClass().getSimpleName()).build();
+            return Health.status(ReadinessOnly.NOT_READY).withDetail("reason", cause.getClass().getSimpleName()).build();
         } catch (InterruptedException ex) {
             Thread.currentThread().interrupt();
-            return Health.down().withDetail("reason", "interrupted").build();
+            return Health.status(ReadinessOnly.NOT_READY).withDetail("reason", "interrupted").build();
         }
     }
 

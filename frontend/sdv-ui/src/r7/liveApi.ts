@@ -143,7 +143,12 @@ export const systemInfo=(role:'tenantIt'|'platform'='tenantIt')=>roleApi<SystemI
 export type OpsDetail=OpSummary & {storageVolumes:{volumeId:string;displayName:string;state:string;health:string;usedPercent:number|null;writable:boolean;warningThresholdReached:boolean;stopWriteThresholdReached:boolean;observationError:string|null;rootPath?:string;priority?:number;warningPercent?:number;stopWritePercent?:number;totalBytes?:number|null;usableBytes?:number|null;observedAt?:string|null}[];processingFailures:{documentId:string;submissionId:string;sourceId:string;errorCode:string;processingAttemptCount:number;ingestedAt:string;
   /** Task 0027 (0.4): never a file name; the effective level (null if unknown) and the page count instead. */ pageCount?:number|null;sensitivityLevel?:SensitivityLevel|null}[];stuckDocuments:{documentId:string;submissionId:string;status:string;stateSince:string;processingErrorCode:string|null;ingestedAt?:string;pageCount?:number|null;sensitivityLevel?:SensitivityLevel|null}[];attentionSubmissions:{submissionId:string;sourceSubmissionId:string;status:string;expectedDocumentCount:number;receivedDocumentCount:number;lastActivityAt:string;attentionHours:number;sourceId?:string}[];
   /** Task 0011: by submission ID, the record and sending system behind each problem. */
-  problemRecords?:Record<string,{recordNumber:string|null;recordNumberLabel:string|null;sourceName:string|null}>}
+  problemRecords?:Record<string,{recordNumber:string|null;recordNumberLabel:string|null;sourceName:string|null}>;
+  /** Task 0039: intake attempts with no known sending system (a failed sign-in, for example), last 7 days, newest first. Never token content. */
+  unidentifiedIntakeAttemptCount?:number|null;unidentifiedIntakeAttempts?:UnidentifiedIntakeAttempt[]}
+/** address: the Vero address called, IDs blanked; callerAddress: the network address the request came from. */
+/** Task 0039 part 2: one row per caller address, address and code per minute; count = requests, lastSeenAt = the last of them. */
+export type UnidentifiedIntakeAttempt={attemptId:string;tenantId:string|null;occurredAt:string;lastSeenAt:string;count:number;callerAddress:string|null;method:string;address:string;status:number;code:string;reference:string}
 /** Tenant IT reads the same summary for its read-only Problems tab. */
 export const opsDetail=(role:'platform'|'tenantIt'='platform')=>roleApi<OpsDetail>('/api/v1/operations/summary',role)
 export type OpsAuditEvent={auditEventId:string;occurredAt:string;action:string;outcome:string;actorId:string;actorType:string;targetType:string;targetId:string;correlationId:string|null;safeDetailsJson:string|null;
@@ -252,11 +257,13 @@ export const releaseHold = (holdId: string) => roleApi<LegalHold>('/api/v1/admin
 // ---- Task 0032: the Business admin's Reports tab (Daily intake) and the Stewards' intake notices ----
 
 /** A delivery line: its request ID as the sending system sent it, its first time, its record's primary identifier, counts. */
-export type IntakeDeliveryLine = { requestId: string | null; receivedAt: string; receivedLocal: string; primaryIdentifier: string | null; documents: number; pages: number; duplicates: number; refused: number; refusedCodes: string[]; failed: number }
+/** failed: after receipt or at intake; failedCodes (task 0039): the codes of intake requests that failed on Vero's side. */
+export type IntakeDeliveryLine = { requestId: string | null; receivedAt: string; receivedLocal: string; primaryIdentifier: string | null; documents: number; pages: number; duplicates: number; refused: number; refusedCodes: string[]; failed: number; failedCodes?: string[] }
 export type IntakeSystemTotals = { deliveries: number; contracts: number; documents: number; pages: number; duplicates: number; refused: number; failed: number }
 /** deliveries: the first linesPerSystem; moreDeliveries: the rest, which are in the CSV. */
 export type IntakeSystemBlock = { sourceId: string; displayName: string; totals: IntakeSystemTotals; deliveries: IntakeDeliveryLine[]; moreDeliveries: number }
-export type IntakeTotals = { deliveries: number; sendingSystems: number; documents: number; pages: number; duplicates: number; contracts: number; newContracts: number; updatedContracts: number; refused: number; refusedCodes: { code: string; count: number }[]; failed: number }
+/** failed: after receipt plus (task 0039) failedAtIntake, the intake requests that failed on Vero's side (by code in failedCodes). */
+export type IntakeTotals = { deliveries: number; sendingSystems: number; documents: number; pages: number; duplicates: number; contracts: number; newContracts: number; updatedContracts: number; refused: number; refusedCodes: { code: string; count: number }[]; failed: number; failedAtIntake?: number; failedCodes?: { code: string; count: number }[] }
 /**
  * Counts only: no title, file name or name. from/to/today are days in the tenant's time zone (timeZone, an IANA name);
  * timeZoneSource says whether the tenant set it or the install default applies.

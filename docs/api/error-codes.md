@@ -199,7 +199,7 @@ Task 0038. A sign-in Vero refuses gets the one error body. The message is a fixe
 ### SDV-AUT-001: not signed in
 
 - **HTTP status:** 401. Any address except health and system information, when the request carries no sign-in. It used to be 401 `UNAUTHORIZED` (or Spring's 401 with no body).
-- **Meaning:** no token, or the session has ended. Message: "Please sign in again." The screen sends the person to sign in. One INFO line.
+- **Meaning:** no token, or the session has ended. Message: "Please sign in again." The screen sends the person to sign in. One DEBUG line (task 0039, owner answer to report 0038: one INFO line per request without a sign-in was noise).
 - **What the user should do:** sign in again.
 - **What support should tell the customer:** the session ended; the person signs in again. Nothing is wrong.
 
@@ -220,7 +220,7 @@ Task 0038. A sign-in Vero refuses gets the one error body. The message is a fixe
 ### SDV-AUT-004: sign-in hub's keys can't be fetched
 
 - **HTTP status:** 503. Any signed-in request while the sign-in hub's signing keys (`SDV_AUTH_JWT_JWK_SET_URI`) can't be fetched. Confirmed by test (task 0038): before, Spring rethrew the failure and Vero answered 500 SDV-SYS-013, which said nothing about the sign-in hub.
-- **Meaning:** the sign-in hub (for example Keycloak) is down or unreachable from Vero, so no sign-in can be checked. Message: "Vero can't check sign-ins right now because the sign-in service isn't answering. Try again in a few minutes." One ERROR line with the reference and the key set's host. Readiness (`/actuator/health/readiness`) fetches the keys too: it is 503 while they can't be fetched (one WARN line `code=SDV-AUT-004 …` with the host) and 200 again on its own when they can (one INFO line). Liveness stays UP.
+- **Meaning:** the sign-in hub (for example Keycloak) is down or unreachable from Vero, so no sign-in can be checked. Message: "Vero can't check sign-ins right now because the sign-in service isn't answering. Try again in a few minutes." One ERROR line with the reference and the key set's host. Readiness (`/actuator/health/readiness`) fetches the keys too: it is 503 while they can't be fetched (one WARN line `code=SDV-AUT-004 …` with the host) and 200 again on its own when they can (one INFO line). Liveness stays UP. Task 0039: this check belongs to readiness only; it reports `NOT_READY`, which readiness answers 503 and the overall `/actuator/health` and liveness ignore, so neither is DOWN while the hub is away.
 - **What the user should do:** try again in a few minutes.
 - **What support should tell the customer:** their sign-in service is unavailable, or Vero's server can't reach it; nobody can sign in to Vero until it is back. Check the sign-in hub and the network path to the key set's host the log names. No restart of Vero is needed.
 
@@ -241,7 +241,7 @@ Task 0038. A sign-in Vero refuses gets the one error body. The message is a fixe
 ### SDV-AUT-007: no Vero role from the sign-in groups
 
 - **HTTP status:** 401. It used to be 401 with "Authenticated identity has no mapped SDV role.".
-- **Meaning:** the person signed in, but none of their sign-in groups gives a Vero role. Message: "You're signed in, but you don't have access to Vero. Ask your IT team to add you to a Vero group." It says nothing about other accounts. One INFO line with the reference; not the person's groups, subject or name.
+- **Meaning:** the person signed in, but none of their sign-in groups gives a Vero role. Message: "You're signed in, but you don't have access to Vero. Ask your IT team to add you to a Vero group." It says nothing about other accounts. One INFO line with the reference and the subject (the user's or client's ID, task 0039, so IT knows who was refused); never the token, the groups, the name or another claim.
 - **What the user should do:** ask your IT team to add you to a Vero group.
 - **What support should tell the customer:** the person needs to be in one of the Vero sign-in groups (the `sdv.auth.jwt.role-mappings.*` settings name them).
 
@@ -255,7 +255,7 @@ Task 0038. A sign-in Vero refuses gets the one error body. The message is a fixe
 ### SDV-AUT-009: organisation not found or not active
 
 - **HTTP status:** 403, the same for both. It used to be 404 "Tenant not found." or 409 "Tenant is not active.", which told the caller whether the tenant exists.
-- **Meaning:** the sign-in names a tenant that doesn't exist in Vero or is suspended. Message: "Your organisation's Vero account isn't available. Contact your IT team." The answer is identical for both, apart from the reference and the time, so it never tells an outsider which tenants exist. One WARN line with the tenant ID and whether it was missing or suspended. Sent by the intake, the business screens, fields, Operations, sending systems, storage, retention and redaction, where Vero looks up the tenant.
+- **Meaning:** the sign-in names a tenant that doesn't exist in Vero or is suspended. Message: "Your organisation's Vero account isn't available. Contact your IT team." The answer is identical for both, apart from the reference and the time, so it never tells an outsider which tenants exist. One WARN line with the tenant ID and whether it was missing or suspended. Task 0039: every signed-in request checks it, so a suspended tenant is refused everywhere. The status is kept for up to 60 seconds (`SDV_TENANT_STATUS_CACHE_SECONDS`, default 30, 0 to 60), so a suspension takes effect everywhere within that time, and at once where Vero reads the tenant anyway (the intake, the business screens, fields, Operations, sending systems, storage, retention and redaction). The log line then ends "(request check)" when the per-request check refused it.
 - **What the user should do:** contact your IT team.
 - **What support should tell the customer:** their organisation's Vero account is suspended or the sign-in hub sends the wrong tenant. The log line says which. Escalate to Vero operations to reactivate the tenant, or correct the sign-in hub's tenant claim.
 
@@ -460,6 +460,122 @@ Sent by the access requests of task 0028: a Restricted steward's request to prin
 - **What the user should do:** mark the notices from the list in Vero.
 - **What support should tell the customer:** send `{"noticeIds": [...]}` with 1 to 100 notice IDs.
 
+### Intake answers to sending systems (task 0039)
+
+INT-004 to INT-018 are sent by the sending systems' addresses (`/api/v1/ingestion/…`): creating a submission (`POST /api/v1/ingestion/submissions`), reading one, uploading a document (`POST …/{submissionId}/documents`) and retrying its finishing (`POST …/documents/{documentId}/retry-finalization`). Each has the one error body; the message is the sentence below (it names a field, a header or a limit, never a value sent). Vero's log has one line with the code, the reference and the exact cause (a field's key, a rule, a header's name, a limit): INFO for a refusal, WARN for INT-005, ERROR for INT-010.
+
+**Recorded, every time** (task 0039). Every error answer on these addresses is recorded in one place, also the ones Spring gives before Vero's code runs (SDV-SYS-015: JSON that doesn't parse, a missing `X-SDV-Filename`, a content type other than PDF), the sign-in refusals and the 5xx failures:
+- a sending system Vero knows (a verified sending-system sign-in whose system is one of the tenant's, active or paused): a delivery, upload or finishing retry is counted by the Daily intake report under that system, as **refused** (4xx, audit event `INTAKE_REFUSED`) or **failed** (5xx, `INTAKE_FAILED`), with the code it got. A status query (`GET`) delivers nothing and isn't counted.
+- no known sending system (no sign-in, a refused token, a person's sign-in, a sending system the tenant doesn't have): it is listed for Tenant IT and Platform operations under Problems, "Unidentified intake attempts", with the time, the address called (IDs blanked), the caller's network address, the status, the code and the reference; never anything from a token. Without a verified tenant an attempt is shown to every tenant's Tenant IT; with one, to that tenant's only. Kept 30 days; Problems shows the last 7.
+  - Task 0039 part 2: one line per caller address, address called and code **per minute** (and per tenant, method and status), with how many times and the last time; the reference is the first request's (every request's is in the log). Parts of an address that aren't Vero's own words are blanked, an unknown method is `OTHER`, and past 100 lines in a minute new callers are counted together as "(many addresses)", so a flood can't grow the list without bound.
+  - The caller's address is the one Vero's server sees. Behind a proxy or load balancer, `SDV_TRUSTED_PROXIES` lists the proxies' IP addresses; only from those is `X-Forwarded-For` read. Empty by default: the header is ignored.
+- a failure while Vero's database is away can't be recorded; it is in Vero's log only.
+
+### SDV-INT-004: no such submission
+
+- **HTTP status:** 404. It used to be 404 `NOT_FOUND` "Submission not found.".
+- **Meaning:** no submission of this sending system has this ID (or this `sourceSubmissionId`, when looked up by it). Message: "No submission of this sending system has this ID. Create the submission first, or check the ID." Nothing was stored.
+- **What the user should do:** the sending system uses the `submissionId` that creating the submission returned.
+- **What support should tell the customer:** the sending system used a wrong ID, or another system's submission ID.
+
+### SDV-INT-005: sending system unknown or paused
+
+- **HTTP status:** 403, the same for both. It used to be 404 `NOT_FOUND` "Ingestion source not found." or 409 `CONFLICT` "Ingestion source is not active.".
+- **Meaning:** the sign-in names a sending system that isn't one of the tenant's, or Tenant IT paused it. Message: "This sending system is paused or not set up in Vero. Nothing was stored." One WARN line with the source ID and which of the two it is.
+- **What the user should do:** Tenant IT reactivates the sending system (Integrations), or corrects the client's source claim in the sign-in service.
+- **What support should tell the customer:** the sending system is paused in Vero, or its sign-in names a system Vero doesn't know; the log line says which. Tenant IT checks Integrations.
+
+### SDV-INT-006: submission request incomplete
+
+- **HTTP status:** 400. It used to be 400 `BAD_REQUEST`.
+- **Meaning:** the submission has no body, `expectedDocumentCount` is below 1, or `sourceSubmissionId` is missing or longer than 200 characters. The message names the field. Nothing was created.
+- **What the user should do:** the sending system corrects the field the message names.
+- **What support should tell the customer:** the sending system left out a required field; the message names it.
+
+### SDV-INT-007: document list not valid
+
+- **HTTP status:** 400. It used to be 400 `BAD_REQUEST`.
+- **Meaning:** `expectedDocumentCount` is above the limit for the tenant or sending system, there are more listed documents than the count, or a listed `sourceDocumentId` is missing, too long or appears twice. Nothing was created.
+- **What the user should do:** the sending system corrects its list of expected documents.
+- **What support should tell the customer:** the submission's list of expected documents is inconsistent; the message says how.
+
+### SDV-INT-008: metadata field unknown or missing
+
+- **HTTP status:** 400. It used to be 400 `BAD_REQUEST`.
+- **Meaning:** a metadata field this sending system doesn't have, a required field left out or blank, a field sent as `null`, or a value that isn't a single JSON value (an object or a list). The message names the field, never the value. Nothing was created.
+- **What the user should do:** send the fields Tenant IT set up for the sending system, or ask Tenant IT to add the field.
+- **What support should tell the customer:** the sending system and Vero's field setup disagree about a field; the message names it.
+
+### SDV-INT-009: metadata value not valid
+
+- **HTTP status:** 400. It used to be 400 `BAD_REQUEST`.
+- **Meaning:** a value of the wrong type, or one that breaks its field's pattern, range or length. The message names the field and the rule, never the value (a parser's own message, which could repeat the value, is never sent). The INFO line has the field and the rule. Nothing was created.
+- **What the user should do:** the sending system corrects the value.
+- **What support should tell the customer:** a field's value breaks the rule Tenant IT set for it; the message names the field and the rule.
+
+### SDV-INT-010: a field's own rule can't be used
+
+- **HTTP status:** 500. It used to be 409 `CONFLICT`, which told the sending system to change a request that was fine.
+- **Meaning:** the rule Tenant IT stored for a field (its pattern, a length, its rules as a whole) can't be used, so the submission can't be checked. Message: "Vero's setup for field '<key>' is broken, so this submission can't be checked. Nothing was stored. Your IT team has been told." One ERROR line with the field and which rule. The Daily intake report counts it as failed.
+- **What the user should do:** tell your IT team; send the submission again once the field is fixed.
+- **What support should tell the customer:** a field's rule in Vero is broken; Tenant IT corrects it (Integrations, the sending system's fields), then the sending system sends again.
+
+### SDV-INT-011: submission retry differs from the first
+
+- **HTTP status:** 409. It used to be 409 `CONFLICT`. (A retry that differs only in its record level is SDV-SEN-004.)
+- **Meaning:** the same `sourceSubmissionId` was sent again with different content. Nothing was changed.
+- **What the user should do:** repeat the first request exactly, or use a new `sourceSubmissionId`.
+- **What support should tell the customer:** the submission already exists; a retry must match it exactly.
+
+### SDV-INT-012: document upload has no identity
+
+- **HTTP status:** 400. It used to be 400 `BAD_REQUEST`.
+- **Meaning:** the upload sends neither `X-SDV-Source-Document-Id` nor `Idempotency-Key`, or the submission listed all its documents and this ID isn't one of them (or none was sent). Nothing was stored.
+- **What the user should do:** send the document's `X-SDV-Source-Document-Id` from the submission's list.
+- **What support should tell the customer:** each document needs its ID from the submission's list.
+
+### SDV-INT-013: upload headers not valid
+
+- **HTTP status:** 400. It used to be 400 `BAD_REQUEST`. (A missing `X-SDV-Filename` header, or a content type the address doesn't take, is refused before Vero's code runs: SDV-SYS-015.)
+- **Meaning:** the file name is blank, longer than 500 characters or looks like a path; `X-SDV-Source-Document-Id` or `Idempotency-Key` is longer than 200 characters; or the content type isn't `application/pdf`. The message and the INFO line name the header, never its value. Nothing was stored.
+- **What the user should do:** correct the header the message names.
+- **What support should tell the customer:** the upload's file name or headers are wrong; the message says which.
+
+### SDV-INT-014: PDF too large
+
+- **HTTP status:** 413. It used to be 413 `PDF_TOO_LARGE`.
+- **Meaning:** the PDF is bigger than the limit for the tenant or the sending system. The message gives the limit in bytes. Nothing was stored.
+- **What the user should do:** send a smaller file, or ask Tenant IT to raise the sending system's limit.
+- **What support should tell the customer:** the file is over the size limit; nothing was stored.
+
+### SDV-INT-015: not a PDF
+
+- **HTTP status:** 400. It used to be 400 `INVALID_PDF`.
+- **Meaning:** the body is empty, cut short, or doesn't start with a PDF header. Nothing was stored.
+- **What the user should do:** the sending system sends the PDF file itself.
+- **What support should tell the customer:** what was sent isn't a PDF, or was cut short; send it again.
+
+### SDV-INT-016: submission already full
+
+- **HTTP status:** 409 when the submission already has its expected number of documents; 400 when this document would take the submission over its total size limit. It used to be 409 `CONFLICT` and 400 `BAD_REQUEST`.
+- **Meaning:** the submission can't take this document. Nothing was stored.
+- **What the user should do:** send the document on a new submission.
+- **What support should tell the customer:** the submission is complete or at its size limit; extra documents go on a new one.
+
+### SDV-INT-017: document retry differs from the first
+
+- **HTTP status:** 409. It used to be 409 `CONFLICT`. (A retry that differs only in its level is SDV-SEN-003.)
+- **Meaning:** a document with this ID is already stored (or was acknowledged as an exact duplicate) with other content or another file name. The INFO line names the document ID and which differs. Nothing was stored.
+- **What the user should do:** repeat the first upload exactly, or send the changed document with a new ID.
+- **What support should tell the customer:** a document with this ID is already stored with other content; a changed document needs a new ID.
+
+### SDV-INT-018: document can't be finished again
+
+- **HTTP status:** 404 when no document of this submission has the ID; 409 when the document is in a state that can't be finished again. It used to be 404 `NOT_FOUND` and 409 `CONFLICT`.
+- **Meaning:** retry-finalization can't run. Messages: "No document of this submission has this ID, so it can't be finished again." or "This document can't be finished again in its current state (<state>)."
+- **What the user should do:** none; check the document's state first (`GET …/documents`).
+- **What support should tell the customer:** the document is already being handled, or was deleted.
+
 ## Reports (RPT)
 
 Sent by the Business Admin's reports: the Daily intake report (task 0032, `GET /api/v1/admin/reports/intake`) and its CSV (`GET /api/v1/admin/reports/intake/export`), and the Sensitivity report (task 0033, `GET /api/v1/admin/reports/sensitivity`) and its CSV (`GET /api/v1/admin/reports/sensitivity/export`). All take `from` and `to` (days, `YYYY-MM-DD`, in the tenant's time zone; both left out means today for Daily intake and this month so far for Sensitivity) and `sourceId` (left out or empty means every sending system).
@@ -522,7 +638,7 @@ Task 0037: SYS-003 to SYS-012 are start-up codes. A start that stops prints one 
 ### SDV-SYS-003: database unreachable at start
 
 - **HTTP status:** none since task 0037; it is the start-up log line. While the database can't be reached, requests get 503 **SDV-SYS-014** (task 0036 sent this code with 503, and Vero refused until it was restarted).
-- **Meaning:** when Vero started it couldn't reach the database to check its version. Vero keeps running and keeps trying: after 2 s, then twice as long each time, at most once a minute. As soon as the database answers, the version check runs and Vero serves (or refuses with SYS-001 or SYS-002), without a restart. Readiness (`/actuator/health/readiness`) is 503 until then; liveness stays UP.
+- **Meaning:** when Vero started it couldn't reach the database to check its version. Vero keeps running and keeps trying: after 2 s, then twice as long each time, at most once a minute. As soon as the database answers, the version check runs and Vero serves (or refuses with SYS-001 or SYS-002), without a restart. Readiness (`/actuator/health/readiness`) is 503 until then; liveness stays UP. Task 0039 part 2: the same rule as when the database goes away later: the schema check reports `NOT_READY` (readiness only), so the overall `/actuator/health` stays 200 too (it was 503 `OUT_OF_SERVICE`). A database that answers and doesn't match (SYS-001, SYS-002) is still `OUT_OF_SERVICE` in readiness and the overall health.
 - **What the user should do:** try again in a few minutes. If it keeps happening, tell the IT team.
 - **What support should tell the customer:** Vero started while its database was unavailable. Check that PostgreSQL is running and reachable; no restart is needed. The log has one ERROR line `SDV-SYS-003 …` with the database host and port and the SQL state, a WARN line per further try, and an INFO line when the database can be reached again.
 
@@ -599,7 +715,7 @@ Task 0037: SYS-003 to SYS-012 are start-up codes. A start that stops prints one 
 ### SDV-SYS-014: database failed during a request
 
 - **HTTP status:** 503. Any request that reads or writes the database. Task 0037: also every request except health and system information while the database couldn't be reached since the start (SDV-SYS-003); Vero keeps trying.
-- **Meaning:** PostgreSQL went down, timed out or ran out of connections while Vero was answering, or hasn't answered since Vero started. Message: "Vero can't reach its database just now. Try again in a few minutes." Task 0037: readiness pings the database, so `/actuator/health/readiness` is 503 while it is gone and 200 again when it answers.
+- **Meaning:** PostgreSQL went down, timed out or ran out of connections while Vero was answering, or hasn't answered since Vero started. Message: "Vero can't reach its database just now. Try again in a few minutes." Task 0037: readiness pings the database, so `/actuator/health/readiness` is 503 while it is gone and 200 again when it answers. Task 0039: the ping belongs to readiness only (status `NOT_READY`); the overall `/actuator/health` and liveness are not DOWN while the database is away, and Spring's own database check is switched off.
 - **What the user should do:** try again in a few minutes. A sending system re-sends what got a 503.
 - **What support should tell the customer:** Vero lost its database for a while. Check the database server. The log line has the reference, the SQL state and the Vero method; it never holds the SQL or the values sent.
 
@@ -608,7 +724,7 @@ Task 0037: SYS-003 to SYS-012 are start-up codes. A start that stops prints one 
 - **HTTP status:** 400 when the request can't be read: an ID that isn't a UUID, JSON that doesn't parse, a required header or parameter missing. A wrong method (405), a wrong content type (415), an Accept header Vero can't answer (406) and an unknown address (404) keep their own status.
 - **Meaning:** the request was refused before Vero looked at it. Nothing was stored. The message says which part, for example "Vero couldn't read this request: the submissionId is not valid." It names the field, never the value sent.
 - **What the user should do:** correct the part the message names and send it again. For a person: reload the page and try again.
-- **What support should tell the customer:** the sending program or screen sent the request in the wrong form; the message says which part. Vero logs an INFO line with the reference and the route.
+- **What support should tell the customer:** the sending program or screen sent the request in the wrong form; the message says which part. Vero logs an INFO line with the reference and the route. Task 0039: on an intake address it is also recorded (the Daily intake report, or Problems when no sending system is known).
 
 ### SDV-SYS-016: internal check failed
 
@@ -1070,7 +1186,8 @@ Task 0034 went through the code flow by flow and listed every point where someth
 
 The watch folder and polling intake are **not in this repository**. Sending systems deliver only through the API (`/api/v1/ingestion/…`). There are no failure points to list for them.
 
-#### SDV-INT-004 (proposed): no such submission
+#### SDV-INT-004 (released in task 0039): no such submission
+- **Released:** now sent (task 0039); its section is above. The notes below are what task 0034 found, kept for the list of lines.
 - **Where:** `DocumentIntakeService.java:144`, `:277`, `SubmissionService.java:180`, `:189`, `:239`, `JdbcSecureIngestionRepository.java:202`.
 - **Trigger:** the submission ID names no submission of this sending system.
 - **Today:** 404 `NOT_FOUND` "Submission not found." Generic: yes.
@@ -1080,7 +1197,8 @@ The watch folder and polling intake are **not in this repository**. Sending syst
 - **Fix:** the sender uses the `submissionId` returned by create.
 - **L1 tells the customer:** the sending system used a wrong or another system's submission ID.
 
-#### SDV-INT-005 (proposed): sending system unknown or paused
+#### SDV-INT-005 (released in task 0039): sending system unknown or paused
+- **Released:** now sent (task 0039); its section is above. The notes below are what task 0034 found, kept for the list of lines.
 - **Where:** `DocumentIntakeService.java:553`, `:555`, `SubmissionService.java:251`, `:253`.
 - **Trigger:** the token's source ID isn't a sending system of the tenant (404), or Tenant IT paused it (409).
 - **Today:** 404 `NOT_FOUND` or 409 `CONFLICT` "Ingestion source is not active." Generic: yes.
@@ -1090,7 +1208,8 @@ The watch folder and polling intake are **not in this repository**. Sending syst
 - **Fix:** Tenant IT reactivates the sending system (Integrations), or corrects the client's source claim.
 - **L1 tells the customer:** the sending system is paused in Vero, or its sign-in names a system Vero doesn't know. Tenant IT checks Integrations.
 
-#### SDV-INT-006 (proposed): submission request incomplete
+#### SDV-INT-006 (released in task 0039): submission request incomplete
+- **Released:** now sent (task 0039); its section is above. The notes below are what task 0034 found, kept for the list of lines.
 - **Where:** `SubmissionService.java:265`, `:268`, `:453`, `:455`.
 - **Trigger:** no body, `expectedDocumentCount` below 1, or a required text field missing or too long.
 - **Today:** 400 `BAD_REQUEST` with a plain message naming the field. Generic: yes.
@@ -1100,7 +1219,8 @@ The watch folder and polling intake are **not in this repository**. Sending syst
 - **Fix:** the sender corrects the field.
 - **L1 tells the customer:** the sending system left out a required field; the message names it. Nothing was created.
 
-#### SDV-INT-007 (proposed): document list not valid
+#### SDV-INT-007 (released in task 0039): document list not valid
+- **Released:** now sent (task 0039); its section is above. The notes below are what task 0034 found, kept for the list of lines.
 - **Where:** `SubmissionService.java:120`, `:123`, `:276`.
 - **Trigger:** `expectedDocumentCount` is above the limit, there are more listed documents than the count, or a listed `sourceDocumentId` appears twice.
 - **Today:** 400 `BAD_REQUEST`. The `:276` message repeats the producer's `sourceDocumentId`. That is an ID, not content, but it is the sender's own value. Generic: yes.
@@ -1110,7 +1230,8 @@ The watch folder and polling intake are **not in this repository**. Sending syst
 - **Fix:** the sender corrects the list of documents.
 - **L1 tells the customer:** the submission's list of expected documents is inconsistent; nothing was created.
 
-#### SDV-INT-008 (proposed): metadata field unknown or missing
+#### SDV-INT-008 (released in task 0039): metadata field unknown or missing
+- **Released:** now sent (task 0039); its section is above. The notes below are what task 0034 found, kept for the list of lines.
 - **Where:** `SubmissionService.java:285`, `:311`, `:316`, `MetadataValueValidator.java:26`, `SubmissionController.java:106`.
 - **Trigger:** the sender uses a field this sending system doesn't have, leaves out a required one, sends `null`, or sends a non-scalar JSON value.
 - **Today:** 400 `BAD_REQUEST`, naming the field key (never the value). Generic: yes.
@@ -1120,7 +1241,8 @@ The watch folder and polling intake are **not in this repository**. Sending syst
 - **Fix:** the sender sends the fields Tenant IT set up, or Tenant IT adds the field.
 - **L1 tells the customer:** the sending system and Vero's field setup disagree about a field; the message names it.
 
-#### SDV-INT-009 (proposed): metadata value not valid
+#### SDV-INT-009 (released in task 0039): metadata value not valid
+- **Released:** now sent (task 0039); its section is above. The notes below are what task 0034 found, kept for the list of lines.
 - **Where:** `MetadataValueValidator.java:46`, `:53`, `:58-59`, `:60-62`, `:92`, `:103`, `:107`, `:123`, `:126`, `:136`.
 - **Trigger:** a value of the wrong type, pattern, range or length.
 - **Today:** 400 `BAD_REQUEST`, naming the field key and the rule (never the value). Generic: yes.
@@ -1130,7 +1252,8 @@ The watch folder and polling intake are **not in this repository**. Sending syst
 - **Fix:** the sender corrects the value.
 - **L1 tells the customer:** a field value breaks the rule Tenant IT set for it; the message names the field and the rule.
 
-#### SDV-INT-010 (proposed): a field's own rules are broken
+#### SDV-INT-010 (released in task 0039): a field's own rules are broken
+- **Released:** now sent (task 0039); its section is above. The notes below are what task 0034 found, kept for the list of lines.
 - **Where:** `MetadataValueValidator.java:94-95`, `:112-113`, `:121`, `:134`.
 - **Trigger:** the stored rule for a field (pattern, length) can't be used.
 - **Today:** 409 `CONFLICT`. The sender is told to change the request, but the fault is Vero's setup. Generic: yes.
@@ -1140,7 +1263,8 @@ The watch folder and polling intake are **not in this repository**. Sending syst
 - **Fix:** Tenant IT corrects the field's rule.
 - **L1 tells the customer:** a field's rule in Vero is broken; Tenant IT fixes it, then the sender re-sends.
 
-#### SDV-INT-011 (proposed): submission retry differs from the first
+#### SDV-INT-011 (released in task 0039): submission retry differs from the first
+- **Released:** now sent (task 0039); its section is above. The notes below are what task 0034 found, kept for the list of lines.
 - **Where:** `SubmissionService.java:390`, `:409`. (Retries that differ only in record level are SDV-SEN-004.)
 - **Trigger:** the same `sourceSubmissionId` was sent again with different content.
 - **Today:** 409 `CONFLICT` "sourceSubmissionId already exists with a different submission create request." Generic: yes.
@@ -1150,7 +1274,8 @@ The watch folder and polling intake are **not in this repository**. Sending syst
 - **Fix:** the sender repeats the first request exactly, or uses a new `sourceSubmissionId`.
 - **L1 tells the customer:** the submission already exists; a retry must match it exactly.
 
-#### SDV-INT-012 (proposed): document upload has no identity
+#### SDV-INT-012 (released in task 0039): document upload has no identity
+- **Released:** now sent (task 0039); its section is above. The notes below are what task 0034 found, kept for the list of lines.
 - **Where:** `DocumentIntakeService.java:493`, `:499`, `:504`.
 - **Trigger:** neither `X-SDV-Source-Document-Id` nor `Idempotency-Key` is sent, or the ID isn't in the submission's complete list.
 - **Today:** 400 `BAD_REQUEST`. Generic: yes.
@@ -1160,7 +1285,8 @@ The watch folder and polling intake are **not in this repository**. Sending syst
 - **Fix:** the sender sends a listed `X-SDV-Source-Document-Id`.
 - **L1 tells the customer:** each document needs its ID from the submission's list.
 
-#### SDV-INT-013 (proposed): upload headers not valid
+#### SDV-INT-013 (released in task 0039): upload headers not valid
+- **Released:** now sent (task 0039); its section is above. The notes below are what task 0034 found, kept for the list of lines.
 - **Where:** `DocumentIntakeService.java:581`, `:584`, `:591`, `:594`, `:596`, `:605`.
 - **Trigger:** a missing, too long or path-like file name; a text header too long; a content type other than PDF (mostly refused earlier by SYS-015).
 - **Today:** 400 `BAD_REQUEST`. Generic: yes.
@@ -1170,7 +1296,8 @@ The watch folder and polling intake are **not in this repository**. Sending syst
 - **Fix:** the sender corrects the header.
 - **L1 tells the customer:** the upload's file name or headers are wrong; the message names which.
 
-#### SDV-INT-014 (proposed): PDF too large
+#### SDV-INT-014 (released in task 0039): PDF too large
+- **Released:** now sent (task 0039); its section is above. The notes below are what task 0034 found, kept for the list of lines.
 - **Where:** `DocumentIntakeService.java:156`, `ValidatedPdfInputStream.java:56`.
 - **Trigger:** the PDF is bigger than the limit for the tenant or sending system.
 - **Today:** 413 `PDF_TOO_LARGE` with the limit in bytes. Generic: no (own code, not in SDV form).
@@ -1180,7 +1307,8 @@ The watch folder and polling intake are **not in this repository**. Sending syst
 - **Fix:** send a smaller file, or Tenant IT raises the sending system's limit.
 - **L1 tells the customer:** the file is over the size limit; nothing was stored.
 
-#### SDV-INT-015 (proposed): not a PDF
+#### SDV-INT-015 (released in task 0039): not a PDF
+- **Released:** now sent (task 0039); its section is above. The notes below are what task 0034 found, kept for the list of lines.
 - **Where:** `ValidatedPdfInputStream.java:73`, `:74`, `:77`.
 - **Trigger:** the body is empty, cut short, or doesn't start with a PDF header.
 - **Today:** 400 `INVALID_PDF`. Generic: no (own code, not in SDV form).
@@ -1190,7 +1318,8 @@ The watch folder and polling intake are **not in this repository**. Sending syst
 - **Fix:** the sender sends the PDF itself.
 - **L1 tells the customer:** what was sent isn't a PDF, or was cut short; send it again.
 
-#### SDV-INT-016 (proposed): submission already full
+#### SDV-INT-016 (released in task 0039): submission already full
+- **Released:** now sent (task 0039); its section is above. The notes below are what task 0034 found, kept for the list of lines.
 - **Where:** `DocumentIntakeService.java:332` (409, count) and `:365` (400, total size).
 - **Trigger:** the submission already has its expected number of documents, or this document takes it over the total size.
 - **Today:** 409 `CONFLICT` and 400 `BAD_REQUEST`. Generic: yes.
@@ -1200,7 +1329,8 @@ The watch folder and polling intake are **not in this repository**. Sending syst
 - **Fix:** send the document on a new submission.
 - **L1 tells the customer:** the submission is complete; extra documents go on a new one.
 
-#### SDV-INT-017 (proposed): document retry differs from the first
+#### SDV-INT-017 (released in task 0039): document retry differs from the first
+- **Released:** now sent (task 0039); its section is above. The notes below are what task 0034 found, kept for the list of lines.
 - **Where:** `DocumentIntakeService.java:258-259` (duplicate replay) and `:531-532` (`ensureReplayMatches`). (Different level only: SDV-SEN-003.)
 - **Trigger:** the same document ID was sent again with different content or a different file name.
 - **Today:** 409 `CONFLICT`. Generic: yes.
@@ -1210,7 +1340,8 @@ The watch folder and polling intake are **not in this repository**. Sending syst
 - **Fix:** repeat the first upload exactly, or send a new document ID.
 - **L1 tells the customer:** a document with this ID is already stored with other content. A changed document needs a new ID.
 
-#### SDV-INT-018 (proposed): document can't be finished again
+#### SDV-INT-018 (released in task 0039): document can't be finished again
+- **Released:** now sent (task 0039); its section is above. The notes below are what task 0034 found, kept for the list of lines.
 - **Where:** `DocumentIntakeService.java:290` (404 "Document not found."), `:294` (409).
 - **Trigger:** retry-finalization on an unknown document, or on one that is not received, failed or available.
 - **Today:** 404 `NOT_FOUND` or 409 `CONFLICT`. Generic: yes.

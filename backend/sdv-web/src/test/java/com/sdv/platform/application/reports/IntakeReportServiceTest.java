@@ -133,6 +133,42 @@ class IntakeReportServiceTest {
         verifyNoInteractions(audit);
     }
 
+    /**
+     * Task 0039: an intake request of a known sending system that failed on Vero's side is counted under that system as
+     * failed, with the code it got; with the documents that failed after receipt in the totals, apart in failedAtIntake.
+     * In the CSV it is a FAILED_AT_INTAKE line with its code.
+     */
+    @Test
+    void intakeFailuresAreCountedUnderTheirSystemWithTheirCode() {
+        seedDay();
+        repo.failure(LV, A2, null, "SDV-SYS-014", "2026-11-20T16:06:00Z");
+        repo.failure(LOS, null, "req-down", "SDV-INT-010", "2026-11-20T18:30:00Z");
+        IntakeReportService.IntakeReport r = service(NY).intake(TENANT, null, null, null);
+
+        IntakeReportService.Totals t = r.totals();
+        assertEquals(3, t.failed(), "one after receipt, two at intake");
+        assertEquals(2, t.failedAtIntake());
+        assertEquals(List.of(new IntakeReportService.CodeCount("SDV-INT-010", 1), new IntakeReportService.CodeCount("SDV-SYS-014", 1)), t.failedCodes());
+        assertEquals(2, t.refused(), "failures are not refusals");
+        assertEquals(5, t.deliveries(), "the failure before a submission is a delivery line of its own");
+
+        IntakeReportService.DeliveryLine a2 = block(r, "LexaVault").deliveries().get(1);
+        assertEquals(1, a2.failed());
+        assertEquals(List.of("SDV-SYS-014"), a2.failedCodes());
+        assertEquals(List.of("SDV-SEN-001"), a2.refusedCodes());
+        IntakeReportService.DeliveryLine down = block(r, "Loan Origination System").deliveries().getLast();
+        assertEquals("req-down", down.requestId());
+        assertEquals(List.of("SDV-INT-010"), down.failedCodes());
+
+        String csv = new String(service(NY).export(TENANT, "admin", "corr", null, null, null).csv(), StandardCharsets.UTF_8);
+        assertTrue(csv.lines().anyMatch(l -> l.endsWith("\"FAILED_AT_INTAKE\",\"SDV-SYS-014\"")), csv);
+        assertTrue(csv.lines().anyMatch(l -> l.contains("req-down") && l.endsWith("\"FAILED_AT_INTAKE\",\"SDV-INT-010\"")), csv);
+    }
+
+    private static IntakeReportService.SystemBlock block(IntakeReportService.IntakeReport r, String name) {
+        return r.systems().stream().filter(b -> b.displayName().equals(name)).findFirst().orElseThrow();
+    }
+
     @Test
     void theDayBoundaryIsTheTenantsTimeZone() {
         seedDay();
@@ -296,6 +332,12 @@ class IntakeReportServiceTest {
 
         void refusal(UUID source, UUID submission, String requestId, String code, String at) {
             items.add(new Item(Kind.REFUSED, UUID.randomUUID(), source, submission,
+                    submission != null ? requestIds.get(submission) : requestId, null, null, Instant.parse(at), null, code));
+        }
+
+        /** Task 0039: an intake request that failed on Vero's side (INTAKE_FAILED). */
+        void failure(UUID source, UUID submission, String requestId, String code, String at) {
+            items.add(new Item(Kind.FAILED, UUID.randomUUID(), source, submission,
                     submission != null ? requestIds.get(submission) : requestId, null, null, Instant.parse(at), null, code));
         }
 

@@ -203,10 +203,11 @@ class RecordSensitivityIntakeTest {
         assertEquals("SDV-SEN-004", added.errorCode().code());
         assertEquals("sourceSubmissionId already exists with no recordSensitivityLevel; leave it out when retrying.",
                 added.getMessage());
-        // Another difference as well: the generic conflict, not a sensitivity code.
-        IllegalStateException other = assertThrows(IllegalStateException.class,
+        // Another difference as well: not a sensitivity code. Task 0039: it is SDV-INT-011 now (it was the generic
+        // conflict, so this assertion changed).
+        com.sdv.platform.domain.error.CodedRefusal.Conflict other = assertThrows(com.sdv.platform.domain.error.CodedRefusal.Conflict.class,
                 () -> deliver("s1", Map.of("contractNumber", "111122223333"), "CONFIDENTIAL"));
-        assertFalse(other instanceof com.sdv.platform.domain.error.CodedRefusal);
+        assertEquals("SDV-INT-011", other.errorCode().code());
         assertEquals("sourceSubmissionId already exists with a different submission create request.", other.getMessage());
         assertTrue(levels.rows.isEmpty());
     }

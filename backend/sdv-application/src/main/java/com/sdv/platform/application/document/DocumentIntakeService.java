@@ -3,6 +3,9 @@ package com.sdv.platform.application.document;
 import com.sdv.platform.application.access.ActiveTenant;
 
 import com.sdv.platform.domain.error.InternalCheckFailed;
+import com.sdv.platform.domain.error.CodedRefusal;
+import com.sdv.platform.domain.error.SdvErrorCode;
+import com.sdv.platform.application.source.ActiveSource;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sdv.platform.application.business.RecordKey;
@@ -64,6 +67,8 @@ public class DocumentIntakeService {
      * DOCUMENT_DUPLICATE_RECEIVED.
      */
     public static final String UNCORRECTED_COPY_ACTION = "DOCUMENT_UNCORRECTED_COPY_RECEIVED";
+    /** Task 0039 (SDV-INT-018, 404): retry-finalization names no document of this submission. */
+    static final String NO_SUCH_DOCUMENT = "No document of this submission has this ID, so it can't be finished again.";
     /** The reason in the level-change history when a duplicate raises the document it duplicates. */
     static final String DUPLICATE_RAISE_REASON = "Sent again by the sending system with a higher level";
     private static final Set<DocumentStatus> GONE = EnumSet.of(DocumentStatus.EXPIRED_DELETED, DocumentStatus.RETENTION_DELETING);
@@ -144,9 +149,9 @@ public class DocumentIntakeService {
         Tenant tenant = requireActiveTenant(tenantId);
         IngestionSource source = requireActiveSource(tenantId, sourceId);
         Submission submission = submissions.findById(tenantId, sourceId, submissionId)
-                .orElseThrow(() -> new NoSuchElementException("Submission not found."));
+                .orElseThrow(() -> ActiveSource.noSuchSubmission(submissionId));
 
-        String normalizedSourceDocumentId = optionalText(sourceDocumentId, "sourceDocumentId", 200);
+        String normalizedSourceDocumentId = optionalText(sourceDocumentId, "X-SDV-Source-Document-Id", 200);
         String normalizedIdempotencyKey = optionalText(producerIdempotencyKey, "Idempotency-Key", 200);
         String filename = requireFilename(originalFilename);
         String normalizedMediaType = normalizeMediaType(mediaType);
@@ -156,7 +161,7 @@ public class DocumentIntakeService {
 
         long maxPdfBytes = effectiveMaxPdfBytes(tenant, source);
         if (declaredContentLength > maxPdfBytes) {
-            throw new PdfTooLargeException("PDF exceeds the configured maximum of " + maxPdfBytes + " bytes.");
+            throw new PdfTooLargeException(maxPdfBytes);
         }
 
         Document existing = findExistingIdentity(
@@ -259,8 +264,7 @@ public class DocumentIntakeService {
     private DocumentReceipt duplicateReplay(UUID tenantId, DuplicateReceipt earlier, long sizeBytes, String sha256,
                                             SensitivityLevel level) {
         if (earlier.contentSizeBytes() != sizeBytes || !earlier.contentSha256().equals(sha256)) {
-            throw new IllegalStateException(
-                    "The document retry identity already exists with different content or filename.");
+            throw retryDiffers(earlier.sourceDocumentId(), "content differs from the earlier duplicate");
         }
         if (earlier.sentLevel() != level) {
             throw new com.sdv.platform.domain.error.CodedRefusal.Conflict(
@@ -277,7 +281,7 @@ public class DocumentIntakeService {
         requireActiveTenant(tenantId);
         requireActiveSource(tenantId, sourceId);
         submissions.findById(tenantId, sourceId, submissionId)
-                .orElseThrow(() -> new NoSuchElementException("Submission not found."));
+                .orElseThrow(() -> ActiveSource.noSuchSubmission(submissionId));
         return documents.findDocuments(tenantId, sourceId, submissionId);
     }
 
@@ -290,11 +294,14 @@ public class DocumentIntakeService {
         requireActiveTenant(tenantId);
         requireActiveSource(tenantId, sourceId);
         Document document = documents.findDocumentById(tenantId, sourceId, submissionId, documentId)
-                .orElseThrow(() -> new NoSuchElementException("Document not found."));
+                .orElseThrow(() -> new CodedRefusal.NotFound(SdvErrorCode.INT_018, NO_SUCH_DOCUMENT,
+                        "documentId=" + documentId + " submissionId=" + submissionId));
         if (document.status() != DocumentStatus.PROCESSING_FAILED
                 && document.status() != DocumentStatus.RECEIVED
                 && document.status() != DocumentStatus.AVAILABLE) {
-            throw new IllegalStateException("Document is not eligible for finalization retry.");
+            throw new CodedRefusal.Conflict(SdvErrorCode.INT_018, "This document can't be finished again in its "
+                    + "current state (" + document.status().name() + ").",
+                    "documentId=" + documentId + " status=" + document.status().name());
         }
         return finalization.finalizeDocument(
                 tenantId, sourceId, submissionId, documentId, sourceSubject, correlationId);
@@ -332,7 +339,9 @@ public class DocumentIntakeService {
         // Task 0031: a duplicate takes a place too, so it counts against the declared number like a document.
         long count = documents.countReceived(tenant.tenantId(), submissionId);
         if (count >= locked.expectedDocumentCount()) {
-            throw new IllegalStateException("Submission already contains its declared expected number of documents.");
+            throw new CodedRefusal.Conflict(SdvErrorCode.INT_016,
+                    "Submission already contains its declared expected number of documents.",
+                    "submissionId=" + submissionId + " expected=" + locked.expectedDocumentCount());
         }
 
         // Task 0031, case 2: the same file for the same record from this sending system is already kept. The lock makes
@@ -365,7 +374,9 @@ public class DocumentIntakeService {
         long aggregateLimit = effectiveMaxAggregateBytes(tenant, source);
         long aggregate = documents.sumContentBytes(tenant.tenantId(), submissionId);
         if (contentSizeBytes > aggregateLimit - aggregate) {
-            throw new IllegalArgumentException("Document would exceed the configured aggregate submission size limit.");
+            throw new CodedRefusal.BadRequest(SdvErrorCode.INT_016,
+                    "Document would exceed the configured aggregate submission size limit.",
+                    "submissionId=" + submissionId + " limitBytes=" + aggregateLimit);
         }
 
         Integer retentionDays = tenant.guardrails().defaultRetentionDays();
@@ -493,19 +504,21 @@ public class DocumentIntakeService {
                                                         String sourceDocumentId,
                                                         String idempotencyKey) {
         if (sourceDocumentId == null && idempotencyKey == null) {
-            throw new IllegalArgumentException(
-                    "Idempotency-Key is required when sourceDocumentId is not supplied.");
+            throw new CodedRefusal.BadRequest(SdvErrorCode.INT_012,
+                    "Idempotency-Key is required when sourceDocumentId is not supplied.", "no document ID");
         }
         boolean manifestIsComplete = expected.size() == submission.expectedDocumentCount();
         if (manifestIsComplete) {
             if (sourceDocumentId == null) {
-                throw new IllegalArgumentException(
-                        "sourceDocumentId is required because the submission declared a complete manifest.");
+                throw new CodedRefusal.BadRequest(SdvErrorCode.INT_012,
+                        "sourceDocumentId is required because the submission declared a complete manifest.",
+                        "no X-SDV-Source-Document-Id, complete list");
             }
             boolean known = expected.stream().anyMatch(item -> item.sourceDocumentId().equals(sourceDocumentId));
             if (!known) {
-                throw new IllegalArgumentException(
-                        "sourceDocumentId is not part of the submission's declared complete manifest.");
+                throw new CodedRefusal.BadRequest(SdvErrorCode.INT_012,
+                        "sourceDocumentId is not part of the submission's declared complete manifest.",
+                        "document ID not in the complete list of submissionId=" + submission.submissionId());
             }
         }
     }
@@ -532,8 +545,8 @@ public class DocumentIntakeService {
                 || existing.contentSizeBytes() == null
                 || existing.contentSizeBytes() != contentSizeBytes
                 || !existing.contentSha256().equals(contentSha256)) {
-            throw new IllegalStateException(
-                    "The document retry identity already exists with different content or filename.");
+            throw retryDiffers(existing.sourceDocumentId(), "documentId=" + existing.documentId()
+                    + (existing.originalFilename().equals(filename) ? " content differs" : " file name differs"));
         }
         // A retry must repeat the level it was first sent with; the stored level is never changed by a retry.
         if (existing.sensitivityLevel() != sensitivityLevel) {
@@ -550,12 +563,14 @@ public class DocumentIntakeService {
     }
 
     private IngestionSource requireActiveSource(UUID tenantId, UUID sourceId) {
-        IngestionSource source = sources.findById(tenantId, sourceId)
-                .orElseThrow(() -> new NoSuchElementException("Ingestion source not found."));
-        if (source.status() != IngestionSourceStatus.ACTIVE) {
-            throw new IllegalStateException("Ingestion source is not active.");
-        }
-        return source;
+        return ActiveSource.require(sources, tenantId, sourceId);
+    }
+
+    /** Task 0039 (SDV-INT-017): the same document ID again with other content or another file name. */
+    private static CodedRefusal.Conflict retryDiffers(String sourceDocumentId, String why) {
+        return new CodedRefusal.Conflict(SdvErrorCode.INT_017,
+                "The document retry identity already exists with different content or filename.",
+                "sourceDocumentId=" + (sourceDocumentId == null ? "-" : sourceDocumentId) + " " + why);
     }
 
     private StorageProvider provider(String providerId) {
@@ -579,22 +594,22 @@ public class DocumentIntakeService {
     }
 
     private static String normalizeMediaType(String mediaType) {
-        if (mediaType == null) throw new IllegalArgumentException("Content-Type application/pdf is required.");
+        if (mediaType == null) throw badHeader("Content-Type application/pdf is required.", "Content-Type");
         String value = mediaType.split(";", 2)[0].trim().toLowerCase();
         if (!"application/pdf".equals(value)) {
-            throw new IllegalArgumentException("Only application/pdf document uploads are supported.");
+            throw badHeader("Only application/pdf document uploads are supported.", "Content-Type");
         }
         return value;
     }
 
     private static String requireFilename(String filename) {
         if (filename == null || filename.isBlank()) {
-            throw new IllegalArgumentException("X-SDV-Filename is required.");
+            throw badHeader("X-SDV-Filename is required.", "X-SDV-Filename");
         }
         String value = filename.trim();
-        if (value.length() > 500) throw new IllegalArgumentException("Filename exceeds 500 characters.");
+        if (value.length() > 500) throw badHeader("Filename exceeds 500 characters.", "X-SDV-Filename");
         if (value.contains("/") || value.contains("\\") || value.chars().anyMatch(Character::isISOControl)) {
-            throw new IllegalArgumentException("Filename must be a simple display filename, not a filesystem path.");
+            throw badHeader("Filename must be a simple display filename, not a filesystem path.", "X-SDV-Filename");
         }
         return value;
     }
@@ -603,9 +618,14 @@ public class DocumentIntakeService {
         if (value == null || value.isBlank()) return null;
         String trimmed = value.trim();
         if (trimmed.length() > maxLength) {
-            throw new IllegalArgumentException(field + " exceeds " + maxLength + " characters.");
+            throw badHeader(field + " exceeds " + maxLength + " characters.", field);
         }
         return trimmed;
+    }
+
+    /** Task 0039 (SDV-INT-013): an upload header that isn't valid; the log line names the header, never its value. */
+    private static CodedRefusal.BadRequest badHeader(String message, String header) {
+        return new CodedRefusal.BadRequest(SdvErrorCode.INT_013, message, "header=" + header);
     }
 
     private static long estimateEncryptedSize(long plaintextBytes) {

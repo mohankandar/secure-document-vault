@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sdv.platform.application.storage.NoWritableStorageException;
 import com.sdv.platform.domain.error.InternalCheckFailed;
 import com.sdv.platform.domain.error.SdvErrorCode;
+import com.sdv.platform.domain.error.SetupProblem;
 import com.sdv.platform.web.config.CorrelationIdFilter;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -91,6 +92,10 @@ public final class ErrorReplies {
                 default -> SYS_016_MESSAGE;
             };
             return new Reply(HttpStatus.INTERNAL_SERVER_ERROR, check.errorCode(), message);
+        }
+        if (ex instanceof SetupProblem setup) {
+            // Task 0039 (for example SDV-INT-010): Vero's own setup stops the request; the message is safe to send.
+            return new Reply(HttpStatus.INTERNAL_SERVER_ERROR, setup.errorCode(), setup.getMessage());
         }
         if (ex instanceof NoWritableStorageException storage) {
             return new Reply(HttpStatus.SERVICE_UNAVAILABLE, storage.errorCode(), STO_001_MESSAGE);
@@ -213,7 +218,11 @@ public final class ErrorReplies {
         String route = route(request);
         int status = reply.status().value();
         if (reply.status().is5xxServerError()) {
-            if (cause != null && isDatabase(cause)) {
+            if (cause instanceof SetupProblem setup) {
+                // The exact cause (which field, which rule) is the log detail; no stack trace for a setup to fix.
+                LOG.error("code={} reference={} status={} route={} cause={}", reply.code(), reference, status, route,
+                        setup.logDetail() == null ? "-" : setup.logDetail());
+            } else if (cause != null && isDatabase(cause)) {
                 // No message: Spring's and PostgreSQL's messages hold the SQL and can hold the values sent.
                 LOG.error("code={} reference={} status={} route={} cause={}", reply.code(), reference, status, route,
                         databaseCause(cause));
@@ -248,6 +257,9 @@ public final class ErrorReplies {
             LOG.warn("code={} reference={} status={} route={} reason={}", code, reference, status.value(), route, reason);
         } else if (known != null && known.loggedAtInfo()) {
             LOG.info("code={} reference={} status={} route={} reason={}", code, reference, status.value(), route, reason);
+        } else if (known != null && known.loggedAtDebug()) {
+            // Task 0039: SDV-AUT-001 (no sign-in) would be one INFO line per such request.
+            LOG.debug("code={} reference={} status={} route={} reason={}", code, reference, status.value(), route, reason);
         }
     }
 

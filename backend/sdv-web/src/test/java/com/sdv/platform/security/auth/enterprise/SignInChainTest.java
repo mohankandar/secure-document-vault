@@ -68,6 +68,7 @@ class SignInChainTest {
     void setUp() {
         mvc = mvc(context);
         CONNECTIONS.set(SignInTestKit::bound);
+        TENANT_STATUS.set(com.sdv.platform.domain.tenant.TenantStatus.ACTIVE);
         logs = captureLogs(ErrorReplies.class);
     }
 
@@ -122,14 +123,26 @@ class SignInChainTest {
         assertEquals(200, answer.status(), answer.body());
     }
 
+    /**
+     * Task 0039 (owner answer to report 0038, 1): the line is DEBUG, not INFO (it was INFO in task 0038, so this test
+     * changed): one INFO line per request without a sign-in was noise. Shown with DEBUG on, and nothing at INFO.
+     */
     @Test
-    void noTokenIs401Aut001WithABearerHeaderAndAnInfoLine() throws Exception {
-        Answer answer = call(get("/api/v1/session"));
-        JsonNode body = body(answer, 401, "SDV-AUT-001", "Please sign in again.");
-        assertEquals("Bearer", answer.wwwAuthenticate());
-        List<ILoggingEvent> info = lines(Level.INFO, "SDV-AUT-001");
-        assertEquals(1, info.size());
-        assertTrue(info.getFirst().getFormattedMessage().contains("reference=" + body.get("reference").asText()));
+    void noTokenIs401Aut001WithABearerHeaderAndADebugLine() throws Exception {
+        ch.qos.logback.classic.Logger errors = (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(ErrorReplies.class);
+        Level before = errors.getLevel();
+        errors.setLevel(Level.DEBUG);
+        try {
+            Answer answer = call(get("/api/v1/session"));
+            JsonNode body = body(answer, 401, "SDV-AUT-001", "Please sign in again.");
+            assertEquals("Bearer", answer.wwwAuthenticate());
+            assertEquals(List.of(), lines(Level.INFO, "SDV-AUT-001"));
+            List<ILoggingEvent> debug = lines(Level.DEBUG, "SDV-AUT-001");
+            assertEquals(1, debug.size());
+            assertTrue(debug.getFirst().getFormattedMessage().contains("reference=" + body.get("reference").asText()));
+        } finally {
+            errors.setLevel(before);
+        }
     }
 
     @Test
@@ -180,12 +193,51 @@ class SignInChainTest {
         assertTrue(warn.getFirst().getFormattedMessage().contains("issuer host=idp.example.test"));
     }
 
+    /**
+     * Task 0039 (owner answer to report 0038, 2): the INFO line names the subject, so IT knows who was refused; never
+     * the token, the groups or the name. Changed from task 0038, where the line named no subject: this test used the
+     * do-not-echo subject before; it now uses its own subject, which only the log line may hold.
+     */
     @Test
-    void noVeroRoleIs401Aut007AtInfoAndNamesNoGroup() throws Exception {
-        Answer answer = withToken("/api/v1/session", false, sign(KEY, person(SUBJECT, List.of(GROUP))));
-        body(answer, 401, "SDV-AUT-007",
+    void noVeroRoleIs401Aut007AtInfoWithTheSubjectAndNamesNoGroup() throws Exception {
+        String who = "pat.lee-0039";
+        Answer answer = withToken("/api/v1/session", false, sign(KEY, person(who, List.of(GROUP))));
+        JsonNode body = body(answer, 401, "SDV-AUT-007",
                 "You're signed in, but you don't have access to Vero. Ask your IT team to add you to a Vero group.");
-        assertEquals(1, lines(Level.INFO, "SDV-AUT-007").size());
+        assertFalse(body.toString().contains(who), "the answer never names the subject");
+        assertFalse(answer.wwwAuthenticate().contains(who));
+        List<ILoggingEvent> info = lines(Level.INFO, "SDV-AUT-007");
+        assertEquals(1, info.size());
+        assertTrue(info.getFirst().getFormattedMessage().contains("subject=" + who), info.getFirst().getFormattedMessage());
+    }
+
+    /**
+     * Task 0039 (owner answer to report 0038, 3): every signed-in request checks that the tenant is active, so a
+     * suspended tenant is refused everywhere, also on addresses that never read the tenant (here the session and the
+     * intake probe). The same answer for an unknown tenant. (The cache time itself: ActiveTenantCacheTest.)
+     */
+    @Test
+    void aSuspendedTenantIsRefusedOnEveryAddress() throws Exception {
+        String personToken = sign(KEY, person(SUBJECT, List.of("vero-users")));
+        String systemToken = sign(KEY, sendingSystem());
+        assertEquals(200, withToken("/api/v1/session", false, personToken).status());
+
+        TENANT_STATUS.set(com.sdv.platform.domain.tenant.TenantStatus.SUSPENDED);
+        String sentence = "Your organisation's Vero account isn't available. Contact your IT team.";
+        JsonNode person = body(withToken("/api/v1/session", false, personToken), 403, "SDV-AUT-009", sentence);
+        body(withToken("/api/v1/business/home", false, personToken), 403, "SDV-AUT-009", sentence);
+        JsonNode system = body(withToken("/api/v1/ingestion/submissions", true, systemToken), 403, "SDV-AUT-009", sentence);
+        assertEquals(person.get("message"), system.get("message"));
+        List<ILoggingEvent> warn = lines(Level.WARN, "SDV-AUT-009");
+        assertEquals(3, warn.size());
+        assertTrue(warn.getFirst().getFormattedMessage().contains("tenant=" + TENANT + " suspended (SUSPENDED) (request check)"));
+
+        TENANT_STATUS.set(null);
+        body(withToken("/api/v1/session", false, personToken), 403, "SDV-AUT-009", sentence);
+        assertTrue(lines(Level.WARN, "SDV-AUT-009").getLast().getFormattedMessage().contains("missing"));
+
+        TENANT_STATUS.set(com.sdv.platform.domain.tenant.TenantStatus.ACTIVE);
+        assertEquals(200, withToken("/api/v1/session", false, personToken).status());
     }
 
     @Test
