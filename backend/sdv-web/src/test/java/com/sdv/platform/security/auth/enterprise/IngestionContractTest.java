@@ -72,6 +72,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.core.annotation.AnnotatedElementUtils;
 import org.springframework.core.type.filter.AnnotationTypeFilter;
 import org.springframework.dao.DataAccessResourceFailureException;
+import org.springframework.jdbc.CannotGetJdbcConnectionException;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.mock.web.MockHttpServletRequest;
@@ -110,6 +111,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
+import java.sql.SQLTransientConnectionException;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -149,8 +151,10 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
  *       every answer the stack produced is listed. The stack is Vero's real security chain (enterprise-jwt, real signed
  *       tokens, a loopback sign-in server), the schema gate, the real ingestion controllers and services and Vero's
  *       error handling; only the repositories, storage and crypto are stand-ins.</li>
- *   <li><b>Catalog:</b> every code is a product code listed in error-codes.md (or the one generic code the file
- *       names), and each status-and-code pair has its retry rule.</li>
+ *   <li><b>Catalog:</b> every code is a product code listed in error-codes.md (task 0040 part 2: no generic code is
+ *       left), and each status-and-code pair has its retry rule.</li>
+ *   <li><b>Busy:</b> only the busy answer (503 SDV-SYS-018) carries Retry-After, in whole seconds; every 503 is
+ *       "retry" (task 0040 part 2).</li>
  *   <li><b>Version:</b> {@code info.version} is semantic and is the newest changelog entry in docs/api/README.md.</li>
  * </ol>
  * It lives in this package to share the sign-in test kit ({@link SignInTestKit}).
@@ -383,13 +387,46 @@ class IngestionContractTest {
                     used.add(key);
                     assertTrue(answers.has(key), "x-sdv-answers has " + key);
                     assertTrue(retryRules.contains(answers.path(key).path("retry").asText()), key + " has a retry rule");
-                    if (code.equals("CONFLICT")) continue; // the one generic code, named in the file
+                    // Task 0040 part 2 (owner answer 2): no generic code is left; every code is a product code.
                     assertTrue(productCodes.contains(code), code + " is a product code");
                     assertTrue(catalog.contains("### " + code + ":"), code + " is in error-codes.md");
                 }
             }
         }
         assertEquals(names(answers), used, "every x-sdv-answers entry is used by an operation, and only those");
+    }
+
+    /**
+     * Task 0040 part 2: the busy rule. Only 503 SDV-SYS-018 is marked {@code retryAfter}; it and every other 503 are
+     * "retry" (the busy one after the header's wait, the others with back-off), apart from SDV-STO-004 (after-fix);
+     * every operation's 503 lists the busy code and declares the Retry-After header; Vero never answers 429 itself.
+     */
+    @Test
+    void theBusyAnswerIsTheOnlyOneWithRetryAfterAndEvery503IsRetry() {
+        JsonNode answers = api.path("x-sdv-answers");
+        Set<String> withRetryAfter = new TreeSet<>();
+        for (Iterator<Map.Entry<String, JsonNode>> it = answers.fields(); it.hasNext(); ) {
+            Map.Entry<String, JsonNode> entry = it.next();
+            if (entry.getValue().path("retryAfter").asBoolean(false)) withRetryAfter.add(entry.getKey());
+            if (entry.getKey().startsWith("503 ")) {
+                // Owner answer 2 to report 0040: SDV-STO-004 is after-fix (the installer must fix it); the rest retry.
+                String rule = entry.getKey().equals("503 SDV-STO-004") ? "after-fix" : "yes";
+                assertEquals(rule, entry.getValue().path("retry").asText(), entry.getKey());
+            }
+            assertFalse(entry.getKey().startsWith("429 "), "Vero never answers 429");
+        }
+        assertEquals(Set.of("503 SDV-SYS-018"), withRetryAfter, "only the busy answer has Retry-After");
+        int busy = 0;
+        for (Operation op : operations()) {
+            if (!op.path().startsWith(INGESTION)) continue;
+            JsonNode unavailable = resolve(op.node().path("responses").path("503"));
+            assertTrue(texts(unavailable.path("x-sdv-codes")).contains("SDV-SYS-018"), op.id() + " can be busy");
+            assertTrue(unavailable.path("headers").has("Retry-After"), op.id() + " 503 declares Retry-After");
+            busy++;
+        }
+        assertEquals(OPERATIONS.size(), busy);
+        assertTrue(api.path("x-sdv-retry").path("yes").asText().contains("Retry-After"),
+                "the retry rule says to wait the header's seconds when it is there");
     }
 
     @Test
@@ -442,6 +479,7 @@ class IngestionContractTest {
                     continue;
                 }
                 checkBody(scenario.op(), answer, label, failures);
+                checkRetryAfter(answer, label, failures);
                 produced.add(scenario.op() + " " + seen);
             } catch (Throwable ex) {
                 failures.add(label + ": " + ex);
@@ -454,6 +492,23 @@ class IngestionContractTest {
         notProduced.removeAll(produced);
         assertEquals(Set.of(), notListed, "answers the API gives that the file doesn't list");
         assertEquals(Set.of(), notProduced, "answers the file lists that no scenario produced");
+    }
+
+    /**
+     * Task 0040 part 2: an answer carries Retry-After exactly when the file marks its status and code
+     * {@code "retryAfter": true} (only the busy answer, 503 SDV-SYS-018), and then it is a whole number of seconds
+     * above 0. Every other answer, success or error, has none.
+     */
+    private void checkRetryAfter(Answer answer, String label, List<String> failures) {
+        boolean wanted = answer.status() >= 400
+                && api.path("x-sdv-answers").path(answer.status() + " " + answer.code()).path("retryAfter").asBoolean(false);
+        if (!wanted) {
+            if (answer.retryAfter() != null) failures.add(label + ": Retry-After " + answer.retryAfter() + " on an answer that has none");
+            return;
+        }
+        if (answer.retryAfter() == null || !answer.retryAfter().matches("[1-9]\\d*")) {
+            failures.add(label + ": the busy answer needs Retry-After in whole seconds, got " + answer.retryAfter());
+        }
     }
 
     /** The answer's body: the error body with exactly its four fields and the reference header; a success's fields. */
@@ -512,7 +567,8 @@ class IngestionContractTest {
     record Scenario(String op, String name, java.util.function.Supplier<MockHttpServletRequestBuilder> request,
                     Setup setup, Special special, int status, String code) { }
 
-    record Answer(int status, String code, String body, String correlation) { }
+    /** {@code retryAfter}: the Retry-After answer header, or null (task 0040 part 2: only the busy answer has one). */
+    record Answer(int status, String code, String body, String correlation, String retryAfter) { }
 
     private static Scenario ok(String op, String name, java.util.function.Supplier<MockHttpServletRequestBuilder> request,
                                Setup setup, int status) {
@@ -592,6 +648,12 @@ class IngestionContractTest {
             all.add(refused(op, "database away", () -> signed(base(op)),
                     test -> when(TENANTS.findById(TENANT)).thenThrow(new DataAccessResourceFailureException("down")),
                     503, "SDV-SYS-014"));
+            // Task 0040 part 2: the database connection pool is full (HikariCP's timeout, no connection failure).
+            all.add(refused(op, "too busy: no database connection free", () -> signed(base(op)),
+                    test -> when(TENANTS.findById(TENANT)).thenThrow(new CannotGetJdbcConnectionException(
+                            "Failed to obtain JDBC Connection", new SQLTransientConnectionException(
+                            "HikariPool-1 - Connection is not available, request timed out after 30000ms"))),
+                    503, "SDV-SYS-018"));
             all.add(refused(op, "sign-in server's keys can't be fetched", () -> signed(base(op)),
                     test -> DECODER.set(decoder(closedPort())), 503, "SDV-AUT-004"));
             if (AUDITED.contains(op)) {
@@ -685,7 +747,7 @@ class IngestionContractTest {
         all.add(refused(u, "a retry with another level", () -> signed(upload().header("X-SDV-Source-Document-Id", "doc-1")),
                 test -> stored("a.pdf", SensitivityLevel.CONFIDENTIAL), 409, "SDV-SEN-003"));
         all.add(refused(u, "storage volume with no provider", () -> signed(upload().header("X-SDV-Source-Document-Id", "doc-1")),
-                test -> when(STORAGE.providerId()).thenReturn("SOMETHING_ELSE"), 409, "CONFLICT"));
+                test -> when(STORAGE.providerId()).thenReturn("SOMETHING_ELSE"), 503, "SDV-STO-004"));
         all.add(refused(u, "PDF too large", () -> signed(upload().header("X-SDV-Source-Document-Id", "doc-1")),
                 test -> tenant(new TenantGuardrails(10, 2_000, 100, 1_000_000, 24, 90, 95, null)), 413, "SDV-INT-014"));
         all.add(refused(u, "not application/pdf", () -> signed(post(DOCUMENTS).contentType(MediaType.APPLICATION_OCTET_STREAM)
@@ -734,6 +796,7 @@ class IngestionContractTest {
     private Answer call(MockHttpServletRequestBuilder request) throws Exception {
         MockHttpServletResponse original;
         String body;
+        String retryAfter;
         int status;
         try {
             MvcResult result = mvc.perform(request).andReturn();
@@ -741,12 +804,14 @@ class IngestionContractTest {
             status = original.getStatus();
             if (original.getErrorMessage() == null) {
                 body = original.getContentAsString();
+                retryAfter = original.getHeader("Retry-After");
             } else {
                 MockHttpServletRequest same = (MockHttpServletRequest) result.getRequest();
                 same.setAttribute(RequestDispatcher.ERROR_STATUS_CODE, original.getStatus());
                 MockHttpServletResponse page = new MockHttpServletResponse();
                 new SdvErrorController().error(same, page);
                 body = page.getContentAsString();
+                retryAfter = page.getHeader("Retry-After");
             }
         } catch (Exception ex) {
             MockHttpServletRequest error = new MockHttpServletRequest("GET", "/error");
@@ -754,15 +819,15 @@ class IngestionContractTest {
             error.setAttribute(RequestDispatcher.ERROR_EXCEPTION, ex);
             MockHttpServletResponse page = new MockHttpServletResponse();
             new SdvErrorController().error(error, page);
-            return answer(page.getStatus(), page.getContentAsString(), null);
+            return answer(page.getStatus(), page.getContentAsString(), null, page.getHeader("Retry-After"));
         }
-        return answer(status, body, original.getHeader(CorrelationIdFilter.HEADER));
+        return answer(status, body, original.getHeader(CorrelationIdFilter.HEADER), retryAfter);
     }
 
-    private Answer answer(int status, String body, String correlation) throws Exception {
+    private Answer answer(int status, String body, String correlation, String retryAfter) throws Exception {
         String code = null;
         if (status >= 400 && body != null && !body.isBlank()) code = json.readTree(body).path("code").asText(null);
-        return new Answer(status, code, body, correlation);
+        return new Answer(status, code, body, correlation, retryAfter);
     }
 
     /** Sign-in switched off: the entry point the disabled chain uses, then Vero's error page (as SignInCodesTest does). */
@@ -774,7 +839,7 @@ class IngestionContractTest {
         built.setAttribute(RequestDispatcher.ERROR_STATUS_CODE, response.getStatus());
         MockHttpServletResponse page = new MockHttpServletResponse();
         new SdvErrorController().error(built, page);
-        return test.answer(page.getStatus(), page.getContentAsString(), "ref-off");
+        return test.answer(page.getStatus(), page.getContentAsString(), "ref-off", page.getHeader("Retry-After"));
     }
 
     // ----------------------------------------------------------------------------------------------------------------

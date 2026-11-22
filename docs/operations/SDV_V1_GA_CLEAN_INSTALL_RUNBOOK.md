@@ -234,6 +234,23 @@ Vero keeps the Problems list of unidentified intake attempts small, however many
 
 Each request's reference is in Vero's log, also when it is counted in a row with others.
 
+### When Vero is busy: `SDV_BUSY_RETRY_AFTER_SECONDS`
+
+When no database connection is free for a request, Vero answers `503 SDV-SYS-018` ("busy") with a `Retry-After`
+header: the number of seconds the caller should wait before sending the same request again. Sending systems do this by
+themselves; nothing is lost.
+
+| Setting | Default | Value |
+|---|---|---|
+| `SDV_BUSY_RETRY_AFTER_SECONDS` | `5` | The seconds in `Retry-After`. A whole number from 1 to 300; anything else stops the start with `SDV-SYS-005` |
+
+- It changes only what Vero tells the caller. How long Vero itself waits for a free connection (the pool's 30 seconds)
+  is not changed by it.
+- Each busy answer writes one WARN line (not ERROR) with the code and the reference: busy is expected under load.
+- The Problems page shows how many busy answers Vero gave in the last hour and since it started, when there was at
+  least one in the last hour. If it keeps happening, raise `SDV_DB_POOL_MAX` (10 by default) within the database's own
+  connection limit, or spread the senders' load. The count is for this Vero process and starts again at a restart.
+
 Vero sends no usage data anywhere. Liquibase's anonymous usage analytics are switched off in every mode (the
 running app, local mode and the schema step).
 

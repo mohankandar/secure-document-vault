@@ -46,11 +46,11 @@ The token's issuer must be Vero's `SDV_AUTH_JWT_ISSUER`; `sub` is the client's o
 
 Report 0040 (`docs/work/0040-report.md`) shows this set up in Keycloak, step by step.
 
-**Planned change (at Vero's switch-over to platform-core).** Vero will then find the organisation and the sending system from the verified client ID (platform-core `MachineEntityBindings`). Tokens will need only the standard audience and subject. Tenant or source claims may still be sent, but if present they must match the binding, or the token is refused. The "tenant" claim will be renamed "entity" at the same time (codes `ENT-…`). For a sender this is a relaxation, not a break: a token that works today keeps working as long as its claims match the binding.
+**Planned change: client-ID lookup.** Vero will find the organisation and the sending system from the verified client ID (platform-core `MachineEntityBindings`), **before the first customer install** (task 0041). Until then, the `sdv_tenant_id` and `sdv_source_id` claims are how Vero finds them, and they keep working. After the change, tokens need only the standard audience and subject. Tenant or source claims may still be sent, but if present they must match the binding, or the token is refused. At Vero's switch-over to platform-core, the "tenant" claim will be renamed "entity" (codes `ENT-…`). For a sender this is a relaxation, not a break: a token that works today keeps working as long as its claims match the binding.
 
 ### 2. Before sending: is Vero ready?
 
-`GET /actuator/health/readiness` needs no token. `200 {"status":"UP"}`: send. `503`: wait and ask again (Vero's database or the sign-in server can't be reached, or an upgrade is under way). A 503 here never means something you sent was refused.
+`GET /actuator/health/readiness` needs no token. `200 {"status":"UP"}`: send. `503`: wait and ask again (Vero's database or the sign-in server can't be reached, an upgrade is under way, or Vero is busy: no database connection free for 2 seconds). A 503 here never means something you sent was refused.
 
 ### 3. Worked example: one submission, two documents
 
@@ -101,7 +101,7 @@ Every error has one body: `{"code", "message", "reference", "timestamp"}`. Read 
 
 | Rule | What to do |
 |---|---|
-| `yes` | Wait (back off, for example 2 s doubling up to 5 minutes; check readiness) and send exactly the same request again. Safe: nothing is stored twice. |
+| `yes` | Wait, then send exactly the same request again. Safe: nothing is stored twice. **Busy** (`503 SDV-SYS-018`, the only answer with a `Retry-After` header): wait the header's seconds. **Any other 503, or a 500 marked `yes`:** Vero is unavailable; back off (for example 2 s doubling up to 5 minutes) and check readiness. |
 | `new-token` | Get a new token and send once more. If refused again, stop and alert. |
 | `no` | A refusal. The same request gets the same answer. Correct it, or drop it and alert. |
 | `after-fix` | A person must fix Vero's or the sign-in server's setup first. Keep the delivery, alert, and send it again after the fix. |
@@ -119,23 +119,24 @@ The answers a sender can get:
 | 404 | `SDV-INT-004`, `SDV-INT-018` | no |
 | 406 | `SDV-SYS-015`: the Accept header. Vero finds it only when it writes the answer, so the work may be done; send again with `Accept: application/json` | no |
 | 409 | `SDV-INT-011`, `-016`, `-017`, `-018`; `SDV-SEN-003`, `-004` | no |
-| 409 | `CONFLICT` (upload only; no SDV code yet: a storage setup problem in Vero) | after-fix |
 | 413 | `SDV-INT-014` | no |
 | 415 | `SDV-SYS-015` | no |
 | 429 | Never from Vero; a gateway in front of it may send it | yes |
 | 500 | `SDV-SYS-013`, `SDV-SYS-017` | yes |
 | 500 | `SDV-SYS-016`, `SDV-INT-010` | after-fix |
-| 503 | `SDV-SYS-001`, `SDV-SYS-002`, `SDV-SYS-014`, `SDV-AUT-004`, `SDV-STO-001` | yes |
+| 503 | `SDV-SYS-018`: **busy**, with `Retry-After` (seconds) | yes, after the header's wait |
+| 503 | `SDV-SYS-001`, `SDV-SYS-002`, `SDV-SYS-014`, `SDV-AUT-004`, `SDV-STO-001`: **unavailable**, no `Retry-After` | yes, with back-off |
+| 503 | `SDV-STO-004` (upload only): storage for this tenant isn't available; the installer must fix it. No `Retry-After` | after-fix |
 
-Vero sends no `Retry-After` header; use your own back-off. The OpenAPI file says which operation gives which code.
+**The busy rule.** Vero never sends 429. When it is too busy to take a request (today: no database connection is free for it), it answers `503 SDV-SYS-018` with a `Retry-After` header in seconds; wait that long and send the same request again. It sends `Retry-After` only with the busy code. Every other 503 means Vero is unavailable: back off and check readiness. Read the header rather than relying on its number (5 by default; the installer can set it from 1 to 300). The OpenAPI file says which operation gives which code.
 
 ## Sensitivity level
 
 Each document carries a sensitivity level: `STANDARD`, `CONFIDENTIAL` or `HIGHLY_CONFIDENTIAL` (lowest to highest).
 
 - Set it on the document upload with the header `X-SDV-Sensitivity-Level`. Leave it out and the document is `STANDARD`.
-- Any other value is refused with `400 BAD_REQUEST`, and nothing is stored. That includes a blank value and lower-case or mixed-case names (`confidential`, `Confidential`).
-- A retry of the same document must send the same level as the first upload. A different level, or a missing one where the first upload had one, is refused with `409 CONFLICT`; the stored level never changes.
+- Any other value is refused with `400 SDV-SEN-001`, and nothing is stored. That includes a blank value and lower-case or mixed-case names (`confidential`, `Confidential`).
+- A retry of the same document must send the same level as the first upload. A different level, or a missing one where the first upload had one, is refused with `409 SDV-SEN-003`; the stored level never changes.
 - The upload and document list responses return `sensitivityLevel`.
 - The submission request does not take a document level: `sensitivityLevel` in its JSON is refused with `400`.
 
@@ -144,10 +145,10 @@ Each document carries a sensitivity level: `STANDARD`, `CONFIDENTIAL` or `HIGHLY
 A record (a contract, a patient file) can have a level of its own. A record is the submissions of one sending system that share the same identifier values, compared as stored after normalization. A submission without identifier values is a record on its own.
 
 - Send it as `recordSensitivityLevel` in the submission JSON. It is optional; the same three names, exactly.
-- Any other value is refused with `400 BAD_REQUEST` and nothing is stored. That includes a blank, lower-case or mixed-case value, and a value that isn't a JSON string (`1`, `null`).
+- Any other value is refused with `400 SDV-SEN-002` and nothing is stored. That includes a blank, lower-case or mixed-case value, and a value that isn't a JSON string (`1`, `null`).
 - The header `X-SDV-Record-Sensitivity-Level` on a document upload is refused with `400`. The submission is the only place to send a record level.
 - A delivery can set a record's first level or raise it. It never lowers it: a lower or equal value is ignored and written to the audit trail ("record level kept at …"), and the submission is still created.
-- A retry of the same `sourceSubmissionId` must send the same `recordSensitivityLevel` as the first request (or none, if the first had none). Otherwise it is refused with `409 CONFLICT`.
+- A retry of the same `sourceSubmissionId` must send the same `recordSensitivityLevel` as the first request (or none, if the first had none). Otherwise it is refused with `409 SDV-SEN-004`.
 - A document's **effective level** is the higher of its own level and its record's level. Documents that arrive later for the record get the record's level through this rule; nothing is copied onto them.
 - While any record of a sending system has a level, an administrator can't change which fields are that system's identifiers, or how an identifier is normalized (`409`).
 
@@ -191,5 +192,7 @@ The first contract that sending systems build against. Tagged `sdv-ingestion-v1.
 - Every operation lists every answer with its status, codes and retry rule (`x-sdv-codes`, `x-sdv-answers`, `x-sdv-retry`).
 - Readiness (`/actuator/health/readiness`) documented as the "can I send now?" check.
 - Sign-in (`bearerAuth`) in full: client-credentials tokens, the required claims, and what each missing or wrong claim returns.
-- Corrections to the earlier, unversioned file, so it says what Vero does: `metadata` is optional; unknown submission fields are ignored, not refused; a malformed `Authorization` header is 401 `SDV-AUT-003` (not 400); 406 can come after the work is done; the upload's 409 can carry the generic `CONFLICT`; answer fields are always present (`required`); `DocumentState` lists every state.
-- The build checks this file against the running API (`IngestionContractTest`).
+- Corrections to the earlier, unversioned file, so it says what Vero does: `metadata` is optional; unknown submission fields are ignored, not refused; a malformed `Authorization` header is 401 `SDV-AUT-003` (not 400); 406 can come after the work is done; answer fields are always present (`required`); `DocumentState` lists every state.
+- **The busy answer** (part 2 of task 0040, before the tag): when Vero is too busy to take a request (no database connection free), it answers `503 SDV-SYS-018` with `Retry-After` in seconds. Vero never sends 429, and sends `Retry-After` only with the busy code. Every other 503 means unavailable (retry with back-off). Before, these requests got `503 SDV-SYS-014`.
+- **No generic codes left** (part 2): the upload's storage-provider problem is `503 SDV-STO-004`, retry rule `after-fix`. Before, it was `409 CONFLICT`.
+- The build checks this file against the running API (`IngestionContractTest`), including that only the busy answer carries `Retry-After`.

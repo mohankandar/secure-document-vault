@@ -1306,6 +1306,28 @@ async function tourCheckDocument(page: Page): Promise<string> {
 }
 
 /** The tour searches LexaVault's demo records, so it chooses LexaVault the way a person does: as their last choice in this browser. */
+/**
+ * Task 0040 (owner answers, second round): a step that needs one sending system chooses it in Records, with the
+ * Filters panel's Source picker, and searches one field there. It never relies on which system delivered last (live
+ * checks deliver through LexaVault, so the newest sender changes from run to run).
+ */
+async function searchInSource(page: Page, system: string, field: RegExp, value: string) {
+  await page.getByRole('button', { name: /^Filters/ }).click()
+  const filters = page.getByRole('dialog', { name: 'Filters' })
+  await expect(filters).toBeVisible({ timeout: 15000 })
+  // By role: the label wraps the picker, so its text also holds the options' names.
+  await filters.getByRole('combobox', { name: 'Source', exact: true }).selectOption({ label: system })
+  const answered = page.waitForResponse((r) => r.url().endsWith('/api/v1/business/search') && r.request().method() === 'POST'
+    && JSON.stringify(r.request().postDataJSON() ?? {}).includes(JSON.stringify(value)), { timeout: 15000 })
+  answered.catch(() => { /* awaited below */ })
+  await filters.getByLabel(field).fill(value)
+  await filters.getByRole('button', { name: 'Show results' }).click()
+  await expect(filters).toHaveCount(0)
+  expect((await answered).ok(), `the search for ${value} in ${system} was answered`).toBeTruthy()
+  await expect(resultsBusy(page)).toHaveCount(0, { timeout: 15000 })
+  await expect(page.getByRole('region', { name: 'Search results' }), `searched in ${system}`).toContainText(system)
+}
+
 async function chooseLexaVault(page: Page) {
   const lexa = (await searchSources(page)).find((s) => s.displayName === 'LexaVault')
   expect(lexa, 'the LexaVault sending system').toBeTruthy()
@@ -1365,8 +1387,13 @@ test.describe('SDV role-based screen capture', () => {
       expect(s.status, `${s.displayName} is active`).toBe('ACTIVE')
       expect(s.hasRecords, `${s.displayName} holds records`).toBe(true)
     }
-    // The seed delivers the loan system last, so it is the active system that delivered most recently.
-    expect(Date.parse(los!.lastDeliveredAt ?? ''), 'the loan system delivered most recently').toBeGreaterThan(Date.parse(lexa!.lastDeliveredAt ?? ''))
+    // Task 0040 (owner answers, second round): which system delivered last changes from run to run (live checks deliver
+    // through LexaVault), so the tour doesn't rely on it. The loan system is chosen in Records (Filters, Source), and
+    // the fallback below expects whichever active system the schema says delivered most recently.
+    const newest = sources.filter((s) => s.status === 'ACTIVE' && s.hasRecords && s.fields.length > 0)
+      .sort((a, b) => Date.parse(b.lastDeliveredAt ?? '') - Date.parse(a.lastDeliveredAt ?? ''))[0]
+    const recordIn: Record<string, string> = { 'Loan Origination System': CANVAS_RECORD, LexaVault: demoRecord }
+    expect(newest && recordIn[newest.displayName], `the newest active system (${newest?.displayName}) is one the tour has a record in`).toBeTruthy()
     await selectRole(page, 'Business User')
     await areaTab(page, 'Records').click()
     await waitForBusinessSearchReady(page)
@@ -1383,10 +1410,18 @@ test.describe('SDV role-based screen capture', () => {
       await expect(page.getByText('no field the search box can use')).toHaveCount(0)
     }
 
-    // Ten loads in a row with no remembered choice, and with the half-set-up system remembered (it never qualifies).
+    // Choose the loan system in Records: the choice is remembered in this browser.
+    await searchInSource(page, 'Loan Origination System', /^Contract number/, CANVAS_RECORD)
+    await expect(resultRows(page).filter({ hasText: CANVAS_RECORD }).first()).toBeVisible({ timeout: 15000 })
+    expect(await page.evaluate((key) => window.localStorage.getItem(key), LAST_SOURCE_KEY), 'the choice is remembered').toBe(los!.sourceId)
+
+    // Ten loads in a row: the loan system chosen above (kept), and the half-set-up system remembered instead (it never
+    // qualifies, so the active system that delivered most recently is searched).
     for (let i = 1; i <= 10; i++) {
-      await remember(i % 2 === 0 ? leftover!.sourceId : null)
-      await searchAfterReload(CANVAS_RECORD, 'Loan Origination System', `load ${i}`)
+      const leftoverRemembered = i % 2 === 0
+      await remember(leftoverRemembered ? leftover!.sourceId : los!.sourceId)
+      if (leftoverRemembered) await searchAfterReload(recordIn[newest!.displayName], newest!.displayName, `load ${i}, half-set-up system remembered`)
+      else await searchAfterReload(CANVAS_RECORD, 'Loan Origination System', `load ${i}, loan system chosen`)
       await page.getByRole('button', { name: /^Filters/ }).click()
       const filters = page.getByRole('dialog', { name: 'Filters' })
       await expect(filters).toBeVisible()
@@ -1468,14 +1503,14 @@ test.describe('SDV role-based screen capture', () => {
     const RECORD = '300000000003'
     const los = (await searchSources(page)).find((s) => s.displayName === 'Loan Origination System')
     expect(los, 'the Loan Origination System from Seed-SDV-Canvas-Demo.ps1').toBeTruthy()
-    await page.evaluate(([key, id]) => window.localStorage.setItem(key, id), [LAST_SOURCE_KEY, los!.sourceId])
     const inspector = () => page.getByRole('complementary', { name: 'Record inspector' })
     const lockedItem = () => inspector().getByRole('button', { name: /^Restricted document, Highly Confidential/ })
     const viewerBar = () => viewer(page).locator('.vw-bar').first()
     const openRecord = async () => {
       await areaTab(page, 'Records').click()
       await waitForBusinessSearchReady(page)
-      await searchFor(page, RECORD)
+      // Task 0040 (second round): the record's system is chosen in Records, not left to the newest delivery.
+      await searchInSource(page, 'Loan Origination System', /^Contract number/, RECORD)
       const row = resultRows(page).filter({ hasText: RECORD }).first()
       await expect(row).toBeVisible({ timeout: 15000 })
       await row.click()

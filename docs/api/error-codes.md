@@ -715,7 +715,7 @@ Task 0037: SYS-003 to SYS-012 are start-up codes. A start that stops prints one 
 ### SDV-SYS-014: database failed during a request
 
 - **HTTP status:** 503. Any request that reads or writes the database. Task 0037: also every request except health and system information while the database couldn't be reached since the start (SDV-SYS-003); Vero keeps trying.
-- **Meaning:** PostgreSQL went down, timed out or ran out of connections while Vero was answering, or hasn't answered since Vero started. Message: "Vero can't reach its database just now. Try again in a few minutes." Task 0037: readiness pings the database, so `/actuator/health/readiness` is 503 while it is gone and 200 again when it answers. Task 0039: the ping belongs to readiness only (status `NOT_READY`); the overall `/actuator/health` and liveness are not DOWN while the database is away, and Spring's own database check is switched off.
+- **Meaning:** PostgreSQL went down or timed out while Vero was answering, or hasn't answered since Vero started. (Task 0040 part 2: no connection free in Vero's pool, or PostgreSQL out of connections, is SDV-SYS-018, busy, with `Retry-After`. SYS-014 never carries `Retry-After`.) Message: "Vero can't reach its database just now. Try again in a few minutes." Task 0037: readiness pings the database, so `/actuator/health/readiness` is 503 while it is gone and 200 again when it answers. Task 0039: the ping belongs to readiness only (status `NOT_READY`); the overall `/actuator/health` and liveness are not DOWN while the database is away, and Spring's own database check is switched off.
 - **What the user should do:** try again in a few minutes. A sending system re-sends what got a 503.
 - **What support should tell the customer:** Vero lost its database for a while. Check the database server. The log line has the reference, the SQL state and the Vero method; it never holds the SQL or the values sent.
 
@@ -740,6 +740,13 @@ Task 0037: SYS-003 to SYS-012 are start-up codes. A start that stops prints one 
 - **What the user should do:** try again in a few minutes.
 - **What support should tell the customer:** the audit couldn't be written, so nothing happened. Check the database, then try again. The log line has the reference and the cause.
 
+### SDV-SYS-018: too busy to take the request
+
+- **HTTP status:** 503, with a `Retry-After` header in seconds (the setting `SDV_BUSY_RETRY_AFTER_SECONDS`, 1 to 300, default 5; another value stops the start with SDV-SYS-005). Task 0040 part 2: any request. It is the only answer from Vero that carries `Retry-After`, and Vero never answers 429. Before, these requests got 503 SDV-SYS-014, which said the database couldn't be reached.
+- **Meaning:** Vero is too busy to take the request: the database is there, but no connection was free for this request. Vero tells the two apart from the cause. Busy is: the connection pool waited its full time (HikariCP's `connectionTimeout`, 30 s by default) and no new connection had failed; or PostgreSQL refused a new connection because it has none left (SQL state 53300, too_many_connections). When connections to the database fail, it is SDV-SYS-014 as before. Message: "Vero is too busy to take this request just now. Try again in a few seconds."
+- **What the user should do:** wait the seconds in `Retry-After`, then send the same request again. A sending system does this without alerting; a retry of a create or an upload is never stored twice. A person tries again in a few seconds.
+- **What support should tell the customer:** Vero had more work at once than its database connections allow. If it happens often, raise `SDV_DB_POOL_MAX` (10 by default) within the database's own connection limit, or spread the senders' load. While the pool stays full for more than 2 s, readiness (`/actuator/health/readiness`) is 503 too. Each such answer writes one WARN line (not ERROR: busy is expected under load) with the code, the reference, the exception classes and the SQL state (never the SQL). Problems shows how many busy answers Vero gave in the last hour and since it started.
+
 ## Storage (STO)
 
 ### SDV-STO-001: no storage can take the document
@@ -748,6 +755,13 @@ Task 0037: SYS-003 to SYS-012 are start-up codes. A start that stops prints one 
 - **Meaning:** every ACTIVE storage volume is full, at its stop-write level, or can't be written or read. Nothing was stored. Message: "Vero has no storage space for new documents right now. Nothing was stored; send it again later."
 - **What the user should do:** a sending system sends the document again later. A person tells the IT team.
 - **What support should tell the customer:** Vero's storage is full. Tenant IT frees space, adds a volume, or raises the stop-write level; then senders re-send. Vero logs an ERROR line with the reference.
+
+### SDV-STO-004: storage type not installed
+
+- **HTTP status:** 503, no `Retry-After`. Task 0040 part 2 (owner answer 2 to report 0040): sent by the document upload (`POST /api/v1/ingestion/submissions/{id}/documents`). It used to be 409 with the generic code `CONFLICT`, which told the sender to change a request that was fine. The other places that meet the same problem (finishing a document, the viewer, download, corrective redaction, retention) keep their answers until the storage fix task.
+- **Meaning:** storage for this tenant isn't available: the ACTIVE storage volume Vero picked names a storage provider this install doesn't have. Nothing was stored. Message: "Storage for this tenant isn't available, so nothing was stored. The installer must fix it."
+- **What the user should do:** a sending system keeps the document, alerts, and sends it again after the fix (retry rule `after-fix`). A person tells the IT team.
+- **What support should tell the customer:** an install problem, not the sender's. Install or configure the storage provider the volume names, or move the tenant to a volume whose provider is installed; then senders re-send. Vero logs an ERROR line with the code, the reference and the provider ID.
 
 ### SDV-STO-005: storage volume settings not valid
 
@@ -1434,7 +1448,8 @@ The watch folder and polling intake are **not in this repository**. Sending syst
 - **Fix:** Vero support.
 - **L1 tells the customer:** escalate to Vero security.
 
-#### SDV-STO-004 (proposed): storage type not installed
+#### SDV-STO-004 (released for the upload in task 0040 part 2): storage type not installed
+- **Released for the upload:** the upload now sends it (503); its section is under "Storage (STO)" above. The other places below still answer as "Today" says.
 - **Where:** `DocumentIntakeService.java:564` (409), `DocumentFinalizationService.java:168`, `DocumentViewerService.java:484`, `ControlledDownloadService.java:197`, `CorrectiveRedactionService.java:374`, `RetentionDeletionService.java:129`.
 - **Trigger:** a volume names a storage provider this install doesn't have.
 - **Today:** 409 `CONFLICT` (intake), 422 `VIEWER_UNAVAILABLE` or `DOWNLOAD_UNAVAILABLE`, or `REDACTION_FAILED`. Generic: yes.

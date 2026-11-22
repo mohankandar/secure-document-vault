@@ -145,7 +145,9 @@ export type OpsDetail=OpSummary & {storageVolumes:{volumeId:string;displayName:s
   /** Task 0011: by submission ID, the record and sending system behind each problem. */
   problemRecords?:Record<string,{recordNumber:string|null;recordNumberLabel:string|null;sourceName:string|null}>;
   /** Task 0039: intake attempts with no known sending system (a failed sign-in, for example), last 7 days, newest first. Never token content. */
-  unidentifiedIntakeAttemptCount?:number|null;unidentifiedIntakeAttempts?:UnidentifiedIntakeAttempt[]}
+  unidentifiedIntakeAttemptCount?:number|null;unidentifiedIntakeAttempts?:UnidentifiedIntakeAttempt[];
+  /** Task 0040 part 2: busy answers (503 SDV-SYS-018) from this Vero, the last hour and since it started. Vero-wide. */
+  busyAnswers?:{lastHour:number;sinceStart:number;lastAt:string|null;retryAfterSeconds:number}|null}
 /** address: the Vero address called, IDs blanked; callerAddress: the network address the request came from. */
 /** Task 0039 part 2: one row per caller address, address and code per minute; count = requests, lastSeenAt = the last of them. */
 export type UnidentifiedIntakeAttempt={attemptId:string;tenantId:string|null;occurredAt:string;lastSeenAt:string;count:number;callerAddress:string|null;method:string;address:string;status:number;code:string;reference:string}

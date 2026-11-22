@@ -1,7 +1,9 @@
 package com.sdv.platform.web.foundation;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.sdv.platform.application.operations.BusyAnswers;
 import com.sdv.platform.application.storage.NoWritableStorageException;
+import com.sdv.platform.application.storage.StorageProviderMissingException;
 import com.sdv.platform.domain.error.InternalCheckFailed;
 import com.sdv.platform.domain.error.SdvErrorCode;
 import com.sdv.platform.domain.error.SetupProblem;
@@ -13,6 +15,7 @@ import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
 import org.springframework.beans.TypeMismatchException;
 import org.springframework.dao.DataAccessException;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.MediaType;
@@ -35,6 +38,7 @@ import org.springframework.web.servlet.resource.NoResourceFoundException;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.sql.SQLException;
+import java.sql.SQLTransientConnectionException;
 import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -50,8 +54,10 @@ import java.util.stream.Collectors;
  * is the request's correlation ID (the {@code X-Correlation-Id} response header); the same ID is on the log line and
  * on any audit event the request wrote.
  * <p>
- * Logs: one ERROR line with the reference for every 5xx (the exact cause, for IT); WARN for a refusal whose code
- * needs a person ({@link SdvErrorCode#needsPerson()}); INFO for a request Spring couldn't read (SDV-SYS-015).
+ * Logs: one ERROR line with the reference for every 5xx (the exact cause, for IT), except the busy answer
+ * (SDV-SYS-018), which is WARN: busy is expected under load, not a fault (task 0040 part 2, owner answer 4); WARN for
+ * a refusal whose code needs a person ({@link SdvErrorCode#needsPerson()}); INFO for a request Spring couldn't read
+ * (SDV-SYS-015).
  */
 public final class ErrorReplies {
     static final Logger LOG = LoggerFactory.getLogger(ErrorReplies.class);
@@ -67,11 +73,35 @@ public final class ErrorReplies {
             "Vero couldn't record this action, so it wasn't done. Try again in a few minutes.";
     static final String STO_001_MESSAGE =
             "Vero has no storage space for new documents right now. Nothing was stored; send it again later.";
+    /** Task 0040 part 2 (owner answer 2): the upload's volume names a storage provider this install doesn't have. */
+    static final String STO_004_MESSAGE = "Storage for this tenant isn't available, so nothing was stored. The "
+            + "installer must fix it.";
+    /** Task 0040 part 2: too busy (database pool full); the answer carries Retry-After. */
+    static final String SYS_018_MESSAGE = "Vero is too busy to take this request just now. Try again in a few seconds.";
+    /**
+     * Task 0040 part 2 (owner answers 3 and 4 to report 0040 part 2): the busy answer's Retry-After seconds (the
+     * setting SDV_BUSY_RETRY_AFTER_SECONDS) and its count for Problems. Vero's {@link BusyAnswers} bean is put here
+     * when it starts ({@link BusyAnswersInstaller}); until then, and in tests that build no Spring context, the
+     * defaults (5 seconds).
+     */
+    private static volatile BusyAnswers busy = new BusyAnswers();
+    /** PostgreSQL's SQL state "too_many_connections": the server has no connection left for Vero. */
+    static final String TOO_MANY_CONNECTIONS = "53300";
     /** Task 0038: two ACTIVE sign-in connections match one sign-in (data changed outside Vero). */
     static final String IDP_007_SIGN_IN_MESSAGE =
             "Vero can't sign you in because its sign-in setup is inconsistent. Your IT team has been told.";
 
     private ErrorReplies() { }
+
+    /** Task 0040 part 2: the busy answers' setting and count in force (see {@link #busy}). */
+    static void use(BusyAnswers busyAnswers) {
+        busy = java.util.Objects.requireNonNull(busyAnswers, "busyAnswers");
+    }
+
+    /** The busy answers' setting and count in force. */
+    static BusyAnswers busyAnswers() {
+        return busy;
+    }
 
     /** What a failure is answered with: status, code, safe message; and whether a person must act (for the log). */
     public record Reply(HttpStatusCode status, String code, String message, boolean needsPerson) {
@@ -99,6 +129,12 @@ public final class ErrorReplies {
         }
         if (ex instanceof NoWritableStorageException storage) {
             return new Reply(HttpStatus.SERVICE_UNAVAILABLE, storage.errorCode(), STO_001_MESSAGE);
+        }
+        if (ex instanceof StorageProviderMissingException provider) {
+            return new Reply(HttpStatus.SERVICE_UNAVAILABLE, provider.errorCode(), STO_004_MESSAGE);
+        }
+        if (isBusy(ex)) {
+            return new Reply(HttpStatus.SERVICE_UNAVAILABLE, SdvErrorCode.SYS_018, SYS_018_MESSAGE);
         }
         if (isDatabase(ex)) {
             return new Reply(HttpStatus.SERVICE_UNAVAILABLE, SdvErrorCode.SYS_014, SYS_014_MESSAGE);
@@ -165,6 +201,25 @@ public final class ErrorReplies {
         return false;
     }
 
+    /**
+     * Task 0040 part 2: Vero is busy, not unavailable: the database is there, but no connection is free for this
+     * request. Two causes, anywhere in the chain:
+     * <ul>
+     *   <li>the connection pool timed out waiting for a free connection while no new connection had failed: HikariCP's
+     *       {@link SQLTransientConnectionException} with no cause (when the database can't be reached, Hikari puts the
+     *       last connection failure as its cause, and that stays SDV-SYS-014);</li>
+     *   <li>PostgreSQL refused a new connection because it has none left (SQL state 53300, too_many_connections).</li>
+     * </ul>
+     * Anything else about the database is SDV-SYS-014. Both mean "send it again", so a wrong guess costs only the wait.
+     */
+    static boolean isBusy(Throwable ex) {
+        for (Throwable t = ex; t != null; t = t.getCause() == t ? null : t.getCause()) {
+            if (t instanceof SQLTransientConnectionException && t.getCause() == null) return true;
+            if (t instanceof SQLException sql && TOO_MANY_CONNECTIONS.equals(sql.getSQLState())) return true;
+        }
+        return false;
+    }
+
     /** The request's reference: its correlation ID. A new one only if the request somehow has none. */
     public static String reference(HttpServletRequest request) {
         Object attribute = request == null ? null : request.getAttribute(CorrelationIdFilter.REFERENCE_ATTRIBUTE);
@@ -195,6 +250,12 @@ public final class ErrorReplies {
         response.resetBuffer();
         response.setStatus(status.value());
         response.setHeader(CorrelationIdFilter.HEADER, reference);
+        // Task 0040 part 2: Retry-After only with the busy code, never with another answer; each one is counted.
+        if (isBusyCode(code)) {
+            BusyAnswers current = busy;
+            response.setHeader(HttpHeaders.RETRY_AFTER, String.valueOf(current.retryAfterSeconds()));
+            current.record();
+        }
         response.setContentType(MediaType.APPLICATION_JSON_VALUE);
         response.setCharacterEncoding(StandardCharsets.UTF_8.name());
         response.getWriter().write(JSON.writeValueAsString(body(code, message, reference)));
@@ -208,8 +269,13 @@ public final class ErrorReplies {
         write(request, response, reply.status(), reply.code(), reply.message());
     }
 
+    private static boolean isBusyCode(String code) {
+        return SdvErrorCode.SYS_018.code().equals(code);
+    }
+
     /**
-     * One line per error: ERROR for every 5xx, with the exact cause for IT; WARN for a refusal that needs a person;
+     * One line per error: ERROR for every 5xx, with the exact cause for IT, but WARN for the busy answer (SDV-SYS-018,
+     * same fields: busy is expected under load, and Problems counts it); WARN for a refusal that needs a person;
      * INFO for a request Spring couldn't read; nothing for other refusals (they are the caller's to fix and are
      * audited where the action is). The path is the route pattern (never the IDs in it) when Spring matched one.
      */
@@ -217,7 +283,10 @@ public final class ErrorReplies {
         String reference = reference(request);
         String route = route(request);
         int status = reply.status().value();
-        if (reply.status().is5xxServerError()) {
+        if (reply.status().is5xxServerError() && isBusyCode(reply.code())) {
+            LOG.warn("code={} reference={} status={} route={} cause={}", reply.code(), reference, status, route,
+                    cause == null ? "-" : isDatabase(cause) ? databaseCause(cause) : cause.getClass().getName());
+        } else if (reply.status().is5xxServerError()) {
             if (cause instanceof SetupProblem setup) {
                 // The exact cause (which field, which rule) is the log detail; no stack trace for a setup to fix.
                 LOG.error("code={} reference={} status={} route={} cause={}", reply.code(), reference, status, route,
@@ -243,7 +312,7 @@ public final class ErrorReplies {
 
     /**
      * Task 0038: one line for a coded answer, with its exact cause ({@code detail}), which the caller never sees:
-     * ERROR for a 5xx; WARN for a code that needs a person; INFO for an expected refusal the catalog wants logged
+     * ERROR for a 5xx (WARN for the busy answer, SDV-SYS-018); WARN for a code that needs a person; INFO for an expected refusal the catalog wants logged
      * ({@link SdvErrorCode#loggedAtInfo()}, the sign-in and role refusals); nothing for other refusals.
      */
     static void logCoded(HttpServletRequest request, HttpStatusCode status, String code, String detail) {
@@ -251,7 +320,9 @@ public final class ErrorReplies {
         String reference = reference(request);
         String route = route(request);
         String reason = detail == null || detail.isBlank() ? "-" : detail;
-        if (status.is5xxServerError()) {
+        if (status.is5xxServerError() && isBusyCode(code)) {
+            LOG.warn("code={} reference={} status={} route={} cause={}", code, reference, status.value(), route, reason);
+        } else if (status.is5xxServerError()) {
             LOG.error("code={} reference={} status={} route={} cause={}", code, reference, status.value(), route, reason);
         } else if (known != null && known.needsPerson()) {
             LOG.warn("code={} reference={} status={} route={} reason={}", code, reference, status.value(), route, reason);

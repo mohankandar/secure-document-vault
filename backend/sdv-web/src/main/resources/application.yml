@@ -133,3 +133,8 @@ sdv:
     unidentified-attempts:
       max-rows-per-minute: ${SDV_UNIDENTIFIED_ATTEMPTS_MAX_ROWS_PER_MINUTE:100}
 
+  # Task 0040 part 2: the busy answer (503 SDV-SYS-018) tells the caller to wait this many seconds (Retry-After). A
+  # whole number from 1 to 300; anything else stops the start (SDV-SYS-005). The database pool's wait is not changed.
+  busy:
+    retry-after-seconds: ${SDV_BUSY_RETRY_AFTER_SECONDS:5}
+

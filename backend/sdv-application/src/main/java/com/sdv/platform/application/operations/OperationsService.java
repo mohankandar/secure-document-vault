@@ -34,6 +34,7 @@ public class OperationsService {
     private final ProblemRecordResolver problemRecords;
     private final com.sdv.platform.application.access.DocumentAccessGuard access;
     private final UnidentifiedIntakeAttemptRepository unidentified;
+    private final BusyAnswers busyAnswers;
     private final Clock clock = Clock.systemUTC();
 
     /** Without unidentified intake attempts (for tests that build the service by hand): that list stays empty. */
@@ -46,7 +47,7 @@ public class OperationsService {
         this(repository, storage, keyHealth, tenants, problemRecords, access, null);
     }
 
-    @org.springframework.beans.factory.annotation.Autowired
+    /** Without a busy-answer count (for tests that build the service by hand): it stays at none. */
     public OperationsService(OperationalRepository repository,
                              StorageVolumeAdminService storage,
                              KeyServiceHealthProbe keyHealth,
@@ -54,6 +55,19 @@ public class OperationsService {
                              ProblemRecordResolver problemRecords,
                              com.sdv.platform.application.access.DocumentAccessGuard access,
                              UnidentifiedIntakeAttemptRepository unidentified) {
+        this(repository, storage, keyHealth, tenants, problemRecords, access, unidentified, null);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public OperationsService(OperationalRepository repository,
+                             StorageVolumeAdminService storage,
+                             KeyServiceHealthProbe keyHealth,
+                             TenantRepository tenants,
+                             ProblemRecordResolver problemRecords,
+                             com.sdv.platform.application.access.DocumentAccessGuard access,
+                             UnidentifiedIntakeAttemptRepository unidentified,
+                             BusyAnswers busyAnswers) {
+        this.busyAnswers = busyAnswers;
         this.repository = repository;
         this.storage = storage;
         this.keyHealth = keyHealth;
@@ -120,7 +134,8 @@ public class OperationsService {
         return new OperationsSummary(full.overallStatus(), full.observedAt(), full.application(), full.database(),
                 full.keyService(), full.dataObservations(), full.storageVolumes(), full.processingFailureCount(), failures,
                 full.stuckDocumentCount(), stuck, full.attentionSubmissionCount(), full.attentionSubmissions(),
-                full.problemRecords(), full.unidentifiedIntakeAttemptCount(), full.unidentifiedIntakeAttempts());
+                full.problemRecords(), full.unidentifiedIntakeAttemptCount(), full.unidentifiedIntakeAttempts(),
+                full.busyAnswers());
     }
 
     private OperationsSummary summaryWithoutLevels(UUID tenantId) {
@@ -183,7 +198,8 @@ public class OperationsService {
 
         return new OperationsSummary(overall, now, application, database, key, observations, storageRead.items(),
                 failures.count(), failures.items(), stuck.count(), stuck.items(), incomplete.count(), incomplete.items(),
-                records, attempts.count(), attempts.items());
+                records, attempts.count(), attempts.items(),
+                busyAnswers == null ? BusyAnswers.Count.NONE : busyAnswers.count());
     }
 
     private static boolean positive(Long value) {
@@ -317,7 +333,12 @@ public class OperationsService {
              * with no tenant), newest first, at most 50: time, caller's address, Vero address, code, reference.
              */
             Long unidentifiedIntakeAttemptCount,
-            List<UnidentifiedIntakeAttemptRepository.Attempt> unidentifiedIntakeAttempts) {
+            List<UnidentifiedIntakeAttemptRepository.Attempt> unidentifiedIntakeAttempts,
+            /*
+             * Task 0040 part 2 (owner answer 4 to report 0040 part 2): busy answers (503 SDV-SYS-018) from this Vero
+             * process, in the last hour and since it started. Vero-wide, not this tenant's alone.
+             */
+            BusyAnswers.Count busyAnswers) {
         public OperationsSummary {
             dataObservations = List.copyOf(dataObservations);
             storageVolumes = List.copyOf(storageVolumes);

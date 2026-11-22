@@ -165,3 +165,140 @@ Nothing pushed, merged or tagged. The tag `sdv-ingestion-v1.0.0` goes on the mer
 ## Suggested next step
 
 Review `docs/ingestion-contract` and answer question 1. If Part 2 is wanted, do it on this branch. Then merge, and tag the merge commit `sdv-ingestion-v1.0.0`.
+
+---
+
+## Part 2 (2026-11-22): busy answer, upload's 409, planned-change note
+
+Outcome: **DONE.** The busy answer, the upload's STO-004, the contract and the docs; then the owner's answers to this part (items 3 and 4: the `Retry-After` setting, WARN logging and a busy count in Problems) and the second round (the tour chooses the Loan Origination System itself). Full build passed, and the screen tour passed (25 passed, 0 failed) on the last run. Committed; nothing pushed, merged or tagged.
+
+### The places Vero can be busy today
+
+| Place | Before | Now |
+|---|---|---|
+| Vero's database connection pool is full: HikariCP waited its full `connectionTimeout` (30 s by default) and no new connection had failed | 503 SDV-SYS-014 ("can't reach its database") | **503 SDV-SYS-018 + `Retry-After: 5`** |
+| PostgreSQL refuses a new connection because it has none left (SQL state 53300, too_many_connections) | 503 SDV-SYS-014 | **503 SDV-SYS-018 + `Retry-After: 5`** |
+| Intake | No intake pool or limit of its own exists in Vero | nothing to change |
+| Tomcat's worker threads are all busy | Connections wait in the TCP queue; Vero never gets to answer | nothing Vero can answer |
+
+How the two are told apart: when the database can't be reached, Hikari's timeout carries the last connection failure as its cause, and that stays SYS-014. A full pool has no cause. `BusyAnswerTest` proves this against a real HikariCP pool.
+
+### What was done
+
+- **SDV-SYS-018 (busy):**
+  - Message: "Vero is too busy to take this request just now. Try again in a few seconds."
+  - The answer carries `Retry-After` in whole seconds. It is set where every error body is written (`ErrorReplies.write`), so it is the same whether a controller, a filter or the error page answers.
+  - No other answer carries `Retry-After`. Vero never sends 429.
+- **`Retry-After` is a setting (owner answer 3):** `SDV_BUSY_RETRY_AFTER_SECONDS` (`sdv.busy.retry-after-seconds`), a whole number from 1 to 300, default 5. Anything else (empty, 0, 301, `5s`, `05`, `2.5`) stops the start with SDV-SYS-005, which names the setting. The pool's 30-second wait is not changed. The setting and the count live in `BusyAnswers` (application layer); `BusyAnswersInstaller` hands it to `ErrorReplies` at start. Documented in the install runbook ("When Vero is busy"), the catalog and the sender's guide; the OpenAPI `RetryAfter` header now says 1 to 300 (`maximum: 300`). The contract stays 1.0.0.
+- **Logging and the busy count (owner answer 4):**
+  - Each busy answer writes one **WARN** line (not ERROR) with the same fields: code, reference, status, route and the cause (exception classes and SQL state, never the SQL). Every other 5xx stays ERROR, also for coded answers (`logCoded`).
+  - Each busy answer is counted in memory, per minute for the last hour, and since Vero started. Not in the database: a busy answer means no database connection is free. The count is for this Vero process and starts again at a restart.
+  - The Problems summary (`GET /api/v1/operations/summary`, used by Platform operations and Tenant IT) has a new field `busyAnswers`: `lastHour`, `sinceStart`, `lastAt`, `retryAfterSeconds`. It is Vero-wide, not per tenant.
+  - The Problems page shows a warning when there was at least one busy answer in the last hour: "Vero was too busy for N requests in the last hour", with what it means, what to do, the count since start and when the last one was. Hidden otherwise (second-round answer 2: keep it).
+- **The tour no longer relies on the newest sender (second-round answer 1):**
+  - The two failing steps now choose the Loan Origination System in Records' Filters panel (the **Source** picker), with a new tour helper `searchInSource`. The Sensitivity step (task 0029) searches `300000000003` there; it no longer sets the remembered choice in browser storage.
+  - "Records starts with the loan system…" no longer asserts that the loan system delivered last. It chooses the loan system in Filters, checks that the choice is remembered, then checks 10 reloads: the chosen system is kept, and when the half-set-up system is remembered instead (it never qualifies), Records searches the active system that the search schema says delivered most recently, whichever that is. The simulated cases (LexaVault without records, the loan system paused, nothing searchable, nothing delivered) are unchanged.
+  - No data was changed or deleted.
+- **SDV-STO-004 (upload's 409):**
+  - The upload's missing storage provider is now **503 SDV-STO-004**, retry rule `after-fix`, no `Retry-After`. Message: "Storage for this tenant isn't available, so nothing was stored. The installer must fix it." The provider ID goes in the ERROR log line only.
+  - Why STO-004: the catalog had already reserved it for exactly this cause ("storage type not installed", proposed in task 0034). STO-002 and STO-003 are reserved for other causes, so the first number with this meaning is 004 (question 1).
+  - The other places with the same cause (finishing, viewer, download, redaction, retention) keep their answers.
+- **Contract (`sdv-ingestion-v1.openapi.json`, still 1.0.0):**
+  - Every operation's 503 lists SDV-SYS-018 and declares a new `Retry-After` header (`components/headers/RetryAfter`).
+  - The upload's 503 also lists SDV-STO-004. `CONFLICT` is gone from the 409, from `x-sdv-answers` and from the `Error.code` description.
+  - The new answer `503 SDV-SYS-018` is `retry: yes` with `retryAfter: true`.
+  - The `yes` rule now reads: wait the header's seconds when it is there, otherwise back off. The 429 entry says Vero's busy answer is 503 SDV-SYS-018.
+- **Sender's guide (`docs/api/README.md`):**
+  - The line "Vero sends no `Retry-After` header" is replaced by "The busy rule": Vero never sends 429; it sends `Retry-After` only with the busy code; every other 503 means unavailable, so retry with back-off.
+  - The codes table has three 503 rows: busy, unavailable, and STO-004 (after-fix).
+  - The "Planned change" note now says: the entity and sending system will be found from the client ID before the first customer install (task 0041), and `sdv_tenant_id` / `sdv_source_id` keep working until then.
+  - The 1.0.0 changelog entry has both changes.
+  - Old generic codes in the sensitivity section were corrected: `400 BAD_REQUEST` is now SEN-001 / SEN-002, and `409 CONFLICT` is now SEN-003 / SEN-004.
+- **Catalog (`error-codes.md`):**
+  - New sections SDV-SYS-018 and SDV-STO-004.
+  - The SYS-014 meaning no longer says "ran out of connections".
+  - The proposed STO-004 block is marked as released for the upload.
+- **Contract test:**
+  - Every operation now has a "too busy" scenario: 503 SDV-SYS-018.
+  - The upload's provider scenario now expects 503 SDV-STO-004.
+  - Every answer must carry `Retry-After` exactly when the file marks it `retryAfter`, and it must be a whole number above 0.
+  - A new test checks:
+    - only `503 SDV-SYS-018` is marked;
+    - every 503 is `yes`, except STO-004 (`after-fix`);
+    - every operation's 503 lists the busy code and declares the header;
+    - there is no 429 entry;
+    - the `yes` rule mentions `Retry-After`.
+  - The "apart from `CONFLICT`" exception is removed.
+- **Proof the test catches drift:** I removed `retryAfter` from the file on purpose, and the contract test failed twice (the busy rule, and all 6 busy scenarios). I restored the file; its hash is equal.
+
+**Found, not changed:** readiness pings the database through the same pool. While the pool stays full for more than 2 s, readiness is 503 too, so a load balancer takes Vero out while it is busy. The contract and the catalog say so.
+
+### Commands run and results
+
+First session (before the owner's answers to this part):
+
+| Command | Result |
+|---|---|
+| `git commit` `0040-task.md` (Part 2 and the owner's answers) | `2e9880b` |
+| `.\Build-SDV-All.ps1` | BUILD SUCCESS, 549 backend tests, 0 failures, 8 skipped |
+| `.\Test-SDV-SchemaUpgrade.ps1` (scratch DB `sdv_schema_test`, dropped at the end) | **PASS** in 44 s |
+| `.\Seed-SDV-Canvas-Demo.ps1 -Reset` | Not run by Claude (refused by the session's permission check); the owner ran it by hand |
+| `npm run ui:capture` | 23 passed, 2 failed, 11 skipped |
+
+After the owner's answers (items 3 and 4) and the second round:
+
+| Command | Result |
+|---|---|
+| `.\stop-local.cmd` | Stopped |
+| `.\Build-SDV-All.ps1` | **BUILD SUCCESS.** Backend 556 tests (24 + 50 + 2 + 4 + 476), 0 failures, 8 skipped. Frontend build (`tsc -b` and `vite build`) passed |
+| `.\Start-SDV-Local.ps1` | Started; readiness 200, UI 200; ingestion without a token 401, no `Retry-After` |
+| `.\Seed-SDV-Canvas-Demo.ps1 -Reset` | Not run by Claude (the owner ran it before this session) |
+| `npm run ui:capture` (before the tour fix) | 23 passed, **2 failed** (the same two steps), 11 skipped |
+| `npm run typecheck` (after the tour fix) | Passed |
+| `npm run ui:capture` (tour fix, first try) | 23 passed, 2 failed: the new helper looked the Source picker up by its label, and the label also holds the options' names. Fixed: it is found by role (`combobox "Source"`) |
+| `npm run ui:capture` (second try) | 24 passed, **1 failed**, 11 skipped: "Platform Operations Administrator screens", the audit Export (below) |
+| `npm run ui:capture` (third try, nothing changed) | **25 passed, 0 failed, 11 skipped** (5.8 min) |
+
+**The 2 tour failures and their cause.** The newest LexaVault delivery (2026-11-22 15:22 UTC) is Part 1's live check (submission `task0040-live-20261122102238`), which the seed reset doesn't touch. Records' default is the active system that delivered most recently, so it opened on LexaVault. The fix is in the tour, not the data (second-round answer 1).
+
+**The one-off Export failure.** On the second try, the Platform operations audit Export showed "The export didn't work" and no file came. The step passed in the three other runs that day, and on the next run with nothing changed. Afterwards, the same export through the API (record `300000000076`) answered 200 with the file. The unfiltered export now answers `422 EXPORT_TOO_LARGE`: the demo audit has more than 10,000 events, and each tour run adds some. The Audit page sends the record filter, so this limit shouldn't apply to the tour's export, and I couldn't see what the server answered that time (the backend logs to its console window only). Not changed; question 2 below.
+
+The UI server on 5183 didn't stop during any tour.
+
+### Tests
+
+556 in the build, 0 failures, 8 skipped (540 in Part 1, 549 before the owner's answers to this part).
+
+- **New:** `BusyAnswerTest` (10): a real HikariCP pool, full (busy), with a database that refuses connections (SYS-014, no header), and PostgreSQL 53300 (busy); a transaction start with a full pool; every other 503 without `Retry-After`; STO-004's message and log; the error page; the cause-chain rule; the setting is used (`Retry-After: 12`) and each busy answer counted, other 503s not; coded answers: busy WARN, other 5xx ERROR.
+- **New:** `BusyAnswersTest` (4): default 5; 1 to 300 taken; anything else stops the start with SDV-SYS-005 naming `SDV_BUSY_RETRY_AFTER_SECONDS`; the count's last hour (per minute, a reused minute starts again) and since start, with a test clock.
+- **New:** `ProblemsAndAuditRecordsTest.problemsCarryTheBusyAnswerCount`: the summary and its JSON carry the count; without a count it is none.
+- **New:** `IngestionContractTest.theBusyAnswerIsTheOnlyOneWithRetryAfterAndEvery503IsRetry`, plus 6 busy scenarios (163 became 169).
+- **Changed, as the rules require:**
+  - The upload scenario "storage volume with no provider" now expects 503 SDV-STO-004; it was 409 `CONFLICT`. The catalog test no longer skips `CONFLICT`.
+  - `BusyAnswerTest`'s full-pool test expected one ERROR line; it now expects one WARN line and no ERROR (owner answer 4).
+  - The screen tour's two steps, as described above.
+
+### Files changed
+
+- **Code:** `SdvErrorCode.java` (SYS_018, STO_004), `ErrorReplies.java`, `DocumentIntakeService.java`, `StorageProviderMissingException.java` (new), `BusyAnswers.java` (new), `BusyAnswersInstaller.java` (new), `OperationsService.java` (the `busyAnswers` field), `application.yml` (`sdv.busy.retry-after-seconds`).
+- **UI:** `Problems.tsx` (the busy warning), `liveApi.ts` (its type).
+- **Tests:** `BusyAnswerTest.java` (new), `BusyAnswersTest.java` (new), `ProblemsAndAuditRecordsTest.java`, `IngestionContractTest.java`, `e2e/sdv-screen-tour.spec.ts`.
+- **Docs:** `docs/api/sdv-ingestion-v1.openapi.json`, `docs/api/README.md`, `docs/api/error-codes.md`, `docs/operations/SDV_V1_GA_CLEAN_INSTALL_RUNBOOK.md`, this report.
+- **Not committed:** `Start-SDV-Local.ps1` (its earlier local changes), `docs/work/0041-task.md` (as asked), `docs/work/0040-task.md` (the owner's new sections, see question 1).
+- No schema change, no new dependency, no data deleted.
+
+### Commits
+
+- `2e9880b` docs(work): task 0040 Part 2 and owner answers to report 0040
+- Part 2 with the owner's answers and the tour fix: see the next commit on this branch (its hash is added in the commit after it).
+
+Nothing pushed, merged or tagged.
+
+### Questions for the owner
+
+1. **"From the LexaVault thread (master)" in `0040-task.md`.** It appeared in the task file during this session. It asks to commit Part 2 before the tour fix, and adds a readiness change: 503 with `SDV-SYS-018` and `Retry-After` when readiness fails because Vero is busy. The session's instruction was to commit Part 2 together with the tour fix after the tour passes, so I did that. I didn't do the readiness change: it is new backend work that the session didn't ask for. Should it be done, as its own commit on this branch before the merge and tag?
+2. **The one-off Export failure:** leave it, or should the tour log the export's answer (status and code) so a repeat can be diagnosed?
+
+### Suggested next step
+
+Answer question 1. Then `.\Test-SDV-SchemaUpgrade.ps1`, merge, and tag the merge commit `sdv-ingestion-v1.0.0`.
