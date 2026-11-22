@@ -261,6 +261,63 @@ class IngestionContractTest {
         assertTrue(settings.contains("include: readinessState,databaseSchema,databaseConnection,signInKeys"), "readiness group");
     }
 
+    /** What Spring's readiness endpoint answers in {@link #readinessWhenBusyIsTheBusyAnswerAndOtherwiseHasNoCode}. */
+    static final AtomicReference<ResponseEntity<String>> READINESS_ANSWER = new AtomicReference<>();
+
+    @RestController
+    static class StandInReadiness {
+        @org.springframework.web.bind.annotation.GetMapping(READINESS)
+        ResponseEntity<String> readiness() { return READINESS_ANSWER.get(); }
+    }
+
+    /**
+     * Task 0040 part 2 (master section item 2): readiness when Vero is busy is 503 with SDV-SYS-018 in the body and
+     * Retry-After; any other readiness 503 has no code and no Retry-After. The file says so (503 lists SDV-SYS-018 and
+     * declares the header, the Readiness body has the code), and Vero's readiness filter does it over Spring's answer
+     * (the group rules that give BUSY are proven in HealthGroupsTest, the ping's BUSY in
+     * DatabaseConnectionHealthIndicatorTest).
+     */
+    @Test
+    void readinessWhenBusyIsTheBusyAnswerAndOtherwiseHasNoCode() throws Exception {
+        JsonNode notReady = api.path("paths").path(READINESS).path("get").path("responses").path("503");
+        assertEquals(Set.of("SDV-SYS-018"), texts(notReady.path("x-sdv-codes")), "readiness 503 can be busy");
+        assertTrue(notReady.path("headers").has("Retry-After"), "readiness 503 declares Retry-After");
+        assertEquals("yes", notReady.path("x-sdv-retry").asText());
+        JsonNode body = api.path("components").path("schemas").path("Readiness").path("properties");
+        assertTrue(body.has("code") && body.has("message"), "the Readiness body has the busy code and message");
+        assertTrue(texts(body.path("status").path("examples")).contains("BUSY"));
+        assertFalse(api.path("paths").path(READINESS).path("get").path("responses").path("200").has("headers"),
+                "200 has no Retry-After");
+
+        MockMvc readiness = MockMvcBuilders.standaloneSetup(new StandInReadiness())
+                .addFilters(new com.sdv.platform.web.schema.ReadinessBusyAnswer()).build();
+        record Case(int status, String spring, String code, boolean retryAfter) { }
+        for (Case c : List.of(
+                new Case(503, "{\"status\":\"BUSY\"}", "SDV-SYS-018", true),
+                new Case(503, "{\"status\":\"NOT_READY\"}", null, false),
+                new Case(503, "{\"status\":\"OUT_OF_SERVICE\"}", null, false),
+                new Case(503, "{\"status\":\"DOWN\"}", null, false),
+                new Case(503, "not json", null, false),
+                new Case(200, "{\"status\":\"UP\"}", null, false))) {
+            READINESS_ANSWER.set(ResponseEntity.status(c.status()).contentType(MediaType.APPLICATION_JSON).body(c.spring()));
+            MvcResult result = readiness.perform(get(READINESS)).andReturn();
+            String label = c.status() + " " + c.spring();
+            assertEquals(c.status(), result.getResponse().getStatus(), label);
+            String retryAfter = result.getResponse().getHeader("Retry-After");
+            if (c.retryAfter()) {
+                assertNotNull(retryAfter, label);
+                assertTrue(retryAfter.matches("[1-9][0-9]*"), label + ": whole seconds above 0, got " + retryAfter);
+                JsonNode answer = json.readTree(result.getResponse().getContentAsString());
+                assertEquals("BUSY", answer.path("status").asText(), label);
+                assertEquals(c.code(), answer.path("code").asText(), label);
+                assertFalse(answer.path("message").asText().isBlank(), label);
+            } else {
+                assertNull(retryAfter, label + ": no Retry-After");
+                assertEquals(c.spring(), result.getResponse().getContentAsString(), label + ": Spring's answer, unchanged");
+            }
+        }
+    }
+
     // ----------------------------------------------------------------------------------------------------------------
     // 2. Headers, parameters, bodies, fields
 

@@ -1,5 +1,8 @@
 package com.sdv.platform.web.schema;
 
+import com.sdv.platform.web.foundation.ErrorReplies;
+import com.zaxxer.hikari.HikariDataSource;
+import com.zaxxer.hikari.HikariPoolMXBean;
 import jakarta.annotation.PreDestroy;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.actuate.health.Health;
@@ -8,6 +11,8 @@ import org.springframework.stereotype.Component;
 
 import javax.sql.DataSource;
 import java.sql.Connection;
+import java.sql.SQLException;
+import java.util.function.BooleanSupplier;
 import java.time.Duration;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
@@ -31,6 +36,8 @@ public class DatabaseConnectionHealthIndicator implements HealthIndicator {
 
     private final Callable<Boolean> ping;
     private final Duration wait;
+    /** Task 0040 part 2: every pool connection is in use and someone waits for one (the pool is full). */
+    private final BooleanSupplier poolFull;
     private final ExecutorService pinger = Executors.newSingleThreadExecutor(r -> {
         Thread t = new Thread(r, "sdv-database-ping");
         t.setDaemon(true);
@@ -44,14 +51,40 @@ public class DatabaseConnectionHealthIndicator implements HealthIndicator {
             try (Connection connection = dataSource.getConnection()) {
                 return connection.isValid((int) WAIT.toSeconds());
             }
-        }, WAIT);
+        }, WAIT, () -> poolFull(dataSource));
     }
 
     DatabaseConnectionHealthIndicator(Callable<Boolean> ping, Duration wait) {
-        this.ping = ping;
-        this.wait = wait;
+        this(ping, wait, () -> false);
     }
 
+    DatabaseConnectionHealthIndicator(Callable<Boolean> ping, Duration wait, BooleanSupplier poolFull) {
+        this.ping = ping;
+        this.wait = wait;
+        this.poolFull = poolFull;
+    }
+
+    /**
+     * Vero's HikariCP pool is full: every connection it may open is in use, and at least one caller (the ping, at
+     * least) waits for one. A database that can't be reached doesn't look like this: its connections fail and leave
+     * the pool. Not a Hikari pool, or not started yet: not full.
+     */
+    static boolean poolFull(DataSource dataSource) {
+        try {
+            if (!dataSource.isWrapperFor(HikariDataSource.class)) return false;
+            HikariDataSource hikari = dataSource.unwrap(HikariDataSource.class);
+            HikariPoolMXBean pool = hikari.getHikariPoolMXBean();
+            return pool != null && pool.getActiveConnections() >= hikari.getMaximumPoolSize()
+                    && pool.getThreadsAwaitingConnection() > 0;
+        } catch (SQLException | RuntimeException ex) {
+            return false;
+        }
+    }
+
+    /**
+     * Task 0040 part 2 (master section item 2): BUSY when the ping found no free connection (the pool is full, or
+     * PostgreSQL has no connection left, SQL state 53300); NOT_READY for every other failure, as before.
+     */
     @Override
     public Health health() {
         Future<Boolean> f = ping();
@@ -59,9 +92,15 @@ public class DatabaseConnectionHealthIndicator implements HealthIndicator {
             boolean ok = f.get(wait.toMillis(), TimeUnit.MILLISECONDS);
             return ok ? Health.up().build() : Health.status(ReadinessOnly.NOT_READY).withDetail("reason", "the database didn't answer the ping").build();
         } catch (TimeoutException ex) {
+            if (poolFull.getAsBoolean()) {
+                return Health.status(ReadinessOnly.BUSY).withDetail("reason", "no free connection within " + wait.toMillis() + " ms").build();
+            }
             return Health.status(ReadinessOnly.NOT_READY).withDetail("reason", "no answer within " + wait.toMillis() + " ms").build();
         } catch (ExecutionException ex) {
             Throwable cause = ex.getCause() == null ? ex : ex.getCause();
+            if (ErrorReplies.isBusy(cause)) {
+                return Health.status(ReadinessOnly.BUSY).withDetail("reason", cause.getClass().getSimpleName()).build();
+            }
             return Health.status(ReadinessOnly.NOT_READY).withDetail("reason", cause.getClass().getSimpleName()).build();
         } catch (InterruptedException ex) {
             Thread.currentThread().interrupt();

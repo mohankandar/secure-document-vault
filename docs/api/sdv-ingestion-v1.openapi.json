@@ -15,7 +15,7 @@
       "get": {
         "operationId": "checkReadiness",
         "summary": "Can I send now?",
-        "description": "No sign-in needed. 200 with status UP: Vero can take work; send. 503: Vero can't take work right now (its database or the sign-in server can't be reached, its database is being upgraded, or no database connection has been free for 2 seconds because Vero is busy). Wait and ask again; a 503 here is never a refusal of anything you sent. Ask at most every few seconds.",
+        "description": "No sign-in needed. 200 with status UP: Vero can take work; send. 503: Vero can't take work right now. Busy (status BUSY, code SDV-SYS-018, with a Retry-After header): no database connection has been free for 2 seconds; wait the header's seconds and ask again. Any other 503 means unavailable (its database or the sign-in server can't be reached, or its database is being upgraded): no code, no Retry-After; wait with back-off and ask again. A 503 here is never a refusal of anything you sent. Ask at most every few seconds.",
         "security": [],
         "responses": {
           "200": {
@@ -23,9 +23,13 @@
             "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Readiness"}, "example": {"status": "UP"}}}
           },
           "503": {
-            "description": "Not ready. Wait and ask again; don't send meanwhile.",
+            "description": "Not ready. Don't send meanwhile. Busy (SDV-SYS-018, status BUSY): wait the seconds in the Retry-After header, then ask again. Otherwise (no code, no Retry-After) Vero is unavailable: wait with back-off and ask again.",
             "x-sdv-retry": "yes",
-            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Readiness"}, "example": {"status": "NOT_READY"}}}
+            "x-sdv-codes": ["SDV-SYS-018"],
+            "headers": {"Retry-After": {"$ref": "#/components/headers/RetryAfter"}},
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Readiness"}, "examples": {
+              "busy": {"value": {"status": "BUSY", "code": "SDV-SYS-018", "message": "Vero is too busy to take this request just now. Try again in a few seconds."}},
+              "unavailable": {"value": {"status": "NOT_READY"}}}}}
           }
         }
       }
@@ -266,13 +270,16 @@
     },
     "headers": {
       "CorrelationId": {"description": "The request's reference: the X-Correlation-Id you sent, or one Vero made. The same value as reference in an error body.", "schema": {"type": "string"}},
-      "RetryAfter": {"description": "Only on the busy answer (503 SDV-SYS-018): the seconds to wait before sending the same request again, a whole number from 1 to 300 (5 unless the installer set it). Read the header; don't rely on the number. No other answer from Vero carries it.", "schema": {"type": "integer", "minimum": 1, "maximum": 300}}
+      "RetryAfter": {"description": "Only on the busy answer (503 SDV-SYS-018, also from readiness): the seconds to wait before sending the same request (or asking readiness) again, a whole number from 1 to 300 (5 unless the installer set it). Read the header; don't rely on the number. No other answer from Vero carries it.", "schema": {"type": "integer", "minimum": 1, "maximum": 300}}
     },
     "schemas": {
       "Readiness": {
         "type": "object",
         "required": ["status"],
-        "properties": {"status": {"type": "string", "description": "UP: send. NOT_READY, OUT_OF_SERVICE or DOWN: wait. Other values may be added; anything but UP means wait.", "examples": ["UP", "NOT_READY", "OUT_OF_SERVICE"]}}
+        "properties": {
+          "status": {"type": "string", "description": "UP: send. BUSY: wait the Retry-After seconds. NOT_READY, OUT_OF_SERVICE or DOWN: wait with back-off. Other values may be added; anything but UP means wait.", "examples": ["UP", "BUSY", "NOT_READY", "OUT_OF_SERVICE"]},
+          "code": {"type": "string", "description": "Only when busy: SDV-SYS-018.", "enum": ["SDV-SYS-018"]},
+          "message": {"type": "string", "description": "Only when busy: a plain sentence."}}
       },
       "ScalarMetadataValue": {"description": "One JSON value: a string, a number or true/false. null, an object or a list is refused (400 SDV-INT-008).", "oneOf": [{"type": "string"}, {"type": "number"}, {"type": "boolean"}]},
       "ExpectedDocumentRequest": {

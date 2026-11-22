@@ -77,7 +77,7 @@ public final class ErrorReplies {
     static final String STO_004_MESSAGE = "Storage for this tenant isn't available, so nothing was stored. The "
             + "installer must fix it.";
     /** Task 0040 part 2: too busy (database pool full); the answer carries Retry-After. */
-    static final String SYS_018_MESSAGE = "Vero is too busy to take this request just now. Try again in a few seconds.";
+    public static final String SYS_018_MESSAGE = "Vero is too busy to take this request just now. Try again in a few seconds.";
     /**
      * Task 0040 part 2 (owner answers 3 and 4 to report 0040 part 2): the busy answer's Retry-After seconds (the
      * setting SDV_BUSY_RETRY_AFTER_SECONDS) and its count for Problems. Vero's {@link BusyAnswers} bean is put here
@@ -99,7 +99,7 @@ public final class ErrorReplies {
     }
 
     /** The busy answers' setting and count in force. */
-    static BusyAnswers busyAnswers() {
+    public static BusyAnswers busyAnswers() {
         return busy;
     }
 
@@ -212,7 +212,7 @@ public final class ErrorReplies {
      * </ul>
      * Anything else about the database is SDV-SYS-014. Both mean "send it again", so a wrong guess costs only the wait.
      */
-    static boolean isBusy(Throwable ex) {
+    public static boolean isBusy(Throwable ex) {
         for (Throwable t = ex; t != null; t = t.getCause() == t ? null : t.getCause()) {
             if (t instanceof SQLTransientConnectionException && t.getCause() == null) return true;
             if (t instanceof SQLException sql && TOO_MANY_CONNECTIONS.equals(sql.getSQLState())) return true;

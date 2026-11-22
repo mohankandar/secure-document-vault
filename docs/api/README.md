@@ -50,7 +50,14 @@ Report 0040 (`docs/work/0040-report.md`) shows this set up in Keycloak, step by 
 
 ### 2. Before sending: is Vero ready?
 
-`GET /actuator/health/readiness` needs no token. `200 {"status":"UP"}`: send. `503`: wait and ask again (Vero's database or the sign-in server can't be reached, an upgrade is under way, or Vero is busy: no database connection free for 2 seconds). A 503 here never means something you sent was refused.
+`GET /actuator/health/readiness` needs no token. `200 {"status":"UP"}`: send. `503`: don't send; wait and ask again. A 503 here never means something you sent was refused. Two kinds:
+
+| Readiness answer | Means | Do |
+|---|---|---|
+| `503 {"status":"BUSY","code":"SDV-SYS-018","message":…}` with `Retry-After` | Vero is busy: no database connection has been free for 2 seconds | Wait the header's seconds, then ask again |
+| Any other `503` (for example `{"status":"NOT_READY"}`), no code, no `Retry-After` | Vero is unavailable: its database or the sign-in server can't be reached, or an upgrade is under way | Back off (for example 2 s doubling up to 5 minutes), then ask again |
+
+Readiness says `BUSY` only when busy is the one reason; when something else is also wrong, it is the other 503.
 
 ### 3. Worked example: one submission, two documents
 
@@ -193,6 +200,6 @@ The first contract that sending systems build against. Tagged `sdv-ingestion-v1.
 - Readiness (`/actuator/health/readiness`) documented as the "can I send now?" check.
 - Sign-in (`bearerAuth`) in full: client-credentials tokens, the required claims, and what each missing or wrong claim returns.
 - Corrections to the earlier, unversioned file, so it says what Vero does: `metadata` is optional; unknown submission fields are ignored, not refused; a malformed `Authorization` header is 401 `SDV-AUT-003` (not 400); 406 can come after the work is done; answer fields are always present (`required`); `DocumentState` lists every state.
-- **The busy answer** (part 2 of task 0040, before the tag): when Vero is too busy to take a request (no database connection free), it answers `503 SDV-SYS-018` with `Retry-After` in seconds. Vero never sends 429, and sends `Retry-After` only with the busy code. Every other 503 means unavailable (retry with back-off). Before, these requests got `503 SDV-SYS-014`.
+- **The busy answer** (part 2 of task 0040, before the tag): when Vero is too busy to take a request (no database connection free), it answers `503 SDV-SYS-018` with `Retry-After` in seconds. Vero never sends 429, and sends `Retry-After` only with the busy code. Every other 503 means unavailable (retry with back-off). Before, these requests got `503 SDV-SYS-014`. Readiness says the same: `503 {"status":"BUSY","code":"SDV-SYS-018",…}` with `Retry-After` when busy is the one reason; every other readiness 503 has no code and no `Retry-After`.
 - **No generic codes left** (part 2): the upload's storage-provider problem is `503 SDV-STO-004`, retry rule `after-fix`. Before, it was `409 CONFLICT`.
 - The build checks this file against the running API (`IngestionContractTest`), including that only the busy answer carries `Retry-After`.

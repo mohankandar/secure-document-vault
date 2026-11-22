@@ -38,17 +38,21 @@ management:
       # report NOT_READY (not DOWN). Only readiness lists NOT_READY in its status order and maps it to 503; the overall
       # /actuator/health and liveness don't list it, so Spring ignores it there and neither turns DOWN while the hub or
       # the database is away. Liveness stays livenessState only (Spring's default group), UP while the process runs.
+      # Task 0040 part 2: the database ping reports BUSY when no connection is free (pool full, or PostgreSQL has none
+      # left). Ordered after not-ready, so readiness says BUSY only when busy is the one reason; it is 503 with
+      # SDV-SYS-018 and Retry-After (ReadinessBusyAnswer). Liveness and the overall health ignore it, as NOT_READY.
       probes:
         enabled: true
       group:
         readiness:
           include: readinessState,databaseSchema,databaseConnection,signInKeys
           status:
-            order: down,out-of-service,not-ready,up,unknown
+            order: down,out-of-service,not-ready,busy,up,unknown
             http-mapping:
               down: 503
               out-of-service: 503
               not-ready: 503
+              busy: 503
   health:
     defaults:
       enabled: true
