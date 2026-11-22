@@ -43,15 +43,41 @@ const localHeaders = (persona: LocalPersona): Record<string, string> => {
 }
 
 /**
- * correlationId: the server's X-Correlation-Id for the failed request, when it sent one (shown to people as a reference for IT).
+ * correlationId: the failed request's reference for IT: the server's X-Correlation-Id, else the body's `reference`.
  * code: the refusal's stable code (docs/api/error-codes.md), e.g. SDV-SEN-008, when the server sent one.
+ * retryAfterSeconds: the Retry-After header in seconds, when the server sent one (only SDV-SYS-018 does).
+ * status 0: Vero didn't answer at all (network).
+ * Task 0044: the message is never the server's text. Screens take their words from errorWords (problemWords.ts).
  */
-export class ApiRequestError extends Error { constructor(message: string, public readonly status: number, public readonly correlationId?: string, public readonly code?: string) { super(message); this.name = 'ApiRequestError' } }
+export class ApiRequestError extends Error {
+  constructor(message: string, public readonly status: number, public readonly correlationId?: string, public readonly code?: string, public readonly retryAfterSeconds?: number) { super(message); this.name = 'ApiRequestError' }
+}
 const codeOf = (body: { code?: unknown } | null) => (typeof body?.code === 'string' && /^SDV-[A-Z]{3}-\d{3}$/.test(body.code) ? body.code : undefined)
+/** Only a value shaped like a reference is kept (letters, digits and dashes), so no other server text can reach the screen. */
+const referenceOf = (value: unknown) => (typeof value === 'string' && /^[A-Za-z0-9-]{4,64}$/.test(value) ? value : undefined)
+const retryAfterOf = (value: string | null) => (value && /^\d{1,4}$/.test(value.trim()) ? Number(value.trim()) : undefined)
+
+/** Task 0044: the error for an answer that isn't OK. The body's message is not kept. */
+async function failureOf(response: Response): Promise<ApiRequestError> {
+  if (response.status === 401 && isOidcSecurityMode()) expireOidcSession()
+  const body = await response.json().catch(() => null) as { code?: unknown; reference?: unknown } | null
+  return new ApiRequestError(`HTTP ${response.status}`, response.status,
+    referenceOf(response.headers.get('X-Correlation-Id')) ?? referenceOf(body?.reference), codeOf(body), retryAfterOf(response.headers.get('Retry-After')))
+}
+
+/** Task 0044: fetch, with "no answer" (offline, Vero down, connection cut) turned into a network error (status 0). */
+async function send(path: string, init: RequestInit): Promise<Response> {
+  try {
+    return await fetch(path, init)
+  } catch (e) {
+    if (e instanceof DOMException && e.name === 'AbortError') throw e
+    throw new ApiRequestError('No answer', 0)
+  }
+}
 
 async function request<T>(path: string, persona: LocalPersona, init?: RequestInit): Promise<T> {
   const enterpriseHeaders = await bearerHeaders()
-  const response = await fetch(path, {
+  const response = await send(path, {
     ...init,
     headers: {
       'Content-Type': 'application/json',
@@ -61,11 +87,7 @@ async function request<T>(path: string, persona: LocalPersona, init?: RequestIni
     },
     cache: 'no-store',
   })
-  if (!response.ok) {
-    if (response.status === 401 && isOidcSecurityMode()) expireOidcSession()
-    const body = await response.json().catch(() => null) as { message?: string; code?: unknown } | null
-    throw new ApiRequestError(body?.message ?? `HTTP ${response.status}`, response.status, response.headers.get('X-Correlation-Id') ?? undefined, codeOf(body))
-  }
+  if (!response.ok) throw await failureOf(response)
   if (response.status === 204) return undefined as T
   return response.json() as Promise<T>
 }
@@ -86,7 +108,7 @@ export const DOWNLOAD_STOPPED = 'SDV-DOC-009'
  */
 export async function contentDownload(path: string, persona: LocalPersona): Promise<Blob> {
   const response = await binaryResponse(path, persona)
-  const reference = response.headers.get('X-Correlation-Id') ?? undefined
+  const reference = referenceOf(response.headers.get('X-Correlation-Id'))
   const announced = Number(response.headers.get('Content-Length'))
   let blob: Blob
   try {
@@ -102,17 +124,13 @@ export async function contentDownload(path: string, persona: LocalPersona): Prom
 
 async function binaryResponse(path: string, persona: LocalPersona): Promise<Response> {
   const enterpriseHeaders = await bearerHeaders()
-  const response = await fetch(path, {
+  const response = await send(path, {
     method: 'GET',
     headers: { ...localHeaders(persona), ...enterpriseHeaders },
     cache: 'no-store',
     credentials: 'same-origin',
   })
-  if (!response.ok) {
-    if (response.status === 401 && isOidcSecurityMode()) expireOidcSession()
-    const body = await response.json().catch(() => null) as { message?: string; code?: unknown } | null
-    throw new ApiRequestError(body?.message ?? `HTTP ${response.status}`, response.status, response.headers.get('X-Correlation-Id') ?? undefined, codeOf(body))
-  }
+  if (!response.ok) throw await failureOf(response)
   return response
 }
 export type SessionInfo = {

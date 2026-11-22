@@ -182,19 +182,38 @@ async function businessAdminChecks(page: Page, testInfo: TestInfo) {
   }
 
   // A card that fails to load: plain words, a reference, and Try again reloads only that card.
-  let fail = true
-  await page.route('**/api/v1/admin/role-capabilities', (route) => (fail && route.request().method() === 'GET'
-    ? route.fulfill({ status: 500, json: { message: 'ApiRequestError: not mocked' } })
-    : route.continue()))
+  let fail: 'plain' | 'busy' | 'network' | null = 'plain'
+  await page.route('**/api/v1/admin/role-capabilities', (route) => {
+    if (!fail || route.request().method() !== 'GET') return route.continue()
+    if (fail === 'network') return route.abort('internetdisconnected')
+    if (fail === 'busy') return route.fulfill({ status: 503, headers: { 'Retry-After': '7', 'X-Correlation-Id': 'tour-ref-busy' },
+      json: { code: 'SDV-SYS-018', message: 'HikariPool-1 - Connection is not available, request timed out', reference: 'tour-ref-busy', timestamp: '2026-11-22T10:00:00Z' } })
+    return route.fulfill({ status: 500, json: { message: 'ApiRequestError: not mocked' } })
+  })
   await sections.getByRole('tab', { name: 'People & roles' }).click()
   await sections.getByRole('tab', { name: 'Roles & permissions' }).click()
   const card = page.getByRole('alert', { name: "Roles & permissions didn't load" })
   await expect(card).toBeVisible({ timeout: 15000 })
+  await expect(card).toContainText('Something went wrong in Vero.')
   await expect(card).toContainText('The rest of the page still works.')
   await expect(card).toContainText('Ref ')
   await expect(page.getByText(/ApiRequestError|not mocked/)).toHaveCount(0)
   await capture(page, testInfo, 'card-error')
-  fail = false
+  // Task 0044: a 5xx (busy, SDV-SYS-018) shows Vero's fault, the Retry-After seconds, the reference and the code,
+  // never the server's text; no answer at all shows the network words.
+  fail = 'busy'
+  await card.getByRole('button', { name: 'Try again' }).click()
+  await expect(card).toContainText('Something went wrong in Vero. Vero is too busy to take this request just now. Try again in 7 seconds.', { timeout: 15000 })
+  await expect(card).toContainText('Ref tour-ref-busy.')
+  await expect(card).toContainText('(SDV-SYS-018)')
+  await expect(page.getByText(/HikariPool|Connection is not available/)).toHaveCount(0)
+  await capture(page, testInfo, 'card-error-busy')
+  fail = 'network'
+  await card.getByRole('button', { name: 'Try again' }).click()
+  await expect(card).toContainText('Vero can’t be reached. Check your connection.', { timeout: 15000 })
+  await expect(card).not.toContainText('Ref ')
+  await capture(page, testInfo, 'card-error-network')
+  fail = null
   await card.getByRole('button', { name: 'Try again' }).click()
   await expect(page.getByRole('switch', { name: 'Print for Business user' })).toBeVisible({ timeout: 15000 })
   await page.unroute('**/api/v1/admin/role-capabilities')
@@ -1672,13 +1691,16 @@ test.describe('SDV role-based screen capture', () => {
     const review = page.getByRole('alertdialog', { name: 'Review a whole-contract request' })
     await expect(review).toContainText('Lower to Confidential for the whole contract')
     await review.getByRole('button', { name: 'Cancel' }).click()
-    // Self-approval: the server's refusal (SDV-APR-006) is shown in its own words. The refusal is simulated here,
-    // because no local sign-in both asks and approves; the rule itself is tested on the server (AccessRequestApprovalsTest).
+    // Self-approval: the server's refusal (SDV-APR-006) is shown in the catalog's words with its code (task 0044:
+    // never the server's own message). The refusal is simulated here, because no local sign-in both asks and approves;
+    // the rule itself is tested on the server (AccessRequestApprovalsTest).
     await page.route('**/api/v1/admin/access-requests/*/approve', (route) => route.fulfill({ status: 403, contentType: 'application/json',
-      body: JSON.stringify({ code: 'SDV-APR-006', message: "You can't approve or decline your own request." }) }))
+      body: JSON.stringify({ code: 'SDV-APR-006', message: "Server text: you can't approve or decline your own request." }) }))
     await first.getByRole('button', { name: /^Expand / }).click()
     await first.getByRole('button', { name: 'Approve', exact: true }).first().click()
-    await expect(page.getByRole('alert').filter({ hasText: 'Not approved' })).toContainText("You can't approve or decline your own request. (SDV-APR-006)")
+    const selfApproval = page.getByRole('alert').filter({ hasText: 'Not approved' })
+    await expect(selfApproval).toContainText('You don’t have access to this. Nobody decides their own request. Ask another Business admin to decide it. (SDV-APR-006)')
+    await expect(selfApproval).not.toContainText('Server text')
     await page.unroute('**/api/v1/admin/access-requests/*/approve')
 
     // 2. Legal holds: how many documents a contract number covers, never which; the holds in place with Release.

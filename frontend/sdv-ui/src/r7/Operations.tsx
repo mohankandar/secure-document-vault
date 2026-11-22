@@ -3,6 +3,7 @@ import { opsAudit, opsDetail, opsRetention, systemInfo, type OpsAuditEvent, type
 import { AREA_TABS, useStore } from './store'
 import { AreaFrame } from './Governance'
 import { FailureNotice, loadFailed, type Failure } from './CardError'
+import { schemaWords } from './problemWords'
 import { Problems } from './Problems'
 import { AuditLog, AuditWords } from './AuditLog'
 import { isMeaningfulActivity } from './auditWords'
@@ -205,7 +206,7 @@ function Health() {
       <span className="faint" role="status">{checkedAt ? `Checked ${ago(checkedAt)}` : loading ? 'Checking…' : ''}</span>
       <button type="button" className="v-btn sm" disabled={loading} onClick={() => void load()}>{loading ? 'Checking…' : 'Check now'}</button>
     </div>
-    {schemaOff && <Callout tone="bad" title="The database doesn’t match this Vero version">{schema.message}
+    {schemaOff && <Callout tone="bad" title="The database doesn’t match this Vero version">{schemaWords(schema.state)}
       <span className="muted" style={{ display: 'block', marginTop: 6 }}>Vero checks this when it starts. After the schema step, start Vero again.</span></Callout>}
     {error && !schemaOff && <FailureNotice failure={error} loadTitle="Vero couldn't check its services" onRetry={() => void load()} />}
     {data && <>
@@ -230,7 +231,7 @@ function Health() {
     </div></section>}
     {data && <TechDetails hint="component names, response times, raw cleanup fields">
       <dl className="v-kv">
-        {SERVICE_KEYS.map((k) => <div key={k}><dt>{SERVICE_WORDS[k].name}</dt><dd><span className="mono">{data[k]?.component} · {data[k]?.status}</span><div className="faint">{data[k]?.message} · checked {fmtDateTime(data[k]?.observedAt)}</div></dd></div>)}
+        {SERVICE_KEYS.map((k) => <div key={k}><dt>{SERVICE_WORDS[k].name}</dt><dd><span className="mono">{data[k]?.component} · {data[k]?.status}</span><div className="faint">checked {fmtDateTime(data[k]?.observedAt)}</div></dd></div>)}
         <div><dt>Response time</dt><dd>{tookMs == null ? '—' : `${tookMs} ms for the whole check (the server reports no time per service)`}</dd></div>
         {cleanup && <div><dt>Cleanup, last run</dt><dd className="mono">outcome {cleanup.outcome} · started {cleanup.startedAt ? fmtDateTime(cleanup.startedAt) : '—'} · finished {cleanup.completedAt ? fmtDateTime(cleanup.completedAt) : '—'} · candidates {cleanup.candidates} · deleted {cleanup.deleted} · failed {cleanup.failed}{cleanup.reasonCode ? ` · ${cleanup.reasonCode}` : ''}</dd></div>}
         <div><dt>Overall</dt><dd className="mono">{data.overallStatus}</dd></div>

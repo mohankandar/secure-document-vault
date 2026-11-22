@@ -1,9 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { FailureNotice, loadFailed, type Failure } from './CardError'
+import { FailureNotice, exportFailureText, loadFailed, type Failure } from './CardError'
 import { Drawer, TechDetails, fmtDateTime, levelWords } from './ui'
 import { fmtWhen } from './opsWords'
 import { opsAudit, opsAuditExport, type OpsAuditEvent } from './liveApi'
-import { ApiRequestError } from '../api'
 import { ACTIVITY_GROUPS, RESULT_WORDS, actorName, auditSentence } from './auditWords'
 
 // Task 0011 Part B (finding 17): the audit as sentences, everyday filters, and codes only under Technical details.
@@ -97,8 +96,7 @@ export function AuditLog() {
       setTimeout(() => URL.revokeObjectURL(url), 1000)
       setExportNote({ ok: true, text: 'The file is saved. The export is recorded in the audit.' })
     } catch (e) {
-      const message = e instanceof ApiRequestError && e.status === 422 ? e.message : 'The export didn’t work. Try again; if it keeps failing, ask your IT team.'
-      setExportNote({ ok: false, text: message })
+      setExportNote({ ok: false, text: `The export didn’t work. ${exportFailureText('The audit export failed', e)}` })
     } finally { setExporting(false) }
   }
 

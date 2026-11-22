@@ -3,8 +3,7 @@ import { ArrowLeft, ChevronDown, ChevronLeft, ChevronRight, Download, Eraser, Ma
 import { useStore } from './store'
 import { BUSINESS_LIMITS, type Doc, type RecordItem, type Redaction } from './model'
 import { ApiRequestError } from '../api'
-import { failureRef, failureText } from './CardError'
-import { documentProblemText } from './problemWords'
+import { failureText } from './CardError'
 import { Badge, Callout, Dialog, Drawer, Tabs, TechDetails, actorWords, auditEventLabel, fmtDate, fmtDateTime, fmtRel, fmtShortDate } from './ui'
 import { viewerMetadata, viewerPage, viewerSearch, record as fetchRecord, toRecord, documentActivity, type LiveDocumentActivity, type ViewerSearch, documentTags, documentComments, createDocumentTag, createDocumentComment, type LiveTag, type LiveComment, secureDownload, recordPrintEvent, permanentRedaction, viewerPreviews, myRequests, documentLevelHistory, LEVEL_NAMES, type MyRequest, type LevelHistoryEntry } from './liveApi'
 import { LOCKED_MESSAGE, LevelBadge, LevelDialog, RequestItem, RequestPopover, pendingOf, recordWord, validGrant, whenWords } from './Sensitivity'
@@ -20,14 +19,10 @@ export const REFUSED = { title: "You can't do this", detail: "Your role doesn't 
 export const isRefused = (e: unknown) => e instanceof ApiRequestError && e.status === 403
 /**
  * Task 0043: a document action's failure in the catalog's words, with the code, and the reference when Vero itself
- * failed (SDV-DOC-003 and the others); the raw error goes to the console only. Other failures keep the usual sentence.
+ * failed (SDV-DOC-003 and the others); the raw error goes to the console only. Task 0044: through the shared helper
+ * (errorWords), which keeps these DOC words; other failures get its four kinds.
  */
-const docFailure = (what: string, e: unknown) => {
-  const words = documentProblemText(e)
-  if (!words) return failureText(what, e)
-  failureRef(what, e)
-  return words
-}
+const docFailure = (what: string, e: unknown) => failureText(what, e)
 const errorText = (e: unknown) => (isRefused(e) ? `${REFUSED.title}. ${REFUSED.detail}` : docFailure('Viewer action failed', e))
 
 /** Short words written in capitals in a document's kind ("borrower-id.pdf" -> "Borrower ID"). */
