@@ -181,8 +181,8 @@ Build: 515 tests, 0 failures, 7 skipped. Report 0038 had 483 tests, 6 skipped.
 
 ## Commits (hash and message), or "not committed"
 
-- The work commit: "fix: intake codes INT-004..018, every intake failure recorded, tenant check per request, readiness-only health checks (task 0039)".
-- A follow-up commit writes its hash here.
+- `04c498d` fix: intake codes INT-004..018, every intake failure recorded, tenant check per request, readiness-only health checks (task 0039)
+- A follow-up commit that writes this hash into the report.
 
 Both are on `fix/intake` only. Nothing was pushed or merged.
 
