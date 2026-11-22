@@ -355,6 +355,42 @@ class IntakeRefusalsTest {
         assertNull(IntakeRefusals.id(null));
         assertEquals("/api/v1/ingestion/submissions/{id}/documents/{id}/retry-finalization",
                 IntakeRefusals.address("/api/v1/ingestion/submissions/" + SUBMISSION + "/documents/" + UUID.randomUUID() + "/retry-finalization"));
-        assertEquals(200, IntakeRefusals.address("/api/v1/ingestion/" + "a".repeat(400)).length());
+        // Task 0039 part 2: any part that isn't a word of Vero's intake addresses is blanked (it was cut at 200
+        // characters before), so made-up addresses can't make a new row per request.
+        assertEquals("/api/v1/ingestion/{id}", IntakeRefusals.address("/api/v1/ingestion/" + "a".repeat(400)));
+        assertEquals("/api/v1/ingestion/submissions/{id}", IntakeRefusals.address("/api/v1/ingestion/submissions/not-a-uuid-" + UUID.randomUUID()));
+        assertEquals("/api/v1/ingestion/{id}/{id}/{id}/{id}/{id}/{id}/...", IntakeRefusals.address("/api/v1/ingestion/a/b/c/d/e/f/g/h/i"));
+        assertEquals("/api/v1/ingestion/submissions/", IntakeRefusals.address("/api/v1/ingestion/submissions/"));
+    }
+
+    /** Task 0039 part 2: a made-up method is OTHER; Vero's own are kept. */
+    @Test
+    void methodsAreHttpsOwnOrOther() {
+        assertEquals("POST", IntakeRefusals.method("POST"));
+        assertEquals("GET", IntakeRefusals.method("get"));
+        assertEquals("OTHER", IntakeRefusals.method("FLOOD" + UUID.randomUUID()));
+        assertEquals("OTHER", IntakeRefusals.method(null));
+    }
+
+    /**
+     * Task 0039 part 2 (owner answer 3): behind a trusted proxy the caller's address comes from X-Forwarded-For;
+     * without that setting the header is ignored (the default).
+     */
+    @Test
+    void theCallerAddressComesFromXForwardedForOnlyBehindATrustedProxy() throws Exception {
+        SecurityContextHolder.clearContext();
+        for (boolean trusted : new boolean[]{false, true}) {
+            clearInvocations(unidentified);
+            IntakeRefusals recorder = new IntakeRefusals(audit, sources, unidentified, Clock.fixed(NOW, ZoneOffset.UTC),
+                    trusted ? new com.sdv.platform.web.foundation.CallerAddress("10.0.0.5") : com.sdv.platform.web.foundation.CallerAddress.DIRECT);
+            MockHttpServletRequest request = new MockHttpServletRequest("POST", "/api/v1/ingestion/submissions");
+            request.setRemoteAddr("10.0.0.5");
+            request.addHeader("X-Forwarded-For", "198.51.100.7");
+            request.setAttribute(RequestDispatcher.ERROR_STATUS_CODE, 401);
+            new SdvErrorController(recorder).error(request, new MockHttpServletResponse());
+            assertEquals(trusted ? "198.51.100.7" : "10.0.0.5", attempt().callerAddress(), "trusted proxy: " + trusted);
+            assertEquals(1, attempt().count());
+            assertEquals(NOW, attempt().lastSeenAt());
+        }
     }
 }

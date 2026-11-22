@@ -37,23 +37,27 @@ export function toProblems(d: OpsDetail): Problem[] {
  * Task 0039: intake attempts Vero couldn't link to a sending system (no sign-in, a refused sign-in, a person's sign-in,
  * a sending system this tenant doesn't have), the last 7 days. Time, address called, where from, code and reference:
  * never anything from a token. Not counted as problems above: nothing was received.
+ * Task 0039 part 2: one line per caller address, address and code per minute, with how many requests and the last
+ * time; the count in the heading is every request.
  */
 function UnidentifiedAttempts({ count, attempts }: { count: number; attempts: UnidentifiedIntakeAttempt[] }) {
+  const shown = attempts.reduce((sum, a) => sum + (a.count ?? 1), 0)
   return <section className="v-panel flush" aria-label="Unidentified intake attempts">
     <div style={{ padding: '12px 16px 4px' }}>
       <h3 className="v-sec" style={{ margin: 0 }}>Unidentified intake attempts · {count}</h3>
       <p className="faint" style={{ margin: '4px 0 0', fontSize: 13 }}>Requests to the intake addresses that Vero couldn&apos;t link to a sending system, for example a failed sign-in, in the last 7 days. Nothing was received. Give the reference to support, or check the sending system&apos;s sign-in setup.</p>
     </div>
     {attempts.length === 0 ? <p className="muted" style={{ padding: 16 }}>None in the last 7 days.</p> :
-    <table className="v-table" aria-label="Unidentified intake attempts list"><thead><tr><th>When</th><th>Address</th><th>From</th><th>Code</th><th>Reference</th></tr></thead>
+    <table className="v-table" aria-label="Unidentified intake attempts list"><thead><tr><th>When</th><th>Times</th><th>Address</th><th>From</th><th>Code</th><th>Reference</th></tr></thead>
       <tbody>{attempts.map((a) => <tr key={a.attemptId}>
-        <td data-label="When" title={fmtDateTime(a.occurredAt)}>{fmtRel(a.occurredAt)}</td>
+        <td data-label="When" title={(a.count ?? 1) > 1 ? `${fmtDateTime(a.occurredAt)} to ${fmtDateTime(a.lastSeenAt)}` : fmtDateTime(a.occurredAt)}>{fmtRel(a.lastSeenAt ?? a.occurredAt)}</td>
+        <td data-label="Times">{(a.count ?? 1) > 1 ? <>{(a.count ?? 1).toLocaleString()} <span className="faint">in a minute</span></> : '1'}</td>
         <td data-label="Address" className="mono">{a.method} {a.address}</td>
         <td data-label="From" className="mono">{a.callerAddress ?? '—'}</td>
         <td data-label="Code"><span className="mono">{a.code}</span> <span className="faint">({a.status})</span></td>
         <td data-label="Reference" className="mono faint">{a.reference}</td>
       </tr>)}</tbody></table>}
-    {attempts.length > 0 && count > attempts.length && <p className="faint" style={{ padding: '0 16px 12px', fontSize: 13 }}>Showing the newest {attempts.length} of {count}.</p>}
+    {attempts.length > 0 && count > shown && <p className="faint" style={{ padding: '0 16px 12px', fontSize: 13 }}>Showing the newest {attempts.length} lines ({shown.toLocaleString()} of {count.toLocaleString()} attempts).</p>}
   </section>
 }
 

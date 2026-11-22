@@ -151,7 +151,7 @@ class ProblemsAndAuditRecordsTest {
         when(tenant.status()).thenReturn(TenantStatus.ACTIVE);
         when(tenants.findById(TENANT)).thenReturn(Optional.of(tenant));
         var attempts = mock(com.sdv.platform.application.port.UnidentifiedIntakeAttemptRepository.class);
-        var one = new com.sdv.platform.application.port.UnidentifiedIntakeAttemptRepository.Attempt(UUID.randomUUID(), null,
+        var one = com.sdv.platform.application.port.UnidentifiedIntakeAttemptRepository.Attempt.one(UUID.randomUUID(), null,
                 Instant.now(), "203.0.113.9", "POST", "/api/v1/ingestion/submissions", 401, "SDV-AUT-003", "ref-1");
         when(attempts.count(eq(TENANT), any())).thenReturn(12L);
         when(attempts.findRecent(eq(TENANT), any(), eq(50))).thenReturn(List.of(one));

@@ -20,11 +20,14 @@
     4. Start again: nothing new is applied, and the start is quick.
     5. Task 0037: start with the database unreachable, then bring it up: Vero serves without a restart. Then take it
        away and bring it back again: readiness turns not ready and ready again. "The database" is a local TCP relay
-       (test-tools\TcpRelay.java) in front of sdv-postgres; the container itself is never stopped.
+       (test-tools\TcpRelay.java) in front of sdv-postgres; the container itself is never stopped. Task 0039 part 2:
+       at start without the database, as later, only readiness is 503; liveness and the overall health are 200. With
+       SDV_TRUSTED_PROXIES not set, X-Forwarded-For is ignored.
     6. Task 0038: start with the sign-in hub's keys away: readiness 503, a signed-in request 503 SDV-AUT-004. Then
        bring the keys back: ready again without a restart, and the same request gets 401 SDV-AUT-006 (no sign-in
        connection is set up). "The sign-in hub" is a local key set (test-tools\KeySetServer.java) with a test key made
-       for the run.
+       for the run. Task 0039 part 2: this start trusts this computer as a proxy (SDV_TRUSTED_PROXIES); 1,000 requests
+       without sign-in in under a minute, "from" 198.51.100.7, are at most two rows (a minute may turn) counting 1,000.
 
   Since task 0037 a packaged start needs sign-in and a key service. The starts here use placeholder settings: an issuer
   under the reserved .invalid domain (never contacted), and a key service address on this computer where nothing
@@ -247,9 +250,9 @@ function Wait-Readiness([int]$want, [int]$seconds) {
     $false
 }
 
-function Start-Vero([string]$name, [string]$DbUrl = $hostUrl) {
+function Start-Vero([string]$name, [string]$DbUrl = $hostUrl, [hashtable]$Override = @{}) {
     $watch = [System.Diagnostics.Stopwatch]::StartNew()
-    $out = Start-VeroProcess $name @{} $DbUrl
+    $out = Start-VeroProcess $name $Override $DbUrl
     while ($watch.Elapsed.TotalSeconds -lt $StartTimeoutSeconds) {
         if ($script:appProcess.HasExited) { throw "FAIL: Vero exited during start ($name). See $out" }
         Watch-Outbound
@@ -440,7 +443,10 @@ alter default privileges for role $owner in schema public grant select, insert, 
     $s = Start-Vero 'start-4-database-away' $relayUrl
     $veroId = $script:appProcess.Id
     $ready = Get-Http '/actuator/health/readiness'; $live = Get-Http '/actuator/health/liveness'
-    Assert-That ($s.Health.Status -eq 503 -and $ready.Status -eq 503) "health and readiness should be 503 while the database is away, were $($s.Health.Status) and $($ready.Status)"
+    # Task 0039 part 2 (owner answer 4): the same rule at start as later: only readiness is 503 (not ready).
+    $overall = Get-Http '/actuator/health'
+    Assert-That ($ready.Status -eq 503 -and $ready.Body -like '*NOT_READY*') "readiness should be 503 NOT_READY while the database is away, was $($ready.Status) $($ready.Body)"
+    Assert-That ($s.Health.Status -eq 200 -and $overall.Status -eq 200) "the overall health should be 200 while the database is away at start, was $($s.Health.Status) and $($overall.Status) $($overall.Body)"
     Assert-That ($live.Status -eq 200) "liveness should stay 200 while the database is away, was $($live.Status)"
     $gated = Get-Http '/api/v1/operations/summary'
     $gatedBody = $gated.Body | ConvertFrom-Json
@@ -450,7 +456,7 @@ alter default privileges for role $owner in schema public grant select, insert, 
     Assert-That ($log -match "ERROR .* SDV-SYS-003 Vero couldn't reach its database at start\..*127\.0\.0\.1:$RelayPort") 'no SDV-SYS-003 ERROR line with the host and port'
     Assert-That ($log -match 'SDV-SYS-012 Start-up work waits for the database \(UNREACHABLE\)') 'the start-up work did not say it waits'
     Assert-That (-not $log.Contains($appPassword)) 'the database password is in the log'
-    Write-Step '5a. Start with the database away: up, not ready, 503 SDV-SYS-014' $s.Seconds 'readiness 503, liveness 200, SYS-003 logged with host and port, start-up work waits'
+    Write-Step '5a. Start with the database away: up, not ready, 503 SDV-SYS-014' $s.Seconds 'readiness 503 NOT_READY, liveness and overall health 200, SYS-003 logged with host and port, start-up work waits'
 
     $w = [System.Diagnostics.Stopwatch]::StartNew()
     Start-Relay
@@ -461,7 +467,13 @@ alter default privileges for role $owner in schema public grant select, insert, 
     $log = Get-Content -Raw $s.Log
     Assert-That ($log -match 'can be reached again after \d+ tries') 'the log does not say the database is back'
     Assert-That ($log.Contains('Start-up work done: Restricted Steward sign-in group check.')) 'the group check did not run when the database came back'
-    Write-Step '5b. Database up: Vero serves without a restart' $w.Elapsed.TotalSeconds 'readiness 200, the same process, API 401 (gate open), group check ran'
+    # Task 0039 part 2 (owner answer 3): SDV_TRUSTED_PROXIES is not set, so X-Forwarded-For is ignored.
+    $direct = Get-Http '/api/v1/ingestion/submissions' @{ 'X-Forwarded-For' = '198.51.100.8' }
+    $directBody = $direct.Body | ConvertFrom-Json
+    Assert-That ($direct.Status -eq 401 -and $directBody.code -eq 'SDV-AUT-001') "an intake request without sign-in should get 401 SDV-AUT-001, got $($direct.Status) $($direct.Body)"
+    $directFrom = (Invoke-Sql -Database $db -Sql "select coalesce(string_agg(caller_address, ','), '-') from unidentified_intake_attempts where reference = '$($directBody.reference)';").Out.Trim()
+    Assert-That ($directFrom -in @('127.0.0.1', '0:0:0:0:0:0:0:1')) "without trusted proxies the caller address should be this computer's, was: $directFrom"
+    Write-Step '5b. Database up: Vero serves without a restart' $w.Elapsed.TotalSeconds "readiness 200, the same process, API 401 (gate open), group check ran; X-Forwarded-For ignored (recorded $directFrom)"
 
     $w = [System.Diagnostics.Stopwatch]::StartNew()
     Stop-Relay
@@ -483,7 +495,8 @@ alter default privileges for role $owner in schema public grant select, insert, 
     $signature = $token.Substring($token.LastIndexOf('.') + 1)
     $signedIn = @{ Authorization = "Bearer $token" }
     Stop-KeyServer
-    $s = Start-Vero 'start-5-sign-in-keys-away'
+    # Task 0039 part 2: this start trusts this computer as a proxy, for the X-Forwarded-For check in 6b.
+    $s = Start-Vero 'start-5-sign-in-keys-away' $hostUrl @{ SDV_TRUSTED_PROXIES = '127.0.0.1, ::1' }
     $veroId = $script:appProcess.Id
     Assert-That (Wait-Readiness 503 30) "readiness should be 503 while the sign-in keys can't be fetched. See $($s.Log)"
     Assert-That ((Get-Http '/actuator/health/liveness').Status -eq 200) 'liveness should stay 200 while the sign-in keys are away'
@@ -522,6 +535,29 @@ alter default privileges for role $owner in schema public grant select, insert, 
     Assert-That (-not $log.Contains($signature)) 'the token is in the log'
     foreach ($b in @($away.Body, $anonymous.Body, $back.Body)) { Assert-That (-not $b.Contains($signature) -and -not $b.Contains('clean-install-person')) 'an answer holds token content' }
     Write-Step '6b. Sign-in keys back: ready without a restart' $w.Elapsed.TotalSeconds 'readiness 200, the same process, the token checked: 401 SDV-AUT-006 (no connection), no token content in answers or log; on an intake address recorded as an unidentified attempt, no token content'
+
+    # Task 0039 part 2 (owner answers 2 and 3): 1,000 requests without sign-in, sent through a trusted proxy (this
+    # computer) for 198.51.100.7. They are one row per minute with their count, at the caller's real address.
+    $w = [System.Diagnostics.Stopwatch]::StartNew()
+    Add-Type -AssemblyName System.Net.Http
+    $client = New-Object System.Net.Http.HttpClient
+    $floodStatuses = @{}
+    try {
+        for ($i = 0; $i -lt 1000; $i++) {
+            $req = New-Object System.Net.Http.HttpRequestMessage([System.Net.Http.HttpMethod]::Get, "http://localhost:$Port/api/v1/ingestion/submissions/$([guid]::NewGuid())")
+            $null = $req.Headers.TryAddWithoutValidation('X-Forwarded-For', '198.51.100.7')
+            $resp = $client.SendAsync($req).GetAwaiter().GetResult()
+            $floodStatuses[[int]$resp.StatusCode] = 1 + [int]$floodStatuses[[int]$resp.StatusCode]
+            $resp.Dispose(); $req.Dispose()
+        }
+    } finally { $client.Dispose() }
+    $floodSeconds = $w.Elapsed.TotalSeconds
+    Assert-That ($floodSeconds -lt 60) ("the 1,000 requests took {0:N1} s, not under a minute" -f $floodSeconds)
+    Assert-That ($floodStatuses.Count -eq 1 -and $floodStatuses[401] -eq 1000) "all 1,000 requests should get 401: $(($floodStatuses.GetEnumerator() | ForEach-Object { "$($_.Key)=$($_.Value)" }) -join ', ')"
+    $flood = (Invoke-Sql -Database $db -Sql "select count(*) || ' ' || coalesce(sum(attempt_count), 0) || ' ' || coalesce(min(address), '-') || ' ' || coalesce(min(code), '-') from unidentified_intake_attempts where caller_address = '198.51.100.7';").Out.Trim()
+    $floodParts = $flood.Split(' ')
+    Assert-That ([int]$floodParts[0] -ge 1 -and [int]$floodParts[0] -le 2 -and $floodParts[1] -eq '1000' -and $floodParts[2] -eq '/api/v1/ingestion/submissions/{id}' -and $floodParts[3] -eq 'SDV-AUT-001') "1,000 requests in under a minute should be one or two rows (a minute may turn) counting 1,000 for 198.51.100.7, was: $flood"
+    Write-Step '6c. 1,000 unidentified requests through a trusted proxy' $w.Elapsed.TotalSeconds ("{0:N1} s; {1} row(s) counting {2}, caller 198.51.100.7 from X-Forwarded-For" -f $floodSeconds, $floodParts[0], $floodParts[1])
     Stop-Vero
     Stop-KeyServer
 

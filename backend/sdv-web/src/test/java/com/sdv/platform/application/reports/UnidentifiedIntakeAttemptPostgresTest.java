@@ -10,10 +10,18 @@ import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 
+import com.sdv.platform.application.port.UnidentifiedIntakeAttemptRepository;
+import com.zaxxer.hikari.HikariConfig;
+import com.zaxxer.hikari.HikariDataSource;
+
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -47,7 +55,7 @@ class UnidentifiedIntakeAttemptPostgresTest {
     }
 
     private Attempt attempt(UUID tenant, Instant at, String code) {
-        return new Attempt(UUID.randomUUID(), tenant, at, "203.0.113.9", "POST", "/api/v1/ingestion/submissions/{id}/documents",
+        return Attempt.one(UUID.randomUUID(), tenant, at, "203.0.113.9", "POST", "/api/v1/ingestion/submissions/{id}/documents",
                 401, code, "ref-" + code);
     }
 
@@ -104,5 +112,96 @@ class UnidentifiedIntakeAttemptPostgresTest {
         assertEquals(List.of("SDV-SYS-015", "SDV-INT-010"), items.stream().map(Item::refusalCode).toList());
         assertEquals(List.of("req-0039-a", "req-0039-b"), items.stream().map(Item::requestId).toList());
         assertEquals(List.of(SA, SA), items.stream().map(Item::sourceId).toList());
+    }
+
+    private static final UUID TC = UUID.fromString("10000000-0000-0000-0000-0000000039c1");
+    private static final UUID TD = UUID.fromString("10000000-0000-0000-0000-0000000039d1");
+
+    private long rows(String where) {
+        Long n = jdbc.queryForObject("select count(*) from unidentified_intake_attempts where " + where,
+                new MapSqlParameterSource(), Long.class);
+        return n == null ? 0 : n;
+    }
+
+    /**
+     * Task 0039 part 2 (owner answer 2 to report 0039, changeset 034): 1,000 requests in a minute from one caller to
+     * one address with one code are one row with the count 1,000 and the last time, also when they arrive at once
+     * (8 threads, the real "insert ... on conflict"). Another minute, another tenant: another row. Past 100 rows in a
+     * minute, new callers are counted together, so the table can't grow without bound.
+     */
+    @Test
+    void aFloodIsOneRowPerCallerAddressAndCodePerMinuteAndTheMinuteHasALimit() throws Exception {
+        for (UUID t : List.of(TC, TD)) {
+            sql("insert into tenants(tenant_id, tenant_key, display_name, status) values ('" + t + "', 'k" + t.toString().substring(30)
+                    + "', 'T', 'ACTIVE')");
+        }
+        // 1. 1,000 requests in one minute, 50 ms apart, sent by 8 threads at once.
+        Instant minute = now.minus(2, ChronoUnit.DAYS).truncatedTo(ChronoUnit.MINUTES);
+        HikariConfig config = new HikariConfig();
+        config.setJdbcUrl(System.getenv("SDV_IT_JDBC_URL"));
+        config.setUsername(System.getenv("SDV_IT_JDBC_USER"));
+        config.setPassword(System.getenv("SDV_IT_JDBC_PASSWORD"));
+        config.setMaximumPoolSize(8);
+        try (HikariDataSource pool = new HikariDataSource(config)) {
+            var flood = new JdbcUnidentifiedIntakeAttemptRepository(new NamedParameterJdbcTemplate(pool));
+            ExecutorService threads = Executors.newFixedThreadPool(8);
+            try {
+                List<Future<?>> sent = new ArrayList<>();
+                for (int i = 0; i < 1000; i++) {
+                    Instant at = minute.plusMillis(50L * i);
+                    int n = i;
+                    sent.add(threads.submit(() -> flood.record(Attempt.one(UUID.randomUUID(), TC, at, "198.51.100.7", "GET",
+                            "/api/v1/ingestion/submissions/{id}", 401, "SDV-AUT-001", "ref-flood-" + n))));
+                }
+                for (Future<?> f : sent) f.get();
+            } finally {
+                threads.shutdownNow();
+            }
+        }
+        assertEquals(1, rows("tenant_id='" + TC + "'"), "1,000 requests in a minute are one row");
+        List<Attempt> seen = attempts.findRecent(TC, minute.minusSeconds(1), 50).stream()
+                .filter(a -> TC.equals(a.tenantId())).toList();
+        assertEquals(1, seen.size());
+        Attempt flood = seen.getFirst();
+        assertEquals(1000, flood.count());
+        assertEquals(minute.plusMillis(50L * 999), flood.lastSeenAt(), "the last time is the last request's");
+        assertFalse(flood.occurredAt().isBefore(minute));
+        assertTrue(flood.occurredAt().isBefore(minute.plus(1, ChronoUnit.MINUTES)));
+        assertTrue(flood.reference().startsWith("ref-flood-"), "the first request's reference");
+
+        // 2. The next minute is a new row; the same request of another tenant is never added to this tenant's row.
+        attempts.record(Attempt.one(UUID.randomUUID(), TC, minute.plusSeconds(61), "198.51.100.7", "GET",
+                "/api/v1/ingestion/submissions/{id}", 401, "SDV-AUT-001", "ref-next"));
+        attempts.record(Attempt.one(UUID.randomUUID(), TD, minute.plusSeconds(5), "198.51.100.7", "GET",
+                "/api/v1/ingestion/submissions/{id}", 401, "SDV-AUT-001", "ref-other-tenant"));
+        assertEquals(2, rows("tenant_id='" + TC + "'"));
+        assertEquals(1, rows("tenant_id='" + TD + "'"));
+        long tcCount = jdbc.queryForObject("select sum(attempt_count) from unidentified_intake_attempts where tenant_id='" + TC + "'",
+                new MapSqlParameterSource(), Long.class);
+        assertEquals(1001L, tcCount);
+
+        // 3. 150 callers in one minute: 100 rows, then one row for the rest ("(many addresses)", count 50).
+        Instant busy = now.minus(3, ChronoUnit.DAYS).truncatedTo(ChronoUnit.MINUTES);
+        for (int i = 0; i < 150; i++) {
+            attempts.record(Attempt.one(UUID.randomUUID(), TD, busy.plusMillis(100L * i), "203.0.113." + i,
+                    "POST", "/api/v1/ingestion/submissions", 401, "SDV-AUT-006", "ref-busy-" + i));
+        }
+        String inBusyMinute = "occurred_at >= '" + busy + "' and occurred_at < '" + busy.plus(1, ChronoUnit.MINUTES) + "'";
+        assertEquals(UnidentifiedIntakeAttemptRepository.MAX_ROWS_PER_MINUTE + 1L, rows(inBusyMinute));
+        Integer many = jdbc.queryForObject("select attempt_count from unidentified_intake_attempts where " + inBusyMinute
+                + " and caller_address='" + UnidentifiedIntakeAttemptRepository.MANY_CALLERS + "'", new MapSqlParameterSource(), Integer.class);
+        assertEquals(50, many);
+        assertEquals(151L, jdbc.queryForObject("select sum(attempt_count) from unidentified_intake_attempts where tenant_id='" + TD + "'",
+                new MapSqlParameterSource(), Long.class), "every request is counted (150 + the one above)");
+
+        // 4. The table refuses a second row for the same key and minute, a count below 1 and a last time before the first.
+        assertThrows(Exception.class, () -> sql("insert into unidentified_intake_attempts(attempt_id, tenant_id, occurred_at,"
+                + " last_seen_at, attempt_count, caller_address, method, address, status, code, reference) values (gen_random_uuid(), '"
+                + TC + "', '" + minute.plusSeconds(1) + "', '" + minute.plusSeconds(1) + "', 1, '198.51.100.7', 'GET',"
+                + " '/api/v1/ingestion/submissions/{id}', 401, 'SDV-AUT-001', 'r')"));
+        assertThrows(Exception.class, () -> sql("insert into unidentified_intake_attempts(attempt_id, occurred_at, last_seen_at,"
+                + " attempt_count, method, address, status, code, reference) values (gen_random_uuid(), now(), now(), 0, 'GET', '/a', 401, 'c', 'r')"));
+        assertThrows(Exception.class, () -> sql("insert into unidentified_intake_attempts(attempt_id, occurred_at, last_seen_at,"
+                + " attempt_count, method, address, status, code, reference) values (gen_random_uuid(), now(), now() - interval '1 second', 1, 'GET', '/a', 401, 'c', 'r')"));
     }
 }

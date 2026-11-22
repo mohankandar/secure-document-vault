@@ -85,14 +85,15 @@ class DatabaseRecoveryTest {
         assertTrue(line.startsWith("SDV-SYS-003 Vero couldn't reach its database at start."), line);
         assertTrue(line.contains("localhost:5433") && line.contains("SQL state 08001") && line.contains("SDV-SYS-014"), line);
 
-        // Meanwhile: 503 SDV-SYS-014 with the reference; readiness OUT_OF_SERVICE (with the refusal published at ready).
+        // Meanwhile: 503 SDV-SYS-014 with the reference. Task 0039 part 2: readiness-only NOT_READY, and no refusal is
+        // published at ready (the same rule as when the database goes away after the start).
         MockHttpServletResponse refused = request(check, "/api/v1/business/search");
         assertEquals(503, refused.getStatus());
         assertTrue(refused.getContentAsString().contains("\"code\":\"SDV-SYS-014\""), refused.getContentAsString());
         assertTrue(refused.getContentAsString().contains("\"reference\":\"" + refused.getHeader("X-Correlation-Id") + "\""));
-        assertEquals(Status.OUT_OF_SERVICE, health.health().getStatus());
+        assertEquals(ReadinessOnly.NOT_READY, health.health().getStatus());
         health.refuseTrafficWhileTheDatabaseDoesNotMatch();
-        assertEquals(ReadinessState.REFUSING_TRAFFIC, ((AvailabilityChangeEvent<?>) readiness.getLast()).getState());
+        assertTrue(readiness.isEmpty(), "no REFUSING_TRAFFIC for a database that can't be reached");
 
         // Still down: it keeps trying.
         assertFalse(check.retryNow());

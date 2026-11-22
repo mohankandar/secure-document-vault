@@ -571,6 +571,9 @@ async function problemsChecks(page: Page, testInfo: TestInfo, area: 'Platform op
   const attempts = page.getByRole('region', { name: 'Unidentified intake attempts' })
   await expect(attempts.getByRole('heading', { name: /^Unidentified intake attempts · \d+$/ })).toBeVisible()
   await expect(attempts).not.toContainText(/Bearer|eyJ/)
+  // Task 0039 part 2: one line per caller address, address and code per minute, with how many times.
+  const attemptsList = attempts.getByRole('table', { name: 'Unidentified intake attempts list' })
+  if (await attemptsList.count() > 0) await expect(attemptsList.locator('thead th', { hasText: /^Times$/ })).toBeVisible()
   await expect(visible(page, /producer API|retry finali[sz]ation|Retry/)).toHaveCount(0)
   const expectations: [string, string, RegExp][] = [
     ['Could not store', problemDemo.store, /Vero couldn’t finish storing the file/],

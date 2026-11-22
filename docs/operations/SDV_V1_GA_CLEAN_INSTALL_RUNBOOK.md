@@ -180,13 +180,32 @@ The startup log and Platform operations › Health say one of:
 
 In that state Vero is up but **not ready**. Point load balancers and orchestrators at these addresses (no sign-in needed):
 
-| Address | Database matches | Database doesn't match |
-|---|---|---|
-| `/actuator/health/readiness` | 200 `UP` | 503 `OUT_OF_SERVICE`: send no traffic |
-| `/actuator/health/liveness` | 200 `UP` | 200 `UP`: don't restart it; it keeps showing why |
-| `/actuator/health` | 200 `UP` | 503 `OUT_OF_SERVICE` |
+| Address | Database matches | Database doesn't match | Database can't be reached (at start or later) |
+|---|---|---|---|
+| `/actuator/health/readiness` | 200 `UP` | 503 `OUT_OF_SERVICE`: send no traffic | 503 `NOT_READY`: send no traffic |
+| `/actuator/health/liveness` | 200 `UP` | 200 `UP`: don't restart it; it keeps showing why | 200 `UP`: don't restart it; it keeps trying |
+| `/actuator/health` | 200 `UP` | 503 `OUT_OF_SERVICE` | 200 `UP` |
 
-Vero checks the database once, when it starts. After the schema step, start Vero again.
+Vero checks the database version when it starts. After the schema step, start Vero again. If the database can't be
+reached, Vero keeps trying and serves as soon as it answers, without a restart; requests get 503 `SDV-SYS-014`
+meanwhile.
+
+### Behind a proxy or load balancer: `SDV_TRUSTED_PROXIES`
+
+Tenant IT's Problems page lists intake requests Vero couldn't link to a sending system, for example a failed
+sign-in, with the caller's network address. By default that is the address Vero's server sees: behind a proxy or load
+balancer, the proxy's.
+
+| Setting | Default | Value |
+|---|---|---|
+| `SDV_TRUSTED_PROXIES` | empty: trust no proxy | The IP addresses of your proxies or load balancers as Vero sees them, separated by commas, for example `10.0.4.11,10.0.4.12` |
+
+- Only a request that reaches Vero from one of these addresses has its `X-Forwarded-For` header read. The caller is
+  the first address from the right that isn't one of your proxies. From any other address the header is ignored, so
+  a caller can't give a false address.
+- List IP addresses only. A host name, a range (`10.0.0.0/8`) or a port stops the start with `SDV-SYS-005`.
+- Your proxy must set or append `X-Forwarded-For`; most do.
+- The address is used for the Problems list only. It doesn't affect sign-in or access.
 
 Vero sends no usage data anywhere. Liquibase's anonymous usage analytics are switched off in every mode (the
 running app, local mode and the schema step).

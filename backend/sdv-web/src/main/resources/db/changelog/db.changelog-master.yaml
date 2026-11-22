@@ -93,3 +93,6 @@ databaseChangeLog:
 
   - include:
       file: db/changelog/033-unidentified-intake-attempts.yaml
+
+  - include:
+      file: db/changelog/034-unidentified-intake-attempt-counts.yaml

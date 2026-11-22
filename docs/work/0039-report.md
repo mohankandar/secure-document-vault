@@ -206,3 +206,146 @@ Both are on `fix/intake` only. Nothing was pushed or merged.
 ## Suggested next step
 
 Review and merge `fix/intake`. Then task 0040 (the ingestion API contract) can list the INT codes and the new statuses. Before the next screen tour, run `.\Seed-SDV-Canvas-Demo.ps1 -Reset`: the demo print approvals expire after 24 hours.
+
+---
+
+# Part 2: owner answers to report 0039
+
+Date: 2026-11-22
+Branch: `fix/intake` (same branch, on top of `f1cd88a`)
+Outcome: DONE
+
+## What was done
+
+**One schema change, as approved:** changeset 034 changes `unidentified_intake_attempts` only. No other table changes. No dependency added or upgraded. No file deleted.
+
+### 1. INT-010 as 500
+
+Accepted. No change.
+
+### 2. Limit on unidentified attempts
+
+**Changeset 034 (`034-unidentified-intake-attempt-counts`)**, exactly:
+- New column `attempt_count integer not null default 1`.
+- New column `last_seen_at timestamptz not null`. Rows already there get `last_seen_at = occurred_at`.
+- Rows already there that share a key in the same minute are merged into the first one: its count and last time are set, and the others are deleted. On the dev database `sdv` there were 3 rows and none merged; the schema check proves the merge (8 rows became 5).
+- New checks: `ck_unidentified_intake_attempts_count` (`attempt_count >= 1`) and `ck_unidentified_intake_attempts_last_seen` (`last_seen_at >= occurred_at`).
+- New unique index `uq_unidentified_intake_attempts_minute` on tenant, caller address, method, address, code, status and the UTC minute of `occurred_at`. Null tenant and null address are each counted as one value.
+
+**How Vero writes:**
+- One request adds 1 to its minute's row and moves `last_seen_at`. Only a new key writes a row, using `insert … on conflict … do update`, so requests that arrive together still make one row.
+- The key is caller address + address called + code per minute, as asked. It also holds the **tenant** (rows of different tenants are never merged, because who may see a row depends on it), plus the **method** and **status**.
+- The row keeps the first request's reference. Every request's reference is in Vero's log.
+- Rows are kept 30 days, as before. Old rows are removed when a new row is written.
+
+**Additions so the table really can't grow without bound.** I added these myself; they need your OK (question 1):
+- Parts of an intake address that aren't Vero's own words (`submissions`, `documents`, `retry-finalization`) are now blanked to `{id}`, at most 6 parts. Before, only UUIDs were blanked, so made-up paths made one row per request.
+- A method that isn't one of HTTP's standard ones is recorded as `OTHER`.
+- After 100 rows in a minute, new caller addresses in that minute go into one row with the caller address `(many addresses)`. Many distinct callers (an IPv6 range, for example) would otherwise still add a row each. Worst case: about 100 rows a minute plus a few overflow rows, kept 30 days.
+
+**Problems page:** a new "Times" column ("1,000 in a minute"). "When" shows the last time; hovering shows the first and last time. The count in the heading is every request.
+
+### 3. Caller address behind a proxy
+
+- New setting `SDV_TRUSTED_PROXIES` (`sdv.trusted-proxies`): IP addresses separated by commas or spaces. It is **empty by default, which trusts no proxy**.
+- How the address is found: Vero reads `X-Forwarded-For` only when the request came from one of those addresses. It reads the header from the right, skips the trusted proxies, and takes the first address that isn't one of them.
+- A value that isn't an IP address ends the search, and the last trusted proxy's address is kept. So a value the caller could have written is never recorded as their address. Host names are never looked up.
+- A setting entry that isn't an IP address (a host name, a range or a port) stops the start with SDV-SYS-005.
+- The address is used only for the Problems list.
+- New class `web/foundation/CallerAddress`.
+- Documented for the install: `SDV_V1_GA_CLEAN_INSTALL_RUNBOOK.md`, new section "Behind a proxy or load balancer: `SDV_TRUSTED_PROXIES`"; also in `docs/api/error-codes.md` (intake intro).
+
+### 4. Health at start without a database
+
+- At start without a database, the schema check (`databaseSchema`, state UNREACHABLE) now reports `NOT_READY`, which counts in readiness only.
+- Vero no longer publishes "refusing traffic" for this case.
+- Result, the same rule at start and later:
+  - readiness is 503 `NOT_READY`;
+  - liveness is 200;
+  - the overall `/actuator/health` is 200 (it was 503 `OUT_OF_SERVICE`);
+  - requests get 503 SDV-SYS-014, as before.
+- Unchanged: a database that answers but doesn't match (SYS-001, SYS-002) is still `OUT_OF_SERVICE` in readiness and overall, and refuses traffic. It needs the schema step.
+- The runbook's health table has a new column, "Database can't be reached". SYS-003 in the catalog is updated.
+
+### 5. Seed script path defaults
+
+- In `Seed-SDV-Canvas-Demo.ps1` the four path parameters now default to empty, and the script fills them in from its own folder (`$PSScriptRoot`, or the script's path when that is empty).
+- Before the fix, `powershell.exe -File .\Seed-SDV-Canvas-Demo.ps1` failed at once: "Join-Path : Cannot bind argument to parameter 'Path' because it is an empty string" (reproduced).
+- After the fix, `-Reset` ran that way with no path parameters.
+
+## Commands run and results
+
+| Command | Result |
+|---|---|
+| `powershell.exe -File .\Seed-SDV-Canvas-Demo.ps1 -Base http://localhost:1`, before the fix | Failed: Join-Path, empty `$PSScriptRoot` (item 5 reproduced) |
+| The same, after the fix | Got past the path checks; stopped at "SDV is not reachable" (expected, port 1) |
+| `mvn -o test` for the health tests (`HealthGroupsTest`, `DatabaseSchemaHealthIndicatorTest`, `DatabaseRecoveryTest`) | 16 passed |
+| `mvn -o test` for `CallerAddressTest`, `IntakeRefusalsTest`, `ProblemsAndAuditRecordsTest`, `IntakeCodesTest` | 41 passed |
+| `npm run typecheck` | Passed |
+| `.\Stop-SDV-Local.ps1`, then `.\Build-SDV-All.ps1` | **BUILD SUCCESS.** Backend 526 tests (24 + 50 + 2 + 4 + 446), 0 failures, 8 skipped (PostgreSQL-only). Frontend build passed. |
+| `.\Test-SDV-SchemaUpgrade.ps1` (default, now `-From 034`), first run | **FAIL** in step 4f. The migration steps passed. `UnidentifiedIntakeAttemptPostgresTest` failed: the rows the script wrote at 033 (dated 2026-11-20, two without a tenant) fell within the test's 7-day window. A test-data clash, not a code fault. The script now deletes its rows once step 4m has checked them. |
+| `.\Test-SDV-SchemaUpgrade.ps1`, second run | **PASS**, 43 s. 4m: 8 rows written at 033 became 5; the columns are not null; the unique index is valid; the checks refuse bad rows. 4f: all 8 PostgreSQL tests passed. |
+| `.\Test-SDV-SchemaUpgrade.ps1 -From 033` | **PASS**, 49 s (033 and 034) |
+| `.\Test-SDV-CleanInstall.ps1` | **PASS**, 131 s, 34 changesets. 5a: database away at start, readiness 503 `NOT_READY`, liveness and overall health 200. 5b: `X-Forwarded-For` ignored without the setting (recorded `0:0:0:0:0:0:0:1`). 6c (new): 1,000 requests without sign-in in 8.4 s through a trusted proxy for 198.51.100.7 became 2 rows counting 1,000 (a minute turned during the run), all 401, the caller taken from the header. |
+| `.\Start-SDV-Local.ps1` | Readiness 200. The local start applied changeset 034 to `sdv`; its 3 attempt rows were kept (count 1 each). |
+| `powershell.exe -File .\Seed-SDV-Canvas-Demo.ps1 -Reset` (no path parameters) | Passed: "Demo data ready." |
+| `npm run ui:capture`, first run | 18 passed, 4 failed, 10 skipped. (1, 2) My new tour check looked for the "Times" header by role; the column was on the page (screenshot), so I changed the check to the header text. (3, 4) The UI server on 5183 stopped during the run (ECONNREFUSED); its console window was gone, so the cause can't be seen. |
+| `.\Stop-SDV-Local.ps1`, `.\Start-SDV-Local.ps1` | UI 200, readiness 200 |
+| `npm run ui:capture`, second run | **25 passed, 11 skipped** (as in reports 0035 to 0039) |
+
+## Tests: counts, and any failures with their output
+
+Build: 526 tests, 0 failures, 8 skipped (515 and 7 in Part 1). Failures along the way are in the table above.
+
+**Tests changed (said here as the rules require):**
+- `DatabaseSchemaHealthIndicatorTest`: UNREACHABLE is no longer in the "OUT_OF_SERVICE" list; it has its own test (item 4).
+- `DatabaseRecoveryTest`: at start without a database it expected `OUT_OF_SERVICE` and a published REFUSING_TRAFFIC; it now expects `NOT_READY` and nothing published.
+- `HealthGroupsTest`: `databaseSchema` is now the real indicator (it was a stub that was always UP).
+- `IntakeRefusalsTest`: the old assertion "a long made-up address is cut to 200 characters" is now "it becomes `/api/v1/ingestion/{id}`".
+- `ProblemsAndAuditRecordsTest`, `UnidentifiedIntakeAttemptPostgresTest`: the attempt record has two more fields.
+- `Test-SDV-SchemaUpgrade.ps1`: checks 034, `-From 034` is now the default, and the test count for `UnidentifiedIntakeAttemptPostgresTest` is 2. The 033 check's "bad rows" now give `last_seen_at`, so each fails for the reason named.
+- `Test-SDV-CleanInstall.ps1`: 5a expects overall health 200 (it was 503). `Start-Vero` can take extra settings. New checks in 5b and 6c.
+- `e2e/sdv-screen-tour.spec.ts`: checks the "Times" column.
+
+**New tests (10 in the normal build, plus 1 PostgreSQL test):**
+- `CallerAddressTest` (6): no trust by default; the walk from the right over trusted proxies; IPv6, brackets and ports; a caller not behind a trusted proxy can't name itself; a value that isn't an address keeps the last trusted hop; a long chain stops after 20 hops; a setting entry that isn't an IP address stops the start (SYS-005); names are never looked up.
+- `IntakeRefusalsTest` (+2): unknown methods are `OTHER`; the caller address comes from `X-Forwarded-For` only behind a trusted proxy (end to end through Vero's error page). Plus the new address cases in the existing address test.
+- `DatabaseSchemaHealthIndicatorTest` (+1), `HealthGroupsTest` (+1): at start without a database, readiness is 503 `NOT_READY` and liveness and overall are 200 UP; a mismatched database is still `OUT_OF_SERVICE`.
+- `UnidentifiedIntakeAttemptPostgresTest` (+1, run by the schema check):
+  - 1,000 requests in one minute, sent by 8 threads at once, are one row with count 1,000, the last request's time and the first request's reference.
+  - The next minute is a new row. Another tenant is never merged in.
+  - 150 callers in a minute make 100 rows plus one `(many addresses)` row counting 50.
+  - The table refuses a second row per minute, a count of 0 and a last time before the first.
+
+## Files changed
+
+- Schema: new `034-unidentified-intake-attempt-counts.sql` and `.yaml`; `db.changelog-master.yaml`.
+- Application: `port/UnidentifiedIntakeAttemptRepository` (count, last time, `Attempt.one`, the 100-a-minute limit).
+- Persistence: `JdbcUnidentifiedIntakeAttemptRepository` (add to the minute's row; insert on conflict; sums for the count).
+- Web: new `foundation/CallerAddress`; `ingestion/IntakeRefusals` (caller address, address and method made bounded); `schema/DatabaseSchemaHealthIndicator`.
+- Frontend: `Problems.tsx`, `liveApi.ts`, `e2e/sdv-screen-tour.spec.ts`.
+- Tests: the new `CallerAddressTest` and the changed ones above.
+- Scripts: `Seed-SDV-Canvas-Demo.ps1`, `Test-SDV-SchemaUpgrade.ps1`, `Test-SDV-CleanInstall.ps1`.
+- Docs: `docs/api/error-codes.md`, `docs/operations/SDV_V1_GA_CLEAN_INSTALL_RUNBOOK.md`, this report, and the task file (Part 2 as the owner wrote it).
+- Not touched: `Start-SDV-Local.ps1` (its local changes stay uncommitted), `docs/work/0040-task.md` (left untracked).
+
+## Commits (hash and message), or "not committed"
+
+See the end of this section. Nothing was pushed or merged.
+
+## Not done, and why
+
+- **The 100-rows-a-minute limit, the blanked address parts and `OTHER`** go beyond the answer's wording. Without them the table could still grow with each request (question 1).
+- **`SDV_TRUSTED_PROXIES` takes single IP addresses only**, no ranges. A proxy pool that changes addresses must be listed in full (question 2).
+- **`X-Forwarded-For` only.** The standard `Forwarded` header is not read.
+- **The live local app has no proxy setting**, so the Problems page in the screen tour shows the server's view (`0:0:0:0:0:0:0:1`). The proxy path is proved by the clean install (6c) and the tests.
+- **Why the UI server stopped** during the first screen tour is not known; its console window had closed. The second run, after a restart, passed.
+
+## Questions for the owner
+
+1. **The extra bounds on unidentified attempts:** past 100 rows in a minute, new callers share one "(many addresses)" row; made-up address parts are blanked; unknown methods are `OTHER`. Keep them, and is 100 the right limit?
+2. **`SDV_TRUSTED_PROXIES`:** are single IP addresses enough, or should it accept ranges (for example `10.0.4.0/24`) for load balancers whose addresses change?
+
+## Suggested next step
+
+Review and merge `fix/intake`. Then task 0040: the shared delivery contract can also say that unidentified attempts are counted per minute.

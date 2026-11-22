@@ -17,11 +17,23 @@ class DatabaseSchemaHealthIndicatorTest {
 
     @Test
     void aMismatchedDatabaseIsOutOfServiceNotDown() {
-        for (SchemaVersion.State state : List.of(SchemaVersion.State.OLDER, SchemaVersion.State.NEWER, SchemaVersion.State.UNREACHABLE)) {
+        for (SchemaVersion.State state : List.of(SchemaVersion.State.OLDER, SchemaVersion.State.NEWER)) {
             var health = new DatabaseSchemaHealthIndicator(check(state), e -> { }).health();
             assertEquals(Status.OUT_OF_SERVICE, health.getStatus(), state.name());
             assertEquals(state.name(), health.getDetails().get("state"));
         }
+    }
+
+    /** Task 0039 part 2 (owner answer 4): unreachable at start is readiness-only, as after the start. */
+    @Test
+    void aDatabaseThatCantBeReachedAtStartIsNotReadyOnlyAndDoesNotRefuseTraffic() {
+        List<Object> published = new ArrayList<>();
+        var indicator = new DatabaseSchemaHealthIndicator(check(SchemaVersion.State.UNREACHABLE), published::add);
+        var health = indicator.health();
+        assertEquals(ReadinessOnly.NOT_READY, health.getStatus());
+        assertEquals("UNREACHABLE", health.getDetails().get("state"));
+        indicator.refuseTrafficWhileTheDatabaseDoesNotMatch();
+        assertTrue(published.isEmpty(), "readiness comes from the checks, not from a refusal");
     }
 
     @Test

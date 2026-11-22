@@ -16,6 +16,12 @@ import org.springframework.stereotype.Component;
  * <p>
  * Task 0037: when the database couldn't be reached at start and comes back matching, readiness turns ready again
  * without a restart.
+ * <p>
+ * Task 0039 part 2 (owner answer 4 to report 0039): a database that can't be reached <b>at start</b> follows the same
+ * rule as one that goes away later. This check then reports {@link ReadinessOnly#NOT_READY}: readiness is not ready
+ * (503; requests get 503 SDV-SYS-014 from the SchemaGateFilter), liveness and the overall health stay UP (200), and no
+ * refusal of traffic is published. Only a database that answers and doesn't match (older or newer) is OUT_OF_SERVICE
+ * everywhere and refuses traffic: that one needs the schema step.
  */
 @Component("databaseSchema")
 public class DatabaseSchemaHealthIndicator implements HealthIndicator {
@@ -32,13 +38,21 @@ public class DatabaseSchemaHealthIndicator implements HealthIndicator {
     @Override
     public Health health() {
         SchemaVersion.Status status = check.status();
-        Health.Builder builder = status.current() ? Health.up() : Health.outOfService();
+        Health.Builder builder = status.current() ? Health.up()
+                : status.reachable() ? Health.outOfService() : Health.status(ReadinessOnly.NOT_READY);
         return builder.withDetail("state", status.state().name()).withDetail("message", status.message()).build();
     }
 
-    /** Spring marks the application ready to take traffic when it has started; a mismatched database takes that back. */
+    /**
+     * Spring marks the application ready to take traffic when it has started; a mismatched database takes that back.
+     * A database that can't be reached doesn't (task 0039 part 2): readiness is not ready through this check and the
+     * database ping, as after the start.
+     */
     @EventListener(ApplicationReadyEvent.class)
     public void refuseTrafficWhileTheDatabaseDoesNotMatch() {
-        if (!check.current()) AvailabilityChangeEvent.publish(events, this, ReadinessState.REFUSING_TRAFFIC);
+        SchemaVersion.Status status = check.status();
+        if (!status.current() && status.reachable()) {
+            AvailabilityChangeEvent.publish(events, this, ReadinessState.REFUSING_TRAFFIC);
+        }
     }
 }

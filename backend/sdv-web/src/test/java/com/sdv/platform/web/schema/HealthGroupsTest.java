@@ -43,13 +43,19 @@ class HealthGroupsTest {
     }
 
     private static ApplicationContextRunner vero(Status database, Status keys) throws Exception {
+        return vero(new DatabaseSchemaCheck(new SchemaVersion.Status(SchemaVersion.State.CURRENT, List.of(), List.of(), 0)),
+                database, keys);
+    }
+
+    private static ApplicationContextRunner vero(DatabaseSchemaCheck schema, Status database, Status keys) throws Exception {
         return new ApplicationContextRunner()
                 .withConfiguration(AutoConfigurations.of(ApplicationAvailabilityAutoConfiguration.class,
                         EndpointAutoConfiguration.class, HealthContributorAutoConfiguration.class,
                         HealthEndpointAutoConfiguration.class, AvailabilityHealthContributorAutoConfiguration.class,
                         AvailabilityProbesAutoConfiguration.class))
                 .withPropertyValues(veroHealthSettings())
-                .withBean("databaseSchema", HealthIndicator.class, () -> () -> Health.up().build())
+                .withBean("databaseSchema", HealthIndicator.class,
+                        () -> new DatabaseSchemaHealthIndicator(schema, event -> { }))
                 .withBean("databaseConnection", HealthIndicator.class, () -> () -> Health.status(database).build())
                 .withBean("signInKeys", HealthIndicator.class, () -> () -> Health.status(keys).build());
     }
@@ -80,6 +86,28 @@ class HealthGroupsTest {
                 assertEquals(new Answer(Status.UP, 200), answer(context, null), "overall /actuator/health");
             });
         }
+    }
+
+    /**
+     * Task 0039 part 2 (owner answer 4 to report 0039): the database can't be reached at start. The same rule as after
+     * the start: readiness not ready (503), liveness and the overall health UP (200).
+     */
+    @Test
+    void theDatabaseAwayAtStartIsTheSameRuleAsLater() throws Exception {
+        DatabaseSchemaCheck unreachable = new DatabaseSchemaCheck(SchemaVersion.Status.unreachable());
+        vero(unreachable, ReadinessOnly.NOT_READY, Status.UP).run(context -> {
+            assertEquals(new Answer(ReadinessOnly.NOT_READY, 503), answer(context, "readiness"), "readiness");
+            assertEquals(new Answer(Status.UP, 200), answer(context, "liveness"), "liveness");
+            assertEquals(new Answer(Status.UP, 200), answer(context, null), "overall /actuator/health");
+        });
+        // A database that answers and doesn't match is unchanged: out of service everywhere but liveness.
+        DatabaseSchemaCheck older = new DatabaseSchemaCheck(
+                new SchemaVersion.Status(SchemaVersion.State.OLDER, List.of(), List.of(), 0));
+        vero(older, Status.UP, Status.UP).run(context -> {
+            assertEquals(new Answer(Status.OUT_OF_SERVICE, 503), answer(context, "readiness"));
+            assertEquals(new Answer(Status.OUT_OF_SERVICE, 503), answer(context, null));
+            assertEquals(new Answer(Status.UP, 200), answer(context, "liveness"));
+        });
     }
 
     @Test

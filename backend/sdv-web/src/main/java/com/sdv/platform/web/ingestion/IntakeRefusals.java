@@ -9,6 +9,7 @@ import com.sdv.platform.domain.audit.AuditOutcome;
 import com.sdv.platform.security.auth.ActiveTenantFilter;
 import com.sdv.platform.security.auth.IngestionSourcePrincipal;
 import com.sdv.platform.security.auth.SdvPrincipal;
+import com.sdv.platform.web.foundation.CallerAddress;
 import jakarta.servlet.RequestDispatcher;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
@@ -62,8 +63,11 @@ public class IntakeRefusals {
     static final Logger LOG = LoggerFactory.getLogger(IntakeRefusals.class);
     private static final ObjectMapper JSON = new ObjectMapper();
     private static final int MAX_ID = 200;
-    private static final Pattern UUID_SEGMENT =
-            Pattern.compile("(?i)(?<=/)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?=/|$)");
+    /** Task 0039 part 2: the words of Vero's intake addresses; any other part of an address is blanked to {id}. */
+    private static final java.util.Set<String> ADDRESS_WORDS = java.util.Set.of("submissions", "documents", "retry-finalization");
+    static final int MAX_ADDRESS_PARTS = 6;
+    private static final java.util.Set<String> KNOWN_METHODS =
+            java.util.Set.of("GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "TRACE");
     private static final Pattern SUBMISSION_PATH =
             Pattern.compile("^/api/v1/ingestion/submissions/([0-9a-fA-F-]{36})(/.*)?$");
 
@@ -71,19 +75,27 @@ public class IntakeRefusals {
     private final IngestionSourceRepository sources;
     private final UnidentifiedIntakeAttemptRepository unidentified;
     private final Clock clock;
+    /** Task 0039 part 2: the caller's address, from X-Forwarded-For only behind a trusted proxy. */
+    private final CallerAddress callers;
 
     @Autowired
     public IntakeRefusals(AuditEventPort audit, IngestionSourceRepository sources,
-                          UnidentifiedIntakeAttemptRepository unidentified) {
-        this(audit, sources, unidentified, Clock.systemUTC());
+                          UnidentifiedIntakeAttemptRepository unidentified, CallerAddress callers) {
+        this(audit, sources, unidentified, Clock.systemUTC(), callers);
     }
 
     IntakeRefusals(AuditEventPort audit, IngestionSourceRepository sources,
                    UnidentifiedIntakeAttemptRepository unidentified, Clock clock) {
+        this(audit, sources, unidentified, clock, CallerAddress.DIRECT);
+    }
+
+    IntakeRefusals(AuditEventPort audit, IngestionSourceRepository sources,
+                   UnidentifiedIntakeAttemptRepository unidentified, Clock clock, CallerAddress callers) {
         this.audit = audit;
         this.sources = sources;
         this.unidentified = unidentified;
         this.clock = clock;
+        this.callers = callers == null ? CallerAddress.DIRECT : callers;
     }
 
     /** The controller read the delivery's request ID from the body; it is recorded if the delivery is refused. */
@@ -165,9 +177,15 @@ public class IntakeRefusals {
         if (unidentified == null) return;
         UUID tenantId = principal instanceof IngestionSourcePrincipal source ? source.tenantId()
                 : principal instanceof SdvPrincipal person ? person.tenantId() : null;
-        unidentified.record(new UnidentifiedIntakeAttemptRepository.Attempt(UUID.randomUUID(), tenantId,
-                clock.instant(), cut(request.getRemoteAddr(), 64), cut(request.getMethod(), 10), address(path),
+        unidentified.record(UnidentifiedIntakeAttemptRepository.Attempt.one(UUID.randomUUID(), tenantId,
+                clock.instant(), cut(callers.of(request), 64), method(request.getMethod()), address(path),
                 status.value(), cut(code, 40), cut(reference, 200)));
+    }
+
+    /** Task 0039 part 2: a method HTTP knows, or OTHER, so a made-up method can't make a new row per request. */
+    static String method(String method) {
+        String m = method == null ? "" : method.trim().toUpperCase(java.util.Locale.ROOT);
+        return KNOWN_METHODS.contains(m) ? m : "OTHER";
     }
 
     /** The principal of a verified sign-in: from the security context, or as the tenant check left it (error page). */
@@ -187,10 +205,25 @@ public class IntakeRefusals {
         return context != null && !context.isEmpty() && uri.startsWith(context) ? uri.substring(context.length()) : uri;
     }
 
-    /** The address with every ID blanked, without control characters, at most 200 characters. */
+    /**
+     * The address with every ID blanked, without control characters, at most 200 characters. Task 0039 part 2: every
+     * part after {@code /api/v1/ingestion/} that isn't a word of Vero's intake addresses is blanked too (not only
+     * UUIDs), and at most {@link #MAX_ADDRESS_PARTS} parts are kept, so made-up addresses can't make a new row per
+     * request either.
+     */
     static String address(String path) {
-        String blanked = UUID_SEGMENT.matcher(path).replaceAll("{id}");
-        return cut(blanked, 200);
+        String rest = path.substring(INTAKE_PREFIX.length());
+        String[] parts = rest.split("/", -1);
+        StringBuilder out = new StringBuilder(INTAKE_PREFIX.substring(0, INTAKE_PREFIX.length() - 1));
+        for (int i = 0; i < parts.length; i++) {
+            if (i == MAX_ADDRESS_PARTS) {
+                out.append("/...");
+                break;
+            }
+            String part = parts[i];
+            out.append('/').append(part.isEmpty() || ADDRESS_WORDS.contains(part) ? part : "{id}");
+        }
+        return cut(out.toString(), 200);
     }
 
     private static String cut(String value, int max) {

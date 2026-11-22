@@ -147,7 +147,8 @@ export type OpsDetail=OpSummary & {storageVolumes:{volumeId:string;displayName:s
   /** Task 0039: intake attempts with no known sending system (a failed sign-in, for example), last 7 days, newest first. Never token content. */
   unidentifiedIntakeAttemptCount?:number|null;unidentifiedIntakeAttempts?:UnidentifiedIntakeAttempt[]}
 /** address: the Vero address called, IDs blanked; callerAddress: the network address the request came from. */
-export type UnidentifiedIntakeAttempt={attemptId:string;tenantId:string|null;occurredAt:string;callerAddress:string|null;method:string;address:string;status:number;code:string;reference:string}
+/** Task 0039 part 2: one row per caller address, address and code per minute; count = requests, lastSeenAt = the last of them. */
+export type UnidentifiedIntakeAttempt={attemptId:string;tenantId:string|null;occurredAt:string;lastSeenAt:string;count:number;callerAddress:string|null;method:string;address:string;status:number;code:string;reference:string}
 /** Tenant IT reads the same summary for its read-only Problems tab. */
 export const opsDetail=(role:'platform'|'tenantIt'='platform')=>roleApi<OpsDetail>('/api/v1/operations/summary',role)
 export type OpsAuditEvent={auditEventId:string;occurredAt:string;action:string;outcome:string;actorId:string;actorType:string;targetType:string;targetId:string;correlationId:string|null;safeDetailsJson:string|null;
