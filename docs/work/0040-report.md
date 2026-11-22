@@ -290,7 +290,8 @@ The UI server on 5183 didn't stop during any tour.
 ### Commits
 
 - `2e9880b` docs(work): task 0040 Part 2 and owner answers to report 0040
-- Part 2 with the owner's answers and the tour fix: see the next commit on this branch (its hash is added in the commit after it).
+- `76307d6` feat: busy answer 503 SDV-SYS-018 with Retry-After setting, upload SDV-STO-004, busy count in Problems (task 0040 part 2)
+- The commit after it adds this hash to the report.
 
 Nothing pushed, merged or tagged.
 
