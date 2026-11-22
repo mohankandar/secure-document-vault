@@ -331,7 +331,10 @@ Build: 526 tests, 0 failures, 8 skipped (515 and 7 in Part 1). Failures along th
 
 ## Commits (hash and message), or "not committed"
 
-See the end of this section. Nothing was pushed or merged.
+- `fafc160` fix: unidentified intake attempts counted per minute, trusted proxies for the caller address, readiness-only database health at start, seed path defaults (task 0039 part 2)
+- A follow-up commit that writes this hash into the report.
+
+Both are on `fix/intake` only. Nothing was pushed or merged.
 
 ## Not done, and why
 
