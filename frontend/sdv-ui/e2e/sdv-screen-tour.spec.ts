@@ -27,6 +27,43 @@ const AREA_TAB_BY_ROLE: Record<string, string> = {
   'Local Administrator (Tenant IT + Business admin)': 'Business administration',
 }
 
+// ---- Task 0040 (owner answers, third round, item 3): the server's answers when a step fails ----
+// Every error answer (4xx or 5xx) from Vero's API that the page gets during a step is kept: method, address, status,
+// and from the error body the code and the reference (the request's correlation ID, which is on Vero's log line).
+// When the step fails, they are printed and attached to the report, so a failure on a server answer (like the one-off
+// audit export failure in report 0040 part 2) can be matched to the server log. Nothing else of the body is kept.
+type ServerAnswer = { at: string; method: string; address: string; status: number; code: string; reference: string }
+const SERVER_ANSWERS_KEPT = 20
+const serverAnswers = new WeakMap<Page, ServerAnswer[]>()
+
+test.beforeEach(async ({ page }) => {
+  const answers: ServerAnswer[] = []
+  serverAnswers.set(page, answers)
+  page.on('response', (response) => {
+    const status = response.status()
+    const url = new URL(response.url())
+    if (status < 400 || !url.pathname.startsWith('/api/')) return
+    const header = response.headers()['x-correlation-id'] ?? '—'
+    const keep = (code: string, reference: string) => {
+      answers.push({ at: new Date().toISOString(), method: response.request().method(), address: url.pathname, status, code, reference })
+      if (answers.length > SERVER_ANSWERS_KEPT) answers.shift()
+    }
+    const json = (response.headers()['content-type'] ?? '').includes('json')
+    if (!json) { keep('—', header); return }
+    response.json().then(
+      (body: { code?: unknown; reference?: unknown }) => keep(typeof body?.code === 'string' ? body.code : '—', typeof body?.reference === 'string' ? body.reference : header),
+      () => keep('—', header))
+  })
+})
+
+test.afterEach(async ({ page }, testInfo) => {
+  const answers = serverAnswers.get(page) ?? []
+  if (testInfo.status === testInfo.expectedStatus || answers.length === 0) return
+  const lines = answers.map((a) => `${a.at} ${a.method} ${a.address} -> ${a.status} code=${a.code} reference=${a.reference}`)
+  console.log(`Server error answers during "${testInfo.title}" (newest last, at most ${SERVER_ANSWERS_KEPT}):\n  ${lines.join('\n  ')}`)
+  await testInfo.attach('server-error-answers', { body: lines.join('\n'), contentType: 'text/plain' })
+})
+
 const accountButton = (page: Page) => page.getByRole('banner').getByRole('button', { name: /^Account: / })
 
 /**
