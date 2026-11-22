@@ -158,6 +158,22 @@ public class JdbcAccessRequestRepository implements AccessRequestRepository {
     }
 
     @Override
+    public boolean giveBackGrant(UUID tenantId, UUID requestId, UUID documentId, String requestedBy,
+                                 AccessRequestKind kind) {
+        return jdbc.update("""
+                update access_requests
+                   set status='APPROVED', used_at=null
+                 where tenant_id=:tenantId and request_id=:requestId and document_id=:documentId
+                   and requested_by=:requestedBy and kind=:kind and status='USED'
+                """, new MapSqlParameterSource()
+                .addValue("tenantId", tenantId)
+                .addValue("requestId", requestId)
+                .addValue("documentId", documentId)
+                .addValue("requestedBy", requestedBy)
+                .addValue("kind", kind.name())) == 1;
+    }
+
+    @Override
     public List<AccessRequest> findPending(UUID tenantId, Collection<AccessRequestKind> kinds, String requester, int limit) {
         List<String> kindNames = kinds == null || kinds.isEmpty()
                 ? List.of(AccessRequestKind.values()).stream().map(Enum::name).toList()

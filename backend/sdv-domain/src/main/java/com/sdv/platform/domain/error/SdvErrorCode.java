@@ -170,6 +170,35 @@ public enum SdvErrorCode {
     INT_017("SDV-INT-017", false, true),
     /** Task 0039: retry-finalization of an unknown document (404), or of one in a state it can't be (409). INFO. */
     INT_018("SDV-INT-018", false, true),
+    /** Task 0043: no document of this tenant has this ID (404). INFO line. */
+    DOC_001("SDV-DOC-001", false, Log.INFO),
+    /** Task 0043: the document isn't available: still being stored, failed, being corrected or deleted (409). INFO. */
+    DOC_002("SDV-DOC-002", false, Log.INFO),
+    /** Task 0043: the viewer can't read the stored copy: storage metadata, volume, storage or key service (422). ERROR. */
+    DOC_003("SDV-DOC-003", false, Log.ERROR),
+    /** Task 0043: the stored copy failed its size or fingerprint check, or is too big to view (422). ERROR line. */
+    DOC_004("SDV-DOC-004", false, Log.ERROR),
+    /** Task 0043: the PDF can't be loaded or a page can't be drawn (422). WARN line with the page. */
+    DOC_005("SDV-DOC-005", false, Log.WARN),
+    /** Task 0043: a viewer request isn't valid: page, zoom, preview count or search text (400). DEBUG line. */
+    DOC_006("SDV-DOC-006", false, Log.DEBUG),
+    /** Task 0043: the download can't be read or verified before anything is sent (422). ERROR line. */
+    DOC_007("SDV-DOC-007", false, Log.ERROR),
+    /** Task 0043: a correction replaced the document between preparing and sending the download (409). WARN line. */
+    DOC_008("SDV-DOC-008", false, Log.WARN),
+    /**
+     * Task 0043: the download stopped after part of the file was handed to the response (storage, key service, check
+     * or the browser). ERROR line saying whether a grant was used; a Highly Confidential grant stays used.
+     */
+    DOC_009("SDV-DOC-009", false, Log.ERROR),
+    /** Task 0043: a tag or comment is empty or too long (400). DEBUG line. */
+    DOC_010("SDV-DOC-010", false, Log.DEBUG),
+    /** Task 0043: the search criteria aren't valid (400). DEBUG line; messages name a field's key, never a value. */
+    SCH_001("SDV-SCH-001", false, Log.DEBUG),
+    /** Task 0043: the record reference is malformed or names no record of this tenant (400 or 404). INFO line. */
+    SCH_002("SDV-SCH-002", false, Log.INFO),
+    /** Task 0043: the recently viewed request isn't valid (400). DEBUG line. */
+    SCH_003("SDV-SCH-003", false, Log.DEBUG),
     /** Task 0032: the Reports tab is for Business Admins only (VIEW_INTAKE_REPORTS) (403). */
     RPT_001("SDV-RPT-001"),
     /**
@@ -240,8 +269,11 @@ public enum SdvErrorCode {
     /** Task 0037: no key service is set up: WARN at a local start, and a packaged start refuses. */
     KEY_001("SDV-KEY-001", true);
 
-    /** Task 0039: the line an expected refusal (no person must act) gets: none, DEBUG or INFO. */
-    private enum Log { NONE, DEBUG, INFO }
+    /**
+     * Task 0039: the line an expected refusal (no person must act) gets: none, DEBUG or INFO. Task 0043: WARN or ERROR
+     * for a document action Vero itself couldn't finish, also when it is answered with a 4xx status (422).
+     */
+    private enum Log { NONE, DEBUG, INFO, WARN, ERROR }
 
     private final String code;
     private final boolean needsPerson;
@@ -289,5 +321,15 @@ public enum SdvErrorCode {
     /** Task 0039: an expected refusal logged at DEBUG only (SDV-AUT-001: a line per request without a sign-in). */
     public boolean loggedAtDebug() {
         return refusalLog == Log.DEBUG;
+    }
+
+    /** Task 0043: a document action refused or stopped that gets a WARN line (SDV-DOC-005, SDV-DOC-008). */
+    public boolean loggedAtWarn() {
+        return refusalLog == Log.WARN;
+    }
+
+    /** Task 0043: a document action Vero couldn't finish: ERROR, whatever the status (DOC-003, -004, -007, -009). */
+    public boolean loggedAtError() {
+        return refusalLog == Log.ERROR;
     }
 }

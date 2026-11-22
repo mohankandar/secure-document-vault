@@ -13,12 +13,13 @@ import com.sdv.platform.domain.audit.AuditOutcome;
 import com.sdv.platform.domain.document.Document;
 import com.sdv.platform.domain.document.DocumentStatus;
 import com.sdv.platform.domain.document.SensitivityLevel;
+import com.sdv.platform.domain.error.CodedRefusal;
+import com.sdv.platform.domain.error.SdvErrorCode;
 import org.springframework.stereotype.Service;
 
 import java.time.Clock;
 import java.time.Instant;
 import java.util.List;
-import java.util.NoSuchElementException;
 import java.util.Objects;
 import java.util.UUID;
 
@@ -63,8 +64,10 @@ public class DocumentActionService {
         Document document = requireAvailable(tenantId, documentId, clearance, DocumentAccessGuard.Attempt.ADD_TAG,
                 actorId, correlationId);
         String tag = rawTag == null ? "" : rawTag.trim();
-        if (tag.isEmpty()) throw new IllegalArgumentException("Tag is required.");
-        if (tag.length() > MAX_TAG_LENGTH) throw new IllegalArgumentException("Tag exceeds " + MAX_TAG_LENGTH + " characters.");
+        if (tag.isEmpty()) throw new CodedRefusal.BadRequest(SdvErrorCode.DOC_010, "Tag is required.");
+        if (tag.length() > MAX_TAG_LENGTH) {
+            throw new CodedRefusal.BadRequest(SdvErrorCode.DOC_010, "Tag exceeds " + MAX_TAG_LENGTH + " characters.");
+        }
         DocumentTagRepository.DocumentTag created = tags.add(tenantId, documentId, tag, actorId, clock.instant());
         audit.append(new AuditEvent(UUID.randomUUID(), tenantId, "USER", actorId,
                 "DOCUMENT_TAG_ADDED", "DOCUMENT", document.documentId().toString(), clock.instant(), correlationId,
@@ -83,8 +86,11 @@ public class DocumentActionService {
         Document document = requireAvailable(tenantId, documentId, clearance, DocumentAccessGuard.Attempt.ADD_COMMENT,
                 actorId, correlationId);
         String comment = rawComment == null ? "" : rawComment.trim();
-        if (comment.isEmpty()) throw new IllegalArgumentException("Comment is required.");
-        if (comment.length() > MAX_COMMENT_LENGTH) throw new IllegalArgumentException("Comment exceeds " + MAX_COMMENT_LENGTH + " characters.");
+        if (comment.isEmpty()) throw new CodedRefusal.BadRequest(SdvErrorCode.DOC_010, "Comment is required.");
+        if (comment.length() > MAX_COMMENT_LENGTH) {
+            throw new CodedRefusal.BadRequest(SdvErrorCode.DOC_010,
+                    "Comment exceeds " + MAX_COMMENT_LENGTH + " characters.");
+        }
         DocumentCommentRepository.DocumentComment created = comments.add(tenantId, documentId, comment, actorId, clock.instant());
         audit.append(new AuditEvent(UUID.randomUUID(), tenantId, "USER", actorId,
                 "DOCUMENT_COMMENT_ADDED", "DOCUMENT", document.documentId().toString(), clock.instant(), correlationId,
@@ -95,6 +101,10 @@ public class DocumentActionService {
     /**
      * The event names the effective level. Task 0028: Highly Confidential needs a valid print grant for this person
      * and document, which this uses up (one print per approval); the event then names the request it used.
+     * <p>
+     * Task 0043 (owner answer 4 to report 0034, the download's rule): the screen prints only after Vero answers this
+     * call, so the grant counts as used only once the print is recorded. If the print event can't be written, the
+     * print doesn't go ahead and the grant is given back (audited), so it can still be used once.
      */
     public void recordPrint(UUID tenantId, UUID documentId, Clearance clearance, String actorId, String correlationId) {
         Document document = requireAvailable(tenantId, documentId, clearance, DocumentAccessGuard.Attempt.PRINT,
@@ -102,10 +112,18 @@ public class DocumentActionService {
         DocumentAccessGuard.PrintOrDownload allowed = access.requirePrintOrDownload(document, clearance,
                 DocumentAccessGuard.Attempt.PRINT, actorId, correlationId, SensitiveAccessGrants.Use.USE);
         SensitivityLevel level = allowed.level();
-        audit.append(new AuditEvent(UUID.randomUUID(), tenantId, "USER", actorId,
-                "DOCUMENT_PRINTED", "DOCUMENT", document.documentId().toString(), clock.instant(), correlationId,
-                AuditOutcome.SUCCESS, "{\"currentApproved\":true,\"sensitivityLevel\":\"" + level.name() + "\""
-                        + (allowed.grantId() == null ? "" : ",\"accessRequestId\":\"" + allowed.grantId() + "\"") + "}"));
+        try {
+            audit.append(new AuditEvent(UUID.randomUUID(), tenantId, "USER", actorId,
+                    "DOCUMENT_PRINTED", "DOCUMENT", document.documentId().toString(), clock.instant(), correlationId,
+                    AuditOutcome.SUCCESS, "{\"currentApproved\":true,\"sensitivityLevel\":\"" + level.name() + "\""
+                            + (allowed.grantId() == null ? "" : ",\"accessRequestId\":\"" + allowed.grantId() + "\"") + "}"));
+        } catch (RuntimeException ex) {
+            if (allowed.grantId() != null) {
+                access.giveBack(document, DocumentAccessGuard.Attempt.PRINT, allowed.grantId(), actorId, correlationId,
+                        "print not recorded");
+            }
+            throw ex;
+        }
     }
 
     public List<ActivityEntry> activity(UUID tenantId, UUID documentId, Instant from, Instant to,
@@ -121,10 +139,10 @@ public class DocumentActionService {
     private Document requireAvailable(UUID tenantId, UUID documentId, Clearance clearance,
                                       DocumentAccessGuard.Attempt attempt, String actorId, String correlationId) {
         Document document = documents.findDocumentByIdForTenant(tenantId, documentId)
-                .orElseThrow(() -> new NoSuchElementException("Document not found."));
+                .orElseThrow(() -> DocumentRefusals.notFound(documentId));
         access.requireOpenable(document, clearance, attempt, actorId, correlationId);
         if (document.status() != DocumentStatus.AVAILABLE) {
-            throw new IllegalStateException("Only AVAILABLE documents support this action.");
+            throw DocumentRefusals.notAvailable(documentId, document.status());
         }
         return document;
     }

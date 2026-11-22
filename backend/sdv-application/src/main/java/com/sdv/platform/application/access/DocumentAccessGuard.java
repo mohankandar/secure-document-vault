@@ -131,6 +131,23 @@ public class DocumentAccessGuard {
         return new PrintOrDownload(level, grant);
     }
 
+    /**
+     * Task 0043 (owner answer 4 to report 0034): a grant counts as used only once something leaves Vero. A download
+     * that fails before its first byte is handed to the response, or a print whose event can't be recorded, gives its
+     * grant back here, audited, so it can still be used once. True when it was given back; false when it couldn't be
+     * (it then stays used: fail closed). Never throws.
+     */
+    public boolean giveBack(Document document, Attempt attempt, UUID grantId, String actorId, String correlationId,
+                            String reason) {
+        if (document == null || grantId == null || (attempt != Attempt.PRINT && attempt != Attempt.DOWNLOAD)) return false;
+        try {
+            return grants.giveBack(document.tenantId(), document.documentId(), actorId, attempt, grantId, reason,
+                    correlationId);
+        } catch (RuntimeException ex) {
+            return false;
+        }
+    }
+
     /** A document described in a list (audit and problem views): enough to work out its effective level. */
     public record DocumentLevelRef(UUID documentId, UUID sourceId, UUID submissionId, SensitivityLevel ownLevel) { }
 

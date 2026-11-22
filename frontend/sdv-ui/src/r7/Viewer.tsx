@@ -3,7 +3,8 @@ import { ArrowLeft, ChevronDown, ChevronLeft, ChevronRight, Download, Eraser, Ma
 import { useStore } from './store'
 import { BUSINESS_LIMITS, type Doc, type RecordItem, type Redaction } from './model'
 import { ApiRequestError } from '../api'
-import { failureText } from './CardError'
+import { failureRef, failureText } from './CardError'
+import { documentProblemText } from './problemWords'
 import { Badge, Callout, Dialog, Drawer, Tabs, TechDetails, actorWords, auditEventLabel, fmtDate, fmtDateTime, fmtRel, fmtShortDate } from './ui'
 import { viewerMetadata, viewerPage, viewerSearch, record as fetchRecord, toRecord, documentActivity, type LiveDocumentActivity, type ViewerSearch, documentTags, documentComments, createDocumentTag, createDocumentComment, type LiveTag, type LiveComment, secureDownload, recordPrintEvent, permanentRedaction, viewerPreviews, myRequests, documentLevelHistory, LEVEL_NAMES, type MyRequest, type LevelHistoryEntry } from './liveApi'
 import { LOCKED_MESSAGE, LevelBadge, LevelDialog, RequestItem, RequestPopover, pendingOf, recordWord, validGrant, whenWords } from './Sensitivity'
@@ -17,7 +18,17 @@ const showDevelopmentUtilities = import.meta.env.DEV
 /** The server refused an action (e.g. permissions changed mid-session). Plain words, no codes. */
 export const REFUSED = { title: "You can't do this", detail: "Your role doesn't allow it. Ask your Business admin if you need it." }
 export const isRefused = (e: unknown) => e instanceof ApiRequestError && e.status === 403
-const errorText = (e: unknown) => (isRefused(e) ? `${REFUSED.title}. ${REFUSED.detail}` : failureText('Viewer action failed', e))
+/**
+ * Task 0043: a document action's failure in the catalog's words, with the code, and the reference when Vero itself
+ * failed (SDV-DOC-003 and the others); the raw error goes to the console only. Other failures keep the usual sentence.
+ */
+const docFailure = (what: string, e: unknown) => {
+  const words = documentProblemText(e)
+  if (!words) return failureText(what, e)
+  failureRef(what, e)
+  return words
+}
+const errorText = (e: unknown) => (isRefused(e) ? `${REFUSED.title}. ${REFUSED.detail}` : docFailure('Viewer action failed', e))
 
 /** Short words written in capitals in a document's kind ("borrower-id.pdf" -> "Borrower ID"). */
 const ACRONYMS = new Set(['id', 'ssn', 'vin', 'kyc', 'w2', 'w9', 'irs', 'llc', 'usa', 'uk', 'eu'])
@@ -74,7 +85,7 @@ export function Viewer({ record, results, docId, onClose, recordTitle, backLabel
     setViewingId('')
     viewerMetadata(doc.id).then(m => { if(active){setViewingId(m.viewingId ?? '');setPageCount(m.pageCount)} })
       // Task 0029, item 5: a document this person can't open says only that (SDV-SEN-008), nothing about the document.
-      .catch(e => {if(active)setViewerFailure(e instanceof ApiRequestError && e.code === 'SDV-SEN-008' ? LOCKED_MESSAGE + '.' : failureText('Viewer: document did not open', e))})
+      .catch(e => {if(active)setViewerFailure(e instanceof ApiRequestError && e.code === 'SDV-SEN-008' ? LOCKED_MESSAGE + '.' : docFailure('Viewer: document did not open', e))})
       .finally(() => {if(active)setViewerLoading(false)})
     return () => {active=false}
   }, [doc.id])
@@ -84,7 +95,7 @@ export function Viewer({ record, results, docId, onClose, recordTitle, backLabel
     if(term.length>100){setSearchError('Search is limited to 100 characters');return}
     let active=true
     viewerSearch(doc.id,term).then(r=>{if(active){setSearchResults(r);setSearchError('')}})
-      .catch(e=>{if(active){setSearchResults(null);setSearchError(failureText('Viewer: find in document failed', e))}})
+      .catch(e=>{if(active){setSearchResults(null);setSearchError(docFailure('Viewer: find in document failed', e))}})
     return ()=>{active=false}
   },[doc.id,query])
 
@@ -238,7 +249,7 @@ export function Viewer({ record, results, docId, onClose, recordTitle, backLabel
       setMarks([]);setRedacting(false);setReview(false);setQuery('');setSearchResults(null)
       setRenderRevision(n=>n+1)
       setPageCount(0)
-      viewerMetadata(doc.id).then(m=>{setViewingId(m.viewingId ?? '');setPageCount(m.pageCount)}).catch(e=>setViewerFailure(failureText('Viewer: document did not reopen', e)))
+      viewerMetadata(doc.id).then(m=>{setViewingId(m.viewingId ?? '');setPageCount(m.pageCount)}).catch(e=>setViewerFailure(docFailure('Viewer: document did not reopen', e)))
       toast({title:'Permanent corrective redaction completed'})
     }catch(e){setRedactionFailure(errorText(e)); if(isRefused(e))failed('Redaction failed',e)}
     finally{setActionBusy(false)}
@@ -258,7 +269,7 @@ export function Viewer({ record, results, docId, onClose, recordTitle, backLabel
       setRecords(prev => prev.map(r => r.ref === loaded.ref ? loaded : r))
       setSelectedRef(loaded.ref)
       setOpenDocId(loaded.docs[0].id)
-    } catch (e) { toast({ tone: 'bad', title: "The next record didn't open", detail: failureText('Viewer: next record did not open', e) }) }
+    } catch (e) { toast({ tone: 'bad', title: "The next record didn't open", detail: docFailure('Viewer: next record did not open', e) }) }
     finally { setRecordLoading(false) }
   }
   const switchDoc = (id: string) => { setOpenDocId(id); setDocsOpen(false) }
@@ -481,7 +492,7 @@ function SecurePage({documentId,viewingId,page,scale,scrollRoot,matches,highligh
       const objectUrl=URL.createObjectURL(blob)
       if(active)setUrl(objectUrl)
       else URL.revokeObjectURL(objectUrl)
-    }).catch(e=>{if(active)setError(failureText('Viewer: page did not load', e))})
+    }).catch(e=>{if(active)setError(docFailure('Viewer: page did not load', e))})
     return ()=>{active=false}
   },[visible,documentId,page,scale,viewingId])
   useEffect(()=>()=>{if(url)URL.revokeObjectURL(url)},[url])
@@ -573,7 +584,7 @@ function DocInfo({ doc, tab, setTab, embedded, requests, record }: { doc: Doc; t
   const [liveEvents,setLiveEvents] = useState<LiveDocumentActivity[]>([])
   const [includeViews,setIncludeViews] = useState(false)
   const [activityError,setActivityError] = useState('')
-  useEffect(()=>{if(tab!=='activity')return;let active=true;setActivityError('');documentActivity(doc.id,includeViews).then(rows=>{if(active)setLiveEvents(rows)}).catch(e=>{if(active){setLiveEvents([]);setActivityError(failureText('Viewer: activity did not load', e))}});return()=>{active=false}},[tab,doc.id,includeViews])
+  useEffect(()=>{if(tab!=='activity')return;let active=true;setActivityError('');documentActivity(doc.id,includeViews).then(rows=>{if(active)setLiveEvents(rows)}).catch(e=>{if(active){setLiveEvents([]);setActivityError(docFailure('Viewer: activity did not load', e))}});return()=>{active=false}},[tab,doc.id,includeViews])
   const [liveTags,setLiveTags] = useState<LiveTag[]>([])
   const [liveComments,setLiveComments] = useState<LiveComment[]>([])
   const [metadataLoading,setMetadataLoading] = useState(false)
@@ -585,7 +596,7 @@ function DocInfo({ doc, tab, setTab, embedded, requests, record }: { doc: Doc; t
     setMetadataLoading(true);setMetadataError('')
     const task=tab==='comments'?documentComments(doc.id):documentTags(doc.id)
     task.then(items=>{if(!active)return;if(tab==='comments')setLiveComments(items as LiveComment[]);else setLiveTags(items as LiveTag[])})
-      .catch(e=>{if(active)setMetadataError(failureText('Viewer: comments or tags did not load', e))})
+      .catch(e=>{if(active)setMetadataError(docFailure('Viewer: comments or tags did not load', e))})
       .finally(()=>{if(active)setMetadataLoading(false)})
     return()=>{active=false}
   },[tab,doc.id])

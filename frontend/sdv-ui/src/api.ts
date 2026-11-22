@@ -73,6 +73,34 @@ async function request<T>(path: string, persona: LocalPersona, init?: RequestIni
 export const roleApi = <T>(path: string, persona: LocalPersona, init?: RequestInit) => request<T>(path, persona, init)
 
 export async function contentBinary(path: string, persona: LocalPersona): Promise<Blob> {
+  const response = await binaryResponse(path, persona)
+  return response.blob()
+}
+
+/** Task 0043: the code a download that stopped part-way gets on screen (the server can't send it once the file has started). */
+export const DOWNLOAD_STOPPED = 'SDV-DOC-009'
+
+/**
+ * Task 0043: a download, checked for being complete. When the connection breaks, or the file is shorter than the
+ * length the server announced, it fails with SDV-DOC-009 ("The download didn't finish."), with the request's reference.
+ */
+export async function contentDownload(path: string, persona: LocalPersona): Promise<Blob> {
+  const response = await binaryResponse(path, persona)
+  const reference = response.headers.get('X-Correlation-Id') ?? undefined
+  const announced = Number(response.headers.get('Content-Length'))
+  let blob: Blob
+  try {
+    blob = await response.blob()
+  } catch {
+    throw new ApiRequestError("The download didn't finish.", response.status, reference, DOWNLOAD_STOPPED)
+  }
+  if (Number.isFinite(announced) && announced > 0 && blob.size < announced) {
+    throw new ApiRequestError("The download didn't finish.", response.status, reference, DOWNLOAD_STOPPED)
+  }
+  return blob
+}
+
+async function binaryResponse(path: string, persona: LocalPersona): Promise<Response> {
   const enterpriseHeaders = await bearerHeaders()
   const response = await fetch(path, {
     method: 'GET',
@@ -85,7 +113,7 @@ export async function contentBinary(path: string, persona: LocalPersona): Promis
     const body = await response.json().catch(() => null) as { message?: string; code?: unknown } | null
     throw new ApiRequestError(body?.message ?? `HTTP ${response.status}`, response.status, response.headers.get('X-Correlation-Id') ?? undefined, codeOf(body))
   }
-  return response.blob()
+  return response
 }
 export type SessionInfo = {
   tenantId: string

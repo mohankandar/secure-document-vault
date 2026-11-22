@@ -40,7 +40,16 @@ final class BusinessRecordRefCodec {
         }
     }
 
+    /** Task 0043: a reference that can't be read is SDV-SCH-002 (400); the exact cause goes to the log line. */
     RecordIdentity decode(String token) {
+        try {
+            return read(token);
+        } catch (IllegalArgumentException ex) {
+            throw RecordRefusals.invalid(ex.getMessage());
+        }
+    }
+
+    private RecordIdentity read(String token) {
         if (token == null || token.isBlank() || token.length() > MAX_TOKEN_LENGTH) {
             throw new IllegalArgumentException("Business-record reference is invalid.");
         }

@@ -169,6 +169,24 @@ class AccessRequestPostgresTest {
         assertEquals("SDV-SEN-009", code(() -> actions.recordPrint(T1, H, Clearance.ALL, "rs-1", "c")), "used once");
         assertEquals(1, count("select count(*) from audit_events where tenant_id='" + T1 + "' and action='SENSITIVE_ACCESS_GRANT_USED'"));
 
+        // Task 0043: a used grant is given back only for its person, document and kind, and only while it is used; the
+        // row then passes the table's checks (approved, no use time) and can be used once more.
+        var printKind = DocumentAccessGuard.Attempt.PRINT;
+        assertFalse(grants.giveBack(T1, H, "rs-2", printKind, print, "print not recorded", "c"), "another person");
+        assertFalse(grants.giveBack(T1, H, "rs-1", DocumentAccessGuard.Attempt.DOWNLOAD, print, "print not recorded", "c"));
+        assertFalse(grants.giveBack(T1, H2, "rs-1", printKind, print, "print not recorded", "c"), "another document");
+        assertFalse(grants.giveBack(T2, H, "rs-1", printKind, print, "print not recorded", "c"), "another tenant");
+        assertEquals("USED", status(print));
+        assertTrue(grants.giveBack(T1, H, "rs-1", printKind, print, "print not recorded", "give-back"));
+        assertEquals("APPROVED", status(print));
+        assertEquals(0, count("select count(*) from access_requests where request_id='" + print + "' and used_at is not null"));
+        assertEquals(1, count("select count(*) from audit_events where tenant_id='" + T1
+                + "' and action='SENSITIVE_ACCESS_GRANT_RETURNED' and correlation_id='give-back'"));
+        assertFalse(grants.giveBack(T1, H, "rs-1", printKind, print, "print not recorded", "c"), "only while used");
+        actions.recordPrint(T1, H, Clearance.ALL, "rs-1", "c");
+        assertEquals("USED", status(print));
+        assertEquals("SDV-SEN-009", code(() -> actions.recordPrint(T1, H, Clearance.ALL, "rs-1", "c")), "used once more");
+
         // Two uses at the same moment: exactly one gets the grant.
         UUID race = ask(T1, "rs-1", H2, "PRINT");
         approvals.decide(T1, "ba-1", null, race.toString(), AccessRequestService.Decision.APPROVE, "c");

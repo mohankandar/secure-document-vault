@@ -29,12 +29,25 @@ const CAPABILITY_WORDS: Record<string, string> = {
 }
 
 type Sentence = (who: string, file: string, d: Record<string, unknown>, e: OpsAuditEvent) => string
+/** Task 0043: why a download failed, by its code (docs/api/error-codes.md). */
+const DOWNLOAD_FAILURE_WORDS: Record<string, string> = {
+  'SDV-DOC-007': 'Vero couldn’t verify it, so nothing was sent',
+  'SDV-DOC-008': 'it had just been changed',
+  'SDV-DOC-009': 'it stopped part-way',
+}
 /** One pattern per action code. */
 export const AUDIT_SENTENCES: Record<string, Sentence> = {
   DOCUMENT_VIEW_OPENED: (w, f) => `${w} opened ${f}`,
   DOCUMENT_PAGE_VIEWED: (w, f, d) => (n(d.page) != null ? `${w} loaded page ${n(d.page)} of ${f}` : `${w} loaded a page of ${f}`),
   DOCUMENT_DOWNLOADED: (w, f) => `${w} downloaded ${f}`,
-  DOCUMENT_DOWNLOAD_FAILED: (w, f) => `${w} tried to download ${f}, but it failed`,
+  // Task 0043: the failure's code says why (SDV-DOC-007 nothing was sent, -008 it had just changed, -009 it stopped part-way).
+  DOCUMENT_DOWNLOAD_FAILED: (w, f, d) => {
+    const why = DOWNLOAD_FAILURE_WORDS[String(d.code)]
+    return why ? `${w} tried to download ${f}, but ${why} (${String(d.code)})` : `${w} tried to download ${f}, but it failed`
+  },
+  // Task 0028 / 0043: a Highly Confidential approval used, or given back because nothing left Vero.
+  SENSITIVE_ACCESS_GRANT_USED: (w, f, d) => `${w} used an approval to ${d.kind === 'PRINT' ? 'print' : 'download'} ${f}`,
+  SENSITIVE_ACCESS_GRANT_RETURNED: (w, f, d) => `${w}’s approval to ${d.kind === 'PRINT' ? 'print' : 'download'} ${f} was given back, because nothing left Vero`,
   DOCUMENT_PRINTED: (w, f) => `${w} printed ${f}`,
   DOCUMENT_TAG_ADDED: (w, f) => `${w} tagged ${f}`,
   DOCUMENT_COMMENT_ADDED: (w, f) => `${w} commented on ${f}`,
@@ -98,7 +111,7 @@ export const RESULT_WORDS: Record<string, string> = { SUCCESS: 'Done', DENIED: '
 /** Everyday activity groups. Refused is every event the server refused, whatever its action. */
 export const ACTIVITY_GROUPS: { id: string; label: string; actions?: string[]; outcome?: string }[] = [
   { id: 'reading', label: 'Opening and reading', actions: ['DOCUMENT_VIEW_OPENED', 'DOCUMENT_PAGE_VIEWED', 'BUSINESS_RECORD_OPENED', 'BUSINESS_SEARCH', 'BUSINESS_RECENT_RECORDS_LISTED', 'AUDIT_VIEWED'] },
-  { id: 'downloads', label: 'Downloads, prints and exports', actions: ['DOCUMENT_DOWNLOADED', 'DOCUMENT_DOWNLOAD_FAILED', 'DOCUMENT_PRINTED', 'AUDIT_EXPORTED', 'INTAKE_REPORT_EXPORTED', 'SENSITIVITY_REPORT_EXPORTED'] },
+  { id: 'downloads', label: 'Downloads, prints and exports', actions: ['DOCUMENT_DOWNLOADED', 'DOCUMENT_DOWNLOAD_FAILED', 'DOCUMENT_PRINTED', 'SENSITIVE_ACCESS_GRANT_USED', 'SENSITIVE_ACCESS_GRANT_RETURNED','AUDIT_EXPORTED', 'INTAKE_REPORT_EXPORTED', 'SENSITIVITY_REPORT_EXPORTED'] },
   { id: 'changes', label: 'Changes to documents', actions: ['DOCUMENT_TAG_ADDED', 'DOCUMENT_COMMENT_ADDED', 'DOCUMENT_PERMANENTLY_REDACTED', 'DOCUMENT_REDACTION_FAILED', 'DOCUMENT_RETENTION_DELETED', 'DOCUMENT_RETENTION_DELETE_FAILED', 'LEGAL_HOLD_PLACED', 'LEGAL_HOLD_RELEASED'] },
   { id: 'settings', label: 'Settings changes', actions: ['ROLE_CAPABILITIES_UPDATED', 'RETENTION_POLICY_UPDATED', 'METADATA_BEHAVIOR_REVISED', 'METADATA_DISPLAY_ORDER_UPDATED', 'RECORD_TITLE_FIELDS_UPDATED', 'METADATA_FIELD_CREATED', 'METADATA_FIELD_REVISED', 'SOURCE_FIELD_DEFINED', 'SOURCE_FIELD_REVISED', 'INGESTION_SOURCE_CREATED', 'INGESTION_SOURCE_UPDATED', 'STORAGE_VOLUME_CREATED', 'STORAGE_VOLUME_UPDATED', 'STORAGE_FOLDER_CHECKED', 'ENTERPRISE_IDENTITY_DRAFT_SAVED', 'ENTERPRISE_IDENTITY_CONNECTION_TESTED', 'ENTERPRISE_IDENTITY_CONNECTION_ACTIVATED', 'ENTERPRISE_IDENTITY_CONNECTION_ACTIVATION_FAILED', 'ENTERPRISE_IDENTITY_CONNECTION_ROLLED_BACK', 'ENTERPRISE_IDENTITY_CONNECTION_ROLLBACK_FAILED'] },
   { id: 'deliveries', label: 'Deliveries', actions: ['SUBMISSION_CREATED', 'DOCUMENT_RECEIVED', 'DOCUMENT_DUPLICATE_RECEIVED', 'DOCUMENT_UNCORRECTED_COPY_RECEIVED', 'INTAKE_REFUSED', 'STEWARD_NOTICE_READ', 'DOCUMENT_AVAILABLE', 'DOCUMENT_PROCESSING_FAILED'] },

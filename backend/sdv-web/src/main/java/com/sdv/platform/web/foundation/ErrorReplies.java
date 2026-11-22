@@ -322,9 +322,10 @@ public final class ErrorReplies {
         String reason = detail == null || detail.isBlank() ? "-" : detail;
         if (status.is5xxServerError() && isBusyCode(code)) {
             LOG.warn("code={} reference={} status={} route={} cause={}", code, reference, status.value(), route, reason);
-        } else if (status.is5xxServerError()) {
+        } else if (status.is5xxServerError() || (known != null && known.loggedAtError())) {
+            // Task 0043: a document action Vero couldn't finish is ERROR also when answered 422 (SDV-DOC-003 and others).
             LOG.error("code={} reference={} status={} route={} cause={}", code, reference, status.value(), route, reason);
-        } else if (known != null && known.needsPerson()) {
+        } else if (known != null && (known.needsPerson() || known.loggedAtWarn())) {
             LOG.warn("code={} reference={} status={} route={} reason={}", code, reference, status.value(), route, reason);
         } else if (known != null && known.loggedAtInfo()) {
             LOG.info("code={} reference={} status={} route={} reason={}", code, reference, status.value(), route, reason);

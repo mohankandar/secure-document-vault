@@ -145,7 +145,8 @@ class BusinessExperienceServiceHomeTest {
     @Test
     void recentRecordsRejectAnOutOfRangeLimit() {
         assertThrows(IllegalArgumentException.class, () -> service.recentRecords(TENANT, "maya.okafor", 0, "corr"));
-        assertThrows(IllegalArgumentException.class, () -> service.recentRecords(TENANT, "maya.okafor", 21, "corr"));
+        var ex = assertThrows(IllegalArgumentException.class, () -> service.recentRecords(TENANT, "maya.okafor", 21, "corr"));
+        assertEquals("SDV-SCH-003", ((com.sdv.platform.domain.error.CodedRefusal) ex).errorCode().code(), "task 0043");
     }
 
     @Test
@@ -168,7 +169,8 @@ class BusinessExperienceServiceHomeTest {
 
     @Test
     void searchWithoutAnyCriterionIsStillRefused() {
-        assertThrows(IllegalArgumentException.class,
+        var ex = assertThrows(IllegalArgumentException.class,
                 () -> service.search(TENANT, SOURCE, Map.of(), null, null, null, null, false, 1, 25, "maya.okafor", "corr"));
+        assertEquals("SDV-SCH-001", ((com.sdv.platform.domain.error.CodedRefusal) ex).errorCode().code(), "task 0043");
     }
 }

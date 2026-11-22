@@ -359,6 +359,18 @@ final class ApprovalsFixture {
             return grant.map(AccessRequest::requestId);
         }
 
+        @Override public synchronized boolean giveBackGrant(UUID tenantId, UUID requestId, UUID documentId,
+                                                            String requestedBy, AccessRequestKind kind) {
+            AccessRequest r = rows.get(requestId);
+            if (r == null || !r.tenantId().equals(tenantId) || !documentId.equals(r.documentId())
+                    || !r.requestedBy().equals(requestedBy) || r.kind() != kind || r.status() != AccessRequestStatus.USED) {
+                return false;
+            }
+            rows.put(requestId, copy(r, AccessRequestStatus.APPROVED, r.decidedBy(), r.decidedByName(), r.decidedAt(),
+                    r.expiresAt(), null));
+            return true;
+        }
+
         @Override public List<AccessRequest> findPending(UUID tenantId, Collection<AccessRequestKind> kinds, String requester,
                                                          int limit) {
             return rows.values().stream()

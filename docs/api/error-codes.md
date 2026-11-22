@@ -7,7 +7,7 @@ Every error from Vero comes back with one body: a short, stable `code`, a plain 
 ```
 
 - **Reference:** the request's correlation ID, the same as the `X-Correlation-Id` response header. It is on Vero's log line for the error, and on the audit event when one was written. Give it to support.
-- **Format:** `SDV-<AREA>-<NNN>`. `SDV` is the product. `AREA` is three letters: `SEN` sensitivity, `ROL` roles, `AUT` sign-in, `IDP` sign-in connections, `HLD` legal hold, `APR` approvals, `INT` intake, `RPT` reports, `SYS` the server as a whole, `STO` storage, `KEY` the key service.
+- **Format:** `SDV-<AREA>-<NNN>`. `SDV` is the product. `AREA` is three letters: `SEN` sensitivity, `ROL` roles, `AUT` sign-in, `IDP` sign-in connections, `HLD` legal hold, `APR` approvals, `INT` intake, `RPT` reports, `SYS` the server as a whole, `STO` storage, `KEY` the key service, `DOC` viewing, print and download, `SCH` search.
 - **Stable:** a code never changes meaning once it is released. A code that is no longer used stays listed and is marked retired. Its number is never reused.
 - **Messages** may be reworded. Programs should read the `code`, not the message.
 - **Not yet coded:** errors that are not listed here still send a generic code (`BAD_REQUEST`, `CONFLICT`, `NOT_FOUND`, `FORBIDDEN` and so on). They get an `SDV-` code when their area is worked on. The failure catalog at the end of this file (task 0034) lists every such point and proposes its code.
@@ -774,10 +774,113 @@ Task 0037: SYS-003 to SYS-012 are start-up codes. A start that stops prints one 
 
 ### SDV-KEY-001: encryption not set up
 
-- **HTTP status:** none yet. Task 0037 sends it in the start-up log; document actions still answer as before (`VIEWER_UNAVAILABLE`, `DOWNLOAD_UNAVAILABLE` or a 500) until the key service fix task.
+- **HTTP status:** none yet. Task 0037 sends it in the start-up log; until the key service fix task, the viewer answers SDV-DOC-003 and a download SDV-DOC-007 (task 0043; they were `VIEWER_UNAVAILABLE` and `DOWNLOAD_UNAVAILABLE`), and other document actions a 500.
 - **Meaning:** `SDV_KEY_PROVIDER` is `disabled` (its default), so no document can be stored, viewed, printed, downloaded or redacted. In a local start Vero starts with one WARN line `SDV-KEY-001 …` that names what will fail. A packaged start (any start without the local profile) refuses to start, with an ERROR line and the ERROR block.
 - **What the user should do:** nothing; tell the IT team.
 - **What support should tell the customer:** the install has no key service configured. Set `SDV_KEY_PROVIDER=vault` and the Vault settings (see the install guide), then start Vero again.
+
+## Viewing, print and download (DOC)
+
+Task 0043. Sent by the viewer (`GET /api/v1/business/documents/{id}/viewer`, `…/viewer/pages/{n}`, `…/viewer/previews`, `…/viewer/search`), download (`…/download`), print (`…/print-event`), tags and comments (`…/tags`, `…/comments`) and a document's activity (`…/activity`). They replace `VIEWER_UNAVAILABLE` and `DOWNLOAD_UNAVAILABLE`, which covered every cause with one code and were never logged (owner answer 3 to report 0034). The level check still comes first: a restricted document gets SDV-SEN-008, never one of these.
+
+Every one writes one log line with the reference and the exact cause: ERROR for SDV-DOC-003, -004, -007 and -009; WARN for -005 and -008; INFO for -001 and -002; DEBUG for -006 and -010. Statuses (owner answer 1 to report 0043): Vero's own faults are not the caller's mistake, so storage or the key service is 503 (SDV-DOC-003, and SDV-DOC-007 for those causes) and a failed check is 500 (SDV-DOC-004, and SDV-DOC-007 for a check). What belongs to the document itself stays 422: too large to view (SDV-DOC-004) and can't be drawn (SDV-DOC-005). None of these 503 answers carries `Retry-After`; only the busy answer (SDV-SYS-018) does.
+
+**Highly Confidential grants (owner answer 4 to report 0034).** A one-time print or download grant counts as used when the first byte is sent. A download takes the grant just before it decrypts, so two downloads racing on one grant can't both start. If it then fails before any byte is handed to the answer (storage, the key service, a check), the grant is given back (audited `SENSITIVE_ACCESS_GRANT_RETURNED`) and can be used once more. Once part of the file has left, it stays used. Print follows the same rule: the screen prints only after Vero has recorded the print, so a print that can't be recorded gives its grant back.
+
+### SDV-DOC-001: no such document
+
+- **HTTP status:** 404.
+- **Meaning:** the document ID names no document of the person's organisation. The message is "This document isn't there any more, or the link is wrong. Open the record again from search." INFO line with the document ID.
+- **What the user should do:** open the record again from search.
+- **What support should tell the customer:** old links can point to documents that were deleted or never existed in this organisation.
+
+### SDV-DOC-002: document not available
+
+- **HTTP status:** 409.
+- **Meaning:** the document exists, but it can't be opened, printed, downloaded, tagged or commented on yet: it is still being stored, Vero couldn't store it, a permanent correction is being made, or it is being or was deleted. The message names the state in plain words: "This document can't be opened yet: it is still being stored." INFO line with the state's name.
+- **What the user should do:** wait a few minutes and open it again. If Vero couldn't store it, a Steward sees it on Problems.
+- **What support should tell the customer:** the document is still being processed, failed (see Problems) or was removed by the keeping rule.
+
+### SDV-DOC-003: the viewer can't read the stored copy
+
+- **HTTP status:** 503 (it was 422 until owner answer 1 to report 0043). No `Retry-After`.
+- **Meaning:** the viewer couldn't read the document: its storage details or its storage volume are missing, the storage provider isn't installed, storage couldn't be read, or the key service failed. The message is "Vero couldn't read this document from storage. Try again later." ERROR line with the reference, the document ID and which step failed. Nothing was shown.
+- **What the user should do:** try again later. If it keeps happening, give the IT team the reference.
+- **What support should tell the customer:** a storage or key service problem. Tenant IT checks Storage on Operations and the key service; the log line with the reference names the step.
+
+### SDV-DOC-004: the stored copy failed its check before viewing
+
+- **HTTP status:** 500 when the stored copy fails its check; 422 for "too large to view here", which belongs to the document (owner answer 1 to report 0043; both were 422).
+- **Meaning:** the stored copy no longer matches what Vero stored: its encrypted size or fingerprint, a decryption check, or the decrypted size, PDF header or fingerprint. The message is "This document's stored copy didn't pass Vero's check, so it isn't shown." A document too large for the in-memory viewer gets the same code with "This document is too large to view here." ERROR line with the reference, the document ID and which check. Nothing was shown.
+- **What the user should do:** give the IT team the reference. For the size case, download it if the role allows.
+- **What support should tell the customer:** escalate to Vero support with the reference; the copy may be damaged and may need restoring from backup.
+
+### SDV-DOC-005: the document can't be drawn
+
+- **HTTP status:** 422 (unchanged: a property of the document, not a fault; owner answer 1 to report 0043).
+- **Meaning:** the stored copy passed its checks, but the PDF can't be loaded or a page can't be drawn as an image. The message is "Vero can't draw this page. Download it if your role allows, or tell your IT team." WARN line with the reference, the document ID and the page.
+- **What the user should do:** download it if the role allows, or tell the IT team.
+- **What support should tell the customer:** the file is stored safely, but the viewer can't draw it. Send Vero support the document ID.
+
+### SDV-DOC-006: viewer request not valid
+
+- **HTTP status:** 400.
+- **Meaning:** a page number outside the document, a zoom too large for the page, a preview count out of range, or a find text that is empty or too long. The message says which. DEBUG line.
+- **What the user should do:** reload the document.
+- **What support should tell the customer:** the screen asked for something the document doesn't have; reloading fixes it.
+
+### SDV-DOC-007: download can't be verified
+
+- **HTTP status:** 503 when storage or the key service failed, 500 when a check failed (owner answer 1 to report 0043; it was 422). No `Retry-After`.
+- **Meaning:** before anything was sent, the stored copy was missing, couldn't be read, or failed its size or fingerprint check, or the key service failed. The message is "Vero couldn't verify this document, so it wasn't downloaded." Audited `DOCUMENT_DOWNLOAD_FAILED` with the code; a Highly Confidential grant was given back. ERROR line with the reference, the document ID, which step and the grant's state.
+- **What the user should do:** try again later; give the IT team the reference if it keeps happening. A Highly Confidential approval is still good.
+- **What support should tell the customer:** as SDV-DOC-003 or SDV-DOC-004; the log line says which step.
+
+### SDV-DOC-008: document changed while downloading
+
+- **HTTP status:** 409.
+- **Meaning:** a correction replaced the document between preparing the download and sending it, so the old version was not sent. The message is "This document was just changed. Open it again and download the new version." Audited `DOCUMENT_DOWNLOAD_FAILED`. WARN line. No grant was used.
+- **What the user should do:** open the document again and download the new version.
+- **What support should tell the customer:** someone corrected the document at that moment; downloading again gets the corrected version.
+
+### SDV-DOC-009: download stopped part-way
+
+- **HTTP status:** none can be sent: the file had started. The screen shows "The download didn't finish." when the file is shorter than announced or the connection breaks.
+- **Meaning:** storage, the key service or a check failed, or the browser stopped taking the file, after part of it was sent. Audited `DOCUMENT_DOWNLOAD_FAILED` with the code and the bytes sent. ERROR line with the reference, the document ID, the step, the bytes sent and the grant's state. A Highly Confidential grant stays used, because part of the file left Vero.
+- **What the user should do:** download again. For a Highly Confidential document, ask for approval again and mention the reference.
+- **What support should tell the customer:** the download was interrupted; the log line with the reference says why.
+
+### SDV-DOC-010: tag or comment not valid
+
+- **HTTP status:** 400.
+- **Meaning:** the tag or comment is empty, or longer than its limit (80 characters for a tag, 2,000 for a comment). The message says which. DEBUG line.
+- **What the user should do:** shorten the text, or write something.
+- **What support should tell the customer:** the text was empty or too long.
+
+## Search (SCH)
+
+Task 0043. Sent by search (`POST /api/v1/business/search`), a record (`GET /api/v1/business/records/{recordRef}`) and Recently viewed (`GET /api/v1/business/me/recent-records`).
+
+### SDV-SCH-001: search criteria not valid
+
+- **HTTP status:** 400.
+- **Meaning:** the search text is too short or too long, a page is out of range, there are no criteria, dates are reversed, too many fields are combined, a field isn't searchable, or no sending system was chosen. The message says which and names the field's key, never the value searched for. DEBUG line.
+- **What the user should do:** change the search as the message says.
+- **What support should tell the customer:** the search was refused as sent; the message says what to change.
+
+### SDV-SCH-002: record not found or link not valid
+
+- **HTTP status:** 404 when the reference names no record of this organisation (another organisation's sending system, or no documents left); 400 when the reference can't be read. The person reads the same sentence for both: "This record isn't there any more, or the link is wrong. Search for it again." INFO line with the exact cause, never the reference itself (it holds identifier values).
+- **Meaning:** the record link is old, broken or from elsewhere.
+- **What the user should do:** search for the record again.
+- **What support should tell the customer:** old links can break when documents are deleted; searching again finds the record if it is still there.
+
+### SDV-SCH-003: Recently viewed request not valid
+
+- **HTTP status:** 400.
+- **Meaning:** the number of records asked for is out of range, or no person is signed in for the request. DEBUG line.
+- **What the user should do:** reload the page.
+- **What support should tell the customer:** the screen asked for an unusual number of records; reloading fixes it.
 
 ## Failure catalog (task 0034): proposed codes
 
@@ -1549,7 +1652,8 @@ The watch folder and polling intake are **not in this repository**. Sending syst
 
 ### Viewing, search, print and download (DOC, SCH)
 
-#### SDV-DOC-001 (proposed): no such document
+#### SDV-DOC-001 (released in task 0043): no such document
+- **Released:** now sent; its section is under "Viewing, print and download (DOC)" or "Search (SCH)" above. The notes below are what task 0034 found, kept for the list of lines.
 - **Where:** `DocumentActionService.java:124`, `ControlledDownloadService.java:185`, `DocumentViewerService.java:463`.
 - **Trigger:** the document ID names no document of the person's organisation.
 - **Today:** 404 `NOT_FOUND` "Document not found." Generic: yes. (Sensitivity, approvals and legal holds already use SEN-016, APR-013 and HLD-004 for this case.)
@@ -1559,7 +1663,8 @@ The watch folder and polling intake are **not in this repository**. Sending syst
 - **Fix:** none.
 - **L1 tells the customer:** open the record from search; old links can point to deleted documents.
 
-#### SDV-DOC-002 (proposed): document not available
+#### SDV-DOC-002 (released in task 0043): document not available
+- **Released:** now sent; its section is under "Viewing, print and download (DOC)" or "Search (SCH)" above. The notes below are what task 0034 found, kept for the list of lines.
 - **Where:** `DocumentActionService.java:127`, `ControlledDownloadService.java:188`, `DocumentViewerService.java:466`.
 - **Trigger:** the document is still being stored, failed, is being corrected, or was deleted.
 - **Today:** 409 `CONFLICT` "Only AVAILABLE documents…". Generic: yes.
@@ -1569,7 +1674,8 @@ The watch folder and polling intake are **not in this repository**. Sending syst
 - **Fix:** wait, or see Problems.
 - **L1 tells the customer:** the document is still being processed or was removed.
 
-#### SDV-DOC-003 (proposed): viewer can't read the stored copy
+#### SDV-DOC-003 (released in task 0043): viewer can't read the stored copy
+- **Released:** now sent; its section is under "Viewing, print and download (DOC)" or "Search (SCH)" above. The notes below are what task 0034 found, kept for the list of lines.
 - **Where:** `DocumentViewerService.java:391`, `:395`, `:399`, `:443-447` (catch-all "cannot be securely reconstructed"), `:532-534` (`unavailable`).
 - **Trigger:** storage metadata is missing, the volume is missing, or storage can't be read.
 - **Today:** 422 `VIEWER_UNAVAILABLE` "The document cannot be viewed securely right now." One code for every viewer cause, and no log at all. Generic: yes.
@@ -1579,7 +1685,8 @@ The watch folder and polling intake are **not in this repository**. Sending syst
 - **Fix:** check the storage volume.
 - **L1 tells the customer:** a storage problem; Tenant IT checks Storage on Operations.
 
-#### SDV-DOC-004 (proposed): stored copy failed its check before viewing
+#### SDV-DOC-004 (released in task 0043): stored copy failed its check before viewing
+- **Released:** now sent; its section is under "Viewing, print and download (DOC)" or "Search (SCH)" above. The notes below are what task 0034 found, kept for the list of lines.
 - **Where:** `DocumentViewerService.java:405` (too big to view safely), `:433`, `:438`, `:592-593`, `:600`, `:609`, `:618`, `:621`, `:625`, `:630`, `:652-653`.
 - **Trigger:** the encrypted or decrypted size or fingerprint no longer matches what was stored, or the document is too big for the in-memory viewer.
 - **Today:** 422 `VIEWER_UNAVAILABLE`, not logged. Generic: yes.
@@ -1589,7 +1696,8 @@ The watch folder and polling intake are **not in this repository**. Sending syst
 - **Fix:** Vero support; restore the copy from backup.
 - **L1 tells the customer:** escalate with the reference; the copy may be damaged.
 
-#### SDV-DOC-005 (proposed): document can't be drawn
+#### SDV-DOC-005 (released in task 0043): document can't be drawn
+- **Released:** now sent; its section is under "Viewing, print and download (DOC)" or "Search (SCH)" above. The notes below are what task 0034 found, kept for the list of lines.
 - **Where:** `DocumentViewerService.java:193`, `:260`, `:269`, `:490-492`.
 - **Trigger:** the PDF can't be loaded or a page can't be drawn as an image.
 - **Today:** 422 `VIEWER_UNAVAILABLE`. Generic: yes.
@@ -1599,7 +1707,8 @@ The watch folder and polling intake are **not in this repository**. Sending syst
 - **Fix:** Vero support, with the document ID.
 - **L1 tells the customer:** the file is stored, but the viewer can't draw it.
 
-#### SDV-DOC-006 (proposed): viewer request not valid
+#### SDV-DOC-006 (released in task 0043): viewer request not valid
+- **Released:** now sent; its section is under "Viewing, print and download (DOC)" or "Search (SCH)" above. The notes below are what task 0034 found, kept for the list of lines.
 - **Where:** `DocumentViewerService.java:160`, `:162`, `:171`, `:182`, `:236`, `:238`, `:246`, `:291`, `:294`.
 - **Trigger:** a page number out of range, a preview count out of range, or an empty or too long search text.
 - **Today:** 400 `BAD_REQUEST` with a plain message. Generic: yes.
@@ -1609,7 +1718,8 @@ The watch folder and polling intake are **not in this repository**. Sending syst
 - **Fix:** none.
 - **L1 tells the customer:** the screen asked for a page that doesn't exist; reload.
 
-#### SDV-DOC-007 (proposed): download can't be verified
+#### SDV-DOC-007 (released in task 0043): download can't be verified
+- **Released:** now sent; its section is under "Viewing, print and download (DOC)" or "Search (SCH)" above. The notes below are what task 0034 found, kept for the list of lines.
 - **Where:** `ControlledDownloadService.java:78`, `:80`, `:82`, `:110`, `:113`, `:173-177`, `:285-286`, `:293`, `:304`, `:321`, `:324`, `:328`, `:333`, `:353-354`.
 - **Trigger:** the stored copy is missing, unreadable, or fails its size or fingerprint check.
 - **Today:** 422 `DOWNLOAD_UNAVAILABLE` "The current document cannot be downloaded securely right now." Audited `DOCUMENT_DOWNLOAD_FAILED` with the exception class. Not logged. Generic: yes.
@@ -1619,7 +1729,8 @@ The watch folder and polling intake are **not in this repository**. Sending syst
 - **Fix:** as DOC-003 or DOC-004.
 - **L1 tells the customer:** as DOC-003 or DOC-004.
 
-#### SDV-DOC-008 (proposed): document changed while downloading
+#### SDV-DOC-008 (released in task 0043): document changed while downloading
+- **Released:** now sent; its section is under "Viewing, print and download (DOC)" or "Search (SCH)" above. The notes below are what task 0034 found, kept for the list of lines.
 - **Where:** `ControlledDownloadService.java:118`.
 - **Trigger:** a correction replaced the document between preparing and sending the download.
 - **Today:** 409 `CONFLICT`. Generic: yes.
@@ -1629,7 +1740,8 @@ The watch folder and polling intake are **not in this repository**. Sending syst
 - **Fix:** none.
 - **L1 tells the customer:** someone corrected the document at that moment; download again.
 
-#### SDV-DOC-009 (proposed): download stopped part-way
+#### SDV-DOC-009 (released in task 0043): download stopped part-way
+- **Released:** now sent; its section is under "Viewing, print and download (DOC)" or "Search (SCH)" above. The notes below are what task 0034 found, kept for the list of lines.
 - **Where:** `ControlledDownloadService.java:125` (the grant is used **before** decryption starts), then `:145-153` (failures after the file has started to be sent).
 - **Trigger:** storage or the key service fails during the download, or the browser disconnects.
 - **Today:** the person gets a cut-short file or a broken response; the server can't send an error once the file has started. For a Highly Confidential document, the one-time approval is **used up anyway**, so the person must ask again. Audited `DOCUMENT_DOWNLOAD_FAILED`. Generic: yes.
@@ -1639,7 +1751,8 @@ The watch folder and polling intake are **not in this repository**. Sending syst
 - **Fix:** fix task: mark the grant used only after the last byte is sent. Until then, a Business Admin approves again.
 - **L1 tells the customer:** the download was interrupted. For Highly Confidential, ask for approval again and mention the reference.
 
-#### SDV-DOC-010 (proposed): tag or comment not valid
+#### SDV-DOC-010 (released in task 0043): tag or comment not valid
+- **Released:** now sent; its section is under "Viewing, print and download (DOC)" or "Search (SCH)" above. The notes below are what task 0034 found, kept for the list of lines.
 - **Where:** `DocumentActionService.java:66`, `:67`, `:86`, `:87`.
 - **Trigger:** empty or too long.
 - **Today:** 400 `BAD_REQUEST`. Generic: yes.
@@ -1649,7 +1762,8 @@ The watch folder and polling intake are **not in this repository**. Sending syst
 - **Fix:** none.
 - **L1 tells the customer:** shorten the text.
 
-#### SDV-SCH-001 (proposed): search criteria not valid
+#### SDV-SCH-001 (released in task 0043): search criteria not valid
+- **Released:** now sent; its section is under "Viewing, print and download (DOC)" or "Search (SCH)" above. The notes below are what task 0034 found, kept for the list of lines.
 - **Where:**
   - `BusinessExperienceService.java:243`, `:250`, `:253`, `:259`, `:262`, `:265`, `:268`, `:494`, `:498`, `:501`, `:506`;
   - `BusinessRecordRepository.java:152`, `:166`;
@@ -1663,7 +1777,8 @@ The watch folder and polling intake are **not in this repository**. Sending syst
 - **Fix:** none.
 - **L1 tells the customer:** change the search as the message says.
 
-#### SDV-SCH-002 (proposed): record not found or link not valid
+#### SDV-SCH-002 (released in task 0043): record not found or link not valid
+- **Released:** now sent; its section is under "Viewing, print and download (DOC)" or "Search (SCH)" above. The notes below are what task 0034 found, kept for the list of lines.
 - **Where:** `BusinessExperienceService.java:462`; `BusinessRecordRefCodec.java:44`, `:48`, `:55`, `:63`, `:70`, `:79-80`, `:87`; `RecordReferences.java:37` (swallowed into "not found"); `RecordKey.java:32`, `:34`, `:42`, `:57`, `:84`, `:88`, `:91`, `:95`, `:99`, `:101-102`.
 - **Trigger:** a record reference that is malformed, from another tenant, or no longer has documents.
 - **Today:** 404 `NOT_FOUND` "Business record not found.", or 400 `BAD_REQUEST` "Business-record reference is invalid." Generic: yes.
@@ -1673,7 +1788,8 @@ The watch folder and polling intake are **not in this repository**. Sending syst
 - **Fix:** none.
 - **L1 tells the customer:** search for the record again; old links can break.
 
-#### SDV-SCH-003 (proposed): recent records request not valid
+#### SDV-SCH-003 (released in task 0043): recent records request not valid
+- **Released:** now sent; its section is under "Viewing, print and download (DOC)" or "Search (SCH)" above. The notes below are what task 0034 found, kept for the list of lines.
 - **Where:** `BusinessExperienceService.java:380`, `:384`.
 - **Trigger:** the limit is out of range.
 - **Today:** 400 `BAD_REQUEST`. Generic: yes.
