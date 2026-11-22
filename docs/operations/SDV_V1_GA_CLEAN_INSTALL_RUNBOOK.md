@@ -30,7 +30,7 @@ Install before extracting SDV:
 - Windows PowerShell 5.1 or newer PowerShell
 - Java 21
 - Maven
-- Node.js + npm
+- Node.js 22 (22.12 or later), 24, or 26 and later, with npm (not Node 25)
 - Docker Desktop / Docker Engine with `docker compose`
 
 The official clean-install run should begin with:
