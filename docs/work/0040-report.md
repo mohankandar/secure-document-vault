@@ -142,7 +142,7 @@ Plus one new part (3b) in `UnidentifiedIntakeAttemptPostgresTest`: with the limi
 - `d881d93` docs(work): task 0040 ingestion API contract
 - `d212d76` fix: trusted proxies accept CIDR ranges, unidentified-attempt row limit is a setting (task 0040 carry-over from 0039 part 2)
 - `ab817b7` docs(api): ingestion contract 1.0.0 with every answer and retry rule, sender's guide, versioning, contract test (task 0040)
-- This report: the commit after `ab817b7`.
+- This report: `a6d3be2` docs(work): report 0040, plus a follow-up commit that writes this hash in.
 
 `error-codes.md` is in the second (contract) commit, though its SYS-005 and intake-intro lines belong to the carry-over.
 
