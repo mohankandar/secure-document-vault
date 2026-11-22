@@ -31,6 +31,7 @@ Install before extracting SDV:
 - Java 21
 - Maven
 - Node.js 22 (22.12 or later), 24, or 26 and later, with npm (not Node 25)
+- Supported browsers (customer requirement, for everyone who uses the SDV UI): Chrome or Edge 111 or later, Firefox 114 or later, Safari 16.4 or later. Older browsers are not supported.
 - Docker Desktop / Docker Engine with `docker compose`
 
 The official clean-install run should begin with:
