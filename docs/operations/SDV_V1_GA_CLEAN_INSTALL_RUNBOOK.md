@@ -198,14 +198,58 @@ balancer, the proxy's.
 
 | Setting | Default | Value |
 |---|---|---|
-| `SDV_TRUSTED_PROXIES` | empty: trust no proxy | The IP addresses of your proxies or load balancers as Vero sees them, separated by commas, for example `10.0.4.11,10.0.4.12` |
+| `SDV_TRUSTED_PROXIES` | empty: trust no proxy | The IP addresses or address ranges of your proxies or load balancers as Vero sees them, separated by commas, for example `10.0.4.11,10.0.4.12` or `10.0.4.0/24, 2001:db8:4::/64, 192.0.2.10` |
 
-- Only a request that reaches Vero from one of these addresses has its `X-Forwarded-For` header read. The caller is
-  the first address from the right that isn't one of your proxies. From any other address the header is ignored, so
-  a caller can't give a false address.
-- List IP addresses only. A host name, a range (`10.0.0.0/8`) or a port stops the start with `SDV-SYS-005`.
+- Only a request that reaches Vero from one of these addresses, or from an address inside one of these ranges, has
+  its `X-Forwarded-For` header read. The caller is the first address from the right that isn't one of your proxies.
+  From any other address the header is ignored, so a caller can't give a false address.
+- Ranges are written in CIDR form, IPv4 (`10.0.4.0/24`) or IPv6 (`2001:db8:4::/64`), and can be mixed with single
+  addresses. Use a range when your load balancer's addresses change within a known block.
+- These stop the start with `SDV-SYS-005`, and the log names the entry:
+  - a host name, a port, or an IPv6 address in brackets;
+  - a prefix larger than the address allows (`/33` for IPv4, `/129` for IPv6), or not a plain number;
+  - a prefix of `0` (`0.0.0.0/0`, `::/0`): that would trust every caller;
+  - a range whose address isn't the range's first address (`10.0.4.5/24`; write `10.0.4.0/24`);
+  - an IPv4 address written in IPv6 form with a prefix (`::ffff:10.0.4.0/120`; write the IPv4 range).
 - Your proxy must set or append `X-Forwarded-For`; most do.
 - The address is used for the Problems list only. It doesn't affect sign-in or access.
+
+### How unidentified attempts are counted
+
+Vero keeps the Problems list of unidentified intake attempts small, however many requests arrive:
+
+- **One row per minute.** Requests with the same tenant (when a verified sign-in named one), caller address, method,
+  address called, status and code in the same minute (UTC) are one row, with a count ("1,000 in a minute") and the
+  first and last time. Rows are kept 30 days.
+- **Addresses with IDs blanked.** Parts of the address called that aren't Vero's own words (`submissions`,
+  `documents`, `retry-finalization`) are shown as `{id}`, at most 6 parts. So made-up addresses don't make a row each.
+- **Unknown methods are `OTHER`.** A request method that isn't one of HTTP's standard ones is recorded as `OTHER`.
+- **"(many addresses)".** Once a minute has as many rows as the limit below, requests from new caller addresses in
+  that minute are counted in one row per key with the caller address `(many addresses)`. Many distinct callers (an
+  IPv6 range, for example) can't add a row each.
+
+| Setting | Default | Value |
+|---|---|---|
+| `SDV_UNIDENTIFIED_ATTEMPTS_MAX_ROWS_PER_MINUTE` | `100` | Rows a minute before new caller addresses share the "(many addresses)" row. A whole number from 1 to 10000; anything else stops the start with `SDV-SYS-005` |
+
+Each request's reference is in Vero's log, also when it is counted in a row with others.
+
+### When Vero is busy: `SDV_BUSY_RETRY_AFTER_SECONDS`
+
+When no database connection is free for a request, Vero answers `503 SDV-SYS-018` ("busy") with a `Retry-After`
+header: the number of seconds the caller should wait before sending the same request again. Sending systems do this by
+themselves; nothing is lost.
+
+| Setting | Default | Value |
+|---|---|---|
+| `SDV_BUSY_RETRY_AFTER_SECONDS` | `5` | The seconds in `Retry-After`. A whole number from 1 to 300; anything else stops the start with `SDV-SYS-005` |
+
+- It changes only what Vero tells the caller. How long Vero itself waits for a free connection (the pool's 30 seconds)
+  is not changed by it.
+- Each busy answer writes one WARN line (not ERROR) with the code and the reference: busy is expected under load.
+- The Problems page shows how many busy answers Vero gave in the last hour and since it started, when there was at
+  least one in the last hour. If it keeps happening, raise `SDV_DB_POOL_MAX` (10 by default) within the database's own
+  connection limit, or spread the senders' load. The count is for this Vero process and starts again at a restart.
 
 Vero sends no usage data anywhere. Liquibase's anonymous usage analytics are switched off in every mode (the
 running app, local mode and the schema step).

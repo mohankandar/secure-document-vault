@@ -91,6 +91,10 @@ export function Problems({ role }: { role: 'platform' | 'tenantIt' }) {
   return <>
     {error && <FailureNotice failure={error} loadTitle="Problems didn't load" onRetry={() => setReload((x) => x + 1)} />}
     {partial && <Callout tone="warn" title="Some problems couldn't be read">Part of this list didn't load. Missing rows don't mean there are no problems.</Callout>}
+    {/* Task 0040 part 2 (owner answer 4): sustained busy is visible here. Shown only when Vero was busy in the last hour. */}
+    {data?.busyAnswers && data.busyAnswers.lastHour > 0 && <Callout tone="warn" title={`Vero was too busy for ${data.busyAnswers.lastHour.toLocaleString()} ${data.busyAnswers.lastHour === 1 ? 'request' : 'requests'} in the last hour`}>
+      No database connection was free, so Vero answered “busy” (<span className="mono">SDV-SYS-018</span>) and asked the caller to try again in {data.busyAnswers.retryAfterSeconds} seconds. Nothing was lost; sending systems send again by themselves. If this keeps happening, Vero needs more database connections or less load. {data.busyAnswers.sinceStart.toLocaleString()} since Vero started{data.busyAnswers.lastAt ? `; the last one ${fmtRel(data.busyAnswers.lastAt).toLowerCase()}` : ''}.
+    </Callout>}
     <div className="row between wrap" style={{ gap: 8 }}>
       <div className="pr-chips" role="group" aria-label="Show">
         {FILTERS.map((f) => <button key={f.id} type="button" className="pr-chip" aria-pressed={filter === f.id} onClick={() => setFilter(f.id)}>{f.label} · {count(f.id)}</button>)}

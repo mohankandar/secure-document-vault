@@ -172,6 +172,39 @@ class ProblemsAndAuditRecordsTest {
         assertTrue(degraded.dataObservations().stream().anyMatch(o -> o.section().equals("unidentified-intake-attempts") && o.degraded()));
     }
 
+    /**
+     * Task 0040 part 2 (owner answer 4 to report 0040 part 2): Problems carries the count of busy answers (503
+     * SDV-SYS-018), in the last hour and since start, so sustained busy is visible to Tenant IT. None without a count.
+     */
+    @Test
+    void problemsCarryTheBusyAnswerCount() throws Exception {
+        OperationalRepository ops = mock(OperationalRepository.class);
+        when(ops.databaseAvailable()).thenReturn(true);
+        TenantRepository tenants = mock(TenantRepository.class);
+        Tenant tenant = mock(Tenant.class);
+        when(tenant.status()).thenReturn(TenantStatus.ACTIVE);
+        when(tenants.findById(TENANT)).thenReturn(Optional.of(tenant));
+        BusyAnswers busy = new BusyAnswers("7");
+        busy.record();
+        busy.record();
+        OperationsService service = new OperationsService(ops, mock(StorageVolumeAdminService.class),
+                mock(KeyServiceHealthProbe.class), tenants, resolver, guard(), null, busy);
+
+        var summary = service.summary(TENANT);
+        assertEquals(2, summary.busyAnswers().lastHour());
+        assertEquals(2, summary.busyAnswers().sinceStart());
+        assertEquals(7, summary.busyAnswers().retryAfterSeconds());
+        assertNotNull(summary.busyAnswers().lastAt());
+        var json = new com.fasterxml.jackson.databind.ObjectMapper().findAndRegisterModules()
+                .readTree(new com.fasterxml.jackson.databind.ObjectMapper().findAndRegisterModules().writeValueAsString(summary));
+        assertEquals(2, json.at("/busyAnswers/lastHour").asLong());
+        assertEquals(2, json.at("/busyAnswers/sinceStart").asLong());
+
+        OperationsService without = new OperationsService(ops, mock(StorageVolumeAdminService.class),
+                mock(KeyServiceHealthProbe.class), tenants, resolver, guard());
+        assertEquals(BusyAnswers.Count.NONE, without.summary(TENANT).busyAnswers());
+    }
+
     private static java.util.List<String> iterable(java.util.Iterator<String> names) {
         java.util.List<String> list = new java.util.ArrayList<>();
         names.forEachRemaining(list::add);

@@ -1,10 +1,11 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://sdv.example.invalid/contracts/sdv-ingestion-submission-v1.schema.json",
-  "title": "SDV V1 Producer Submission",
+  "$id": "https://vero.example.invalid/contracts/sdv-ingestion-submission-v1.schema.json",
+  "title": "Vero ingestion v1: create submission",
+  "description": "For a sending system to check what it sends to POST /api/v1/ingestion/submissions. The same fields as CreateSubmissionRequest in sdv-ingestion-v1.openapi.json (the build checks that they agree). This schema refuses fields it doesn't list, so a sender finds them first; Vero itself ignores unknown fields, and refuses sensitivityLevel (SDV-SEN-006).",
   "type": "object",
   "additionalProperties": false,
-  "required": ["sourceSubmissionId", "expectedDocumentCount", "metadata"],
+  "required": ["sourceSubmissionId", "expectedDocumentCount"],
   "properties": {
     "sourceSubmissionId": {"type": "string", "minLength": 1, "maxLength": 200},
     "expectedDocumentCount": {"type": "integer", "minimum": 1},
@@ -20,7 +21,7 @@
     },
     "metadata": {
       "type": "object",
-      "additionalProperties": {"type": ["string", "number", "integer", "boolean"]}
+      "additionalProperties": {"type": ["string", "number", "boolean"]}
     },
     "recordSensitivityLevel": {
       "description": "Optional level for the whole record this submission belongs to. Exact names only. A delivery may raise a record's level, never lower it.",

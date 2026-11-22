@@ -187,12 +187,24 @@ class UnidentifiedIntakeAttemptPostgresTest {
                     "POST", "/api/v1/ingestion/submissions", 401, "SDV-AUT-006", "ref-busy-" + i));
         }
         String inBusyMinute = "occurred_at >= '" + busy + "' and occurred_at < '" + busy.plus(1, ChronoUnit.MINUTES) + "'";
-        assertEquals(UnidentifiedIntakeAttemptRepository.MAX_ROWS_PER_MINUTE + 1L, rows(inBusyMinute));
+        assertEquals(UnidentifiedIntakeAttemptRepository.DEFAULT_MAX_ROWS_PER_MINUTE + 1L, rows(inBusyMinute));
         Integer many = jdbc.queryForObject("select attempt_count from unidentified_intake_attempts where " + inBusyMinute
                 + " and caller_address='" + UnidentifiedIntakeAttemptRepository.MANY_CALLERS + "'", new MapSqlParameterSource(), Integer.class);
         assertEquals(50, many);
         assertEquals(151L, jdbc.queryForObject("select sum(attempt_count) from unidentified_intake_attempts where tenant_id='" + TD + "'",
                 new MapSqlParameterSource(), Long.class), "every request is counted (150 + the one above)");
+
+        // 3b. Task 0040: the limit is a setting. With 3, five callers in a minute make 3 rows plus one shared row of 2.
+        var limited = new JdbcUnidentifiedIntakeAttemptRepository(jdbc, "3");
+        Instant quiet = now.minus(4, ChronoUnit.DAYS).truncatedTo(ChronoUnit.MINUTES);
+        for (int i = 0; i < 5; i++) {
+            limited.record(Attempt.one(UUID.randomUUID(), TD, quiet.plusMillis(100L * i), "192.0.2." + i,
+                    "POST", "/api/v1/ingestion/submissions", 401, "SDV-AUT-006", "ref-limited-" + i));
+        }
+        String inQuietMinute = "occurred_at >= '" + quiet + "' and occurred_at < '" + quiet.plus(1, ChronoUnit.MINUTES) + "'";
+        assertEquals(4L, rows(inQuietMinute));
+        assertEquals(2, jdbc.queryForObject("select attempt_count from unidentified_intake_attempts where " + inQuietMinute
+                + " and caller_address='" + UnidentifiedIntakeAttemptRepository.MANY_CALLERS + "'", new MapSqlParameterSource(), Integer.class));
 
         // 4. The table refuses a second row for the same key and minute, a count below 1 and a last time before the first.
         assertThrows(Exception.class, () -> sql("insert into unidentified_intake_attempts(attempt_id, tenant_id, occurred_at,"

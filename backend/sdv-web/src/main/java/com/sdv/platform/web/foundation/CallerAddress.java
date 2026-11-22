@@ -9,7 +9,6 @@ import org.springframework.stereotype.Component;
 
 import java.net.InetAddress;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.Enumeration;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -21,10 +20,16 @@ import java.util.regex.Pattern;
  * Task 0039 part 2 (owner answer 3 to report 0039): the caller's network address, as Vero records it (for now only
  * for unidentified intake attempts in Problems).
  * <p>
- * {@code X-Forwarded-For} is trusted <b>only</b> when the request reached Vero from one of the proxy addresses in
- * {@code sdv.trusted-proxies} ({@code SDV_TRUSTED_PROXIES}): IP addresses, separated by commas or spaces. Empty by
- * default, which trusts no proxy: the address is then always the one Vero's server sees. An entry that isn't an IP
- * address (a host name, a range, anything else) stops the start (SDV-SYS-005); host names are never looked up.
+ * {@code X-Forwarded-For} is trusted <b>only</b> when the request reached Vero from one of the proxies in
+ * {@code sdv.trusted-proxies} ({@code SDV_TRUSTED_PROXIES}): IP addresses and, since task 0040 (owner answer 2 to
+ * report 0039 part 2), address ranges in CIDR form (IPv4 or IPv6, for example {@code 10.0.4.0/24} or
+ * {@code 2001:db8:4::/64}), mixed, separated by commas or spaces. Empty by default, which trusts no proxy: the address
+ * is then always the one Vero's server sees.
+ * <p>
+ * An entry that isn't an IP address or a valid range stops the start (SDV-SYS-005): a host name, a port, brackets, a
+ * prefix past the family's size, a prefix of 0 (that would trust every address), a range whose address has bits set
+ * past the prefix (likely a typing mistake, so it is refused, not guessed), or an IPv4 address written in IPv6 form
+ * with a prefix. Host names are never looked up.
  * <p>
  * From a trusted proxy the header is read from the right: trusted proxies are skipped, and the first address that
  * isn't one of them is the caller. A value that isn't an IP address ends the walk, and the last trusted hop is used
@@ -38,36 +43,65 @@ public class CallerAddress {
     private static final Pattern IPV4_PORT = Pattern.compile("^([0-9.]+):\\d{1,5}$");
     private static final Pattern BRACKETED_IPV6 = Pattern.compile("^\\[([0-9A-Fa-f:.]+)](:\\d{1,5})?$");
     private static final Pattern IPV6 = Pattern.compile("^[0-9A-Fa-f:.]+$");
+    private static final Pattern PREFIX = Pattern.compile("^(0|[1-9]\\d{0,2})$");
 
     /** Trusts no proxy. */
-    public static final CallerAddress DIRECT = new CallerAddress(Set.of());
+    public static final CallerAddress DIRECT = new CallerAddress(List.of());
 
-    private final Set<InetAddress> trusted;
+    /** One trusted address (the prefix is every bit of its family) or range. */
+    record Range(InetAddress network, int prefix) {
+        boolean contains(InetAddress address) {
+            byte[] a = address.getAddress();
+            byte[] n = network.getAddress();
+            if (a.length != n.length) return false; // an IPv4 address never matches an IPv6 range, nor the reverse
+            int full = prefix / 8;
+            for (int i = 0; i < full; i++) if (a[i] != n[i]) return false;
+            int rest = prefix % 8;
+            if (rest == 0) return true;
+            int mask = (0xFF << (8 - rest)) & 0xFF;
+            return (a[full] & mask) == (n[full] & mask);
+        }
+
+        @Override
+        public String toString() {
+            int bits = network.getAddress().length * 8;
+            return network.getHostAddress() + (prefix == bits ? "" : "/" + prefix);
+        }
+    }
+
+    private final List<Range> trusted;
 
     @Autowired
     public CallerAddress(@Value("${sdv.trusted-proxies:}") String trustedProxies) {
         this(parse(trustedProxies));
     }
 
-    private CallerAddress(Set<InetAddress> trusted) {
-        this.trusted = Collections.unmodifiableSet(trusted);
+    private CallerAddress(List<Range> trusted) {
+        this.trusted = List.copyOf(trusted);
     }
 
-    /** The configured proxies, for tests and the start log. */
-    public Set<InetAddress> trustedProxies() { return trusted; }
+    /** The configured proxies and ranges, as text, for tests and the start log. */
+    public List<String> trustedProxies() {
+        return trusted.stream().map(Range::toString).toList();
+    }
+
+    private boolean isTrusted(InetAddress address) {
+        for (Range range : trusted) if (range.contains(address)) return true;
+        return false;
+    }
 
     /** The caller's address: the server's view, or from X-Forwarded-For when that came from a trusted proxy. */
     public String of(HttpServletRequest request) {
         if (request == null) return null;
         String remote = request.getRemoteAddr();
         InetAddress hop = literal(remote);
-        if (hop == null || trusted.isEmpty() || !trusted.contains(hop)) return remote;
+        if (hop == null || trusted.isEmpty() || !isTrusted(hop)) return remote;
         List<String> entries = forwardedEntries(request);
         int read = 0;
         for (int i = entries.size() - 1; i >= 0 && read < MAX_HOPS; i--, read++) {
             InetAddress next = literal(entries.get(i));
             if (next == null) return hop.getHostAddress(); // not an address: keep the last trusted hop
-            if (!trusted.contains(next)) return next.getHostAddress();
+            if (!isTrusted(next)) return next.getHostAddress();
             hop = next;
         }
         return hop.getHostAddress(); // every hop is a trusted proxy, or the chain is too long
@@ -85,20 +119,56 @@ public class CallerAddress {
         return entries;
     }
 
-    static Set<InetAddress> parse(String setting) {
-        Set<InetAddress> out = new LinkedHashSet<>();
-        if (setting == null || setting.isBlank()) return out;
+    static List<Range> parse(String setting) {
+        Set<Range> out = new LinkedHashSet<>();
+        if (setting == null || setting.isBlank()) return List.of();
         for (String entry : setting.trim().split("[,\\s]+")) {
             if (entry.isEmpty()) continue;
-            InetAddress address = literal(entry);
-            if (address == null || entry.contains("[") || IPV4_PORT.matcher(entry).matches()) {
-                throw new StartupFailure(SdvErrorCode.SYS_005, "sdv.trusted-proxies (SDV_TRUSTED_PROXIES) must list IP"
-                        + " addresses separated by commas; \"" + printable(entry) + "\" is not one (no host names,"
-                        + " ranges or ports).");
-            }
-            out.add(address);
+            out.add(entry.indexOf('/') >= 0 ? range(entry) : single(entry));
         }
-        return out;
+        return new ArrayList<>(out);
+    }
+
+    private static Range single(String entry) {
+        InetAddress address = literal(entry);
+        if (address == null || entry.contains("[") || IPV4_PORT.matcher(entry).matches()) {
+            throw badEntry(entry, "is not an IP address or an address range");
+        }
+        return new Range(address, address.getAddress().length * 8);
+    }
+
+    /** {@code address/prefix}: the address written plainly (no brackets, no port), the prefix within its family. */
+    private static Range range(String entry) {
+        int slash = entry.indexOf('/');
+        String addressPart = entry.substring(0, slash);
+        String prefixPart = entry.substring(slash + 1);
+        InetAddress network = literal(addressPart);
+        if (network == null || addressPart.contains("[") || IPV4_PORT.matcher(addressPart).matches()
+                || !PREFIX.matcher(prefixPart).matches()) {
+            throw badEntry(entry, "is not an IP address or an address range");
+        }
+        int bits = network.getAddress().length * 8;
+        // Java turns an IPv4 address written in IPv6 form (::ffff:a.b.c.d) into IPv4; its prefix would then count
+        // the wrong bits, so it is refused rather than guessed.
+        if (bits == 32 && addressPart.indexOf(':') >= 0) {
+            throw badEntry(entry, "is an IPv4 address in IPv6 form; write the IPv4 range");
+        }
+        int prefix = Integer.parseInt(prefixPart);
+        if (prefix > bits) throw badEntry(entry, "has a prefix larger than " + bits);
+        if (prefix == 0) throw badEntry(entry, "would trust every address");
+        byte[] a = network.getAddress();
+        for (int bit = prefix; bit < bits; bit++) {
+            if ((a[bit / 8] & (0x80 >> (bit % 8))) != 0) {
+                throw badEntry(entry, "has address bits set past the prefix (write the range's first address)");
+            }
+        }
+        return new Range(network, prefix);
+    }
+
+    private static StartupFailure badEntry(String entry, String why) {
+        return new StartupFailure(SdvErrorCode.SYS_005, "sdv.trusted-proxies (SDV_TRUSTED_PROXIES) must list IP"
+                + " addresses or address ranges (CIDR, for example 10.0.4.0/24) separated by commas; \""
+                + printable(entry) + "\" " + why + " (no host names or ports).");
     }
 
     /**

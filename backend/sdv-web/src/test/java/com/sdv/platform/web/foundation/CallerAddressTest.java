@@ -1,8 +1,11 @@
 package com.sdv.platform.web.foundation;
 
+import com.sdv.platform.domain.error.SdvErrorCode;
 import com.sdv.platform.domain.error.StartupFailure;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockHttpServletRequest;
+
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -62,11 +65,56 @@ class CallerAddressTest {
 
     @Test
     void anEntryThatIsNotAnIpAddressStopsTheStart() {
-        for (String bad : new String[]{"proxy.example.com", "10.0.0.0/8", "10.0.0.5:8080", "[::1]", "10.0.0.256", "localhost", "abc"}) {
+        for (String bad : new String[]{"proxy.example.com", "10.0.0.5:8080", "[::1]", "10.0.0.256", "localhost", "abc"}) {
             StartupFailure failure = assertThrows(StartupFailure.class, () -> new CallerAddress("10.0.0.5, " + bad), bad);
             assertTrue(failure.getMessage().contains("SDV_TRUSTED_PROXIES"), failure.getMessage());
         }
         assertEquals(3, new CallerAddress(" 10.0.0.5 10.0.0.6,::1 ").trustedProxies().size(), "commas or spaces");
+    }
+
+    // Task 0040 (owner answer 2 to report 0039 part 2): ranges (CIDR, IPv4 and IPv6), mixed with single addresses.
+
+    @Test
+    void anAddressInsideATrustedRangeIsAProxy() {
+        CallerAddress callers = new CallerAddress("10.0.4.0/24, 192.0.2.10, 2001:db8:4::/64");
+        assertEquals(List.of("10.0.4.0/24", "192.0.2.10", "2001:db8:4:0:0:0:0:0/64"), callers.trustedProxies());
+        assertEquals("198.51.100.7", callers.of(from("10.0.4.0", "198.51.100.7")), "first address of the range");
+        assertEquals("198.51.100.7", callers.of(from("10.0.4.255", "198.51.100.7")), "last address of the range");
+        assertEquals("198.51.100.7", callers.of(from("192.0.2.10", "198.51.100.7")), "single address still works");
+        assertEquals("2001:db8:0:0:0:0:0:7", callers.of(from("2001:db8:4::abcd", "2001:db8::7")), "IPv6 range");
+        // Hops inside the range are skipped too.
+        assertEquals("198.51.100.7", callers.of(from("10.0.4.9", "198.51.100.7, 10.0.4.17, 10.0.4.200")));
+        // A prefix that doesn't end on a byte.
+        CallerAddress odd = new CallerAddress("172.16.0.0/12");
+        assertEquals("198.51.100.7", odd.of(from("172.31.255.254", "198.51.100.7")));
+        assertEquals("172.32.0.1", odd.of(from("172.32.0.1", "198.51.100.7")), "just past the range");
+        // A whole address as a range: /32 and /128.
+        assertEquals("198.51.100.7", new CallerAddress("10.0.0.5/32").of(from("10.0.0.5", "198.51.100.7")));
+        assertEquals("198.51.100.7", new CallerAddress("::1/128").of(from("0:0:0:0:0:0:0:1", "198.51.100.7")));
+    }
+
+    @Test
+    void anAddressOutsideEveryTrustedRangeKeepsItsOwnAddress() {
+        CallerAddress callers = new CallerAddress("10.0.4.0/24, 2001:db8:4::/64");
+        assertEquals("10.0.5.1", callers.of(from("10.0.5.1", "198.51.100.7")), "next block");
+        assertEquals("10.0.3.255", callers.of(from("10.0.3.255", "198.51.100.7")), "block before");
+        assertEquals("2001:db8:5::1", callers.of(from("2001:db8:5::1", "198.51.100.7")), "other IPv6 block");
+        // An IPv4 address never matches an IPv6 range.
+        assertEquals("10.0.4.1", new CallerAddress("::/1").of(from("10.0.4.1", "198.51.100.7")));
+        // From a trusted proxy, the first hop outside the range is the caller, even when it is close by.
+        assertEquals("10.0.5.3", callers.of(from("10.0.4.9", "198.51.100.7, 10.0.5.3, 10.0.4.17")));
+    }
+
+    @Test
+    void aBadRangeStopsTheStart() {
+        for (String bad : new String[]{"10.0.4.0/33", "2001:db8::/129", "10.0.4.0/", "/24", "10.0.4.0/-1",
+                "10.0.4.0/24/8", "10.0.4.0/a", "10.0.4.0/024", "10.0.4.5/24", "2001:db8::1/64", "0.0.0.0/0", "::/0",
+                "proxy.example.com/24", "10.0.4.0:80/24", "[2001:db8::]/64", "::ffff:10.0.4.0/120", "10.0.4/24"}) {
+            StartupFailure failure = assertThrows(StartupFailure.class,
+                    () -> new CallerAddress("10.0.0.5, " + bad), bad);
+            assertTrue(failure.getMessage().contains("SDV_TRUSTED_PROXIES"), failure.getMessage());
+            assertEquals(SdvErrorCode.SYS_005, failure.errorCode(), bad);
+        }
     }
 
     @Test

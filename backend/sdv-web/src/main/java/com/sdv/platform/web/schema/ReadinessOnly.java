@@ -16,6 +16,12 @@ import org.springframework.boot.actuate.health.Status;
  */
 public final class ReadinessOnly {
     public static final Status NOT_READY = new Status("NOT_READY", "Vero can't take work until this is back");
+    /**
+     * Task 0040 part 2 (master section item 2, owner answers third round): the database is there, but no connection is
+     * free (pool full, or PostgreSQL has none left). Readiness orders it after NOT_READY, so it is the answer only when
+     * busy is the one reason; {@link ReadinessBusyAnswer} then adds SDV-SYS-018 and Retry-After to the 503.
+     */
+    public static final Status BUSY = new Status("BUSY", "Vero is busy: no database connection is free just now");
 
     private ReadinessOnly() { }
 }

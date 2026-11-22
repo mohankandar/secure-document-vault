@@ -110,6 +110,25 @@ class HealthGroupsTest {
         });
     }
 
+    /**
+     * Task 0040 part 2 (master section item 2): a busy database ping makes readiness BUSY (503), only readiness; when
+     * something else is also wrong (the hub away), readiness is NOT_READY: busy is the answer only as the one reason.
+     */
+    @Test
+    void busyIsReadinessOnlyAndOnlyWhenItIsTheOneReason() throws Exception {
+        vero(ReadinessOnly.BUSY, Status.UP).run(context -> {
+            assertEquals(new Answer(ReadinessOnly.BUSY, 503), answer(context, "readiness"), "readiness");
+            assertEquals(new Answer(Status.UP, 200), answer(context, "liveness"), "liveness");
+            assertEquals(new Answer(Status.UP, 200), answer(context, null), "overall /actuator/health");
+        });
+        vero(ReadinessOnly.BUSY, ReadinessOnly.NOT_READY).run(context ->
+                assertEquals(new Answer(ReadinessOnly.NOT_READY, 503), answer(context, "readiness")));
+        DatabaseSchemaCheck older = new DatabaseSchemaCheck(
+                new SchemaVersion.Status(SchemaVersion.State.OLDER, List.of(), List.of(), 0));
+        vero(older, ReadinessOnly.BUSY, Status.UP).run(context ->
+                assertEquals(new Answer(Status.OUT_OF_SERVICE, 503), answer(context, "readiness")));
+    }
+
     @Test
     void allBackMeansReadyAndARealDownStillCounts() throws Exception {
         vero(Status.UP, Status.UP).run(context -> {

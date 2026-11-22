@@ -20,6 +20,7 @@ import com.sdv.platform.application.port.StreamingCryptoPort;
 import com.sdv.platform.application.port.SubmissionRepository;
 import com.sdv.platform.application.port.TenantRepository;
 import com.sdv.platform.application.storage.StoragePlacementService;
+import com.sdv.platform.application.storage.StorageProviderMissingException;
 import com.sdv.platform.domain.audit.AuditEvent;
 import com.sdv.platform.domain.audit.AuditOutcome;
 import com.sdv.platform.domain.document.Document;
@@ -577,7 +578,8 @@ public class DocumentIntakeService {
         return storageProviders.stream()
                 .filter(candidate -> candidate.providerId().equals(providerId))
                 .findFirst()
-                .orElseThrow(() -> new IllegalStateException(
+                // Task 0040 part 2: SDV-STO-004, 503 (Vero's setup); it was 409 CONFLICT.
+                .orElseThrow(() -> new StorageProviderMissingException(
                         "Configured storage provider is unavailable: " + providerId));
     }
 

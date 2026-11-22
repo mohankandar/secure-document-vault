@@ -223,8 +223,18 @@ public enum SdvErrorCode {
     SYS_016("SDV-SYS-016"),
     /** Task 0036: the action's audit couldn't be written, so the action was not done (500). */
     SYS_017("SDV-SYS-017"),
+    /**
+     * Task 0040 part 2: Vero is too busy to take the request: the database connection pool is full, or PostgreSQL has
+     * no connection left for Vero. 503 with a Retry-After header, the only answer that carries one.
+     */
+    SYS_018("SDV-SYS-018"),
     /** Task 0036: no ACTIVE storage volume can take the document (503). */
     STO_001("SDV-STO-001", true),
+    /**
+     * Task 0040 part 2: the storage volume picked for an upload names a storage provider this install doesn't have
+     * (503, no Retry-After; the installer must fix it). It used to be 409 CONFLICT.
+     */
+    STO_004("SDV-STO-004", true),
     /** Task 0037: the storage placement preview's size is negative (400). Other volume settings follow in their task. */
     STO_005("SDV-STO-005"),
     /** Task 0037: no key service is set up: WARN at a local start, and a packaged start refuses. */
