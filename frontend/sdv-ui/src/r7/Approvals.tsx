@@ -5,6 +5,7 @@ import { useStore } from './store'
 import { FailureNotice, loadFailed, type Failure } from './CardError'
 import { Callout, Dialog, Drawer, Switch, fmtDate } from './ui'
 import { refusalText, whenWords } from './Sensitivity'
+import { itemWords } from './problemWords'
 import { BULK_MAX, LEVEL_NAMES, approvalLevelNote, decideMany, decideRequest, decidedRecently, pendingRequests, type BulkItem, type DecidedRequest, type PendingList, type PendingRequest } from './liveApi'
 
 /**
@@ -133,7 +134,8 @@ export function Approvals({ onWaiting }: { onWaiting: (w: WaitingSummary) => voi
       if (done.length) toast({ tone: 'ok', title: `${plural(done.length, 'request')} ${decision === 'APPROVE' ? 'approved' : 'declined'}`, detail: 'Each requester sees it under Requests the next time they open Vero.' })
       if (refused.length) setProblems({ title: `${plural(refused.length, 'request')} ${refused.length === 1 ? 'was' : 'were'} not ${decision === 'APPROVE' ? 'approved' : 'declined'}`, lines: refused.map((r) => {
         const req = byId.get(r.requestId)
-        return `${req ? `${kindWords(req)} on ${req.primaryIdentifier ?? 'a record'} (${req.requester})` : 'A request'}: ${r.message ?? 'not decided'}${r.code ? ` (${r.code})` : ''}`
+        // Task 0044: the catalog's words for the item's code, never the server's message.
+        return `${req ? `${kindWords(req)} on ${req.primaryIdentifier ?? 'a record'} (${req.requester})` : 'A request'}: ${itemWords(r.outcome === 'FAILED' ? 'FAILED' : 'REFUSED', r.code)}`
       }) })
       setSelected((s) => new Set([...s].filter((id) => !done.some((d) => d.requestId === id))))
       setBusy(false); setReload((x) => x + 1)

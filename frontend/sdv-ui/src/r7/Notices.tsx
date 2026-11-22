@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Bell, X } from 'lucide-react'
 import { useStore } from './store'
 import { whenWords } from './Sensitivity'
-import { ApiRequestError } from '../api'
+import { failureText } from './CardError'
 import { LEVEL_NAMES, intakeNotices, markIntakeNoticesRead, myRequests, type IntakeNotices as IntakeNoticeList, type MyRequest } from './liveApi'
 
 /**
@@ -128,7 +128,7 @@ export function IntakeNotices() {
   const markRead = async (ids: string[]) => {
     setBusy(true); setProblem(null)
     try { await markIntakeNoticesRead(ids); setReload((x) => x + 1) }
-    catch (e) { setProblem(e instanceof ApiRequestError && e.code ? `${e.message} (${e.code})` : 'Vero couldn’t mark it as read. Try again.') }
+    catch (e) { setProblem(`Vero couldn’t mark it as read. ${failureText('Marking a notice as read failed', e)}`) }
     finally { setBusy(false) }
   }
   return (

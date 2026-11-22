@@ -26,15 +26,164 @@ export const DOCUMENT_PROBLEM_WORDS: Record<string, { text: string; fault?: true
 }
 
 /**
- * Task 0043: the sentence for a document action's failure: the catalog's words, the reference for Vero's own
- * failures, and the code. Null when the error carries no DOC code (the caller then shows its usual words).
+ * Task 0044: one sentence per code a screen can get, from the catalog (docs/api/error-codes.md, "What the user should
+ * do"). Written for a person, never the server's own message. For a 401 or 403 it follows "You don’t have access to
+ * this."; for a 5xx it follows "Something went wrong in Vero." and the screen adds when to try again and the reference.
+ * A code not listed gets its kind's general sentence, with the code. The DOC codes are DOCUMENT_PROBLEM_WORDS above.
  */
-export function documentProblemText(error: unknown): string | null {
-  if (!(error instanceof ApiRequestError) || !error.code) return null
-  const words = DOCUMENT_PROBLEM_WORDS[error.code]
-  if (!words) return null
-  const ref = words.fault && error.correlationId ? ` Ref ${error.correlationId}.` : ''
-  return `${words.text}${ref} (${error.code})`
+export const CODE_WORDS: Record<string, string> = {
+  'SDV-SEN-007': 'This change to the identifiers isn’t allowed while records of this sending system have a sensitivity level. Labels, search settings and the other field settings can still be changed.',
+  'SDV-SEN-008': 'This document is restricted. If you need it for your work, ask someone who holds the right role.',
+  'SDV-SEN-009': 'Printing or downloading a Highly Confidential document needs a Business admin’s approval, once. A Restricted steward can ask for it.',
+  'SDV-SEN-010': 'Only a Steward can change a level.',
+  'SDV-SEN-011': 'Choose one of the three levels and try again.',
+  'SDV-SEN-012': 'Write why the level must change, in 3 to 500 characters.',
+  'SDV-SEN-013': 'A raise must go to a higher level. To make it lower, ask for a lowering instead.',
+  'SDV-SEN-014': 'A lowering must go to a lower level. If the document is restricted only through its record’s level, ask for the record’s level to be lowered instead.',
+  'SDV-SEN-015': 'A Steward can lower a level only from Confidential. Ask a Restricted steward to request the lowering.',
+  'SDV-SEN-016': 'This document or record isn’t there any more. Open the record again from search and try again.',
+  'SDV-SEN-017': 'Only an available document’s level can be changed. Wait until it is available.',
+  'SDV-SEN-018': 'Only a Steward or a Business admin can see the level history.',
+  'SDV-SEN-019': 'Choose Any, Confidential or Highly Confidential in the Sensitivity filter.',
+  'SDV-ROL-001': 'That permission can never be given to that role. Leave it off.',
+  'SDV-ROL-002': 'This role’s permissions are fixed. Only Business User and Document Steward can be changed.',
+  'SDV-ROL-003': 'That permission can’t be changed here.',
+  'SDV-ROL-004': 'Your sign-in groups give you two roles that can’t be held together. Ask your IT team to take you out of one of them.',
+  'SDV-ROL-005': 'Vero couldn’t record a role conflict at sign-in. Try again in a few minutes. If it keeps happening, ask your IT team.',
+  'SDV-ROL-006': 'Your role doesn’t include this action. Ask someone who has the role, or ask your IT team whether you should have it.',
+  'SDV-AUT-001': 'Sign in again.',
+  'SDV-AUT-002': 'This address is for sending systems, not for a person’s sign-in.',
+  'SDV-AUT-003': 'Your sign-in wasn’t accepted. Sign in again.',
+  'SDV-AUT-004': 'Vero can’t check sign-ins just now.',
+  'SDV-AUT-005': 'Vero can’t use your sign-in. Tell your IT team.',
+  'SDV-AUT-006': 'Vero doesn’t know this sign-in service. Tell your IT team.',
+  'SDV-AUT-007': 'Your sign-in groups give you no Vero role. Ask your IT team to add you to a Vero group.',
+  'SDV-AUT-008': 'The local test sign-in isn’t valid. Choose a role from the local guide.',
+  'SDV-AUT-009': 'Your organisation isn’t set up or isn’t active in Vero. Contact your IT team.',
+  'SDV-IDP-007': 'Vero already has an active sign-in connection for this sign-in service. Give Vero its own client there, or contact Vero operations.',
+  'SDV-HLD-001': 'Only a Business admin places or releases legal holds.',
+  'SDV-HLD-002': 'Write why the document must be kept, in 3 to 500 characters, and place the hold again.',
+  'SDV-HLD-003': 'Enter the record’s identifier and look again.',
+  'SDV-HLD-004': 'This document isn’t there any more. Find it again by its record’s identifier and place the hold from there.',
+  'SDV-HLD-005': 'This document is already on legal hold. To change the reason, release the hold and place a new one.',
+  'SDV-HLD-006': 'This document was deleted or is being deleted, so it can’t be put on hold.',
+  'SDV-HLD-007': 'This legal hold isn’t there any more. Open the list of holds again.',
+  'SDV-HLD-008': 'This legal hold was already released. Reload the list of holds.',
+  'SDV-APR-001': 'Only a Restricted steward can ask to print or download.',
+  'SDV-APR-002': 'Write why the document must be printed or downloaded, in 3 to 500 characters, and ask again.',
+  'SDV-APR-003': 'This document needs no approval. Print or download it directly, if your role allows.',
+  'SDV-APR-004': 'The same request is already waiting. Wait for the Business admin’s decision.',
+  'SDV-APR-005': 'Only a Business admin decides requests.',
+  'SDV-APR-006': 'Nobody decides their own request. Ask another Business admin to decide it.',
+  'SDV-APR-007': 'This request isn’t there any more. Reload the approvals list.',
+  'SDV-APR-008': 'This request is no longer waiting. Reload the approvals list.',
+  'SDV-APR-009': 'A whole-record request is decided on its own. Open it with Review.',
+  'SDV-APR-010': 'Choose from 1 to 100 requests and decide them again.',
+  'SDV-APR-011': 'The lowering no longer applies, because the level has changed. Decline the request; the Steward can ask again.',
+  'SDV-APR-012': 'Choose one of the kinds and ask again.',
+  'SDV-APR-013': 'This document isn’t there any more. Open it again from its record and ask from there.',
+  'SDV-APR-014': 'This document isn’t available, so nothing can be asked for it yet.',
+  'SDV-APR-015': 'Only a Steward has a list of their own requests.',
+  'SDV-INT-001': 'Only a Steward gets intake notices.',
+  'SDV-INT-002': 'This notice isn’t there any more. Reload Vero.',
+  'SDV-INT-003': 'Mark the notices from the list in Vero.',
+  'SDV-RPT-001': 'Only a Business admin sees reports.',
+  'SDV-RPT-002': 'Choose one day, or a range of up to 31 days (Daily intake) or 366 days (Sensitivity).',
+  'SDV-RPT-003': 'Choose a sending system from the list, or All.',
+  'SDV-RPT-004': 'The organisation’s time zone isn’t valid. Tell Tenant IT.',
+  'SDV-RPT-005': 'That is too much for one report. Choose fewer days, or one sending system.',
+  'SDV-SYS-001': 'The database is older than this Vero version.',
+  'SDV-SYS-002': 'The database is newer than this Vero version.',
+  'SDV-SYS-006': 'Sign-in is switched off for this installation. Tell your IT team.',
+  'SDV-SYS-014': 'Vero can’t reach its database just now.',
+  'SDV-SYS-015': 'Vero couldn’t read this request. Reload the page and try again.',
+  'SDV-SYS-016': 'Something inside Vero didn’t add up, so nothing was changed.',
+  'SDV-SYS-017': 'Vero couldn’t record this action, so it wasn’t done.',
+  'SDV-SYS-018': 'Vero is too busy to take this request just now.',
+  'SDV-STO-001': 'Vero has no storage space for new documents right now. Nothing was stored.',
+  'SDV-STO-004': 'Storage for this organisation isn’t available, so nothing was stored.',
+  'SDV-STO-005': 'A storage value is missing or out of range. Correct it and try again.',
+  'SDV-SCH-001': 'Vero can’t search with these criteria. Change the search and try again.',
+  'SDV-SCH-002': 'This record isn’t there, or the link is wrong. Search for the record again.',
+  'SDV-SCH-003': 'Vero couldn’t load Recently viewed. Reload the page.',
+}
+
+/** Task 0044: the four kinds of error a screen shows. */
+export type ErrorKind = 'refusal' | 'notAllowed' | 'fault' | 'network'
+/** What a screen shows for an error: `text` is the whole line (sentence, reference, code). */
+export type ErrorWords = { kind: ErrorKind; text: string; code?: string; reference?: string }
+
+export const GENERAL_WORDS = {
+  refusal: 'Vero can’t do this as asked. Check what you entered and try again.',
+  notAllowed: 'You don’t have access to this.',
+  signInAgain: 'Sign in again.',
+  askIt: 'If you need it for your work, ask your IT team.',
+  fault: 'Something went wrong in Vero.',
+  network: 'Vero can’t be reached. Check your connection.',
+} as const
+
+const randomReference = () => Array.from(crypto.getRandomValues(new Uint8Array(4)), (b) => b.toString(16).padStart(2, '0')).join('')
+const seconds = (n: number) => `${n} second${n === 1 ? '' : 's'}`
+
+/**
+ * Task 0044: the one way every screen turns an error into words (the viewer's DOC codes keep task 0043's words).
+ * - refusal (a 4xx that isn't 401/403): the code's sentence, or the general one;
+ * - notAllowed (401/403): "You don’t have access to this." and what to do (sign in again for a 401);
+ * - fault (5xx, or anything else unexpected): "Something went wrong in Vero.", when to try again (503: in a few
+ *   minutes, or the Retry-After seconds) and always a reference;
+ * - network (no answer): "Vero can’t be reached. Check your connection."
+ * The code is shown as "(SDV-XXX-NNN)" whenever there is one. The server's message is never used (ApiRequestError
+ * doesn't keep it). The reference is the server's; when it sent none, a new one is made, which the caller logs to the
+ * console with the raw error. `withReference` also adds the reference to a refusal or not-allowed line (exports).
+ */
+export function errorWords(error: unknown, options: { withReference?: boolean; newReference?: () => string } = {}): ErrorWords {
+  const newReference = options.newReference ?? randomReference
+  if (!(error instanceof ApiRequestError)) {
+    const reference = newReference()
+    return { kind: 'fault', reference, text: `${GENERAL_WORDS.fault} Try again. If it keeps happening, give your IT team this reference: Ref ${reference}.` }
+  }
+  const { status, code } = error
+  const tail = code ? ` (${code})` : ''
+  if (status === 0) return { kind: 'network', text: GENERAL_WORDS.network }
+  const doc = code ? DOCUMENT_PROBLEM_WORDS[code] : undefined
+  if (doc) {
+    const reference = doc.fault ? error.correlationId ?? newReference() : error.correlationId
+    const ref = reference && (doc.fault || options.withReference) ? ` Ref ${reference}.` : ''
+    return { kind: doc.fault ? 'fault' : status === 401 || status === 403 ? 'notAllowed' : 'refusal', code, reference, text: `${doc.text}${ref}${tail}` }
+  }
+  const words = code ? CODE_WORDS[code] : undefined
+  if (status >= 400 && status < 500) {
+    const notAllowed = status === 401 || status === 403
+    const reference = error.correlationId
+    const ref = options.withReference && reference ? ` Ref ${reference}.` : ''
+    const text = notAllowed
+      ? `${GENERAL_WORDS.notAllowed} ${words ?? (status === 401 ? GENERAL_WORDS.signInAgain : GENERAL_WORDS.askIt)}`
+      : words ?? GENERAL_WORDS.refusal
+    return { kind: notAllowed ? 'notAllowed' : 'refusal', code, reference, text: `${text}${ref}${tail}` }
+  }
+  const reference = error.correlationId ?? newReference()
+  const when = status === 503
+    ? `Try again in ${error.retryAfterSeconds != null ? seconds(error.retryAfterSeconds) : 'a few minutes'}. If it keeps happening, give your IT team this reference`
+    : 'Try again. If it keeps happening, give your IT team this reference'
+  return { kind: 'fault', code, reference, text: `${GENERAL_WORDS.fault}${words ? ` ${words}` : ''} ${when}: Ref ${reference}.${tail}` }
+}
+
+/**
+ * Task 0044: Health's sentence for the database check at start (SDV-SYS-001 to -003), in Vero's own words rather than
+ * the server's message. The same sentences as the start-up log (SchemaVersion).
+ */
+export function schemaWords(state: string): string {
+  if (state === 'OLDER') return 'The database is older than this Vero version. Ask your database team to run the schema step (install guide, "Update the database").'
+  if (state === 'NEWER') return 'The database is newer than this Vero version. Start the Vero version the database was updated for, or ask your database team which version that is.'
+  if (state === 'UNREACHABLE') return 'Vero can’t reach its database. It keeps trying and starts serving as soon as the database answers; check that PostgreSQL is running and that Vero can reach it.'
+  return 'Vero couldn’t tell whether the database matches this version. Tell your IT team.'
+}
+
+/** The words for one item of a bulk answer (an outcome with a code, no HTTP status): a refusal, or Vero's fault. */
+export function itemWords(outcome: 'REFUSED' | 'FAILED', code: string | null): string {
+  const tail = code ? ` (${code})` : ''
+  if (outcome === 'FAILED') return `${GENERAL_WORDS.fault}${code && CODE_WORDS[code] ? ` ${CODE_WORDS[code]}` : ''} Try again.${tail}`
+  return `${(code && CODE_WORDS[code]) || GENERAL_WORDS.refusal}${tail}`
 }
 
 /** Code → what happened (short, for the list) and the cause (for the detail). */

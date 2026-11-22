@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { Lock, X } from 'lucide-react'
 import type { SensitivityLevel } from '../api'
-import { ApiRequestError } from '../api'
+import { failureText } from './CardError'
 import { useStore } from './store'
 import type { Doc, RecordItem } from './model'
 import { askToLowerLevel, raiseLevel, requestPrintOrDownload, LEVEL_NAMES, type LevelChangeResult, type LevelScope, type MyRequest } from './liveApi'
@@ -34,11 +34,8 @@ export function recordWord(record: Pick<RecordItem, 'identifiers'>): string {
 }
 const capital = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 
-/** A refusal in plain words, with its code as a reference ("… (SDV-SEN-013)"). */
-export function refusalText(e: unknown): string {
-  if (e instanceof ApiRequestError) return e.code ? `${e.message} (${e.code})` : e.message
-  return e instanceof Error ? e.message : 'Something went wrong. Try again.'
-}
+/** A refusal in plain words, with its code ("… (SDV-SEN-013)"). Task 0044: the shared words, never the server's text. */
+export const refusalText = (e: unknown): string => failureText('An action was not done', e)
 
 /** "today 09:40", "yesterday 16:02", "tomorrow 10:12", else "14 Nov 10:12". */
 export function whenWords(iso: string, withTime = true, now: Date = new Date()): string {

@@ -1,7 +1,6 @@
 import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react'
 import { ChevronDown, ChevronRight, Download } from 'lucide-react'
-import { ApiRequestError } from '../api'
-import { FailureNotice, loadFailed, type Failure } from './CardError'
+import { FailureNotice, describeFailure, exportFailureText, type Failure } from './CardError'
 import { intakeReport, intakeReportCsv, sensitivityReport, sensitivityReportCsv, type IntakeDeliveryLine, type IntakeFilter, type IntakeReport, type IntakeSystemBlock, type SensitivityReport, type SensitivityRequestKind } from './liveApi'
 
 /**
@@ -97,9 +96,11 @@ function DailyIntake({ tabs }: { tabs: ReactNode }) {
     setLoading(true); setFailure(null); setRefusal(null)
     intakeReport(filter).then((r) => { if (active) setReport(r) }).catch((e) => {
       if (!active) return
-      // A coded refusal (SDV-RPT-…) is the server's answer to these filters: shown in its words, the report kept.
-      if (e instanceof ApiRequestError && e.code) setRefusal(`${e.message} (${e.code})`)
-      else setFailure(loadFailed('The Daily intake report', e, "The Daily intake report didn't load"))
+      // A coded refusal (SDV-RPT-…) is the server's answer to these filters: shown in the catalog's words, the report
+      // kept. Anything else (not allowed, Vero's fault, no answer) is the card with Try again.
+      const words = describeFailure('The Daily intake report did not load', e)
+      if (words.kind === 'refusal' && words.code) setRefusal(words.text)
+      else setFailure({ words, kind: 'load', title: "The Daily intake report didn't load" })
     }).finally(() => { if (active) setLoading(false) })
     return () => { active = false }
   }, [filter, reload])
@@ -117,7 +118,7 @@ function DailyIntake({ tabs }: { tabs: ReactNode }) {
       setTimeout(() => URL.revokeObjectURL(url), 1000)
       setExportNote({ ok: true, text: 'The file is saved. The export is recorded in the audit.' })
     } catch (e) {
-      setExportNote({ ok: false, text: e instanceof ApiRequestError && e.code ? `${e.message} (${e.code})` : 'The export didn’t work. Try again; if it keeps failing, ask your IT team.' })
+      setExportNote({ ok: false, text: `The export didn’t work. ${exportFailureText('A report export failed', e)}` })
     } finally { setExporting(false) }
   }
 
@@ -279,8 +280,9 @@ function SensitivityReportView({ tabs }: { tabs: ReactNode }) {
     setLoading(true); setFailure(null); setRefusal(null)
     sensitivityReport(filter).then((r) => { if (active) setReport(r) }).catch((e) => {
       if (!active) return
-      if (e instanceof ApiRequestError && e.code) setRefusal(`${e.message} (${e.code})`)
-      else setFailure(loadFailed('The Sensitivity report', e, "The Sensitivity report didn't load"))
+      const words = describeFailure('The Sensitivity report did not load', e)
+      if (words.kind === 'refusal' && words.code) setRefusal(words.text)
+      else setFailure({ words, kind: 'load', title: "The Sensitivity report didn't load" })
     }).finally(() => { if (active) setLoading(false) })
     return () => { active = false }
   }, [filter, reload])
@@ -297,7 +299,7 @@ function SensitivityReportView({ tabs }: { tabs: ReactNode }) {
       setTimeout(() => URL.revokeObjectURL(url), 1000)
       setExportNote({ ok: true, text: 'The file is saved. The export is recorded in the audit.' })
     } catch (e) {
-      setExportNote({ ok: false, text: e instanceof ApiRequestError && e.code ? `${e.message} (${e.code})` : 'The export didn’t work. Try again; if it keeps failing, ask your IT team.' })
+      setExportNote({ ok: false, text: `The export didn’t work. ${exportFailureText('A report export failed', e)}` })
     } finally { setExporting(false) }
   }
 
