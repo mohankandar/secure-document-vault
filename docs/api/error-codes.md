@@ -212,7 +212,7 @@ Task 0038. A sign-in Vero refuses gets the one error body. The message is a fixe
 
 ### SDV-AUT-003: token not accepted
 
-- **HTTP status:** 401 (400 when the `Authorization` header itself is malformed, as before).
+- **HTTP status:** 401. Task 0040: also when the `Authorization` header itself is malformed (for example `Bearer !!!`); the contract test (`IngestionContractTest`) shows it. The earlier note "400 when the header is malformed" was not right for Vero's settings.
 - **Meaning:** the token is expired or not yet valid, its signature doesn't match the sign-in hub's keys, it was issued by another issuer or for another audience, its lifetime is longer than Vero allows, or it isn't a token at all. Message: "Please sign in again." One INFO line with the reason class (expired, signature, issuer, audience, lifetime, malformed); never the token or its times.
 - **What the user should do:** sign in again.
 - **What support should tell the customer:** the sign-in expired or wasn't issued for Vero. If everyone gets it, their IT team checks the sign-in hub's issuer and audience settings for Vero against `SDV_AUTH_JWT_ISSUER` and `SDV_AUTH_JWT_AUDIENCE`.
@@ -467,8 +467,8 @@ INT-004 to INT-018 are sent by the sending systems' addresses (`/api/v1/ingestio
 **Recorded, every time** (task 0039). Every error answer on these addresses is recorded in one place, also the ones Spring gives before Vero's code runs (SDV-SYS-015: JSON that doesn't parse, a missing `X-SDV-Filename`, a content type other than PDF), the sign-in refusals and the 5xx failures:
 - a sending system Vero knows (a verified sending-system sign-in whose system is one of the tenant's, active or paused): a delivery, upload or finishing retry is counted by the Daily intake report under that system, as **refused** (4xx, audit event `INTAKE_REFUSED`) or **failed** (5xx, `INTAKE_FAILED`), with the code it got. A status query (`GET`) delivers nothing and isn't counted.
 - no known sending system (no sign-in, a refused token, a person's sign-in, a sending system the tenant doesn't have): it is listed for Tenant IT and Platform operations under Problems, "Unidentified intake attempts", with the time, the address called (IDs blanked), the caller's network address, the status, the code and the reference; never anything from a token. Without a verified tenant an attempt is shown to every tenant's Tenant IT; with one, to that tenant's only. Kept 30 days; Problems shows the last 7.
-  - Task 0039 part 2: one line per caller address, address called and code **per minute** (and per tenant, method and status), with how many times and the last time; the reference is the first request's (every request's is in the log). Parts of an address that aren't Vero's own words are blanked, an unknown method is `OTHER`, and past 100 lines in a minute new callers are counted together as "(many addresses)", so a flood can't grow the list without bound.
-  - The caller's address is the one Vero's server sees. Behind a proxy or load balancer, `SDV_TRUSTED_PROXIES` lists the proxies' IP addresses; only from those is `X-Forwarded-For` read. Empty by default: the header is ignored.
+  - Task 0039 part 2: one line per caller address, address called and code **per minute** (and per tenant, method and status), with how many times and the last time; the reference is the first request's (every request's is in the log). Parts of an address that aren't Vero's own words are blanked, an unknown method is `OTHER`, and past 100 lines in a minute new callers are counted together as "(many addresses)", so a flood can't grow the list without bound. Task 0040: the 100 is the setting `SDV_UNIDENTIFIED_ATTEMPTS_MAX_ROWS_PER_MINUTE` (1 to 10000, default 100).
+  - The caller's address is the one Vero's server sees. Behind a proxy or load balancer, `SDV_TRUSTED_PROXIES` lists the proxies' IP addresses and, since task 0040, address ranges (CIDR, IPv4 or IPv6, for example `10.0.4.0/24`); only from those is `X-Forwarded-For` read. Empty by default: the header is ignored.
 - a failure while Vero's database is away can't be recorded; it is in Vero's log only.
 
 ### SDV-INT-004: no such submission
@@ -652,7 +652,7 @@ Task 0037: SYS-003 to SYS-012 are start-up codes. A start that stops prints one 
 ### SDV-SYS-005: sign-in settings not valid
 
 - **HTTP status:** none; Vero doesn't start.
-- **Meaning:** a sign-in setting is wrong: `SDV_AUTH_MODE` is unknown, `local-header` is used outside a local start, an issuer, key set (JWKS) or audience setting is missing, not HTTPS or not a URI, a tenant ID setting is not a UUID, or two claim names are the same. The ERROR block names the setting (never a secret value).
+- **Meaning:** a sign-in setting is wrong: `SDV_AUTH_MODE` is unknown, `local-header` is used outside a local start, an issuer, key set (JWKS) or audience setting is missing, not HTTPS or not a URI, a tenant ID setting is not a UUID, or two claim names are the same. Since task 0039 part 2 also a setting for recording who calls the intake addresses: an entry in `SDV_TRUSTED_PROXIES` that isn't an IP address or a valid range (task 0040), or `SDV_UNIDENTIFIED_ATTEMPTS_MAX_ROWS_PER_MINUTE` that isn't a whole number from 1 to 10000 (task 0040). The ERROR block names the setting (never a secret value).
 - **What the user should do:** nothing; Vero is not running. Tell the IT team.
 - **What support should tell the customer:** a sign-in setting is wrong; the log names it. Correct it and start Vero again.
 

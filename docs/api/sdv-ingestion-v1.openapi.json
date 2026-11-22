@@ -1,19 +1,40 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "Secure Document Vault Ingestion API",
+    "title": "Vero (Secure Document Vault) Ingestion API",
     "version": "1.0.0",
-    "description": "Public integration-neutral V1 contract for authenticated document producers. Tenant and source scope are derived from the validated bearer identity. SDV-generated identifiers are opaque."
+    "description": "The contract for sending systems: create a submission, upload its PDFs, read their state. Sign-in is an OAuth2 client-credentials token from the customer's sign-in server; the tenant and the sending system come from the verified token, never from a request header. Every error has the same body (Error) with a stable code. Each answer below says whether to send the request again (x-sdv-retry). The versioning policy, the sender's guide and the changelog are in docs/api/README.md. The build checks this file against the running API (IngestionContractTest).",
+    "contact": {"name": "Vero team"}
   },
   "servers": [
-    {"url": "{baseUrl}", "variables": {"baseUrl": {"default": "https://sdv.example.invalid"}}}
+    {"url": "{baseUrl}", "variables": {"baseUrl": {"default": "https://vero.example.invalid", "description": "The customer's Vero address."}}}
   ],
   "security": [{"bearerAuth": []}],
   "paths": {
+    "/actuator/health/readiness": {
+      "get": {
+        "operationId": "checkReadiness",
+        "summary": "Can I send now?",
+        "description": "No sign-in needed. 200 with status UP: Vero can take work; send. 503: Vero can't take work right now (its database or the sign-in server can't be reached, or its database is being upgraded). Wait and ask again; a 503 here is never a refusal of anything you sent. Ask at most every few seconds.",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Ready. Send.",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Readiness"}, "example": {"status": "UP"}}}
+          },
+          "503": {
+            "description": "Not ready. Wait and ask again; don't send meanwhile.",
+            "x-sdv-retry": "yes",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Readiness"}, "example": {"status": "NOT_READY"}}}
+          }
+        }
+      }
+    },
     "/api/v1/ingestion/submissions": {
       "post": {
         "operationId": "createSubmission",
-        "summary": "Create or idempotently replay a producer submission",
+        "summary": "Create a submission, or answer a retry of one",
+        "description": "Creates the submission that the documents are then uploaded to. A retry with the same sourceSubmissionId and exactly the same body is answered 200 with the same submission (idempotentReplay true); a retry with a different body is refused (409).",
         "parameters": [{"$ref": "#/components/parameters/CorrelationId"}],
         "requestBody": {
           "required": true,
@@ -25,125 +46,186 @@
           }
         },
         "responses": {
-          "201": {"description": "Submission created", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/SubmissionResponse"}}}},
-          "200": {"description": "Exact idempotent create replay", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/SubmissionResponse"}}}},
+          "201": {"description": "Created. Upload the documents to submissionId.", "headers": {"X-Correlation-Id": {"$ref": "#/components/headers/CorrelationId"}}, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/SubmissionResponse"}}}},
+          "200": {"description": "Already received: a retry of the same request. The same submission, idempotentReplay true. Treat it as created.", "headers": {"X-Correlation-Id": {"$ref": "#/components/headers/CorrelationId"}}, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/SubmissionResponse"}}}},
           "400": {
-            "description": "Invalid producer request, including an unknown recordSensitivityLevel or a sensitivityLevel on the submission",
-            "content": {"application/json": {
-              "schema": {"$ref": "#/components/schemas/Error"},
-              "example": {"code": "SDV-SEN-002", "message": "recordSensitivityLevel must be one of STANDARD, CONFIDENTIAL, HIGHLY_CONFIDENTIAL (exactly, in capitals); leave it out for no record level.", "reference": "6f1c0f0e-5b7a-4c1e-9f4e-2d8a7c3b1e90", "timestamp": "2026-11-20T10:00:00Z"}
-            }}
+            "description": "Refused: the request is not valid. Nothing was created. Don't send it again unchanged; correct what the message names.",
+            "x-sdv-codes": ["SDV-INT-006", "SDV-INT-007", "SDV-INT-008", "SDV-INT-009", "SDV-SEN-002", "SDV-SEN-006", "SDV-SYS-015"],
+            "headers": {"X-Correlation-Id": {"$ref": "#/components/headers/CorrelationId"}},
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}, "example": {"code": "SDV-SEN-002", "message": "recordSensitivityLevel must be one of STANDARD, CONFIDENTIAL, HIGHLY_CONFIDENTIAL (exactly, in capitals); leave it out for no record level.", "reference": "6f1c0f0e-5b7a-4c1e-9f4e-2d8a7c3b1e90", "timestamp": "2026-11-20T10:00:00Z"}}}
           },
           "401": {"$ref": "#/components/responses/Unauthorized"},
           "403": {"$ref": "#/components/responses/Forbidden"},
-          "409": {"$ref": "#/components/responses/Conflict"},
-          "500": {"$ref": "#/components/responses/ServerError"},
-          "503": {"$ref": "#/components/responses/ServiceUnavailable"}
+          "406": {"$ref": "#/components/responses/NotAcceptable"},
+          "409": {
+            "description": "Refused: a submission with this sourceSubmissionId already exists with a different body. Nothing was changed. Don't send it again unchanged; repeat the first request exactly, or use a new sourceSubmissionId.",
+            "x-sdv-codes": ["SDV-INT-011", "SDV-SEN-004"],
+            "headers": {"X-Correlation-Id": {"$ref": "#/components/headers/CorrelationId"}},
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}
+          },
+          "415": {"$ref": "#/components/responses/UnsupportedMediaType"},
+          "429": {"$ref": "#/components/responses/TooManyRequestsFromGateway"},
+          "500": {
+            "description": "Failed inside Vero. Nothing was created. SDV-SYS-013 and SDV-SYS-017: send it again later. SDV-SYS-016 and SDV-INT-010: keep it and send it again once Vero's IT team has fixed the cause.",
+            "x-sdv-codes": ["SDV-SYS-013", "SDV-SYS-016", "SDV-SYS-017", "SDV-INT-010"],
+            "headers": {"X-Correlation-Id": {"$ref": "#/components/headers/CorrelationId"}},
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}
+          },
+          "503": {"$ref": "#/components/responses/Unavailable"}
         }
       },
       "get": {
         "operationId": "getSubmissionBySourceIdentity",
-        "summary": "Retrieve by producer-owned sourceSubmissionId",
+        "summary": "Find a submission by your own sourceSubmissionId",
         "parameters": [
           {"$ref": "#/components/parameters/CorrelationId"},
-          {"name": "sourceSubmissionId", "in": "query", "required": true, "schema": {"type": "string", "minLength": 1, "maxLength": 200}}
+          {"name": "sourceSubmissionId", "in": "query", "required": true, "schema": {"type": "string", "minLength": 1, "maxLength": 200}, "description": "The sourceSubmissionId the submission was created with."}
         ],
         "responses": {
-          "200": {"description": "Submission", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/SubmissionResponse"}}}},
+          "200": {"description": "The submission.", "headers": {"X-Correlation-Id": {"$ref": "#/components/headers/CorrelationId"}}, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/SubmissionResponse"}}}},
+          "400": {
+            "description": "Refused: the parameter is missing, blank or longer than 200 characters. Don't send it again unchanged.",
+            "x-sdv-codes": ["SDV-SYS-015", "SDV-INT-006"],
+            "headers": {"X-Correlation-Id": {"$ref": "#/components/headers/CorrelationId"}},
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}
+          },
           "401": {"$ref": "#/components/responses/Unauthorized"},
-          "404": {"$ref": "#/components/responses/NotFound"},
-          "400": {"$ref": "#/components/responses/BadRequest"},
-          "500": {"$ref": "#/components/responses/ServerError"},
-          "503": {"$ref": "#/components/responses/ServiceUnavailable"}
+          "403": {"$ref": "#/components/responses/Forbidden"},
+          "404": {"$ref": "#/components/responses/NoSuchSubmission"},
+          "406": {"$ref": "#/components/responses/NotAcceptable"},
+          "429": {"$ref": "#/components/responses/TooManyRequestsFromGateway"},
+          "500": {"$ref": "#/components/responses/ServerFailure"},
+          "503": {"$ref": "#/components/responses/Unavailable"}
         }
       }
     },
     "/api/v1/ingestion/submissions/{submissionId}": {
       "get": {
         "operationId": "getSubmission",
+        "summary": "Read a submission and its progress",
         "parameters": [
           {"$ref": "#/components/parameters/CorrelationId"},
           {"$ref": "#/components/parameters/SubmissionId"}
         ],
         "responses": {
-          "200": {"description": "Submission", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/SubmissionResponse"}}}},
+          "200": {"description": "The submission.", "headers": {"X-Correlation-Id": {"$ref": "#/components/headers/CorrelationId"}}, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/SubmissionResponse"}}}},
+          "400": {"$ref": "#/components/responses/BadRequestShape"},
           "401": {"$ref": "#/components/responses/Unauthorized"},
-          "404": {"$ref": "#/components/responses/NotFound"},
-          "400": {"$ref": "#/components/responses/BadRequest"},
-          "500": {"$ref": "#/components/responses/ServerError"},
-          "503": {"$ref": "#/components/responses/ServiceUnavailable"}
+          "403": {"$ref": "#/components/responses/Forbidden"},
+          "404": {"$ref": "#/components/responses/NoSuchSubmission"},
+          "406": {"$ref": "#/components/responses/NotAcceptable"},
+          "429": {"$ref": "#/components/responses/TooManyRequestsFromGateway"},
+          "500": {"$ref": "#/components/responses/ServerFailure"},
+          "503": {"$ref": "#/components/responses/Unavailable"}
         }
       }
     },
     "/api/v1/ingestion/submissions/{submissionId}/documents": {
       "post": {
         "operationId": "uploadDocument",
-        "summary": "Upload one PDF independently",
+        "summary": "Upload one PDF to a submission",
+        "description": "One PDF per request, as the raw body. Name the document with X-SDV-Source-Document-Id (required when the submission listed all its documents) or, without one, Idempotency-Key. After a timeout or a lost answer, send exactly the same upload again with the same identity: Vero answers 200 and stores nothing twice.",
         "parameters": [
           {"$ref": "#/components/parameters/CorrelationId"},
           {"$ref": "#/components/parameters/SubmissionId"},
-          {"name": "X-SDV-Filename", "in": "header", "required": true, "schema": {"type": "string", "minLength": 1}},
-          {"name": "X-SDV-Source-Document-Id", "in": "header", "required": false, "schema": {"type": "string", "maxLength": 200}},
-          {"name": "Idempotency-Key", "in": "header", "required": false, "schema": {"type": "string"}, "description": "Reuse after an ambiguous network or acknowledgement failure."},
-          {"name": "X-SDV-Sensitivity-Level", "in": "header", "required": false, "schema": {"$ref": "#/components/schemas/SensitivityLevel"}, "description": "The document's sensitivity level (sensitivityLevel). Leave it out for STANDARD. Any other value, including a blank, lower-case or mixed-case one, is refused with 400 and nothing is stored. A retry must send the same level as the first upload, or it is refused with 409."},
-          {"name": "X-SDV-Record-Sensitivity-Level", "in": "header", "required": false, "schema": {"type": "string"}, "description": "Not accepted on the upload: any value is refused with 400. Send the record level as recordSensitivityLevel on the submission."}
+          {"name": "X-SDV-Filename", "in": "header", "required": true, "schema": {"type": "string", "minLength": 1, "maxLength": 500}, "description": "The file name to show, without a path (no / or \\, no control characters). Missing: 400 SDV-SYS-015; blank, too long or a path: 400 SDV-INT-013."},
+          {"name": "X-SDV-Source-Document-Id", "in": "header", "required": false, "schema": {"type": "string", "maxLength": 200}, "description": "Your stable ID for this document. Required when the submission listed all its documents (expectedDocuments has expectedDocumentCount entries); it must then be one of them (SDV-INT-012)."},
+          {"name": "Idempotency-Key", "in": "header", "required": false, "schema": {"type": "string", "maxLength": 200}, "description": "Names the upload when there is no X-SDV-Source-Document-Id. One of the two is required (SDV-INT-012). Reuse it for a retry."},
+          {"name": "X-SDV-Sensitivity-Level", "in": "header", "required": false, "schema": {"$ref": "#/components/schemas/SensitivityLevel"}, "description": "The document's own level. Leave it out for STANDARD. Any other value, also a blank, lower-case or mixed-case one, is refused (400 SDV-SEN-001). A retry must send the same level as the first upload (409 SDV-SEN-003)."},
+          {"name": "X-SDV-Record-Sensitivity-Level", "in": "header", "required": false, "schema": {"type": "string"}, "deprecated": true, "description": "Not accepted here: any value is refused (400 SDV-SEN-005). Send the record level as recordSensitivityLevel on the submission."}
         ],
         "requestBody": {
           "required": true,
+          "description": "The PDF itself. Content-Type must be application/pdf; other types get 415 SDV-SYS-015. Send Content-Length: a declared length over the limit is refused before the body is read.",
           "content": {"application/pdf": {"schema": {"type": "string", "contentMediaType": "application/pdf", "contentEncoding": "binary"}}}
         },
         "responses": {
-          "201": {"description": "Document durably received", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/DocumentReceipt"}}}},
-          "200": {"description": "Nothing new stored: a retry of the same delivery (idempotentReplay true, receiptAcknowledgement RECEIVED), or an exact duplicate (receiptAcknowledgement DUPLICATE_ALREADY_STORED, duplicate true): the same file (same SHA-256) for the same record from the same sending system in a new delivery. Treat both as delivered; do not retry.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/DocumentReceipt"}}}},
+          "201": {"description": "Received: stored durably. receiptAcknowledgement RECEIVED.", "headers": {"X-Correlation-Id": {"$ref": "#/components/headers/CorrelationId"}}, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/DocumentReceipt"}}}},
+          "200": {"description": "Nothing new stored, and that is success; don't send it again. Either already received (a retry of the same upload: receiptAcknowledgement RECEIVED, idempotentReplay true) or DUPLICATE_ALREADY_STORED (the same file, same SHA-256, from this sending system for the same record in a new delivery: duplicate true, documentId is the document Vero already has).", "headers": {"X-Correlation-Id": {"$ref": "#/components/headers/CorrelationId"}}, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/DocumentReceipt"}}}},
           "400": {
-            "description": "Invalid producer request, including an unknown X-SDV-Sensitivity-Level or any X-SDV-Record-Sensitivity-Level",
-            "content": {"application/json": {
-              "schema": {"$ref": "#/components/schemas/Error"},
-              "example": {"code": "SDV-SEN-001", "message": "X-SDV-Sensitivity-Level must be one of STANDARD, CONFIDENTIAL, HIGHLY_CONFIDENTIAL (exactly, in capitals); leave it out for STANDARD.", "reference": "6f1c0f0e-5b7a-4c1e-9f4e-2d8a7c3b1e90", "timestamp": "2026-11-20T10:00:00Z"}
-            }}
+            "description": "Refused: the upload is not valid. Nothing was stored. Don't send it again unchanged; correct what the message names. SDV-INT-016 here: the document would take the submission over its total size limit; send it on a new submission.",
+            "x-sdv-codes": ["SDV-SEN-001", "SDV-SEN-005", "SDV-INT-012", "SDV-INT-013", "SDV-INT-015", "SDV-INT-016", "SDV-SYS-015"],
+            "headers": {"X-Correlation-Id": {"$ref": "#/components/headers/CorrelationId"}},
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}, "example": {"code": "SDV-SEN-001", "message": "X-SDV-Sensitivity-Level must be one of STANDARD, CONFIDENTIAL, HIGHLY_CONFIDENTIAL (exactly, in capitals); leave it out for STANDARD.", "reference": "6f1c0f0e-5b7a-4c1e-9f4e-2d8a7c3b1e90", "timestamp": "2026-11-20T10:00:00Z"}}}
           },
           "401": {"$ref": "#/components/responses/Unauthorized"},
-          "404": {"$ref": "#/components/responses/NotFound"},
-          "409": {"$ref": "#/components/responses/Conflict"},
-          "413": {"$ref": "#/components/responses/PayloadTooLarge"},
+          "403": {"$ref": "#/components/responses/Forbidden"},
+          "404": {"$ref": "#/components/responses/NoSuchSubmission"},
+          "406": {"$ref": "#/components/responses/NotAcceptable"},
+          "409": {
+            "description": "Refused. Nothing was stored. SDV-INT-016: the submission already has all its documents; send it on a new submission. SDV-INT-017, SDV-SEN-003: a document with this identity is already stored with other content, file name or level; repeat the first upload exactly, or use a new identity. CONFLICT (no SDV code yet): the storage volume Vero picked has no storage provider in this install; keep the document and send it again once Vero's IT team has fixed the setup.",
+            "x-sdv-codes": ["SDV-INT-016", "SDV-INT-017", "SDV-SEN-003", "CONFLICT"],
+            "headers": {"X-Correlation-Id": {"$ref": "#/components/headers/CorrelationId"}},
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}
+          },
+          "413": {
+            "description": "Refused: the PDF is larger than the limit for the tenant or the sending system; the message gives the limit in bytes. Nothing was stored. Don't send it again unchanged.",
+            "x-sdv-codes": ["SDV-INT-014"],
+            "headers": {"X-Correlation-Id": {"$ref": "#/components/headers/CorrelationId"}},
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}
+          },
           "415": {"$ref": "#/components/responses/UnsupportedMediaType"},
-          "500": {"$ref": "#/components/responses/ServerError"},
-          "503": {"$ref": "#/components/responses/ServiceUnavailable"}
+          "429": {"$ref": "#/components/responses/TooManyRequestsFromGateway"},
+          "500": {"$ref": "#/components/responses/ServerFailureWithAudit"},
+          "503": {
+            "description": "Vero can't take work right now. Nothing was stored. Wait and send the same upload again (check readiness first). SDV-STO-001: Vero's storage is full.",
+            "x-sdv-codes": ["SDV-SYS-001", "SDV-SYS-002", "SDV-SYS-014", "SDV-AUT-004", "SDV-STO-001"],
+            "headers": {"X-Correlation-Id": {"$ref": "#/components/headers/CorrelationId"}},
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}
+          }
         }
       },
       "get": {
         "operationId": "listSubmissionDocuments",
+        "summary": "List the documents received for a submission",
         "parameters": [
           {"$ref": "#/components/parameters/CorrelationId"},
           {"$ref": "#/components/parameters/SubmissionId"}
         ],
         "responses": {
-          "200": {"description": "Received documents", "content": {"application/json": {"schema": {"type": "array", "items": {"$ref": "#/components/schemas/DocumentSummary"}}}}},
+          "200": {"description": "The documents received so far.", "headers": {"X-Correlation-Id": {"$ref": "#/components/headers/CorrelationId"}}, "content": {"application/json": {"schema": {"type": "array", "items": {"$ref": "#/components/schemas/DocumentSummary"}}}}},
+          "400": {"$ref": "#/components/responses/BadRequestShape"},
           "401": {"$ref": "#/components/responses/Unauthorized"},
-          "404": {"$ref": "#/components/responses/NotFound"},
-          "400": {"$ref": "#/components/responses/BadRequest"},
-          "500": {"$ref": "#/components/responses/ServerError"},
-          "503": {"$ref": "#/components/responses/ServiceUnavailable"}
+          "403": {"$ref": "#/components/responses/Forbidden"},
+          "404": {"$ref": "#/components/responses/NoSuchSubmission"},
+          "406": {"$ref": "#/components/responses/NotAcceptable"},
+          "429": {"$ref": "#/components/responses/TooManyRequestsFromGateway"},
+          "500": {"$ref": "#/components/responses/ServerFailure"},
+          "503": {"$ref": "#/components/responses/Unavailable"}
         }
       }
     },
     "/api/v1/ingestion/submissions/{submissionId}/documents/{documentId}/retry-finalization": {
       "post": {
         "operationId": "retryDocumentFinalization",
-        "summary": "Retry safe finalization for a received document",
+        "summary": "Finish a received document again",
+        "description": "For a document whose status is PROCESSING_FAILED (or RECEIVED): Vero checks the stored file again and makes it AVAILABLE. An AVAILABLE document is answered as it is. The answer is the document's state afterwards; a failed check is shown there (status PROCESSING_FAILED, processingErrorCode), not as an error.",
         "parameters": [
           {"$ref": "#/components/parameters/CorrelationId"},
           {"$ref": "#/components/parameters/SubmissionId"},
           {"$ref": "#/components/parameters/DocumentId"}
         ],
         "responses": {
-          "200": {"description": "Current document state", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/DocumentSummary"}}}},
+          "200": {"description": "The document's state after the attempt.", "headers": {"X-Correlation-Id": {"$ref": "#/components/headers/CorrelationId"}}, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/DocumentSummary"}}}},
+          "400": {"$ref": "#/components/responses/BadRequestShape"},
           "401": {"$ref": "#/components/responses/Unauthorized"},
-          "404": {"$ref": "#/components/responses/NotFound"},
-          "409": {"$ref": "#/components/responses/Conflict"},
-          "400": {"$ref": "#/components/responses/BadRequest"},
-          "500": {"$ref": "#/components/responses/ServerError"},
-          "503": {"$ref": "#/components/responses/ServiceUnavailable"}
+          "403": {"$ref": "#/components/responses/Forbidden"},
+          "404": {
+            "description": "Refused: no document of this submission has this ID. Don't send it again unchanged.",
+            "x-sdv-codes": ["SDV-INT-018"],
+            "headers": {"X-Correlation-Id": {"$ref": "#/components/headers/CorrelationId"}},
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}
+          },
+          "406": {"$ref": "#/components/responses/NotAcceptable"},
+          "409": {
+            "description": "Refused: the document is in a state that can't be finished again (the message names it, for example PROCESSING). Don't send it again unchanged; read the document's state first.",
+            "x-sdv-codes": ["SDV-INT-018"],
+            "headers": {"X-Correlation-Id": {"$ref": "#/components/headers/CorrelationId"}},
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}
+          },
+          "429": {"$ref": "#/components/responses/TooManyRequestsFromGateway"},
+          "500": {"$ref": "#/components/responses/ServerFailureWithAudit"},
+          "503": {"$ref": "#/components/responses/Unavailable"}
         }
       }
     }
@@ -154,49 +236,85 @@
         "type": "http",
         "scheme": "bearer",
         "bearerFormat": "JWT",
-        "description": "Deployment-issued OAuth2/OIDC ingestion-source bearer token. SDV validates and maps tenant/source claims using deployment configuration."
+        "description": "An OAuth2 client-credentials access token (a signed JWT) from the customer's sign-in server, one client per sending system. Vero checks: the signature against the server's published keys; iss equals Vero's SDV_AUTH_JWT_ISSUER; aud contains SDV_AUTH_JWT_AUDIENCE; exp and nbf (and, when SDV_AUTH_JWT_MAX_TOKEN_LIFETIME_SECONDS is set, exp minus iat at most that). Claims a sending system's token must carry: sub (the client's ID, 1 to 300 characters); the tenant-ID claim (SDV_AUTH_JWT_TENANT_CLAIM, default sdv_tenant_id) with the tenant's UUID; the source-ID claim (SDV_AUTH_JWT_SOURCE_ID_CLAIM, default sdv_source_id) with the sending system's UUID; both claims as JSON strings of at most 100 characters. It must not carry the groups claim (SDV_AUTH_JWT_GROUPS_CLAIM). The source-ID claim is what makes a token a sending system's: without it the token is read as a person's sign-in (see x-sdv-sign-in-answers). A planned change at the switch-over to platform-core is described in docs/api/README.md.",
+        "x-sdv-required-claims": {
+          "iss": "Equals SDV_AUTH_JWT_ISSUER. Wrong: 401 SDV-AUT-003.",
+          "aud": "Contains SDV_AUTH_JWT_AUDIENCE. Missing or wrong: 401 SDV-AUT-003.",
+          "exp": "In the future (and nbf, when present, in the past). Expired: 401 SDV-AUT-003.",
+          "sub": "The client's ID, 1 to 300 characters. Missing or too long: 401 SDV-AUT-005.",
+          "sdv_tenant_id": "The tenant-ID claim (name set by SDV_AUTH_JWT_TENANT_CLAIM): the tenant's UUID as a string. Missing, not a string, too long or not a UUID: 401 SDV-AUT-005. A tenant Vero doesn't have, or a suspended one: 403 SDV-AUT-009.",
+          "sdv_source_id": "The source-ID claim (name set by SDV_AUTH_JWT_SOURCE_ID_CLAIM): the sending system's UUID as a string. Not a string, too long or not a UUID: 401 SDV-AUT-005. Missing or blank: the token is read as a person's (401 SDV-AUT-006 or SDV-AUT-007, or 403 SDV-AUT-002). A sending system that isn't the tenant's, or is paused: 403 SDV-INT-005."
+        },
+        "x-sdv-sign-in-answers": [
+          {"case": "No Authorization header", "status": 401, "code": "SDV-AUT-001"},
+          {"case": "Token expired, not yet valid, wrong signature, wrong issuer, wrong audience, lifetime too long, not a JWT, or an Authorization header that isn't 'Bearer <token>'", "status": 401, "code": "SDV-AUT-003"},
+          {"case": "sub missing or too long; tenant-ID claim missing or not a UUID; source-ID claim not a UUID; both the source-ID claim and the groups claim present", "status": 401, "code": "SDV-AUT-005"},
+          {"case": "No source-ID claim and Vero has no active sign-in connection for the issuer (read as a person)", "status": 401, "code": "SDV-AUT-006"},
+          {"case": "No source-ID claim and no Vero role from the groups (read as a person)", "status": 401, "code": "SDV-AUT-007"},
+          {"case": "A person's sign-in with a Vero role", "status": 403, "code": "SDV-AUT-002"},
+          {"case": "Tenant not found or suspended", "status": 403, "code": "SDV-AUT-009"},
+          {"case": "Sending system not the tenant's, or paused", "status": 403, "code": "SDV-INT-005"},
+          {"case": "The sign-in server's keys can't be fetched", "status": 503, "code": "SDV-AUT-004"},
+          {"case": "Sign-in is switched off in this Vero (SDV_AUTH_MODE=disabled)", "status": 401, "code": "SDV-SYS-006"}
+        ]
       }
     },
     "parameters": {
-      "CorrelationId": {"name": "X-Correlation-Id", "in": "header", "required": false, "schema": {"type": "string", "maxLength": 128, "pattern": "^[A-Za-z0-9._:-]+$"}},
-      "SubmissionId": {"name": "submissionId", "in": "path", "required": true, "schema": {"type": "string", "format": "uuid"}, "description": "Opaque SDV-generated identity."},
-      "DocumentId": {"name": "documentId", "in": "path", "required": true, "schema": {"type": "string", "format": "uuid"}, "description": "Opaque SDV-generated identity."}
+      "CorrelationId": {"name": "X-Correlation-Id", "in": "header", "required": false, "schema": {"type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z0-9._:-]+$"}, "description": "Your ID for this request, for tracing. Vero uses it as the answer's reference and returns it in the X-Correlation-Id answer header. A value that doesn't match the pattern is replaced by a new UUID (not refused)."},
+      "SubmissionId": {"name": "submissionId", "in": "path", "required": true, "schema": {"type": "string", "format": "uuid"}, "description": "The submissionId Vero returned when the submission was created. Not a UUID: 400 SDV-SYS-015."},
+      "DocumentId": {"name": "documentId", "in": "path", "required": true, "schema": {"type": "string", "format": "uuid"}, "description": "The documentId Vero returned for the upload. Not a UUID: 400 SDV-SYS-015."}
+    },
+    "headers": {
+      "CorrelationId": {"description": "The request's reference: the X-Correlation-Id you sent, or one Vero made. The same value as reference in an error body.", "schema": {"type": "string"}}
     },
     "schemas": {
-      "ScalarMetadataValue": {"oneOf": [{"type": "string"}, {"type": "number"}, {"type": "integer"}, {"type": "boolean"}]},
+      "Readiness": {
+        "type": "object",
+        "required": ["status"],
+        "properties": {"status": {"type": "string", "description": "UP: send. NOT_READY, OUT_OF_SERVICE or DOWN: wait. Other values may be added; anything but UP means wait.", "examples": ["UP", "NOT_READY", "OUT_OF_SERVICE"]}}
+      },
+      "ScalarMetadataValue": {"description": "One JSON value: a string, a number or true/false. null, an object or a list is refused (400 SDV-INT-008).", "oneOf": [{"type": "string"}, {"type": "number"}, {"type": "boolean"}]},
       "ExpectedDocumentRequest": {
         "type": "object",
-        "additionalProperties": false,
         "required": ["sourceDocumentId"],
         "properties": {"sourceDocumentId": {"type": "string", "minLength": 1, "maxLength": 200}}
       },
       "CreateSubmissionRequest": {
         "type": "object",
-        "additionalProperties": false,
-        "required": ["sourceSubmissionId", "expectedDocumentCount", "metadata"],
+        "description": "Fields Vero doesn't know are ignored today. Send only the fields below. sensitivityLevel is refused (400 SDV-SEN-006): a document's level goes on its upload.",
+        "required": ["sourceSubmissionId", "expectedDocumentCount"],
+        "x-sdv-refused-fields": ["sensitivityLevel"],
         "properties": {
-          "sourceSubmissionId": {"type": "string", "minLength": 1, "maxLength": 200},
-          "expectedDocumentCount": {"type": "integer", "minimum": 1},
-          "expectedDocuments": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/components/schemas/ExpectedDocumentRequest"}},
-          "metadata": {"type": "object", "additionalProperties": {"$ref": "#/components/schemas/ScalarMetadataValue"}},
-          "recordSensitivityLevel": {"allOf": [{"$ref": "#/components/schemas/SensitivityLevel"}], "description": "Optional level for the whole record this submission belongs to (for example a contract): the submissions of this sending system with the same identifier values, or this submission alone when it has none. A delivery may set a record's first level or raise it; a lower or equal value is ignored and audited, not refused. Any other value than the exact names, including a blank, lower-case or non-string one, is refused with 400 and nothing is stored. A retry of the same sourceSubmissionId must send the same value (or none, if the first had none), or it is refused with 409. A document's effective level is the higher of its own level and its record's level."}
+          "sourceSubmissionId": {"type": "string", "minLength": 1, "maxLength": 200, "description": "Your stable ID for this submission. A retry sends the same one."},
+          "expectedDocumentCount": {"type": "integer", "minimum": 1, "description": "How many documents will be uploaded. At most the tenant's or the sending system's limit (400 SDV-INT-007)."},
+          "expectedDocuments": {"type": "array", "uniqueItems": true, "description": "Optional list of the documents to come, by your sourceDocumentId; at most expectedDocumentCount entries. A complete list (expectedDocumentCount entries) makes X-SDV-Source-Document-Id required on each upload.", "items": {"$ref": "#/components/schemas/ExpectedDocumentRequest"}},
+          "metadata": {"type": "object", "description": "The fields Tenant IT set up for this sending system, by key. Unknown keys and missing required fields are refused (400 SDV-INT-008); a value that breaks its field's rule too (400 SDV-INT-009).", "additionalProperties": {"$ref": "#/components/schemas/ScalarMetadataValue"}},
+          "recordSensitivityLevel": {"allOf": [{"$ref": "#/components/schemas/SensitivityLevel"}], "description": "Optional level for the whole record this submission belongs to (the submissions of this sending system with the same identifier values). Sets the record's first level or raises it; a lower or equal value is ignored and audited, not refused. Not exactly one of the names, also blank, lower case or not a string: 400 SDV-SEN-002. A retry must send the same value or none as the first: 409 SDV-SEN-004."}
         }
       },
       "ExpectedDocument": {
         "type": "object",
+        "required": ["sourceDocumentId", "state"],
         "properties": {"sourceDocumentId": {"type": "string"}, "state": {"type": "string", "enum": ["EXPECTED", "RECEIVED"]}}
+      },
+      "DocumentState": {
+        "type": "string",
+        "description": "A document's state. AVAILABLE is done. RECEIVING, RECEIVED and PROCESSING are on the way. PROCESSING_FAILED: send retry-finalization. REDACTION_PROCESSING, RETENTION_DELETING and EXPIRED_DELETED are Vero's own later work. New states may be added; treat an unknown one as on the way.",
+        "enum": ["RECEIVING", "RECEIVED", "PROCESSING", "AVAILABLE", "REDACTION_PROCESSING", "RETENTION_DELETING", "PROCESSING_FAILED", "EXPIRED_DELETED"]
       },
       "DocumentStatus": {
         "type": "object",
+        "required": ["documentId", "sourceDocumentId", "originalFilename", "status"],
         "properties": {
           "documentId": {"type": "string", "format": "uuid"},
           "sourceDocumentId": {"type": ["string", "null"]},
           "originalFilename": {"type": "string"},
-          "status": {"type": "string"}
+          "status": {"$ref": "#/components/schemas/DocumentState"}
         }
       },
       "SubmissionProgress": {
         "type": ["object", "null"],
+        "required": ["expectedCount", "receivedCount", "missingCount", "missingSourceDocumentIds"],
         "properties": {
           "expectedCount": {"type": "integer"},
           "receivedCount": {"type": "integer"},
@@ -206,69 +324,127 @@
       },
       "SubmissionResponse": {
         "type": "object",
+        "required": ["submissionId", "sourceId", "sourceSubmissionId", "expectedDocumentCount", "status", "expectedDocuments", "documents", "progress", "metadata", "idempotentReplay"],
         "properties": {
-          "submissionId": {"type": "string", "format": "uuid"},
-          "sourceId": {"type": "string", "format": "uuid"},
+          "submissionId": {"type": "string", "format": "uuid", "description": "Vero's ID for the submission. Use it for the uploads."},
+          "sourceId": {"type": "string", "format": "uuid", "description": "The sending system, from the token."},
           "sourceSubmissionId": {"type": "string"},
           "expectedDocumentCount": {"type": "integer"},
           "status": {"type": "string", "enum": ["OPEN", "RECEIVING", "COMPLETE", "INCOMPLETE"]},
           "expectedDocuments": {"type": "array", "items": {"$ref": "#/components/schemas/ExpectedDocument"}},
           "documents": {"type": "array", "items": {"$ref": "#/components/schemas/DocumentStatus"}},
           "progress": {"$ref": "#/components/schemas/SubmissionProgress"},
-          "metadata": {"type": "object", "additionalProperties": {"type": "string"}},
-          "idempotentReplay": {"type": "boolean"}
+          "metadata": {"type": "object", "additionalProperties": {"type": "string"}, "description": "The values as Vero stored them, as text."},
+          "idempotentReplay": {"type": "boolean", "description": "True when this answer is for a retry of an earlier create."}
         }
       },
       "DocumentReceipt": {
         "type": "object",
+        "required": ["documentId", "sourceDocumentId", "receiptAcknowledgement", "currentStatus", "contentSha256", "contentSizeBytes", "idempotentReplay", "exactDuplicateContent", "duplicate", "sensitivityLevel"],
         "properties": {
-          "documentId": {"type": "string", "format": "uuid", "description": "The stored document. For an exact duplicate, the document SDV already had (it may belong to an earlier submission)."},
-          "sourceDocumentId": {"type": ["string", "null"], "description": "The sourceDocumentId this upload was sent with."},
-          "receiptAcknowledgement": {"type": "string", "enum": ["RECEIVED", "DUPLICATE_ALREADY_STORED"], "description": "RECEIVED: stored (201), or a retry of a stored delivery (200). DUPLICATE_ALREADY_STORED: an exact duplicate; nothing was stored again (200)."},
-          "currentStatus": {"type": "string", "description": "The status of the document named by documentId."},
+          "documentId": {"type": "string", "format": "uuid", "description": "The stored document. For DUPLICATE_ALREADY_STORED, the document Vero already had (it may belong to an earlier submission)."},
+          "sourceDocumentId": {"type": ["string", "null"], "description": "The X-SDV-Source-Document-Id this upload was sent with."},
+          "receiptAcknowledgement": {"type": "string", "enum": ["RECEIVED", "DUPLICATE_ALREADY_STORED"], "description": "RECEIVED: stored (201), or a retry of a stored upload (200). DUPLICATE_ALREADY_STORED: an exact duplicate; nothing was stored again (200)."},
+          "currentStatus": {"$ref": "#/components/schemas/DocumentState"},
           "contentSha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
           "contentSizeBytes": {"type": "integer", "minimum": 0},
-          "idempotentReplay": {"type": "boolean", "description": "True for a retry of the same delivery (same sourceDocumentId, or Idempotency-Key when there is none), including a retry of a delivery that was an exact duplicate."},
+          "idempotentReplay": {"type": "boolean", "description": "True for a retry of the same upload (same X-SDV-Source-Document-Id, or Idempotency-Key when there is none), also of one that was an exact duplicate."},
+          "exactDuplicateContent": {"type": "boolean", "description": "Same value as duplicate; kept for senders that read it."},
           "duplicate": {"type": "boolean", "description": "True only with DUPLICATE_ALREADY_STORED."},
-          "exactDuplicateContent": {"type": "boolean", "description": "Same value as duplicate; kept for producers that read it."},
-          "sensitivityLevel": {"$ref": "#/components/schemas/SensitivityLevel", "description": "The document's own level. A duplicate with a higher level raises the existing document's level; a lower or equal one is ignored."}
+          "sensitivityLevel": {"$ref": "#/components/schemas/SensitivityLevel"}
         }
       },
       "SensitivityLevel": {
         "type": "string",
         "enum": ["STANDARD", "CONFIDENTIAL", "HIGHLY_CONFIDENTIAL"],
-        "description": "How sensitive a document is, from lowest to highest. Set by the producer on the document upload; STANDARD when it sends none."
+        "description": "How sensitive a document is, from lowest to highest. Exactly these names, in capitals."
       },
       "DocumentSummary": {
         "type": "object",
+        "required": ["documentId", "sourceDocumentId", "originalFilename", "status", "contentSizeBytes", "contentSha256", "processingAttemptCount", "processingErrorCode", "sensitivityLevel"],
         "properties": {
           "documentId": {"type": "string", "format": "uuid"},
           "sourceDocumentId": {"type": ["string", "null"]},
           "originalFilename": {"type": "string"},
-          "status": {"type": "string"},
+          "status": {"$ref": "#/components/schemas/DocumentState"},
           "contentSizeBytes": {"type": "integer"},
           "contentSha256": {"type": ["string", "null"]},
           "processingAttemptCount": {"type": "integer"},
-          "processingErrorCode": {"type": ["string", "null"]},
+          "processingErrorCode": {"type": ["string", "null"], "description": "Why the last finishing failed, when status is PROCESSING_FAILED: DURABLE_OBJECT_VALIDATION_FAILED, STORAGE_SECURITY_VALIDATION_FAILED or DOCUMENT_FINALIZATION_FAILED."},
           "sensitivityLevel": {"$ref": "#/components/schemas/SensitivityLevel"}
         }
       },
       "Error": {
         "type": "object",
-        "properties": {"code": {"type": "string", "description": "A stable SDV-AREA-NNN code (see docs/api/error-codes.md), or a generic code such as BAD_REQUEST or CONFLICT for errors not yet coded. Read the code, not the message."}, "message": {"type": "string", "description": "A plain sentence for people. It never holds a stack trace, an exception class, SQL, a path, a token, a key or document content."}, "reference": {"type": "string", "description": "The request's correlation ID, the same as the X-Correlation-Id response header, the log line and any audit event. Give it to support."}, "timestamp": {"type": "string", "format": "date-time"}},
-        "required": ["code", "message", "reference", "timestamp"]
+        "required": ["code", "message", "reference", "timestamp"],
+        "properties": {
+          "code": {"type": "string", "description": "A stable SDV-AREA-NNN code (docs/api/error-codes.md). Read the code, not the message. One answer has no SDV code yet (CONFLICT on the upload, see its 409)."},
+          "message": {"type": "string", "description": "A plain sentence for people. May be reworded. It never holds a stack trace, a token or document content."},
+          "reference": {"type": "string", "description": "The request's reference, the same as the X-Correlation-Id answer header and Vero's log line. Give it to support."},
+          "timestamp": {"type": "string", "format": "date-time"}
+        }
       }
     },
     "responses": {
-      "BadRequest": {"description": "Invalid producer request", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
-      "Unauthorized": {"description": "Missing or invalid producer authentication", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
-      "Forbidden": {"description": "Authenticated principal is not permitted", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
-      "NotFound": {"description": "Tenant/source-scoped resource not found", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
-      "Conflict": {"description": "Existing identity/state conflicts with this request", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
-      "PayloadTooLarge": {"description": "PDF exceeds configured limits", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
-      "UnsupportedMediaType": {"description": "SDV-SYS-015: the body is not the content type this operation accepts", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
-      "ServerError": {"description": "SDV-SYS-013 (unexpected), SDV-SYS-016 (internal check) or SDV-SYS-017 (audit not written). Nothing was changed; give support the reference.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
-      "ServiceUnavailable": {"description": "SDV-SYS-001 to 003 (database version or start), SDV-SYS-014 (database) or SDV-STO-001 (no storage). Send again later.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}}
+      "BadRequestShape": {
+        "description": "Refused: an ID in the address isn't a UUID. Don't send it again unchanged.",
+        "x-sdv-codes": ["SDV-SYS-015"],
+        "headers": {"X-Correlation-Id": {"$ref": "#/components/headers/CorrelationId"}},
+        "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}
+      },
+      "Unauthorized": {
+        "description": "Sign-in refused. Nothing was read or stored. SDV-AUT-001, SDV-AUT-003: get a new token and send once more; if refused again, stop and alert. SDV-AUT-005, SDV-AUT-006, SDV-AUT-007, SDV-SYS-006: the sign-in setup must be fixed first; keep the delivery and send it again after. A refused token also gets WWW-Authenticate: Bearer error=\"invalid_token\", error_description=\"<code>\".",
+        "x-sdv-codes": ["SDV-AUT-001", "SDV-AUT-003", "SDV-AUT-005", "SDV-AUT-006", "SDV-AUT-007", "SDV-SYS-006"],
+        "headers": {"X-Correlation-Id": {"$ref": "#/components/headers/CorrelationId"}, "WWW-Authenticate": {"schema": {"type": "string"}}},
+        "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}
+      },
+      "Forbidden": {
+        "description": "Signed in, but not allowed here. Nothing was read or stored. A person must fix it first (a person's sign-in was used; the tenant is suspended; the sending system is paused or not the tenant's); keep the delivery and send it again after.",
+        "x-sdv-codes": ["SDV-AUT-002", "SDV-AUT-009", "SDV-INT-005"],
+        "headers": {"X-Correlation-Id": {"$ref": "#/components/headers/CorrelationId"}},
+        "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}
+      },
+      "NoSuchSubmission": {
+        "description": "Refused: no submission of this sending system has this ID (or sourceSubmissionId). Don't send it again unchanged; create the submission first, or check the ID.",
+        "x-sdv-codes": ["SDV-INT-004"],
+        "headers": {"X-Correlation-Id": {"$ref": "#/components/headers/CorrelationId"}},
+        "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}
+      },
+      "NotAcceptable": {
+        "description": "The Accept header asks for a format Vero can't answer in. Vero finds this only when it writes the answer, so the work may already be done (a submission created, a document stored). Send the same request again with Accept application/json (or */*, or no Accept header): a create or an upload is then answered 200 as already received.",
+        "x-sdv-codes": ["SDV-SYS-015"],
+        "headers": {"X-Correlation-Id": {"$ref": "#/components/headers/CorrelationId"}},
+        "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}
+      },
+      "UnsupportedMediaType": {
+        "description": "Refused: the body's Content-Type isn't the one this operation takes. Nothing was stored. Don't send it again unchanged.",
+        "x-sdv-codes": ["SDV-SYS-015"],
+        "headers": {"X-Correlation-Id": {"$ref": "#/components/headers/CorrelationId"}},
+        "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}
+      },
+      "TooManyRequestsFromGateway": {
+        "description": "Vero itself never answers 429. A gateway or proxy in front of Vero may. Wait (Retry-After, when given) and send the same request again.",
+        "x-sdv-sent-by": "gateway",
+        "x-sdv-retry": "yes"
+      },
+      "ServerFailure": {
+        "description": "Failed inside Vero. SDV-SYS-013: send it again later. SDV-SYS-016: Vero found an inconsistency; send it again once Vero's IT team has looked at the reference.",
+        "x-sdv-codes": ["SDV-SYS-013", "SDV-SYS-016"],
+        "headers": {"X-Correlation-Id": {"$ref": "#/components/headers/CorrelationId"}},
+        "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}
+      },
+      "ServerFailureWithAudit": {
+        "description": "Failed inside Vero; nothing was stored or changed. SDV-SYS-013 and SDV-SYS-017 (the audit couldn't be written, so nothing was done): send it again later. SDV-SYS-016: send it again once Vero's IT team has looked at the reference.",
+        "x-sdv-codes": ["SDV-SYS-013", "SDV-SYS-016", "SDV-SYS-017"],
+        "headers": {"X-Correlation-Id": {"$ref": "#/components/headers/CorrelationId"}},
+        "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}
+      },
+      "Unavailable": {
+        "description": "Vero can't take work right now; nothing was done. Wait and send the same request again (check readiness first). SDV-SYS-001, SDV-SYS-002: Vero's database is being upgraded. SDV-SYS-014: the database can't be reached. SDV-AUT-004: the sign-in server's keys can't be fetched.",
+        "x-sdv-codes": ["SDV-SYS-001", "SDV-SYS-002", "SDV-SYS-014", "SDV-AUT-004"],
+        "headers": {"X-Correlation-Id": {"$ref": "#/components/headers/CorrelationId"}},
+        "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}
+      }
     },
     "examples": {
       "CreateSubmissionTwoDocuments": {
@@ -279,14 +455,66 @@
             {"sourceDocumentId": "producer-doc-001"},
             {"sourceDocumentId": "producer-doc-002"}
           ],
-          "metadata": {"contractNumber": "990023450001", "memberName": "Example Customer"}
+          "metadata": {"contractNumber": "990023450001", "memberName": "Example Customer"},
+          "recordSensitivityLevel": "CONFIDENTIAL"
         }
       }
     }
   },
+  "x-sdv-retry": {
+    "yes": "Vero couldn't do it now. Wait (back off, for example 2 s doubling to at most 5 minutes; check readiness) and send exactly the same request again. It is safe: a retry of a create or an upload is never stored twice.",
+    "new-token": "The token was missing, expired or not accepted. Get a new token and send the same request once more. If it is refused again, stop and alert: the sign-in setup is wrong.",
+    "no": "A refusal. Sending the same request again gets the same answer. Correct what the message names, or drop it and alert.",
+    "after-fix": "A person must fix Vero's or the sign-in server's setup first. Keep the delivery, alert, and send it again after the fix."
+  },
+  "x-sdv-answers": {
+    "401 SDV-AUT-001": {"retry": "new-token", "summary": "No token."},
+    "401 SDV-AUT-003": {"retry": "new-token", "summary": "Token expired, not yet valid, badly signed, for another issuer or audience, too long-lived, or not a JWT."},
+    "401 SDV-AUT-005": {"retry": "after-fix", "summary": "A claim Vero needs is missing or not usable (sub, tenant ID, source ID), or the token has both the source-ID and the groups claim."},
+    "401 SDV-AUT-006": {"retry": "after-fix", "summary": "The token has no source-ID claim, so it was read as a person's, and Vero has no active sign-in connection for its issuer."},
+    "401 SDV-AUT-007": {"retry": "after-fix", "summary": "The token has no source-ID claim, so it was read as a person's, and it gives no Vero role."},
+    "401 SDV-SYS-006": {"retry": "after-fix", "summary": "Sign-in is switched off in this Vero."},
+    "403 SDV-AUT-002": {"retry": "after-fix", "summary": "A person's sign-in on a sending system's address."},
+    "403 SDV-AUT-009": {"retry": "after-fix", "summary": "The tenant doesn't exist in Vero or is suspended."},
+    "403 SDV-INT-005": {"retry": "after-fix", "summary": "The sending system isn't one of the tenant's, or Tenant IT paused it."},
+    "400 SDV-INT-006": {"retry": "no", "summary": "Submission incomplete: no body, expectedDocumentCount below 1, sourceSubmissionId missing or longer than 200."},
+    "400 SDV-INT-007": {"retry": "no", "summary": "Document list not valid: over the limit, more entries than the count, an entry missing, too long or twice."},
+    "400 SDV-INT-008": {"retry": "no", "summary": "A metadata field unknown, missing, blank, null, or not a single value."},
+    "400 SDV-INT-009": {"retry": "no", "summary": "A metadata value of the wrong type or breaking its field's rule."},
+    "400 SDV-SEN-002": {"retry": "no", "summary": "recordSensitivityLevel is not exactly one of the three names."},
+    "400 SDV-SEN-006": {"retry": "no", "summary": "sensitivityLevel on the submission; it belongs on each upload."},
+    "400 SDV-SYS-015": {"retry": "no", "summary": "The request couldn't be read: JSON that doesn't parse, an ID that isn't a UUID, a required header or parameter missing."},
+    "400 SDV-SEN-001": {"retry": "no", "summary": "X-SDV-Sensitivity-Level is not exactly one of the three names."},
+    "400 SDV-SEN-005": {"retry": "no", "summary": "X-SDV-Record-Sensitivity-Level on an upload."},
+    "400 SDV-INT-012": {"retry": "no", "summary": "The upload has no identity, or its X-SDV-Source-Document-Id isn't in the submission's complete list."},
+    "400 SDV-INT-013": {"retry": "no", "summary": "An upload header isn't valid: file name blank, too long or a path; an ID longer than 200."},
+    "400 SDV-INT-015": {"retry": "no", "summary": "The body is empty, cut short, or not a PDF."},
+    "400 SDV-INT-016": {"retry": "no", "summary": "The document would take the submission over its total size limit. Send it on a new submission."},
+    "404 SDV-INT-004": {"retry": "no", "summary": "No submission of this sending system has this ID."},
+    "404 SDV-INT-018": {"retry": "no", "summary": "No document of this submission has this ID."},
+    "406 SDV-SYS-015": {"retry": "no", "summary": "The Accept header asks for a format Vero can't answer in. The work may already be done; send again with Accept application/json."},
+    "409 SDV-INT-011": {"retry": "no", "summary": "A submission with this sourceSubmissionId exists with a different body."},
+    "409 SDV-SEN-004": {"retry": "no", "summary": "A submission with this sourceSubmissionId exists with another recordSensitivityLevel."},
+    "409 SDV-INT-016": {"retry": "no", "summary": "The submission already has all its documents. Send it on a new submission."},
+    "409 SDV-INT-017": {"retry": "no", "summary": "A document with this identity is already stored with other content or file name."},
+    "409 SDV-SEN-003": {"retry": "no", "summary": "A document with this identity is already stored with another level."},
+    "409 SDV-INT-018": {"retry": "no", "summary": "The document can't be finished again in its state."},
+    "409 CONFLICT": {"retry": "after-fix", "summary": "No SDV code yet. The storage volume Vero picked has no storage provider in this install (Vero's setup)."},
+    "413 SDV-INT-014": {"retry": "no", "summary": "The PDF is over the size limit."},
+    "415 SDV-SYS-015": {"retry": "no", "summary": "The body's Content-Type isn't the one this operation takes."},
+    "500 SDV-SYS-013": {"retry": "yes", "summary": "Unexpected failure inside Vero."},
+    "500 SDV-SYS-016": {"retry": "after-fix", "summary": "An internal check failed; retrying usually gives the same answer."},
+    "500 SDV-SYS-017": {"retry": "yes", "summary": "The audit couldn't be written, so nothing was done."},
+    "500 SDV-INT-010": {"retry": "after-fix", "summary": "Tenant IT's rule for a metadata field is broken."},
+    "503 SDV-SYS-001": {"retry": "yes", "summary": "Vero's database is older than Vero (upgrade under way)."},
+    "503 SDV-SYS-002": {"retry": "yes", "summary": "Vero's database is newer than Vero."},
+    "503 SDV-SYS-014": {"retry": "yes", "summary": "Vero's database can't be reached."},
+    "503 SDV-AUT-004": {"retry": "yes", "summary": "The sign-in server's keys can't be fetched."},
+    "503 SDV-STO-001": {"retry": "yes", "summary": "No storage can take the document (storage full)."}
+  },
   "x-sdv-compatibility": {
     "contract": "sdv-ingestion-v1",
-    "producerIsolation": "No shared SDV code, schema, database, internal IDs or runtime dependency is required.",
-    "forwardCompatibility": "Within V1 producers must ignore unknown response fields and must not depend on undocumented implementation details."
+    "policy": "docs/api/README.md, 'Versioning'. Within /v1 Vero only adds: new optional request fields, new answer fields, new codes. Ignore answer fields you don't know, and treat an unknown code by its status and the x-sdv-retry of the status class (4xx: no; 503: yes).",
+    "producerIsolation": "No shared Vero code, schema, database, internal IDs or runtime dependency is required."
   }
 }
