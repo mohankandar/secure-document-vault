@@ -1,7 +1,8 @@
 <#
 .SYNOPSIS
   Repeatable upgrade check for task 0024: a database at an earlier schema moves to this version's schema with its data
-  unchanged. -From 032 (the default, task 0033) starts at 031 and checks changeset 032 (the stewards' notices);
+  unchanged. -From 033 (the default, task 0039) starts at 032 and checks changeset 033 (unidentified intake
+  attempts); -From 032 (task 0033) starts at 031 and checks changeset 032 (the stewards' notices) and then 033;
   -From 030 starts at 029 and checks changesets 030 (the tenant time zone), 031 (the report indexes) and 032;
   -From 031 starts at 030 and checks 031 and 032; -From 029 starts at 028 and checks changeset 029 (exact
   duplicates) and then 030 and 031;
@@ -45,6 +46,9 @@
        For 032 (task 0033): steward_notices exists, an uncorrected copy received before became one unread notice (the
        audit event is unchanged), its checks refuse bad rows, IntakeReportPostgresTest writes and reads the stored
        notices (read per person), and SensitivityReportPostgresTest runs the Sensitivity report's SQL.
+       For 033 (task 0039): unidentified_intake_attempts exists and is empty, its checks refuse a bad status and an
+       unknown tenant, and UnidentifiedIntakeAttemptPostgresTest writes and reads attempts (per tenant and without
+       one) and runs the Daily intake report's SQL for intake failures (INTAKE_FAILED).
        Always: every other column of every row is unchanged, no other
        table changed, status is up to date.
 
@@ -54,8 +58,8 @@
 param(
     [string]$Jar,
     # The first changeset the upgrade applies; the scratch database is built up to the one before it.
-    [ValidateSet('023', '024', '025', '026', '027', '028', '029', '030', '031', '032')]
-    [string]$From = '032',
+    [ValidateSet('023', '024', '025', '026', '027', '028', '029', '030', '031', '032', '033')]
+    [string]$From = '033',
     # Drop a scratch database and role left by an earlier run of this script that could not clean up.
     [switch]$DropLeftover
 )
@@ -67,7 +71,7 @@ $db = 'sdv_schema_test'
 $owner = 'sdv_schema_owner'
 $hostUrl = 'jdbc:postgresql://localhost:5433/' + $db
 # In order. The upgrade applies every changeset from -From on.
-$checked = @('022-retention-policy-creator-name', '023-document-sensitivity-level', '024-record-sensitivity-levels', '025-role-separation', '026-legal-holds', '027-access-requests', '028-sensitivity-level-changes', '029-document-duplicate-receipts', '030-tenant-time-zone', '031-intake-report-indexes', '032-steward-notices')
+$checked = @('022-retention-policy-creator-name', '023-document-sensitivity-level', '024-record-sensitivity-levels', '025-role-separation', '026-legal-holds', '027-access-requests', '028-sensitivity-level-changes', '029-document-duplicate-receipts', '030-tenant-time-zone', '031-intake-report-indexes', '032-steward-notices', '033-unidentified-intake-attempts')
 $start = [array]::IndexOf(($checked | ForEach-Object { $_.Substring(0, 3) }), $From)
 $newChangesets = @($checked[$start..($checked.Count - 1)])
 $newChangeset = $newChangesets[0]
@@ -82,6 +86,7 @@ $has029 = $newChangesets -contains '029-document-duplicate-receipts'
 $has030 = $newChangesets -contains '030-tenant-time-zone'
 $has031 = $newChangesets -contains '031-intake-report-indexes'
 $has032 = $newChangesets -contains '032-steward-notices'
+$has033 = $newChangesets -contains '033-unidentified-intake-attempts'
 # Task 0033: an uncorrected copy received at the previous version, which 032 must turn into one stored notice.
 $oldCopyEvent = '50000000-0000-0000-0000-0000000000c1'
 $reportIndexes = @('idx_submissions_tenant_created', 'idx_documents_tenant_ingested', 'idx_audit_events_redaction_old_sha')
@@ -154,7 +159,7 @@ function Invoke-SchemaStep([string[]]$StepArgs) {
 $otherTablesSql = @"
 select string_agg(t.relname || '=' || (xpath('/row/c/text()', query_to_xml(format('select count(*) || '':'' || coalesce(md5(string_agg(x::text, ''|'' order by x::text)), '''') as c from %I x', t.relname), false, true, '')))[1]::text, ',' order by t.relname)
   from pg_stat_user_tables t
- where t.relname not in ('documents', 'record_sensitivity_levels', 'role_conflict_problems', 'role_group_mappings_seen', 'role_mapping_notices', 'legal_holds', 'access_requests', 'sensitivity_level_changes', 'document_duplicate_receipts', 'tenants', 'steward_notices', 'databasechangelog', 'databasechangeloglock');
+ where t.relname not in ('documents', 'record_sensitivity_levels', 'role_conflict_problems', 'role_group_mappings_seen', 'role_mapping_notices', 'legal_holds', 'access_requests', 'sensitivity_level_changes', 'document_duplicate_receipts', 'tenants', 'steward_notices', 'unidentified_intake_attempts', 'databasechangelog', 'databasechangeloglock');
 "@
 # Task 0032: tenants with every column it had before 030 (030 adds time_zone, null for every existing tenant).
 $tenantsOldColumnsSql = "select count(*) || ':' || md5(string_agg((to_jsonb(x) - 'time_zone')::text, '|' order by x.tenant_id)) from tenants x;"
@@ -177,6 +182,8 @@ $hasChangeTableSql = "select count(*) from information_schema.tables where table
 $hasDuplicateTableSql = "select count(*) from information_schema.tables where table_name = 'document_duplicate_receipts';"
 $hasNoticeTableSql = "select count(*) from information_schema.tables where table_name = 'steward_notices';"
 $noticeTableBefore = if ($has032) { '0' } else { '1' }
+$hasAttemptTableSql = "select count(*) from information_schema.tables where table_name = 'unidentified_intake_attempts';"
+$attemptTableBefore = if ($has033) { '0' } else { '1' }
 $changeTableBefore = if ($has028) { '0' } else { '1' }
 $requestTableBefore = if ($has027) { '0' } else { '1' }
 $holdTableBefore = if ($has026) { '0' } else { '1' }
@@ -241,8 +248,9 @@ revoke all on database $db from public;
     $indexesBefore = if ($has031) { '0' } else { '3' }
     Assert-That ((Get-Value $reportIndexesSql) -eq $indexesBefore) "the report indexes should $(if ($has031) { 'not ' })exist at the previous version"
     Assert-That ((Get-Value $hasNoticeTableSql) -eq $noticeTableBefore) "steward_notices should $(if ($has032) { 'not ' })exist at the previous version"
+    Assert-That ((Get-Value $hasAttemptTableSql) -eq $attemptTableBefore) "unidentified_intake_attempts should $(if ($has033) { 'not ' })exist at the previous version"
     $prevCount = Get-Value 'select count(*) from databasechangelog;'
-    $missing = @(); if ($has023) { $missing += 'no sensitivity_level' }; if ($has024) { $missing += 'no record_sensitivity_levels' }; if ($has025) { $missing += 'no role tables' }; if ($has026) { $missing += 'no legal_holds' }; if ($has027) { $missing += 'no access_requests' }; if ($has028) { $missing += 'no sensitivity_level_changes' }; if ($has029) { $missing += 'no document_duplicate_receipts' }; if ($has030) { $missing += 'no tenants.time_zone' }; if ($has031) { $missing += 'no report indexes' }; if ($has032) { $missing += 'no steward_notices' }
+    $missing = @(); if ($has023) { $missing += 'no sensitivity_level' }; if ($has024) { $missing += 'no record_sensitivity_levels' }; if ($has025) { $missing += 'no role tables' }; if ($has026) { $missing += 'no legal_holds' }; if ($has027) { $missing += 'no access_requests' }; if ($has028) { $missing += 'no sensitivity_level_changes' }; if ($has029) { $missing += 'no document_duplicate_receipts' }; if ($has030) { $missing += 'no tenants.time_zone' }; if ($has031) { $missing += 'no report indexes' }; if ($has032) { $missing += 'no steward_notices' }; if ($has033) { $missing += 'no unidentified_intake_attempts' }
     Write-Step "1. Previous version (changesets up to $($lastPrevious.Substring(0, 3)))" $w.Elapsed.TotalSeconds "$prevCount changesets, last $last, $($missing -join ', ')"
 
     # ------------------------------------------------------------ 2. data at the previous version
@@ -368,6 +376,12 @@ values ('40000000-0000-0000-0000-000000000001', '10000000-0000-0000-0000-0000000
             Assert-That ($upgradeText.Contains($c)) "the reviewable SQL lacks $c"
         }
     }
+    if ($has033) {
+        foreach ($c in @('create table unidentified_intake_attempts', 'ck_unidentified_intake_attempts_status',
+                'idx_unidentified_intake_attempts_time', 'idx_unidentified_intake_attempts_tenant_time')) {
+            Assert-That ($upgradeText.Contains($c)) "the reviewable SQL lacks $c"
+        }
+    }
     Assert-That (-not ($upgradeText -match "::$lastPrevious::")) 'the reviewable SQL repeats an already applied changeset'
     Assert-That ((Get-Value $hasColumnSql) -eq $hasColumn) 'sql changed the database (documents)'
     Assert-That ((Get-Value $hasTableSql) -eq $recordTableBefore) 'sql changed the database (record_sensitivity_levels)'
@@ -379,6 +393,7 @@ values ('40000000-0000-0000-0000-000000000001', '10000000-0000-0000-0000-0000000
     Assert-That ((Get-Value $hasTimeZoneSql) -eq $(if ($has030) { '0' } else { '1' })) 'sql changed the database (tenants.time_zone)'
     Assert-That ((Get-Value $reportIndexesSql) -eq $indexesBefore) 'sql changed the database (report indexes)'
     Assert-That ((Get-Value $hasNoticeTableSql) -eq $noticeTableBefore) 'sql changed the database (steward_notices)'
+    Assert-That ((Get-Value $hasAttemptTableSql) -eq $attemptTableBefore) 'sql changed the database (unidentified_intake_attempts)'
     Write-Step '3b. Schema step sql (the SQL to review)' $sq.Seconds "only $($newChangesets.ForEach({ $_.Substring(0, 3) }) -join ' and '); database unchanged"
 
     $up = Invoke-SchemaStep @('update')
@@ -597,7 +612,22 @@ rollback;
         Write-Step '4k. After 032: steward_notices' $w.Elapsed.TotalSeconds 'the earlier uncorrected copy is one unread notice; checks refuse a bad kind, a second notice, an unknown event, a bad read_by'
         $w = [System.Diagnostics.Stopwatch]::StartNew()
     }
-    if ($has027 -or $has028 -or $has029 -or $has030 -or $has031 -or $has032) {
+    if ($has033) {
+        Assert-That ((Get-Value $hasAttemptTableSql) -eq '1') 'unidentified_intake_attempts was not created'
+        Assert-That ((Get-Value 'select count(*) from unidentified_intake_attempts;') -eq '0') 'unidentified_intake_attempts should start empty'
+        $nullable = Get-Value "select is_nullable from information_schema.columns where table_name = 'unidentified_intake_attempts' and column_name = 'tenant_id';"
+        Assert-That ($nullable -eq 'YES') 'an attempt without a tenant must be allowed'
+        foreach ($bad in @(
+                "insert into unidentified_intake_attempts(attempt_id, occurred_at, method, address, status, code, reference) values (gen_random_uuid(), now(), 'POST', '/api/v1/ingestion/submissions', 200, 'SDV-AUT-003', 'r');",
+                "insert into unidentified_intake_attempts(attempt_id, tenant_id, occurred_at, method, address, status, code, reference) values (gen_random_uuid(), gen_random_uuid(), now(), 'POST', '/api/v1/ingestion/submissions', 401, 'SDV-AUT-003', 'r');",
+                "insert into unidentified_intake_attempts(attempt_id, occurred_at, method, address, status, code, reference) values (gen_random_uuid(), now(), 'POST', '/api/v1/ingestion/submissions', 401, null, 'r');")) {
+            $r = Invoke-Sql -Database $db -AsOwner -AllowFailure -Sql $bad
+            Assert-That ($r.Code -ne 0) "unidentified_intake_attempts should refuse: $bad"
+        }
+        Write-Step '4l. After 033: unidentified_intake_attempts' $w.Elapsed.TotalSeconds 'empty; tenant optional; checks refuse a status below 400, an unknown tenant, no code'
+        $w = [System.Diagnostics.Stopwatch]::StartNew()
+    }
+    if ($has027 -or $has028 -or $has029 -or $has030 -or $has031 -or $has032 -or $has033) {
 
         # The application's own repositories and services against this database: holds and the retention cleanup
         # (LegalHoldPostgresTest), requests, grants, expiry and the table's checks (AccessRequestPostgresTest), exact
@@ -607,9 +637,9 @@ rollback;
         $w = [System.Diagnostics.Stopwatch]::StartNew()
         $mvn = (Get-Command mvn.cmd -ErrorAction Stop).Source
         $it = Invoke-Native -File $mvn -Arguments @('-o', '-f', (Join-Path $root 'backend\pom.xml'), '-pl', 'sdv-web', '-am', 'test',
-            '-Dtest=LegalHoldPostgresTest,AccessRequestPostgresTest,DuplicateIntakePostgresTest,IntakeReportPostgresTest,SensitivityReportPostgresTest,SignInConnectionPostgresTest', '-Dsurefire.failIfNoSpecifiedTests=false') -Environment @{
+            '-Dtest=LegalHoldPostgresTest,AccessRequestPostgresTest,DuplicateIntakePostgresTest,IntakeReportPostgresTest,SensitivityReportPostgresTest,SignInConnectionPostgresTest,UnidentifiedIntakeAttemptPostgresTest', '-Dsurefire.failIfNoSpecifiedTests=false') -Environment @{
             SDV_IT_JDBC_URL = $hostUrl; SDV_IT_JDBC_USER = $owner; SDV_IT_JDBC_PASSWORD = $ownerPassword }
-        foreach ($test in @('legalhold.LegalHoldPostgresTest', 'approvals.AccessRequestPostgresTest', 'document.DuplicateIntakePostgresTest', 'reports.IntakeReportPostgresTest', 'reports.SensitivityReportPostgresTest', 'identity.SignInConnectionPostgresTest')) {
+        foreach ($test in @('legalhold.LegalHoldPostgresTest', 'approvals.AccessRequestPostgresTest', 'document.DuplicateIntakePostgresTest', 'reports.IntakeReportPostgresTest', 'reports.SensitivityReportPostgresTest', 'identity.SignInConnectionPostgresTest', 'reports.UnidentifiedIntakeAttemptPostgresTest')) {
             $itLine = ($it.Out -split "`n" | Where-Object { $_ -match ('Tests run: .* in com\.sdv\.platform\.application\.' + [regex]::Escape($test)) } | Select-Object -First 1)
             if ($it.Code -ne 0 -or -not $itLine -or $itLine -notmatch 'Tests run: 1, Failures: 0, Errors: 0, Skipped: 0') {
                 $it.Out | Set-Content -Encoding utf8 (Join-Path $run 'postgres-tests.log')

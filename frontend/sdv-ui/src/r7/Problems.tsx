@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { ChevronRight } from 'lucide-react'
 import { FailureNotice, loadFailed, type Failure } from './CardError'
 import { Badge, Callout, Drawer, TechDetails, fmtDateTime, fmtRel, levelWords } from './ui'
-import { opsDetail, type OpsDetail } from './liveApi'
+import { opsDetail, type OpsDetail, type UnidentifiedIntakeAttempt } from './liveApi'
 import { problemNote, problemSentences, type ProblemFacts, type ProblemKind } from './problemWords'
 
 // Task 0011 Part A: one read-only list of problems for Platform operations and Tenant IT. Nothing can be fixed here:
@@ -31,6 +31,30 @@ export function toProblems(d: OpsDetail): Problem[] {
     tech: [['State', a.status], ['Submission', a.submissionId], ['Delivery ID from the sending system', a.sourceSubmissionId || '—'], ['Attention after', `${a.attentionHours} hours`], ['Last activity', fmtDateTime(a.lastActivityAt)]],
   }))
   return [...store, ...stuck, ...missing].sort((a, b) => b.at.localeCompare(a.at))
+}
+
+/**
+ * Task 0039: intake attempts Vero couldn't link to a sending system (no sign-in, a refused sign-in, a person's sign-in,
+ * a sending system this tenant doesn't have), the last 7 days. Time, address called, where from, code and reference:
+ * never anything from a token. Not counted as problems above: nothing was received.
+ */
+function UnidentifiedAttempts({ count, attempts }: { count: number; attempts: UnidentifiedIntakeAttempt[] }) {
+  return <section className="v-panel flush" aria-label="Unidentified intake attempts">
+    <div style={{ padding: '12px 16px 4px' }}>
+      <h3 className="v-sec" style={{ margin: 0 }}>Unidentified intake attempts · {count}</h3>
+      <p className="faint" style={{ margin: '4px 0 0', fontSize: 13 }}>Requests to the intake addresses that Vero couldn&apos;t link to a sending system, for example a failed sign-in, in the last 7 days. Nothing was received. Give the reference to support, or check the sending system&apos;s sign-in setup.</p>
+    </div>
+    {attempts.length === 0 ? <p className="muted" style={{ padding: 16 }}>None in the last 7 days.</p> :
+    <table className="v-table" aria-label="Unidentified intake attempts list"><thead><tr><th>When</th><th>Address</th><th>From</th><th>Code</th><th>Reference</th></tr></thead>
+      <tbody>{attempts.map((a) => <tr key={a.attemptId}>
+        <td data-label="When" title={fmtDateTime(a.occurredAt)}>{fmtRel(a.occurredAt)}</td>
+        <td data-label="Address" className="mono">{a.method} {a.address}</td>
+        <td data-label="From" className="mono">{a.callerAddress ?? '—'}</td>
+        <td data-label="Code"><span className="mono">{a.code}</span> <span className="faint">({a.status})</span></td>
+        <td data-label="Reference" className="mono faint">{a.reference}</td>
+      </tr>)}</tbody></table>}
+    {attempts.length > 0 && count > attempts.length && <p className="faint" style={{ padding: '0 16px 12px', fontSize: 13 }}>Showing the newest {attempts.length} of {count}.</p>}
+  </section>
 }
 
 export function Problems({ role }: { role: 'platform' | 'tenantIt' }) {
@@ -81,6 +105,8 @@ export function Problems({ role }: { role: 'platform' | 'tenantIt' }) {
             <td className="act faint"><ChevronRight size={16} aria-hidden /></td>
           </tr>) })}</tbody></table>}
     </section>
+
+    {data && <UnidentifiedAttempts count={data.unidentifiedIntakeAttemptCount ?? 0} attempts={data.unidentifiedIntakeAttempts ?? []} />}
 
     {open && (() => { const s = problemSentences(open); return (
       <Drawer eyebrow="Problem" title={s.what} onClose={() => { setOpen(null); setCopied(false) }}>

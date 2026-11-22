@@ -63,6 +63,13 @@ function Codes({ line }: { line: IntakeDeliveryLine }) {
   return <span className="rpt-codes">{line.refusedCodes.map((c) => <span key={c} className="rpt-code">{c}</span>)}{line.refused > line.refusedCodes.length && <span className="faint"> ×{line.refused}</span>}</span>
 }
 
+/** Task 0039: failed after receipt, or at intake on Vero's side (with the code the sending system got). */
+function FailedCell({ line }: { line: IntakeDeliveryLine }) {
+  const codes = line.failedCodes ?? []
+  if (!codes.length) return <>{n(line.failed)}</>
+  return <span className="rpt-codes">{codes.map((c) => <span key={c} className="rpt-code">{c}</span>)}{line.failed > codes.length && <span className="faint"> ×{line.failed}</span>}</span>
+}
+
 /** Task 0033: the Reports tab with its two sub-tabs. The sub-tab is kept while the tab is open. */
 export function Reports() {
   const [tab, setTab] = useState<'intake' | 'sensitivity'>('intake')
@@ -145,7 +152,7 @@ function DailyIntake({ tabs }: { tabs: ReactNode }) {
         <div className="rpt-kpi"><span>Documents accepted</span><b>{n(t.documents)}</b><i>{plural(t.pages, 'page')} · plus {n(t.duplicates)} exact duplicate{t.duplicates === 1 ? '' : 's'} (not stored again)</i></div>
         <div className="rpt-kpi"><span>{words.many}</span><b>{n(t.contracts)}</b><i>{n(t.newContracts)} new · {n(t.updatedContracts)} updated</i></div>
         <div className={`rpt-kpi${t.refused ? ' bad' : ''}`}><span>Refused at intake</span><b>{n(t.refused)}</b><i title={t.refusedCodes.map((c) => `${c.code}: ${c.count}`).join(', ')}>{t.refused ? 'see codes below' : 'none'}</i></div>
-        <div className={`rpt-kpi${t.failed ? ' bad' : ''}`}><span>Failed after receipt</span><b>{n(t.failed)}</b><i>shown to Tenant IT</i></div>
+        <div className={`rpt-kpi${t.failed ? ' bad' : ''}`}><span>Failed</span><b>{n(t.failed)}</b><i title={(t.failedCodes ?? []).map((c) => `${c.code}: ${c.count}`).join(', ')}>{n(t.failed - (t.failedAtIntake ?? 0))} after receipt · {n(t.failedAtIntake ?? 0)} at intake</i></div>
       </div>
       <section className="v-panel flush rpt-card" aria-label="Deliveries by sending system">
         <table className="rpt-table">
@@ -164,7 +171,7 @@ function DailyIntake({ tabs }: { tabs: ReactNode }) {
                   <td className="mono faint" title={l.requestId ?? 'No request ID: refused before a delivery existed'}>req {l.requestId ? shortId(l.requestId) : '—'}</td>
                   <td title={l.receivedLocal.replace('T', ' ')}>{time(l)}</td>
                   <td className="mono">{l.primaryIdentifier ?? '—'}</td>
-                  <td>{n(l.documents)}</td><td>{n(l.pages)}</td><td>{n(l.duplicates)}</td><td><Codes line={l} /></td><td>{n(l.failed)}</td>
+                  <td>{n(l.documents)}</td><td>{n(l.pages)}</td><td>{n(l.duplicates)}</td><td><Codes line={l} /></td><td><FailedCell line={l} /></td>
                 </tr>)}
                 {expanded && b.moreDeliveries > 0 && <tr><td colSpan={8} className="faint rpt-note">… {n(b.moreDeliveries)} more {b.moreDeliveries === 1 ? 'delivery' : 'deliveries'} · shown in full in the CSV</td></tr>}
               </Fragment>
@@ -174,7 +181,7 @@ function DailyIntake({ tabs }: { tabs: ReactNode }) {
           </tbody>
         </table>
       </section>
-      <p className="faint rpt-foot">Deliveries refused before Vero could identify the sending system (for example a failed sign-in) are not counted here.</p>
+      <p className="faint rpt-foot">Refused and failed deliveries from a known sending system are counted here, with the code each got; only failures while Vero&apos;s database was away can&apos;t be (they are in Vero&apos;s log). Attempts Vero couldn&apos;t link to a sending system (for example a failed sign-in) are listed for Tenant IT under Problems.</p>
       <p className="faint rpt-foot">Each delivery shows the request ID its sending system used, so the line can be matched with that system's own report. Duplicates are files whose checksum matches one already received; they are acknowledged to the sender and counted; no second copy is kept. Refusal codes are explained in the error code list.</p>
     </>}
   </>

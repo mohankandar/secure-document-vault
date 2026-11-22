@@ -59,8 +59,12 @@ import java.util.UUID;
  *       the range or anything below arrived in it; its time is the first of these.</li>
  *   <li><b>Documents accepted</b> and their pages: documents stored in the range that didn't fail after receipt.</li>
  *   <li><b>Exact duplicates</b> (task 0031, and task 0032's uncorrected copies): acknowledged, not stored again.</li>
- *   <li><b>Refused at intake</b>: each refused submission or upload (INTAKE_REFUSED), with the code the sender got.</li>
- *   <li><b>Failed after receipt</b>: documents stored in the range whose finalization failed (PROCESSING_FAILED).</li>
+ *   <li><b>Refused at intake</b>: each refused submission or upload (INTAKE_REFUSED), with the code the sender got;
+ *       task 0039: also the ones Spring refused before Vero's code ran (SDV-SYS-015).</li>
+ *   <li><b>Failed</b>: documents stored in the range whose finalization failed (PROCESSING_FAILED) and, task 0039,
+ *       intake requests that failed on Vero's side (INTAKE_FAILED, a 5xx), with the code the sender got.</li>
+ *   <li>Attempts with no known sending system (a failed sign-in, for example) are not here: Tenant IT sees them in
+ *       Problems (unidentified intake attempts).</li>
  *   <li><b>Contracts</b>: distinct primary identifier values (normalized), so a contract sent by two sending systems
  *       counts once in the overall total. A delivery without one is a record on its own. <b>New</b>: no submission
  *       created before the range carried the value (from any sending system); <b>updated</b> otherwise.</li>
@@ -141,7 +145,9 @@ public class IntakeReportService {
                     .append(AuditCsv.cell(at.atZone(scope.zone()).toOffsetDateTime().toString())).append(',')
                     .append(AuditCsv.cell(at.toString())).append(',')
                     .append(AuditCsv.cell(outcome(item))).append(',')
-                    .append(AuditCsv.cell(item.kind() == Item.Kind.REFUSED ? item.refusalCode() : null)).append("\r\n");
+                    // Task 0039: an intake failure (FAILED_AT_INTAKE) gives its code here too: the code the sender got.
+                    .append(AuditCsv.cell(item.kind() == Item.Kind.REFUSED || item.kind() == Item.Kind.FAILED
+                            ? item.refusalCode() : null)).append("\r\n");
             rows++;
         }
         Map<String, Object> details = new LinkedHashMap<>();
@@ -161,6 +167,7 @@ public class IntakeReportService {
             case DOCUMENT -> "PROCESSING_FAILED".equals(item.documentStatus()) ? "FAILED" : "ACCEPTED";
             case DUPLICATE -> "DUPLICATE_ALREADY_STORED";
             case REFUSED -> "REFUSED";
+            case FAILED -> "FAILED_AT_INTAKE";
             case DELIVERY -> throw new InternalCheckFailed("A delivery has no document line.");
         };
     }
@@ -251,7 +258,8 @@ public class IntakeReportService {
         Set<String> allContracts = new LinkedHashSet<>();
         Map<String, Integer> labels = new HashMap<>();
         Map<String, Integer> codes = new TreeMap<>();
-        int deliveries = 0, documents = 0, duplicates = 0, refused = 0, failed = 0;
+        Map<String, Integer> failCodes = new TreeMap<>();
+        int deliveries = 0, documents = 0, duplicates = 0, refused = 0, failed = 0, atIntake = 0;
         long pages = 0;
         for (Map.Entry<UUID, Map<String, List<Item>>> system : bySystem.entrySet()) {
             List<DeliveryLine> lines = new ArrayList<>();
@@ -270,6 +278,7 @@ public class IntakeReportService {
                 int d = 0, dup = 0, ref = 0, fail = 0;
                 long p = 0;
                 List<String> lineCodes = new ArrayList<>();
+                List<String> lineFailCodes = new ArrayList<>();
                 String requestId = null;
                 for (Item item : delivery) {
                     if (requestId == null) requestId = item.requestId();
@@ -288,6 +297,14 @@ public class IntakeReportService {
                             if (!lineCodes.contains(code)) lineCodes.add(code);
                             codes.merge(code, 1, Integer::sum);
                         }
+                        case FAILED -> {
+                            // Task 0039: failed on Vero's side at intake (a 5xx), counted with the failures.
+                            fail++;
+                            atIntake++;
+                            String code = item.refusalCode() == null ? "FAILED" : item.refusalCode();
+                            if (!lineFailCodes.contains(code)) lineFailCodes.add(code);
+                            failCodes.merge(code, 1, Integer::sum);
+                        }
                         case DELIVERY -> { }
                     }
                 }
@@ -298,7 +315,7 @@ public class IntakeReportService {
                 sFail += fail;
                 lines.add(new DeliveryLine(requestId, first.at(),
                         LOCAL.format(first.at().atZone(scope.zone())), pid == null ? null : pid.value(),
-                        d, p, dup, ref, List.copyOf(lineCodes), fail));
+                        d, p, dup, ref, List.copyOf(lineCodes), fail, List.copyOf(lineFailCodes)));
             }
             int shown = Math.min(lines.size(), LINES_PER_SYSTEM);
             blocks.add(new SystemBlock(system.getKey(), names.getOrDefault(system.getKey(), "Sending system"),
@@ -334,8 +351,9 @@ public class IntakeReportService {
                 .max(Map.Entry.<String, Integer>comparingByValue().thenComparing(Map.Entry.comparingByKey(Comparator.reverseOrder())))
                 .map(Map.Entry::getKey).orElse(null);
         List<CodeCount> codeCounts = codes.entrySet().stream().map(e -> new CodeCount(e.getKey(), e.getValue())).toList();
+        List<CodeCount> failCodeCounts = failCodes.entrySet().stream().map(e -> new CodeCount(e.getKey(), e.getValue())).toList();
         Totals totals = new Totals(deliveries, blocks.size(), documents, pages, duplicates, allContracts.size(), fresh,
-                allContracts.size() - fresh, refused, codeCounts, failed);
+                allContracts.size() - fresh, refused, codeCounts, failed, atIntake, failCodeCounts);
         return new IntakeReport(scope.from().toString(), scope.to().toString(), scope.today().toString(),
                 scope.zone().getId(), scope.zoneSource(), scope.sourceId(), label, scope.systems(), totals,
                 List.copyOf(blocks), LINES_PER_SYSTEM);
@@ -373,9 +391,13 @@ public class IntakeReportService {
                                UUID sourceId, String primaryIdentifierLabel, List<SendingSystem> sendingSystems,
                                Totals totals, List<SystemBlock> systems, int linesPerSystem) { }
 
+    /**
+     * failed: documents that failed after receipt plus, task 0039, intake requests that failed on Vero's side
+     * (failedAtIntake of them, by code in failedCodes).
+     */
     public record Totals(int deliveries, int sendingSystems, int documents, long pages, int duplicates, int contracts,
                          int newContracts, int updatedContracts, int refused, List<CodeCount> refusedCodes,
-                         int failed) { }
+                         int failed, int failedAtIntake, List<CodeCount> failedCodes) { }
 
     public record CodeCount(String code, int count) { }
 
@@ -386,10 +408,13 @@ public class IntakeReportService {
     public record SystemTotals(int deliveries, int contracts, int documents, long pages, int duplicates, int refused,
                                int failed) { }
 
-    /** receivedLocal: the first time, in the tenant's time zone (yyyy-MM-ddTHH:mm). */
+    /**
+     * receivedLocal: the first time, in the tenant's time zone (yyyy-MM-ddTHH:mm). failed: after receipt or at intake;
+     * failedCodes (task 0039): the codes of the intake requests that failed on Vero's side.
+     */
     public record DeliveryLine(String requestId, Instant receivedAt, String receivedLocal, String primaryIdentifier,
                                int documents, long pages, int duplicates, int refused, List<String> refusedCodes,
-                               int failed) { }
+                               int failed, List<String> failedCodes) { }
 
     public record Export(byte[] csv, int rowCount, String filename) { }
 

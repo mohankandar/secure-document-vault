@@ -25,10 +25,10 @@ class DatabaseConnectionHealthIndicatorTest {
         assertEquals(Status.UP, ping.health().getStatus());
         database.set("down");
         var down = ping.health();
-        assertEquals(Status.DOWN, down.getStatus());
+        assertEquals(ReadinessOnly.NOT_READY, down.getStatus());
         assertEquals("SQLTransientConnectionException", down.getDetails().get("reason"), "the class only, never the message");
         database.set("invalid");
-        assertEquals(Status.DOWN, ping.health().getStatus(), "a connection that isn't valid");
+        assertEquals(ReadinessOnly.NOT_READY, ping.health().getStatus(), "a connection that isn't valid");
         database.set("up");
         assertEquals(Status.UP, ping.health().getStatus(), "back without a restart");
     }
@@ -45,10 +45,10 @@ class DatabaseConnectionHealthIndicatorTest {
 
         long started = System.nanoTime();
         var health = ping.health();
-        assertEquals(Status.DOWN, health.getStatus());
+        assertEquals(ReadinessOnly.NOT_READY, health.getStatus());
         assertEquals("no answer within 100 ms", health.getDetails().get("reason"));
         assertTrue(Duration.ofNanos(System.nanoTime() - started).toMillis() < 1500);
-        assertEquals(Status.DOWN, ping.health().getStatus());
+        assertEquals(ReadinessOnly.NOT_READY, ping.health().getStatus());
         assertEquals(1, pings.get(), "the second probe waits for the same ping");
         release.countDown();
         Thread.sleep(50);

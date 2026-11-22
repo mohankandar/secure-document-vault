@@ -3,6 +3,9 @@ package com.sdv.platform.application.submission;
 import com.sdv.platform.application.access.ActiveTenant;
 
 import com.sdv.platform.domain.error.InternalCheckFailed;
+import com.sdv.platform.domain.error.CodedRefusal;
+import com.sdv.platform.domain.error.SdvErrorCode;
+import com.sdv.platform.application.source.ActiveSource;
 import com.sdv.platform.application.business.RecordKey;
 import com.sdv.platform.application.port.AuditEventPort;
 import com.sdv.platform.application.port.DocumentIntakeRepository;
@@ -120,10 +123,13 @@ public class SubmissionService {
 
         int maxDocuments = effectiveMaxDocuments(tenant, source);
         if (canonical.expectedDocumentCount() > maxDocuments) {
-            throw new IllegalArgumentException("expectedDocumentCount exceeds the configured submission limit of " + maxDocuments + ".");
+            throw new CodedRefusal.BadRequest(SdvErrorCode.INT_007,
+                    "expectedDocumentCount exceeds the configured submission limit of " + maxDocuments + ".",
+                    "limit=" + maxDocuments);
         }
         if (canonical.expectedSourceDocumentIds().size() > canonical.expectedDocumentCount()) {
-            throw new IllegalArgumentException("Expected manifest entries cannot exceed expectedDocumentCount.");
+            throw new CodedRefusal.BadRequest(SdvErrorCode.INT_007,
+                    "Expected manifest entries cannot exceed expectedDocumentCount.", "more listed than the count");
         }
 
         List<MetadataFieldDefinition> currentDefinitions = definitions.findCurrent(tenantId, sourceId);
@@ -180,7 +186,7 @@ public class SubmissionService {
         requireActiveTenant(tenantId);
         requireActiveSource(tenantId, sourceId);
         Submission submission = submissions.findById(tenantId, sourceId, submissionId)
-                .orElseThrow(() -> new NoSuchElementException("Submission not found."));
+                .orElseThrow(() -> ActiveSource.noSuchSubmission(submissionId));
         return details(submission, false);
     }
 
@@ -189,7 +195,8 @@ public class SubmissionService {
         requireActiveSource(tenantId, sourceId);
         String normalized = requireText(sourceSubmissionId, "sourceSubmissionId", 200);
         Submission submission = submissions.findBySourceIdentity(tenantId, sourceId, normalized)
-                .orElseThrow(() -> new NoSuchElementException("Submission not found."));
+                .orElseThrow(() -> new CodedRefusal.NotFound(SdvErrorCode.INT_004, ActiveSource.NO_SUCH_SUBMISSION,
+                        "no submission with this sourceSubmissionId"));
         return details(submission, false);
     }
 
@@ -239,7 +246,7 @@ public class SubmissionService {
         documents.markSubmissionIncompleteIfDue(
                 submission.tenantId(), submission.sourceId(), submission.submissionId(), cutoff);
         return submissions.findById(submission.tenantId(), submission.sourceId(), submission.submissionId())
-                .orElseThrow(() -> new NoSuchElementException("Submission not found."));
+                .orElseThrow(() -> ActiveSource.noSuchSubmission(submission.submissionId()));
     }
 
     private Tenant requireActiveTenant(UUID tenantId) {
@@ -248,12 +255,7 @@ public class SubmissionService {
     }
 
     private IngestionSource requireActiveSource(UUID tenantId, UUID sourceId) {
-        IngestionSource source = sources.findById(tenantId, sourceId)
-                .orElseThrow(() -> new NoSuchElementException("Ingestion source not found."));
-        if (source.status() != IngestionSourceStatus.ACTIVE) {
-            throw new IllegalStateException("Ingestion source is not active.");
-        }
-        return source;
+        return ActiveSource.require(sources, tenantId, sourceId);
     }
 
     private static int effectiveMaxDocuments(Tenant tenant, IngestionSource source) {
@@ -263,18 +265,24 @@ public class SubmissionService {
     }
 
     private static CanonicalRequest canonicalize(CreateSubmissionCommand command) {
-        if (command == null) throw new IllegalArgumentException("Submission request is required.");
+        if (command == null) {
+            throw new CodedRefusal.BadRequest(SdvErrorCode.INT_006, "Submission request is required.", "no body");
+        }
         String sourceSubmissionId = requireText(command.sourceSubmissionId(), "sourceSubmissionId", 200);
         if (command.expectedDocumentCount() < 1) {
-            throw new IllegalArgumentException("expectedDocumentCount must be at least 1.");
+            throw new CodedRefusal.BadRequest(SdvErrorCode.INT_006, "expectedDocumentCount must be at least 1.",
+                    "field=expectedDocumentCount");
         }
 
         List<String> manifest = new ArrayList<>();
         Set<String> seen = new HashSet<>();
         if (command.expectedSourceDocumentIds() != null) {
             for (String rawId : command.expectedSourceDocumentIds()) {
-                String id = requireText(rawId, "sourceDocumentId", 200);
-                if (!seen.add(id)) throw new IllegalArgumentException("Expected manifest contains duplicate sourceDocumentId '" + id + "'.");
+                String id = requireText(rawId, "sourceDocumentId", 200, SdvErrorCode.INT_007);
+                if (!seen.add(id)) {
+                    throw new CodedRefusal.BadRequest(SdvErrorCode.INT_007,
+                            "Expected manifest contains duplicate sourceDocumentId '" + id + "'.", "a listed ID twice");
+                }
                 manifest.add(id);
             }
         }
@@ -282,8 +290,11 @@ public class SubmissionService {
         Map<String, String> metadata = new LinkedHashMap<>();
         if (command.metadata() != null) {
             command.metadata().forEach((key, value) -> {
-                String fieldKey = requireText(key, "metadata field key", 100);
-                if (value == null) throw new IllegalArgumentException("Metadata field '" + fieldKey + "' cannot be null.");
+                String fieldKey = requireText(key, "metadata field key", 100, SdvErrorCode.INT_008);
+                if (value == null) {
+                    throw new CodedRefusal.BadRequest(SdvErrorCode.INT_008,
+                            "Metadata field '" + fieldKey + "' cannot be null.", "field=" + fieldKey + " null");
+                }
                 metadata.put(fieldKey, value);
             });
         }
@@ -309,12 +320,16 @@ public class SubmissionService {
 
         for (String suppliedKey : supplied.keySet()) {
             if (!byKey.containsKey(suppliedKey)) {
-                throw new IllegalArgumentException("Metadata field '" + suppliedKey + "' is not configured for this ingestion source.");
+                throw new CodedRefusal.BadRequest(SdvErrorCode.INT_008,
+                        "Metadata field '" + suppliedKey + "' is not configured for this ingestion source.",
+                        "field=" + suppliedKey + " unknown");
             }
         }
         for (MetadataFieldDefinition definition : definitions) {
             if (definition.required() && (!supplied.containsKey(definition.fieldKey()) || supplied.get(definition.fieldKey()).isBlank())) {
-                throw new IllegalArgumentException("Required metadata field '" + definition.fieldKey() + "' is missing.");
+                throw new CodedRefusal.BadRequest(SdvErrorCode.INT_008,
+                        "Required metadata field '" + definition.fieldKey() + "' is missing.",
+                        "field=" + definition.fieldKey() + " missing");
             }
         }
 
@@ -388,7 +403,9 @@ public class SubmissionService {
 
     private static void ensureSameCreateRequest(Submission existing, CanonicalRequest request) {
         if (existing.createRequestSha256() == null) {
-            throw new IllegalStateException("The source submission identity already exists without a comparable create fingerprint.");
+            throw new CodedRefusal.Conflict(SdvErrorCode.INT_011,
+                    "The source submission identity already exists without a comparable create fingerprint.",
+                    "submissionId=" + existing.submissionId() + " has no fingerprint");
         }
         if (existing.createRequestSha256().equals(request.requestSha256())) return;
         // Task 0024, 4a: when the record level is the only difference, say so with its own code. The fingerprint is
@@ -407,7 +424,9 @@ public class SubmissionService {
                                 + " when retrying.");
             }
         }
-        throw new IllegalStateException("sourceSubmissionId already exists with a different submission create request.");
+        throw new CodedRefusal.Conflict(SdvErrorCode.INT_011,
+                "sourceSubmissionId already exists with a different submission create request.",
+                "submissionId=" + existing.submissionId());
     }
 
     private static String requestFingerprint(String sourceSubmissionId,
@@ -451,9 +470,19 @@ public class SubmissionService {
     }
 
     private static String requireText(String value, String field, int maxLength) {
-        if (value == null || value.isBlank()) throw new IllegalArgumentException(field + " is required.");
+        return requireText(value, field, maxLength, SdvErrorCode.INT_006);
+    }
+
+    /** Task 0039: a required text, refused with {@code code} (INT-006 for the request, INT-007 list, INT-008 field). */
+    private static String requireText(String value, String field, int maxLength, SdvErrorCode code) {
+        if (value == null || value.isBlank()) {
+            throw new CodedRefusal.BadRequest(code, field + " is required.", "field=" + field + " missing");
+        }
         String trimmed = value.trim();
-        if (trimmed.length() > maxLength) throw new IllegalArgumentException(field + " exceeds " + maxLength + " characters.");
+        if (trimmed.length() > maxLength) {
+            throw new CodedRefusal.BadRequest(code, field + " exceeds " + maxLength + " characters.",
+                    "field=" + field + " too long");
+        }
         return trimmed;
     }
 

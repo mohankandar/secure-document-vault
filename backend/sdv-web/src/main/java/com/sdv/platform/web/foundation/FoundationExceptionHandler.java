@@ -8,8 +8,10 @@ import com.sdv.platform.application.viewer.DocumentViewerUnavailableException;
 import com.sdv.platform.application.redaction.RedactionFailedException;
 import com.sdv.platform.domain.error.CodedRefusal;
 import com.sdv.platform.domain.error.SdvErrorCode;
+import com.sdv.platform.web.ingestion.IntakeRefusals;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.security.access.AccessDeniedException;
@@ -20,14 +22,30 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 import java.io.IOException;
 import java.util.NoSuchElementException;
+import java.util.Objects;
 
 /**
  * Every error a controller lets out is answered here with the one body (task 0036, {@link ErrorReplies}):
  * {@code {code, message, reference, timestamp}}. Refusals keep their codes and statuses; Vero's own failures, the
  * database, Spring MVC's refusals and anything unexpected are answered by {@link ErrorReplies#failure(Throwable)}.
+ * <p>
+ * Task 0039: every answer on an intake address is then recorded ({@link IntakeRefusals}), so the Daily intake report
+ * and Problems see each refused or failed intake request, also the ones Spring refused before Vero's code ran.
  */
 @RestControllerAdvice
 public class FoundationExceptionHandler {
+    private final IntakeRefusals intake;
+
+    /** Records nothing on intake addresses (for tests that build the handler by hand). */
+    public FoundationExceptionHandler() {
+        this(IntakeRefusals.NONE);
+    }
+
+    @Autowired
+    public FoundationExceptionHandler(IntakeRefusals intake) {
+        this.intake = Objects.requireNonNull(intake, "intake");
+    }
+
     @ExceptionHandler(DocumentDownloadUnavailableException.class)
     void downloadUnavailable(DocumentDownloadUnavailableException ex, HttpServletRequest rq, HttpServletResponse rs) throws IOException {
         refuse(rq, rs, HttpStatus.UNPROCESSABLE_ENTITY, "DOWNLOAD_UNAVAILABLE", "The current document cannot be downloaded securely right now.");
@@ -43,14 +61,16 @@ public class FoundationExceptionHandler {
         refuse(rq, rs, HttpStatus.UNPROCESSABLE_ENTITY, "VIEWER_UNAVAILABLE", "The document cannot be viewed securely right now.");
     }
 
+    /** Task 0039: SDV-INT-014 (it was PDF_TOO_LARGE), with the limit in the message and the log line. */
     @ExceptionHandler(PdfTooLargeException.class)
     void tooLarge(PdfTooLargeException ex, HttpServletRequest rq, HttpServletResponse rs) throws IOException {
-        refuse(rq, rs, HttpStatus.PAYLOAD_TOO_LARGE, "PDF_TOO_LARGE", ex.getMessage());
+        refuse(rq, rs, HttpStatus.PAYLOAD_TOO_LARGE, ex, ex.getMessage());
     }
 
+    /** Task 0039: SDV-INT-015 (it was INVALID_PDF). */
     @ExceptionHandler(InvalidPdfException.class)
     void invalidPdf(InvalidPdfException ex, HttpServletRequest rq, HttpServletResponse rs) throws IOException {
-        refuse(rq, rs, HttpStatus.BAD_REQUEST, "INVALID_PDF", ex.getMessage());
+        refuse(rq, rs, HttpStatus.BAD_REQUEST, ex, ex.getMessage());
     }
 
     @ExceptionHandler(AuditQueryService.ExportTooLargeException.class)
@@ -65,13 +85,11 @@ public class FoundationExceptionHandler {
 
     /**
      * Task 0032: the code this handler sends for a refusal (a 4xx answer), as the sender sees it; null for anything that
-     * is not a refusal (a 5xx failure). The intake endpoints record their refusals with it (INTAKE_REFUSED).
-     * Task 0036: InternalCheckFailed and "no storage" (SDV-STO-001) are failures, not refusals, so they give null.
+     * is not a refusal (a 5xx failure). Task 0036: InternalCheckFailed and "no storage" (SDV-STO-001) are failures, not
+     * refusals, so they give null. Task 0039: the PDF refusals carry SDV-INT-014 and SDV-INT-015.
      */
     public static String refusalCode(Throwable ex) {
         if (ex instanceof CodedRefusal coded) return coded.errorCode().code();
-        if (ex instanceof PdfTooLargeException) return "PDF_TOO_LARGE";
-        if (ex instanceof InvalidPdfException) return "INVALID_PDF";
         if (ex instanceof IllegalArgumentException) return "BAD_REQUEST";
         if (ex instanceof NoSuchElementException) return "NOT_FOUND";
         if (ex instanceof IllegalStateException) return "CONFLICT";
@@ -103,7 +121,7 @@ public class FoundationExceptionHandler {
         if (ex instanceof CodedRefusal coded) {
             refuse(rq, rs, HttpStatus.FORBIDDEN, coded, ex.getMessage());
         } else {
-            ErrorReplies.answerCoded(rq, rs, HttpStatus.FORBIDDEN, SdvErrorCode.ROL_006.code(),
+            answerCoded(rq, rs, HttpStatus.FORBIDDEN, SdvErrorCode.ROL_006.code(),
                     "Your role doesn't include this action. Ask someone who has it.", "uncoded refusal");
         }
     }
@@ -111,7 +129,7 @@ public class FoundationExceptionHandler {
     /** Task 0038: no sign-in reached the controller: 401 SDV-AUT-001. */
     @ExceptionHandler(AuthenticationCredentialsNotFoundException.class)
     void unauthorized(AuthenticationCredentialsNotFoundException ex, HttpServletRequest rq, HttpServletResponse rs) throws IOException {
-        ErrorReplies.answerCoded(rq, rs, HttpStatus.UNAUTHORIZED, SdvErrorCode.AUT_001.code(), "Please sign in again.",
+        answerCoded(rq, rs, HttpStatus.UNAUTHORIZED, SdvErrorCode.AUT_001.code(), "Please sign in again.",
                 "no Vero sign-in on the request");
     }
 
@@ -128,8 +146,9 @@ public class FoundationExceptionHandler {
 
     /**
      * Task 0036: the last resort. Every exception no handler above takes: InternalCheckFailed (500, SDV-SYS-016/017),
-     * no storage (503, SDV-STO-001), the database (503, SDV-SYS-014), Spring MVC's refusals (SDV-SYS-015), and
-     * anything else (500, SDV-SYS-013). The log line holds the cause; the body holds only the safe sentence.
+     * a setup problem (500, for example SDV-INT-010, task 0039), no storage (503, SDV-STO-001), the database (503,
+     * SDV-SYS-014), Spring MVC's refusals (SDV-SYS-015), and anything else (500, SDV-SYS-013). The log line holds the
+     * cause; the body holds only the safe sentence.
      */
     @ExceptionHandler(Exception.class)
     void failure(Exception ex, HttpServletRequest rq, HttpServletResponse rs) throws IOException {
@@ -139,15 +158,16 @@ public class FoundationExceptionHandler {
             spring.getHeaders().forEach((name, values) -> values.forEach(v -> rs.addHeader(name, v)));
         }
         ErrorReplies.answer(rq, rs, reply, ex);
+        intake.answered(rq, reply.status(), reply.code());
     }
 
-    private static void refuse(HttpServletRequest rq, HttpServletResponse rs, HttpStatusCode status, String code, String message)
+    private void refuse(HttpServletRequest rq, HttpServletResponse rs, HttpStatusCode status, String code, String message)
             throws IOException {
         refuse(rq, rs, status, code, message, null);
     }
 
-    private static void refuse(HttpServletRequest rq, HttpServletResponse rs, HttpStatusCode status, CodedRefusal coded,
-                               String message) throws IOException {
+    private void refuse(HttpServletRequest rq, HttpServletResponse rs, HttpStatusCode status, CodedRefusal coded,
+                        String message) throws IOException {
         refuse(rq, rs, status, coded.errorCode().code(), message, coded.logDetail());
     }
 
@@ -156,10 +176,17 @@ public class FoundationExceptionHandler {
      * expected sign-in or role refusal gets an INFO line. The line holds the refusal's log detail (the exact cause),
      * which is never sent.
      */
-    private static void refuse(HttpServletRequest rq, HttpServletResponse rs, HttpStatusCode status, String code,
-                               String message, String detail) throws IOException {
+    private void refuse(HttpServletRequest rq, HttpServletResponse rs, HttpStatusCode status, String code,
+                        String message, String detail) throws IOException {
         String text = message == null ? "The request was refused." : message;
-        ErrorReplies.answerCoded(rq, rs, status, code, text, detail);
+        answerCoded(rq, rs, status, code, text, detail);
+    }
+
+    /** Writes and logs the answer, then records it if it was on an intake address (task 0039). */
+    private void answerCoded(HttpServletRequest rq, HttpServletResponse rs, HttpStatusCode status, String code,
+                             String message, String detail) throws IOException {
+        ErrorReplies.answerCoded(rq, rs, status, code, message, detail);
+        intake.answered(rq, status, code);
     }
 
     private static String detail(RuntimeException ex) {

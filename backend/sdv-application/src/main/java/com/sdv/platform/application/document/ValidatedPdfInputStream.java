@@ -54,7 +54,7 @@ final class ValidatedPdfInputStream extends FilterInputStream {
 
     private void accept(byte[] b, int off, int len) throws IOException {
         if (count > maxBytes - len) {
-            throw new PdfTooLargeException("PDF exceeds the configured maximum of " + maxBytes + " bytes.");
+            throw new PdfTooLargeException(maxBytes);
         }
         int copy = Math.min(len, PDF_MAGIC.length - prefixLength);
         if (copy > 0) {

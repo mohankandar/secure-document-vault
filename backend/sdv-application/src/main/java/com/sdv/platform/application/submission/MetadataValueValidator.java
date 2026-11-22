@@ -2,6 +2,9 @@ package com.sdv.platform.application.submission;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.sdv.platform.domain.error.CodedRefusal;
+import com.sdv.platform.domain.error.SdvErrorCode;
+import com.sdv.platform.domain.error.SetupProblem;
 import com.sdv.platform.domain.metadata.MetadataFieldDefinition;
 import com.sdv.platform.domain.metadata.MetadataFieldType;
 import com.sdv.platform.domain.metadata.MetadataNormalization;
@@ -21,15 +24,38 @@ final class MetadataValueValidator {
 
     private MetadataValueValidator() { }
 
+    /**
+     * Task 0039: a value that breaks its field's rules is SDV-INT-009 (400; the message names the field and the rule,
+     * never the value). A null is SDV-INT-008. A stored rule that can't be used is Vero's setup, not the sender's
+     * request: SDV-INT-010, answered 500 with an ERROR line naming the field and the rule (it was 409 CONFLICT).
+     */
     static ValidatedValue validate(MetadataFieldDefinition definition, String rawValue) {
+        String key = definition.fieldKey();
         if (rawValue == null) {
-            throw new IllegalArgumentException("Metadata field '" + definition.fieldKey() + "' cannot be null.");
+            throw new CodedRefusal.BadRequest(SdvErrorCode.INT_008, "Metadata field '" + key + "' cannot be null.",
+                    "field=" + key + " null");
         }
+        try {
+            validateType(definition.fieldType(), rawValue, key);
+            String normalized = normalize(definition.normalization(), rawValue);
+            applyRules(definition, normalized);
+            return new ValidatedValue(rawValue, normalized);
+        } catch (IllegalStateException ex) {
+            throw new SetupProblem(SdvErrorCode.INT_010, "Vero's setup for field '" + key + "' is broken, so this "
+                    + "submission can't be checked. Nothing was stored. Your IT team has been told.",
+                    "field=" + key + " rule: " + ex.getMessage());
+        } catch (IllegalArgumentException ex) {
+            // Only the validator's own sentences are sent; another (a number parser's) could repeat the value.
+            String message = ex.getMessage() != null && ex.getMessage().startsWith("Metadata field '" + key + "'")
+                    ? ex.getMessage() : "Metadata field '" + key + "' is not a valid " + definition.fieldType() + " value.";
+            throw new CodedRefusal.BadRequest(SdvErrorCode.INT_009, message, "field=" + key + " " + ruleOf(message));
+        }
+    }
 
-        validateType(definition.fieldType(), rawValue, definition.fieldKey());
-        String normalized = normalize(definition.normalization(), rawValue);
-        applyRules(definition, normalized);
-        return new ValidatedValue(rawValue, normalized);
+    /** The rule a value broke, from the validator's own sentence (for the log line). */
+    private static String ruleOf(String message) {
+        int quote = message.indexOf("' ");
+        return quote < 0 ? "-" : message.substring(quote + 2).replaceAll("\\.$", "");
     }
 
     private static void validateType(MetadataFieldType type, String value, String fieldKey) {

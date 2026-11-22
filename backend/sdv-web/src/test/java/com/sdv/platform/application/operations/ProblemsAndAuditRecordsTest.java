@@ -138,6 +138,40 @@ class ProblemsAndAuditRecordsTest {
         assertFalse(json.contains("Patel"), json);
     }
 
+    /**
+     * Task 0039: Problems lists intake attempts with no known sending system (this tenant's and those without one), the
+     * last 7 days, at most 50; a read failure marks the section degraded and never hides the rest of Problems.
+     */
+    @Test
+    void problemsCarryTheUnidentifiedIntakeAttempts() {
+        OperationalRepository ops = mock(OperationalRepository.class);
+        when(ops.databaseAvailable()).thenReturn(true);
+        TenantRepository tenants = mock(TenantRepository.class);
+        Tenant tenant = mock(Tenant.class);
+        when(tenant.status()).thenReturn(TenantStatus.ACTIVE);
+        when(tenants.findById(TENANT)).thenReturn(Optional.of(tenant));
+        var attempts = mock(com.sdv.platform.application.port.UnidentifiedIntakeAttemptRepository.class);
+        var one = new com.sdv.platform.application.port.UnidentifiedIntakeAttemptRepository.Attempt(UUID.randomUUID(), null,
+                Instant.now(), "203.0.113.9", "POST", "/api/v1/ingestion/submissions", 401, "SDV-AUT-003", "ref-1");
+        when(attempts.count(eq(TENANT), any())).thenReturn(12L);
+        when(attempts.findRecent(eq(TENANT), any(), eq(50))).thenReturn(List.of(one));
+        OperationsService service = new OperationsService(ops, mock(StorageVolumeAdminService.class),
+                mock(KeyServiceHealthProbe.class), tenants, resolver, guard(), attempts);
+
+        var summary = service.summary(TENANT);
+        assertEquals(12L, summary.unidentifiedIntakeAttemptCount());
+        assertEquals(List.of(one), summary.unidentifiedIntakeAttempts());
+        var since = org.mockito.ArgumentCaptor.forClass(Instant.class);
+        verify(attempts).count(eq(TENANT), since.capture());
+        long days = java.time.Duration.between(since.getValue(), Instant.now()).toDays();
+        assertEquals(7, days, "the last 7 days");
+
+        when(attempts.count(eq(TENANT), any())).thenThrow(new IllegalStateException("down"));
+        var degraded = service.summary(TENANT);
+        assertEquals(List.of(), degraded.unidentifiedIntakeAttempts());
+        assertTrue(degraded.dataObservations().stream().anyMatch(o -> o.section().equals("unidentified-intake-attempts") && o.degraded()));
+    }
+
     private static java.util.List<String> iterable(java.util.Iterator<String> names) {
         java.util.List<String> list = new java.util.ArrayList<>();
         names.forEachRemaining(list::add);

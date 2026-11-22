@@ -567,6 +567,10 @@ async function problemsChecks(page: Page, testInfo: TestInfo, area: 'Platform op
   const list = page.getByRole('table', { name: 'Problems list' })
   const chip = (label: string) => page.getByRole('group', { name: 'Show' }).getByRole('button', { name: new RegExp(`^${label} · \\d+$`) })
   if (!(await list.waitFor({ timeout: 15000 }).then(() => true, () => false))) return missingDemoData(testInfo, 'no problems listed. Run .\\Seed-SDV-Demo-Records.ps1 -SourceDisplayName LexaVault -ProblemDemo')
+  // Task 0039: intake attempts with no known sending system (a failed sign-in, for example) are listed below Problems.
+  const attempts = page.getByRole('region', { name: 'Unidentified intake attempts' })
+  await expect(attempts.getByRole('heading', { name: /^Unidentified intake attempts · \d+$/ })).toBeVisible()
+  await expect(attempts).not.toContainText(/Bearer|eyJ/)
   await expect(visible(page, /producer API|retry finali[sz]ation|Retry/)).toHaveCount(0)
   const expectations: [string, string, RegExp][] = [
     ['Could not store', problemDemo.store, /Vero couldn’t finish storing the file/],
@@ -1782,7 +1786,10 @@ test.describe('SDV role-based screen capture', () => {
     await expect(page.getByText('Counts only. No document contents, titles or names.')).toBeVisible()
     // Task 0033: the Sensitivity sub-tab is there now (it was disabled in task 0032).
     await expect(page.getByRole('tablist', { name: 'Reports' }).getByRole('tab', { name: 'Sensitivity' })).toBeEnabled()
-    await expect(page.getByText('Deliveries refused before Vero could identify the sending system (for example a failed sign-in) are not counted here.')).toBeVisible()
+    // Task 0039: the line under the table changed: refusals and failures of a known sending system are counted; the
+    // rest are listed for Tenant IT under Problems.
+    await expect(page.getByText(/^Refused and failed deliveries from a known sending system are counted here, with the code each got;.*listed for Tenant IT under Problems\.$/)).toBeVisible()
+    await expect(page.locator('.rpt-kpi').filter({ hasText: /^Failed/ }).locator('i')).toHaveText(/^\d[\d,]* after receipt · \d[\d,]* at intake$/)
     await expect(page.getByRole('button', { name: /^Day Today, / })).toBeVisible()
     await expect(page.getByText(/ \(entity\)$/)).toHaveAttribute('title', new RegExp(after.timeZone.replace('/', '\\/')))
     await expect(page.locator('.rpt-kpi').filter({ hasText: 'Refused at intake' }).locator('b')).toHaveText(after.totals.refused.toLocaleString('en-US'))

@@ -15,15 +15,27 @@ public interface CodedRefusal {
     /** A request that is wrong as sent (400). */
     final class BadRequest extends IllegalArgumentException implements CodedRefusal {
         private final SdvErrorCode errorCode;
+        private final String logDetail;
 
         public BadRequest(SdvErrorCode errorCode, String message) {
+            this(errorCode, message, null);
+        }
+
+        /** Task 0039: with the exact cause for the log line (a field's key, a rule, a header's name). */
+        public BadRequest(SdvErrorCode errorCode, String message, String logDetail) {
             super(message);
             this.errorCode = errorCode;
+            this.logDetail = logDetail;
         }
 
         @Override
         public SdvErrorCode errorCode() {
             return errorCode;
+        }
+
+        @Override
+        public String logDetail() {
+            return logDetail;
         }
     }
 
@@ -79,15 +91,27 @@ public interface CodedRefusal {
     /** Task 0027: nothing of this tenant has this reference (404). */
     final class NotFound extends java.util.NoSuchElementException implements CodedRefusal {
         private final SdvErrorCode errorCode;
+        private final String logDetail;
 
         public NotFound(SdvErrorCode errorCode, String message) {
+            this(errorCode, message, null);
+        }
+
+        /** Task 0039: with the exact cause for the log line, which the caller never sees. */
+        public NotFound(SdvErrorCode errorCode, String message, String logDetail) {
             super(message);
             this.errorCode = errorCode;
+            this.logDetail = logDetail;
         }
 
         @Override
         public SdvErrorCode errorCode() {
             return errorCode;
+        }
+
+        @Override
+        public String logDetail() {
+            return logDetail;
         }
     }
 

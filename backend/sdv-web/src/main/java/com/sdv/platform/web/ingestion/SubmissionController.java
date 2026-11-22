@@ -25,32 +25,21 @@ import java.util.UUID;
 public class SubmissionController {
     private final SecurityContextFacade security;
     private final SubmissionService submissions;
-    private final IntakeRefusals refusals;
-
-    @org.springframework.beans.factory.annotation.Autowired
-    public SubmissionController(SecurityContextFacade security, SubmissionService submissions, IntakeRefusals refusals) {
-        this.security = security;
-        this.submissions = submissions;
-        this.refusals = refusals;
-    }
 
     public SubmissionController(SecurityContextFacade security, SubmissionService submissions) {
-        this(security, submissions, IntakeRefusals.NONE);
+        this.security = security;
+        this.submissions = submissions;
     }
 
     @PostMapping
-    public ResponseEntity<SubmissionResponse> create(@RequestBody CreateSubmissionRequest request) {
+    public ResponseEntity<SubmissionResponse> create(@RequestBody CreateSubmissionRequest request,
+                                                     jakarta.servlet.http.HttpServletRequest http) {
+        // Task 0032: a refused delivery is counted by the Daily intake report, with its code, although no submission
+        // exists. Task 0039: Vero's error handler records it (IntakeRefusals); the request ID is noted for it here.
+        IntakeRefusals.noteRequestId(http, request.sourceSubmissionId());
         IngestionSourcePrincipal principal = security.requireIngestionSourcePrincipal();
-        SubmissionDetails result;
-        try {
-            result = submissions.create(
-                    principal.tenantId(), principal.sourceId(), request.toCommand(), principal.subject(), correlationId());
-        } catch (RuntimeException ex) {
-            // Task 0032: a refused delivery is counted by the Daily intake report, with its code, although no
-            // submission exists.
-            refusals.submissionRefused(principal, request.sourceSubmissionId(), ex, correlationId());
-            throw ex;
-        }
+        SubmissionDetails result = submissions.create(
+                principal.tenantId(), principal.sourceId(), request.toCommand(), principal.subject(), correlationId());
         HttpStatus status = result.idempotentReplay() ? HttpStatus.OK : HttpStatus.CREATED;
         return ResponseEntity.status(status).body(SubmissionResponse.from(result));
     }
@@ -103,7 +92,9 @@ public class SubmissionController {
             if (metadata != null) {
                 metadata.forEach((key, value) -> {
                     if (value == null || value.isNull() || !value.isValueNode()) {
-                        throw new IllegalArgumentException("Metadata field '" + key + "' must be a scalar JSON value.");
+                        throw new com.sdv.platform.domain.error.CodedRefusal.BadRequest(
+                                com.sdv.platform.domain.error.SdvErrorCode.INT_008,
+                                "Metadata field '" + key + "' must be a scalar JSON value.", "field=" + key + " not a scalar");
                     }
                     values.put(key, value.isTextual() ? value.textValue() : value.asText());
                 });

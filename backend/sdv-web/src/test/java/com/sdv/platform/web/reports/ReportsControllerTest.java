@@ -107,7 +107,7 @@ class ReportsControllerTest {
         signIn(SdvRole.BUSINESS_ADMIN);
         when(reports.intake(TENANT, "2026-11-20", "2026-11-20", null)).thenReturn(new IntakeReportService.IntakeReport(
                 "2026-11-20", "2026-11-20", "2026-11-20", "America/New_York", "INSTALL_DEFAULT", null, "Contract number",
-                List.of(), new IntakeReportService.Totals(0, 0, 0, 0, 0, 0, 0, 0, 0, List.of(), 0), List.of(), 50));
+                List.of(), new IntakeReportService.Totals(0, 0, 0, 0, 0, 0, 0, 0, 0, List.of(), 0, 0, List.of()), List.of(), 50));
         mvc.perform(get("/api/v1/admin/reports/intake").param("from", "2026-11-20").param("to", "2026-11-20"))
                 .andExpect(status().isOk())
                 .andExpect(header().string("Cache-Control", org.hamcrest.Matchers.containsString("no-store")))

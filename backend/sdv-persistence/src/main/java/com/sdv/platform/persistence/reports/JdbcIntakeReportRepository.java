@@ -111,7 +111,8 @@ public class JdbcIntakeReportRepository implements IntakeReportRepository {
                      where r.tenant_id=:tenantId and r.received_at >= :from and r.received_at < :to""" + duplicateSource + """
 
                     union all
-                    select 'REFUSED', a.audit_event_id, cast(a.safe_details ->> 'sourceId' as uuid), s.submission_id,
+                    select case when a.action='INTAKE_FAILED' then 'FAILED' else 'REFUSED' end,
+                           a.audit_event_id, cast(a.safe_details ->> 'sourceId' as uuid), s.submission_id,
                            coalesce(s.source_submission_id, a.safe_details ->> 'requestId'), null, null, a.occurred_at,
                            null, a.safe_details ->> 'code'
                       from audit_events a
@@ -119,7 +120,7 @@ public class JdbcIntakeReportRepository implements IntakeReportRepository {
                         on s.tenant_id=a.tenant_id
                        and s.submission_id=cast(nullif(a.safe_details ->> 'submissionId', '') as uuid)
                        and s.source_id=cast(a.safe_details ->> 'sourceId' as uuid)
-                     where a.tenant_id=:tenantId and a.action='INTAKE_REFUSED'
+                     where a.tenant_id=:tenantId and a.action in ('INTAKE_REFUSED', 'INTAKE_FAILED')
                        and a.occurred_at >= :from and a.occurred_at < :to""" + refusalSource + """
 
                   ) items

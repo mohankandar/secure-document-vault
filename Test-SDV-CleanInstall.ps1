@@ -467,11 +467,14 @@ alter default privileges for role $owner in schema public grant select, insert, 
     Stop-Relay
     Assert-That (Wait-Readiness 503 60) 'readiness did not turn 503 within 60 s of the database going away'
     Assert-That ((Get-Http '/actuator/health/liveness').Status -eq 200) 'liveness should stay 200 while the database is gone'
+    # Task 0039: the database ping belongs to readiness only; the overall health is not DOWN for it.
+    $overall = Get-Http '/actuator/health'
+    Assert-That ($overall.Status -eq 200) "the overall health should stay 200 while the database is gone, was $($overall.Status) $($overall.Body)"
     $wentAway = $w.Elapsed.TotalSeconds
     Start-Relay
     Assert-That (Wait-Readiness 200 60) 'readiness did not turn 200 again within 60 s of the database coming back'
     Assert-That (-not $script:appProcess.HasExited -and $script:appProcess.Id -eq $veroId) 'Vero was restarted'
-    Write-Step '5c. Database away and back after the start: readiness 503, then 200' $w.Elapsed.TotalSeconds ("not ready after {0:N1} s, ready again, liveness 200 throughout, the same process" -f $wentAway)
+    Write-Step '5c. Database away and back after the start: readiness 503, then 200' $w.Elapsed.TotalSeconds ("not ready after {0:N1} s, ready again, liveness and overall health 200 throughout, the same process" -f $wentAway)
     Stop-Vero
     Stop-Relay
 
@@ -484,6 +487,9 @@ alter default privileges for role $owner in schema public grant select, insert, 
     $veroId = $script:appProcess.Id
     Assert-That (Wait-Readiness 503 30) "readiness should be 503 while the sign-in keys can't be fetched. See $($s.Log)"
     Assert-That ((Get-Http '/actuator/health/liveness').Status -eq 200) 'liveness should stay 200 while the sign-in keys are away'
+    # Task 0039: the sign-in keys check belongs to readiness only; the overall health is not DOWN for it.
+    $overall = Get-Http '/actuator/health'
+    Assert-That ($overall.Status -eq 200) "the overall health should stay 200 while the sign-in keys are away, was $($overall.Status) $($overall.Body)"
     $away = Get-Http '/api/v1/operations/summary' $signedIn
     $awayBody = $away.Body | ConvertFrom-Json
     Assert-That ($away.Status -eq 503 -and $awayBody.code -eq 'SDV-AUT-004' -and $awayBody.reference) "a signed-in request should get 503 SDV-AUT-004 with a reference while the keys are away, got $($away.Status) $($away.Body)"
@@ -492,7 +498,7 @@ alter default privileges for role $owner in schema public grant select, insert, 
     $log = Get-Content -Raw $s.Log
     Assert-That ($log -match "WARN .*code=SDV-AUT-004 The sign-in keys at 127\.0\.0\.1:$KeysPort can't be fetched") 'no readiness WARN line with SDV-AUT-004 and the key set host'
     Assert-That ($log -match "ERROR .*code=SDV-AUT-004 reference=$([regex]::Escape($awayBody.reference)) .*127\.0\.0\.1:$KeysPort") 'no ERROR line with SDV-AUT-004, the reference and the key set host'
-    Write-Step '6a. Start with the sign-in keys away: not ready, 503 SDV-AUT-004' $s.Seconds 'readiness 503, liveness 200, signed-in request 503 AUT-004 with reference, no token 401 AUT-001, WARN and ERROR lines with the host'
+    Write-Step '6a. Start with the sign-in keys away: not ready, 503 SDV-AUT-004' $s.Seconds 'readiness 503, liveness and overall health 200, signed-in request 503 AUT-004 with reference, no token 401 AUT-001, WARN and ERROR lines with the host'
 
     $w = [System.Diagnostics.Stopwatch]::StartNew()
     Start-KeyServer
@@ -501,12 +507,21 @@ alter default privileges for role $owner in schema public grant select, insert, 
     $back = Get-Http '/api/v1/operations/summary' $signedIn
     $backBody = $back.Body | ConvertFrom-Json
     Assert-That ($back.Status -eq 401 -and $backBody.code -eq 'SDV-AUT-006') "with the keys back the token is checked and no connection is set up: 401 SDV-AUT-006 expected, got $($back.Status) $($back.Body)"
+    # Task 0039: a failed sign-in on an intake address is recorded for Tenant IT (no known sending system, no tenant),
+    # with its address (IDs blanked), code and reference, and nothing from the token.
+    $intake = Get-Http "/api/v1/ingestion/submissions/$([guid]::NewGuid())" $signedIn
+    $intakeBody = $intake.Body | ConvertFrom-Json
+    Assert-That ($intake.Status -eq 401 -and $intakeBody.code -eq 'SDV-AUT-006') "a failed sign-in on an intake address should get 401 SDV-AUT-006, got $($intake.Status) $($intake.Body)"
+    $attempt = (Invoke-Sql -Database $db -Sql "select count(*) || ' ' || coalesce(min(method), '-') || ' ' || coalesce(min(address), '-') || ' ' || coalesce(min(tenant_id::text), 'none') || ' ' || coalesce(min(status)::text, '-') from unidentified_intake_attempts where reference = '$($intakeBody.reference)' and code = 'SDV-AUT-006';").Out.Trim()
+    Assert-That ($attempt -eq '1 GET /api/v1/ingestion/submissions/{id} none 401') "the failed sign-in on the intake address should be one unidentified attempt, was: $attempt"
+    $attempts = (Invoke-Sql -Database $db -Sql "select coalesce(string_agg(row_to_json(a)::text, ' '), '') from unidentified_intake_attempts a;").Out
+    Assert-That (-not $attempts.Contains($signature) -and -not $attempts.Contains('clean-install-person') -and -not $attempts.Contains('eyJ')) 'an unidentified attempt holds token content'
     $log = Get-Content -Raw $s.Log
     Assert-That ($log -match "Sign-in keys at 127\.0\.0\.1:$KeysPort can be fetched again") 'the log does not say the sign-in keys are back'
     Assert-That ($log -match "WARN .*code=SDV-AUT-006 reference=$([regex]::Escape($backBody.reference))") 'no WARN line with SDV-AUT-006 and the reference'
     Assert-That (-not $log.Contains($signature)) 'the token is in the log'
     foreach ($b in @($away.Body, $anonymous.Body, $back.Body)) { Assert-That (-not $b.Contains($signature) -and -not $b.Contains('clean-install-person')) 'an answer holds token content' }
-    Write-Step '6b. Sign-in keys back: ready without a restart' $w.Elapsed.TotalSeconds 'readiness 200, the same process, the token checked: 401 SDV-AUT-006 (no connection), no token content in answers or log'
+    Write-Step '6b. Sign-in keys back: ready without a restart' $w.Elapsed.TotalSeconds 'readiness 200, the same process, the token checked: 401 SDV-AUT-006 (no connection), no token content in answers or log; on an intake address recorded as an unidentified attempt, no token content'
     Stop-Vero
     Stop-KeyServer
 

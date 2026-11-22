@@ -1,0 +1,102 @@
+package com.sdv.platform.web.schema;
+
+import org.junit.jupiter.api.Test;
+import org.springframework.boot.actuate.autoconfigure.availability.AvailabilityHealthContributorAutoConfiguration;
+import org.springframework.boot.actuate.autoconfigure.availability.AvailabilityProbesAutoConfiguration;
+import org.springframework.boot.actuate.autoconfigure.endpoint.EndpointAutoConfiguration;
+import org.springframework.boot.actuate.autoconfigure.health.HealthContributorAutoConfiguration;
+import org.springframework.boot.actuate.autoconfigure.health.HealthEndpointAutoConfiguration;
+import org.springframework.boot.actuate.health.Health;
+import org.springframework.boot.actuate.health.HealthEndpoint;
+import org.springframework.boot.actuate.health.HealthEndpointGroups;
+import org.springframework.boot.actuate.health.HealthIndicator;
+import org.springframework.boot.actuate.health.Status;
+import org.springframework.boot.autoconfigure.AutoConfigurations;
+import org.springframework.boot.autoconfigure.availability.ApplicationAvailabilityAutoConfiguration;
+import org.springframework.boot.env.YamlPropertySourceLoader;
+import org.springframework.boot.test.context.runner.ApplicationContextRunner;
+import org.springframework.core.env.EnumerablePropertySource;
+import org.springframework.core.io.ClassPathResource;
+
+import java.util.ArrayList;
+import java.util.List;
+
+import static org.junit.jupiter.api.Assertions.*;
+
+/**
+ * Task 0039 (owner answer to report 0038, 4): the sign-in keys check and the database ping belong to readiness only.
+ * With Vero's own health settings (application.yml): while the database or the sign-in hub is away, readiness is not
+ * ready (503); liveness and the overall /actuator/health stay UP (200), so an orchestrator never restarts Vero for it.
+ */
+class HealthGroupsTest {
+
+    /** Vero's management.* settings, as application.yml has them. */
+    private static String[] veroHealthSettings() throws Exception {
+        List<String> values = new ArrayList<>();
+        for (var source : new YamlPropertySourceLoader().load("vero", new ClassPathResource("application.yml"))) {
+            for (String name : ((EnumerablePropertySource<?>) source).getPropertyNames()) {
+                if (name.startsWith("management.")) values.add(name + "=" + source.getProperty(name));
+            }
+        }
+        assertTrue(values.stream().anyMatch(v -> v.startsWith("management.endpoint.health.group.readiness.include=")));
+        return values.toArray(String[]::new);
+    }
+
+    private static ApplicationContextRunner vero(Status database, Status keys) throws Exception {
+        return new ApplicationContextRunner()
+                .withConfiguration(AutoConfigurations.of(ApplicationAvailabilityAutoConfiguration.class,
+                        EndpointAutoConfiguration.class, HealthContributorAutoConfiguration.class,
+                        HealthEndpointAutoConfiguration.class, AvailabilityHealthContributorAutoConfiguration.class,
+                        AvailabilityProbesAutoConfiguration.class))
+                .withPropertyValues(veroHealthSettings())
+                .withBean("databaseSchema", HealthIndicator.class, () -> () -> Health.up().build())
+                .withBean("databaseConnection", HealthIndicator.class, () -> () -> Health.status(database).build())
+                .withBean("signInKeys", HealthIndicator.class, () -> () -> Health.status(keys).build());
+    }
+
+    private record Answer(Status status, int http) { }
+
+    private static Answer answer(org.springframework.context.ApplicationContext context, String group) {
+        // What Spring publishes when the application has started and is ready (the runner doesn't).
+        org.springframework.boot.availability.AvailabilityChangeEvent.publish(context,
+                org.springframework.boot.availability.LivenessState.CORRECT);
+        org.springframework.boot.availability.AvailabilityChangeEvent.publish(context,
+                org.springframework.boot.availability.ReadinessState.ACCEPTING_TRAFFIC);
+        HealthEndpoint endpoint = context.getBean(HealthEndpoint.class);
+        HealthEndpointGroups groups = context.getBean(HealthEndpointGroups.class);
+        Status status = group == null ? endpoint.health().getStatus() : endpoint.healthForPath(group).getStatus();
+        var mapper = (group == null ? groups.getPrimary() : groups.get(group)).getHttpCodeStatusMapper();
+        return new Answer(status, mapper.getStatusCode(status));
+    }
+
+    @Test
+    void theDatabaseOrTheHubAwayMakesOnlyReadinessNotReady() throws Exception {
+        for (Status[] away : new Status[][]{
+                {ReadinessOnly.NOT_READY, Status.UP}, {Status.UP, ReadinessOnly.NOT_READY},
+                {ReadinessOnly.NOT_READY, ReadinessOnly.NOT_READY}}) {
+            vero(away[0], away[1]).run(context -> {
+                assertEquals(new Answer(ReadinessOnly.NOT_READY, 503), answer(context, "readiness"), "readiness");
+                assertEquals(new Answer(Status.UP, 200), answer(context, "liveness"), "liveness");
+                assertEquals(new Answer(Status.UP, 200), answer(context, null), "overall /actuator/health");
+            });
+        }
+    }
+
+    @Test
+    void allBackMeansReadyAndARealDownStillCounts() throws Exception {
+        vero(Status.UP, Status.UP).run(context -> {
+            assertEquals(new Answer(Status.UP, 200), answer(context, "readiness"));
+            assertEquals(new Answer(Status.UP, 200), answer(context, null));
+        });
+        // Readiness keeps Spring's own statuses too: a DOWN is 503 there.
+        vero(Status.DOWN, Status.UP).run(context -> assertEquals(503, answer(context, "readiness").http()));
+    }
+
+    @Test
+    void spingsOwnDatabaseCheckIsOffAndTheGroupsAreAsDocumented() throws Exception {
+        String all = String.join("\n", veroHealthSettings());
+        assertTrue(all.contains("management.health.db.enabled=false"), all);
+        assertTrue(all.contains("management.endpoint.health.group.readiness.include=readinessState,databaseSchema,databaseConnection,signInKeys"), all);
+        assertFalse(all.contains("management.endpoint.health.group.liveness"), "liveness stays Spring's: livenessState only");
+    }
+}

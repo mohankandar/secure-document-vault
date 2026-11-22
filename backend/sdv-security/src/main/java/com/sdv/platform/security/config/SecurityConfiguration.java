@@ -2,6 +2,8 @@ package com.sdv.platform.security.config;
 
 import com.sdv.platform.domain.error.SdvErrorCode;
 import com.sdv.platform.domain.error.StartupFailure;
+import com.sdv.platform.application.access.ActiveTenantCache;
+import com.sdv.platform.security.auth.ActiveTenantFilter;
 import com.sdv.platform.security.auth.LocalHeaderAuthenticationFilter;
 import com.sdv.platform.security.auth.enterprise.EnterpriseJwtAuthenticationConverter;
 import org.springframework.beans.factory.ObjectProvider;
@@ -23,8 +25,16 @@ public class SecurityConfiguration {
     SecurityFilterChain sdvSecurityFilterChain(HttpSecurity http,
                                                ObjectProvider<LocalHeaderAuthenticationFilter> localFilterProvider,
                                                ObjectProvider<EnterpriseJwtAuthenticationConverter> enterpriseJwtConverterProvider,
+                                               ObjectProvider<ActiveTenantCache> tenantCheckProvider,
                                                @Value("${sdv.auth.mode:disabled}") String authMode) throws Exception {
         String mode = authMode == null ? "disabled" : authMode.trim().toLowerCase(java.util.Locale.ROOT);
+        // Task 0039: every signed-in request checks that its tenant is active (SDV-AUT-009). A sign-in mode without the
+        // check would let a suspended tenant through, so Vero doesn't start without it.
+        ActiveTenantCache tenantCheck = tenantCheckProvider.getIfAvailable();
+        if (tenantCheck == null && !"disabled".equals(mode)) {
+            throw new StartupFailure(SdvErrorCode.SYS_005, "The tenant check for every request is not available.");
+        }
+        if (tenantCheck != null) http.addFilterAfter(new ActiveTenantFilter(tenantCheck), AnonymousAuthenticationFilter.class);
         // Task 0038: every refused sign-in gets a coded answer (SignInAnswers), in every mode.
         AuthenticationEntryPoint entryPoint = SignInAnswers.entryPoint(mode);
         http

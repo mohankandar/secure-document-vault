@@ -200,7 +200,7 @@ public class JdbcSecureIngestionRepository implements SubmissionRepository, Stor
                         + " where tenant_id=:tenantId and source_id=:sourceId and submission_id=:submissionId for update",
                 p, submissionMapper()).stream()
                 .findFirst()
-                .orElseThrow(() -> new java.util.NoSuchElementException("Submission not found."));
+                .orElseThrow(() -> com.sdv.platform.application.source.ActiveSource.noSuchSubmission(submissionId));
     }
 
     @Override

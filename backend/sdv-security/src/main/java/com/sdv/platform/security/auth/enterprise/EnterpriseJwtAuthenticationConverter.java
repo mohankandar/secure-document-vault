@@ -133,15 +133,24 @@ public final class EnterpriseJwtAuthenticationConverter implements Converter<Jwt
 
             UUID tenantId = resolveHumanTenant(jwt);
             AuthenticatedIdentity identity = identityNormalizer.normalize(jwt);
-            EnumSet<SdvRole> named = roleMapper.map(identity.groups());
+            EnumSet<SdvRole> named;
+            try {
+                named = roleMapper.map(identity.groups());
+            } catch (SignInRefusedException ex) {
+                // Task 0039 (owner answer to report 0038, 2): AUT-007 logs who was refused: the subject, never the token,
+                // the groups or any other claim.
+                throw withSubject(ex.answer(), tenantId, identity.subject());
+            }
             // Task 0025, rule 1: roles that can never be held together are withheld and reported.
             EnumSet<SdvRole> roles;
             try {
                 roles = separationGuard.apply(tenantId, identity.subject(), identity.displayName(),
                         RoleConflictReporter.Source.LOGIN_GROUPS, named);
             } catch (RoleSeparationGuard.RefusedException ex) {
-                // Task 0038: ROL-004, ROL-005 or AUT-007, with its fixed sentence. The log names no subject or group.
+                // Task 0038: ROL-004, ROL-005 or AUT-007, with its fixed sentence. The log names no group; task 0039:
+                // AUT-007 names the subject.
                 var answer = ex.answer();
+                if (answer.code() == SdvErrorCode.AUT_007) throw withSubject(answer, tenantId, identity.subject());
                 throw new SignInRefusedException(answer.code(), answer.message(), "tenant=" + tenantId + " " + answer.logDetail());
             }
             // Name and email are display-only; they come from the claims configured for the shared normalizer
@@ -204,6 +213,18 @@ public final class EnterpriseJwtAuthenticationConverter implements Converter<Jwt
         } catch (IllegalArgumentException ex) {
             throw claims("claim=" + name + " is not a UUID");
         }
+    }
+
+    /**
+     * Task 0039 (SDV-AUT-007): the refusal's log line names the subject (the user or client ID), so IT knows who was
+     * refused. Only the subject: never the token, the groups or another claim. Control characters are dropped.
+     */
+    static SignInRefusedException withSubject(SignInAnswer answer, UUID tenantId, String subject) {
+        String who = subject == null ? "-" : subject.codePoints().filter(c -> !Character.isISOControl(c))
+                .collect(StringBuilder::new, StringBuilder::appendCodePoint, StringBuilder::append).toString();
+        if (who.length() > 300) who = who.substring(0, 300);
+        return new SignInRefusedException(answer.code(), answer.message(),
+                "tenant=" + tenantId + " subject=" + who + " " + answer.logDetail());
     }
 
     /** Task 0038 (SDV-AUT-005): the log detail names the claim, never its value. */
