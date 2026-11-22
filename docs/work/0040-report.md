@@ -287,19 +287,62 @@ The UI server on 5183 didn't stop during any tour.
 - **Not committed:** `Start-SDV-Local.ps1` (its earlier local changes), `docs/work/0041-task.md` (as asked), `docs/work/0040-task.md` (the owner's new sections, see question 1).
 - No schema change, no new dependency, no data deleted.
 
+### Third round (owner answers, third round): readiness busy, the tour's server answers
+
+**Item 2: readiness when Vero is busy** (the master section's item 2), commit `4653d7f`:
+
+- The database ping (`databaseConnection`) now reports a new readiness-only status, `BUSY`, when it finds no free connection:
+  - the ping got no answer in 2 s while Vero's HikariCP pool is full (every connection it may open in use, and someone waiting); or
+  - the connection failed as busy, by the same rule as the request answers (PostgreSQL 53300, or the pool's own timeout with no cause).
+  - Every other failure stays `NOT_READY`, as before. A database that can't be reached doesn't look full: its connections fail and leave the pool.
+- Readiness orders `busy` after `not-ready` and maps it to 503, so readiness says `BUSY` only when busy is the one reason. With the hub also away it is `NOT_READY`; with an older database it is `OUT_OF_SERVICE`. Liveness and the overall `/actuator/health` ignore it, as they do `NOT_READY`.
+- A new filter, `ReadinessBusyAnswer`, only on `/actuator/health/readiness`: when Spring's answer is 503 with status `BUSY`, it answers `503 {"status":"BUSY","code":"SDV-SYS-018","message":"Vero is too busy…"}` with `Retry-After` (the same setting, `SDV_BUSY_RETRY_AFTER_SECONDS`). Every other readiness answer passes through unchanged: no code, no `Retry-After`. A body it can't read is treated as not busy (fail closed). A probe isn't a refused request, so it isn't counted in Problems' busy count.
+- Contract (still 1.0.0):
+  - The readiness 503 lists `SDV-SYS-018` (`x-sdv-codes`), declares the `Retry-After` header, and has two examples, busy and unavailable.
+  - The `Readiness` body has `code` and `message` (only when busy). `BUSY` is among the documented statuses.
+  - The `RetryAfter` header says it comes from readiness too.
+- Sender's guide: the readiness section is now a table: busy (wait the header's seconds) and any other 503 (back off). The 1.0.0 changelog says readiness follows the busy rule. Catalog SDV-SYS-018: the readiness answer described.
+- Tests:
+  - `IngestionContractTest.readinessWhenBusyIsTheBusyAnswerAndOtherwiseHasNoCode` (new) checks the file, then runs Vero's readiness filter over Spring's answers. `BUSY` gets the code and a whole-number `Retry-After`. `NOT_READY`, `OUT_OF_SERVICE`, `DOWN`, a body that isn't JSON, and `UP` are unchanged, with no header.
+  - `HealthGroupsTest.busyIsReadinessOnlyAndOnlyWhenItIsTheOneReason` (new).
+  - `DatabaseConnectionHealthIndicatorTest`, 2 new tests: busy and not-ready cases with stand-ins; `poolFull` against a real HikariCP pool (full only while every connection is in use and one caller waits; a non-Hikari data source is never full).
+  - **Changed test, said plainly:** `DatabaseConnectionHealthIndicatorTest.readinessTurnsNotReady…` modelled "database down" as a pool timeout with no cause. Under the busy rule that shape means a full pool, so the test would now get `BUSY`. It now throws what Hikari really throws for a database that can't be reached: the timeout with the connection failure as its cause (shown against a real pool in `BusyAnswerTest`). It still expects `NOT_READY`.
+- Live: after the start, readiness through the new filter is 200 `{"status":"UP"}` with no `Retry-After`. The busy case can't be made on the shared dev database without filling its pool, so it is proven by the tests above.
+
+**Item 3: the tour records the server's answers**, commit `2bb8138` (the tour file only):
+
+- During each tour step, every error answer (4xx or 5xx) from `/api/` that the page gets is kept: time, method, address, status, and from the error body `code` and `reference` (or the `X-Correlation-Id` header when there is no JSON body). At most the last 20 are kept, and nothing else of the body.
+- When a step fails, they are printed in the test output and attached to the report as `server-error-answers`, one line each: `… GET /api/v1/operations/audit-events/export -> 422 code=EXPORT_TOO_LARGE reference=…`. The reference is the one on Vero's log line.
+- It covers the page's own requests (what a person's click sends). The tour's direct API calls (`page.request`) already fail with their own message.
+- No step failed in the run below, so nothing was printed: the recording hasn't been seen on a real failure yet.
+
+**Commands run (third round)**
+
+| Command | Result |
+|---|---|
+| `mvn -o test -pl sdv-web -Dtest=IngestionContractTest,HealthGroupsTest,DatabaseConnectionHealthIndicatorTest,BusyAnswerTest,ErrorCodesDocumentedTest` | 32 passed |
+| `.\stop-local.cmd` | Stopped |
+| `.\Build-SDV-All.ps1` | **BUILD SUCCESS.** Backend 560 tests (24 + 50 + 2 + 4 + 480), 0 failures, 8 skipped (556 before). Frontend build passed |
+| `.\Start-SDV-Local.ps1` | Started; readiness 200 `{"status":"UP"}`, no `Retry-After`; UI 200 |
+| `npm run ui:capture` | **25 passed, 0 failed, 11 skipped** (5.7 min) |
+
+Files: `ReadinessOnly.java`, `DatabaseConnectionHealthIndicator.java`, `ReadinessBusyAnswer.java` (new), `ErrorReplies.java` (`SYS_018_MESSAGE`, `isBusy` and `busyAnswers()` made public for the filter and the ping), `application.yml`, `DatabaseConnectionHealthIndicatorTest.java`, `HealthGroupsTest.java`, `IngestionContractTest.java`, `sdv-ingestion-v1.openapi.json`, `README.md`, `error-codes.md`; `e2e/sdv-screen-tour.spec.ts`. No schema change, no new dependency (HikariCP was already in the app).
+
 ### Commits
 
 - `2e9880b` docs(work): task 0040 Part 2 and owner answers to report 0040
 - `76307d6` feat: busy answer 503 SDV-SYS-018 with Retry-After setting, upload SDV-STO-004, busy count in Problems (task 0040 part 2)
-- The commit after it adds this hash to the report.
+- `55d525f` docs(work): commit hash in report 0040 part 2
+- `4653d7f` feat: readiness answers 503 BUSY with SDV-SYS-018 and Retry-After when Vero is busy (task 0040 part 2)
+- `2bb8138` test(ui): the screen tour records Vero's error answers and prints them when a step fails (task 0040)
+- The next commit adds this section.
 
-Nothing pushed, merged or tagged.
+Not committed: `Start-SDV-Local.ps1` (its earlier local changes), `docs/work/0041-task.md` (as asked), `docs/work/0040-task.md` (the owner's sections from this session). Nothing pushed, merged or tagged.
 
 ### Questions for the owner
 
-1. **"From the LexaVault thread (master)" in `0040-task.md`.** It appeared in the task file during this session. It asks to commit Part 2 before the tour fix, and adds a readiness change: 503 with `SDV-SYS-018` and `Retry-After` when readiness fails because Vero is busy. The session's instruction was to commit Part 2 together with the tour fix after the tour passes, so I did that. I didn't do the readiness change: it is new backend work that the session didn't ask for. Should it be done, as its own commit on this branch before the merge and tag?
-2. **The one-off Export failure:** leave it, or should the tour log the export's answer (status and code) so a repeat can be diagnosed?
+Questions 1 and 2 of the second round are answered (third round, items 2 and 3). None new.
 
 ### Suggested next step
 
-Answer question 1. Then `.\Test-SDV-SchemaUpgrade.ps1`, merge, and tag the merge commit `sdv-ingestion-v1.0.0`.
+Rerun `.\Test-SDV-SchemaUpgrade.ps1` (last run before the third round; no schema change since), then merge and tag the merge commit `sdv-ingestion-v1.0.0`.
