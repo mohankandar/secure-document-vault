@@ -1,5 +1,6 @@
 package com.sdv.platform.persistence.reports;
 
+import com.sdv.platform.persistence.business.PrimaryIdentifierSql;
 import com.sdv.platform.domain.error.InternalCheckFailed;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -168,17 +169,16 @@ public class JdbcSensitivityReportRepository implements SensitivityReportReposit
             p.addValue("sourceId", sourceId);
             source = " and f.source_id=:sourceId";
         }
-        // Each sending system's primary identifier (its first business identifier in display order); the label most
-        // of them use.
+        // Each sending system's primary identifier field (the one rule, task 0056); the label most of them use.
         return jdbc.query("""
                 select label from (
                     select distinct on (f.source_id) f.source_id, f.display_label as label
                       from metadata_field_definitions f
-                      left join metadata_field_display_order o
-                        on o.tenant_id=f.tenant_id and o.source_id=f.source_id and o.field_key=f.field_key
+                """ + PrimaryIdentifierSql.FIELD_POSITION + """
                      where f.tenant_id=:tenantId and f.business_identifier and f.active""" + source + """
 
-                     order by f.source_id, o.display_position nulls last, f.field_key, f.version desc) x
+                     order by f.source_id, """ + PrimaryIdentifierSql.FIELD_ORDER + """
+                , f.version desc) x
                  group by label
                  order by count(*) desc, label
                  limit 1

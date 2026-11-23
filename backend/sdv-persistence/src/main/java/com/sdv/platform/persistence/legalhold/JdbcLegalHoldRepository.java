@@ -1,5 +1,6 @@
 package com.sdv.platform.persistence.legalhold;
 
+import com.sdv.platform.persistence.business.PrimaryIdentifierSql;
 import com.sdv.platform.domain.error.InternalCheckFailed;
 import com.sdv.platform.application.port.LegalHoldRepository;
 import com.sdv.platform.domain.document.SensitivityLevel;
@@ -18,20 +19,8 @@ import java.util.UUID;
 /** Task 0027: legal_holds (migration 026). Every statement is limited to one tenant. */
 @Repository
 public class JdbcLegalHoldRepository implements LegalHoldRepository {
-    /**
-     * The record's primary identifier: its first business-identifier value in display order (then by field key), as
-     * the record number in the audit list and in Problems.
-     */
-    static final String PRIMARY_IDENTIFIER = """
-            left join lateral (
-                select v.stored_value, v.normalized_value, f.display_label
-                  from business_metadata_values v
-                  join metadata_field_definitions f on f.definition_id=v.definition_id and f.business_identifier
-                  left join metadata_field_display_order o
-                    on o.tenant_id=v.tenant_id and o.source_id=f.source_id and o.field_key=v.field_key
-                 where v.tenant_id=d.tenant_id and v.submission_id=d.submission_id and btrim(v.stored_value)<>''
-                 order by o.display_position nulls last, v.field_key
-                 limit 1) pid on true
+    /** The record's primary identifier of document d (the one rule, task 0056), and its hold in place. */
+    static final String PRIMARY_IDENTIFIER = PrimaryIdentifierSql.join("d.tenant_id", "d.submission_id") + """
             left join legal_holds ah
               on ah.tenant_id=d.tenant_id and ah.document_id=d.document_id and ah.released_at is null
             """;

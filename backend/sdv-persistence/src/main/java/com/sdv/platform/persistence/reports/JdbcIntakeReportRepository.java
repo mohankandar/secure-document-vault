@@ -1,5 +1,6 @@
 package com.sdv.platform.persistence.reports;
 
+import com.sdv.platform.persistence.business.PrimaryIdentifierSql;
 import com.sdv.platform.application.port.IntakeReportRepository;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
@@ -28,18 +29,8 @@ import java.util.UUID;
 @Repository
 public class JdbcIntakeReportRepository implements IntakeReportRepository {
     private static final int CHUNK = 1000;
-    /** The primary identifier of submission s: its first non-blank business identifier, in display order. */
-    public static final String PRIMARY_IDENTIFIER = """
-            left join lateral (
-                select v.field_key, v.stored_value, v.normalized_value, f.display_label
-                  from business_metadata_values v
-                  join metadata_field_definitions f on f.definition_id=v.definition_id and f.business_identifier
-                  left join metadata_field_display_order o
-                    on o.tenant_id=v.tenant_id and o.source_id=f.source_id and o.field_key=v.field_key
-                 where v.tenant_id=s.tenant_id and v.submission_id=s.submission_id and btrim(v.stored_value)<>''
-                 order by o.display_position nulls last, v.field_key
-                 limit 1) pid on true
-            """;
+    /** The record's primary identifier of submission s: the one rule (task 0056). */
+    public static final String PRIMARY_IDENTIFIER = PrimaryIdentifierSql.join("s.tenant_id", "s.submission_id");
 
     private final NamedParameterJdbcTemplate jdbc;
 
