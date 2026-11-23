@@ -22,13 +22,13 @@ Added `.github/dependabot.yml`, the only file the task approves:
 - `git checkout release/vero-r7; git pull --ff-only`: fast-forward `1c9442c..ad35d5c`. `git checkout -b ci/dependabot`.
 - YAML parse of `.github/dependabot.yml` with SnakeYAML 2.7 from the local Maven cache (no new dependency): parses, structure as intended.
 - `cd backend; mvn -B -ntp -pl sdv-web -am test -Dtest=ProductNameGuardTest -Dsurefire.failIfNoSpecifiedTests=false`: BUILD SUCCESS. The guard scans YAML under `.github/`, so it covers the new file.
-- GitHub CI on the pull request: see "Tests".
+- GitHub CI on pull request #20 (run 45096421933): backend, frontend, product-name-guard, sender-profile-contract and ci-passed all passed.
 - Not run: `.\Build-SDV-All.ps1`. The change is one configuration file read only by GitHub; no Java or frontend code changed. CI runs the full build on the pull request.
 
 ## Tests: counts, and any failures with their output
 
 - ProductNameGuardTest: 3 run, 0 failures, 0 errors, 0 skipped.
-- CI on the pull request: recorded in the pull request; `ci-passed` must be green before merge.
+- CI on pull request #20: 5 of 5 checks passed (backend 1m38s, which runs the full Maven build and all tests).
 
 ## Files changed
 
@@ -39,7 +39,8 @@ Added `.github/dependabot.yml`, the only file the task approves:
 ## Commits (hash and message), or "not committed"
 
 - `e2040a4` docs(work): task 0047, Dependabot for Actions and npm
-- (next) ci: Dependabot for Actions and npm, report 0047 (task 0047)
+- `8b0f669` ci: Dependabot for Actions and npm, report 0047 (task 0047)
+- (next) docs(work): report 0047, CI result
 
 ## Not done, and why
 
