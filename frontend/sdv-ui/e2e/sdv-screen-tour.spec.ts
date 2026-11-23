@@ -2011,6 +2011,166 @@ test.describe('SDV role-based screen capture', () => {
     await expect(page.getByText('The file is saved. The export is recorded in the audit.')).toBeVisible()
   })
 
+  // Task 0049: the quarantine screens, on the tour's own record (one Highly Confidential document), so no demo
+  // document's history grows. Every quarantine it makes is released again before the step ends (and at its start, if
+  // an earlier run stopped half-way), so the record is available afterwards. Released incidents stay as history.
+  test('Quarantine: an incident by filter, review, temporarily unavailable, release approval and exposure (task 0049)', async ({ page }, testInfo) => {
+    test.skip(!isDesktop(testInfo), 'Runs once per tour (desktop only).')
+    test.setTimeout(300_000)
+    const TENANT = 'bd960ee9-9d54-5053-9958-92aaa54893a6'
+    const as = (subject: string, roles: string) => ({ 'X-SDV-Tenant-Id': TENANT, 'X-SDV-Subject': subject, 'X-SDV-Roles': roles, 'Content-Type': 'application/json' })
+    const dana = as('local-restricted-steward', 'RESTRICTED_STEWARD')
+    const tourDoc = await tourCheckDocument(page)
+    const releaseLeftover = async () => {
+      // Not quarantined: refused with SDV-QUA-011, which is fine here.
+      await page.request.post(`/api/v1/quarantine/documents/${tourDoc}/release`, { headers: dana, data: { reason: 'Tour clean-up (task 0049)' } })
+    }
+    await releaseLeftover()
+    const name = `Tour check ${new Date().toISOString().slice(0, 16).replace('T', ' ')}`
+    try {
+      // 1. Dana (Restricted steward): the Quarantine area, and a new incident by filter with the server's live count.
+      await selectRole(page, 'Restricted Steward')
+      await areaTab(page, 'Quarantine').click()
+      await expect(page.getByRole('heading', { level: 1, name: 'Quarantine' })).toBeVisible({ timeout: 15000 })
+      await expect(page.getByRole('region', { name: 'Open incidents' })).toBeVisible({ timeout: 15000 })
+      await capture(page, testInfo, 'quarantine-list')
+      await page.getByRole('button', { name: 'New incident' }).click()
+      const form = page.getByRole('region', { name: 'New incident' })
+      await form.getByLabel('Received from').fill('2020-01-01')
+      await form.getByLabel('Received to').fill(new Date().toISOString().slice(0, 10))
+      await form.getByRole('combobox', { name: 'Sending system' }).selectOption({ label: 'Loan Origination System' })
+      await form.getByLabel(/^Contract number/).fill(TOUR_RECORD)
+      const all = form.getByRole('checkbox', { name: 'Select all 1 matching document' })
+      await expect(all, 'the server counts the one tour document').toBeVisible({ timeout: 15000 })
+      await form.getByLabel('Incident name').fill(name)
+      await form.getByLabel('Reason').fill('Tour check of the quarantine screens (task 0049)')
+      await expect(form.getByRole('button', { name: 'Quarantine' })).toBeDisabled()
+      await all.check()
+      await capture(page, testInfo, 'quarantine-new-incident')
+      await form.getByRole('button', { name: 'Quarantine 1 document' }).click()
+
+      // 2. The incident: the review list (oldest first, level shown), Open, Release, the whole-incident request.
+      const incident = page.getByRole('region', { name: `Incident ${name}` })
+      await expect(incident).toBeVisible({ timeout: 15000 })
+      const review = page.getByRole('table', { name: 'Quarantined documents' })
+      await expect(review.locator('tbody tr')).toHaveCount(1)
+      await expect(review).toContainText(TOUR_RECORD)
+      await expect(review).toContainText('Highly Confidential')
+      await expect(review.getByRole('button', { name: `Release ${TOUR_RECORD}` })).toBeVisible()
+      await capture(page, testInfo, 'quarantine-incident')
+
+      // 3. Review in the viewer: read and correct only; no print, download or level change while quarantined.
+      await review.getByRole('button', { name: `Open ${TOUR_RECORD}` }).click()
+      await expect(page.getByRole('img', { name: /Document page 1/ })).toBeVisible({ timeout: 20000 })
+      const v = viewer(page)
+      await expect(v.getByRole('status').filter({ hasText: 'Quarantined.' })).toBeVisible()
+      // The file name as the server names it when the document opens, never the review list's placeholder.
+      await expect(v.getByRole('button', { name: /Switch document/ })).toContainText(TOUR_FILE)
+      await expect(v.getByRole('button', { name: 'Redact' })).toBeVisible()
+      await expect(v.getByRole('button', { name: /^(Download|Print|Request download|Request print|Level)/ })).toHaveCount(0)
+      await capture(page, testInfo, 'quarantine-review-viewer')
+      await v.getByRole('button', { name: 'Back to incident' }).click()
+      await expect(incident).toBeVisible({ timeout: 15000 })
+
+      // 4. The exposure report and its CSV, with the server's reference and fingerprint.
+      await incident.getByRole('button', { name: 'Exposure report' }).click()
+      const exposure = page.getByRole('dialog', { name: `Exposure: ${name}` })
+      await expect(exposure.getByRole('group', { name: 'Documents by level' })).toContainText('Highly Confidential1')
+      await expect(exposure).toContainText(TOUR_RECORD)
+      expect(await exposure.innerText()).not.toMatch(/\.pdf|Tour check of the quarantine screens/i)
+      const [download] = await Promise.all([page.waitForEvent('download'), exposure.getByRole('button', { name: 'Export CSV' }).click()])
+      expect(download.suggestedFilename()).toMatch(/^vero-quarantine-exposure-\d{4}-\d{2}-\d{2}-[0-9a-f]{8}\.csv$/)
+      await expect(exposure.getByRole('status')).toContainText(/Reference [0-9a-f-]{36}\. SHA-256 fingerprint [0-9a-f]{64}\./)
+      await capture(page, testInfo, 'quarantine-exposure')
+      await exposure.getByRole('button', { name: 'Close' }).click()
+
+      // 5. Maya (Business user): temporarily unavailable in the search row and the record panel, never the level or why.
+      await selectRole(page, 'Business User')
+      await expect(areaTab(page, 'Quarantine')).toHaveCount(0)
+      await areaTab(page, 'Records').click()
+      await searchInSource(page, 'Loan Origination System', /^Contract number/, TOUR_RECORD)
+      const row = resultRows(page).filter({ hasText: TOUR_RECORD }).first()
+      await expect(row.getByRole('img', { name: 'A document is temporarily unavailable' })).toBeVisible()
+      await expect(row.getByRole('img', { name: /Highly Confidential/ })).toHaveCount(0)
+      await row.click()
+      const panel = page.getByRole('complementary', { name: 'Record inspector' })
+      await expect(panel.getByRole('button', { name: /^Temporarily unavailable document/ })).toBeVisible({ timeout: 15000 })
+      expect(await panel.innerText()).not.toMatch(/Highly Confidential|quarantin|Tour check of the quarantine/i)
+      await capture(page, testInfo, 'quarantine-unavailable-business-user')
+
+      // 6. Daniel (Document steward): the incident, with the Highly Confidential document counted, not shown.
+      await selectRole(page, 'Document Steward')
+      await areaTab(page, 'Quarantine').click()
+      await page.getByRole('region', { name: 'Open incidents' }).getByRole('button', { name: `Open incident ${name}` }).click()
+      await expect(page.getByText(/1 document not shown:/)).toBeVisible({ timeout: 15000 })
+      await expect(page.getByRole('button', { name: 'Request release of whole incident' })).toHaveCount(0)
+      await capture(page, testInfo, 'quarantine-steward-hidden-level')
+
+      // 7. Dana asks to release the whole incident; Priya (Business admin) decides it on its own under Approvals.
+      await selectRole(page, 'Restricted Steward')
+      await areaTab(page, 'Quarantine').click()
+      await page.getByRole('region', { name: 'Open incidents' }).getByRole('button', { name: `Open incident ${name}` }).click()
+      await page.getByRole('button', { name: 'Request release of whole incident' }).click()
+      const ask = page.getByRole('alertdialog', { name: 'Request release of the whole incident' })
+      await ask.getByLabel('Why it can be released').fill('Tour check: review finished')
+      await ask.getByRole('button', { name: 'Send request' }).click()
+      await expect(page.getByText(/asked to release the whole incident/)).toBeVisible({ timeout: 15000 })
+      await selectRole(page, 'Business Administrator')
+      await page.evaluate(() => { window.location.hash = '#/governance/approvals' })
+      const releases = page.getByRole('region', { name: 'Release incident requests' })
+      await expect(releases).toContainText(name, { timeout: 15000 })
+      expect(await releases.innerText()).not.toMatch(/review finished|Tour check of the quarantine/i)
+      await expect(releases.getByRole('checkbox')).toHaveCount(0)
+      await capture(page, testInfo, 'approvals-release-row')
+      await releases.getByRole('button', { name: `Review release of ${name}` }).click()
+      const decide = page.getByRole('alertdialog', { name: 'Release a quarantine incident' })
+      await expect(decide).toContainText('1 Highly Confidential')
+      await capture(page, testInfo, 'approvals-release-incident')
+      await decide.getByRole('button', { name: 'Approve release' }).click()
+      await expect(page.getByText('Release approved')).toBeVisible({ timeout: 15000 })
+      const after = await (await page.request.get('/api/v1/quarantine/incidents', { headers: dana })).json() as { name: string; status: string }[]
+      expect(after.find((i) => i.name === name)?.status, 'the approval released the incident').toBe('RELEASED')
+
+      // 8. One document from the record panel (and the viewer's button), then released from the review list.
+      await selectRole(page, 'Restricted Steward')
+      await areaTab(page, 'Records').click()
+      await searchInSource(page, 'Loan Origination System', /^Contract number/, TOUR_RECORD)
+      await resultRows(page).filter({ hasText: TOUR_RECORD }).first().click()
+      const dPanel = page.getByRole('complementary', { name: 'Record inspector' })
+      await dPanel.getByRole('button', { name: 'Open documents' }).click()
+      await expect(page.getByRole('img', { name: /Document page 1/ })).toBeVisible({ timeout: 20000 })
+      await viewer(page).getByRole('button', { name: 'Quarantine', exact: true }).click()
+      const fromViewer = page.getByRole('alertdialog', { name: 'Quarantine a document' })
+      await expect(fromViewer.getByRole('radio', { name: 'A new incident' })).toBeChecked()
+      await capture(page, testInfo, 'quarantine-from-viewer')
+      await fromViewer.getByRole('button', { name: 'Cancel' }).click()
+      await viewer(page).getByRole('button', { name: 'Back to results' }).click()
+      await dPanel.getByRole('button', { name: 'Quarantine a document' }).click()
+      const one = page.getByRole('alertdialog', { name: 'Quarantine a document' })
+      await one.getByLabel('Incident name').fill(name + ' (one document)')
+      await one.getByLabel('Reason').fill('Tour check: one document (task 0049)')
+      await one.getByRole('button', { name: 'Quarantine', exact: true }).click()
+      await expect(one).toHaveCount(0, { timeout: 15000 })
+      // The reviewer still sees the document, marked Quarantined; nothing is left to quarantine on this record.
+      await expect(dPanel.getByRole('button', { name: /tour-check\.pdf.*Quarantined/ })).toBeVisible({ timeout: 15000 })
+      await expect(dPanel.getByRole('button', { name: 'Quarantine a document' })).toHaveCount(0)
+      await capture(page, testInfo, 'quarantine-from-record-panel')
+      await areaTab(page, 'Quarantine').click()
+      await page.getByRole('region', { name: 'Open incidents' }).getByRole('button', { name: `Open incident ${name} (one document)` }).click()
+      await page.getByRole('table', { name: 'Quarantined documents' }).getByRole('button', { name: `Release ${TOUR_RECORD}` }).click()
+      const rel = page.getByRole('alertdialog', { name: 'Release this document?' })
+      await rel.getByLabel('Why it can be released').fill('Tour check: nothing exposed')
+      await rel.getByRole('button', { name: 'Release document' }).click()
+      await expect(page.getByRole('table', { name: 'Quarantined documents' })).toContainText('Released', { timeout: 15000 })
+      await page.getByRole('button', { name: 'All incidents' }).click()
+      await page.getByRole('button', { name: /Released incidents · \d+/ }).click()
+      await expect(page.getByRole('table', { name: 'Released incidents' })).toContainText(name)
+      await capture(page, testInfo, 'quarantine-released')
+    } finally {
+      await releaseLeftover()
+    }
+  })
+
   // Task 0030: approve 50 waiting requests in one go. Opt-in, because it uses up the seed's 50 waiting print and
   // download requests (run Seed-SDV-Canvas-Demo.ps1 again afterwards to make them again).
   test('Bulk approval of the 50 waiting print and download requests (task 0030)', async ({ page }, testInfo) => {

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type PointerEvent as RPointerEvent } from 'react'
-import { ArrowLeft, ChevronDown, ChevronLeft, ChevronRight, Download, Eraser, Maximize2, Minus, PanelLeftClose, PanelLeftOpen, PanelRight, Plus, Printer, Search, ShieldAlert, Sparkles, X } from 'lucide-react'
+import { ArrowLeft, ChevronDown, ChevronLeft, ChevronRight, Download, Eraser, Maximize2, Minus, PanelLeftClose, PanelLeftOpen, PanelRight, Plus, Printer, Search, ShieldAlert, ShieldOff, Sparkles, X } from 'lucide-react'
 import { useStore } from './store'
 import { BUSINESS_LIMITS, type Doc, type RecordItem, type Redaction } from './model'
 import { ApiRequestError } from '../api'
@@ -8,6 +8,8 @@ import { Badge, Callout, Dialog, Drawer, Tabs, TechDetails, actorWords, auditEve
 import { viewerMetadata, viewerPage, viewerSearch, record as fetchRecord, toRecord, documentActivity, type LiveDocumentActivity, type ViewerSearch, documentTags, documentComments, createDocumentTag, createDocumentComment, type LiveTag, type LiveComment, secureDownload, recordPrintEvent, permanentRedaction, viewerPreviews, myRequests, documentLevelHistory, LEVEL_NAMES, type MyRequest, type LevelHistoryEntry } from './liveApi'
 import { LOCKED_MESSAGE, LevelBadge, LevelDialog, RequestItem, RequestPopover, pendingOf, recordWord, validGrant, whenWords } from './Sensitivity'
 import { markViewed, unseenDecisions, useSeenRevision } from './Notices'
+import { QuarantineDialog } from './Quarantine'
+import { UNAVAILABLE_SENTENCE } from './quarantineWords'
 
 type Zoom = 'width' | 'page' | number
 type InfoTab = 'ask' | 'details' | 'requests' | 'comments' | 'tags' | 'activity'
@@ -41,7 +43,10 @@ const PREVIEW_CHUNK = 12
 
 export function Viewer({ record, results, docId, onClose, recordTitle, backLabel = 'Results' }: { record: RecordItem; results: RecordItem[]; docId: string; onClose: () => void; /** Same title as the record panel. */ recordTitle?: string; backLabel?: string }) {
   const { can, setOpenDocId, setSelectedRef, setRecords, toast } = useStore()
-  const doc = record.docs.find((d) => d.id === docId) ?? record.docs[0]
+  const listed = record.docs.find((d) => d.id === docId) ?? record.docs[0]
+  // Task 0049: the file name as the server names it when the document opens (the quarantine review list has none).
+  const [openedName, setOpenedName] = useState('')
+  const doc = openedName && openedName !== listed.filename ? { ...listed, filename: openedName } : listed
   const [pageCount, setPageCount] = useState(0)
   // This opening's ID from the server; page requests send it so each page is recorded once per viewing (task 0007).
   const [viewingId, setViewingId] = useState('')
@@ -49,7 +54,7 @@ export function Viewer({ record, results, docId, onClose, recordTitle, backLabel
   const [viewerLoading, setViewerLoading] = useState(true)
   const [searchResults, setSearchResults] = useState<ViewerSearch | null>(null)
   const [searchError, setSearchError] = useState('')
-  const docIndex = record.docs.indexOf(doc)
+  const docIndex = record.docs.findIndex((d) => d.id === doc.id)
   const recIndex = results.findIndex((r) => r.ref === record.ref)
 
   // Canvas board 4: the whole page height, about 600px wide at 1440 × 900.
@@ -77,10 +82,11 @@ export function Viewer({ record, results, docId, onClose, recordTitle, backLabel
     let active = true
     setPage(1); setPageCount(0); setSearchResults(null); setQuery(''); setViewerFailure(''); setViewerLoading(true)
     canvasRef.current?.scrollTo({ top: 0 })
-    setViewingId('')
-    viewerMetadata(doc.id).then(m => { if(active){setViewingId(m.viewingId ?? '');setPageCount(m.pageCount)} })
+    setViewingId(''); setOpenedName('')
+    viewerMetadata(doc.id).then(m => { if(active){setViewingId(m.viewingId ?? '');setPageCount(m.pageCount);setOpenedName(m.originalFilename ?? '')} })
       // Task 0029, item 5: a document this person can't open says only that (SDV-SEN-008), nothing about the document.
-      .catch(e => {if(active)setViewerFailure(e instanceof ApiRequestError && e.code === 'SDV-SEN-008' ? LOCKED_MESSAGE + '.' : docFailure('Viewer: document did not open', e))})
+      // Task 0049: a quarantined one says only that it is temporarily unavailable (SDV-QUA-001), never its level or why.
+      .catch(e => {if(active)setViewerFailure(e instanceof ApiRequestError && e.code === 'SDV-SEN-008' ? LOCKED_MESSAGE + '.' : e instanceof ApiRequestError && e.code === 'SDV-QUA-001' ? UNAVAILABLE_SENTENCE : docFailure('Viewer: document did not open', e))})
       .finally(() => {if(active)setViewerLoading(false)})
     return () => {active=false}
   }, [doc.id])
@@ -165,6 +171,7 @@ export function Viewer({ record, results, docId, onClose, recordTitle, backLabel
   }, [stewardView, doc.id, requestsRevision])
   const [asking, setAsking] = useState<'PRINT' | 'DOWNLOAD' | null>(null)
   const [levelOpen, setLevelOpen] = useState(false)
+  const [quarantining, setQuarantining] = useState(false)
   useEffect(() => { setAsking(null); setLevelOpen(false) }, [doc.id])
   askingRef.current = !!asking
   levelOpenRef.current = levelOpen
@@ -294,11 +301,13 @@ export function Viewer({ record, results, docId, onClose, recordTitle, backLabel
   const kind = docKind(doc.filename)
   // Task 0026: a Highly Confidential document is printed or downloaded only with an approval (SDV-SEN-009 otherwise), so
   // Download and Print are not offered for it. A missing level is treated the same way (fail closed).
-  const mayTakeOut = doc.level === 'STANDARD' || doc.level === 'CONFIDENTIAL'
+  // Task 0049: while quarantined, a reviewer reads and corrects only: no print, download, level change, tag or comment.
+  const quarantined = !!doc.quarantined
+  const mayTakeOut = !quarantined && (doc.level === 'STANDARD' || doc.level === 'CONFIDENTIAL')
   // Task 0029 (board Sens-Viewer): a Restricted Steward sees "Request download" and "Request print" instead; once one is
   // approved the button reads "Download (approved, use by …)" and works once (the server uses the approval up).
   const highlyConfidential = doc.level === 'HIGHLY_CONFIDENTIAL'
-  const mayAsk = highlyConfidential && can('REQUEST_SENSITIVE_ACCESS')
+  const mayAsk = !quarantined && highlyConfidential && can('REQUEST_SENSITIVE_ACCESS')
   const grant = (kind: 'PRINT' | 'DOWNLOAD') => (mayAsk ? validGrant(requests, doc.id, kind) : null)
   const waiting = (kind: 'PRINT' | 'DOWNLOAD') => (mayAsk ? pendingOf(requests, doc.id, kind) : null)
   const takeOutButton = (kind: 'PRINT' | 'DOWNLOAD', extra = '') => {
@@ -339,7 +348,7 @@ export function Viewer({ record, results, docId, onClose, recordTitle, backLabel
         <span className="eyebrow">Documents · {record.docs.length}</span>
         {record.docs.map((d) => (
           <button key={d.id} type="button" className="vw-thumb" aria-current={d.id === doc.id} onClick={() => switchDoc(d.id)}>
-            <span className="grow" style={{ minWidth: 0 }}><strong className="truncate">{docKind(d.filename)}</strong>{(() => { const pages = d.id === doc.id && pageTotal ? pageTotal : d.pages; return [pages > 0 ? `${pages} page${pages === 1 ? '' : 's'}` : `received ${fmtShortDate(d.ingestedAt)}`, d.redacted ? 'redacted' : ''].filter(Boolean).join(' · ') })()}</span>
+            <span className="grow" style={{ minWidth: 0 }}><strong className="truncate">{docKind(d.id === doc.id ? doc.filename : d.filename)}</strong>{(() => { const pages = d.id === doc.id && pageTotal ? pageTotal : d.pages; return [pages > 0 ? `${pages} page${pages === 1 ? '' : 's'}` : `received ${fmtShortDate(d.ingestedAt)}`, d.redacted ? 'redacted' : ''].filter(Boolean).join(' · ') })()}</span>
           </button>
         ))}
       </div>
@@ -375,7 +384,8 @@ export function Viewer({ record, results, docId, onClose, recordTitle, backLabel
           {mayTakeOut && can('PRINT_DOCUMENT') && <button type="button" className="v-btn sm vw-hide-sm" disabled={actionBusy} onClick={print}><Printer size={16} aria-hidden />Print</button>}
           {mayAsk && takeOutButton('DOWNLOAD', 'vw-hide-sm')}
           {mayAsk && takeOutButton('PRINT', 'vw-hide-sm')}
-          {stewardView && <><span className="vw-sep vw-hide-sm" aria-hidden /><button type="button" className="v-btn sm" aria-haspopup="dialog" onClick={() => { setAsking(null); setLevelOpen(true) }}>Level<ChevronDown size={14} aria-hidden /></button></>}
+          {can('QUARANTINE_DOCUMENTS') && !quarantined && !record.ref.startsWith('quarantine:') && <button type="button" className="v-btn sm vw-hide-sm" onClick={() => setQuarantining(true)}><ShieldOff size={16} aria-hidden />Quarantine</button>}
+          {stewardView && !quarantined && <><span className="vw-sep vw-hide-sm" aria-hidden /><button type="button" className="v-btn sm" aria-haspopup="dialog" onClick={() => { setAsking(null); setLevelOpen(true) }}>Level<ChevronDown size={14} aria-hidden /></button></>}
           {can('PERMANENT_REDACTION') && <button type="button" className="v-btn sm vw-redact" disabled={actionBusy} aria-pressed={redacting} onClick={startRedact} aria-label="Redact"><Eraser size={16} aria-hidden /><span className="vw-label">Redact</span></button>}
           <button type="button" className="v-btn quiet icon vw-panel-toggle" aria-pressed={infoOpen} onClick={() => setInfoOpen(true)} aria-label="Document information"><PanelRight size={18} /></button>
         </div>
@@ -386,6 +396,12 @@ export function Viewer({ record, results, docId, onClose, recordTitle, backLabel
           <input className="v-input grow" autoFocus placeholder="Find text in this document" value={query} onChange={(e) => setQuery(e.target.value)} maxLength={100} aria-label="Find in document" style={{ border: 0, boxShadow: 'none', background: 'transparent' }} />
           <span className="faint" style={{ fontSize: 13, whiteSpace: 'nowrap' }} aria-live="polite">{searchError || (query ? `${matchCount} match${matchCount === 1 ? '' : 'es'}` : '')}</span>
           <button type="button" className="v-btn quiet icon sm" onClick={() => { setFindOpen(false); setQuery('') }} aria-label="Close find"><X size={16} /></button>
+        </div>
+      )}
+      {quarantined && !redacting && (
+        <div className="vw-bar vw-quarantined" role="status">
+          <ShieldOff size={18} aria-hidden />
+          <span className="grow" style={{ fontSize: 13 }}><strong>Quarantined.</strong> Everyone else sees it as temporarily unavailable. You can read and correct it; print, download, tags, comments and level changes wait until it is released.</span>
         </div>
       )}
       {redacting && (
@@ -454,6 +470,10 @@ export function Viewer({ record, results, docId, onClose, recordTitle, backLabel
         </Drawer>
       )}
       {docsOpen && <Drawer eyebrow="Record documents" title={record.identifiers[0].value} onClose={() => setDocsOpen(false)}>{docsNav(true)}</Drawer>}
+      {quarantining && <QuarantineDialog documents={[{ id: doc.id, label: kind }]} initialId={doc.id} onClose={() => setQuarantining(false)} onDone={() => {
+        setQuarantining(false)
+        void fetchRecord(record.ref).then((x) => setRecords((prev) => prev.map((y) => (y.ref === x.recordRef ? toRecord(x) : y)))).catch(() => { /* the viewer keeps what it showed */ })
+      }} />}
       {review && <RedactionReview doc={doc} marks={marks} onCancel={() => setReview(false)} onApply={applyRedaction} busy={actionBusy} failure={redactionFailure} />}
     </div>
   )
@@ -670,7 +690,7 @@ function DocInfo({ doc, tab, setTab, embedded, requests, record }: { doc: Doc; t
           {metadataError && <Callout tone="warn" title={metadataError.startsWith(REFUSED.title) ? REFUSED.title : 'Comments unavailable'}>{metadataError.startsWith(REFUSED.title) ? REFUSED.detail : metadataError}</Callout>}
           {!metadataLoading && !metadataError && liveComments.length === 0 && <p className="faint">No comments yet.</p>}
           {liveComments.map(c=><article key={c.commentId} className="v-comment"><header><strong>{c.createdBy}</strong><span>{fmtRel(c.createdAt)}</span></header><p>{c.comment}</p></article>)}
-          {can('ADD_DOCUMENT_COMMENT') && <form className="stack" style={{gap:8}} onSubmit={e=>{e.preventDefault();void submitLiveComment()}}>
+          {can('ADD_DOCUMENT_COMMENT') && !doc.quarantined && <form className="stack" style={{gap:8}} onSubmit={e=>{e.preventDefault();void submitLiveComment()}}>
             <textarea className="v-textarea" aria-label="New comment" value={comment} maxLength={BUSINESS_LIMITS.maxCommentLength} onChange={e=>setComment(e.target.value)} placeholder="Add a comment for other authorized users"/>
             <button type="submit" className="v-btn sm" style={{alignSelf:'flex-end'}} disabled={!comment.trim() || saving}>Add comment</button>
           </form>}
@@ -681,7 +701,7 @@ function DocInfo({ doc, tab, setTab, embedded, requests, record }: { doc: Doc; t
           {metadataLoading && <p className="faint">Loading tags…</p>}
           {metadataError && <Callout tone="warn" title={metadataError.startsWith(REFUSED.title) ? REFUSED.title : 'Tags unavailable'}>{metadataError.startsWith(REFUSED.title) ? REFUSED.detail : metadataError}</Callout>}
           <div className="v-tagrow">{liveTags.length===0 ? <span className="faint">No tags yet.</span> : liveTags.map(t=><Badge key={t.tagId} tone="outline">{t.tag}</Badge>)}</div>
-          {can('ADD_DOCUMENT_TAG') && <form className="row" onSubmit={e=>{e.preventDefault();void submitLiveTag()}}>
+          {can('ADD_DOCUMENT_TAG') && !doc.quarantined && <form className="row" onSubmit={e=>{e.preventDefault();void submitLiveTag()}}>
             <input className="v-input grow" aria-label="New tag" value={tag} maxLength={BUSINESS_LIMITS.maxTagLength} onChange={e=>setTag(e.target.value)} placeholder="Add tag"/>
             <button type="submit" className="v-btn" disabled={!tag.trim() || saving}>Add</button>
           </form>}

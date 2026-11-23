@@ -6,7 +6,8 @@ import { FailureNotice, loadFailed, type Failure } from './CardError'
 import { Callout, Dialog, Drawer, Switch, fmtDate } from './ui'
 import { refusalText, whenWords } from './Sensitivity'
 import { itemWords } from './problemWords'
-import { BULK_MAX, LEVEL_NAMES, approvalLevelNote, decideMany, decideRequest, decidedRecently, pendingRequests, type BulkItem, type DecidedRequest, type PendingList, type PendingRequest } from './liveApi'
+import { BULK_MAX, LEVEL_NAMES, approvalLevelNote, decideIncidentRelease, decideMany, decideRequest, decidedRecently, incidentReleaseRequests, pendingRequests, type BulkItem, type DecidedRequest, type IncidentReleaseRequest, type PendingList, type PendingRequest } from './liveApi'
+import { levelsLine } from './quarantineWords'
 
 /**
  * Task 0030 (S9a part 2), board Sens-Approvals: the Business admin's approvals. One line per request, grouped by the
@@ -44,6 +45,12 @@ export function waitingSummary(list: PendingList): WaitingSummary {
   const all = list.groups.flatMap((g) => g.requests)
   const oldest = all.reduce<string | null>((o, r) => (!o || r.requestedAt < o ? r.requestedAt : o), null)
   return { count: list.requestCount, oldest: oldest ? waitedFor(oldest) : null }
+}
+/** Task 0049: the waiting count with the whole-incident release requests added. */
+export function waitingWithReleases(list: PendingList, releases: IncidentReleaseRequest[]): WaitingSummary {
+  const all = [...list.groups.flatMap((g) => g.requests.map((r) => r.requestedAt)), ...releases.map((r) => r.requestedAt)]
+  const oldest = all.reduce<string | null>((o, at) => (!o || at < o ? at : o), null)
+  return { count: list.requestCount + releases.length, oldest: oldest ? waitedFor(oldest) : null }
 }
 
 function Lvl({ level }: { level: SensitivityLevel }) {
@@ -93,13 +100,23 @@ export function Approvals({ onWaiting }: { onWaiting: (w: WaitingSummary) => voi
     let active = true
     pendingRequests().then((l) => {
       if (!active) return
-      setList(l); setError(null); onWaiting(waitingSummary(l))
+      setList(l); setError(null)
       // Ticks of requests that are no longer waiting are dropped.
       const ids = new Set(l.groups.flatMap((g) => g.requests.map((r) => r.requestId)))
       setSelected((s) => new Set([...s].filter((id) => ids.has(id))))
     }).catch((e) => { if (active) setError(loadFailed('Approvals did not load', e)) })
     return () => { active = false }
   }, [reload]) // eslint-disable-line react-hooks/exhaustive-deps
+  // Task 0049: whole-incident release requests (quarantine), decided one at a time; never in bulk, never a reason.
+  const [releases, setReleases] = useState<IncidentReleaseRequest[] | null>(null)
+  const [releasesError, setReleasesError] = useState<Failure | null>(null)
+  const [reviewRelease, setReviewRelease] = useState<IncidentReleaseRequest | null>(null)
+  useEffect(() => {
+    let active = true
+    incidentReleaseRequests().then((r) => { if (active) { setReleases(r); setReleasesError(null) } }).catch((e) => { if (active) { setReleases(null); setReleasesError(loadFailed('Incident release requests did not load', e)) } })
+    return () => { active = false }
+  }, [reload])
+  useEffect(() => { if (list) onWaiting(waitingWithReleases(list, releases ?? [])) }, [list, releases]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const all = useMemo(() => list?.groups.flatMap((g) => g.requests) ?? [], [list])
   const byId = useMemo(() => new Map(all.map((r) => [r.requestId, r])), [all])
@@ -154,6 +171,19 @@ export function Approvals({ onWaiting }: { onWaiting: (w: WaitingSummary) => voi
     } finally { setBusy(false); setReload((x) => x + 1) }
   }
 
+  const decideRelease = async (r: IncidentReleaseRequest, decision: 'approve' | 'decline') => {
+    if (busy) return
+    setBusy(true); setProblems(null)
+    try {
+      await decideIncidentRelease(r.requestId, decision)
+      toast({ tone: 'ok', title: decision === 'approve' ? 'Release approved' : 'Release declined', detail: decision === 'approve'
+        ? `${plural(r.documentCount, 'document')} in “${r.incidentName}” ${r.documentCount === 1 ? 'is' : 'are'} available again.` : `The documents in “${r.incidentName}” stay quarantined. ${r.requestedByName} sees it on the incident.` })
+      setReviewRelease(null)
+    } catch (e) {
+      setProblems({ title: decision === 'approve' ? 'Not approved' : 'Not declined', lines: [refusalText(e)] })
+    } finally { setBusy(false); setReload((x) => x + 1) }
+  }
+
   // The bar names exactly what is ticked: "3 on 300000000001 (2 downloads, 1 print) and 2 on 300000000005 (…)".
   const ticked = [...selected].map((id) => byId.get(id)).filter((r): r is PendingRequest => !!r)
   const tickedByGroup = new Map<string, PendingRequest[]>()
@@ -183,7 +213,26 @@ export function Approvals({ onWaiting }: { onWaiting: (w: WaitingSummary) => voi
       <button type="button" className="v-btn sm primary" disabled={busy} onClick={() => void decideAll('APPROVE', ticked.map((r) => r.requestId))}>Approve {ticked.length}</button>
     </div>}
 
-    {groups.length === 0 ? <section className="v-panel"><p className="muted" style={{ padding: 16 }}>{total === 0 ? 'Nothing is waiting. New requests show up here.' : 'No waiting request matches these filters.'}</p></section>
+    {releasesError && <FailureNotice failure={releasesError} loadTitle="Incident release requests didn't load" onRetry={() => setReload((x) => x + 1)} />}
+    {releases && releases.length > 0 && <section className="v-panel apr-card" aria-label="Release incident requests">
+      <div className="apr-gh"><b>Release incident</b><span className="faint">{plural(releases.length, 'request')} · quarantine</span>
+        <span className="apr-lock"><CircleAlert size={12} strokeWidth={2.4} aria-hidden />Whole incident: decide each on its own</span></div>
+      {releases.map((r) => <div key={r.requestId} className="apr-row q-release">
+        <span className="apr-sc whole" title="Whole incident" aria-label="Whole incident" role="img"><Files size={16} aria-hidden /></span>
+        <span className="apr-kind"><b>{r.incidentName}</b></span>
+        <span className="apr-whole">{plural(r.documentCount, 'document')}</span>
+        <span className="faint" title="Documents by level">{levelsLine(r.standard, r.confidential, r.highlyConfidential)}</span>
+        <span className="faint">{r.firstReceivedAt ? `received ${fmtDate(r.firstReceivedAt)}${r.lastReceivedAt && fmtDate(r.lastReceivedAt) !== fmtDate(r.firstReceivedAt) ? ` – ${fmtDate(r.lastReceivedAt)}` : ''}` : ''}</span>
+        <span className="apr-who-cell">{r.requestedByName}</span>
+        <span className="faint" title={whenWords(r.requestedAt)}>{waitedFor(r.requestedAt)}</span>
+        <span className="apr-acts">
+          <button type="button" className="v-btn xs" disabled={busy} onClick={() => void decideRelease(r, 'decline')} aria-label={`Decline release of ${r.incidentName}`}>Decline</button>
+          <button type="button" className="v-btn xs primary" disabled={busy} onClick={() => setReviewRelease(r)} aria-label={`Review release of ${r.incidentName}`}>Review</button>
+        </span>
+      </div>)}
+    </section>}
+
+    {groups.length === 0 ? <section className="v-panel"><p className="muted" style={{ padding: 16 }}>{total === 0 ? (releases?.length ? 'No other request is waiting.' : 'Nothing is waiting. New requests show up here.') : 'No waiting request matches these filters.'}</p></section>
       : <section className="v-panel apr-card" aria-label="Waiting requests">
         {grouped ? shownGroups.map((g) => {
           const ids = tickable(g.requests), on = ids.filter((id) => selected.has(id)).length, expanded = isOpen(g), k = key(g)
@@ -230,6 +279,23 @@ export function Approvals({ onWaiting }: { onWaiting: (w: WaitingSummary) => voi
         <div><dt>Reason</dt><dd>{review.reason}</dd></div>
       </dl>
       <p className="muted">Approving changes the level of every document of this contract at once. It is decided on its own, never with other requests.</p>
+    </Dialog>}
+
+    {reviewRelease && <Dialog title="Release a quarantine incident" onClose={() => { if (!busy) setReviewRelease(null) }} footer={<>
+      <button type="button" className="v-btn" disabled={busy} onClick={() => setReviewRelease(null)}>Cancel</button>
+      <button type="button" className="v-btn" disabled={busy} onClick={() => void decideRelease(reviewRelease, 'decline')}>Decline</button>
+      <button type="button" className="v-btn primary" disabled={busy} onClick={() => void decideRelease(reviewRelease, 'approve')}>Approve release</button>
+    </>}>
+      <dl className="v-kv">
+        <div><dt>Incident</dt><dd>{reviewRelease.incidentName}</dd></div>
+        <div><dt>Documents</dt><dd>{reviewRelease.documentCount}</dd></div>
+        <div><dt>Levels</dt><dd>{levelsLine(reviewRelease.standard, reviewRelease.confidential, reviewRelease.highlyConfidential)}</dd></div>
+        <div><dt>Received</dt><dd>{reviewRelease.firstReceivedAt ? `${fmtDate(reviewRelease.firstReceivedAt)} to ${fmtDate(reviewRelease.lastReceivedAt)}` : '—'}</dd></div>
+        <div><dt>Quarantined since</dt><dd>{fmtDate(reviewRelease.incidentCreatedAt)}</dd></div>
+        <div><dt>Requested by</dt><dd>{reviewRelease.requestedByName}, {whenWords(reviewRelease.requestedAt)}</dd></div>
+        <div><dt>Expires</dt><dd>{whenWords(reviewRelease.expiresAt)}, if nobody decides</dd></div>
+      </dl>
+      <p className="muted">Approving makes every document of the incident available again at once. It is decided on its own, never with other requests. You can&apos;t decide your own request.</p>
     </Dialog>}
 
     {recentOpen && <Drawer eyebrow="Approvals" title="Decided recently" onClose={() => setRecentOpen(false)}>

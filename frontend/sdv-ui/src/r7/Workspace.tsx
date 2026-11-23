@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
-import { AlertTriangle, ArrowRight, ChevronDown, ChevronUp, Lock, Search, SlidersHorizontal, X } from 'lucide-react'
+import { AlertTriangle, ArrowRight, ChevronDown, ChevronUp, Clock, Lock, Search, ShieldOff, SlidersHorizontal, X } from 'lucide-react'
 import type { SensitivityLevel } from '../api'
 import { useStore } from './store'
 import type { RecordItem, Source } from './model'
@@ -13,6 +13,8 @@ import { NOTHING_TO_SEARCH, defaultSource, nothingToSearchIn, rememberSourceChoi
 import { extraField, orderedPreview, titleLabel } from './recordColumns'
 import { anywhereProblem, hiddenMatch, identifierCriteria, type MatchedField } from './quickSearchRules'
 import { Mark, useQuickSearch, type QuickPick } from './QuickSearch'
+import { QuarantineDialog } from './Quarantine'
+import { UNAVAILABLE, UNAVAILABLE_SENTENCE } from './quarantineWords'
 
 type Criteria = Record<string, string>
 /**
@@ -24,7 +26,7 @@ const NO_RANGE: Range = { from: '', to: '' }
 const emptyApplied = (sourceId: string): Applied => ({ sourceId, c: {}, received: NO_RANGE, updated: NO_RANGE })
 type FieldValue = { label: string; value: string }
 /** What the search result said about a record; kept apart so loading the full record does not change the row. */
-type Summary = { /** the server's record title, null when it has none */ title: string | null; identifiers: FieldValue[]; preview: FieldValue[]; docs: number; incomplete: boolean; expected: number; received: number; /** an "anywhere" search only */ matched: MatchedField[]; /** task 0026: highest level this person can't open, or null */ restricted?: SensitivityLevel | null }
+type Summary = { /** the server's record title, null when it has none */ title: string | null; identifiers: FieldValue[]; preview: FieldValue[]; docs: number; incomplete: boolean; expected: number; received: number; /** an "anywhere" search only */ matched: MatchedField[]; /** task 0026: highest level this person can't open, or null */ restricted?: SensitivityLevel | null; /** task 0049: documents temporarily unavailable (quarantined) to this person */ unavailable?: number }
 
 /** Task 0026: level names as people read them. */
 const LEVEL_WORDS: Record<SensitivityLevel, string> = { STANDARD: 'Standard', CONFIDENTIAL: 'Confidential', HIGHLY_CONFIDENTIAL: 'Highly Confidential' }
@@ -34,6 +36,13 @@ function RestrictedLock({ level }: { level?: SensitivityLevel | null }) {
   if (!level || level === 'STANDARD') return null
   const label = `Holds ${LEVEL_WORDS[level]} documents you can't open`
   return <span className={`ws-lock ${level === 'HIGHLY_CONFIDENTIAL' ? 'hc' : 'c'}`} role="img" aria-label={label} title={label}><Lock size={12} aria-hidden /></span>
+}
+
+/** Task 0049: next to the number, like the lock: some documents are temporarily unavailable; never their level or why. */
+function UnavailableMark({ count }: { count?: number }) {
+  if (!count) return null
+  const label = `${count === 1 ? 'A document is' : `${count} documents are`} temporarily unavailable`
+  return <span className="ws-unavailable" role="img" aria-label={label} title={label}><Clock size={12} aria-hidden /></span>
 }
 
 function useMediaQuery(q: string) {
@@ -120,6 +129,7 @@ export function Workspace() {
         expected: x.incompleteExpectedCount ?? 0, received: x.incompleteReceivedCount ?? 0,
         matched: x.matchedFields ?? [],
         restricted: x.restrictedLevel ?? null,
+        unavailable: x.unavailableDocumentCount ?? 0,
       }])))
       setHasMore(r.hasMore)
       setStatus('live')
@@ -454,7 +464,7 @@ function ResultsTable({ results, summaries, selectedRef, onOpen, source, needle 
                 else if (e.key === 'End') { e.preventDefault(); move(results.length - 1) }
                 else if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen(r.ref) }
               }}>
-              <td className="mono lead" data-label={numberLabel}><span className="ws-num"><Mark text={number} needle={needle} /><RestrictedLock level={s?.restricted} /></span></td>
+              <td className="mono lead" data-label={numberLabel}><span className="ws-num"><Mark text={number} needle={needle} /><RestrictedLock level={s?.restricted} /><UnavailableMark count={s?.unavailable} /></span></td>
               <td className="ws-name" data-label={titleHead}>
                 <span className="ws-cell">{s?.title ? <Mark text={s.title} needle={needle} /> : "—"}{s?.incomplete && missing(s)}</span>
                 {/* Quick search board 2: a match in a field that is not a column, under the title. */}
@@ -495,7 +505,11 @@ function RecordPanelBody({ record, summary, onOpen, source, action, needle }: { 
   }, [record.ref, record.docs.map((d) => d.id).join(','), includeViews])
   const inc = record.incomplete
   const locked = record.locked ?? []
-  const docCount = record.docs.length + locked.length
+  const unavailable = record.unavailable ?? []
+  const docCount = record.docs.length + locked.length + unavailable.length
+  // Task 0049: a Steward quarantines one of the documents they can open, into a new or an open incident.
+  const [quarantining, setQuarantining] = useState(false)
+  const quarantinable = can('QUARANTINE_DOCUMENTS') ? record.docs.filter((d) => !d.quarantined) : []
   const loadingDocs = docCount === 0 && (summary?.docs ?? 0) > 0
   return (
     <>
@@ -521,6 +535,20 @@ function RecordPanelBody({ record, summary, onOpen, source, action, needle }: { 
                     <strong className="truncate">{d.kind}</strong>
                     <span>{d.pages > 0 ? `${d.pages} page${d.pages === 1 ? '' : 's'} · ` : ''}received {fmtShortDate(d.ingestedAt)}{d.redacted && ' · redacted'}</span>
                   </span>
+                  {d.quarantined && <Badge tone="warn">Quarantined</Badge>}
+                </button>
+              </li>
+            ))}
+            {/* Task 0049: a quarantined document this person can't open: only that it is temporarily unavailable. */}
+            {unavailable.map((id) => (
+              <li key={id}>
+                <button type="button" className="ws-doc locked" aria-label={`${UNAVAILABLE} document. ${UNAVAILABLE_SENTENCE}`}
+                  onClick={() => toast({ tone: 'bad', title: UNAVAILABLE_SENTENCE })}>
+                  <span className="lsheet" aria-hidden><Clock size={14} /></span>
+                  <span className="grow" style={{ minWidth: 0 }}>
+                    <strong>{UNAVAILABLE}</strong>
+                    <span>It comes back once it has been reviewed</span>
+                  </span>
                 </button>
               </li>
             ))}
@@ -540,6 +568,7 @@ function RecordPanelBody({ record, summary, onOpen, source, action, needle }: { 
             ))}
           </ul>
         )}
+        {quarantinable.length > 0 && <button type="button" className="v-btn sm" style={{ alignSelf: 'flex-start' }} onClick={() => setQuarantining(true)}><ShieldOff size={15} aria-hidden />Quarantine a document</button>}
       </div>
       {details.length > 0 && (
         <div className="stack" style={{ gap: 10 }}>
@@ -560,6 +589,8 @@ function RecordPanelBody({ record, summary, onOpen, source, action, needle }: { 
         {liveEvents.length > 3 && <button type="button" className="v-btn quiet sm" style={{ alignSelf: 'flex-start' }} onClick={() => setMore((m) => !m)}>{more ? <ChevronUp size={14} aria-hidden /> : <ChevronDown size={14} aria-hidden />}{more ? 'Show less' : 'Show more'}</button>}
       </div>
       {!can('VIEW_PDF') && <Callout tone="warn" title="Viewing isn't assigned"><AlertTriangle size={0} aria-hidden />Your role can find this record but not open its documents.</Callout>}
+      {quarantining && <QuarantineDialog documents={quarantinable.map((d) => ({ id: d.id, label: `${d.kind} · received ${fmtShortDate(d.ingestedAt)}${d.pages > 0 ? ` · ${d.pages} page${d.pages === 1 ? '' : 's'}` : ''}` }))}
+        onClose={() => setQuarantining(false)} onDone={() => { setQuarantining(false); void reloadRecord() }} />}
       {levelOpen && <LevelDialog record={record} initialScope="record" onClose={() => setLevelOpen(false)}
         onChanged={(_, r) => {
           setLevelOpen(false)
