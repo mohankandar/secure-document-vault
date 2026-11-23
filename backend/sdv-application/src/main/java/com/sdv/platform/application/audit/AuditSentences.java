@@ -121,7 +121,6 @@ public final class AuditSentences {
             case "ACCESS_REQUEST_DECISION_REFUSED" -> w + " tried to decide a request; Vero refused it";
             case "ACCESS_REQUEST_EXPIRED" -> "A request " + requestWords(text(d, "kind"), null, f) + " expired";
             case "SENSITIVE_ACCESS_GRANT_USED" -> w + " used an approval to " + ("DOWNLOAD".equals(text(d, "kind")) ? "download " : "print ") + f;
-            case "ROLE_GROUP_MAPPING_CHANGED" -> "The sign-in groups for " + text(d, "role") + " changed";
             case "RETENTION_POLICY_UPDATED" -> d.path("indefinite").asBoolean(false) && d.path("indefinite").isBoolean()
                     ? w + " changed how long to keep new documents: keep them forever"
                     : w + " changed how long to keep new documents to " + ruleWords(d);
@@ -137,12 +136,8 @@ public final class AuditSentences {
             case "STORAGE_FOLDER_CHECKED" -> d.path("writable").isBoolean() && !d.path("writable").asBoolean()
                     ? w + " checked a folder for a new volume; Vero couldn't write there"
                     : w + " checked a folder for a new volume";
-            case "ENTERPRISE_IDENTITY_DRAFT_SAVED" -> w + " saved a draft of the sign-in settings";
-            case "ENTERPRISE_IDENTITY_CONNECTION_TESTED" -> w + " tested the sign-in settings";
-            case "ENTERPRISE_IDENTITY_CONNECTION_ACTIVATED" -> w + " switched on new sign-in settings";
-            case "ENTERPRISE_IDENTITY_CONNECTION_ACTIVATION_FAILED" -> w + " tried to switch on new sign-in settings, but it failed";
-            case "ENTERPRISE_IDENTITY_CONNECTION_ROLLED_BACK" -> w + " went back to earlier sign-in settings";
-            case "ENTERPRISE_IDENTITY_CONNECTION_ROLLBACK_FAILED" -> w + " tried to go back to earlier sign-in settings, but it failed";
+            case "ENTITY_ACTIVATED" -> w + " activated this entity";
+            case "ENTITY_SWITCHED" -> w + " switched to this entity";
             default -> w + " · " + humanize(e.action());
         };
     }

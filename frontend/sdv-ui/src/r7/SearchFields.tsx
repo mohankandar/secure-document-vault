@@ -149,7 +149,7 @@ export function SearchFields() {
     {sources.length > 1 && <label className="v-field sf-source"><span>Sending system</span>
       <select className="v-select" value={sourceId} onChange={(e) => setSourceId(e.target.value)}>{sources.map((s) => <option key={s.sourceId} value={s.sourceId}>{s.displayName}</option>)}</select>
     </label>}
-    {loading ? <Callout title="Loading">Reading the search fields…</Callout> : !error && fields.length === 0 ? <Callout title="No fields yet">Tenant IT adds the fields a sending system sends. They appear here once it has.</Callout> : fields.length > 0 && <>
+    {loading ? <Callout title="Loading">Reading the search fields…</Callout> : !error && fields.length === 0 ? <Callout title="No fields yet">IT adds the fields a sending system sends. They appear here once it has.</Callout> : fields.length > 0 && <>
       <section className="v-panel sf-title" aria-labelledby="sf-title-h"><div className="v-panel-body">
         <div className="stack grow" style={{ gap: 3 }}>
           <h2 id="sf-title-h" className="sf-title-h">Record title</h2>

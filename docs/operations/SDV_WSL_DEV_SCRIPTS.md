@@ -48,7 +48,7 @@ Use a separately approved manual unseal procedure when the Vault is sealed.
     bash Stop-SDV-WSL.sh
 
 Only backend and frontend processes created by this WSL launcher are stopped.
-PostgreSQL, Vault, Docker, LexaVault and SDV DEMO remain untouched.
+PostgreSQL, Vault, Docker, other products and SDV DEMO remain untouched.
 
 If existing app ports are occupied but the process is not tracked by the launcher,
 startup refuses to take over the processes. Stop the prior manually launched

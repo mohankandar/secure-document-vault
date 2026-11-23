@@ -1,8 +1,9 @@
 # Vero ingestion API, v1: the contract for sending systems
 
-A sending system (LexaVault, a scanning line, any producer) builds against this folder:
+A sending system (a redaction service, a scanning line, any producer) builds against this folder:
 
 - `sdv-ingestion-v1.openapi.json`: **the contract.** Every operation, header, field and answer, with the code and whether to send again. The build checks it against the running API (`IngestionContractTest`), so the two can't drift apart.
+- `sdv-ingestion-v1.profile.json`: Vero's sender profile (`platform-integration-profile/1`): the calls, sign-in and the rule for every answer, for platform-core apps that send to Vero by configuration. The build checks it against this contract and a running Vero (`SenderProfileContractTest`).
 - `schemas/sdv-ingestion-submission-v1.schema.json`: the same submission body as a portable JSON Schema, to check what you send.
 - `examples/`: a submission with two documents.
 - [error-codes.md](error-codes.md): every code, what it means, what to do, what support tells the customer.
@@ -21,32 +22,41 @@ A sending system (LexaVault, a scanning line, any producer) builds against this 
 2. `sourceSubmissionId` and `sourceDocumentId` are your stable IDs. `submissionId` and `documentId` are Vero's; treat them as opaque.
 3. A create is safe to send again: the same `sourceSubmissionId` with exactly the same body is answered 200 with the same submission. A different body is refused (409).
 4. An upload is safe to send again: the same `X-SDV-Source-Document-Id` (or `Idempotency-Key`) with the same file is answered 200 and stored once.
-5. Send only the metadata fields Tenant IT set up for your sending system, each as one JSON value (string, number, true or false).
-6. The tenant and the sending system come from your verified token, never from a header. `X-SDV-Tenant-Id` and `X-SDV-Source-Id` work only in a developer's local mode and are not part of this contract.
+5. Send only the metadata fields IT set up for your sending system, each as one JSON value (string, number, true or false).
+6. The entity and the sending system come from your verified token (its client binding), never from a header. `X-SDV-Tenant-Id` and `X-SDV-Source-Id` work only in a developer's local mode and are not part of this contract.
 7. Vero ignores submission fields it doesn't know. Send only documented fields: a later version may give an unknown name a meaning.
 
 ## Sender's guide
 
 ### 1. Set up the sending system
 
-In Vero, Tenant IT creates the sending system (Integrations) and its metadata fields. Note the **tenant ID** and the **sending system's ID** (both UUIDs).
+Since 1.1.0 a sending system needs a **standard client-credentials token and nothing else**: no custom claims. Vero finds the entity and the sending system from the token's verified client ID.
 
-In the customer's sign-in server, create one client for the sending system:
+1. **In Vero**, the IT Admin creates the sending system (Integrations) and its metadata fields. Its **key** is short and lower case (letters, digits, `.`, `_`, `-`; for example `redaction-service`).
+2. **In the customer's sign-in server**, create one client for the sending system:
 
-| Setting | Value |
+   | Setting | Value |
+   |---|---|
+   | Grant | Client credentials only (no browser sign-in, no user accounts) |
+   | Audience | The token's `aud` must contain Vero's audience (`SDV_AUTH_JWT_AUDIENCE`, for example `sdv-api`) |
+   | Groups | None. A bound client whose token carries groups is refused (`SDV-AUT-005`) |
+   | Token lifetime | Short, for example 5 minutes. If Vero sets `SDV_AUTH_JWT_MAX_TOKEN_LIFETIME_SECONDS`, at most that |
+
+3. **With Vero's setup command**, IT binds the client to its entity and sending system: one line in the client-binding file (`client_id,entity_slot,source,description`, install guide "Setup"), then `setup apply`. The client ID is copied exactly as the sign-in server shows it; capitals matter. The file holds client IDs only, never a secret.
+
+Vero reads the client ID from the token's `azp`, `client_id` or `cid` claim (Keycloak sends `azp` and `client_id`, Okta `cid`; when more than one is present they must agree). The token's issuer must be Vero's `SDV_AUTH_JWT_ISSUER`, and the customer's login connection for that issuer must be active.
+
+**Optional claims, which must match.** A token may still carry `sdv_entity_id` (the entity's UUID), `sdv_source_id` (the sending system's UUID) or `sdv_source_key` (its key). Vero never uses them to find anything; when one is present and is not what the binding says, the token is refused (`SDV-AUT-012`). The 1.0.0 claim `sdv_tenant_id` is ignored.
+
+| Answer | Means |
 |---|---|
-| Grant | Client credentials only (no browser sign-in, no user accounts) |
-| Audience | The token's `aud` must contain Vero's audience (`SDV_AUTH_JWT_AUDIENCE`, for example `sdv-api`) |
-| Claim: tenant ID | `sdv_tenant_id` (or the name in `SDV_AUTH_JWT_TENANT_CLAIM`) = the tenant ID, as a string |
-| Claim: source ID | `sdv_source_id` (or the name in `SDV_AUTH_JWT_SOURCE_ID_CLAIM`) = the sending system's ID, as a string |
-| Groups | None. A token with both the source-ID claim and the groups claim is refused (`SDV-AUT-005`) |
-| Token lifetime | Short, for example 5 minutes. If Vero sets `SDV_AUTH_JWT_MAX_TOKEN_LIFETIME_SECONDS`, at most that |
+| `401 SDV-AUT-011` | The client ID has no active binding, or its entity or the login connection isn't active |
+| `401 SDV-AUT-012` | An optional entity or source claim isn't the binding's |
+| `401 SDV-AUT-013` | The binding names a sending system the entity doesn't have in Vero |
 
-The token's issuer must be Vero's `SDV_AUTH_JWT_ISSUER`; `sub` is the client's own ID. The source-ID claim is what makes a token a sending system's: without it Vero reads the token as a person's sign-in and refuses it on these addresses (`SDV-AUT-006`, `SDV-AUT-007` or `SDV-AUT-002`). The OpenAPI file lists every claim and what each missing or wrong one returns (`bearerAuth`, `x-sdv-required-claims`).
+The OpenAPI file lists every claim and what each missing or wrong one returns (`bearerAuth`, `x-sdv-required-claims`, `x-sdv-optional-claims`).
 
-Report 0040 (`docs/work/0040-report.md`) shows this set up in Keycloak, step by step.
-
-**Planned change: client-ID lookup.** Vero will find the organisation and the sending system from the verified client ID (platform-core `MachineEntityBindings`), **before the first customer install** (task 0041). Until then, the `sdv_tenant_id` and `sdv_source_id` claims are how Vero finds them, and they keep working. After the change, tokens need only the standard audience and subject. Tenant or source claims may still be sent, but if present they must match the binding, or the token is refused. At Vero's switch-over to platform-core, the "tenant" claim will be renamed "entity" (codes `ENT-…`). For a sender this is a relaxation, not a break: a token that works today keeps working as long as its claims match the binding.
+**"Tenant" is now "entity".** An entity is a legally separate part of the customer (in the licence: an entity slot). Vero's answers, codes and this guide say "entity"; nothing in a request changes.
 
 ### 2. Before sending: is Vero ready?
 
@@ -67,7 +77,7 @@ Get a token (client credentials; Keycloak shown, any OAuth2 server works the sam
 POST https://login.example.com/realms/acme/protocol/openid-connect/token
 Content-Type: application/x-www-form-urlencoded
 
-grant_type=client_credentials&client_id=lexavault-intake&client_secret=<from your secret store>
+grant_type=client_credentials&client_id=redaction-service-intake&client_secret=<from your secret store>
 ```
 
 The answer's `access_token` goes in `Authorization: Bearer <token>` on every call below.
@@ -104,7 +114,7 @@ X-SDV-Sensitivity-Level: CONFIDENTIAL
 
 ### 4. Reading the answer
 
-Every error has one body: `{"code", "message", "reference", "timestamp"}`. Read the `code`, not the message. The `reference` is the `X-Correlation-Id` answer header; give it to support. In the OpenAPI file each answer lists its codes (`x-sdv-codes`), and each status-and-code pair has a rule for sending again (`x-sdv-answers`):
+Every error has one body: `{"code", "message", "reference", "timestamp"}`. Read the `code`, not the message. The `reference` is the `X-Correlation-Id` answer header; give it to support. In the OpenAPI file each answer lists its codes (`x-sdv-codes`, and the same list as `x-error-codes` for platform-core's contract kit), and each status-and-code pair has a rule for sending again (`x-sdv-answers`):
 
 | Rule | What to do |
 |---|---|
@@ -133,7 +143,7 @@ The answers a sender can get:
 | 500 | `SDV-SYS-016`, `SDV-INT-010` | after-fix |
 | 503 | `SDV-SYS-018`: **busy**, with `Retry-After` (seconds) | yes, after the header's wait |
 | 503 | `SDV-SYS-001`, `SDV-SYS-002`, `SDV-SYS-014`, `SDV-AUT-004`, `SDV-STO-001`: **unavailable**, no `Retry-After` | yes, with back-off |
-| 503 | `SDV-STO-004` (upload only): storage for this tenant isn't available; the installer must fix it. No `Retry-After` | after-fix |
+| 503 | `SDV-STO-004` (upload only): storage for this entity isn't available; the installer must fix it. No `Retry-After` | after-fix |
 
 **The busy rule.** Vero never sends 429. When it is too busy to take a request (today: no database connection is free for it), it answers `503 SDV-SYS-018` with a `Retry-After` header in seconds; wait that long and send the same request again. It sends `Retry-After` only with the busy code. Every other 503 means Vero is unavailable: back off and check readiness. Read the header rather than relying on its number (5 by default; the installer can set it from 1 to 300). The OpenAPI file says which operation gives which code.
 
@@ -191,6 +201,18 @@ The record is the same grouping as for record levels (above): the submissions of
 The sample under `samples/third-party-producer/` demonstrates the contract with raw HTTP calls only.
 
 ## Changelog
+
+### 1.1.0 (task 0041, 2026-11-22). Release tag: `sdv-ingestion-v1.1.0`
+
+Vero's identity moved to platform-core. Tagged `sdv-ingestion-v1.1.0` on the merge commit.
+
+- **The client ID finds the entity and the sending system.** A standard client-credentials token is enough; no custom claim is needed. IT binds each client ID to an entity and a sending system with Vero's setup command (client-binding file). Vero reads the client ID from `azp`, `client_id` or `cid`.
+- **Entity and source claims are optional and must match.** `sdv_entity_id`, `sdv_source_id` and `sdv_source_key` may be sent; when one doesn't match the binding the token is refused, `401 SDV-AUT-012`. The 1.0.0 claim `sdv_tenant_id` is ignored.
+- **New codes:** `401 SDV-AUT-011` (no active client binding, or its entity or the login connection isn't active), `401 SDV-AUT-012` (claim not the binding's), `401 SDV-AUT-013` (the binding's sending system isn't in Vero). All three are `after-fix` and are recorded as unidentified intake attempts.
+- **`SDV-AUT-005`** no longer covers a missing tenant or source claim; it now covers client-ID claims that disagree and a bound client whose token also carries groups.
+- **"Tenant" is now "entity"** in answers and descriptions. Nothing in a request changes.
+- **Sender profile:** `sdv-ingestion-v1.profile.json` (`platform-integration-profile/1`, version 1.1.0), checked by the build against this file and a running Vero. Every answer also lists its codes as `x-error-codes` (the same list as `x-sdv-codes`), which platform-core's contract kit reads.
+- For a 1.0.0 sender this is a relaxation once its client is bound: the old claims can stay as long as they match. A client that is not bound is refused (`SDV-AUT-011`), where 1.0.0 trusted the claims.
 
 ### 1.0.0 (task 0040, 2026-11-22). Release tag: `sdv-ingestion-v1.0.0`
 

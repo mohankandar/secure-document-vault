@@ -20,7 +20,7 @@ function Invoke-Step {
     }
 }
 
-Write-Host "SDV V1.0.0 build - Units 0-25 frozen / Enterprise Identity Admin R1 Checkpoint A / migration 014"
+Write-Host "Vero build - identity on platform-core (task 0041) / migration 035"
 
 # java -version writes its version text to STDERR. Windows PowerShell 5.1
 # can promote native STDERR to NativeCommandError when ErrorActionPreference=Stop,

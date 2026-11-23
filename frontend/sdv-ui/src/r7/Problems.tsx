@@ -5,7 +5,7 @@ import { Badge, Callout, Drawer, TechDetails, fmtDateTime, fmtRel, levelWords } 
 import { opsDetail, type OpsDetail, type UnidentifiedIntakeAttempt } from './liveApi'
 import { problemNote, problemSentences, type ProblemFacts, type ProblemKind } from './problemWords'
 
-// Task 0011 Part A: one read-only list of problems for Platform operations and Tenant IT. Nothing can be fixed here:
+// Task 0011 Part A: one read-only list of problems for Platform operations and IT. Nothing can be fixed here:
 // recovery is the sending system sending again, so each problem says who to ask.
 
 type Problem = ProblemFacts & { id: string; tech: [string, string][] }

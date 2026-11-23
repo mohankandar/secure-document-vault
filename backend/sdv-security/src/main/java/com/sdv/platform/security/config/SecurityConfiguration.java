@@ -4,8 +4,9 @@ import com.sdv.platform.domain.error.SdvErrorCode;
 import com.sdv.platform.domain.error.StartupFailure;
 import com.sdv.platform.application.access.ActiveTenantCache;
 import com.sdv.platform.security.auth.ActiveTenantFilter;
+import com.sdv.platform.security.auth.EntityChoiceFilter;
 import com.sdv.platform.security.auth.LocalHeaderAuthenticationFilter;
-import com.sdv.platform.security.auth.enterprise.EnterpriseJwtAuthenticationConverter;
+import com.sdv.platform.security.auth.oidc.OidcJwtAuthenticationConverter;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
@@ -24,7 +25,7 @@ public class SecurityConfiguration {
     @Bean
     SecurityFilterChain sdvSecurityFilterChain(HttpSecurity http,
                                                ObjectProvider<LocalHeaderAuthenticationFilter> localFilterProvider,
-                                               ObjectProvider<EnterpriseJwtAuthenticationConverter> enterpriseJwtConverterProvider,
+                                               ObjectProvider<OidcJwtAuthenticationConverter> oidcJwtConverterProvider,
                                                ObjectProvider<ActiveTenantCache> tenantCheckProvider,
                                                @Value("${sdv.auth.mode:disabled}") String authMode) throws Exception {
         String mode = authMode == null ? "disabled" : authMode.trim().toLowerCase(java.util.Locale.ROOT);
@@ -35,6 +36,8 @@ public class SecurityConfiguration {
             throw new StartupFailure(SdvErrorCode.SYS_005, "The tenant check for every request is not available.");
         }
         if (tenantCheck != null) http.addFilterAfter(new ActiveTenantFilter(tenantCheck), AnonymousAuthenticationFilter.class);
+        // Task 0041: a person who has not chosen an entity reaches only the entity list and activation (SDV-AUT-010).
+        http.addFilterAfter(new EntityChoiceFilter(), AnonymousAuthenticationFilter.class);
         // Task 0038: every refused sign-in gets a coded answer (SignInAnswers), in every mode.
         AuthenticationEntryPoint entryPoint = SignInAnswers.entryPoint(mode);
         http
@@ -60,9 +63,9 @@ public class SecurityConfiguration {
                 http.addFilterBefore(localFilter, AnonymousAuthenticationFilter.class);
             }
             case "enterprise-jwt" -> {
-                EnterpriseJwtAuthenticationConverter converter = enterpriseJwtConverterProvider.getIfAvailable();
+                OidcJwtAuthenticationConverter converter = oidcJwtConverterProvider.getIfAvailable();
                 if (converter == null) {
-                    throw new StartupFailure(SdvErrorCode.SYS_005, "Enterprise JWT authentication is not configured.");
+                    throw new StartupFailure(SdvErrorCode.SYS_005, "OIDC sign-in (enterprise-jwt) is not configured.");
                 }
                 http.oauth2ResourceServer(oauth2 -> oauth2
                         .authenticationEntryPoint(entryPoint)

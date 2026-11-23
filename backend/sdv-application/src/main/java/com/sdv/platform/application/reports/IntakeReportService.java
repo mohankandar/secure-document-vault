@@ -63,7 +63,7 @@ import java.util.UUID;
  *       task 0039: also the ones Spring refused before Vero's code ran (SDV-SYS-015).</li>
  *   <li><b>Failed</b>: documents stored in the range whose finalization failed (PROCESSING_FAILED) and, task 0039,
  *       intake requests that failed on Vero's side (INTAKE_FAILED, a 5xx), with the code the sender got.</li>
- *   <li>Attempts with no known sending system (a failed sign-in, for example) are not here: Tenant IT sees them in
+ *   <li>Attempts with no known sending system (a failed sign-in, for example) are not here: IT sees them in
  *       Problems (unidentified intake attempts).</li>
  *   <li><b>Contracts</b>: distinct primary identifier values (normalized), so a contract sent by two sending systems
  *       counts once in the overall total. A delivery without one is a record on its own. <b>New</b>: no submission

@@ -62,7 +62,7 @@ class IntakeReportPostgresTest {
     private static final UUID T1 = UUID.fromString("10000000-0000-0000-0000-0000000000f1");
     private static final UUID S0 = UUID.fromString("20000000-0000-0000-0000-0000000000f0");
     private static final UUID S0B = UUID.fromString("20000000-0000-0000-0000-0000000000f4");
-    private static final UUID LV = UUID.fromString("20000000-0000-0000-0000-0000000000f1");
+    private static final UUID RS = UUID.fromString("20000000-0000-0000-0000-0000000000f1");
     private static final UUID LOS = UUID.fromString("20000000-0000-0000-0000-0000000000f2");
     private static final UUID FIRST = UUID.fromString("30000000-0000-0000-0000-0000000000f0");
     private static final UUID AGAIN = UUID.fromString("30000000-0000-0000-0000-0000000000f1");
@@ -188,7 +188,7 @@ class IntakeReportPostgresTest {
     }
 
     private void uncorrectedCopy() throws Exception {
-        source(T0, S0, "loans", "LexaVault");
+        source(T0, S0, "loans", "Redaction Service");
         source(T0, S0B, "cards", "Card system");
         submission(T0, S0, FIRST, "first", 1, now.minus(2, ChronoUnit.DAYS).toString(), CONTRACT);
         submission(T0, S0, AGAIN, "again", 2, now.minus(1, ChronoUnit.HOURS).toString(), CONTRACT);
@@ -237,7 +237,7 @@ class IntakeReportPostgresTest {
         StewardNoticeService.Notice notice = forDee.notices().get(0);
         assertEquals(CONTRACT, notice.primaryIdentifier());
         assertEquals("Contract number", notice.primaryIdentifierLabel());
-        assertEquals("LexaVault", notice.sendingSystem());
+        assertEquals("Redaction Service", notice.sendingSystem());
         assertEquals(IntakeReportService.NOTICE_MESSAGE, notice.message());
         assertEquals(0, stewards.unread(T1, "dee-steward").unread(), "tenants apart");
         // Each steward marks their own: Dee's mark leaves it unread for Rae, and a second mark keeps Dee's first time.
@@ -268,7 +268,7 @@ class IntakeReportPostgresTest {
         assertEquals(0, today.totals().documents());
         assertEquals("INSTALL_DEFAULT", today.timeZoneSource());
         String csv = new String(reports.export(T0, "admin", "corr-csv", yesterday, tomorrow, S0.toString()).csv(), StandardCharsets.UTF_8);
-        assertTrue(csv.contains("\"" + ORIGINAL_SHA + "\",\"again\",\"LexaVault\",\"" + CONTRACT + "\",\"4\","), csv);
+        assertTrue(csv.contains("\"" + ORIGINAL_SHA + "\",\"again\",\"Redaction Service\",\"" + CONTRACT + "\",\"4\","), csv);
         assertTrue(csv.contains(",\"DUPLICATE_ALREADY_STORED\","), csv);
 
         // The same file from another sending system is another scope: neither lookup finds anything for it, so intake
@@ -281,23 +281,23 @@ class IntakeReportPostgresTest {
 
     /** Friday 20 November 2026 in New York: 05:00 UTC on the 20th to 05:00 UTC on the 21st. */
     private void seededDay() {
-        source(T1, LV, "lexavault", "LexaVault");
+        source(T1, RS, "redaction-service", "Redaction Service");
         source(T1, LOS, "los", "Loan Origination System");
         UUID a1 = UUID.randomUUID(), a2 = UUID.randomUUID(), b1 = UUID.randomUUID(), dupTarget = UUID.randomUUID();
-        submission(T1, LV, a1, "req-a1", 9, "2026-11-20T14:00:00Z", "300000000001");
-        submission(T1, LV, a2, "req-a2", 9, "2026-11-19T20:00:00Z", "300000000002");
+        submission(T1, RS, a1, "req-a1", 9, "2026-11-20T14:00:00Z", "300000000001");
+        submission(T1, RS, a2, "req-a2", 9, "2026-11-19T20:00:00Z", "300000000002");
         submission(T1, LOS, b1, "=req-b1", 9, "2026-11-20T17:00:00Z", "300000000001");
-        document(T1, LV, a1, dupTarget, "1".repeat(64), 5, "2026-11-20T14:01:00Z", "AVAILABLE");
-        document(T1, LV, a1, UUID.randomUUID(), "2".repeat(64), 7, "2026-11-20T14:02:00Z", "AVAILABLE");
-        document(T1, LV, a1, UUID.randomUUID(), "3".repeat(64), null, "2026-11-20T14:04:00Z", "PROCESSING_FAILED");
-        document(T1, LV, a1, UUID.randomUUID(), "4".repeat(64), 1, "2026-11-21T04:59:00Z", "AVAILABLE");
-        document(T1, LV, a1, UUID.randomUUID(), "5".repeat(64), 9, "2026-11-20T04:59:59Z", "AVAILABLE");
-        document(T1, LV, a2, UUID.randomUUID(), "6".repeat(64), 3, "2026-11-20T16:00:00Z", "AVAILABLE");
+        document(T1, RS, a1, dupTarget, "1".repeat(64), 5, "2026-11-20T14:01:00Z", "AVAILABLE");
+        document(T1, RS, a1, UUID.randomUUID(), "2".repeat(64), 7, "2026-11-20T14:02:00Z", "AVAILABLE");
+        document(T1, RS, a1, UUID.randomUUID(), "3".repeat(64), null, "2026-11-20T14:04:00Z", "PROCESSING_FAILED");
+        document(T1, RS, a1, UUID.randomUUID(), "4".repeat(64), 1, "2026-11-21T04:59:00Z", "AVAILABLE");
+        document(T1, RS, a1, UUID.randomUUID(), "5".repeat(64), 9, "2026-11-20T04:59:59Z", "AVAILABLE");
+        document(T1, RS, a2, UUID.randomUUID(), "6".repeat(64), 3, "2026-11-20T16:00:00Z", "AVAILABLE");
         document(T1, LOS, b1, UUID.randomUUID(), "7".repeat(64), 4, "2026-11-20T17:01:00Z", "AVAILABLE");
         sql("insert into document_duplicate_receipts(duplicate_id, tenant_id, source_id, submission_id, source_document_id, existing_document_id, "
                 + "content_sha256, content_size_bytes, sent_level, level_outcome, received_at) values ('" + UUID.randomUUID() + "', '" + T1 + "', '"
-                + LV + "', '" + a1 + "', 'dup-1', '" + dupTarget + "', '" + "1".repeat(64) + "', 100, 'STANDARD', 'KEPT', '2026-11-20T14:03:00Z')");
-        refusal(T1, LV, a2, null, "SDV-SEN-001", "2026-11-20T16:05:00Z");
+                + RS + "', '" + a1 + "', 'dup-1', '" + dupTarget + "', '" + "1".repeat(64) + "', 100, 'STANDARD', 'KEPT', '2026-11-20T14:03:00Z')");
+        refusal(T1, RS, a2, null, "SDV-SEN-001", "2026-11-20T16:05:00Z");
         refusal(T1, LOS, null, "req-bad", "SDV-SEN-006", "2026-11-20T18:00:00Z");
         // A refusal naming another sending system's submission is not attributed to it.
         refusal(T1, LOS, a1, null, "NOT_FOUND", "2026-11-20T18:30:00Z");
@@ -322,10 +322,10 @@ class IntakeReportPostgresTest {
         assertEquals(1, t.updatedContracts());
         assertEquals(3, t.refused());
         assertEquals(1, t.failed());
-        IntakeReportService.SystemBlock lv = r.systems().stream().filter(b -> b.sourceId().equals(LV)).findFirst().orElseThrow();
-        assertEquals(new IntakeReportService.SystemTotals(2, 2, 4, 16, 1, 1, 1), lv.totals());
-        assertEquals("req-a1", lv.deliveries().get(0).requestId());
-        assertEquals("2026-11-20T09:00", lv.deliveries().get(0).receivedLocal());
+        IntakeReportService.SystemBlock rs = r.systems().stream().filter(b -> b.sourceId().equals(RS)).findFirst().orElseThrow();
+        assertEquals(new IntakeReportService.SystemTotals(2, 2, 4, 16, 1, 1, 1), rs.totals());
+        assertEquals("req-a1", rs.deliveries().get(0).requestId());
+        assertEquals("2026-11-20T09:00", rs.deliveries().get(0).receivedLocal());
         IntakeReportService.SystemBlock los = r.systems().stream().filter(b -> b.sourceId().equals(LOS)).findFirst().orElseThrow();
         assertEquals(3, los.totals().deliveries());
         assertEquals(1, los.totals().contracts());
@@ -348,7 +348,7 @@ class IntakeReportPostgresTest {
         IntakeReportService.Export export = reports.export(T1, "priya", "corr-export", null, null, null);
         String csv = new String(export.csv(), StandardCharsets.UTF_8);
         assertEquals(10, export.rowCount(), "6 documents (one failed), 1 duplicate, 3 refusals");
-        assertTrue(csv.contains("\"" + "1".repeat(64) + "\",\"req-a1\",\"LexaVault\",\"300000000001\",\"5\",\"2026-11-20T09:01-05:00\",\"2026-11-20T14:01:00Z\",\"ACCEPTED\",\"\""), csv);
+        assertTrue(csv.contains("\"" + "1".repeat(64) + "\",\"req-a1\",\"Redaction Service\",\"300000000001\",\"5\",\"2026-11-20T09:01-05:00\",\"2026-11-20T14:01:00Z\",\"ACCEPTED\",\"\""), csv);
         assertTrue(csv.contains(",\"FAILED\","));
         assertTrue(csv.contains("\"'=req-b1\""), "formula guard");
         assertTrue(csv.contains("\"\",\"req-bad\",\"Loan Origination System\",\"\",\"\",\"2026-11-20T13:00-05:00\",\"2026-11-20T18:00:00Z\",\"REFUSED\",\"SDV-SEN-006\""), csv);

@@ -30,7 +30,7 @@ export const ROLES: RoleDef[] = [
   { id: 'steward', code: 'DOCUMENT_STEWARD', areas: ['home', 'workspace'] },
   { id: 'restricted', code: 'RESTRICTED_STEWARD', areas: ['home', 'workspace'] },
   { id: 'businessAdmin', code: 'BUSINESS_ADMIN', areas: ['governance'] },
-  { id: 'tenantIt', code: 'TENANT_IT_ADMIN', areas: ['tenant'] },
+  { id: 'tenantIt', code: 'IT_ADMIN', areas: ['tenant'] },
   { id: 'platform', code: 'PLATFORM_OPERATIONS_ADMIN', areas: ['operations'] },
 ]
 

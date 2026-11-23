@@ -13,8 +13,8 @@ $Base = 'http://localhost:8280'
 $IssuerPort = 18081
 $Issuer = "http://127.0.0.1:$IssuerPort"
 $IssuerSource = Join-Path $Root 'tools\Unit21JwtTestIssuer.java'
-$Tenant = '11111111-1111-1111-1111-111111111111'
-$OtherTenant = '22222222-2222-2222-2222-222222222222'
+$Tenant = 'bd960ee9-9d54-5053-9958-92aaa54893a6'
+$OtherTenant = '9b233c00-fe6e-582c-a9de-c1fa46f87254'
 $Suffix = ([guid]::NewGuid().ToString('N')).Substring(0, 10)
 $SourceId = $null
 $IssuerProcess = $null
@@ -103,7 +103,7 @@ try {
     $localAdmin = @{
         'X-SDV-Tenant-Id' = $Tenant
         'X-SDV-Subject' = 'unit21-local-admin'
-        'X-SDV-Roles' = 'TENANT_IT_ADMIN,BUSINESS_ADMIN'
+        'X-SDV-Roles' = 'IT_ADMIN,BUSINESS_ADMIN'
         'X-Correlation-Id' = "unit21-$Suffix"
     }
     $session = Invoke-RestMethod -Uri "$Base/api/v1/session" -Headers $localAdmin -TimeoutSec 5

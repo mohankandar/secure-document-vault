@@ -96,7 +96,7 @@ class StorageFolderCheckTest {
 
     @Test
     void aNewFolderIsWritableAndNothingIsLeftBehind() throws IOException {
-        signIn(SdvRole.TENANT_IT_ADMIN);
+        signIn(SdvRole.IT_ADMIN);
         var result = check(temp.resolve("volumes").resolve("primary-b"));
         assertTrue(result.writable());
         assertNull(result.problem());
@@ -108,7 +108,7 @@ class StorageFolderCheckTest {
 
     @Test
     void anExistingFolderKeepsItsContents() throws IOException {
-        signIn(SdvRole.TENANT_IT_ADMIN);
+        signIn(SdvRole.IT_ADMIN);
         Path folder = Files.createDirectories(temp.resolve("existing"));
         Files.writeString(folder.resolve("keep.txt"), "kept");
         assertTrue(check(folder).writable());
@@ -118,7 +118,7 @@ class StorageFolderCheckTest {
 
     @Test
     void anUnwritableFolderIsReportedPlainly() throws IOException {
-        signIn(SdvRole.TENANT_IT_ADMIN);
+        signIn(SdvRole.IT_ADMIN);
         Path file = Files.writeString(temp.resolve("not-a-folder.txt"), "x");
         var result = check(file.resolve("volume"));
         assertFalse(result.writable());
@@ -129,7 +129,7 @@ class StorageFolderCheckTest {
 
     @Test
     void aFolderOverlappingAnotherVolumeIsRefusedWithoutWriting() {
-        signIn(SdvRole.TENANT_IT_ADMIN);
+        signIn(SdvRole.IT_ADMIN);
         when(volumes.findConfiguredRoots(anyString())).thenReturn(List.of(
                 new StorageVolumeRepository.ConfiguredRoot(UUID.randomUUID(), temp.toAbsolutePath().normalize().toString())));
         var result = check(temp.resolve("inside"));

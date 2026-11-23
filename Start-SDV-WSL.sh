@@ -139,4 +139,4 @@ done
 echo "SDV DEV READY: http://localhost:5183"
 echo "Backend: http://localhost:8280/actuator/health"
 echo "Stop: bash Stop-SDV-WSL.sh"
-echo "PostgreSQL, persistent Vault, LexaVault and DEMO remain independently managed."
+echo "PostgreSQL, persistent Vault, other products and DEMO remain independently managed."

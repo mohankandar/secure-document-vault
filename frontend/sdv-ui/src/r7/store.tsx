@@ -49,7 +49,7 @@ const AREA_ORDER: AreaId[] = ['home', 'workspace', 'governance', 'tenant', 'oper
 
 /** The role the session names first, in this order; Business user when it names none of them. */
 const primaryRole = (roles: string[]): RoleId =>
-  roles.includes('PLATFORM_OPERATIONS_ADMIN') ? 'platform' : roles.includes('TENANT_IT_ADMIN') ? 'tenantIt' : roles.includes('BUSINESS_ADMIN') ? 'businessAdmin' : roles.includes('RESTRICTED_STEWARD') ? 'restricted' : roles.includes('DOCUMENT_STEWARD') ? 'steward' : 'business'
+  roles.includes('PLATFORM_OPERATIONS_ADMIN') ? 'platform' : roles.includes('IT_ADMIN') ? 'tenantIt' : roles.includes('BUSINESS_ADMIN') ? 'businessAdmin' : roles.includes('RESTRICTED_STEWARD') ? 'restricted' : roles.includes('DOCUMENT_STEWARD') ? 'steward' : 'business'
 
 let toastSeq = 0
 

@@ -133,7 +133,7 @@ function lastRunWords(r: OpsRetention): Cleanup {
 
 // ---- Storage, read-only for Platform operations ----
 
-/** The operations summary's volume in the Tenant IT shape, so both screens name roles the same way. */
+/** The operations summary's volume in the IT shape, so both screens name roles the same way. */
 export function asLiveVolume(v: OpsDetail['storageVolumes'][number]): LiveStorageVolume {
   return {
     volume: { volumeId: v.volumeId, displayName: v.displayName, rootPath: v.rootPath ?? '', state: v.state, priority: v.priority ?? 0, warningPercent: v.warningPercent ?? 0, stopWritePercent: v.stopWritePercent ?? 0 },
@@ -142,7 +142,7 @@ export function asLiveVolume(v: OpsDetail['storageVolumes'][number]): LiveStorag
   }
 }
 
-/** A volume Tenant IT set offline, read only or to be emptied is on purpose: never counted as needing attention. */
+/** A volume IT set offline, read only or to be emptied is on purpose: never counted as needing attention. */
 export const setOnPurpose = (state: string) => state === 'OFFLINE' || state === 'READ_ONLY' || state === 'DRAINING'
 /** Only unexpected states count: a volume in use or standby that is nearly full, full, or can't be reached. */
 export const volumeNeedsAttention = (v: LiveStorageVolume) => v.volume.state === 'ACTIVE'
@@ -173,10 +173,10 @@ export function storageWhatToDo(items: LiveStorageVolume[]): string[] {
   const { next } = storageRoles(items)
   return items.filter(volumeNeedsAttention).map((v) => {
     const name = v.volume.displayName, then = next(v)?.volume.displayName, stop = v.volume.stopWritePercent
-    if (v.observationError) return `Vero can’t reach the folder of ${name}. Ask the customer’s Tenant IT to check the folder and its disk.${then ? ` Meanwhile Vero stores new documents on ${then}.` : ' Until then Vero can’t store new documents.'}`
-    if (v.stopWriteThresholdReached) return `${name} is full. Ask the customer’s Tenant IT to add space or add a volume.${then ? ` Vero now stores new documents on ${then}.` : ' Until then Vero can’t store new documents.'}`
-    if (!v.capacity?.writable) return `Vero can’t write to the folder of ${name}. Ask the customer’s Tenant IT to check its permissions.${then ? ` Meanwhile Vero stores new documents on ${then}.` : ''}`
-    return `Ask the customer’s Tenant IT to add space to ${name} or add a volume.${then ? ` At ${stop}% Vero switches new documents to ${then} by itself.` : ` At ${stop}% Vero stops storing new documents.`}`
+    if (v.observationError) return `Vero can’t reach the folder of ${name}. Ask the customer’s IT to check the folder and its disk.${then ? ` Meanwhile Vero stores new documents on ${then}.` : ' Until then Vero can’t store new documents.'}`
+    if (v.stopWriteThresholdReached) return `${name} is full. Ask the customer’s IT to add space or add a volume.${then ? ` Vero now stores new documents on ${then}.` : ' Until then Vero can’t store new documents.'}`
+    if (!v.capacity?.writable) return `Vero can’t write to the folder of ${name}. Ask the customer’s IT to check its permissions.${then ? ` Meanwhile Vero stores new documents on ${then}.` : ''}`
+    return `Ask the customer’s IT to add space to ${name} or add a volume.${then ? ` At ${stop}% Vero switches new documents to ${then} by itself.` : ` At ${stop}% Vero stops storing new documents.`}`
   })
 }
 

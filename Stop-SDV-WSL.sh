@@ -29,4 +29,4 @@ stop_owned() {
 }
 stop_owned frontend
 stop_owned backend
-echo "Vault, PostgreSQL, Docker, LexaVault and SDV DEMO untouched."
+echo "Vault, PostgreSQL, Docker, other products and SDV DEMO untouched."

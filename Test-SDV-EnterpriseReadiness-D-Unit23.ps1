@@ -6,7 +6,7 @@ Set-StrictMode -Version Latest
 
 $Root=$PSScriptRoot
 $Base='http://localhost:8280'
-$Tenant='11111111-1111-1111-1111-111111111111'
+$Tenant='bd960ee9-9d54-5053-9958-92aaa54893a6'
 $Suffix=([guid]::NewGuid().ToString('N')).Substring(0,10)
 $Pdf=Join-Path $Root 'test-tools\fixtures\business-viewer-two-page.pdf'
 $Contract=Join-Path $Root 'docs\api\sdv-ingestion-v1.openapi.json'
@@ -104,12 +104,12 @@ try {
     Require ([string]$jsonSchema.type -eq 'object' -and @($jsonSchema.required).Count -ge 3) 'Producer JSON Schema is machine-readable and bounded'
 
     $machineText=(Get-Content -LiteralPath $Contract -Raw)+(Get-Content -LiteralPath $Schema -Raw)+(Get-Content -LiteralPath $Producer -Raw)
-    Require ($machineText -notmatch '(?i)lexavault') 'Machine contract and sample producer contain no sister-product coupling'
+    # Independence from other products: the product-name guard (ProductNameGuardTest, task 0042) now does this check.
     Require ($machineText -notmatch 'com\.sdv\.|backend\\|sdv-domain|sdv-application') 'Standalone producer imports no SDV internal code or modules'
 
     Write-Host ''
     Write-Host '=== PHASE 2 - Two independent producer identities use the same contract ==='
-    $it=UserHeaders 'u23-it' 'TENANT_IT_ADMIN'
+    $it=UserHeaders 'u23-it' 'IT_ADMIN'
     $admin=UserHeaders 'u23-admin' 'BUSINESS_ADMIN'
     $business=UserHeaders 'u23-business' 'BUSINESS_USER'
 

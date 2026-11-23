@@ -8,7 +8,7 @@ import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-/** Task 0025, 3a: the generic rule, with plain text role names (as LexaVault might use it), not Vero's roles. */
+/** Task 0025, 3a: the generic rule, with plain text role names, not Vero's roles. */
 class RoleSeparationPolicyTest {
     private final RoleSeparationPolicy<String> policy = new RoleSeparationPolicy<>(List.of(
             new RoleSeparationRule<>("AUDITOR_NOT_APPROVER", Set.of("auditor"), Set.of("approver", "owner")),

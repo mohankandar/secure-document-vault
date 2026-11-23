@@ -1,18 +1,32 @@
 [CmdletBinding()]
 param(
-    [switch]$WithVault,
     [string]$IssuerUri = 'http://localhost:8181/realms/document-platform-local',
     [string]$JwkSetUri = '',
     [string]$Audience = 'sdv-api',
-    [string]$TenantId = '11111111-1111-1111-1111-111111111111',
+    # Task 0041: with the issuer and the audience, the provider ID finds the customer's login connection. It is the
+    # sign-in file's "providerId" (dev\setup\signin-vero-demo.json: customer-oidc).
+    [string]$ProviderId = 'customer-oidc',
     [string]$WebClientId = 'sdv-web',
-    [string]$WebRedirectUri = 'http://localhost:5183/'
+    [string]$WebRedirectUri = 'http://localhost:5183/',
+    # Task 0041 (Part B 6): the persistent sdv-vault, as Start-SDV-Local.ps1 uses it. Only the path of the restricted
+    # application token file is passed on, never the token. Default: SDV_VAULT_TOKEN_FILE, then ..\secrets\sdv-app.token
+    # beside (never inside) the repository.
+    [string]$VaultTokenFile = ''
 )
+
+# Local OIDC check (task 0041): Vero with OIDC sign-in against the local development login server (lexa-keycloak).
+# Who may sign in, with which role in which entity, and which client may send for which entity, come from
+# platform-core's idn_ tables: run .\Seed-SDV-Canvas-Demo.ps1 (or .\setup.ps1 with the dev\setup files) first. No
+# group list, entity ID or tenant ID is set here any more.
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
 $Root = $PSScriptRoot
+$VaultUrl = 'http://127.0.0.1:8200'
+if (-not $VaultTokenFile) {
+    $VaultTokenFile = if ($env:SDV_VAULT_TOKEN_FILE) { $env:SDV_VAULT_TOKEN_FILE } else { Join-Path (Split-Path -Parent $Root) 'secrets\sdv-app.token' }
+}
 $Runtime = Join-Path $Root '.runtime'
 $BackendPid = Join-Path $Runtime 'backend.pid'
 $FrontendPid = Join-Path $Runtime 'frontend.pid'
@@ -22,8 +36,7 @@ $Frontend = Join-Path $Root 'frontend\sdv-ui'
 if ([string]::IsNullOrWhiteSpace($IssuerUri)) { throw 'OIDC issuer URI is required.' }
 if ([string]::IsNullOrWhiteSpace($JwkSetUri)) { $JwkSetUri = $IssuerUri.TrimEnd('/') + '/protocol/openid-connect/certs' }
 if ([string]::IsNullOrWhiteSpace($Audience)) { throw 'OIDC API audience is required.' }
-if ([string]::IsNullOrWhiteSpace($TenantId)) { throw 'Configured SDV tenant ID is required for human OIDC login.' }
-
+if ([string]::IsNullOrWhiteSpace($ProviderId)) { throw 'The provider ID (the sign-in file''s providerId) is required.' }
 
 function Get-SdvOwnedProcess {
     param(
@@ -38,13 +51,11 @@ function Get-SdvOwnedProcess {
     $cmd = [string]$p.CommandLine
     if ([string]::IsNullOrWhiteSpace($cmd)) { return $null }
 
+    if ($p.Name -notmatch '^powershell(\.exe)?$') { return $null }
     if ($Kind -eq 'backend') {
-        if ($p.Name -notmatch '^powershell(\.exe)?$') { return $null }
         if ($cmd -notmatch 'SDV Backend -') { return $null }
         return $p
     }
-
-    if ($p.Name -notmatch '^powershell(\.exe)?$') { return $null }
     if ($cmd -notmatch 'SDV Frontend -') { return $null }
     return $p
 }
@@ -102,9 +113,32 @@ if (-not (Test-Path (Join-Path $Frontend 'node_modules'))) { throw 'Frontend dep
 
 New-Item -ItemType Directory -Force -Path $Runtime | Out-Null
 
-Write-Host 'Starting isolated SDV PostgreSQL...'
-& docker compose -f (Join-Path $Root 'compose.local.yml') up -d sdv-postgres
-if ($LASTEXITCODE -ne 0) { throw 'Could not start sdv-postgres.' }
+if (-not (Test-Path -LiteralPath $VaultTokenFile -PathType Leaf) -or (Get-Item -LiteralPath $VaultTokenFile).Length -eq 0) {
+    throw "Application Vault token file is missing or empty: $VaultTokenFile"
+}
+$VaultTokenFile = (Resolve-Path -LiteralPath $VaultTokenFile).Path
+$rootPrefix = $Root.TrimEnd('\', '/') + [IO.Path]::DirectorySeparatorChar
+if ($VaultTokenFile.StartsWith($rootPrefix, [StringComparison]::OrdinalIgnoreCase)) {
+    throw 'The Vault token file must live outside the repository so it can never be committed.'
+}
+
+# Reuse the existing persistent database container. Compose is used only when no sdv-postgres container exists yet,
+# so an existing one is never recreated.
+$existingPostgres = (& docker ps -a --filter 'name=^/sdv-postgres$' --format '{{.Names}}' | Out-String).Trim()
+if ($existingPostgres -eq 'sdv-postgres') {
+    $postgresRunning = (& docker inspect --format='{{.State.Running}}' sdv-postgres | Out-String).Trim()
+    if ($postgresRunning -ne 'true') {
+        Write-Host 'Starting existing sdv-postgres container...'
+        & docker start sdv-postgres | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw 'Could not start existing sdv-postgres container.' }
+    } else {
+        Write-Host 'Existing sdv-postgres container is already running.'
+    }
+} else {
+    Write-Host 'Starting isolated SDV PostgreSQL...'
+    & docker compose -f (Join-Path $Root 'compose.local.yml') up -d sdv-postgres
+    if ($LASTEXITCODE -ne 0) { throw 'Could not start sdv-postgres.' }
+}
 
 $healthy = $false
 for ($i = 0; $i -lt 40; $i++) {
@@ -114,48 +148,35 @@ for ($i = 0; $i -lt 40; $i++) {
 }
 if (-not $healthy) { throw 'sdv-postgres did not become healthy.' }
 
-
-if ($WithVault) {
-    Write-Host 'Starting local-only Vault dev service for SDV document crypto...'
-    & docker compose -f (Join-Path $Root 'compose.local.yml') up -d sdv-vault
-    if ($LASTEXITCODE -ne 0) { throw 'Could not start sdv-vault.' }
-
-    $vaultReady = $false
-    for ($i = 0; $i -lt 60; $i++) {
-        try {
-            $vaultHealth = Invoke-WebRequest -Uri 'http://127.0.0.1:8200/v1/sys/health' -UseBasicParsing -TimeoutSec 2 -ErrorAction Stop
-            if ($vaultHealth.StatusCode -eq 200) {
-                $vaultReady = $true
-                break
-            }
-        } catch {
-            # Vault is expected to refuse connections briefly while the dev server boots.
-        }
-        Start-Sleep -Seconds 1
-    }
-    if (-not $vaultReady) {
-        $vaultLogs = (& docker logs sdv-vault --tail 80 2>&1 | Out-String)
-        throw "sdv-vault did not become healthy on http://127.0.0.1:8200.`n$vaultLogs"
-    }
-    Write-Host 'Vault health is UP.'
-
-    # Make local Vault startup idempotent. A reused dev container may already
-    # have Transit mounted; calling `vault secrets enable transit` again writes
-    # an expected error to stderr, which PowerShell can promote to a terminating
-    # NativeCommandError before LASTEXITCODE can be inspected.
-    $secrets = (& docker exec -e VAULT_ADDR=http://127.0.0.1:8200 -e VAULT_TOKEN=sdv-local-root sdv-vault vault secrets list -format=json 2>$null | Out-String)
-    if ($LASTEXITCODE -ne 0) {
-        throw 'Could not inspect Vault secret-engine mounts for local SDV runtime.'
-    }
-
-    if ($secrets -notmatch '"transit/"') {
-        & docker exec -e VAULT_ADDR=http://127.0.0.1:8200 -e VAULT_TOKEN=sdv-local-root sdv-vault vault secrets enable transit *> $null
-        if ($LASTEXITCODE -ne 0) {
-            throw 'Could not enable Vault Transit for local SDV runtime.'
-        }
-    }
-    Write-Host 'Vault Transit is ready.'
+# The persistent sdv-vault only: never Compose, never a dev-mode Vault, never initialized, reset or resealed here.
+$existingVault = (& docker ps -a --filter 'name=^/sdv-vault$' --format '{{.Names}}' | Out-String).Trim()
+if ($existingVault -ne 'sdv-vault') {
+    throw 'Persistent sdv-vault was not found. Configure and initialize it using compose.vault-persistent.yml first. Refusing ephemeral dev-mode startup.'
 }
+$vaultRunning = (& docker inspect --format='{{.State.Running}}' sdv-vault | Out-String).Trim()
+if ($vaultRunning -ne 'true') {
+    Write-Host 'Starting existing persistent sdv-vault container...'
+    & docker start sdv-vault | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw 'Could not start existing sdv-vault container.' }
+}
+$vaultReady = $false
+for ($i = 0; $i -lt 60; $i++) {
+    try {
+        $vaultHealth = Invoke-WebRequest -Uri "$VaultUrl/v1/sys/health" -UseBasicParsing -TimeoutSec 2 -ErrorAction Stop
+        if ($vaultHealth.StatusCode -eq 200) { $vaultReady = $true; break }
+    } catch {
+        # Vault refuses connections briefly while it starts.
+    }
+    Start-Sleep -Seconds 1
+}
+if (-not $vaultReady) {
+    throw 'sdv-vault is not healthy/unsealed. Unseal the existing persistent Vault, then retry. Do not reinitialize it.'
+}
+$sealState = Invoke-RestMethod -Uri "$VaultUrl/v1/sys/seal-status" -TimeoutSec 5
+if (-not $sealState.initialized -or $sealState.sealed) {
+    throw 'Vault is sealed or uninitialized. Unseal the existing persistent Vault, then retry. Do not reinitialize it.'
+}
+Write-Host 'Persistent Vault is up and unsealed.'
 
 Remove-StalePidFile -PidFile $BackendPid -Kind 'backend'
 
@@ -170,29 +191,22 @@ $jarEscaped = $Jar.Replace("'", "''")
 $issuerEscaped = $IssuerUri.Replace("'", "''")
 $jwkEscaped = $JwkSetUri.Replace("'", "''")
 $audienceEscaped = $Audience.Replace("'", "''")
-$tenantEscaped = $TenantId.Replace("'", "''")
-$webClientEscaped = $WebClientId.Replace("'", "''")
-$keyProvider = if ($WithVault) { 'vault' } else { 'disabled' }
+$providerEscaped = $ProviderId.Replace("'", "''")
+$tokenFileEscaped = $VaultTokenFile.Replace("'", "''")
+# The backend reads the restricted token from the file itself; the token is never on a command line or in a variable.
 $backendCommand = @"
 `$Host.UI.RawUI.WindowTitle = 'SDV Backend - OIDC'
 Set-Location -LiteralPath '$rootEscaped'
-`$env:SDV_KEY_PROVIDER = '$keyProvider'
-`$env:SDV_VAULT_BASE_URL = 'http://127.0.0.1:8200'
-`$env:SDV_VAULT_TOKEN = 'sdv-local-root'
+`$env:SDV_KEY_PROVIDER = 'vault'
+`$env:SDV_VAULT_BASE_URL = '$VaultUrl'
+Remove-Item Env:SDV_VAULT_TOKEN -ErrorAction SilentlyContinue
+`$env:SDV_VAULT_TOKEN_FILE = '$tokenFileEscaped'
 `$env:SDV_AUTH_MODE = 'enterprise-jwt'
 `$env:SDV_AUTH_JWT_ISSUER = '$issuerEscaped'
 `$env:SDV_AUTH_JWT_JWK_SET_URI = '$jwkEscaped'
 `$env:SDV_AUTH_JWT_AUDIENCE = '$audienceEscaped'
-`$env:SDV_AUTH_JWT_BROWSER_CLIENT_ID = '$webClientEscaped'
-`$env:SDV_AUTH_JWT_PERSISTENT_CONNECTION_ENABLED = 'true'
-`$env:SDV_AUTH_JWT_TENANT_ID = '$tenantEscaped'
+`$env:SDV_AUTH_JWT_PROVIDER_ID = '$providerEscaped'
 `$env:SDV_AUTH_JWT_GROUPS_CLAIM = 'groups'
-`$env:SDV_AUTH_GROUP_BUSINESS_USER = 'BusinessUsers'
-`$env:SDV_AUTH_GROUP_DOCUMENT_STEWARD = 'DocumentStewards'
-`$env:SDV_AUTH_GROUP_BUSINESS_ADMIN = 'BusinessAdmins'
-`$env:SDV_AUTH_GROUP_TENANT_IT_ADMIN = 'TenantITAdmins'
-`$env:SDV_AUTH_GROUP_PLATFORM_OPERATIONS_ADMIN = 'PlatformOperationsAdmins'
-`$env:SDV_AUTH_LEGACY_DIRECT_ROLE_CLAIM_ENABLED = 'false'
 Write-Host 'SDV backend LOCAL/OIDC console. Close this window to stop the backend.' -ForegroundColor Cyan
 java -jar '$jarEscaped' --spring.profiles.active=local
 "@
@@ -205,7 +219,7 @@ Write-Host 'Waiting for SDV backend health...'
 $backendUp = $false
 for ($i = 0; $i -lt 60; $i++) {
     try {
-        $health = Invoke-RestMethod -Uri 'http://localhost:8280/actuator/health' -TimeoutSec 2
+        $health = Invoke-RestMethod -Uri 'http://127.0.0.1:8280/actuator/health' -TimeoutSec 2
         if ($health.status -eq 'UP') { $backendUp = $true; break }
     } catch { }
     Start-Sleep -Seconds 1
@@ -213,7 +227,7 @@ for ($i = 0; $i -lt 60; $i++) {
 if (-not $backendUp) {
     Stop-OwnedProcess -ProcessId $backendProcess.Id -Kind 'backend'
     Remove-Item -LiteralPath $BackendPid -Force -ErrorAction SilentlyContinue
-    throw "SDV backend did not become healthy. Review the separate SDV Backend - OIDC window."
+    throw "SDV backend did not become healthy. Review the separate SDV Backend - OIDC window (the database may need .\Update-SDV-Schema.ps1 update)."
 }
 
 Remove-StalePidFile -PidFile $FrontendPid -Kind 'frontend'
@@ -248,7 +262,7 @@ Set-Content -Path $FrontendPid -Value $frontendProcess.Id -Encoding ASCII
 $frontendUp = $false
 for ($i = 0; $i -lt 40; $i++) {
     try {
-        $response = Invoke-WebRequest -Uri 'http://localhost:5183' -UseBasicParsing -TimeoutSec 2
+        $response = Invoke-WebRequest -Uri 'http://127.0.0.1:5183' -UseBasicParsing -TimeoutSec 2
         if ($response.StatusCode -eq 200) { $frontendUp = $true; break }
     } catch { }
     Start-Sleep -Seconds 1
@@ -265,11 +279,9 @@ Write-Host ''
 Write-Host 'SDV OIDC local validation services started.'
 Write-Host 'Backend : http://localhost:8280'
 Write-Host 'Health  : http://localhost:8280/actuator/health'
-Write-Host 'System  : http://localhost:8280/api/v1/system/info'
 Write-Host 'Frontend: http://localhost:5183'
-Write-Host "OIDC    : $IssuerUri"
-Write-Host "Web     : $WebClientId / API audience=$Audience"
-Write-Host "Tenant  : $TenantId (resolved from configured OIDC connection)"
+Write-Host "OIDC    : $IssuerUri (provider $ProviderId, API audience $Audience, web client $WebClientId)"
+Write-Host 'Entities: from setup (idn_ tables); run .\Seed-SDV-Canvas-Demo.ps1 if they are missing'
 Write-Host 'Postgres: localhost:5433 (container sdv-postgres)'
-if ($WithVault) { Write-Host 'Vault   : localhost:8200 (LOCAL DEV ONLY; container sdv-vault)' }
+Write-Host 'Vault   : localhost:8200 (persistent sdv-vault; token file only)'
 Write-Host 'Logs    : separate Backend and Frontend console windows (LOCAL profile only)'

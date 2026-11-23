@@ -6,7 +6,7 @@ import org.springframework.stereotype.Component;
 
 import java.util.Set;
 
-/** Task 0025, rule 1: writes each role conflict as a problem record for the Tenant IT Admin, with an audit event. */
+/** Task 0025, rule 1: writes each role conflict as a problem record for the IT Admin, with an audit event. */
 @Component
 public class RecordingRoleConflictReporter implements RoleConflictReporter {
     private final RoleConflictService conflicts;

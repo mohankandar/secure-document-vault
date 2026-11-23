@@ -12,7 +12,7 @@ import static org.junit.jupiter.api.Assertions.*;
 /** Task 0025, section 3: Vero's separation rules as data. */
 class SdvAccessRulesTest {
     private static final Set<SdvRole> ADMINS =
-            EnumSet.of(SdvRole.BUSINESS_ADMIN, SdvRole.TENANT_IT_ADMIN, SdvRole.PLATFORM_OPERATIONS_ADMIN);
+            EnumSet.of(SdvRole.BUSINESS_ADMIN, SdvRole.IT_ADMIN, SdvRole.PLATFORM_OPERATIONS_ADMIN);
 
     private static RoleSeparationPolicy.Resolution<SdvRole> resolve(SdvRole... roles) {
         return SdvAccessRules.SEPARATION.resolve(EnumSet.copyOf(List.of(roles)));
@@ -51,8 +51,8 @@ class SdvAccessRulesTest {
                 EnumSet.of(SdvRole.RESTRICTED_STEWARD),
                 EnumSet.of(SdvRole.RESTRICTED_STEWARD, SdvRole.DOCUMENT_STEWARD, SdvRole.BUSINESS_USER),
                 EnumSet.of(SdvRole.DOCUMENT_STEWARD, SdvRole.BUSINESS_ADMIN),
-                EnumSet.of(SdvRole.BUSINESS_ADMIN, SdvRole.TENANT_IT_ADMIN, SdvRole.PLATFORM_OPERATIONS_ADMIN),
-                EnumSet.of(SdvRole.BUSINESS_USER, SdvRole.TENANT_IT_ADMIN))) {
+                EnumSet.of(SdvRole.BUSINESS_ADMIN, SdvRole.IT_ADMIN, SdvRole.PLATFORM_OPERATIONS_ADMIN),
+                EnumSet.of(SdvRole.BUSINESS_USER, SdvRole.IT_ADMIN))) {
             var resolution = SdvAccessRules.SEPARATION.resolve(held);
             assertFalse(resolution.conflicted(), held.toString());
             assertEquals(held, resolution.granted(), held.toString());

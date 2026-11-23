@@ -39,7 +39,7 @@ import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 /**
- * Task 0027, carry-over 0.4 (separation rule 4): the audit list, its CSV export and Problems, read by the Tenant IT
+ * Task 0027, carry-over 0.4 (separation rule 4): the audit list, its CSV export and Problems, read by the IT
  * Admin and Platform Ops, never show a file name, at any level. A document is named instead by the record's primary
  * identifier, the document ID, its effective level, its received date and its page count. (Task 0026 hid only the
  * names of documents the reader couldn't open; the owner replaced that rule on 2026-11-20.) Counts are unchanged.

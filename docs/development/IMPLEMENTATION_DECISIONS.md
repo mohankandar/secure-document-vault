@@ -2,13 +2,13 @@
 
 These are implementation clarifications that preserve the frozen V1 product behavior.
 
-## 1. LexaVault / SDV boundary
+## 1. Producer / SDV boundary
 
-LexaVault is a processing/redaction product and may deliver an already-approved/already-redacted final PDF to SDV through SDV's public API contract.
+An upstream processing or redaction product may deliver an already-approved/already-redacted final PDF to SDV through SDV's public API contract.
 
-SDV is final secure custody. Its normal ingestion path does not repeat LexaVault OCR, AI discovery, review, or redaction processing. SDV corrective redaction remains a later exception/safety-net capability for an authorized Document Steward.
+SDV is final secure custody. Its normal ingestion path does not repeat a producer's OCR, AI discovery, review, or redaction processing. SDV corrective redaction remains a later exception/safety-net capability for an authorized Document Steward.
 
-There is no shared code, database/schema, internal identity, or runtime dependency between the products.
+There is no shared code, database/schema, internal identity, or runtime dependency between SDV and any other product.
 
 ## 2. Unit execution dependency clarification
 

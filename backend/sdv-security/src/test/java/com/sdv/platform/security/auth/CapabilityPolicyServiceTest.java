@@ -38,7 +38,7 @@ class CapabilityPolicyServiceTest {
 
     @Test
     void sensitiveViewingIsNeverGivenToAnAdminRole() {
-        for (SdvRole admin : List.of(SdvRole.BUSINESS_ADMIN, SdvRole.TENANT_IT_ADMIN, SdvRole.PLATFORM_OPERATIONS_ADMIN)) {
+        for (SdvRole admin : List.of(SdvRole.BUSINESS_ADMIN, SdvRole.IT_ADMIN, SdvRole.PLATFORM_OPERATIONS_ADMIN)) {
             for (Capability c : List.of(Capability.VIEW_CONFIDENTIAL, Capability.VIEW_HIGHLY_CONFIDENTIAL, Capability.REQUEST_SENSITIVE_ACCESS)) {
                 assertEquals("SDV-ROL-001", refusalCode(admin, c), admin + " / " + c);
             }

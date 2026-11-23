@@ -61,10 +61,14 @@ public class DatabaseSchemaCheck {
 
     @Autowired
     public DatabaseSchemaCheck(DataSource dataSource, Environment environment) {
-        this(environment.acceptsProfiles(Profiles.of("local")), () -> {
+        // Task 0041 (owner answer 10): the local profile no longer migrates at startup, so it is checked like any start.
+        this(false, () -> {
+                    SchemaVersion.Status status;
                     try (Connection connection = dataSource.getConnection()) {
-                        return SchemaVersion.check(connection);
+                        status = SchemaVersion.check(connection);
                     }
+                    if (status.current()) requireIdentityRights(dataSource);
+                    return status;
                 }, hostAndPort(environment.getProperty("spring.datasource.url")),
                 FIRST_RETRY, MAX_RETRY, Executors.newSingleThreadScheduledExecutor(r -> {
                     Thread t = new Thread(r, "sdv-database-retry");
@@ -180,6 +184,22 @@ public class DatabaseSchemaCheck {
         if (url == null) return "(no database URL set)";
         Matcher m = HOST_AND_PORT.matcher(url.trim());
         return m.find() ? m.group(1).replaceAll(".*@", "") : "(database URL not readable)";
+    }
+
+    /**
+     * Task 0041: platform-core's own check of the identity tables, as its install guide asks: every idn_ table there and
+     * the app's database user holding the rights it needs. Missing rights or tables stop the start with the IDN_ code
+     * and what to do (SDV-SYS-005); a check the database refused counts as "can't reach the database".
+     */
+    static void requireIdentityRights(DataSource dataSource) throws java.sql.SQLException {
+        try {
+            com.documentplatform.identity.jdbc.IdentitySchema.verify(dataSource);
+        } catch (com.documentplatform.identity.jdbc.IdentitySchemaException e) {
+            if (e.problem() == com.documentplatform.identity.jdbc.IdentitySchemaException.Problem.IDN_CHECK_FAILED) {
+                throw new java.sql.SQLException("identity tables could not be checked", e);
+            }
+            throw new StartupFailure(SdvErrorCode.SYS_005, e.problem() + ": " + e.getMessage(), e);
+        }
     }
 
     /** Hears every later change of state (after the database came back). Called on the retry thread. */

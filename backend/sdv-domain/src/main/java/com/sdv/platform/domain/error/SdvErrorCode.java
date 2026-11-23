@@ -84,10 +84,26 @@ public enum SdvErrorCode {
     /** Task 0038: the sign-in's organisation is unknown or suspended; one answer for both (403). WARN with which. */
     AUT_009("SDV-AUT-009", true),
     /**
-     * Task 0038: a second ACTIVE sign-in connection for the same provider, issuer and audience: refused when it is
-     * saved or activated (409, WARN), and 500 with an ERROR line at sign-in if two are found anyway.
+     * Task 0041: the person may work in more than one entity and the request chose none, or chose one that is not
+     * theirs or is not an entity ID (409). INFO line with which.
      */
-    IDP_007("SDV-IDP-007", true),
+    AUT_010("SDV-AUT-010", false, true),
+    /**
+     * Task 0041: the token's client ID has no ACTIVE client binding, or its entity or the login connection is not
+     * ACTIVE (401). WARN with the client ID (never a secret).
+     */
+    AUT_011("SDV-AUT-011", true),
+    /** Task 0041: an entity or source claim in a sending system's token does not match its client binding (401). WARN. */
+    AUT_012("SDV-AUT-012", true),
+    /** Task 0041: the client binding names a source key the entity has no sending system for in Vero (401). WARN. */
+    AUT_013("SDV-AUT-013", true),
+    /**
+     * Task 0041: the entity slot can't be activated (not in the licence, no licence in force, already activated, name
+     * not usable or taken); the answer names the reason (409). INFO line.
+     */
+    ENT_001("SDV-ENT-001", false, true),
+    /** Task 0041: the person has no Business Admin grant on that entity slot, so may not activate it (403). INFO line. */
+    ENT_002("SDV-ENT-002", false, true),
     /** Task 0027: finding, placing, releasing or listing legal holds needs MANAGE_LEGAL_HOLD (Business Admin) (403). */
     HLD_001("SDV-HLD-001"),
     /** Task 0027: a legal hold's reason is missing, shorter than 3 or longer than 500 characters (400). */
@@ -142,7 +158,7 @@ public enum SdvErrorCode {
     INT_003("SDV-INT-003"),
     /** Task 0039: no submission of this sending system has this ID (404). INFO line. */
     INT_004("SDV-INT-004", false, true),
-    /** Task 0039: the token's sending system isn't one of the tenant's, or Tenant IT paused it (403). WARN line. */
+    /** Task 0039: the token's sending system isn't one of the tenant's, or IT paused it (403). WARN line. */
     INT_005("SDV-INT-005", true),
     /** Task 0039: no submission body, a count below 1, or a required text missing or too long (400). INFO line. */
     INT_006("SDV-INT-006", false, true),
@@ -238,8 +254,6 @@ public enum SdvErrorCode {
     SYS_009("SDV-SYS-009", true),
     /** Task 0037: the install's default time zone is not valid; Vero doesn't start. */
     SYS_010("SDV-SYS-010", true),
-    /** Task 0037: the explicitly requested sign-in recovery couldn't be applied; Vero doesn't start. */
-    SYS_011("SDV-SYS-011", true),
     /** Task 0037: start-up work that needs the database failed; Vero doesn't start (or, after a late recovery, stops). */
     SYS_012("SDV-SYS-012"),
     /** Task 0036: a failure Vero didn't expect; the last-resort answer (500). */

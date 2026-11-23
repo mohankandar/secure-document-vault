@@ -29,7 +29,7 @@ public class CapabilityPolicyService {
 
     private static final Map<String, String> FORBIDDEN_REASONS = Map.of(
             "ADMINS_NEVER_SEE_SENSITIVE_DOCUMENTS",
-            "Business Admin, Tenant IT Admin and Platform Operations can never see or ask for Confidential or Highly Confidential documents.",
+            "Business Admin, IT Admin and Platform Operations can never see or ask for Confidential or Highly Confidential documents.",
             "STEWARDS_NEVER_APPROVE_SENSITIVE_ACCESS",
             "Document Stewards and Restricted Stewards can never approve requests to print or download sensitive documents; only a Business Admin does.");
 

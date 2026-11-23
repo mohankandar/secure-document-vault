@@ -15,12 +15,12 @@ import {
 } from './opsWords'
 
 // Task 0012 (change 9): Platform operations Overview, Storage (read-only) and Health in plain words; About is shared
-// with Tenant IT. Codes, paths and raw fields are only under Technical details.
+// with IT. Codes, paths and raw fields are only under Technical details.
 
 const LEDE: Record<string, string> = {
   overview: 'How Vero is doing right now.',
   problems: 'Documents that could not be stored, and deliveries still missing documents.',
-  storage: 'How full each storage volume is. Tenant IT adds and changes volumes.',
+  storage: 'How full each storage volume is. IT adds and changes volumes.',
   health: 'The services Vero depends on, and its automatic cleanup.',
   audit: 'Everything people and systems did in Vero. Document content is never shown here.',
   about: 'The facts support will ask for.',
@@ -101,7 +101,7 @@ function Overview() {
   const volumes = data.storageVolumes.map(asLiveVolume)
   const lead = overviewSentence(data, volumes, cleanup)
   const total = problemTotal(data)
-  // The fullest volume that can take documents; one Tenant IT set offline or read only is left out on purpose.
+  // The fullest volume that can take documents; one IT set offline or read only is left out on purpose.
   const active = volumes.filter((v) => v.volume.state === 'ACTIVE')
   const fullest = [...active].sort((a, b) => (b.capacity?.usedPercent ?? -1) - (a.capacity?.usedPercent ?? -1))[0]
   const unreachable = active.find((v) => v.observationError)
@@ -116,7 +116,7 @@ function Overview() {
       detail: total ? problemKinds(data) : total === 0 ? 'Every delivery arrived properly' : 'Open Problems to see what is listed' },
     { id: 'storage', label: 'Storage', tab: 'storage', bad: active.some(volumeNeedsAttention),
       value: unreachable ? 'Can’t reach' : fullest?.capacity?.usedPercent != null ? `${fullest.capacity.usedPercent}% full` : active.length ? 'Unknown' : 'No volume',
-      detail: unreachable ? `${unreachable.volume.displayName} · Tenant IT checks the folder` : fullest ? `${fullest.volume.displayName} · warns at ${fullest.volume.warningPercent}%, stops at ${fullest.volume.stopWritePercent}%` : 'No volume can take new documents' },
+      detail: unreachable ? `${unreachable.volume.displayName} · IT checks the folder` : fullest ? `${fullest.volume.displayName} · warns at ${fullest.volume.warningPercent}%, stops at ${fullest.volume.stopWritePercent}%` : 'No volume can take new documents' },
     { id: 'services', label: 'Services', tab: 'health', bad: down.length > 0,
       value: down.length === 0 ? 'All working' : `${down.map((k) => SERVICE_WORDS[k].name).join(', ')} not working`,
       detail: 'Vero, database and key service' },
@@ -159,7 +159,7 @@ function OpsStorage() {
   const todo = storageWhatToDo(volumes)
   return <>
     <section className="v-panel">
-      {volumes.length === 0 ? <p className="muted" style={{ padding: 16 }}>No storage volume is set up. The customer’s Tenant IT adds one.</p> :
+      {volumes.length === 0 ? <p className="muted" style={{ padding: 16 }}>No storage volume is set up. The customer’s IT adds one.</p> :
       <table className="v-table" aria-label="Storage volumes">
         <thead><tr><th>Volume</th><th>Role</th><th style={{ width: '26%' }}>How full</th><th>Can store new documents</th></tr></thead>
         <tbody>{volumes.map((v) => { const can = canStoreWords(v), pct = v.capacity?.usedPercent; return (
@@ -172,7 +172,7 @@ function OpsStorage() {
       </table>}
     </section>
     {todo.length ? <Banner lead="What to do:">{todo.join(' ')}</Banner>
-      : <Banner tone="info" lead="What to do:">Nothing right now. The customer’s Tenant IT adds and changes volumes; this page only shows them.</Banner>}
+      : <Banner tone="info" lead="What to do:">Nothing right now. The customer’s IT adds and changes volumes; this page only shows them.</Banner>}
     <TechDetails hint="folder paths, thresholds, last check, write test result">
       <table className="v-table" aria-label="Storage technical details"><thead><tr><th>Volume</th><th>Folder</th><th>Warns at · stops at</th><th>Order</th><th>Last check</th><th>Write test</th></tr></thead>
         <tbody>{data.storageVolumes.map((v) => <tr key={v.volumeId}>

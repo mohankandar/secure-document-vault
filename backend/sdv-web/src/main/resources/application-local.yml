@@ -1,8 +1,6 @@
 spring:
-  liquibase:
-    # Local mode only: migrate at startup, including the local seed data.
-    enabled: true
-    contexts: local
+  # Task 0041 (owner answer 10): the local profile no longer migrates at startup either. Run the schema step first
+  # (.\Update-SDV-Schema.ps1 update), then setup and the demo step (.\Seed-SDV-Canvas-Demo.ps1 -Reset does all three).
   datasource:
     url: jdbc:postgresql://localhost:5433/sdv
     username: sdv
@@ -15,6 +13,9 @@ server:
 sdv:
   auth:
     mode: ${SDV_AUTH_MODE:local-header}
+  # Task 0041: the development trusted-keys file, so the demo licence's slots can be activated (local only).
+  identity:
+    trusted-keys-file: ${SDV_TRUSTED_KEYS_FILE:dev/setup/development-trusted-keys.json}
   # Task 0032: the local demo tenant (Acme Lending) counts its days in Eastern time, as on the Reports board.
   tenant-defaults:
     time-zone: ${SDV_DEFAULT_TIME_ZONE:America/New_York}

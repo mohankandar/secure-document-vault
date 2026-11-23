@@ -28,7 +28,7 @@ export function TenantAdmin() {
     return () => { live = false }
   }, [route.tab])
   return (
-    <AreaFrame crumbs={['Tenant IT', tab.label]} title={route.tab === 'about' ? 'About this installation' : tab.label} lede={LEDE[route.tab]} attention={storageAttention ? ['storage'] : []}>
+    <AreaFrame crumbs={['IT', tab.label]} title={route.tab === 'about' ? 'About this installation' : tab.label} lede={LEDE[route.tab]} attention={storageAttention ? ['storage'] : []}>
       {route.tab === 'storage' && <Storage />}
       {route.tab === 'authentication' && <SignIn />}
       {route.tab === 'integrations' && <Integrations />}

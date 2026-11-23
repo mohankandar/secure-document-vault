@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [string]$Base = 'http://localhost:8280',
-    [string]$SourceDisplayName = 'laxavault',
+    [string]$SourceDisplayName = 'Redaction Service',
     [string]$PdfPath = (Join-Path $PSScriptRoot 'test-tools\fixtures\business-viewer-two-page.pdf'),
     [switch]$FreshTestData,
     [ValidatePattern('^[0-9]{12}$')][string]$ContractNumber = '300000000076',
@@ -16,7 +16,7 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
-$Tenant = '11111111-1111-1111-1111-111111111111'
+$Tenant = 'bd960ee9-9d54-5053-9958-92aaa54893a6'
 $Correlation = 'r3-demo-seed-' + ([guid]::NewGuid().ToString('N')).Substring(0, 10)
 
 function Ok([string]$Message) { Write-Host "  [OK  ] $Message" -ForegroundColor Green }
@@ -67,8 +67,8 @@ Ok 'Backend is UP'
 # Resolve one exact source. This avoids Windows PowerShell property-enumeration behavior
 # that can accidentally concatenate every returned source id into one string.
 $escapedName=$SourceDisplayName.Replace("'", "''")
-$SourceId=DbScalar "select source_id from ingestion_sources where tenant_id='$Tenant' and (lower(display_name)=lower('$escapedName') or lower(source_key)=lower('lexaVault')) order by case when lower(display_name)=lower('$escapedName') then 0 else 1 end, created_at desc limit 1;"
-if ([string]::IsNullOrWhiteSpace($SourceId)) { throw "Ingestion source '$SourceDisplayName' / sourceKey 'lexaVault' was not found." }
+$SourceId=DbScalar "select source_id from ingestion_sources where tenant_id='$Tenant' and (lower(display_name)=lower('$escapedName') or lower(source_key)=lower('redaction-service')) order by case when lower(display_name)=lower('$escapedName') then 0 else 1 end, created_at desc limit 1;"
+if ([string]::IsNullOrWhiteSpace($SourceId)) { throw "Ingestion source '$SourceDisplayName' / sourceKey 'redaction-service' was not found." }
 $ResolvedName=DbScalar "select display_name from ingestion_sources where tenant_id='$Tenant' and source_id='$SourceId';"
 Ok "Using source: $ResolvedName ($SourceId)"
 

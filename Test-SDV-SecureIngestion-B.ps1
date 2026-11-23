@@ -9,8 +9,8 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 $Root = $PSScriptRoot
 $Base = 'http://localhost:8280'
-$Tenant1 = '11111111-1111-1111-1111-111111111111'
-$Tenant2 = '22222222-2222-2222-2222-222222222222'
+$Tenant1 = 'bd960ee9-9d54-5053-9958-92aaa54893a6'
+$Tenant2 = '9b233c00-fe6e-582c-a9de-c1fa46f87254'
 $Suffix = ([guid]::NewGuid().ToString('N')).Substring(0, 10)
 $SourceId = $null
 $SubmissionId = $null
@@ -94,7 +94,7 @@ try {
     Require ($vaultSecrets -match '"transit/"') 'Local acceptance runtime has Vault Transit enabled'
     Require ((DbScalar "select count(*) from databasechangelog where id='004-secure-ingestion-checkpoint-a';") -eq '1') 'Frozen Checkpoint A migration remains applied once'
 
-    $it1 = UserHeaders $Tenant1 'checkpoint-b-it' 'TENANT_IT_ADMIN'
+    $it1 = UserHeaders $Tenant1 'checkpoint-b-it' 'IT_ADMIN'
     $sourceCreate = @{
         sourceKey = "ingest-b-$Suffix"
         displayName = "Checkpoint B Source $Suffix"
@@ -110,7 +110,7 @@ try {
     }
     $source = Invoke-RestMethod -Uri "$Base/api/v1/admin/ingestion-sources" -Method Post -Headers $it1 -ContentType 'application/json' -Body ($sourceCreate | ConvertTo-Json -Depth 12) -TimeoutSec 10
     $SourceId = [string]$source.sourceId
-    Require (-not [string]::IsNullOrWhiteSpace($SourceId)) 'Tenant IT created disposable ingestion source'
+    Require (-not [string]::IsNullOrWhiteSpace($SourceId)) 'IT created disposable ingestion source'
 
     $volume = Invoke-RestMethod -Uri "$Base/api/v1/admin/storage-volumes" -Method Post -Headers $it1 -ContentType 'application/json' -Body (@{
         displayName = "Checkpoint B Volume $Suffix"

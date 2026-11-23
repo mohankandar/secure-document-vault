@@ -6,14 +6,14 @@ import java.util.UUID;
 
 /**
  * Task 0039 (closes the gap from report 0033): intake attempts that ended in an error before Vero knew the sending
- * system, for example a failed sign-in on an intake address (changeset 033, unidentified_intake_attempts). Tenant IT
+ * system, for example a failed sign-in on an intake address (changeset 033, unidentified_intake_attempts). IT
  * and Platform operations see them in Problems.
  * <p>
  * Only: when, the caller's network address, the Vero address called (IDs blanked), the method, the status, the code
  * and the reference. Never a header, a token or anything from one, a body, or a file name.
  * <p>
  * The tenant is set only when a verified sign-in named one (for example a suspended tenant, or a sending system that
- * isn't one of the tenant's). Without a tenant an attempt is shown to every Tenant IT and Platform operations admin
+ * isn't one of the tenant's). Without a tenant an attempt is shown to every IT and Platform operations admin
  * of the install (owner answer, 2026-11-22); with one, to that tenant's only.
  * <p>
  * Task 0039 part 2 (owner answer 2 to report 0039, changeset 034): one row per tenant, caller address, method, address

@@ -1,6 +1,6 @@
 # SDV Current Development State
 
-Updated: 2026-09-28
+Updated: 2026-11-22 (task 0041: identity on platform-core)
 
 ## Verified baseline
 
@@ -10,7 +10,7 @@ That frozen baseline remains the regression reference, but the current workspace
 
 ## Active candidate — Business Workspace R3
 
-Current latest migration: **016**.
+Current latest migration: **035** (task 0041; this section describes R3 as it was).
 
 R3 candidate scope includes:
 
@@ -23,13 +23,27 @@ R3 candidate scope includes:
 - Business Administrator role-capability overrides for business roles;
 - document tags and comments persisted/audited;
 - record-centric activity, with document-view/read events hidden by default;
-- unified horizontal tab styling for Business Administration, Tenant IT, and Platform Operations;
+- unified horizontal tab styling for Business Administration, IT, and Platform Operations;
 - desktop and iPad/tablet responsive behavior.
 
 
-## Enterprise Identity R1
+## Identity on platform-core (task 0041, 2026-11-22)
 
-Enterprise Identity Administration Checkpoint C is implemented and treated as a verified/frozen subsystem within this workspace. The code includes exact-version VALIDATED activation, 15-minute freshness enforcement, one-ACTIVE-per-tenant database protection, known-good rollback, and disabled-by-default one-shot operational recovery. Migration **016** is the current database head.
+Vero's identity runs on platform-core v0.2.0 (`platform-identity-*`), identity only. The earlier own login-connection
+store and its admin screens (Enterprise Identity R1, migrations 014-016) are gone; changeset **035** drops their tables
+and the Restricted Steward group-watch tables (025). The latest Liquibase changeset is **035**; platform-core's
+identity tables are at version 3 and its licensing tables at version 1, each with its own Flyway history table, made by
+the schema step (never at startup, the local profile included).
+
+- Login connection, entity slots, group grants and client bindings come from platform-core's setup command
+  (`setup.ps1`, `docs/install/SETUP.md`). Product code `SDV`; roles in `product-roles.json`; `TENANT_IT_ADMIN` is
+  now `IT_ADMIN`.
+- People: entity and roles from group grants; entity choice with `X-SDV-Entity-Id` (`SDV-AUT-010`), switcher in the
+  account menu, every switch audited. Sending systems: entity and source from the client ID (`SDV-AUT-011`..`013`).
+- Entities are activated by a Business Admin (`POST /api/v1/admin/entities/{slot}/activate`) or, for the demo, by the
+  demo step; demo entity UUIDs are derived from the demo slot IDs.
+- Licensing is not turned on: its tables and the stored licence exist, activation reads the licence, nothing checks the
+  allowance. `docs/verification` keeps the earlier identity checkpoints as history.
 
 ## Validation state
 
@@ -56,7 +70,7 @@ Current candidate also includes the administration/UI polish validated from the 
 - Business Administration tabs: Users & Access, Roles & Permissions, Retention Policies, Metadata Configuration. The empty Settings tab is removed.
 - Roles & Permissions uses a compact permission matrix: Search/View are fixed baseline access; configurable document actions use switches and one Save permissions action.
 - Metadata Configuration clarifies the source/SDV ownership boundary: a source defines available metadata; SDV configures label/search/required/business-identifier behavior.
-- Tenant IT tabs: Storage, Authentication, Integrations, Environment. The redundant Diagnostics tab is removed; Environment links to Operational Readiness.
+- IT tabs: Storage, Authentication, Integrations, Environment. The redundant Diagnostics tab is removed; Environment links to Operational Readiness.
 - Local demo authentication renders an explicit local-mode explanation instead of implying an enterprise-provider failure when status is unavailable.
 - Document comments keep the previously approved backlog behavior in this iteration: latest three by default, View all N / Show latest 3, and bounded internal scrolling for larger threads so the PDF is not pushed far down the page.
 

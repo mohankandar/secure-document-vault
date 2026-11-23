@@ -8,7 +8,7 @@ import java.util.UUID;
 
 /**
  * Task 0025, rule 1: told when a person's sign-in named roles that can never be held together. The roles are already
- * withheld; the reporter writes the audit event and the problem record the Tenant IT Admin sees. If it throws, the
+ * withheld; the reporter writes the audit event and the problem record the IT Admin sees. If it throws, the
  * sign-in is refused (fail closed): a conflict is never left unrecorded.
  */
 public interface RoleConflictReporter {

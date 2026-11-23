@@ -14,7 +14,7 @@
     0. Task 0037: a packaged start (no local profile) with sign-in or the key service switched off refuses to start,
        with SDV-SYS-006 or SDV-KEY-001 and no stack trace, and never opens its port.
     1. Start Vero (no local profile, production context) against the empty database: it refuses with the "older" message.
-       With enterprise sign-in on, the Restricted Steward group check waits instead of stopping the start (SDV-SYS-012).
+       Task 0041: the schema step also runs platform-core's identity and licensing tables (their own Flyway runs).
     2. Schema step: status, sql (to a file, changes nothing), update.
     3. Start again: it serves, as the read/write user, and the tenants table is empty (no seed data).
     4. Start again: nothing new is applied, and the start is quick.
@@ -358,13 +358,11 @@ alter default privileges for role $owner in schema public grant select, insert, 
     Assert-That ($log.Contains($older)) 'the startup log does not contain the "older" sentence'
     Assert-That (-not ($log -match 'liquibase\.(changelog|lockservice)')) 'Liquibase ran during a production start'
     Assert-That (-not ($log -match 'RETENTION_SWEEP_FAILED')) 'the cleanup job ran against the empty database'
-    # Task 0037 (SDV-SYS-012): with enterprise sign-in, the Restricted Steward group check waits instead of stopping the start.
-    Assert-That ($log -match 'SDV-SYS-012 Start-up work waits for the database \(OLDER\): .*Restricted Steward sign-in group check') 'the group check did not say it waits'
     Assert-That (-not ($log -match 'Application run failed|CannotCreateTransactionException')) 'the start-up work stopped the start'
     $tables = (Invoke-Sql -Database $db -Sql "select count(*) from pg_tables where schemaname = 'public';").Out.Trim()
     Assert-That ($tables -eq '0') "the production start created $tables tables; it must change nothing"
     Stop-Vero
-    Write-Step '1. Start on the empty database: refuses with "older"' $s.Seconds 'not ready (health and readiness 503 OUT_OF_SERVICE, liveness UP), API 503, 0 tables created, group check waits (SYS-012)'
+    Write-Step '1. Start on the empty database: refuses with "older"' $s.Seconds 'not ready (health and readiness 503 OUT_OF_SERVICE, liveness UP), API 503, 0 tables created'
 
     # ------------------------------------------------------------ 2. schema step
     $st = Invoke-SchemaStep @('status')
@@ -385,12 +383,19 @@ alter default privileges for role $owner in schema public grant select, insert, 
 
     $up = Invoke-SchemaStep @('update')
     Assert-That ($up.Code -eq 0) "update failed: $($up.Err.Trim()) $($up.Out.Trim())"
-    $applied = (Invoke-Sql -Database $db -Sql "select count(*) from databasechangelog;").Out.Trim()
+    # Task 0041: "would run" counts Vero's changesets and platform-core's identity (V1-V3) and licensing (V1) versions.
+    $liquibase = (Invoke-Sql -Database $db -Sql "select count(*) from databasechangelog;").Out.Trim()
+    $platform = (Invoke-Sql -Database $db -Sql "select (select max(version) from idn_schema_version) || ' ' || (select max(version) from lic_schema_version) || ' ' || (select count(*) from idn_schema_history where success) || ' ' || (select count(*) from lic_schema_history where success);").Out.Trim().Split(' ')
+    Assert-That ($platform[0] -eq '3' -and $platform[1] -eq '1') "identity tables at version $($platform[0]) (3 expected), licensing at $($platform[1]) (1 expected)"
+    Assert-That ([int]$platform[2] -ge 3 -and [int]$platform[3] -ge 1) 'the identity and licensing runs must each record their versions in their own history table'
+    $applied = [int]$liquibase + [int]$platform[0] + [int]$platform[1]
     $seedRows = (Invoke-Sql -Database $db -Sql "select count(*) from databasechangelog where id = '002-local-foundation-seed';").Out.Trim()
-    Assert-That ($applied -eq $wouldRun -and $seedRows -eq '0') "update applied $applied changesets (expected $wouldRun), seed rows $seedRows"
+    Assert-That ("$applied" -eq $wouldRun -and $seedRows -eq '0') "update applied $applied changesets and platform versions (expected $wouldRun), seed rows $seedRows"
+    $oldIdentity = (Invoke-Sql -Database $db -Sql "select count(*) from pg_tables where tablename in ('enterprise_identity_connections', 'enterprise_identity_connection_history', 'role_group_mappings_seen', 'role_mapping_notices');").Out.Trim()
+    Assert-That ($oldIdentity -eq '0') "changeset 035 must drop the old identity tables, $oldIdentity left"
     $invalid = (Invoke-Sql -Database $db -Sql "select count(*) from pg_index where not indisvalid;").Out.Trim()
     Assert-That ($invalid -eq '0') "$invalid indexes are invalid after the concurrent index step"
-    Write-Step '2c. Schema step update' $up.Seconds "$applied changesets applied, 018 indexes valid"
+    Write-Step '2c. Schema step update' $up.Seconds "$liquibase changesets and identity V3, licensing V1 applied (own history tables), old identity tables dropped, 018 indexes valid"
     $up.Out | Set-Content -Encoding utf8 (Join-Path $run 'schema-update.out.txt')
 
     # The app user can read and write but not create or alter.
@@ -418,7 +423,6 @@ alter default privileges for role $owner in schema public grant select, insert, 
     $log = Get-Content -Raw $s.Log
     Assert-That ($log.Contains('the database matches this Vero version')) 'the startup log does not say the database matches'
     Assert-That (-not ($log -match 'RETENTION_SWEEP_FAILED|recovery sweep failed|permission denied')) 'a background job failed as the read/write user'
-    Assert-That ($log.Contains('Start-up work done: Restricted Steward sign-in group check.')) 'the group check did not run on a matching database'
     Stop-Vero
     $readsAfter = [long]((Invoke-Sql -Database $db -Sql $readsSql).Out -split "`n" | Where-Object { $_.Trim() } | Select-Object -Last 1)
     Assert-That ($readsAfter -gt $readsBefore) 'the background jobs did not read any table while Vero ran'
@@ -454,7 +458,6 @@ alter default privileges for role $owner in schema public grant select, insert, 
     Assert-That ((Get-Http '/api/v1/system/info').Body -like '*UNREACHABLE*') 'system info should say UNREACHABLE'
     $log = Get-Content -Raw $s.Log
     Assert-That ($log -match "ERROR .* SDV-SYS-003 Vero couldn't reach its database at start\..*127\.0\.0\.1:$RelayPort") 'no SDV-SYS-003 ERROR line with the host and port'
-    Assert-That ($log -match 'SDV-SYS-012 Start-up work waits for the database \(UNREACHABLE\)') 'the start-up work did not say it waits'
     Assert-That (-not $log.Contains($appPassword)) 'the database password is in the log'
     Write-Step '5a. Start with the database away: up, not ready, 503 SDV-SYS-014' $s.Seconds 'readiness 503 NOT_READY, liveness and overall health 200, SYS-003 logged with host and port, start-up work waits'
 
@@ -466,14 +469,13 @@ alter default privileges for role $owner in schema public grant select, insert, 
     Assert-That ($protected.Status -eq 401) "with the database back a request without sign-in should get 401, got $($protected.Status)"
     $log = Get-Content -Raw $s.Log
     Assert-That ($log -match 'can be reached again after \d+ tries') 'the log does not say the database is back'
-    Assert-That ($log.Contains('Start-up work done: Restricted Steward sign-in group check.')) 'the group check did not run when the database came back'
     # Task 0039 part 2 (owner answer 3): SDV_TRUSTED_PROXIES is not set, so X-Forwarded-For is ignored.
     $direct = Get-Http '/api/v1/ingestion/submissions' @{ 'X-Forwarded-For' = '198.51.100.8' }
     $directBody = $direct.Body | ConvertFrom-Json
     Assert-That ($direct.Status -eq 401 -and $directBody.code -eq 'SDV-AUT-001') "an intake request without sign-in should get 401 SDV-AUT-001, got $($direct.Status) $($direct.Body)"
     $directFrom = (Invoke-Sql -Database $db -Sql "select coalesce(string_agg(caller_address, ','), '-') from unidentified_intake_attempts where reference = '$($directBody.reference)';").Out.Trim()
     Assert-That ($directFrom -in @('127.0.0.1', '0:0:0:0:0:0:0:1')) "without trusted proxies the caller address should be this computer's, was: $directFrom"
-    Write-Step '5b. Database up: Vero serves without a restart' $w.Elapsed.TotalSeconds "readiness 200, the same process, API 401 (gate open), group check ran; X-Forwarded-For ignored (recorded $directFrom)"
+    Write-Step '5b. Database up: Vero serves without a restart' $w.Elapsed.TotalSeconds "readiness 200, the same process, API 401 (gate open); X-Forwarded-For ignored (recorded $directFrom)"
 
     $w = [System.Diagnostics.Stopwatch]::StartNew()
     Stop-Relay
@@ -520,7 +522,7 @@ alter default privileges for role $owner in schema public grant select, insert, 
     $back = Get-Http '/api/v1/operations/summary' $signedIn
     $backBody = $back.Body | ConvertFrom-Json
     Assert-That ($back.Status -eq 401 -and $backBody.code -eq 'SDV-AUT-006') "with the keys back the token is checked and no connection is set up: 401 SDV-AUT-006 expected, got $($back.Status) $($back.Body)"
-    # Task 0039: a failed sign-in on an intake address is recorded for Tenant IT (no known sending system, no tenant),
+    # Task 0039: a failed sign-in on an intake address is recorded for IT (no known sending system, no tenant),
     # with its address (IDs blanked), code and reference, and nothing from the token.
     $intake = Get-Http "/api/v1/ingestion/submissions/$([guid]::NewGuid())" $signedIn
     $intakeBody = $intake.Body | ConvertFrom-Json

@@ -1,6 +1,10 @@
 <#
 .SYNOPSIS
   Repeatable upgrade check for task 0024: a database at an earlier schema moves to this version's schema with its data
+  unchanged. -From 035 (the default, task 0041) starts at 034 and checks changeset 035 (the old identity tables dropped)
+  and platform-core's identity and licensing runs, then runs every PostgreSQL-only test (PlatformIdentityPostgresTest
+  and the sender profile against a running Vero, SenderProfileServerContractTest, included). -From 025 and earlier are
+  no longer offered: 035 drops two of the tables 025 made. Earlier text:
   unchanged. -From 034 (the default, task 0039 part 2) starts at 033 and checks changeset 034 (counts on unidentified
   intake attempts, with rows already there); -From 033 (task 0039) starts at 032 and checks changeset 033 (unidentified
   intake attempts) and then 034; -From 032 (task 0033) starts at 031 and checks changeset 032 (the stewards' notices) and then 033;
@@ -63,8 +67,8 @@
 param(
     [string]$Jar,
     # The first changeset the upgrade applies; the scratch database is built up to the one before it.
-    [ValidateSet('023', '024', '025', '026', '027', '028', '029', '030', '031', '032', '033', '034')]
-    [string]$From = '034',
+    [ValidateSet('026', '027', '028', '029', '030', '031', '032', '033', '034', '035')]
+    [string]$From = '035',
     # Drop a scratch database and role left by an earlier run of this script that could not clean up.
     [switch]$DropLeftover
 )
@@ -76,7 +80,7 @@ $db = 'sdv_schema_test'
 $owner = 'sdv_schema_owner'
 $hostUrl = 'jdbc:postgresql://localhost:5433/' + $db
 # In order. The upgrade applies every changeset from -From on.
-$checked = @('022-retention-policy-creator-name', '023-document-sensitivity-level', '024-record-sensitivity-levels', '025-role-separation', '026-legal-holds', '027-access-requests', '028-sensitivity-level-changes', '029-document-duplicate-receipts', '030-tenant-time-zone', '031-intake-report-indexes', '032-steward-notices', '033-unidentified-intake-attempts', '034-unidentified-intake-attempt-counts')
+$checked = @('022-retention-policy-creator-name', '023-document-sensitivity-level', '024-record-sensitivity-levels', '025-role-separation', '026-legal-holds', '027-access-requests', '028-sensitivity-level-changes', '029-document-duplicate-receipts', '030-tenant-time-zone', '031-intake-report-indexes', '032-steward-notices', '033-unidentified-intake-attempts', '034-unidentified-intake-attempt-counts', '035-drop-old-identity')
 $start = [array]::IndexOf(($checked | ForEach-Object { $_.Substring(0, 3) }), $From)
 $newChangesets = @($checked[$start..($checked.Count - 1)])
 $newChangeset = $newChangesets[0]
@@ -93,6 +97,10 @@ $has031 = $newChangesets -contains '031-intake-report-indexes'
 $has032 = $newChangesets -contains '032-steward-notices'
 $has033 = $newChangesets -contains '033-unidentified-intake-attempts'
 $has034 = $newChangesets -contains '034-unidentified-intake-attempt-counts'
+# Task 0041: 035 drops the old identity tables (014-016) and two of 025's tables; the schema step then also runs
+# platform-core's identity (V1-V3) and licensing (V1) tables, which no earlier version had.
+$has035 = $newChangesets -contains '035-drop-old-identity'
+$platformRuns = @('identity V1 (platform-core)', 'identity V2 (platform-core)', 'identity V3 (platform-core)', 'licensing V1 (platform-core)')
 # Task 0033: an uncorrected copy received at the previous version, which 032 must turn into one stored notice.
 $oldCopyEvent = '50000000-0000-0000-0000-0000000000c1'
 $reportIndexes = @('idx_submissions_tenant_created', 'idx_documents_tenant_ingested', 'idx_audit_events_redaction_old_sha')
@@ -165,7 +173,7 @@ function Invoke-SchemaStep([string[]]$StepArgs) {
 $otherTablesSql = @"
 select string_agg(t.relname || '=' || (xpath('/row/c/text()', query_to_xml(format('select count(*) || '':'' || coalesce(md5(string_agg(x::text, ''|'' order by x::text)), '''') as c from %I x', t.relname), false, true, '')))[1]::text, ',' order by t.relname)
   from pg_stat_user_tables t
- where t.relname not in ('documents', 'record_sensitivity_levels', 'role_conflict_problems', 'role_group_mappings_seen', 'role_mapping_notices', 'legal_holds', 'access_requests', 'sensitivity_level_changes', 'document_duplicate_receipts', 'tenants', 'steward_notices', 'unidentified_intake_attempts', 'databasechangelog', 'databasechangeloglock');
+ where t.relname not like 'idn_%' and t.relname not like 'lic_%' and t.relname not in ('enterprise_identity_connections', 'enterprise_identity_connection_history', 'documents', 'record_sensitivity_levels', 'role_conflict_problems', 'role_group_mappings_seen', 'role_mapping_notices', 'legal_holds', 'access_requests', 'sensitivity_level_changes', 'document_duplicate_receipts', 'tenants', 'steward_notices', 'unidentified_intake_attempts', 'databasechangelog', 'databasechangeloglock');
 "@
 # Task 0032: tenants with every column it had before 030 (030 adds time_zone, null for every existing tenant).
 $tenantsOldColumnsSql = "select count(*) || ':' || md5(string_agg((to_jsonb(x) - 'time_zone')::text, '|' order by x.tenant_id)) from tenants x;"
@@ -340,7 +348,9 @@ insert into unidentified_intake_attempts(attempt_id, tenant_id, occurred_at, cal
     $st = Invoke-SchemaStep @('status')
     Assert-That ($st.Code -eq 0) "status failed: $($st.Err.Trim())"
     $wouldRun = ([regex]::Match($st.Out, '(\d+) changesets would run')).Groups[1].Value
-    Assert-That ($wouldRun -eq [string]$newChangesets.Count) "status should list $($newChangesets.Count) changesets ($($newChangesets -join ', ')), said: $($st.Out.Trim())"
+    # Task 0041: the earlier version has no platform-core tables, so status also lists their four versions.
+    Assert-That ($wouldRun -eq [string]($newChangesets.Count + $platformRuns.Count)) "status should list $($newChangesets.Count) changesets ($($newChangesets -join ', ')) and the 4 platform versions, said: $($st.Out.Trim())"
+    foreach ($c in $platformRuns) { Assert-That ($st.Out.Contains($c)) "status does not list $c" }
     foreach ($c in $newChangesets) { Assert-That ($st.Out.Contains($c)) "status does not list $c" }
     Write-Step '3a. Schema step status' $st.Seconds "$wouldRun would run: $($newChangesets -join ', ')"
 
@@ -692,22 +702,22 @@ rollback;
         Write-Step '4m. After 034: attempt counts' $w.Elapsed.TotalSeconds "$merged; not null; unique minute index valid; checks refuse a count below 1, a last time before the first, no last time, a second row in a minute"
         $w = [System.Diagnostics.Stopwatch]::StartNew()
     }
-    if ($has027 -or $has028 -or $has029 -or $has030 -or $has031 -or $has032 -or $has033 -or $has034) {
+    if ($has027 -or $has028 -or $has029 -or $has030 -or $has031 -or $has032 -or $has033 -or $has034 -or $has035) {
 
         # The application's own repositories and services against this database: holds and the retention cleanup
         # (LegalHoldPostgresTest), requests, grants, expiry and the table's checks (AccessRequestPostgresTest), exact
         # duplicates (DuplicateIntakePostgresTest), uncorrected copies, stored notices and the Daily intake report (IntakeReportPostgresTest),
-        # the Sensitivity report (SensitivityReportPostgresTest), one ACTIVE sign-in connection per issuer (SignInConnectionPostgresTest, task 0038). The scratch owner's password goes to the child process only, as
+        # the Sensitivity report (SensitivityReportPostgresTest), platform-core identity and the demo step (PlatformIdentityPostgresTest) and the sender profile against a running Vero (SenderProfileServerContractTest, task 0041). The scratch owner's password goes to the child process only, as
         # SDV_IT_JDBC_PASSWORD.
         $w = [System.Diagnostics.Stopwatch]::StartNew()
         $mvn = (Get-Command mvn.cmd -ErrorAction Stop).Source
         $it = Invoke-Native -File $mvn -Arguments @('-o', '-f', (Join-Path $root 'backend\pom.xml'), '-pl', 'sdv-web', '-am', 'test',
-            '-Dtest=LegalHoldPostgresTest,AccessRequestPostgresTest,DuplicateIntakePostgresTest,IntakeReportPostgresTest,SensitivityReportPostgresTest,SignInConnectionPostgresTest,UnidentifiedIntakeAttemptPostgresTest', '-Dsurefire.failIfNoSpecifiedTests=false') -Environment @{
+            '-Dtest=LegalHoldPostgresTest,AccessRequestPostgresTest,DuplicateIntakePostgresTest,IntakeReportPostgresTest,SensitivityReportPostgresTest,PlatformIdentityPostgresTest,SenderProfileServerContractTest,UnidentifiedIntakeAttemptPostgresTest', '-Dsurefire.failIfNoSpecifiedTests=false') -Environment @{
             SDV_IT_JDBC_URL = $hostUrl; SDV_IT_JDBC_USER = $owner; SDV_IT_JDBC_PASSWORD = $ownerPassword }
-        foreach ($test in @('legalhold.LegalHoldPostgresTest', 'approvals.AccessRequestPostgresTest', 'document.DuplicateIntakePostgresTest', 'reports.IntakeReportPostgresTest', 'reports.SensitivityReportPostgresTest', 'identity.SignInConnectionPostgresTest', 'reports.UnidentifiedIntakeAttemptPostgresTest')) {
-            $itLine = ($it.Out -split "`n" | Where-Object { $_ -match ('Tests run: .* in com\.sdv\.platform\.application\.' + [regex]::Escape($test)) } | Select-Object -First 1)
+        foreach ($test in @('application.legalhold.LegalHoldPostgresTest', 'application.approvals.AccessRequestPostgresTest', 'application.document.DuplicateIntakePostgresTest', 'application.reports.IntakeReportPostgresTest', 'application.reports.SensitivityReportPostgresTest', 'application.identity.PlatformIdentityPostgresTest', 'web.SenderProfileServerContractTest', 'application.reports.UnidentifiedIntakeAttemptPostgresTest')) {
+            $itLine = ($it.Out -split "`n" | Where-Object { $_ -match ('Tests run: .* in com\.sdv\.platform\.' + [regex]::Escape($test)) } | Select-Object -First 1)
             # Task 0039 part 2: UnidentifiedIntakeAttemptPostgresTest has two tests (the flood of 1,000 requests).
-            $wantRun = if ($test -eq 'reports.UnidentifiedIntakeAttemptPostgresTest') { 2 } else { 1 }
+            $wantRun = switch ($test) { 'application.reports.UnidentifiedIntakeAttemptPostgresTest' { 2 } 'application.identity.PlatformIdentityPostgresTest' { 5 } default { 1 } }
             if ($it.Code -ne 0 -or -not $itLine -or $itLine -notmatch "Tests run: $wantRun, Failures: 0, Errors: 0, Skipped: 0") {
                 $it.Out | Set-Content -Encoding utf8 (Join-Path $run 'postgres-tests.log')
                 throw "FAIL: $test did not pass (exit $($it.Code)): $(if ($itLine) { $itLine.Trim() } else { 'no result line' }). Log: $run\postgres-tests.log"
@@ -715,6 +725,18 @@ rollback;
         }
         Write-Step '4f. Holds, requests, grants, duplicates and reports on PostgreSQL' $w.Elapsed.TotalSeconds 'holds and cleanup; grants, expiry, level history, duplicates, uncorrected copies, stored notices, the intake and Sensitivity reports, checks'
         $w = [System.Diagnostics.Stopwatch]::StartNew()
+    }
+    if ($has035) {
+        # Task 0041: the old identity tables and the Restricted Steward watch tables are gone; role conflicts stay;
+        # platform-core's tables are at their versions, each run with its own history table.
+        $gone = Get-Value "select count(*) from pg_tables where tablename in ('enterprise_identity_connections', 'enterprise_identity_connection_history', 'role_group_mappings_seen', 'role_mapping_notices');"
+        Assert-That ($gone -eq '0') "035 should drop the old identity tables, $gone left"
+        Assert-That ((Get-Value "select count(*) from pg_tables where tablename = 'role_conflict_problems';") -eq '1') 'role_conflict_problems must stay'
+        Assert-That ((Get-Value 'select max(version) from idn_schema_version;') -eq '3') 'identity tables should be at version 3'
+        Assert-That ((Get-Value 'select max(version) from lic_schema_version;') -eq '1') 'licensing tables should be at version 1'
+        Assert-That ([int](Get-Value 'select count(*) from idn_schema_history where success;') -ge 3) 'the identity run should record V1-V3 in idn_schema_history'
+        Assert-That ([int](Get-Value 'select count(*) from lic_schema_history where success;') -ge 1) 'the licensing run should record V1 in lic_schema_history'
+        Write-Step '4k. After 035 and the platform runs' 0 'old identity and watch tables dropped, role conflicts kept; identity V3 and licensing V1, own history tables'
     }
     Write-Step '4. After: nothing else changed' $w.Elapsed.TotalSeconds 'other document columns and every other table unchanged'
 

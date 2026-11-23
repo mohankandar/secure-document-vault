@@ -59,7 +59,7 @@ public final class Unit21JwtTestIssuer {
         try {
             Map<String, String> query = parseQuery(exchange.getRequestURI());
             String kind = query.getOrDefault("kind", "user");
-            String tenant = query.getOrDefault("tenant", "11111111-1111-1111-1111-111111111111");
+            String tenant = query.getOrDefault("tenant", "bd960ee9-9d54-5053-9958-92aaa54893a6");
             String source = query.getOrDefault("source", "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
             String roles = query.getOrDefault("roles", "BUSINESS_USER");
             String key = query.getOrDefault("key", "1");

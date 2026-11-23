@@ -4,8 +4,6 @@ databaseChangeLog:
   - include:
       file: db/changelog/001-foundation-core.yaml
   - include:
-      file: db/changelog/002-local-foundation-seed.yaml
-  - include:
       file: db/changelog/003-foundation-integrity-hardening.yaml
   - include:
       file: db/changelog/004-secure-ingestion-checkpoint-a.yaml
@@ -96,3 +94,6 @@ databaseChangeLog:
 
   - include:
       file: db/changelog/034-unidentified-intake-attempt-counts.yaml
+
+  - include:
+      file: db/changelog/035-drop-old-identity.yaml

@@ -55,7 +55,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * Task 0032: every refusal of a sending system's delivery or upload is recorded (INTAKE_REFUSED) with the code the
  * sender got, so the Daily intake report counts it, also before any submission exists. Task 0039: recorded in one
  * place, Vero's error handler and error page, so it takes in the answers Spring gives before Vero's code runs and the
- * 5xx failures (INTAKE_FAILED), and an attempt with no known sending system goes to Tenant IT's Problems
+ * 5xx failures (INTAKE_FAILED), and an attempt with no known sending system goes to IT's Problems
  * (unidentified intake attempts) without anything from a token. The answer is unchanged in every case.
  */
 class IntakeRefusalsTest {
@@ -257,7 +257,7 @@ class IntakeRefusalsTest {
         verifyNoInteractions(audit, unidentified);
     }
 
-    /** Task 0039: a sending system the tenant doesn't have: no known system, so for Tenant IT, with the tenant. */
+    /** Task 0039: a sending system the tenant doesn't have: no known system, so for IT, with the tenant. */
     @Test
     void aSendingSystemTheTenantDoesntHaveGoesToTenantIt() throws Exception {
         when(sources.findById(TENANT, SOURCE)).thenReturn(Optional.empty());
@@ -279,7 +279,7 @@ class IntakeRefusalsTest {
 
     /**
      * Task 0039 (closes the gap from report 0033): a failed sign-in on an intake address is answered by Vero's error
-     * page; it has no known sending system, so it goes to Tenant IT: time, address, code, reference, no token content.
+     * page; it has no known sending system, so it goes to IT: time, address, code, reference, no token content.
      */
     @Test
     void aFailedSignInOnAnIntakeAddressGoesToTenantItWithNoTokenContent() throws Exception {

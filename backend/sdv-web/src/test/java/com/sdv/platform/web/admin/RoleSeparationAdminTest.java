@@ -4,7 +4,6 @@ import com.sdv.platform.application.port.AuditEventPort;
 import com.sdv.platform.application.port.RoleCapabilityPolicyPort;
 import com.sdv.platform.application.port.RoleGovernancePort;
 import com.sdv.platform.application.roles.RoleConflictService;
-import com.sdv.platform.application.roles.RoleMappingWatchService;
 import com.sdv.platform.domain.audit.AuditOutcome;
 import com.sdv.platform.security.SdvRole;
 import com.sdv.platform.security.auth.AuthorizationService;
@@ -78,8 +77,8 @@ class RoleSeparationAdminTest {
         String[][] forbidden = {
                 {"BUSINESS_ADMIN", "VIEW_CONFIDENTIAL"}, {"BUSINESS_ADMIN", "VIEW_HIGHLY_CONFIDENTIAL"},
                 {"BUSINESS_ADMIN", "REQUEST_SENSITIVE_ACCESS"},
-                {"TENANT_IT_ADMIN", "VIEW_CONFIDENTIAL"}, {"TENANT_IT_ADMIN", "VIEW_HIGHLY_CONFIDENTIAL"},
-                {"TENANT_IT_ADMIN", "REQUEST_SENSITIVE_ACCESS"},
+                {"IT_ADMIN", "VIEW_CONFIDENTIAL"}, {"IT_ADMIN", "VIEW_HIGHLY_CONFIDENTIAL"},
+                {"IT_ADMIN", "REQUEST_SENSITIVE_ACCESS"},
                 {"PLATFORM_OPERATIONS_ADMIN", "VIEW_CONFIDENTIAL"}, {"PLATFORM_OPERATIONS_ADMIN", "VIEW_HIGHLY_CONFIDENTIAL"},
                 {"PLATFORM_OPERATIONS_ADMIN", "REQUEST_SENSITIVE_ACCESS"},
                 {"DOCUMENT_STEWARD", "APPROVE_SENSITIVE_ACCESS"}, {"RESTRICTED_STEWARD", "APPROVE_SENSITIVE_ACCESS"}};
@@ -116,25 +115,24 @@ class RoleSeparationAdminTest {
     }
 
     @Test
-    void onlyTheTenantItAdminReadsRoleConflictsAndOnlyTheBusinessAdminReadsNotices() {
+    void onlyTheItAdminReadsRoleConflictsAndOnlyTheBusinessAdminReadsGrantHistory() {
         when(governance.findRoleConflicts(eq(TENANT), anyInt())).thenReturn(List.of());
-        when(governance.findNotices(eq(TENANT), anyInt())).thenReturn(List.of());
         var controller = new RoleGovernanceAdminController(new SecurityContextFacade(), authorization,
-                new RoleConflictService(governance, audit), new RoleMappingWatchService(governance, audit));
+                new RoleConflictService(governance, audit), (entity, from, to) -> List.of());
 
-        signIn(SdvRole.TENANT_IT_ADMIN);
+        signIn(SdvRole.IT_ADMIN);
         assertEquals(List.of(), controller.roleConflicts());
-        assertThrows(AccessDeniedException.class, controller::roleNotices);
+        assertThrows(AccessDeniedException.class, controller::grantHistory);
 
         signIn(SdvRole.BUSINESS_ADMIN);
-        assertEquals(List.of(), controller.roleNotices());
+        assertEquals(List.of(), controller.grantHistory());
         assertThrows(AccessDeniedException.class, controller::roleConflicts);
 
         for (SdvRole other : List.of(SdvRole.BUSINESS_USER, SdvRole.DOCUMENT_STEWARD, SdvRole.RESTRICTED_STEWARD,
                 SdvRole.PLATFORM_OPERATIONS_ADMIN)) {
             signIn(other);
             assertThrows(AccessDeniedException.class, controller::roleConflicts, other.name());
-            assertThrows(AccessDeniedException.class, controller::roleNotices, other.name());
+            assertThrows(AccessDeniedException.class, controller::grantHistory, other.name());
         }
     }
 }

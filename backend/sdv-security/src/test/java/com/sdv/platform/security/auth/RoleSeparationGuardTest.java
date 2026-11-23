@@ -36,7 +36,7 @@ class RoleSeparationGuardTest {
     @Test
     void aSignInLeftWithNoRoleIsRefusedWithItsCode() {
         var refused = assertThrows(RoleSeparationGuard.RefusedException.class, () -> guard.apply(TENANT, "u1", null,
-                RoleConflictReporter.Source.LOCAL_SIGN_IN, EnumSet.of(SdvRole.RESTRICTED_STEWARD, SdvRole.TENANT_IT_ADMIN)));
+                RoleConflictReporter.Source.LOCAL_SIGN_IN, EnumSet.of(SdvRole.RESTRICTED_STEWARD, SdvRole.IT_ADMIN)));
         assertTrue(refused.getMessage().startsWith("SDV-ROL-004:"), refused.getMessage());
         assertEquals(1, reported.size(), "the conflict is recorded before the refusal");
     }
@@ -60,8 +60,8 @@ class RoleSeparationGuardTest {
         RoleSeparationGuard none = new RoleSeparationGuard(null);
         assertEquals(EnumSet.of(SdvRole.RESTRICTED_STEWARD, SdvRole.DOCUMENT_STEWARD), none.apply(TENANT, "u1", null,
                 RoleConflictReporter.Source.LOGIN_GROUPS, EnumSet.of(SdvRole.RESTRICTED_STEWARD, SdvRole.DOCUMENT_STEWARD)));
-        assertEquals(EnumSet.of(SdvRole.BUSINESS_ADMIN, SdvRole.TENANT_IT_ADMIN), guard.apply(TENANT, "u1", null,
-                RoleConflictReporter.Source.LOGIN_GROUPS, EnumSet.of(SdvRole.BUSINESS_ADMIN, SdvRole.TENANT_IT_ADMIN)));
+        assertEquals(EnumSet.of(SdvRole.BUSINESS_ADMIN, SdvRole.IT_ADMIN), guard.apply(TENANT, "u1", null,
+                RoleConflictReporter.Source.LOGIN_GROUPS, EnumSet.of(SdvRole.BUSINESS_ADMIN, SdvRole.IT_ADMIN)));
         assertTrue(reported.isEmpty());
     }
 

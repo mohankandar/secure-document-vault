@@ -2,7 +2,7 @@ import { useEffect, useId, useRef, useState, type KeyboardEvent as ReactKeyboard
 import { ChevronDown, ChevronUp, LogOut, UserRound } from 'lucide-react'
 import './topbar.css'
 
-// Product-neutral account menu: data in, events out. No SDV logic lives here, so LexaVault can reuse it.
+// Product-neutral account menu: data in, events out. No Vero business logic lives here.
 
 export type ThemeChoice = 'light' | 'dark' | 'system'
 export type AccountPerson = {

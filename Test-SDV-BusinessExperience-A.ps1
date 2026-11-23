@@ -10,8 +10,8 @@ Set-StrictMode -Version Latest
 
 $Root = $PSScriptRoot
 $Base = 'http://localhost:8280'
-$Tenant1 = '11111111-1111-1111-1111-111111111111'
-$Tenant2 = '22222222-2222-2222-2222-222222222222'
+$Tenant1 = 'bd960ee9-9d54-5053-9958-92aaa54893a6'
+$Tenant2 = '9b233c00-fe6e-582c-a9de-c1fa46f87254'
 $Suffix = ([guid]::NewGuid().ToString('N')).Substring(0, 10)
 $SourceId = $null
 $VolumeId = $null
@@ -126,7 +126,7 @@ try {
     Require ((DbScalar "select count(*) from databasechangelog where id='006-business-experience-checkpoint-a';") -eq '1') 'Business Experience Checkpoint A migration applied once'
     Require ((DbScalar "select count(*) from databasechangelog where id='005-secure-ingestion-checkpoint-b';") -eq '1') 'Frozen Secure Ingestion migration 005 remains applied once'
 
-    $it = UserHeaders $Tenant1 'business-a-it' 'TENANT_IT_ADMIN'
+    $it = UserHeaders $Tenant1 'business-a-it' 'IT_ADMIN'
     $admin = UserHeaders $Tenant1 'business-a-admin' 'BUSINESS_ADMIN'
     $business = UserHeaders $Tenant1 'business-a-user' 'BUSINESS_USER'
     $foreignBusiness = UserHeaders $Tenant2 'foreign-business-user' 'BUSINESS_USER'
@@ -144,7 +144,7 @@ try {
             incompleteAttentionHours = 24
         }
     }
-    Require ($source.StatusCode -eq 201) 'Tenant IT created disposable business-experience source'
+    Require ($source.StatusCode -eq 201) 'IT created disposable business-experience source'
     $SourceId = [string]$source.Body.sourceId
 
     SaveField $admin 'contractNumber' 'Contract Number' $true $true $true 'DIGITS_ONLY' 'EXACT'
@@ -158,7 +158,7 @@ try {
         state = 'ACTIVE'
         priority = 1
     }
-    Require ($volume.StatusCode -eq 201) 'Tenant IT created ciphertext volume for business-experience acceptance'
+    Require ($volume.StatusCode -eq 201) 'IT created ciphertext volume for business-experience acceptance'
     $VolumeId = [string]$volume.Body.volume.volumeId
 
     New-Item -ItemType Directory -Force -Path (Split-Path $Pdf -Parent) | Out-Null
@@ -283,7 +283,7 @@ try {
     $appSource = Get-Content (Join-Path $Root 'frontend\sdv-ui\src\App.tsx') -Raw
     Require ($appSource -match 'Search business records') 'Frontend contains dynamic business search workflow'
     Require ($appSource -match 'incompleteAttention') 'Frontend conditionally renders incomplete Business Record attention'
-    Require ($appSource -notmatch 'placeholder="lexavault"') 'Legacy LexaVault placeholder is absent from SDV UI'
+    # Independence from other products: the product-name guard (ProductNameGuardTest, task 0042) now does this check.
 
     Write-Host ''
     Write-Host '=== RESULT ==='

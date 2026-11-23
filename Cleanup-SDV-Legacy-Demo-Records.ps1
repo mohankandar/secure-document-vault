@@ -6,7 +6,7 @@ param(
 
 $ErrorActionPreference='Stop'
 Set-StrictMode -Version Latest
-$Tenant='11111111-1111-1111-1111-111111111111'
+$Tenant='bd960ee9-9d54-5053-9958-92aaa54893a6'
 $LegacySubmissionIds=@(
     'demo-contract-100000000001',
     'demo-contract-100000000002',

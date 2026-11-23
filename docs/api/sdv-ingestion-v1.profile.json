@@ -1,0 +1,87 @@
+{
+  "format": "platform-integration-profile/1",
+  "name": "sdv-ingestion-v1",
+  "version": "1.1.0",
+  "description": "Vero's ingestion API, v1 (sdv-ingestion-v1.openapi.json): create a submission, then upload each PDF to it. Sign-in is a standard OAuth 2.0 client-credentials token; Vero finds the entity and the sending system from the client ID.",
+  "api": {
+    "title": "Vero (Secure Document Vault) Ingestion API",
+    "version": "1.1.0"
+  },
+  "direction": "OUTBOUND",
+  "kind": "API_PUSH",
+  "steps": [
+    {
+      "name": "create",
+      "method": "POST",
+      "path": "/api/v1/ingestion/submissions",
+      "body": "JSON",
+      "bodyTemplate": "{\"sourceSubmissionId\":\"{package.id}\",\"expectedDocumentCount\":{package.documentCount},\"expectedDocuments\":[{#each doc}{\"sourceDocumentId\":\"{doc.sourceDocumentId}\"}{/each}],\"metadata\":{}}",
+      "repeat": "ONCE",
+      "read": {"submissionId": "/submissionId", "submissionStatus": "/status"},
+      "required": ["submissionId"]
+    },
+    {
+      "name": "upload",
+      "method": "POST",
+      "path": "/api/v1/ingestion/submissions/{step.create.submissionId}/documents",
+      "headers": {
+        "Content-Type": "application/pdf",
+        "X-SDV-Filename": "{doc.fileName}",
+        "X-SDV-Source-Document-Id": "{doc.sourceDocumentId}",
+        "X-SDV-Sensitivity-Level": "{doc.attr.sensitivityLevel}"
+      },
+      "body": "FILE",
+      "repeat": "EACH_DOCUMENT",
+      "read": {
+        "documentId": "/documentId",
+        "contentSha256": "/contentSha256",
+        "contentSizeBytes": "/contentSizeBytes",
+        "receipt": "/receiptAcknowledgement",
+        "documentStatus": "/currentStatus"
+      },
+      "required": ["documentId", "contentSha256", "contentSizeBytes"],
+      "integrity": {"sha256Value": "contentSha256", "sizeValue": "contentSizeBytes"}
+    }
+  ],
+  "signIn": {
+    "types": ["OAUTH2_CLIENT_CREDENTIALS"],
+    "installationSupplies": ["tokenAddress", "clientId", "credential"]
+  },
+  "health": {
+    "method": "GET",
+    "path": "/actuator/health/readiness",
+    "signIn": false,
+    "rules": [
+      {"status": "503", "code": "SDV-SYS-018", "outcome": "BUSY", "platformCode": "INT_DESTINATION_BUSY", "attemptUsed": false},
+      {"status": "503", "retryAfter": true, "outcome": "BUSY", "platformCode": "INT_DESTINATION_BUSY", "attemptUsed": false},
+      {"status": "503", "outcome": "OUTAGE"}
+    ]
+  },
+  "rules": [
+    {"status": "200", "pointer": "/receiptAcknowledgement", "equals": "DUPLICATE_ALREADY_STORED", "outcome": "ALREADY_RECEIVED"},
+    {"status": "200", "pointer": "/idempotentReplay", "equals": "true", "outcome": "ALREADY_RECEIVED"},
+    {"status": "401", "code": "SDV-AUT-*", "outcome": "SIGN_IN_FAILED"},
+    {"status": "401", "code": "SDV-SYS-006", "outcome": "SIGN_IN_FAILED"},
+    {"status": "403", "code": "SDV-AUT-*", "outcome": "SIGN_IN_FAILED"},
+    {"status": "403", "code": "SDV-INT-005", "outcome": "REFUSED"},
+    {"status": "503", "code": "SDV-SYS-018", "outcome": "BUSY", "attemptUsed": false},
+    {"status": "503", "code": "SDV-*", "outcome": "OUTAGE"},
+    {"status": "5xx", "code": "SDV-*", "outcome": "OUTAGE"},
+    {"status": "5xx", "outcome": "OUTAGE"},
+    {"status": "4xx", "code": "SDV-*", "outcome": "REFUSED"}
+  ],
+  "errorCodePointer": "/code",
+  "sendCorrelationId": true,
+  "testMode": "CHECK_ONLY",
+  "limits": {"maxDocuments": 100, "maxFileBytes": 262144000},
+  "fields": {"step": "create", "object": "metadata", "expected": [], "others": true},
+  "documentAttributes": [
+    {"name": "sensitivityLevel", "values": ["STANDARD", "CONFIDENTIAL", "HIGHLY_CONFIDENTIAL"], "default": "STANDARD"}
+  ],
+  "notes": [
+    "Create one client for the sending system in the customer's login server: client credentials only, no groups, the token's audience Vero's API audience.",
+    "Vero's IT binds the client ID to its entity and sending system with Vero's setup command (client-binding file). No custom claim is needed; entity or source claims, when sent, must match the binding.",
+    "Map only the fields Vero's IT set up for this sending system.",
+    "Vero answers 503 SDV-SYS-018 with Retry-After when it is busy: wait the seconds given, then send again."
+  ]
+}

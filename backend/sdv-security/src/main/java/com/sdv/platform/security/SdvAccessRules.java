@@ -13,18 +13,18 @@ import java.util.List;
  * permissions overrides apply {@link #FORBIDDEN_GRANTS}.
  */
 public final class SdvAccessRules {
-    /** Rule 1: a Restricted Steward can never also be a Business Admin, Tenant IT Admin or Platform Operations Admin. */
+    /** Rule 1: a Restricted Steward can never also be a Business Admin, IT Admin or Platform Operations Admin. */
     public static final String RESTRICTED_STEWARD_NOT_ADMIN = "RESTRICTED_STEWARD_NOT_ADMIN";
 
     public static final RoleSeparationPolicy<SdvRole> SEPARATION = new RoleSeparationPolicy<>(List.of(
             new RoleSeparationRule<>(RESTRICTED_STEWARD_NOT_ADMIN,
                     EnumSet.of(SdvRole.RESTRICTED_STEWARD),
-                    EnumSet.of(SdvRole.BUSINESS_ADMIN, SdvRole.TENANT_IT_ADMIN, SdvRole.PLATFORM_OPERATIONS_ADMIN))));
+                    EnumSet.of(SdvRole.BUSINESS_ADMIN, SdvRole.IT_ADMIN, SdvRole.PLATFORM_OPERATIONS_ADMIN))));
 
     /** Rule 2: what a Business Admin's role-permission override may never give. */
     public static final List<ForbiddenGrant<SdvRole, Capability>> FORBIDDEN_GRANTS = List.of(
             new ForbiddenGrant<>("ADMINS_NEVER_SEE_SENSITIVE_DOCUMENTS",
-                    EnumSet.of(SdvRole.BUSINESS_ADMIN, SdvRole.TENANT_IT_ADMIN, SdvRole.PLATFORM_OPERATIONS_ADMIN),
+                    EnumSet.of(SdvRole.BUSINESS_ADMIN, SdvRole.IT_ADMIN, SdvRole.PLATFORM_OPERATIONS_ADMIN),
                     EnumSet.of(Capability.VIEW_CONFIDENTIAL, Capability.VIEW_HIGHLY_CONFIDENTIAL,
                             Capability.REQUEST_SENSITIVE_ACCESS)),
             new ForbiddenGrant<>("STEWARDS_NEVER_APPROVE_SENSITIVE_ACCESS",

@@ -20,7 +20,7 @@ R3 includes:
 - record-centric Activity with document-view/read events hidden by default
 - desktop and iPad/tablet responsive layouts
 
-SDV remains independent from LexaVault. LexaVault may act only as an external producer through SDV's published APIs.
+Vero is independent of other products: they may act only as external producers through Vero's published APIs.
 
 ## Local ports
 
@@ -98,7 +98,7 @@ With the local backend and Vault running, one command gives a fresh machine the 
 .\Seed-SDV-Canvas-Demo.ps1
 ```
 
-It creates the LexaVault and Loan Origination System sending systems with their records (including the 14-page demo document on 300000000092 and the record with a missing document, 300000000090), the storage volumes `primary-a` and `primary-b`, the `e2e-demo` tag and a demo comment, the paused "Title Records" and "Tour test system" sending systems, and the organization name "Acme Lending". It runs `Seed-SDV-Demo-Records.ps1` itself; that script is still there for one-off records (`-FreshTestData`, `-ProblemDemo`).
+It creates the Redaction Service and Loan Origination System sending systems with their records (including the 14-page demo document on 300000000092 and the record with a missing document, 300000000090), the storage volumes `primary-a` and `primary-b`, the `e2e-demo` tag and a demo comment, the paused "Title Records" and "Tour test system" sending systems, and the organization name "Acme Lending". It runs `Seed-SDV-Demo-Records.ps1` itself; that script is still there for one-off records (`-FreshTestData`, `-ProblemDemo`).
 
 Running it again changes nothing. The seed uses the normal APIs plus a few direct writes to the local database and is for local development only: it refuses anything but `localhost`. Its PDFs (`test-tools\fixtures`, `scripts\demo-files`) are not part of the backend jar or the frontend build.
 
@@ -133,7 +133,7 @@ Before the next release baseline, update/revalidate release-readiness expectatio
 - `docs/development/IMPLEMENTATION_DECISIONS.md` — durable engineering decisions
 - `docs/development/CURRENT_STATE.md` — current baseline/candidate state
 
-Historical checkpoint, FIX, move-over, handoff, and continuity documents have intentionally been removed from this cleaned source package. Enterprise Identity Checkpoint C evidence is retained under `docs/verification/`.
+Historical checkpoint, FIX, move-over, handoff, and continuity documents have intentionally been removed from this cleaned source package. The earlier identity checkpoints (before platform-core, task 0041) are kept as history under `docs/verification/`.
 
 
 ### Local demo cleanup

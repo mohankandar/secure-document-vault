@@ -16,6 +16,7 @@ import { DesignSystem } from './DesignSystem'
 import { PRODUCT_NAME } from './brand'
 import { TopBar, type TopBarTab } from './topbar/TopBar'
 import { AccountMenu, type AccountPerson } from './topbar/AccountMenu'
+import { EntityChooser, switchEntity, useSessionEntities } from './EntityChoice'
 
 const showDevelopmentUtilities = import.meta.env.DEV
 
@@ -23,7 +24,7 @@ const AREA_META: Record<AreaId, { label: string; tab: string; short: string; Ico
   home: { label: 'Home', tab: 'Home', short: 'Home', Icon: House },
   workspace: { label: 'Records workspace', tab: 'Records', short: 'Records', Icon: FileSearch },
   governance: { label: 'Business administration', tab: 'Business administration', short: 'Governance', Icon: ShieldCheck },
-  tenant: { label: 'Tenant IT', tab: 'Tenant IT', short: 'Tenant IT', Icon: Building2 },
+  tenant: { label: 'IT', tab: 'IT', short: 'IT', Icon: Building2 },
   operations: { label: 'Platform operations', tab: 'Platform operations', short: 'Operations', Icon: ServerCog },
   system: { label: 'Design system', tab: 'Design system', short: 'System', Icon: Layers },
 }
@@ -34,7 +35,7 @@ const ROLE_LABEL: Record<RoleId, string> = {
   steward: 'Document steward',
   restricted: 'Restricted steward',
   businessAdmin: 'Business administrator',
-  tenantIt: 'Tenant IT administrator',
+  tenantIt: 'IT administrator',
   platform: 'Platform operations administrator',
 }
 /** Fallback names for a local test sign-in without a display name (the fixed local subjects have one, local mode only). */
@@ -43,7 +44,7 @@ const LOCAL_NAME: Record<LocalPersona, string> = {
   steward: 'Local document steward',
   restricted: 'Local restricted steward',
   businessAdmin: 'Local business administrator',
-  tenantIt: 'Local Tenant IT administrator',
+  tenantIt: 'Local IT administrator',
   platform: 'Local platform operations administrator',
   admin: 'Local administrator',
 }
@@ -76,9 +77,9 @@ const LOCAL_ROLE_OPTIONS: { value: LocalPersona; label: string }[] = [
   { value: 'steward', label: 'Document Steward' },
   { value: 'restricted', label: 'Restricted Steward' },
   { value: 'businessAdmin', label: 'Business Administrator' },
-  { value: 'tenantIt', label: 'Tenant IT Administrator' },
+  { value: 'tenantIt', label: 'IT Administrator' },
   { value: 'platform', label: 'Platform Operations Administrator' },
-  { value: 'admin', label: 'Local Administrator (Tenant IT + Business admin)' },
+  { value: 'admin', label: 'Local Administrator (IT + Business admin)' },
 ]
 const switchLocalRole = (selected: LocalPersona) => {
   const area = selected === 'business' || selected === 'steward' || selected === 'restricted' ? 'home' : selected === 'businessAdmin' || selected === 'admin' ? 'governance' : selected === 'tenantIt' ? 'tenant' : 'operations'
@@ -169,6 +170,9 @@ function ShellInner() {
   const [accountOpen, setAccountOpen] = useState(false)
   const localMode = isLocalSecurityMode()
   const incidentCount = useIncidentCount(areas.includes('operations'), role.id)
+  // Task 0041: the entities this sign-in may work in; the switcher shows when there are two or more.
+  const sessionEntities = useSessionEntities()
+  const choosing = !!sessionEntities && sessionEntities.current === null
 
   useEffect(() => {
     const k = (e: KeyboardEvent) => { if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); setPalette((p) => !p) } }
@@ -200,7 +204,9 @@ function ShellInner() {
               onThemeChange={setThemePref}
               open={accountOpen}
               onOpenChange={setAccountOpen}
-              // Entity switch: SDV has no entities yet, so no entities are passed and the section stays hidden.
+              entities={sessionEntities?.entities.map((e) => ({ id: e.entityId, label: e.name }))}
+              currentEntityId={sessionEntities?.current ?? undefined}
+              onEntityChange={(id) => switchEntity(id, sessionEntities?.current ?? null)}
               onSignOut={localMode ? undefined : () => { void endOidcSession() }}
               extraSection={showDevelopmentUtilities ? { title: 'Development only', render: (close) => (
                 <>
@@ -222,7 +228,7 @@ function ShellInner() {
         <main className="v-main" id="main">
           {/* Records stays mounted (hidden) to keep its state, but only for roles that may search: other roles must not call it. */}
           {liveSession?.capabilities.includes('SEARCH_RECORDS') && <div style={{ display: route.area === 'workspace' && !sessionLoading && !sessionError && allowed ? 'contents' : 'none' }}><Workspace /></div>}
-          {sessionLoading ? <div className="v-body">Connecting to {PRODUCT_NAME}…</div> : sessionError ? <div className="v-body" role="alert"><strong>Your session didn&apos;t start.</strong> <span className="muted">{sessionError}</span></div> : route.area === 'workspace' && allowed ? null : !allowed ? <AccessBoundary /> :
+          {choosing && sessionEntities ? <EntityChooser entities={sessionEntities} /> : sessionLoading ? <div className="v-body">Connecting to {PRODUCT_NAME}…</div> : sessionError ? <div className="v-body" role="alert"><strong>Your session didn&apos;t start.</strong> <span className="muted">{sessionError}</span></div> : route.area === 'workspace' && allowed ? null : !allowed ? <AccessBoundary /> :
             route.area === 'home' ? <Home /> :
             route.area === 'system' ? <DesignSystem /> :
             route.area === 'governance' ? <Governance /> :

@@ -17,7 +17,7 @@ import java.time.Instant;
  *       {@value #MAX_RETRY_AFTER_SECONDS}, default {@value #DEFAULT_RETRY_AFTER_SECONDS}. Anything else stops the start
  *       (SDV-SYS-005). The database pool's own wait is not changed by it.</li>
  *   <li><b>The count</b>: how many busy answers Vero gave in the last {@value #WINDOW_MINUTES} minutes and since it
- *       started, so sustained busy shows in Problems for Tenant IT (and Platform operations). Kept in memory, for this
+ *       started, so sustained busy shows in Problems for IT (and Platform operations). Kept in memory, for this
  *       Vero process: a busy answer means the database has no connection free, so nothing is written there.</li>
  * </ul>
  */

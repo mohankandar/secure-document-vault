@@ -13,18 +13,18 @@ const ACCOUNT_BY_ROLE: Record<string, string> = {
   'Document Steward': 'Account: Daniel Reyes, Document steward',
   'Restricted Steward': 'Account: Dana Ruiz, Restricted steward',
   'Business Administrator': 'Account: Priya Natarajan, Business administrator',
-  'Tenant IT Administrator': 'Account: Jonas Weber, Tenant IT administrator',
+  'IT Administrator': 'Account: Jonas Weber, IT administrator',
   'Platform Operations Administrator': 'Account: Aiko Tanaka, Platform operations administrator',
-  'Local Administrator (Tenant IT + Business admin)': 'Account: Ari Lindqvist, Business administrator, Tenant IT administrator',
+  'Local Administrator (IT + Business admin)': 'Account: Ari Lindqvist, Business administrator, IT administrator',
 }
 const AREA_TAB_BY_ROLE: Record<string, string> = {
   'Business User': 'Home',
   'Document Steward': 'Home',
   'Restricted Steward': 'Home',
   'Business Administrator': 'Business administration',
-  'Tenant IT Administrator': 'Tenant IT',
+  'IT Administrator': 'IT',
   'Platform Operations Administrator': 'Platform operations',
-  'Local Administrator (Tenant IT + Business admin)': 'Business administration',
+  'Local Administrator (IT + Business admin)': 'Business administration',
 }
 
 // ---- Task 0040 (owner answers, third round, item 3): the server's answers when a step fails ----
@@ -221,7 +221,7 @@ async function businessAdminChecks(page: Page, testInfo: TestInfo) {
 
 // ---- Keeping documents, Search fields, Record title (task 0009) ----
 
-const ADMIN_HEADERS = { 'X-SDV-Tenant-Id': '11111111-1111-1111-1111-111111111111', 'X-SDV-Subject': 'local-business-admin', 'X-SDV-Roles': 'BUSINESS_ADMIN' }
+const ADMIN_HEADERS = { 'X-SDV-Tenant-Id': 'bd960ee9-9d54-5053-9958-92aaa54893a6', 'X-SDV-Subject': 'local-business-admin', 'X-SDV-Roles': 'BUSINESS_ADMIN' }
 /** A demo record with First Name Ava and Last Name Patel (seeded with -FreshTestData). */
 const titleRecord = process.env.SDV_DEMO_TITLE_CONTRACT ?? '300000000076'
 const sectionTab = (page: Page, name: string) => page.getByRole('tablist', { name: 'Business administration sections' }).getByRole('tab', { name })
@@ -282,8 +282,8 @@ async function keepingDocumentsChecks(page: Page, testInfo: TestInfo) {
 /** Search fields: words only, a match change saves, drag reorder saves, and the Record title is set. Returns what to put back. */
 async function searchFieldsChecks(page: Page, testInfo: TestInfo) {
   const sources = await (await page.request.get('/api/v1/admin/metadata-sources', { headers: ADMIN_HEADERS })).json() as { sourceId: string; displayName: string }[]
-  // The demo source by name: a test sending system added by the Tenant IT tour must not be picked instead.
-  const sourceId = (sources.find((s) => s.displayName === 'LexaVault') ?? sources[0]).sourceId
+  // The demo source by name: a test sending system added by the IT tour must not be picked instead.
+  const sourceId = (sources.find((s) => s.displayName === 'Redaction Service') ?? sources[0]).sourceId
   const path = (what: string) => `/api/v1/admin/metadata-sources/${sourceId}/${what}`
   const storedOrder = await (await page.request.get(path('display-order'), { headers: ADMIN_HEADERS })).json() as string[]
   type FieldDefinition = { fieldKey: string; displayLabel: string; fieldType: string; required: boolean; businessIdentifier: boolean; searchable: boolean; normalization: string; searchMode: string; validationRulesJson: string; active: boolean }
@@ -319,6 +319,9 @@ async function searchFieldsChecks(page: Page, testInfo: TestInfo) {
   await expect(page.getByText(/^Records per page: \d+ \(most 50\)$/)).toBeVisible()
   // Task 0020 (item 5): the sending-system picker is wide enough for every name (no name cut off).
   const picker = page.getByLabel('Sending system')
+  // Task 0041: the page opens on the first sending system by key (loan-origination now comes before
+  // redaction-service), so the checks below choose the demo source they are written for.
+  if (await picker.count()) await picker.selectOption({ label: 'Redaction Service' })
   if (await picker.count()) {
     const fits = await picker.evaluate((el: HTMLSelectElement) => {
       const probe = document.createElement('span')
@@ -411,24 +414,26 @@ async function searchFieldsChecks(page: Page, testInfo: TestInfo) {
   await expect(page.getByRole('region', { name: 'Recently viewed' }).getByRole('listitem').first()).toContainText(/Ava/, { timeout: 15000 })
 }
 
-// ---- Tenant IT: Integrations and Storage (task 0010) ----
+// ---- IT: Integrations and Storage (task 0010) ----
 
-const IT_HEADERS = { 'X-SDV-Tenant-Id': '11111111-1111-1111-1111-111111111111', 'X-SDV-Subject': 'local-tenant-it', 'X-SDV-Roles': 'TENANT_IT_ADMIN' }
+const IT_HEADERS = { 'X-SDV-Tenant-Id': 'bd960ee9-9d54-5053-9958-92aaa54893a6', 'X-SDV-Subject': 'local-tenant-it', 'X-SDV-Roles': 'IT_ADMIN' }
 /** Saving a new sending system or volume adds rows that can't be deleted, so it only runs with SDV_ADMIN_CREATE_REGRESSION=1. */
 const createRegression = process.env.SDV_ADMIN_CREATE_REGRESSION === '1'
 /** Test folders live under the repository's .runtime folder only (the tour runs from frontend/sdv-ui). */
 const tourRuntime = path.resolve(process.cwd(), '..', '..', '.runtime', 'ui-checks', '0010')
 const stamp = () => new Date().toISOString().replace(/\D/g, '').slice(0, 14)
-const tenantTab = (page: Page, name: string) => page.getByRole('tablist', { name: 'Tenant IT sections' }).getByRole('tab', { name: new RegExp(`^${name}( needs attention)?$`) })
+const tenantTab = (page: Page, name: string) => page.getByRole('tablist', { name: 'IT sections' }).getByRole('tab', { name: new RegExp(`^${name}( needs attention)?$`) })
 const visible = (page: Page, text: string | RegExp) => page.getByText(text).filter({ visible: true })
 
 /** Integrations: status lines, detail in words, pause asks first, and the three-step add. */
 async function integrationsChecks(page: Page, testInfo: TestInfo) {
   await tenantTab(page, 'Integrations').click()
   const list = page.getByRole('region', { name: 'Sending systems' })
-  const item = list.getByRole('button', { name: /LexaVault/ })
+  const item = list.getByRole('button', { name: /Redaction Service/ })
   await expect(item).toContainText(/Working · last delivery|Waiting for the first delivery/, { timeout: 15000 })
-  const detail = page.getByRole('region', { name: 'LexaVault' })
+  // Task 0041: the list is in key order, and loan-origination now comes before redaction-service: choose it first.
+  await item.click()
+  const detail = page.getByRole('region', { name: 'Redaction Service' })
   await expect(detail).toContainText('Sends documents to Vero through the API.')
   await expect(detail).toContainText(/\d+ deliver(y|ies), \d+ documents?\./)
   const sends = page.getByRole('table', { name: 'What it sends' })
@@ -438,9 +443,9 @@ async function integrationsChecks(page: Page, testInfo: TestInfo) {
   await expect(page.getByText('Vero stores only where the secret is kept, never the secret.')).toBeVisible()
   // Limits are numbers (task 0019 follow-up): the system's own, never above the standard the server sends.
   const standard = await (await page.request.get('/api/v1/admin/ingestion-sources/standard-limits', { headers: IT_HEADERS })).json() as Record<string, number>
-  const lexaLimits = ((await (await page.request.get('/api/v1/admin/ingestion-sources', { headers: IT_HEADERS })).json()) as { displayName: string; limits?: Record<string, number | null> | null }[])
-    .find((s) => s.displayName === 'LexaVault')?.limits ?? {}
-  const inUse = (key: string) => Math.min(lexaLimits[key] ?? standard[key], standard[key])
+  const redactionServiceLimits = ((await (await page.request.get('/api/v1/admin/ingestion-sources', { headers: IT_HEADERS })).json()) as { displayName: string; limits?: Record<string, number | null> | null }[])
+    .find((s) => s.displayName === 'Redaction Service')?.limits ?? {}
+  const inUse = (key: string) => Math.min(redactionServiceLimits[key] ?? standard[key], standard[key])
   expect(standard.maxPagesPerPdf, 'standard limits from the server').toBeGreaterThan(0)
   await expect(visible(page, "Vero's standard limit")).toHaveCount(0)
   const limitsCard = detail.locator('.int-kv')
@@ -452,10 +457,10 @@ async function integrationsChecks(page: Page, testInfo: TestInfo) {
 
   // Pause asks first, then shows "Paused since…"; start again afterwards (and always put the status back).
   const sources = await (await page.request.get('/api/v1/admin/ingestion-sources', { headers: IT_HEADERS })).json() as { sourceId: string; displayName: string; status: string; authType: string; credentialReference: string; limits: unknown }[]
-  const lexa = sources.find((s) => s.displayName === 'LexaVault')!
+  const redactionService = sources.find((s) => s.displayName === 'Redaction Service')!
   try {
     await detail.getByRole('button', { name: 'Pause receiving' }).click()
-    const ask = page.getByRole('alertdialog', { name: 'Pause receiving from LexaVault?' })
+    const ask = page.getByRole('alertdialog', { name: 'Pause receiving from Redaction Service?' })
     await expect(ask).toContainText('While paused, Vero refuses deliveries from this system. It will need to send them again.')
     await capture(page, testInfo, 'integrations-pause-asks')
     await ask.getByRole('button', { name: 'Pause receiving' }).click()
@@ -464,9 +469,9 @@ async function integrationsChecks(page: Page, testInfo: TestInfo) {
     await expect(item).toContainText(/Working/, { timeout: 15000 })
   } finally {
     const now = await (await page.request.get('/api/v1/admin/ingestion-sources', { headers: IT_HEADERS })).json() as { sourceId: string; status: string }[]
-    if (lexa.status === 'ACTIVE' && now.find((s) => s.sourceId === lexa.sourceId)?.status !== 'ACTIVE') {
-      const r = await page.request.put(`/api/v1/admin/ingestion-sources/${lexa.sourceId}`, { headers: { ...IT_HEADERS, 'Content-Type': 'application/json' }, data: { displayName: lexa.displayName, status: 'ACTIVE', authType: lexa.authType, credentialReference: lexa.credentialReference, limits: lexa.limits } })
-      expect(r.ok(), 'starting LexaVault again').toBeTruthy()
+    if (redactionService.status === 'ACTIVE' && now.find((s) => s.sourceId === redactionService.sourceId)?.status !== 'ACTIVE') {
+      const r = await page.request.put(`/api/v1/admin/ingestion-sources/${redactionService.sourceId}`, { headers: { ...IT_HEADERS, 'Content-Type': 'application/json' }, data: { displayName: redactionService.displayName, status: 'ACTIVE', authType: redactionService.authType, credentialReference: redactionService.credentialReference, limits: redactionService.limits } })
+      expect(r.ok(), 'starting Redaction Service again').toBeTruthy()
     }
   }
 
@@ -547,7 +552,7 @@ async function storageChecks(page: Page, testInfo: TestInfo) {
     await page.unroute('**/api/v1/admin/storage-volumes')
   }
 
-  // Task 0020 (item 4): a volume Tenant IT set offline, which Vero doesn't measure, reads as Platform operations sees it, with no warning tone.
+  // Task 0020 (item 4): a volume IT set offline, which Vero doesn't measure, reads as Platform operations sees it, with no warning tone.
   await page.route('**/api/v1/admin/storage-volumes', async (route) => {
     if (route.request().method() !== 'GET') return route.continue()
     const real = await (await route.fetch()).json() as { volume: Record<string, unknown> }[]
@@ -558,7 +563,7 @@ async function storageChecks(page: Page, testInfo: TestInfo) {
   await tenantTab(page, 'Integrations').click()
   await tenantTab(page, 'Storage').click()
   const offlineRow = page.getByRole('row', { name: 'offline-x' })
-  await expect(offlineRow.locator('td[data-label="How full"]')).toHaveText('Offline (set by Tenant IT)', { timeout: 15000 })
+  await expect(offlineRow.locator('td[data-label="How full"]')).toHaveText('Offline (set by IT)', { timeout: 15000 })
   await expect(offlineRow).not.toContainText('can’t be read')
   await expect(offlineRow.locator('.v-dot')).toHaveClass(/^v-dot\s*$/)
   await expect(page.getByRole('alert').filter({ hasText: 'offline-x' })).toHaveCount(0)
@@ -615,14 +620,14 @@ async function storageChecks(page: Page, testInfo: TestInfo) {
 
 /** Seeded by Seed-SDV-Demo-Records.ps1 -ProblemDemo (could not store, stuck) and earlier (missing documents). */
 const problemDemo = { store: '300000000094', stuck: '300000000095', missing: '300000000096' }
-const OPS_HEADERS = { 'X-SDV-Tenant-Id': '11111111-1111-1111-1111-111111111111', 'X-SDV-Subject': 'local-platform-operations', 'X-SDV-Roles': 'PLATFORM_OPERATIONS_ADMIN' }
+const OPS_HEADERS = { 'X-SDV-Tenant-Id': 'bd960ee9-9d54-5053-9958-92aaa54893a6', 'X-SDV-Subject': 'local-platform-operations', 'X-SDV-Roles': 'PLATFORM_OPERATIONS_ADMIN' }
 
 /** Problems: each filter, a detail with its three blocks and the note to copy; read-only for both roles. */
-async function problemsChecks(page: Page, testInfo: TestInfo, area: 'Platform operations' | 'Tenant IT') {
+async function problemsChecks(page: Page, testInfo: TestInfo, area: 'Platform operations' | 'IT') {
   await page.getByRole('tablist', { name: `${area} sections` }).getByRole('tab', { name: /^Problems/ }).click()
   const list = page.getByRole('table', { name: 'Problems list' })
   const chip = (label: string) => page.getByRole('group', { name: 'Show' }).getByRole('button', { name: new RegExp(`^${label} · \\d+$`) })
-  if (!(await list.waitFor({ timeout: 15000 }).then(() => true, () => false))) return missingDemoData(testInfo, 'no problems listed. Run .\\Seed-SDV-Demo-Records.ps1 -SourceDisplayName LexaVault -ProblemDemo')
+  if (!(await list.waitFor({ timeout: 15000 }).then(() => true, () => false))) return missingDemoData(testInfo, 'no problems listed. Run .\\Seed-SDV-Demo-Records.ps1 -SourceDisplayName Redaction Service -ProblemDemo')
   // Task 0039: intake attempts with no known sending system (a failed sign-in, for example) are listed below Problems.
   const attempts = page.getByRole('region', { name: 'Unidentified intake attempts' })
   await expect(attempts.getByRole('heading', { name: /^Unidentified intake attempts · \d+$/ })).toBeVisible()
@@ -641,7 +646,7 @@ async function problemsChecks(page: Page, testInfo: TestInfo, area: 'Platform op
     const row = list.locator('tbody tr').filter({ hasText: record })
     if (!(await row.first().waitFor({ timeout: 10000 }).then(() => true, () => false))) { missingDemoData(testInfo, `no "${label}" problem for ${record}`); continue }
     await expect(row.first()).toContainText(what)
-    await expect(row.first()).toContainText('LexaVault')
+    await expect(row.first()).toContainText('Redaction Service')
     await capture(page, testInfo, `problems-${label.toLowerCase().replace(/\s+/g, '-')}`)
   }
   await chip('All').click()
@@ -653,7 +658,7 @@ async function problemsChecks(page: Page, testInfo: TestInfo, area: 'Platform op
     const panel = page.getByRole('dialog').filter({ hasText: 'What happened' })
     for (const heading of ['What happened', 'What it means', 'What you can do']) await expect(panel.getByRole('heading', { name: heading })).toBeVisible()
     // Task 0027 (0.4): admin views never name a file; the document is described instead.
-    await expect(panel).toContainText(/Vero received a (\d+-page )?document from LexaVault on \d+ \w+ and tried 3 times\./)
+    await expect(panel).toContainText(/Vero received a (\d+-page )?document from Redaction Service on \d+ \w+ and tried 3 times\./)
     await expect(panel).not.toContainText('.pdf')
     await expect(panel).toContainText('there is nothing to retry here')
     const note = panel.getByLabel('Note to copy')
@@ -680,13 +685,13 @@ async function problemsChecks(page: Page, testInfo: TestInfo, area: 'Platform op
 /** Audit: sentences for open, download, refused, settings change and delivery; the record-number filter; codes folded. */
 async function auditChecks(page: Page, testInfo: TestInfo) {
   // A download to read about: the steward downloads one document of the title record through the API.
-  const found = await (await page.request.post('/api/v1/business/search', { headers: { ...STEWARD_HEADERS, 'Content-Type': 'application/json' }, data: { sourceId: (await (await page.request.get('/api/v1/business/search-schema', { headers: STEWARD_HEADERS })).json() as { sources: { sourceId: string; displayName: string }[] }).sources.find((x) => x.displayName === 'LexaVault')!.sourceId, criteria: { contractNumber: titleRecord }, page: 1, pageSize: 5 } })).json() as { records: { recordRef: string }[] }
+  const found = await (await page.request.post('/api/v1/business/search', { headers: { ...STEWARD_HEADERS, 'Content-Type': 'application/json' }, data: { sourceId: (await (await page.request.get('/api/v1/business/search-schema', { headers: STEWARD_HEADERS })).json() as { sources: { sourceId: string; displayName: string }[] }).sources.find((x) => x.displayName === 'Redaction Service')!.sourceId, criteria: { contractNumber: titleRecord }, page: 1, pageSize: 5 } })).json() as { records: { recordRef: string }[] }
   const record = await (await page.request.get(`/api/v1/business/records/${encodeURIComponent(found.records[0].recordRef)}`, { headers: STEWARD_HEADERS })).json() as { documents: { documentId: string }[] }
   expect((await page.request.get(`/api/v1/business/documents/${record.documents[0].documentId}/download`, { headers: STEWARD_HEADERS })).ok()).toBeTruthy()
   // Fresh events to read about: an open, a refusal and a settings change (the setting is saved unchanged).
   expect((await page.request.get(`/api/v1/business/documents/${record.documents[0].documentId}/viewer`, { headers: STEWARD_HEADERS })).ok()).toBeTruthy()
   expect((await page.request.get('/api/v1/admin/role-capabilities', { headers: { ...STEWARD_HEADERS } })).status()).toBe(403)
-  const sourceId = (await (await page.request.get('/api/v1/admin/metadata-sources', { headers: ADMIN_HEADERS })).json() as { sourceId: string; displayName: string }[]).find((x) => x.displayName === 'LexaVault')!.sourceId
+  const sourceId = (await (await page.request.get('/api/v1/admin/metadata-sources', { headers: ADMIN_HEADERS })).json() as { sourceId: string; displayName: string }[]).find((x) => x.displayName === 'Redaction Service')!.sourceId
   const title = await (await page.request.get(`/api/v1/admin/metadata-sources/${sourceId}/record-title`, { headers: ADMIN_HEADERS })).json() as string[]
   expect((await page.request.put(`/api/v1/admin/metadata-sources/${sourceId}/record-title`, { headers: { ...ADMIN_HEADERS, 'Content-Type': 'application/json' }, data: { fieldKeys: title } })).ok()).toBeTruthy()
 
@@ -797,7 +802,7 @@ async function overviewChecks(page: Page, testInfo: TestInfo) {
   for (const [i, label] of ['Problems', 'Storage', 'Services', 'Cleanup'].entries()) await expect(tiles.nth(i)).toContainText(label)
   await expect(tiles.nth(1)).toContainText(/warns at \d+%, stops at \d+%|Can’t reach|No volume/)
   await expect(tiles.nth(3)).toContainText(/deleted today|Last run failed/, { timeout: 15000 })
-  // The demo data has problems; a volume Tenant IT set offline on purpose is never one of the things needing attention.
+  // The demo data has problems; a volume IT set offline on purpose is never one of the things needing attention.
   await expect(lead).toContainText(/did not arrive properly/)
   await expect(lead).not.toContainText('tour-volume')
   await expect(tiles.nth(0)).toContainText(/could not be stored|stuck|missing documents/)
@@ -839,7 +844,7 @@ async function opsStorageChecks(page: Page, testInfo: TestInfo) {
   await expect(table.locator('tbody tr').filter({ hasText: 'primary-a' })).toContainText(/In use/)
   const offline = table.locator('tbody tr').filter({ hasText: 'tour-volume' })
   if (await offline.count()) {
-    await expect(offline).toContainText('Offline (set by Tenant IT)')
+    await expect(offline).toContainText('Offline (set by IT)')
     await expect(offline).toContainText('No: offline on purpose')
   }
   await expect(page.getByRole('button', { name: /Edit|Add volume|Save/ })).toHaveCount(0)
@@ -927,7 +932,7 @@ async function healthChecks(page: Page, testInfo: TestInfo) {
 /** About: the facts, Copy details for support without personal data, and the old addresses open it. */
 async function aboutChecks(page: Page, testInfo: TestInfo, area: 'operations' | 'tenant', oldTab: 'configuration' | 'environment', person: string) {
   await page.evaluate((hash) => { window.location.hash = hash }, `#/${area}/${oldTab}`)
-  const sections = area === 'operations' ? 'Platform operations sections' : 'Tenant IT sections'
+  const sections = area === 'operations' ? 'Platform operations sections' : 'IT sections'
   await expect(page.getByRole('tablist', { name: sections }).getByRole('tab', { name: /^About/ })).toHaveAttribute('aria-selected', 'true', { timeout: 15000 })
   await expect(page.getByRole('tablist', { name: sections }).getByRole('tab', { name: /^(Configuration|Environment|Platform health)$/ })).toHaveCount(0)
   const facts = page.getByLabel('Installation facts')
@@ -954,7 +959,7 @@ async function aboutChecks(page: Page, testInfo: TestInfo, area: 'operations' | 
   await capture(page, testInfo, `about-${area}`)
 }
 
-/** Sign-in for Tenant IT: read-only, with who to contact to change it. */
+/** Sign-in for IT: read-only, with who to contact to change it. */
 async function signInChecks(page: Page, testInfo: TestInfo) {
   await tenantTab(page, 'Sign-in').click()
   await expect(page.getByText('Sign-in is set during installation by your installer. To change it, contact your Vero support team.')).toBeVisible({ timeout: 15000 })
@@ -1008,7 +1013,7 @@ const demoName = process.env.SDV_DEMO_NAME ?? 'pat'
 /** The demo record's member number: typed in the box it is read as a contract number, which triggers the suggestion. */
 const demoMember = process.env.SDV_DEMO_MEMBER ?? '20000000001'
 const allowNoData = process.env.SDV_E2E_ALLOW_NO_DATA === '1'
-const SEED_HELP = 'Run .\\Seed-SDV-Demo-Records.ps1 -SourceDisplayName LexaVault (and -FreshTestData -Count 3 for names, with Last Name set to Contains).'
+const SEED_HELP = 'Run .\\Seed-SDV-Demo-Records.ps1 -SourceDisplayName Redaction Service (and -FreshTestData -Count 3 for names, with Last Name set to Contains).'
 
 /** Missing demo data fails the test, unless SDV_E2E_ALLOW_NO_DATA=1 skips the record steps on purpose. */
 function missingDemoData(testInfo: TestInfo, what: string): void {
@@ -1063,7 +1068,7 @@ async function homeSteps(page: Page, testInfo: TestInfo) {
   const attention = page.getByRole('region', { name: 'Needs attention' })
   const attentionRow = attention.getByRole('button', { name: new RegExp(demoIncomplete) })
   if (!(await attentionRow.waitFor({ timeout: 15000 }).then(() => true, () => false))) return missingDemoData(testInfo, `record ${demoIncomplete} with missing documents is not under Needs attention`)
-  await expect(attentionRow).toContainText('Only 1 of 2 documents have arrived. The rest are still coming from LexaVault.')
+  await expect(attentionRow).toContainText('Only 1 of 2 documents have arrived. The rest are still coming from Redaction Service.')
   await capture(page, testInfo, 'home')
 
   const firstListed = ((await attention.locator('.home-attention').first().innerText()).match(/\d{12}/) ?? [''])[0]
@@ -1105,7 +1110,7 @@ async function recentlyViewedSteps(page: Page, testInfo: TestInfo) {
 
 // ---- Viewer (task 0006) ----
 
-const LOCAL_TENANT = '11111111-1111-1111-1111-111111111111'
+const LOCAL_TENANT = 'bd960ee9-9d54-5053-9958-92aaa54893a6'
 const STEWARD_HEADERS = { 'X-SDV-Tenant-Id': LOCAL_TENANT, 'X-SDV-Subject': 'local-document-steward', 'X-SDV-Roles': 'DOCUMENT_STEWARD' }
 /** Demo record used for the end-to-end redaction; every run permanently redacts a small area of its first page. */
 const redactionRecord = process.env.SDV_REDACTION_DEMO_CONTRACT ?? '100000000003'
@@ -1314,7 +1319,7 @@ async function tryBusinessRecordJourney(page: Page, testInfo: TestInfo, role: st
 
 const BUSINESS_HEADERS = { 'X-SDV-Tenant-Id': LOCAL_TENANT, 'X-SDV-Subject': 'local-business-user', 'X-SDV-Roles': 'BUSINESS_USER' }
 const LAST_SOURCE_KEY = 'vero.records.sourceId'
-/** A record of the canvas's loan system (Seed-SDV-Canvas-Demo.ps1); LexaVault has no record with this number. */
+/** A record of the canvas's loan system (Seed-SDV-Canvas-Demo.ps1); Redaction Service has no record with this number. */
 const CANVAS_RECORD = '300000000001'
 type SchemaSource = { sourceId: string; displayName: string; fields: unknown[]; status: 'ACTIVE' | 'PAUSED'; hasRecords: boolean; lastDeliveredAt: string | null }
 async function searchSources(page: Page) {
@@ -1361,11 +1366,11 @@ async function tourCheckDocument(page: Page): Promise<string> {
   return id!
 }
 
-/** The tour searches LexaVault's demo records, so it chooses LexaVault the way a person does: as their last choice in this browser. */
+/** The tour searches Redaction Service's demo records, so it chooses Redaction Service the way a person does: as their last choice in this browser. */
 /**
  * Task 0040 (owner answers, second round): a step that needs one sending system chooses it in Records, with the
  * Filters panel's Source picker, and searches one field there. It never relies on which system delivered last (live
- * checks deliver through LexaVault, so the newest sender changes from run to run).
+ * checks deliver through Redaction Service, so the newest sender changes from run to run).
  */
 async function searchInSource(page: Page, system: string, field: RegExp, value: string) {
   await page.getByRole('button', { name: /^Filters/ }).click()
@@ -1384,10 +1389,10 @@ async function searchInSource(page: Page, system: string, field: RegExp, value: 
   await expect(page.getByRole('region', { name: 'Search results' }), `searched in ${system}`).toContainText(system)
 }
 
-async function chooseLexaVault(page: Page) {
-  const lexa = (await searchSources(page)).find((s) => s.displayName === 'LexaVault')
-  expect(lexa, 'the LexaVault sending system').toBeTruthy()
-  await page.evaluate(([key, id]) => { try { window.localStorage.setItem(key, id) } catch { /* the default rule still picks it */ } }, [LAST_SOURCE_KEY, lexa!.sourceId])
+async function chooseRedactionService(page: Page) {
+  const redactionService = (await searchSources(page)).find((s) => s.displayName === 'Redaction Service')
+  expect(redactionService, 'the Redaction Service sending system').toBeTruthy()
+  await page.evaluate(([key, id]) => { try { window.localStorage.setItem(key, id) } catch { /* the default rule still picks it */ } }, [LAST_SOURCE_KEY, redactionService!.sourceId])
 }
 
 /**
@@ -1422,7 +1427,7 @@ test.describe('SDV role-based screen capture', () => {
 
   test.beforeEach(async ({ page }) => {
     await openApp(page, '/')
-    await chooseLexaVault(page)
+    await chooseRedactionService(page)
   })
 
   test('Records starts with the loan system while a paused, half-set-up system exists', async ({ page }, testInfo) => {
@@ -1437,18 +1442,18 @@ test.describe('SDV role-based screen capture', () => {
     expect(leftover!.status, 'the leftover system is paused').toBe('PAUSED')
     expect(leftover!.hasRecords, 'the leftover system holds no record').toBe(false)
     const los = sources.find((s) => s.displayName === 'Loan Origination System')
-    const lexa = sources.find((s) => s.displayName === 'LexaVault')
-    expect(los && lexa, 'the loan system and LexaVault (Seed-SDV-Canvas-Demo.ps1)').toBeTruthy()
-    for (const s of [los!, lexa!]) {
+    const redactionService = sources.find((s) => s.displayName === 'Redaction Service')
+    expect(los && redactionService, 'the loan system and Redaction Service (Seed-SDV-Canvas-Demo.ps1)').toBeTruthy()
+    for (const s of [los!, redactionService!]) {
       expect(s.status, `${s.displayName} is active`).toBe('ACTIVE')
       expect(s.hasRecords, `${s.displayName} holds records`).toBe(true)
     }
     // Task 0040 (owner answers, second round): which system delivered last changes from run to run (live checks deliver
-    // through LexaVault), so the tour doesn't rely on it. The loan system is chosen in Records (Filters, Source), and
+    // through Redaction Service), so the tour doesn't rely on it. The loan system is chosen in Records (Filters, Source), and
     // the fallback below expects whichever active system the schema says delivered most recently.
     const newest = sources.filter((s) => s.status === 'ACTIVE' && s.hasRecords && s.fields.length > 0)
       .sort((a, b) => Date.parse(b.lastDeliveredAt ?? '') - Date.parse(a.lastDeliveredAt ?? ''))[0]
-    const recordIn: Record<string, string> = { 'Loan Origination System': CANVAS_RECORD, LexaVault: demoRecord }
+    const recordIn: Record<string, string> = { 'Loan Origination System': CANVAS_RECORD, 'Redaction Service': demoRecord }
     expect(newest && recordIn[newest.displayName], `the newest active system (${newest?.displayName}) is one the tour has a record in`).toBeTruthy()
     await selectRole(page, 'Business User')
     await areaTab(page, 'Records').click()
@@ -1487,22 +1492,22 @@ test.describe('SDV role-based screen capture', () => {
     }
 
     // A last choice that still qualifies is kept.
-    await remember(lexa!.sourceId)
-    await searchAfterReload(demoRecord, 'LexaVault', 'LexaVault remembered')
+    await remember(redactionService!.sourceId)
+    await searchAfterReload(demoRecord, 'Redaction Service', 'Redaction Service remembered')
 
-    // Simulated in the browser: LexaVault, the remembered choice, no longer holds records, so it is ignored.
+    // Simulated in the browser: Redaction Service, the remembered choice, no longer holds records, so it is ignored.
     const changeSchema = (change: (s: SchemaSource) => SchemaSource) => page.route('**/api/v1/business/search-schema', async (route) => {
       const s = await (await route.fetch()).json() as { sources: SchemaSource[] }
       await route.fulfill({ json: { ...s, sources: s.sources.map(change) } })
     })
-    await changeSchema((s) => s.sourceId === lexa!.sourceId ? { ...s, hasRecords: false, lastDeliveredAt: null } : s)
-    await searchAfterReload(CANVAS_RECORD, 'Loan Origination System', 'LexaVault remembered but without records')
+    await changeSchema((s) => s.sourceId === redactionService!.sourceId ? { ...s, hasRecords: false, lastDeliveredAt: null } : s)
+    await searchAfterReload(CANVAS_RECORD, 'Loan Origination System', 'Redaction Service remembered but without records')
     await page.unrouteAll({ behavior: 'ignoreErrors' })
 
     // Simulated: the loan system is paused. An active system that qualifies comes first, although it delivered earlier.
     await remember(null)
     await changeSchema((s) => s.sourceId === los!.sourceId ? { ...s, status: 'PAUSED' } : s)
-    await searchAfterReload(demoRecord, 'LexaVault', 'loan system paused')
+    await searchAfterReload(demoRecord, 'Redaction Service', 'loan system paused')
     await page.unrouteAll({ behavior: 'ignoreErrors' })
 
     // With only systems that can't be searched (simulated in the browser), Records and Home say so.
@@ -1654,7 +1659,7 @@ test.describe('SDV role-based screen capture', () => {
   test('Approvals, legal holds, requester notices and the audit level filter (task 0030)', async ({ page }, testInfo) => {
     test.skip(!isDesktop(testInfo), 'Runs once per tour (desktop only).')
     test.setTimeout(240_000)
-    const TENANT = '11111111-1111-1111-1111-111111111111'
+    const TENANT = 'bd960ee9-9d54-5053-9958-92aaa54893a6'
     const as = (subject: string, roles: string) => ({ 'X-SDV-Tenant-Id': TENANT, 'X-SDV-Subject': subject, 'X-SDV-Roles': roles, 'Content-Type': 'application/json' })
     const dana = as('local-restricted-steward', 'RESTRICTED_STEWARD'), priya = as('local-business-admin', 'BUSINESS_ADMIN')
 
@@ -1782,7 +1787,7 @@ test.describe('SDV role-based screen capture', () => {
   test('Decided recently, the expiry note and levels on openings (task 0031)', async ({ page }, testInfo) => {
     test.skip(!isDesktop(testInfo), 'Runs once per tour (desktop only).')
     test.setTimeout(120_000)
-    const TENANT = '11111111-1111-1111-1111-111111111111'
+    const TENANT = 'bd960ee9-9d54-5053-9958-92aaa54893a6'
     const as = (subject: string, roles: string) => ({ 'X-SDV-Tenant-Id': TENANT, 'X-SDV-Subject': subject, 'X-SDV-Roles': roles, 'Content-Type': 'application/json' })
     const dana = as('local-restricted-steward', 'RESTRICTED_STEWARD'), priya = as('local-business-admin', 'BUSINESS_ADMIN')
 
@@ -1830,7 +1835,7 @@ test.describe('SDV role-based screen capture', () => {
   test('Reports: the Daily intake report, refusals counted, CSV and who may see it (task 0032)', async ({ page }, testInfo) => {
     test.skip(!isDesktop(testInfo), 'Runs once per tour (desktop only).')
     test.setTimeout(120_000)
-    const TENANT = '11111111-1111-1111-1111-111111111111'
+    const TENANT = 'bd960ee9-9d54-5053-9958-92aaa54893a6'
     const as = (subject: string, roles: string) => ({ 'X-SDV-Tenant-Id': TENANT, 'X-SDV-Subject': subject, 'X-SDV-Roles': roles })
     const priya = as('local-business-admin', 'BUSINESS_ADMIN')
     type Report = { from: string; to: string; today: string; timeZone: string; sendingSystems: { sourceId: string; displayName: string }[]; totals: { deliveries: number; refused: number; refusedCodes: { code: string; count: number }[] }; systems: { sourceId: string; displayName: string; totals: { refused: number } }[] }
@@ -1841,7 +1846,7 @@ test.describe('SDV role-based screen capture', () => {
     }
 
     // Business admin only: every other role gets SDV-RPT-001, for the report and its CSV.
-    for (const [subject, roles] of [['local-business-user', 'BUSINESS_USER'], ['local-document-steward', 'DOCUMENT_STEWARD'], ['local-restricted-steward', 'RESTRICTED_STEWARD'], ['local-tenant-it-admin', 'TENANT_IT_ADMIN'], ['local-platform-operations-admin', 'PLATFORM_OPERATIONS_ADMIN']]) {
+    for (const [subject, roles] of [['local-business-user', 'BUSINESS_USER'], ['local-document-steward', 'DOCUMENT_STEWARD'], ['local-restricted-steward', 'RESTRICTED_STEWARD'], ['local-tenant-it-admin', 'IT_ADMIN'], ['local-platform-operations-admin', 'PLATFORM_OPERATIONS_ADMIN']]) {
       for (const path of ['/api/v1/admin/reports/intake', '/api/v1/admin/reports/intake/export']) {
         const refused = await page.request.get(path, { headers: as(subject, roles) })
         expect(refused.status(), `${roles} on ${path}`).toBe(403)
@@ -1884,8 +1889,8 @@ test.describe('SDV role-based screen capture', () => {
     // Task 0033: the Sensitivity sub-tab is there now (it was disabled in task 0032).
     await expect(page.getByRole('tablist', { name: 'Reports' }).getByRole('tab', { name: 'Sensitivity' })).toBeEnabled()
     // Task 0039: the line under the table changed: refusals and failures of a known sending system are counted; the
-    // rest are listed for Tenant IT under Problems.
-    await expect(page.getByText(/^Refused and failed deliveries from a known sending system are counted here, with the code each got;.*listed for Tenant IT under Problems\.$/)).toBeVisible()
+    // rest are listed for IT under Problems.
+    await expect(page.getByText(/^Refused and failed deliveries from a known sending system are counted here, with the code each got;.*listed for IT under Problems\.$/)).toBeVisible()
     await expect(page.locator('.rpt-kpi').filter({ hasText: /^Failed/ }).locator('i')).toHaveText(/^\d[\d,]* after receipt · \d[\d,]* at intake$/)
     await expect(page.getByRole('button', { name: /^Day Today, / })).toBeVisible()
     await expect(page.getByText(/ \(entity\)$/)).toHaveAttribute('title', new RegExp(after.timeZone.replace('/', '\\/')))
@@ -1924,7 +1929,7 @@ test.describe('SDV role-based screen capture', () => {
   test('Reports: the Sensitivity report, attempts by role, CSV and who may see it; stored steward notices (task 0033)', async ({ page }, testInfo) => {
     test.skip(!isDesktop(testInfo), 'Runs once per tour (desktop only).')
     test.setTimeout(120_000)
-    const TENANT = '11111111-1111-1111-1111-111111111111'
+    const TENANT = 'bd960ee9-9d54-5053-9958-92aaa54893a6'
     const as = (subject: string, roles: string) => ({ 'X-SDV-Tenant-Id': TENANT, 'X-SDV-Subject': subject, 'X-SDV-Roles': roles })
     const priya = as('local-business-admin', 'BUSINESS_ADMIN')
     const dee = as('local-document-steward', 'DOCUMENT_STEWARD')
@@ -1937,7 +1942,7 @@ test.describe('SDV role-based screen capture', () => {
     const code = async (r: { json: () => Promise<unknown>; status: () => number }) => [r.status(), (await r.json() as { code: string }).code]
 
     // Business admin only: every other role gets SDV-RPT-001, for the report and its CSV.
-    for (const [subject, roles] of [['local-business-user', 'BUSINESS_USER'], ['local-document-steward', 'DOCUMENT_STEWARD'], ['local-restricted-steward', 'RESTRICTED_STEWARD'], ['local-tenant-it-admin', 'TENANT_IT_ADMIN'], ['local-platform-operations-admin', 'PLATFORM_OPERATIONS_ADMIN']]) {
+    for (const [subject, roles] of [['local-business-user', 'BUSINESS_USER'], ['local-document-steward', 'DOCUMENT_STEWARD'], ['local-restricted-steward', 'RESTRICTED_STEWARD'], ['local-tenant-it-admin', 'IT_ADMIN'], ['local-platform-operations-admin', 'PLATFORM_OPERATIONS_ADMIN']]) {
       for (const path of ['/api/v1/admin/reports/sensitivity', '/api/v1/admin/reports/sensitivity/export']) {
         expect(await code(await page.request.get(path, { headers: as(subject, roles) })), `${roles} on ${path}`).toEqual([403, 'SDV-RPT-001'])
       }
@@ -2332,24 +2337,24 @@ test.describe('SDV role-based screen capture', () => {
     expect(Math.abs((box?.width ?? 0) - (bar?.width ?? 0))).toBeLessThan(4)
     await searchBox(page).press('Escape')
     await page.setViewportSize({ width: 1440, height: 1000 })
-    // The tour's other tests search LexaVault.
-    await chooseLexaVault(page)
+    // The tour's other tests search Redaction Service.
+    await chooseRedactionService(page)
   })
 
-  test('Tenant IT Administrator screens', async ({ page }, testInfo) => {
+  test('IT Administrator screens', async ({ page }, testInfo) => {
     test.setTimeout(240_000)
-    await selectRole(page, 'Tenant IT Administrator')
-    await expectNoRecordsAccess(page, testInfo, 'Tenant IT')
+    await selectRole(page, 'IT Administrator')
+    await expectNoRecordsAccess(page, testInfo, 'IT')
     await captureAccountMenu(page, testInfo)
-    await captureSectionTabs(page, testInfo, 'Tenant IT sections', [
+    await captureSectionTabs(page, testInfo, 'IT sections', [
       'Storage',
       'Sign-in',
       'Integrations',
       'Problems',
       'About',
     ])
-    await expect(page.getByRole('tablist', { name: 'Tenant IT sections' }).getByRole('tab', { name: 'Audit' })).toHaveCount(0)
-    await problemsChecks(page, testInfo, 'Tenant IT')
+    await expect(page.getByRole('tablist', { name: 'IT sections' }).getByRole('tab', { name: 'Audit' })).toHaveCount(0)
+    await problemsChecks(page, testInfo, 'IT')
     await integrationsChecks(page, testInfo)
     await storageChecks(page, testInfo)
     await signInChecks(page, testInfo)
@@ -2357,15 +2362,15 @@ test.describe('SDV role-based screen capture', () => {
   })
 
   test('Local Administrator with several roles sees every area', async ({ page }, testInfo) => {
-    await selectRole(page, 'Local Administrator (Tenant IT + Business admin)')
+    await selectRole(page, 'Local Administrator (IT + Business admin)')
     await expectNoRecordsAccess(page, testInfo, 'Business administration')
     const areas = page.getByRole('banner').getByRole('navigation', { name: 'Areas' })
-    await expect(areas.getByRole('button')).toHaveText(['Business administration', 'Tenant IT'])
+    await expect(areas.getByRole('button')).toHaveText(['Business administration', 'IT'])
     await expect(page.getByRole('tablist', { name: 'Business administration sections' })).toBeVisible({ timeout: 15000 })
     await capture(page, testInfo, 'business-administration')
-    await areas.getByRole('button', { name: 'Tenant IT', exact: true }).click()
-    await expect(areas.getByRole('button', { name: 'Tenant IT', exact: true })).toHaveAttribute('aria-current', 'page')
-    await expect(page.getByRole('tablist', { name: 'Tenant IT sections' })).toBeVisible({ timeout: 15000 })
+    await areas.getByRole('button', { name: 'IT', exact: true }).click()
+    await expect(areas.getByRole('button', { name: 'IT', exact: true })).toHaveAttribute('aria-current', 'page')
+    await expect(page.getByRole('tablist', { name: 'IT sections' })).toBeVisible({ timeout: 15000 })
     await capture(page, testInfo, 'tenant-it')
     await captureAccountMenu(page, testInfo)
   })

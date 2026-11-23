@@ -35,12 +35,12 @@ import static org.mockito.Mockito.*;
  * (the SQL is run on PostgreSQL by IntakeReportPostgresTest).
  * <p>
  * The day: Friday 20 November 2026 in the tenant's time zone, America/New_York (the install default here), which is
- * 05:00 UTC on the 20th to 05:00 UTC on the 21st. Two sending systems, LexaVault and the Loan Origination System. The
+ * 05:00 UTC on the 20th to 05:00 UTC on the 21st. Two sending systems, Redaction Service and the Loan Origination System. The
  * same contract (300000000001) comes from both and counts once in the overall total.
  */
 class IntakeReportServiceTest {
     private static final UUID TENANT = UUID.fromString("11111111-1111-1111-1111-111111111111");
-    private static final UUID LV = UUID.fromString("22222222-0000-0000-0000-000000000001");
+    private static final UUID RS = UUID.fromString("22222222-0000-0000-0000-000000000001");
     private static final UUID LOS = UUID.fromString("22222222-0000-0000-0000-000000000002");
     private static final UUID A1 = UUID.fromString("33333333-0000-0000-0000-0000000000a1");
     private static final UUID A2 = UUID.fromString("33333333-0000-0000-0000-0000000000a2");
@@ -62,21 +62,21 @@ class IntakeReportServiceTest {
 
     /** The seeded day (see the class comment); returns nothing, fills the fake. */
     private void seedDay() {
-        repo.system(LV, "LexaVault");
+        repo.system(RS, "Redaction Service");
         repo.system(LOS, "Loan Origination System");
         // A1: a new contract today. Two documents, a duplicate, a failure, and a document at 23:59 New York time.
-        repo.submission(LV, A1, "req-a1", "2026-11-20T14:00:00Z", "300000000001");
-        repo.document(LV, A1, sha('1'), 5, "2026-11-20T14:01:00Z", "AVAILABLE");
-        repo.document(LV, A1, sha('2'), 7, "2026-11-20T14:02:00Z", "AVAILABLE");
-        repo.duplicate(LV, A1, sha('1'), 5, "2026-11-20T14:03:00Z");
-        repo.document(LV, A1, sha('3'), null, "2026-11-20T14:04:00Z", "PROCESSING_FAILED");
-        repo.document(LV, A1, sha('4'), 1, "2026-11-21T04:59:00Z", "AVAILABLE");
+        repo.submission(RS, A1, "req-a1", "2026-11-20T14:00:00Z", "300000000001");
+        repo.document(RS, A1, sha('1'), 5, "2026-11-20T14:01:00Z", "AVAILABLE");
+        repo.document(RS, A1, sha('2'), 7, "2026-11-20T14:02:00Z", "AVAILABLE");
+        repo.duplicate(RS, A1, sha('1'), 5, "2026-11-20T14:03:00Z");
+        repo.document(RS, A1, sha('3'), null, "2026-11-20T14:04:00Z", "PROCESSING_FAILED");
+        repo.document(RS, A1, sha('4'), 1, "2026-11-21T04:59:00Z", "AVAILABLE");
         // 23:59:59 on the 19th in New York: another day.
-        repo.document(LV, A1, sha('5'), 9, "2026-11-20T04:59:59Z", "AVAILABLE");
+        repo.document(RS, A1, sha('5'), 9, "2026-11-20T04:59:59Z", "AVAILABLE");
         // A2: a contract first delivered yesterday, updated today, with a refused upload.
-        repo.submission(LV, A2, "req-a2", "2026-11-19T20:00:00Z", "300000000002");
-        repo.document(LV, A2, sha('6'), 3, "2026-11-20T16:00:00Z", "AVAILABLE");
-        repo.refusal(LV, A2, null, "SDV-SEN-001", "2026-11-20T16:05:00Z");
+        repo.submission(RS, A2, "req-a2", "2026-11-19T20:00:00Z", "300000000002");
+        repo.document(RS, A2, sha('6'), 3, "2026-11-20T16:00:00Z", "AVAILABLE");
+        repo.refusal(RS, A2, null, "SDV-SEN-001", "2026-11-20T16:05:00Z");
         // B1: the same contract as A1, from the other sending system. Its request ID would be a spreadsheet formula.
         repo.submission(LOS, B1, "=HYPERLINK(\"x\")", "2026-11-20T17:00:00Z", "300000000001");
         repo.document(LOS, B1, sha('7'), 4, "2026-11-20T17:01:00Z", "AVAILABLE");
@@ -95,7 +95,7 @@ class IntakeReportServiceTest {
         assertEquals(NY, r.timeZone());
         assertEquals("INSTALL_DEFAULT", r.timeZoneSource());
         assertEquals("Contract number", r.primaryIdentifierLabel());
-        assertEquals(List.of("LexaVault", "Loan Origination System"), r.sendingSystems().stream().map(IntakeReportRepository.SendingSystem::displayName).toList());
+        assertEquals(List.of("Redaction Service", "Loan Origination System"), r.sendingSystems().stream().map(IntakeReportRepository.SendingSystem::displayName).toList());
 
         IntakeReportService.Totals t = r.totals();
         assertEquals(4, t.deliveries(), "A1, A2, B1 and the refusal before a submission");
@@ -110,20 +110,21 @@ class IntakeReportServiceTest {
         assertEquals(List.of(new IntakeReportService.CodeCount("SDV-SEN-001", 1), new IntakeReportService.CodeCount("SDV-SEN-006", 1)), t.refusedCodes());
         assertEquals(1, t.failed());
 
-        assertEquals(List.of("LexaVault", "Loan Origination System"), r.systems().stream().map(IntakeReportService.SystemBlock::displayName).toList());
-        IntakeReportService.SystemBlock lv = r.systems().get(0);
-        assertEquals(new IntakeReportService.SystemTotals(2, 2, 4, 16, 1, 1, 1), lv.totals());
-        IntakeReportService.DeliveryLine a1 = lv.deliveries().get(0);
+        // Both systems have two deliveries, so they are listed by name.
+        assertEquals(List.of("Loan Origination System", "Redaction Service"), r.systems().stream().map(IntakeReportService.SystemBlock::displayName).toList());
+        IntakeReportService.SystemBlock rs = r.systems().get(1);
+        assertEquals(new IntakeReportService.SystemTotals(2, 2, 4, 16, 1, 1, 1), rs.totals());
+        IntakeReportService.DeliveryLine a1 = rs.deliveries().get(0);
         assertEquals("req-a1", a1.requestId());
         assertEquals("2026-11-20T09:00", a1.receivedLocal(), "the delivery's first time, in New York time");
         assertEquals("300000000001", a1.primaryIdentifier());
         assertEquals(List.of(3, 13L, 1, 0, 1), List.of(a1.documents(), a1.pages(), a1.duplicates(), a1.refused(), a1.failed()));
-        IntakeReportService.DeliveryLine a2 = lv.deliveries().get(1);
+        IntakeReportService.DeliveryLine a2 = rs.deliveries().get(1);
         assertEquals("req-a2", a2.requestId());
         assertEquals("2026-11-20T11:00", a2.receivedLocal(), "created yesterday: listed from its first item today");
         assertEquals(List.of("SDV-SEN-001"), a2.refusedCodes());
 
-        IntakeReportService.SystemBlock los = r.systems().get(1);
+        IntakeReportService.SystemBlock los = r.systems().get(0);
         assertEquals(new IntakeReportService.SystemTotals(2, 1, 1, 4, 0, 1, 0), los.totals());
         IntakeReportService.DeliveryLine refusedFirst = los.deliveries().get(1);
         assertEquals("req-bad", refusedFirst.requestId(), "refused before a submission existed, still listed");
@@ -141,7 +142,7 @@ class IntakeReportServiceTest {
     @Test
     void intakeFailuresAreCountedUnderTheirSystemWithTheirCode() {
         seedDay();
-        repo.failure(LV, A2, null, "SDV-SYS-014", "2026-11-20T16:06:00Z");
+        repo.failure(RS, A2, null, "SDV-SYS-014", "2026-11-20T16:06:00Z");
         repo.failure(LOS, null, "req-down", "SDV-INT-010", "2026-11-20T18:30:00Z");
         IntakeReportService.IntakeReport r = service(NY).intake(TENANT, null, null, null);
 
@@ -152,7 +153,7 @@ class IntakeReportServiceTest {
         assertEquals(2, t.refused(), "failures are not refusals");
         assertEquals(5, t.deliveries(), "the failure before a submission is a delivery line of its own");
 
-        IntakeReportService.DeliveryLine a2 = block(r, "LexaVault").deliveries().get(1);
+        IntakeReportService.DeliveryLine a2 = block(r, "Redaction Service").deliveries().get(1);
         assertEquals(1, a2.failed());
         assertEquals(List.of("SDV-SYS-014"), a2.failedCodes());
         assertEquals(List.of("SDV-SEN-001"), a2.refusedCodes());
@@ -173,7 +174,7 @@ class IntakeReportServiceTest {
     void theDayBoundaryIsTheTenantsTimeZone() {
         seedDay();
         // Same data counted in UTC: the document at 04:59:59 UTC on the 20th is in, the one at 04:59 on the 21st is out.
-        IntakeReportService.IntakeReport utc = service("UTC").intake(TENANT, "2026-11-20", "2026-11-20", LV.toString());
+        IntakeReportService.IntakeReport utc = service("UTC").intake(TENANT, "2026-11-20", "2026-11-20", RS.toString());
         IntakeReportService.DeliveryLine a1 = utc.systems().get(0).deliveries().stream()
                 .filter(l -> "req-a1".equals(l.requestId())).findFirst().orElseThrow();
         assertEquals(3, a1.documents());
@@ -182,7 +183,7 @@ class IntakeReportServiceTest {
 
         // The tenant's own setting wins over the install default.
         repo.timeZone = NY;
-        IntakeReportService.IntakeReport own = service("UTC").intake(TENANT, "2026-11-20", "2026-11-20", LV.toString());
+        IntakeReportService.IntakeReport own = service("UTC").intake(TENANT, "2026-11-20", "2026-11-20", RS.toString());
         assertEquals("TENANT", own.timeZoneSource());
         assertEquals(NY, own.timeZone());
         assertEquals(5 + 7 + 1, own.systems().get(0).deliveries().get(0).pages());
@@ -213,16 +214,16 @@ class IntakeReportServiceTest {
 
     @Test
     void longListsShowFiftyLinesPerSystemAndTheRestAreInTheCsv() {
-        repo.system(LV, "LexaVault");
+        repo.system(RS, "Redaction Service");
         for (int i = 0; i < 53; i++) {
             UUID s = UUID.nameUUIDFromBytes(("s" + i).getBytes(StandardCharsets.UTF_8));
-            repo.submission(LV, s, "req-" + i, "2026-11-20T14:%02d:00Z".formatted(i), "4000000000" + (10 + i));
+            repo.submission(RS, s, "req-" + i, "2026-11-20T14:%02d:00Z".formatted(i), "4000000000" + (10 + i));
         }
-        IntakeReportService.SystemBlock lv = service(NY).intake(TENANT, null, null, null).systems().get(0);
-        assertEquals(53, lv.totals().deliveries());
-        assertEquals(50, lv.deliveries().size());
-        assertEquals(3, lv.moreDeliveries());
-        assertEquals("req-0", lv.deliveries().get(0).requestId(), "oldest first");
+        IntakeReportService.SystemBlock rs = service(NY).intake(TENANT, null, null, null).systems().get(0);
+        assertEquals(53, rs.totals().deliveries());
+        assertEquals(50, rs.deliveries().size());
+        assertEquals(3, rs.moreDeliveries());
+        assertEquals("req-0", rs.deliveries().get(0).requestId(), "oldest first");
     }
 
     @Test
@@ -233,12 +234,12 @@ class IntakeReportServiceTest {
         assertTrue(csv.startsWith("﻿"), "a byte-order mark for spreadsheets");
         List<String> lines = List.of(csv.substring(1).split("\r\n"));
         assertEquals("SHA-256 checksum,Request ID,Sending system,Primary identifier,Pages,\"Received (America/New_York)\",Received (UTC),Outcome,Refusal code", lines.get(0));
-        assertEquals(9, export.rowCount(), "7 from LexaVault (incl. the failure, the duplicate, the refusal), 2 from the other");
+        assertEquals(9, export.rowCount(), "7 from Redaction Service (incl. the failure, the duplicate, the refusal), 2 from the other");
         assertEquals(10, lines.size());
-        assertEquals("\"" + sha('1') + "\",\"req-a1\",\"LexaVault\",\"300000000001\",\"5\",\"2026-11-20T09:01-05:00\",\"2026-11-20T14:01:00Z\",\"ACCEPTED\",\"\"", lines.get(1));
-        assertTrue(lines.contains("\"" + sha('1') + "\",\"req-a1\",\"LexaVault\",\"300000000001\",\"5\",\"2026-11-20T09:03-05:00\",\"2026-11-20T14:03:00Z\",\"DUPLICATE_ALREADY_STORED\",\"\""));
-        assertTrue(lines.contains("\"" + sha('3') + "\",\"req-a1\",\"LexaVault\",\"300000000001\",\"\",\"2026-11-20T09:04-05:00\",\"2026-11-20T14:04:00Z\",\"FAILED\",\"\""));
-        assertTrue(lines.contains("\"\",\"req-a2\",\"LexaVault\",\"300000000002\",\"\",\"2026-11-20T11:05-05:00\",\"2026-11-20T16:05:00Z\",\"REFUSED\",\"SDV-SEN-001\""));
+        assertEquals("\"" + sha('1') + "\",\"req-a1\",\"Redaction Service\",\"300000000001\",\"5\",\"2026-11-20T09:01-05:00\",\"2026-11-20T14:01:00Z\",\"ACCEPTED\",\"\"", lines.get(1));
+        assertTrue(lines.contains("\"" + sha('1') + "\",\"req-a1\",\"Redaction Service\",\"300000000001\",\"5\",\"2026-11-20T09:03-05:00\",\"2026-11-20T14:03:00Z\",\"DUPLICATE_ALREADY_STORED\",\"\""));
+        assertTrue(lines.contains("\"" + sha('3') + "\",\"req-a1\",\"Redaction Service\",\"300000000001\",\"\",\"2026-11-20T09:04-05:00\",\"2026-11-20T14:04:00Z\",\"FAILED\",\"\""));
+        assertTrue(lines.contains("\"\",\"req-a2\",\"Redaction Service\",\"300000000002\",\"\",\"2026-11-20T11:05-05:00\",\"2026-11-20T16:05:00Z\",\"REFUSED\",\"SDV-SEN-001\""));
         assertTrue(lines.contains("\"\",\"req-bad\",\"Loan Origination System\",\"\",\"\",\"2026-11-20T13:00-05:00\",\"2026-11-20T18:00:00Z\",\"REFUSED\",\"SDV-SEN-006\""));
         // The formula guard: a cell starting with = + - @ is prefixed with an apostrophe; quotes are doubled.
         assertTrue(lines.stream().anyMatch(l -> l.contains(",\"'=HYPERLINK(\"\"x\"\")\",")), csv);
