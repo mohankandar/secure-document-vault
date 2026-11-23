@@ -799,6 +799,20 @@ Task 0036. Every error body also carries `reference`: the request's correlation 
 
 Task 0037: SYS-003 to SYS-012 are start-up codes. A start that stops prints one ERROR block, "APPLICATION FAILED TO START", with the code, the sentence, the exact cause and what to do, and no stack trace. A packaged start is any start without the `local` profile, as a customer install runs.
 
+### SDV-RST-001: the Restrictions page needs the Business Admin
+
+- **HTTP status:** 403. Sent by every `/api/v1/admin/restrictions` endpoint: the overview, the records with a record level and the level changes.
+- **Meaning:** the person's role can't see the Restrictions page. Only the Business Admin can (capability `VIEW_RESTRICTIONS`). Nothing was read. The refusal is audited as `AUTHORIZATION_DENIED`.
+- **What the user should do:** ask a Business Admin.
+- **What support should tell the customer:** this is working as intended. Role membership comes from the customer's own sign-in groups, so a change is made there by their IT team, not in Vero.
+
+### SDV-RST-002: a page of the Restrictions page isn't known
+
+- **HTTP status:** 400. Sent by `GET /api/v1/admin/restrictions/records` and `/level-changes`.
+- **Meaning:** the page position (`after`) isn't one Vero gave. Nothing was read.
+- **What the user should do:** open the Restrictions page again and go from its first page.
+- **What support should tell the customer:** the page position was changed or cut short; opening the page again fixes it.
+
 ### SDV-SYS-001: database older than this version
 
 - **HTTP status:** 503, on every request except health and system information (`/actuator/health…`, `/actuator/info`, `/api/v1/system/info`). Replaces `DATABASE_OLDER`.
@@ -2316,6 +2330,8 @@ These are the points where the screen turns a failure into words. Fix tasks belo
 | SDV-RPT-003 | `IntakeReportService.java:193`, `SensitivityReportService.java:216` |
 | SDV-RPT-004 | `TenantZone.java:22-23` |
 | SDV-RPT-005 | `IntakeReportService.java:222` |
+| SDV-RST-001 | `RestrictionsController.java` (`admin()`) |
+| SDV-RST-002 | `RestrictionsService.java` (`cursor()`) |
 
 ### Points swallowed on purpose
 

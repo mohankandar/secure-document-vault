@@ -8,6 +8,7 @@ import { getRolePolicy, saveRolePolicy, type RolePolicy } from './liveApi'
 import { SearchFields } from './SearchFields'
 import { Approvals, waitingWithReleases, type WaitingSummary } from './Approvals'
 import { LegalHolds } from './LegalHolds'
+import { Restrictions } from './Restrictions'
 import { incidentReleaseRequests, pendingRequests } from './liveApi'
 import { Reports } from './Reports'
 import { AuditReports } from './AuditReports'
@@ -29,6 +30,8 @@ const LEDE: Record<string, string> = {
   roles: 'Choose what each business role may do with documents.',
   retention: 'How long Vero keeps documents before deleting them for good.',
   holds: 'Documents on hold are never deleted by the daily cleanup, whatever the keeping rule says.',
+  // Task 0055.
+  restrictions: 'Everything restricted, in one place. Read only: each part links to the page where it is changed.',
   metadata: 'Which fields people can search, how they match, and what a record is called.',
   // Task 0032, board Reports-Intake.
   reports: 'Counts only. No document contents, titles or names.',
@@ -57,6 +60,7 @@ export function Governance() {
       {route.tab === 'roles' && <RolesTab />}
       {route.tab === 'retention' && <KeepingDocuments />}
       {route.tab === 'holds' && <LegalHolds />}
+      {route.tab === 'restrictions' && <Restrictions />}
       {route.tab === 'metadata' && <SearchFields />}
       {route.tab === 'approvals' && <Approvals onWaiting={setWaiting} />}
       {route.tab === 'reports' && <Reports />}

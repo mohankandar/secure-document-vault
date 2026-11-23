@@ -41,7 +41,9 @@ class FinalRoleMatrixTest {
                 Capability.CONFIGURE_BUSINESS_LIMITS, Capability.CONFIGURE_ROLE_PERMISSIONS,
                 Capability.APPROVE_SENSITIVE_ACCESS, Capability.MANAGE_LEGAL_HOLD, Capability.VIEW_INTAKE_REPORTS,
                 // Task 0050: the sealed audit report, for the Business Admin and IT Admin (no auditor role).
-                Capability.GENERATE_AUDIT_REPORT));
+                Capability.GENERATE_AUDIT_REPORT,
+                // Task 0055: the Restrictions page, Business Admin only.
+                Capability.VIEW_RESTRICTIONS));
         EXPECTED.put(SdvRole.IT_ADMIN, EnumSet.of(
                 Capability.CONFIGURE_INGESTION_SOURCES, Capability.CONFIGURE_TENANT_AUTH,
                 Capability.CONFIGURE_STORAGE_KEY_PROVIDER, Capability.VIEW_TECHNICAL_FAILURES, Capability.GENERATE_AUDIT_REPORT));
@@ -87,6 +89,7 @@ class FinalRoleMatrixTest {
         rows.put("Task 0048: Quarantine and review", new Object[]{Capability.QUARANTINE_DOCUMENTS, "011000"});
         rows.put("Task 0048: Quarantine by filter (whole incident)", new Object[]{Capability.QUARANTINE_BY_FILTER, "001000"});
         rows.put("Task 0050: Sealed audit report: generate, download, verify", new Object[]{Capability.GENERATE_AUDIT_REPORT, "000110"});
+        rows.put("Task 0055: Restrictions page, Business admin only", new Object[]{Capability.VIEW_RESTRICTIONS, "000100"});
         List<SdvRole> columns = List.of(SdvRole.BUSINESS_USER, SdvRole.DOCUMENT_STEWARD, SdvRole.RESTRICTED_STEWARD,
                 SdvRole.BUSINESS_ADMIN, SdvRole.IT_ADMIN, SdvRole.PLATFORM_OPERATIONS_ADMIN);
         assertEquals(EnumSet.allOf(SdvRole.class), EnumSet.copyOf(columns), "every role has a column");
@@ -132,7 +135,8 @@ class FinalRoleMatrixTest {
                         Capability.APPROVE_SENSITIVE_ACCESS,
                         Capability.MANAGE_LEGAL_HOLD,
                         Capability.VIEW_INTAKE_REPORTS,
-                        Capability.GENERATE_AUDIT_REPORT),
+                        Capability.GENERATE_AUDIT_REPORT,
+                        Capability.VIEW_RESTRICTIONS),
                 RoleCapabilities.capabilities(EnumSet.of(SdvRole.BUSINESS_ADMIN)));
 
         assertEquals(
@@ -163,7 +167,8 @@ class FinalRoleMatrixTest {
                         Capability.APPROVE_SENSITIVE_ACCESS,
                         Capability.MANAGE_LEGAL_HOLD,
                         Capability.VIEW_INTAKE_REPORTS,
-                        Capability.GENERATE_AUDIT_REPORT),
+                        Capability.GENERATE_AUDIT_REPORT,
+                        Capability.VIEW_RESTRICTIONS),
                 RoleCapabilities.capabilities(EnumSet.of(
                         SdvRole.BUSINESS_USER,
                         SdvRole.BUSINESS_ADMIN)));

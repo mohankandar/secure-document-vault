@@ -115,3 +115,6 @@ databaseChangeLog:
 
   - include:
       file: db/changelog/041-report-activity.yaml
+
+  - include:
+      file: db/changelog/042-restrictions-indexes.yaml

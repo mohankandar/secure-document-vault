@@ -266,6 +266,10 @@ public enum SdvErrorCode {
     RPT_004("SDV-RPT-004"),
     /** Task 0032: the range holds more lines than one report reads; choose fewer days or one sending system (400). */
     RPT_005("SDV-RPT-005"),
+    /** Task 0055: the Restrictions page is for Business Admins only (VIEW_RESTRICTIONS) (403). */
+    RST_001("SDV-RST-001"),
+    /** Task 0055: a page position of the Restrictions page that Vero didn't give (400). */
+    RST_002("SDV-RST-002"),
     /** Task 0036: the database is older than this Vero version; every request but health gets 503 until updated. */
     SYS_001("SDV-SYS-001", true),
     /** Task 0036: the database is newer than this Vero version (503). */

@@ -35,5 +35,7 @@ public enum Capability {
     /** Task 0048: quarantine a whole incident by filter. Restricted Steward only. */
     QUARANTINE_BY_FILTER,
     /** Task 0050: generate, list, download and verify the sealed audit report. Business Admin and IT Admin; there is no auditor role. */
-    GENERATE_AUDIT_REPORT
+    GENERATE_AUDIT_REPORT,
+    /** Task 0055: the read-only Restrictions page (counts and record identifiers; never titles or content). Business Admin only. */
+    VIEW_RESTRICTIONS
 }
