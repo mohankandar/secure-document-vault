@@ -116,6 +116,8 @@ export const CODE_WORDS: Record<string, string> = {
   'SDV-RPT-003': 'Choose a sending system from the list, or All.',
   'SDV-RPT-004': 'The organisation’s time zone isn’t valid. Tell IT.',
   'SDV-RPT-005': 'That is too much for one report. Choose fewer days, or one sending system.',
+  'SDV-RST-001': 'Only a Business admin sees the restrictions.',
+  'SDV-RST-002': 'This page of the list isn’t known any more. Open the Restrictions page again.',
   'SDV-SYS-001': 'The database is older than this Vero version.',
   'SDV-SYS-002': 'The database is newer than this Vero version.',
   'SDV-SYS-006': 'Sign-in is switched off for this installation. Tell your IT team.',

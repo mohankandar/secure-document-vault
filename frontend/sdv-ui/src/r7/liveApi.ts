@@ -353,6 +353,26 @@ export const activityReport = (f: { from?: string; to?: string }) => roleApi<Act
 /** Every count, one line each, with its reference and SHA-256 fingerprint; the server records the export in the audit. */
 export const activityReportCsv = (f: { from?: string; to?: string }): Promise<RegisteredExport> => contentExport('/api/v1/admin/reports/activity/export' + activityQuery(f), 'businessAdmin')
 
+// ---- Task 0055: the Restrictions page (Business admin, read-only; records by primary identifier only) ----
+
+export type RestrictedRecord = { identifierLabel: string | null; identifier: string | null; level: SensitivityLevel; setAt: string }
+export type RestrictionChange = { changedBy: string; changedAt: string; scope: 'DOCUMENT' | 'RECORD'; fromLevel: string | null; toLevel: string; identifierLabel: string | null; identifier: string | null }
+export type RestrictionsOverview = {
+  /** When the documents were counted by level (the Storage and retention report's counts). */
+  levelsCountedAt: string
+  levels: { sendingSystem: string; confidential: number; highlyConfidential: number }[]
+  confidential: number; highlyConfidential: number
+  restrictedRecords: number; records: { items: RestrictedRecord[]; next: string | null }
+  levelChanges: number; changes: { items: RestrictionChange[]; next: string | null }
+  lowerings: { waiting: number; oldest: string | null }
+  legalHolds: { holds: number; documents: number }
+  quarantine: { incidents: number; documents: number; preparing: number }
+}
+const restrictionsPath = '/api/v1/admin/restrictions'
+export const restrictions = () => roleApi<RestrictionsOverview>(restrictionsPath, 'businessAdmin')
+export const restrictedRecords = (after: string) => roleApi<{ items: RestrictedRecord[]; next: string | null }>(restrictionsPath + '/records?after=' + encodeURIComponent(after), 'businessAdmin')
+export const restrictionChanges = (after: string) => roleApi<{ items: RestrictionChange[]; next: string | null }>(restrictionsPath + '/level-changes?after=' + encodeURIComponent(after), 'businessAdmin')
+
 // ---- Task 0049: quarantine screens (the server side is task 0048) ----
 
 /** An incident in the list: documentsInForce is how many are still quarantined; never a reason here. */

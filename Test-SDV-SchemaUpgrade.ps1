@@ -1,7 +1,9 @@
 <#
 .SYNOPSIS
   Repeatable upgrade check for task 0024: a database at an earlier schema moves to this version's schema with its data
-  unchanged. -From 041 (the default, task 0054) starts at 040 and checks changeset 041 (the Activity report's kept days:
+  unchanged. -From 042 (the default, task 0055) starts at 041 and checks changeset 042 (two indexes for the Restrictions
+  page's lists; no table or row changes), then runs every PostgreSQL-only test (RestrictionsPostgresTest included).
+  Earlier: -From 041 (task 0054) starts at 040 and checks changeset 041 (the Activity report's kept days:
   report_activity_counts and report_activity_days, there, empty, their checks), then runs every PostgreSQL-only test
   (ActivityReportPostgresTest included: 10,000 agents, -ActivityPerDay opens each a day for 30 days). Earlier: -From 040 (task 0053) starts at 039 and checks changeset 040 (report_storage_counts, the kept
   counts of the Storage and retention report: there, empty, its checks), then runs every PostgreSQL-only test
@@ -80,8 +82,8 @@
 param(
     [string]$Jar,
     # The first changeset the upgrade applies; the scratch database is built up to the one before it.
-    [ValidateSet('026', '027', '028', '029', '030', '031', '032', '033', '034', '035', '036', '037', '038', '039', '040', '041')]
-    [string]$From = '041',
+    [ValidateSet('026', '027', '028', '029', '030', '031', '032', '033', '034', '035', '036', '037', '038', '039', '040', '041', '042')]
+    [string]$From = '042',
     # Task 0052: documents in QuarantineScalePostgresTest's one incident (250,000 as in CI; 1,000,000 for the local run).
     [ValidateRange(1000, 5000000)]
     [int]$QuarantineScale = 250000,
@@ -102,7 +104,7 @@ $db = 'sdv_schema_test'
 $owner = 'sdv_schema_owner'
 $hostUrl = 'jdbc:postgresql://localhost:5433/' + $db
 # In order. The upgrade applies every changeset from -From on.
-$checked = @('022-retention-policy-creator-name', '023-document-sensitivity-level', '024-record-sensitivity-levels', '025-role-separation', '026-legal-holds', '027-access-requests', '028-sensitivity-level-changes', '029-document-duplicate-receipts', '030-tenant-time-zone', '031-intake-report-indexes', '032-steward-notices', '033-unidentified-intake-attempts', '034-unidentified-intake-attempt-counts', '035-drop-old-identity', '036-quarantine', '037-sealed-audit', '038-quarantine-filter-blocking', '039-quarantine-scale', '040-report-storage', '041-report-activity')
+$checked = @('022-retention-policy-creator-name', '023-document-sensitivity-level', '024-record-sensitivity-levels', '025-role-separation', '026-legal-holds', '027-access-requests', '028-sensitivity-level-changes', '029-document-duplicate-receipts', '030-tenant-time-zone', '031-intake-report-indexes', '032-steward-notices', '033-unidentified-intake-attempts', '034-unidentified-intake-attempt-counts', '035-drop-old-identity', '036-quarantine', '037-sealed-audit', '038-quarantine-filter-blocking', '039-quarantine-scale', '040-report-storage', '041-report-activity', '042-restrictions-indexes')
 $start = [array]::IndexOf(($checked | ForEach-Object { $_.Substring(0, 3) }), $From)
 $newChangesets = @($checked[$start..($checked.Count - 1)])
 $newChangeset = $newChangesets[0]
@@ -150,6 +152,10 @@ $storageTableBefore = if ($has040) { '0' } else { '1' }
 $has041 = $newChangesets -contains '041-report-activity'
 $hasActivityTablesSql = "select count(*) from information_schema.tables where table_name in ('report_activity_counts', 'report_activity_people', 'report_activity_days');"
 $activityTablesBefore = if ($has041) { '0' } else { '3' }
+# Task 0055: 042 adds two indexes for the Restrictions page.
+$has042 = $newChangesets -contains '042-restrictions-indexes'
+$hasRestrictionIndexesSql = "select count(*) from pg_indexes where indexname in ('idx_record_levels_restricted', 'idx_level_changes_recent');"
+$restrictionIndexesBefore = if ($has042) { '0' } else { '2' }
 $platformRuns = @('identity V1 (platform-core)', 'identity V2 (platform-core)', 'identity V3 (platform-core)', 'licensing V1 (platform-core)')
 # Task 0033: an uncorrected copy received at the previous version, which 032 must turn into one stored notice.
 $oldCopyEvent = '50000000-0000-0000-0000-0000000000c1'
@@ -324,6 +330,7 @@ revoke all on database $db from public;
     Assert-That ((Get-Value $hasReportTableSql) -eq $reportTableBefore) "audit_reports should $(if ($has037) { 'not ' })exist at the previous version"
     Assert-That ((Get-Value $hasAppendOnlySql) -eq $(if ($has037) { '0' } else { '4' })) "the append-only triggers should $(if ($has037) { 'not ' })exist at the previous version"
     Assert-That ((Get-Value $hasFilterColumnsSql) -eq $filterColumnsBefore) "the quarantine filter columns should $(if ($has038) { 'not ' })exist at the previous version"
+    Assert-That ((Get-Value $hasRestrictionIndexesSql) -eq $restrictionIndexesBefore) "the restrictions indexes should $(if ($has042) { 'not ' })exist at the previous version"
     Assert-That ((Get-Value $hasActivityTablesSql) -eq $activityTablesBefore) "the activity report tables should $(if ($has041) { 'not ' })exist at the previous version"
     Assert-That ((Get-Value $hasStorageTableSql) -eq $storageTableBefore) "report_storage_counts should $(if ($has040) { 'not ' })exist at the previous version"
     Assert-That ((Get-Value $hasCountColumnsSql) -eq $countColumnsBefore) "the quarantine count columns should $(if ($has039) { 'not ' })exist at the previous version"
@@ -521,6 +528,11 @@ insert into unidentified_intake_attempts(attempt_id, tenant_id, occurred_at, cal
                 'idx_quarantined_documents_page_in_force', 'idx_quarantined_documents_page_released', 'idx_quarantined_documents_document',
                 'idx_quarantined_documents_level_missing', 'idx_quarantine_incidents_releasing', 'create function sdv_quarantine_counts',
                 'trg_quarantined_documents_counts_insert', 'trg_quarantined_documents_counts_update')) {
+            Assert-That ($upgradeText.Contains($c)) "the reviewable SQL lacks $c"
+        }
+    }
+    if ($has042) {
+        foreach ($c in @('create index idx_record_levels_restricted', 'create index idx_level_changes_recent')) {
             Assert-That ($upgradeText.Contains($c)) "the reviewable SQL lacks $c"
         }
     }
@@ -918,6 +930,13 @@ rollback;
         Write-Step '4q. After 039: quarantine counts on the incident' $w.Elapsed.TotalSeconds 'thirteen new columns, two triggers; rows at 038 get their received time and are counted; level filled, release and new row move the counts; checks refuse a bad level, counts that do not add up, no received time'
         $w = [System.Diagnostics.Stopwatch]::StartNew()
     }
+    if ($has042) {
+        # Task 0055: the two indexes are there and valid; no table or row changed (checked in step 4).
+        Assert-That ((Get-Value $hasRestrictionIndexesSql) -eq '2') 'the restrictions indexes were not created'
+        Assert-That ((Get-Value "select count(*) from pg_index i join pg_class c on c.oid = i.indexrelid where c.relname in ('idx_record_levels_restricted', 'idx_level_changes_recent') and i.indisvalid;") -eq '2') 'the restrictions indexes should be valid'
+        Write-Step '4t. After 042: Restrictions page indexes' $w.Elapsed.TotalSeconds 'two indexes there and valid'
+        $w = [System.Diagnostics.Stopwatch]::StartNew()
+    }
     if ($has041) {
         # Task 0054: the activity report's tables are there and empty; their checks refuse a kind Vero doesn't know, a
         # level it doesn't know, no events, a person on anything but an open, a day counted twice.
@@ -954,7 +973,7 @@ rollback;
         Write-Step '4r. After 040: Storage and retention report counts' $w.Elapsed.TotalSeconds 'table there and empty; checks refuse a negative time, counts not an object, an unknown entity'
         $w = [System.Diagnostics.Stopwatch]::StartNew()
     }
-    if ($has027 -or $has028 -or $has029 -or $has030 -or $has031 -or $has032 -or $has033 -or $has034 -or $has035 -or $has036 -or $has037 -or $has038 -or $has039 -or $has040 -or $has041) {
+    if ($has027 -or $has028 -or $has029 -or $has030 -or $has031 -or $has032 -or $has033 -or $has034 -or $has035 -or $has036 -or $has037 -or $has038 -or $has039 -or $has040 -or $has041 -or $has042) {
 
         # The application's own repositories and services against this database: holds and the retention cleanup
         # (LegalHoldPostgresTest), requests, grants, expiry and the table's checks (AccessRequestPostgresTest), exact
@@ -964,9 +983,9 @@ rollback;
         $w = [System.Diagnostics.Stopwatch]::StartNew()
         $mvn = (Get-Command mvn.cmd -ErrorAction Stop).Source
         $it = Invoke-Native -File $mvn -Arguments @('-o', '-f', (Join-Path $root 'backend\pom.xml'), '-pl', 'sdv-web', '-am', 'test',
-            '-Dtest=LegalHoldPostgresTest,AccessRequestPostgresTest,DuplicateIntakePostgresTest,IntakeReportPostgresTest,SensitivityReportPostgresTest,PlatformIdentityPostgresTest,SenderProfileServerContractTest,UnidentifiedIntakeAttemptPostgresTest,QuarantinePostgresTest,QuarantineFilterBlockingPostgresTest,QuarantineScalePostgresTest,StorageReportPostgresTest,ActivityReportPostgresTest,SealedAuditPostgresTest', '-Dsurefire.failIfNoSpecifiedTests=false') -Environment @{
+            '-Dtest=LegalHoldPostgresTest,AccessRequestPostgresTest,DuplicateIntakePostgresTest,IntakeReportPostgresTest,SensitivityReportPostgresTest,PlatformIdentityPostgresTest,SenderProfileServerContractTest,UnidentifiedIntakeAttemptPostgresTest,QuarantinePostgresTest,QuarantineFilterBlockingPostgresTest,QuarantineScalePostgresTest,StorageReportPostgresTest,ActivityReportPostgresTest,RestrictionsPostgresTest,SealedAuditPostgresTest', '-Dsurefire.failIfNoSpecifiedTests=false') -Environment @{
             SDV_IT_JDBC_URL = $hostUrl; SDV_IT_JDBC_USER = $owner; SDV_IT_JDBC_PASSWORD = $ownerPassword; SDV_IT_QUARANTINE_SCALE = "$QuarantineScale"; SDV_IT_REPORT_SCALE = "$ReportScale"; SDV_IT_ACTIVITY_PER_DAY = "$ActivityPerDay" }
-        foreach ($test in @('application.legalhold.LegalHoldPostgresTest', 'application.approvals.AccessRequestPostgresTest', 'application.document.DuplicateIntakePostgresTest', 'application.reports.IntakeReportPostgresTest', 'application.reports.SensitivityReportPostgresTest', 'application.identity.PlatformIdentityPostgresTest', 'web.SenderProfileServerContractTest', 'application.reports.UnidentifiedIntakeAttemptPostgresTest', 'application.quarantine.QuarantinePostgresTest', 'application.quarantine.QuarantineFilterBlockingPostgresTest', 'application.quarantine.QuarantineScalePostgresTest', 'application.reports.StorageReportPostgresTest', 'application.reports.ActivityReportPostgresTest', 'application.audit.SealedAuditPostgresTest')) {
+        foreach ($test in @('application.legalhold.LegalHoldPostgresTest', 'application.approvals.AccessRequestPostgresTest', 'application.document.DuplicateIntakePostgresTest', 'application.reports.IntakeReportPostgresTest', 'application.reports.SensitivityReportPostgresTest', 'application.identity.PlatformIdentityPostgresTest', 'web.SenderProfileServerContractTest', 'application.reports.UnidentifiedIntakeAttemptPostgresTest', 'application.quarantine.QuarantinePostgresTest', 'application.quarantine.QuarantineFilterBlockingPostgresTest', 'application.quarantine.QuarantineScalePostgresTest', 'application.reports.StorageReportPostgresTest', 'application.reports.ActivityReportPostgresTest', 'application.restrictions.RestrictionsPostgresTest', 'application.audit.SealedAuditPostgresTest')) {
             $itLine = ($it.Out -split "`n" | Where-Object { $_ -match ('Tests run: .* in com\.sdv\.platform\.' + [regex]::Escape($test)) } | Select-Object -First 1)
             # Task 0039 part 2: UnidentifiedIntakeAttemptPostgresTest has two tests (the flood of 1,000 requests).
             $wantRun = switch ($test) { 'application.reports.UnidentifiedIntakeAttemptPostgresTest' { 2 } 'application.identity.PlatformIdentityPostgresTest' { 5 } default { 1 } }
@@ -982,6 +1001,8 @@ rollback;
         if (Test-Path $storageTimes) { Copy-Item $storageTimes (Join-Path $run "storage-report-times-$ReportScale.txt") }
         $activityTimes = Join-Path $root 'backend\sdv-web\target\activity-report-times.txt'
         if (Test-Path $activityTimes) { Copy-Item $activityTimes (Join-Path $run "activity-report-times-$ActivityPerDay.txt") }
+        $restrictionTimes = Join-Path $root 'backend\sdv-web\target\restrictions-times.txt'
+        if (Test-Path $restrictionTimes) { Copy-Item $restrictionTimes (Join-Path $run 'restrictions-times.txt') }
         Write-Step '4f. Holds, requests, grants, duplicates and reports on PostgreSQL' $w.Elapsed.TotalSeconds 'holds and cleanup; grants, expiry, level history, duplicates, uncorrected copies, stored notices, the intake and Sensitivity reports, checks'
         $w = [System.Diagnostics.Stopwatch]::StartNew()
     }

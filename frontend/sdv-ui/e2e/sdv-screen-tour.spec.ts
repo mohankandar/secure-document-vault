@@ -2093,6 +2093,36 @@ test.describe('SDV role-based screen capture', () => {
     await expect(page.getByRole('status').filter({ hasText: 'The file is saved.' })).toContainText(`SHA-256 fingerprint ${fingerprint}.`)
   })
 
+  // Task 0055: the Restrictions page: read-only, everything restricted in one place, records by identifier only.
+  test('Business administration: the Restrictions page, read-only, nothing restricted shown (task 0055)', async ({ page }, testInfo) => {
+    test.skip(!isDesktop(testInfo), 'Runs once per tour (desktop only).')
+    test.setTimeout(120_000)
+    const TENANT = 'bd960ee9-9d54-5053-9958-92aaa54893a6'
+    const as = (subject: string, roles: string) => ({ 'X-SDV-Tenant-Id': TENANT, 'X-SDV-Subject': subject, 'X-SDV-Roles': roles })
+    for (const [subject, roles] of [['local-business-user', 'BUSINESS_USER'], ['local-document-steward', 'DOCUMENT_STEWARD'], ['local-restricted-steward', 'RESTRICTED_STEWARD'], ['local-tenant-it-admin', 'IT_ADMIN'], ['local-platform-operations-admin', 'PLATFORM_OPERATIONS_ADMIN']]) {
+      for (const path of ['/api/v1/admin/restrictions', '/api/v1/admin/restrictions/records?after=x', '/api/v1/admin/restrictions/level-changes?after=x']) {
+        const r = await page.request.get(path, { headers: as(subject, roles) })
+        expect(r.status(), `${roles} on ${path}`).toBe(403)
+        expect((await r.json() as { code: string }).code).toBe('SDV-RST-001')
+      }
+    }
+    const r = await page.request.get('/api/v1/admin/restrictions', { headers: as('local-business-admin', 'BUSINESS_ADMIN') })
+    expect(r.ok(), 'the Business admin reads the Restrictions page').toBeTruthy()
+    const body = await r.text()
+    expect(body).not.toMatch(/\.pdf|documentId|"reason"/i)
+
+    await selectRole(page, 'Business Administrator')
+    await page.evaluate(() => { window.location.hash = '#/governance/restrictions' })
+    await expect(page.getByRole('region', { name: 'Restricted documents' })).toBeVisible({ timeout: 15000 })
+    for (const name of ['Lowering requests waiting', 'Legal holds', 'Quarantine', 'Records with a record level', 'Level changes, last 30 days']) await expect(page.getByRole('region', { name })).toBeVisible()
+    await capture(page, testInfo, 'governance-restrictions')
+    const text = await page.locator('.v-main').innerText()
+    expect(text).not.toMatch(/\.pdf/i)
+    // It links to the page that acts: Legal holds.
+    await page.getByRole('region', { name: 'Legal holds' }).getByRole('button', { name: 'Legal holds' }).click()
+    await expect(page).toHaveURL(/#\/governance\/holds/)
+  })
+
   // Task 0049: the quarantine screens, on the tour's own record (one Highly Confidential document), so no demo
   // document's history grows. Every quarantine it makes is released again before the step ends (and at its start, if
   // an earlier run stopped half-way), so the record is available afterwards. Released incidents stay as history.

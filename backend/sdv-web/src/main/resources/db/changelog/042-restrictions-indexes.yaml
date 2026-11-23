@@ -1,0 +1,8 @@
+databaseChangeLog:
+  - changeSet:
+      id: 042-restrictions-indexes
+      author: sdv
+      changes:
+        - sqlFile:
+            path: db/changelog/042-restrictions-indexes.sql
+            relativeToChangelogFile: false

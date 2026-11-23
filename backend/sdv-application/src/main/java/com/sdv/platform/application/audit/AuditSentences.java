@@ -32,6 +32,7 @@ public final class AuditSentences {
             Map.entry("QUARANTINE_DOCUMENTS", "quarantine documents"),
             Map.entry("QUARANTINE_BY_FILTER", "quarantine documents by filter"),
             Map.entry("GENERATE_AUDIT_REPORT", "generate the sealed audit report"),
+            Map.entry("VIEW_RESTRICTIONS", "see the Restrictions page"),
             Map.entry("VIEW_TECHNICAL_FAILURES", "see problems and the audit"));
 
     /** Task 0026: what a refused DOCUMENT_ACCESS_REFUSED tried, in words. */
