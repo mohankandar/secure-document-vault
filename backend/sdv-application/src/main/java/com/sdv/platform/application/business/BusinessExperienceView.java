@@ -77,7 +77,10 @@ public final class BusinessExperienceView {
             List<MatchedField> matchedFields,
             /* Task 0026: the highest effective level among this record's documents that this person can't open
                (CONFIDENTIAL or HIGHLY_CONFIDENTIAL), or null when they can open them all. Counts are unchanged. */
-            String restrictedLevel) {
+            String restrictedLevel,
+            /* Task 0048: how many of the record's documents are quarantined now ("Temporarily unavailable"); they are
+               still in availableDocumentCount, and their levels are left out of restrictedLevel. */
+            int unavailableDocumentCount) {
         public RecordSummary {
             identifiers = List.copyOf(identifiers);
             metadataPreview = List.copyOf(metadataPreview);
@@ -114,9 +117,13 @@ public final class BusinessExperienceView {
             /* Task 0026: the documents this person can't open, as a reference and a level only. `documents` holds
                only the ones they can open. */
             List<LockedDocument> lockedDocuments,
-            /* Task 0026: as RecordSummary.restrictedLevel. */
-            String restrictedLevel) {
+            /* Task 0026: as RecordSummary.restrictedLevel (task 0048: over the documents not in unavailableDocuments). */
+            String restrictedLevel,
+            /* Task 0048: quarantined documents this person may not review: "Temporarily unavailable", the reference
+               only (no level, no reason). A reviewer sees them in documents, marked quarantined. */
+            List<UnavailableDocument> unavailableDocuments) {
         public RecordView {
+            unavailableDocuments = unavailableDocuments == null ? List.of() : List.copyOf(unavailableDocuments);
             identifiers = List.copyOf(identifiers);
             metadata = List.copyOf(metadata);
             documents = List.copyOf(documents);
@@ -130,6 +137,9 @@ public final class BusinessExperienceView {
      * or comments.
      */
     public record LockedDocument(UUID documentId, String effectiveSensitivityLevel) { }
+
+    /** Task 0048: a document that is temporarily unavailable (quarantined): its reference only. */
+    public record UnavailableDocument(UUID documentId) { }
 
     public record DocumentSummary(
             UUID documentId,
@@ -145,7 +155,9 @@ public final class BusinessExperienceView {
             /** Task 0024: the document's own sensitivity level. */
             String sensitivityLevel,
             /** Task 0024, part 2: the higher of its own level and its record's level (SensitivityLevel.effective). */
-            String effectiveSensitivityLevel) { }
+            String effectiveSensitivityLevel,
+            /** Task 0048: quarantined now (only a reviewer who can open its level sees it here). */
+            boolean quarantined) { }
 
     public record IncompleteAttention(List<IncompleteSubmission> submissions) {
         public IncompleteAttention {

@@ -67,7 +67,10 @@ class RetentionLegalHoldTest {
         NamedParameterJdbcTemplate jdbc = mock(NamedParameterJdbcTemplate.class);
         JdbcRetentionRepository repository = new JdbcRetentionRepository(jdbc);
         String activeHold = "not exists (select 1 from legal_holds h where h.tenant_id=documents.tenant_id "
-                + "and h.document_id=documents.document_id and h.released_at is null)";
+                + "and h.document_id=documents.document_id and h.released_at is null "
+                // Task 0048: a quarantine in force pauses the cleanup the same way.
+                + "union all select 1 from quarantined_documents q where q.tenant_id=documents.tenant_id "
+                + "and q.document_id=documents.document_id and q.released_at is null)";
 
         when(jdbc.query(anyString(), any(SqlParameterSource.class), any(RowMapper.class))).thenReturn(List.of());
         repository.findDueDocuments(100);

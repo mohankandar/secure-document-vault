@@ -356,4 +356,31 @@ class QuickSearchTest {
         assertNull(BusinessExperienceService.matchRank(memberId, "AB-12"), "an identifier keeps capitals");
         assertEquals(0, BusinessExperienceService.matchRank(memberId, "ab-12"));
     }
+
+    // ---- task 0048: quarantine ----
+
+    @Test
+    void aQuarantinedDocumentIsCountedAsUnavailableInTheSearchRowAndItsLevelIsNotShown() {
+        UUID doc = UUID.randomUUID();
+        when(records.findAvailableDocuments(eq(TENANT), eq(SOURCE), anyList())).thenReturn(List.of(new AvailableDocumentSnapshot(
+                doc, SUB_OMAR, "d1", "loan-agreement.pdf", NOW, NOW, null, 9, false, SensitivityLevel.HIGHLY_CONFIDENTIAL)));
+        found(SUB_OMAR);
+        var before = anywhere("patel").records().getFirst();
+        assertEquals("HIGHLY_CONFIDENTIAL", before.restrictedLevel(), "not quarantined: its level is shown as restricted");
+        assertEquals(0, before.unavailableDocumentCount());
+
+        com.sdv.platform.application.access.QuarantineLookup lookup = new com.sdv.platform.application.access.QuarantineLookup() {
+            @Override public boolean isQuarantined(UUID tenantId, UUID documentId) { return documentId.equals(doc); }
+            @Override public java.util.Set<UUID> quarantined(UUID tenantId, java.util.Collection<UUID> ids) {
+                return ids.contains(doc) ? java.util.Set.of(doc) : java.util.Set.of();
+            }
+        };
+        var withQuarantine = new BusinessExperienceService(tenants, sources, definitions, records, audit, lookup,
+                Clock.fixed(NOW, ZoneOffset.UTC));
+        var row = withQuarantine.search(TENANT, SOURCE, Map.of(), "patel", null, null, null, null, false, 1, 25, "maya", "corr")
+                .records().getFirst();
+        assertEquals(1, row.unavailableDocumentCount(), "Temporarily unavailable");
+        assertNull(row.restrictedLevel(), "never the level of a quarantined document");
+        assertEquals(1, row.availableDocumentCount(), "counts unchanged");
+    }
 }

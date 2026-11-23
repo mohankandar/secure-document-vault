@@ -29,5 +29,9 @@ public enum Capability {
     APPROVE_SENSITIVE_ACCESS,
     MANAGE_LEGAL_HOLD,
     /** Task 0032: the Reports tab (Daily intake): counts only, never contents, titles or names. Business Admin only. */
-    VIEW_INTAKE_REPORTS
+    VIEW_INTAKE_REPORTS,
+    /** Task 0048: quarantine a document, review quarantined documents, release one, ask to release an incident, read the exposure report. Stewards; levels as for opening. */
+    QUARANTINE_DOCUMENTS,
+    /** Task 0048: quarantine a whole incident by filter. Restricted Steward only. */
+    QUARANTINE_BY_FILTER
 }

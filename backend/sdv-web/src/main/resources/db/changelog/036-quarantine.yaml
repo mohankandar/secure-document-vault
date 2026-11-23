@@ -1,0 +1,8 @@
+databaseChangeLog:
+  - changeSet:
+      id: 036-quarantine
+      author: sdv
+      changes:
+        - sqlFile:
+            path: db/changelog/036-quarantine.sql
+            relativeToChangelogFile: false

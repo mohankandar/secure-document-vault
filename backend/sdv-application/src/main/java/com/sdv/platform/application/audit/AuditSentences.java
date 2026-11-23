@@ -29,6 +29,8 @@ public final class AuditSentences {
             Map.entry("CONFIGURE_INGESTION_SOURCES", "change sending systems"),
             Map.entry("CONFIGURE_STORAGE_KEY_PROVIDER", "change storage"),
             Map.entry("VIEW_INTAKE_REPORTS", "see the reports"),
+            Map.entry("QUARANTINE_DOCUMENTS", "quarantine documents"),
+            Map.entry("QUARANTINE_BY_FILTER", "quarantine documents by filter"),
             Map.entry("VIEW_TECHNICAL_FAILURES", "see problems and the audit"));
 
     /** Task 0026: what a refused DOCUMENT_ACCESS_REFUSED tried, in words. */
@@ -105,11 +107,22 @@ public final class AuditSentences {
             case "ROLE_CONFLICT_DETECTED" -> w + " signed in with roles that can't be held together; Vero gave neither";
             case "ROLE_CONFLICT_ENDED" -> w + " signed in with roles that no longer conflict";
             case "DOCUMENT_ACCESS_REFUSED" -> w + " tried to " + ATTEMPT_WORDS.getOrDefault(text(d, "attempt"), "use")
-                    + " " + f + ("SDV-SEN-009".equals(text(d, "code"))
-                            ? ", but that needs an approval" : ", but its level is restricted");
+                    + " " + f + ("SDV-SEN-009".equals(text(d, "code")) ? ", but that needs an approval"
+                            : "SDV-QUA-001".equals(text(d, "code")) ? ", but it is temporarily unavailable (quarantined)"
+                            : ", but its level is restricted");
             case "LEGAL_HOLD_PLACED" -> w + " put " + f + " on legal hold";
             case "LEGAL_HOLD_RELEASED" -> w + " released the legal hold on " + f;
             case "LEGAL_HOLD_RELEASE_REFUSED" -> w + " tried to release a legal hold that was already released";
+            // Task 0048: quarantine. The incident name and reasons stay in the quarantine tables, never here.
+            case "QUARANTINE_INCIDENT_CREATED" -> w + " started a quarantine incident" + (number(d, "documentCount") != null ? " of " + number(d, "documentCount") + (Long.valueOf(1).equals(number(d, "documentCount")) ? " document" : " documents") : "");
+            case "DOCUMENT_QUARANTINED" -> w + " quarantined " + f;
+            case "DOCUMENT_QUARANTINE_RELEASED" -> d.hasNonNull("requestId") ? w + " released " + f + " from quarantine, as approved" : w + " released " + f + " from quarantine";
+            case "QUARANTINE_INCIDENT_CLOSED" -> "A quarantine incident ended: every document in it was released";
+            case "QUARANTINE_RELEASE_REQUESTED" -> w + " asked to release a whole quarantine incident";
+            case "QUARANTINE_RELEASE_APPROVED" -> w + " approved releasing a whole quarantine incident";
+            case "QUARANTINE_RELEASE_DECLINED" -> w + " declined releasing a whole quarantine incident";
+            case "QUARANTINE_RELEASE_EXPIRED" -> "A request to release a quarantine incident expired";
+            case "QUARANTINE_EXPOSURE_EXPORTED" -> w + " exported a quarantine exposure report";
             // Task 0028: level changes and approvals. Levels in words; the reason stays in the details.
             case "DOCUMENT_SENSITIVITY_RAISED" -> w + " raised " + f + " to " + levelWords(text(d, "to"));
             case "DOCUMENT_SENSITIVITY_LOWERED" -> w + " approved lowering " + f + " to " + levelWords(text(d, "to"));

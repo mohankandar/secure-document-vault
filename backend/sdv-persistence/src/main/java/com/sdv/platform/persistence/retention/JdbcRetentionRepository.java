@@ -130,7 +130,11 @@ public class JdbcRetentionRepository implements RetentionRepository {
     /** Task 0027: the document has a legal hold in place (uq_legal_holds_active covers this lookup). */
     static final String ACTIVE_HOLD = """
             select 1 from legal_holds h
-             where h.tenant_id=documents.tenant_id and h.document_id=documents.document_id and h.released_at is null""";
+             where h.tenant_id=documents.tenant_id and h.document_id=documents.document_id and h.released_at is null
+            union all
+            select 1 from quarantined_documents q
+             where q.tenant_id=documents.tenant_id and q.document_id=documents.document_id and q.released_at is null""";
+    // Task 0048: a quarantined document is paused like a held one (uq_quarantined_documents_active covers the lookup).
 
     /** Due for deletion by retention, as findDueDocuments and claimDueDocument see it, apart from holds. */
     private static final String DUE = """

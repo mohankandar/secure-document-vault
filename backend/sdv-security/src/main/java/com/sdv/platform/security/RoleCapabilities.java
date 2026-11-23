@@ -14,13 +14,17 @@ public final class RoleCapabilities {
                 Capability.SEARCH_RECORDS, Capability.VIEW_PDF,
                 Capability.PERMANENT_REDACTION, Capability.DOWNLOAD_CURRENT_PDF,
                 Capability.PRINT_DOCUMENT, Capability.ADD_DOCUMENT_TAG, Capability.ADD_DOCUMENT_COMMENT,
-                Capability.VIEW_CONFIDENTIAL, Capability.CHANGE_SENSITIVITY_LEVEL);
+                Capability.VIEW_CONFIDENTIAL, Capability.CHANGE_SENSITIVITY_LEVEL,
+                // Task 0048: quarantine, review and release documents of the levels they can open.
+                Capability.QUARANTINE_DOCUMENTS);
         MAPPING.put(SdvRole.DOCUMENT_STEWARD, steward);
         // Task 0025: everything a Document Steward has, plus Highly Confidential documents and asking to print or
         // download one.
         EnumSet<Capability> restricted = EnumSet.copyOf(steward);
         restricted.add(Capability.VIEW_HIGHLY_CONFIDENTIAL);
         restricted.add(Capability.REQUEST_SENSITIVE_ACCESS);
+        // Task 0048: and quarantine a whole incident by filter.
+        restricted.add(Capability.QUARANTINE_BY_FILTER);
         MAPPING.put(SdvRole.RESTRICTED_STEWARD, restricted);
         MAPPING.put(SdvRole.BUSINESS_ADMIN, EnumSet.of(
                 Capability.CONFIGURE_METADATA_SEARCH, Capability.CONFIGURE_RETENTION,

@@ -67,8 +67,9 @@ See the table: no failures in the final runs. New tests: `OidcJwtAuthenticationC
 - `d3d3b59` docs(work): owner answers to plan 0041
 - `337f4f3` merge of `origin/release/vero-r7` (Dependabot, task 0047)
 - `ff1b0e3` feat(identity): Vero on platform-core identity v0.2.0, client-ID lookup, sender profile (task 0041 Part B)
+- `3f23328` fix(scripts): OIDC start probes 127.0.0.1; docs(work): report 0041
 
-Not pushed. `Start-SDV-Local.ps1` (your local changes) and the new untracked `docs/work/0048–0050`, `QUEUE-OVERNIGHT.md` are not in any commit.
+Pushed; PR #21 merged into `release/vero-r7` on green `ci-passed` (merge commit `6fd09b5`); annotated tag `sdv-ingestion-v1.1.0` on `6fd09b5`, pushed. (This section was brought up to date in the 0048 branch.)
 
 ## Not done, and why
 
@@ -80,4 +81,4 @@ Not pushed. `Start-SDV-Local.ps1` (your local changes) and the new untracked `do
 
 ## Suggested next step
 
-After the live check: push, PR into `release/vero-r7`, merge on green `ci-passed`, annotated tag `sdv-ingestion-v1.1.0` on the merge commit, push the tag, then finish this report.
+Done: merged and tagged. Next in the queue: 0048 (quarantine, server side).

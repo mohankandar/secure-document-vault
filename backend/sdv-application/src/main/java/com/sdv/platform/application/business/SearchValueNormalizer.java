@@ -4,10 +4,10 @@ import com.sdv.platform.domain.metadata.MetadataNormalization;
 
 import java.util.Locale;
 
-final class SearchValueNormalizer {
+public final class SearchValueNormalizer {
     private SearchValueNormalizer() { }
 
-    static String normalize(MetadataNormalization normalization, String value) {
+    public static String normalize(MetadataNormalization normalization, String value) {
         if (normalization == null) throw new com.sdv.platform.domain.error.CodedRefusal.BadRequest(com.sdv.platform.domain.error.SdvErrorCode.SCH_001, "Search normalization is required.");
         if (value == null) throw new com.sdv.platform.domain.error.CodedRefusal.BadRequest(com.sdv.platform.domain.error.SdvErrorCode.SCH_001, "Search value cannot be null.");
 
