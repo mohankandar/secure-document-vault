@@ -313,6 +313,26 @@ export const sensitivityReport = (f: IntakeFilter) => roleApi<SensitivityReport>
 /** Every count, one line each; the server records the export in the audit. */
 export const sensitivityReportCsv = (f: IntakeFilter) => contentBinary('/api/v1/admin/reports/sensitivity/export' + intakeQuery(f), 'businessAdmin')
 
+// ---- Task 0053: the Storage and retention report (Business admin, counts only, worked out in the background) ----
+
+export type StorageTotal = { level: SensitivityLevel | null; documents: number; pages: number; bytes: number }
+export type StorageReport = {
+  /** When the counts were worked out (UTC), how long that took, and how often they are worked out again. */
+  countedAt: string; tookMs: number; recountMinutes: number; timeZone: string; timeZoneSource: 'TENANT' | 'INSTALL_DEFAULT'
+  sendingSystems: { sourceId: string; displayName: string }[]
+  stored: { sourceId: string; sendingSystem: string; level: SensitivityLevel; documents: number; pages: number; bytes: number }[]
+  totals: StorageTotal[]; total: StorageTotal
+  /** The last 12 months, oldest first (YYYY-MM in the entity's time zone): received then, at their level now. */
+  growth: { month: string; documents: number; pages: number; bytes: number; standard: number; confidential: number; highlyConfidential: number }[]
+  received: { month: string; sourceId: string; sendingSystem: string; level: SensitivityLevel; documents: number; pages: number; bytes: number }[]
+  /** Per retention rule; keptForever: never due (the within counts are null). */
+  retention: { retentionDays: number | null; ruleName: string | null; keptForever: boolean; stored: number; within30: number | null; within60: number | null; within90: number | null }[]
+  heldBack: { legalHold: number; quarantine: number; both: number; total: number }
+}
+export const storageReport = () => roleApi<StorageReport>('/api/v1/admin/reports/storage', 'businessAdmin')
+/** Every count, one line each, with its reference and SHA-256 fingerprint; the server records the export in the audit. */
+export const storageReportCsv = (): Promise<RegisteredExport> => contentExport('/api/v1/admin/reports/storage/export', 'businessAdmin')
+
 // ---- Task 0049: quarantine screens (the server side is task 0048) ----
 
 /** An incident in the list: documentsInForce is how many are still quarantined; never a reason here. */

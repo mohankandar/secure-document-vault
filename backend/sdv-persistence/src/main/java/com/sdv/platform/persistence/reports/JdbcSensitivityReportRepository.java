@@ -52,87 +52,16 @@ public class JdbcSensitivityReportRepository implements SensitivityReportReposit
     @Override
     public DocumentLevels countStoredDocuments(UUID tenantId, UUID sourceId) {
         MapSqlParameterSource p = new MapSqlParameterSource().addValue("tenantId", tenantId);
-        String recordSource = "";
         String documentSource = "";
         if (sourceId != null) {
             p.addValue("sourceId", sourceId);
-            recordSource = " and source_id=:sourceId";
             documentSource = " and d.source_id=:sourceId";
         }
-        record Level(UUID sourceId, String key, String level) { }
-        List<Level> levels = jdbc.query("select source_id, record_key, sensitivity_level from record_sensitivity_levels"
-                        + " where tenant_id=:tenantId" + recordSource, p,
-                (rs, row) -> new Level(rs.getObject("source_id", UUID.class), rs.getString("record_key"),
-                        rs.getString("sensitivity_level")));
-
-        // The records above Standard: their parts (identifier records) or their one submission.
-        List<Map<String, Object>> parts = new ArrayList<>();
-        List<Map<String, Object>> records = new ArrayList<>();
-        int rec = 0;
-        for (Level level : levels) {
-            int rank = rank(level.level());
-            if (rank == 0) continue;
-            RecordKey.Parsed parsed;
-            try {
-                parsed = RecordKey.parse(level.key());
-            } catch (RuntimeException ex) {
-                throw new InternalCheckFailed("A record level names a record key that can't be read, so the documents "
-                        + "can't be counted by level.", ex);
-            }
-            rec++;
-            Map<String, Object> r = new LinkedHashMap<>();
-            r.put("rec", rec);
-            r.put("lvl", rank);
-            r.put("n", parsed.identifiers().size());
-            r.put("submission_id", parsed.submissionId() == null ? null : parsed.submissionId().toString());
-            records.add(r);
-            for (RecordKey.Part part : parsed.identifiers()) {
-                Map<String, Object> x = new LinkedHashMap<>();
-                x.put("rec", rec);
-                x.put("source_id", level.sourceId().toString());
-                x.put("field_key", part.fieldKey());
-                x.put("value", part.normalizedValue());
-                parts.add(x);
-            }
-        }
-        p.addValue("parts", json(parts)).addValue("records", json(records));
+        LevelSql levels = effectiveLevels(jdbc, tenantId, sourceId, p);
         long[] byLevel = new long[3];
-        jdbc.query("""
-                with parts as (
-                    select * from jsonb_to_recordset(cast(:parts as jsonb)) as x(rec int, source_id uuid, field_key text, value text)
-                ), records as (
-                    select * from jsonb_to_recordset(cast(:records as jsonb)) as x(rec int, lvl int, n int, submission_id uuid)
-                ), hits as (
-                    select pt.rec, v.source_id, v.submission_id, count(distinct (pt.field_key, pt.value)) as n
-                      from parts pt
-                      join business_metadata_values v
-                        on v.tenant_id=:tenantId and v.source_id=pt.source_id
-                       and v.field_key=pt.field_key and v.normalized_value=pt.value
-                      join metadata_field_definitions f
-                        on f.tenant_id=v.tenant_id and f.source_id=v.source_id and f.definition_id=v.definition_id
-                       and f.field_key=v.field_key and f.version=v.definition_version and f.business_identifier
-                     group by pt.rec, v.source_id, v.submission_id
-                ), matched as (
-                    select h.rec, h.submission_id
-                      from hits h
-                      join records r on r.rec=h.rec and r.n=h.n
-                     where (select count(*)
-                              from business_metadata_values iv
-                              join metadata_field_definitions idf
-                                on idf.tenant_id=iv.tenant_id and idf.source_id=iv.source_id
-                               and idf.definition_id=iv.definition_id and idf.field_key=iv.field_key
-                               and idf.version=iv.definition_version and idf.business_identifier
-                             where iv.tenant_id=:tenantId and iv.source_id=h.source_id and iv.submission_id=h.submission_id
-                               and iv.normalized_value ~ '\\S') = r.n
-                    union all
-                    select r.rec, r.submission_id from records r where r.submission_id is not null
-                ), submission_levels as (
-                    select m.submission_id, max(r.lvl) as lvl
-                      from matched m join records r on r.rec=m.rec
-                     group by m.submission_id
-                )
-                select greatest(case d.sensitivity_level when 'STANDARD' then 0 when 'CONFIDENTIAL' then 1 else 2 end,
-                                coalesce(sl.lvl, 0)) as lvl, count(*) as n
+        jdbc.query(levels.with() + """
+                select\s""" + LEVEL_OF_D + """
+                 as lvl, count(*) as n
                   from documents d
                   left join submission_levels sl on sl.submission_id=d.submission_id
                  where d.tenant_id=:tenantId and d.status in\s""" + STORED + documentSource + """
@@ -147,7 +76,7 @@ public class JdbcSensitivityReportRepository implements SensitivityReportReposit
                   join documents d on d.tenant_id=h.tenant_id and d.document_id=h.document_id
                  where h.tenant_id=:tenantId and h.released_at is null and d.status in\s""" + STORED + documentSource,
                 p, Long.class);
-        return new DocumentLevels(byLevel[0], byLevel[1], byLevel[2], levels.size(), held == null ? 0 : held);
+        return new DocumentLevels(byLevel[0], byLevel[1], byLevel[2], levels.recordsWithLevel(), held == null ? 0 : held);
     }
 
     @Override
@@ -291,5 +220,93 @@ public class JdbcSensitivityReportRepository implements SensitivityReportReposit
         } catch (JsonProcessingException ex) {
             throw new InternalCheckFailed("The record levels could not be passed to the count.", ex);
         }
+    }
+
+    /** Task 0053: the effective-level part of a query: "with ... submission_levels as (...)", and how many records carry a level. */
+    record LevelSql(String with, int recordsWithLevel) { }
+
+    /** A stored document {@code d}'s effective level (0 Standard, 1 Confidential, 2 Highly Confidential), joined to {@code sl}. */
+    static final String LEVEL_OF_D = "greatest(case d.sensitivity_level when 'STANDARD' then 0 when 'CONFIDENTIAL' then 1 else 2 end, "
+            + "coalesce(sl.lvl, 0))";
+
+    /**
+     * Task 0053 (from task 0033's count, unchanged): reads the tenant's record levels above Standard, parses their keys,
+     * and returns the "with" part naming each submission's record level ({@code submission_levels}), with its
+     * parameters added to {@code p} (which must hold :tenantId; and :sourceId when {@code sourceId} is set).
+     */
+    static LevelSql effectiveLevels(NamedParameterJdbcTemplate jdbc, UUID tenantId, UUID sourceId, MapSqlParameterSource p) {
+        String recordSource = sourceId == null ? "" : " and source_id=:sourceId";
+        record Level(UUID sourceId, String key, String level) { }
+        List<Level> levels = jdbc.query("select source_id, record_key, sensitivity_level from record_sensitivity_levels"
+                        + " where tenant_id=:tenantId" + recordSource, p,
+                (rs, row) -> new Level(rs.getObject("source_id", UUID.class), rs.getString("record_key"),
+                        rs.getString("sensitivity_level")));
+
+        // The records above Standard: their parts (identifier records) or their one submission.
+        List<Map<String, Object>> parts = new ArrayList<>();
+        List<Map<String, Object>> records = new ArrayList<>();
+        int rec = 0;
+        for (Level level : levels) {
+            int rank = rank(level.level());
+            if (rank == 0) continue;
+            RecordKey.Parsed parsed;
+            try {
+                parsed = RecordKey.parse(level.key());
+            } catch (RuntimeException ex) {
+                throw new InternalCheckFailed("A record level names a record key that can't be read, so the documents "
+                        + "can't be counted by level.", ex);
+            }
+            rec++;
+            Map<String, Object> r = new LinkedHashMap<>();
+            r.put("rec", rec);
+            r.put("lvl", rank);
+            r.put("n", parsed.identifiers().size());
+            r.put("submission_id", parsed.submissionId() == null ? null : parsed.submissionId().toString());
+            records.add(r);
+            for (RecordKey.Part part : parsed.identifiers()) {
+                Map<String, Object> x = new LinkedHashMap<>();
+                x.put("rec", rec);
+                x.put("source_id", level.sourceId().toString());
+                x.put("field_key", part.fieldKey());
+                x.put("value", part.normalizedValue());
+                parts.add(x);
+            }
+        }
+        p.addValue("parts", json(parts)).addValue("records", json(records));
+        return new LevelSql("""
+                with parts as (
+                    select * from jsonb_to_recordset(cast(:parts as jsonb)) as x(rec int, source_id uuid, field_key text, value text)
+                ), records as (
+                    select * from jsonb_to_recordset(cast(:records as jsonb)) as x(rec int, lvl int, n int, submission_id uuid)
+                ), hits as (
+                    select pt.rec, v.source_id, v.submission_id, count(distinct (pt.field_key, pt.value)) as n
+                      from parts pt
+                      join business_metadata_values v
+                        on v.tenant_id=:tenantId and v.source_id=pt.source_id
+                       and v.field_key=pt.field_key and v.normalized_value=pt.value
+                      join metadata_field_definitions f
+                        on f.tenant_id=v.tenant_id and f.source_id=v.source_id and f.definition_id=v.definition_id
+                       and f.field_key=v.field_key and f.version=v.definition_version and f.business_identifier
+                     group by pt.rec, v.source_id, v.submission_id
+                ), matched as (
+                    select h.rec, h.submission_id
+                      from hits h
+                      join records r on r.rec=h.rec and r.n=h.n
+                     where (select count(*)
+                              from business_metadata_values iv
+                              join metadata_field_definitions idf
+                                on idf.tenant_id=iv.tenant_id and idf.source_id=iv.source_id
+                               and idf.definition_id=iv.definition_id and idf.field_key=iv.field_key
+                               and idf.version=iv.definition_version and idf.business_identifier
+                             where iv.tenant_id=:tenantId and iv.source_id=h.source_id and iv.submission_id=h.submission_id
+                               and iv.normalized_value ~ '\\S') = r.n
+                    union all
+                    select r.rec, r.submission_id from records r where r.submission_id is not null
+                ), submission_levels as (
+                    select m.submission_id, max(r.lvl) as lvl
+                      from matched m join records r on r.rec=m.rec
+                     group by m.submission_id
+                )
+                """, levels.size());
     }
 }

@@ -189,6 +189,7 @@ class AuditExportTest {
         // Task 0033.
         assertEquals("Ari Admin exported the Sensitivity report (30 lines)", s.apply("SENSITIVITY_REPORT_EXPORTED", "{\"rowCount\":30}"));
         assertEquals("Ari Admin exported the Sensitivity report", s.apply("SENSITIVITY_REPORT_EXPORTED", null));
+        assertEquals("Ari Admin exported the Storage and retention report (40 lines)", s.apply("STORAGE_REPORT_EXPORTED", "{\"rowCount\":40}"));
         assertEquals("Ari Admin marked a notice of a corrected document sent again as read", s.apply("STEWARD_NOTICE_READ", "{\"markedCount\":1}"));
         assertEquals("Ari Admin marked 3 notices of corrected documents sent again as read", s.apply("STEWARD_NOTICE_READ", "{\"markedCount\":3}"));
         assertEquals("Ari Admin tried to see the reports without permission", s.apply("AUTHORIZATION_DENIED", "{\"capability\":\"VIEW_INTAKE_REPORTS\"}"));

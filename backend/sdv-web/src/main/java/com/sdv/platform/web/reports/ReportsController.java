@@ -2,6 +2,7 @@ package com.sdv.platform.web.reports;
 
 import com.sdv.platform.application.reports.IntakeReportService;
 import com.sdv.platform.application.reports.SensitivityReportService;
+import com.sdv.platform.application.reports.StorageReportService;
 import com.sdv.platform.domain.error.CodedRefusal;
 import com.sdv.platform.domain.error.SdvErrorCode;
 import com.sdv.platform.security.Capability;
@@ -31,6 +32,8 @@ import java.nio.charset.StandardCharsets;
  *   <li>{@code GET /intake/export} with the same filters: one CSV line per document; the export is audited.</li>
  *   <li>Task 0033: {@code GET /sensitivity?from=&to=&sourceId=}: the Sensitivity report (counts only); from and to
  *       left out for this month so far (up to 366 days). {@code GET /sensitivity/export}: its CSV, audited.</li>
+ *   <li>Task 0053: {@code GET /storage}: the Storage and retention report, from the counts kept in the background;
+ *       {@code GET /storage/export}: its CSV, with a reference and its SHA-256 fingerprint, audited.</li>
  * </ul>
  * Other refusals: SDV-RPT-002 (the day or range), SDV-RPT-003 (the sending system), SDV-RPT-004 (the tenant's time
  * zone), SDV-RPT-005 (too many lines, Daily intake only).
@@ -44,13 +47,16 @@ public class ReportsController {
     private final AuthorizationService authorization;
     private final IntakeReportService reports;
     private final SensitivityReportService sensitivity;
+    private final StorageReportService storage;
 
     public ReportsController(SecurityContextFacade security, AuthorizationService authorization,
-                             IntakeReportService reports, SensitivityReportService sensitivity) {
+                             IntakeReportService reports, SensitivityReportService sensitivity,
+                             StorageReportService storage) {
         this.security = security;
         this.authorization = authorization;
         this.reports = reports;
         this.sensitivity = sensitivity;
+        this.storage = storage;
     }
 
     @GetMapping("/intake")
@@ -89,6 +95,31 @@ public class ReportsController {
         SensitivityReportService.Export export = sensitivity.export(p.tenantId(), p.subject(), MDC.get("correlationId"),
                 from, to, sourceId);
         return csv(export.filename(), export.rowCount(), export.csv());
+    }
+
+    @GetMapping("/storage")
+    public ResponseEntity<StorageReportService.StorageReport> storage() {
+        SdvPrincipal p = requireReports();
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore().cachePrivate().mustRevalidate()).body(storage.report(p.tenantId()));
+    }
+
+    @GetMapping("/storage/export")
+    public ResponseEntity<byte[]> storageExport() {
+        SdvPrincipal p = requireReports();
+        StorageReportService.Export export = storage.export(p.tenantId(), p.subject(), MDC.get("correlationId"));
+        return registered(export.filename(), export.rowCount(), export.csv(), export.reference().toString(), export.fingerprint());
+    }
+
+    /** Task 0053: an export with its reference and SHA-256 fingerprint, as the quarantine exposure export had them. */
+    static ResponseEntity<byte[]> registered(String filename, int rows, byte[] body, String reference, String fingerprint) {
+        return ResponseEntity.ok()
+                .contentType(new MediaType("text", "csv", StandardCharsets.UTF_8))
+                .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.attachment().filename(filename).build().toString())
+                .header(HttpHeaders.CACHE_CONTROL, "no-store")
+                .header("X-SDV-Export-Rows", Integer.toString(rows))
+                .header("X-SDV-Export-Reference", reference)
+                .header("X-SDV-Export-Fingerprint", fingerprint)
+                .body(body);
     }
 
     private static ResponseEntity<byte[]> csv(String filename, int rows, byte[] body) {

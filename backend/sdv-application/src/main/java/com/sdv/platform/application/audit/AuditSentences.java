@@ -98,6 +98,10 @@ public final class AuditSentences {
             case "SENSITIVITY_REPORT_EXPORTED" -> number(d, "rowCount") != null
                     ? w + " exported the Sensitivity report (" + number(d, "rowCount") + (number(d, "rowCount") == 1L ? " line)" : " lines)")
                     : w + " exported the Sensitivity report";
+            // Task 0053.
+            case "STORAGE_REPORT_EXPORTED" -> number(d, "rowCount") != null
+                    ? w + " exported the Storage and retention report (" + number(d, "rowCount") + (number(d, "rowCount") == 1L ? " line)" : " lines)")
+                    : w + " exported the Storage and retention report";
             case "STEWARD_NOTICE_READ" -> number(d, "markedCount") != null && number(d, "markedCount") != 1L
                     ? w + " marked " + number(d, "markedCount") + " notices of corrected documents sent again as read"
                     : w + " marked a notice of a corrected document sent again as read";

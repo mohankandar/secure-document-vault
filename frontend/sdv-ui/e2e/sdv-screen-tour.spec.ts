@@ -2011,6 +2011,51 @@ test.describe('SDV role-based screen capture', () => {
     await expect(page.getByText('The file is saved. The export is recorded in the audit.')).toBeVisible()
   })
 
+  // Task 0053: the Storage and retention report: counts only, from the counts kept in the background.
+  test('Reports: storage and retention, counts only, CSV with reference and fingerprint (task 0053)', async ({ page }, testInfo) => {
+    test.skip(!isDesktop(testInfo), 'Runs once per tour (desktop only).')
+    test.setTimeout(120_000)
+    const TENANT = 'bd960ee9-9d54-5053-9958-92aaa54893a6'
+    const as = (subject: string, roles: string) => ({ 'X-SDV-Tenant-Id': TENANT, 'X-SDV-Subject': subject, 'X-SDV-Roles': roles })
+    const priya = as('local-business-admin', 'BUSINESS_ADMIN')
+    // Business admin only: every other role gets SDV-RPT-001, for the report and its CSV.
+    for (const [subject, roles] of [['local-business-user', 'BUSINESS_USER'], ['local-document-steward', 'DOCUMENT_STEWARD'], ['local-restricted-steward', 'RESTRICTED_STEWARD'], ['local-tenant-it-admin', 'IT_ADMIN'], ['local-platform-operations-admin', 'PLATFORM_OPERATIONS_ADMIN']]) {
+      for (const path of ['/api/v1/admin/reports/storage', '/api/v1/admin/reports/storage/export']) {
+        const r = await page.request.get(path, { headers: as(subject, roles) })
+        expect(r.status(), `${roles} on ${path}`).toBe(403)
+        expect((await r.json() as { code: string }).code).toBe('SDV-RPT-001')
+      }
+    }
+    const r = await page.request.get('/api/v1/admin/reports/storage', { headers: priya })
+    expect(r.ok(), 'the Business admin reads the Storage and retention report').toBeTruthy()
+    const report = await r.json() as { total: { documents: number }; growth: unknown[]; retention: unknown[] }
+    expect(report.total.documents).toBeGreaterThan(0)
+    expect(report.growth).toHaveLength(12)
+
+    await selectRole(page, 'Business Administrator')
+    await page.evaluate(() => { window.location.hash = '#/governance/reports' })
+    await page.getByRole('tablist', { name: 'Reports' }).getByRole('tab', { name: 'Storage and retention' }).click()
+    const storage = page.getByRole('region', { name: 'Storage now' })
+    await expect(storage).toBeVisible({ timeout: 15000 })
+    for (const name of ['Growth', 'Due for deletion', 'Held back from deletion']) await expect(page.getByRole('region', { name })).toBeVisible()
+    await expect(storage.getByRole('row').filter({ hasText: /^Total/ })).toContainText(report.total.documents.toLocaleString('en-GB'))
+    await expect(page.getByText(/^Counts counted /)).toBeVisible()
+    await capture(page, testInfo, 'reports-storage')
+    const text = await page.locator('.v-main').innerText()
+    expect(text).not.toMatch(/\.pdf/i)
+
+    // The CSV: every count; its reference and fingerprint on screen match the file saved.
+    const [download] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Export CSV' }).click()])
+    expect(download.suggestedFilename()).toMatch(/^vero-storage-\d{4}-\d{2}-\d{2}-[0-9a-f]{8}\.csv$/)
+    const bytes = fs.readFileSync(await download.path() as string)
+    const csv = bytes.toString('utf8')
+    expect(csv.split('\r\n')[0]).toBe('﻿Section,Line,Level,Measure,Count,Counted at (UTC),Time zone')
+    expect(csv).toContain('"Held back from deletion","Legal hold","All levels","Documents",')
+    expect(csv).not.toMatch(/\.pdf/i)
+    const fingerprint = (await import('node:crypto')).createHash('sha256').update(bytes).digest('hex')
+    await expect(page.getByRole('status').filter({ hasText: 'The file is saved.' })).toContainText(`SHA-256 fingerprint ${fingerprint}.`)
+  })
+
   // Task 0049: the quarantine screens, on the tour's own record (one Highly Confidential document), so no demo
   // document's history grows. Every quarantine it makes is released again before the step ends (and at its start, if
   // an earlier run stopped half-way), so the record is available afterwards. Released incidents stay as history.
