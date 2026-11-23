@@ -15,6 +15,7 @@ import com.sdv.platform.web.foundation.FoundationExceptionHandler;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.converter.ByteArrayHttpMessageConverter;
 import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
@@ -33,6 +34,7 @@ import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -146,15 +148,23 @@ class QuarantineControllerTest {
     }
 
     @Test
-    void theExposureExportCarriesItsReferenceAndFingerprint() throws Exception {
+    void theExposureExportStreamsWithItsReference() throws Exception {
         signIn(SdvRole.DOCUMENT_STEWARD);
         UUID reference = UUID.randomUUID();
-        when(service.exportExposure(any(), anyString())).thenReturn(new QuarantineService.Export(
-                "a,b\r\n".getBytes(), 1, "vero-quarantine-exposure-2026-11-20-abcdef12.csv", reference, "f".repeat(64)));
+        // Task 0052: the file streams; the reference comes first, the fingerprint goes to the audit at the end.
+        when(service.openExposureExport(any(), anyString())).thenReturn(new QuarantineService.ExposureExport() {
+            @Override public UUID reference() { return reference; }
+            @Override public String filename() { return "vero-quarantine-exposure-2026-11-20-abcdef12.csv"; }
+            @Override public QuarantineService.Written writeTo(java.io.OutputStream out) throws java.io.IOException {
+                out.write("a,b\r\n".getBytes());
+                return new QuarantineService.Written(1, 1, "f".repeat(64));
+            }
+        });
         mvc.perform(get("/api/v1/quarantine/incidents/" + UUID.randomUUID() + "/exposure/export"))
                 .andExpect(status().isOk())
                 .andExpect(header().string("X-SDV-Export-Reference", reference.toString()))
-                .andExpect(header().string("X-SDV-Export-Fingerprint", "f".repeat(64)))
-                .andExpect(header().string("X-SDV-Export-Rows", "1"));
+                .andExpect(header().string(HttpHeaders.CONTENT_DISPOSITION, org.hamcrest.Matchers.containsString("vero-quarantine-exposure-2026-11-20-abcdef12.csv")))
+                .andExpect(header().doesNotExist("Content-Length"))
+                .andExpect(content().string("a,b\r\n"));
     }
 }

@@ -106,3 +106,6 @@ databaseChangeLog:
 
   - include:
       file: db/changelog/038-quarantine-filter-blocking.yaml
+
+  - include:
+      file: db/changelog/039-quarantine-scale.yaml

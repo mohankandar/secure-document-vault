@@ -381,7 +381,8 @@ class QuarantineServiceTest {
         assertEquals(expected, ready.preparedCount());
         assertEquals(expected, ready.documentsInForce());
         assertEquals(expected, store.quarantines.size(), "each document has one row");
-        assertEquals(QuarantineService.REVIEW_LIMIT, ready.documents().size(), "the list is limited; the counts are not");
+        assertEquals(QuarantineService.PAGE, ready.documents().size(), "a page of the list; the counts are complete");
+        assertNotNull(ready.next(), "more pages follow");
         assertEquals(expected, count(QuarantineService.QUARANTINED_ACTION), "each row audited once");
         assertEquals(0, service.prepare(10), "nothing left to do");
     }
@@ -410,7 +411,8 @@ class QuarantineServiceTest {
         // The same batch again (as if its commit had been lost after writing): nothing more is written.
         var again = store.prepareBatch(new com.sdv.platform.application.port.QuarantineRepository.Preparation(p.incidentId(),
                 p.tenantId(), p.filter(), p.cutoffReceivedAt(), p.expectedCount(), 0, null, null, null, p.createdBy(),
-                p.createdByName(), p.createdAt(), p.status()), QuarantineService.BATCH_SIZE, "x", "x", NOW);
+                p.createdByName(), p.createdAt(), p.status()), QuarantineService.BATCH_SIZE, "x", "x", NOW,
+                docs -> java.util.Map.of());
         assertEquals(QuarantineService.BATCH_SIZE, again.scanned());
         assertTrue(again.placed().isEmpty(), "every one already has its row");
 
@@ -448,6 +450,16 @@ class QuarantineServiceTest {
         UUID request = service.pendingReleaseRequests(as("admin", ADMIN)).getFirst().requestId();
         assertEquals(expected - 2, service.pendingReleaseRequests(as("admin", ADMIN)).getFirst().documentCount());
         service.decide(as("admin", ADMIN), request.toString(), true);
+        // Task 0052: the first batch at once, the rest in the background; the filter blocks until the end.
+        QuarantineService.IncidentView releasing = service.incident(restricted, incident.toString());
+        assertTrue(releasing.releasing());
+        assertEquals("OPEN", releasing.status());
+        assertEquals(QuarantineService.BATCH_SIZE + 2, releasing.releasedCount(), "two single releases and one batch");
+        assertTrue(store.isQuarantined(TENANT, HIGH), "not released yet: still blocked");
+        refused("SDV-QUA-008", () -> service.quarantineDocument(as("steward", STEWARD), ids.get(3).toString(),
+                incident.toString(), null, null));
+        assertEquals(1, service.release(10), "the rest in one more batch");
+        assertEquals(0, service.release(10), "nothing twice");
         assertEquals("RELEASED", store.incidents.get(incident).status());
         assertTrue(ids.stream().noneMatch(id -> store.isQuarantined(TENANT, id)));
         assertFalse(store.isQuarantined(TENANT, HIGH));
@@ -486,5 +498,92 @@ class QuarantineServiceTest {
         assertEquals(STD.toString(), placed.targetId());
         assertTrue(placed.safeDetailsJson().contains(incident.incidentId().toString()), "the incident ID is recorded");
         assertEquals("corr-steward", placed.correlationId());
+    }
+
+    // ------------------------------------------------------------------ task 0052: a million documents
+
+    @Test
+    void theListsPageThroughTheIncidentWithTheTotalFromTheCounts() {
+        List<UUID> ids = many(250);
+        QuarantineService.Actor restricted = as("restricted", RESTRICTED);
+        long expected = ids.size() + 3L;
+        UUID incident = service.quarantineByFilter(restricted, november(), expected, "Leak", "Suspected leak").incidentId();
+        service.releaseDocument(restricted, ids.get(7).toString(), "Checked, fine");
+
+        // Pages of 100: in force first, oldest first; then the released one; the counts cover the whole incident.
+        List<UUID> seen = new ArrayList<>();
+        QuarantineService.IncidentView page = service.incident(restricted, incident.toString());
+        assertEquals(expected, page.documentCount());
+        assertEquals(expected - 1, page.documentsInForce());
+        assertEquals(1, page.releasedCount());
+        assertEquals(QuarantineService.PAGE, page.listLimit());
+        int pages = 0;
+        while (true) {
+            pages++;
+            assertTrue(page.documents().size() <= QuarantineService.PAGE);
+            page.documents().forEach(d -> seen.add(d.documentId()));
+            if (page.next() == null) break;
+            page = service.incident(restricted, incident.toString(), page.next());
+        }
+        assertEquals(3, pages);
+        assertEquals(expected, seen.size(), "every document once");
+        assertEquals(expected, seen.stream().distinct().count());
+        assertEquals(ids.get(7), seen.getLast(), "the released one after those in force");
+        assertEquals(ids.getFirst(), seen.getFirst(), "oldest first");
+
+        // A Steward sees the levels they can open; the rest is counted from the incident, never listed.
+        QuarantineService.IncidentView steward = service.incident(as("steward", STEWARD), incident.toString());
+        assertEquals(1, steward.hiddenCount(), "the Highly Confidential one");
+        assertTrue(steward.documents().stream().noneMatch(d -> d.documentId().equals(HIGH)));
+
+        // The exposure view pages the same way; a page position nobody gave is refused.
+        QuarantineService.ExposureReport exposure = service.exposure(restricted, incident.toString());
+        assertEquals(QuarantineService.PAGE, exposure.documents().size());
+        assertNotNull(exposure.next());
+        assertEquals(expected, exposure.documentCount());
+        assertEquals(ids.size() + 1, exposure.standard());
+        assertEquals(1, exposure.highlyConfidential());
+        refused("SDV-QUA-004", () -> service.incident(restricted, incident.toString(), "not-a-page"));
+        refused("SDV-QUA-004", () -> service.exposure(restricted, incident.toString(), "Rnx8"));
+    }
+
+    @Test
+    void theExportStreamsEveryDocumentAndAuditsItsStartAndItsFingerprint() throws Exception {
+        List<UUID> ids = many(2 * QuarantineService.EXPORT_PAGE + 7);
+        QuarantineService.Actor restricted = as("restricted", RESTRICTED);
+        long expected = ids.size() + 3L;
+        UUID incident = service.quarantineByFilter(restricted, november(), expected, "Leak", "Suspected leak").incidentId();
+        while (service.prepare(10) > 0) { /* to the end */ }
+        store.exposure.add(new Exposure(ids.get(5), "uma", "Uma User", "DOCUMENT_PRINTED", NOW.minusSeconds(60)));
+
+        QuarantineService.ExposureExport export = service.openExposureExport(restricted, incident.toString());
+        assertEquals(1, count(QuarantineService.EXPOSURE_EXPORT_STARTED_ACTION), "audited before the first byte");
+        assertEquals(0, count(QuarantineService.EXPOSURE_EXPORTED_ACTION));
+        java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+        QuarantineService.Written written = export.writeTo(out);
+        String csv = out.toString(StandardCharsets.UTF_8);
+        assertEquals(expected, written.documentCount());
+        assertEquals(expected, written.rowCount(), "one row per document (the printed one has one access)");
+        assertEquals(expected + 1, csv.split("\r\n").length, "the header and every row");
+        assertTrue(csv.contains("Uma User"));
+        assertEquals(HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(out.toByteArray())), written.fingerprint());
+        AuditEvent finished = events.stream().filter(e -> e.action().equals(QuarantineService.EXPOSURE_EXPORTED_ACTION)).findFirst().orElseThrow();
+        assertTrue(finished.safeDetailsJson().contains(written.fingerprint()));
+        assertTrue(finished.safeDetailsJson().contains(export.reference().toString()));
+    }
+
+    @Test
+    void rowsWrittenBeforeTheCountsGetTheirLevelAndCountAsHiddenUntilThen() {
+        UUID incident = service.quarantineDocument(as("steward", STEWARD), STD.toString(), null, "Old", "Before the counts").incidentId();
+        // As changeset 039 leaves a row written before it: no level yet.
+        store.quarantines.values().forEach(r -> r.level = null);
+        assertEquals(1, service.incident(as("steward", STEWARD), incident.toString()).hiddenCount(), "fail closed");
+        assertEquals(0, service.incident(as("restricted", RESTRICTED), incident.toString()).hiddenCount());
+        refused("SDV-QUA-002", () -> service.requestIncidentRelease(as("steward", STEWARD), incident.toString(), "Done here"));
+        assertEquals(1, service.fillLevels(5));
+        assertEquals(0, service.fillLevels(5), "nothing left");
+        QuarantineService.IncidentView filled = service.incident(as("steward", STEWARD), incident.toString());
+        assertEquals(0, filled.hiddenCount());
+        assertEquals(1, filled.documents().size());
     }
 }

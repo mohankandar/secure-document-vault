@@ -81,7 +81,7 @@ export const CODE_WORDS: Record<string, string> = {
   'SDV-QUA-005': 'This document isn’t there any more. Open it again from its record.',
   'SDV-QUA-006': 'This document is already quarantined, or it was deleted. Look for it in the quarantine list.',
   'SDV-QUA-007': 'This incident isn’t there any more. Open the quarantine list again.',
-  'SDV-QUA-008': 'This incident was released, so nothing can be added to it. Start a new incident.',
+  'SDV-QUA-008': 'This incident was released, or is being released, so nothing can be added to it. Start a new incident.',
   'SDV-QUA-009': 'The matching documents changed since they were counted. Count them again, then select them all.',
   'SDV-QUA-010': 'This release request can’t be made or decided: one is already waiting, it was decided or expired, or it is your own.',
   'SDV-AUD-010': 'Only a Business admin or your IT team can generate or verify an audit report. Ask one of them to hand it to you.',

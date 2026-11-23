@@ -2081,6 +2081,10 @@ test.describe('SDV role-based screen capture', () => {
       const [download] = await Promise.all([page.waitForEvent('download'), exposure.getByRole('button', { name: 'Export CSV' }).click()])
       expect(download.suggestedFilename()).toMatch(/^vero-quarantine-exposure-\d{4}-\d{2}-\d{2}-[0-9a-f]{8}\.csv$/)
       await expect(exposure.getByRole('status')).toContainText(/Reference [0-9a-f-]{36}\. SHA-256 fingerprint [0-9a-f]{64}\./)
+      // Task 0052: the CSV streams; the fingerprint shown is the SHA-256 of the file as saved.
+      const exposureCsv = await (await import('node:fs/promises')).readFile(await download.path())
+      const exposureFingerprint = (await import('node:crypto')).createHash('sha256').update(exposureCsv).digest('hex')
+      await expect(exposure.getByRole('status')).toContainText(`SHA-256 fingerprint ${exposureFingerprint}.`)
       await capture(page, testInfo, 'quarantine-exposure')
       await exposure.getByRole('button', { name: 'Close' }).click()
 

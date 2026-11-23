@@ -39,6 +39,11 @@ public class SessionNamedAuditEventPort implements AuditEventPort {
         store.append(named(event));
     }
 
+    @Override
+    public void appendAll(java.util.List<AuditEvent> events) {
+        store.appendAll(events.stream().map(this::named).toList());
+    }
+
     public AuditEvent named(AuditEvent event) {
         if (event.actorDisplayName() != null) return event;
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();

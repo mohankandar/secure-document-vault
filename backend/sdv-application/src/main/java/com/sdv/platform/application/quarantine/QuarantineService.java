@@ -10,12 +10,15 @@ import com.sdv.platform.application.business.SearchValueNormalizer;
 import com.sdv.platform.application.port.AuditEventPort;
 import com.sdv.platform.application.port.MetadataFieldDefinitionRepository;
 import com.sdv.platform.application.port.QuarantineRepository;
+import com.sdv.platform.application.port.QuarantineRepository.Counts;
 import com.sdv.platform.application.port.QuarantineRepository.DocumentFacts;
 import com.sdv.platform.application.port.QuarantineRepository.Exposure;
 import com.sdv.platform.application.port.QuarantineRepository.Filter;
 import com.sdv.platform.application.port.QuarantineRepository.Incident;
 import com.sdv.platform.application.port.QuarantineRepository.IncidentRef;
+import com.sdv.platform.application.port.QuarantineRepository.LevelGap;
 import com.sdv.platform.application.port.QuarantineRepository.MatchStats;
+import com.sdv.platform.application.port.QuarantineRepository.PageKey;
 import com.sdv.platform.application.port.QuarantineRepository.Placed;
 import com.sdv.platform.application.port.QuarantineRepository.Preparation;
 import com.sdv.platform.application.port.QuarantineRepository.Quarantined;
@@ -33,7 +36,13 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
+import java.io.BufferedWriter;
+import java.io.IOException;
+import java.io.OutputStream;
+import java.io.OutputStreamWriter;
+import java.io.Writer;
 import java.nio.charset.StandardCharsets;
+import java.security.DigestOutputStream;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Clock;
@@ -42,7 +51,8 @@ import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
-import java.util.EnumMap;
+import java.util.Base64;
+import java.util.EnumSet;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -51,7 +61,6 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
-import java.util.function.Consumer;
 
 /**
  * Task 0048: quarantine. A Steward (QUARANTINE_DOCUMENTS) quarantines one document of a level they can open, on its
@@ -72,7 +81,13 @@ import java.util.function.Consumer;
  * background, keeping its place in the incident, so it continues after a restart and a batch run twice writes nothing
  * twice. Review and single release work on the rows already written; a whole-incident release waits until the incident
  * is prepared, and it ends the filter's blocking. A single release frees that one document even though the filter
- * still matches it. Views of large incidents list at most {@link #REVIEW_LIMIT} documents; their counts are complete.
+ * still matches it.
+ * <p>
+ * Task 0052: usable at a million documents. The incident keeps its counts (changeset 039, kept by the database as rows
+ * are written and released), so no screen reads the whole incident; the review list and the exposure view come a page
+ * of {@link #PAGE} at a time; an approved whole release runs in batches in the background ({@link #release}),
+ * continues after a restart and releases nothing twice; the exposure CSV streams and its fingerprint is worked out
+ * while it is written.
  */
 @Service
 public class QuarantineService {
@@ -85,6 +100,8 @@ public class QuarantineService {
     public static final String RELEASE_DECLINED_ACTION = "QUARANTINE_RELEASE_DECLINED";
     public static final String RELEASE_EXPIRED_ACTION = "QUARANTINE_RELEASE_EXPIRED";
     public static final String EXPOSURE_EXPORTED_ACTION = "QUARANTINE_EXPOSURE_EXPORTED";
+    /** Task 0052: written before the first byte of a streamed export leaves (the finished one carries the fingerprint). */
+    public static final String EXPOSURE_EXPORT_STARTED_ACTION = "QUARANTINE_EXPOSURE_EXPORT_STARTED";
     public static final String INCIDENT_TARGET = "QUARANTINE_INCIDENT";
 
     public static final int NAME_MAX = 200;
@@ -92,13 +109,14 @@ public class QuarantineService {
     public static final int REASON_MAX = 500;
     public static final int FIELD_VALUE_MAX = 300;
     static final int LIST_LIMIT = 200;
-    /** Task 0051: the review list and the exposure view show at most this many documents (their counts are complete). */
-    public static final int REVIEW_LIMIT = 500;
-    /** Task 0051: the background job writes this many rows per batch, each batch in its own transaction. */
+    /** Task 0052: the review list and the exposure view come a page of this many documents at a time. */
+    public static final int PAGE = 100;
+    /** Task 0051: the background job writes (task 0052: and releases) this many rows per batch, each in its own transaction. */
     static final int BATCH_SIZE = 1000;
-    /** Task 0051: rows read per page when a large incident is counted. */
-    static final int PAGE_SIZE = 2000;
+    /** Task 0052: rows read per page while the export streams. */
+    static final int EXPORT_PAGE = 1000;
     static final String PREPARING = "This incident is still being prepared. Its whole release can be asked for once it is ready.";
+    static final String RELEASING = "This incident is being released. Nothing can be added to it or asked of it until that is done.";
     static final String CSV_HEADER = "Incident,Document ID,Identifier,Identifier value,Level,Received (UTC),Pages,"
             + "What happened before the quarantine,Person,When (UTC)";
     private static final Set<String> NOT_QUARANTINABLE = Set.of("EXPIRED_DELETED", "RETENTION_DELETING");
@@ -156,7 +174,7 @@ public class QuarantineService {
         UUID id = transactions.execute(status -> {
             DocumentFacts document = quarantine.lockDocument(actor.tenantId(), documentId)
                     .orElseThrow(() -> new CodedRefusal.NotFound(SdvErrorCode.QUA_005, NO_DOCUMENT));
-            requireReviewable(actor, document);
+            SensitivityLevel level = requireReviewable(actor, document);
             requireQuarantinable(actor, document);
             UUID target;
             if (incidentId == null) {
@@ -165,9 +183,13 @@ public class QuarantineService {
                 Incident incident = quarantine.lockIncident(actor.tenantId(), incidentId)
                         .orElseThrow(() -> new CodedRefusal.NotFound(SdvErrorCode.QUA_007, NO_INCIDENT));
                 if (!incident.open()) throw new CodedRefusal.Conflict(SdvErrorCode.QUA_008, INCIDENT_RELEASED);
+                // Task 0052: an incident being released in the background takes nothing more.
+                if (counts(actor.tenantId(), incident.incidentId()).releasing()) {
+                    throw new CodedRefusal.Conflict(SdvErrorCode.QUA_008, RELEASING);
+                }
                 target = incident.incidentId();
             }
-            place(actor, target, document, now);
+            place(actor, target, document, level, now);
             return target;
         });
         return incident(actor, id.toString());
@@ -225,7 +247,7 @@ public class QuarantineService {
         return incident(actor, id.toString());
     }
 
-    // ------------------------------------------------------------------ task 0051: the background job
+    // ------------------------------------------------------------------ task 0051: the background jobs
 
     /**
      * Writes rows of incidents still being prepared, at most {@code maxBatches} batches in all, oldest incident first.
@@ -254,16 +276,20 @@ public class QuarantineService {
             Instant now = clock.instant();
             Instant at = now.isBefore(p.createdAt()) ? p.createdAt() : now;
             String byName = p.createdByName() == null ? p.createdBy() : p.createdByName();
-            QuarantineRepository.Batch batch = quarantine.prepareBatch(p, BATCH_SIZE, p.createdBy(), byName, at);
+            // Task 0052: each row keeps its document's level now, for the incident's counts.
+            QuarantineRepository.Batch batch = quarantine.prepareBatch(p, BATCH_SIZE, p.createdBy(), byName, at,
+                    documents -> levels(p.tenantId(), documents));
+            List<AuditEvent> events = new ArrayList<>(batch.placed().size());
             for (Placed placed : batch.placed()) {
                 Map<String, Object> details = new LinkedHashMap<>();
                 details.put("incidentId", p.incidentId().toString());
                 details.put("quarantineId", placed.quarantineId().toString());
                 details.put("byFilter", true);
-                audit.append(new AuditEvent(UUID.randomUUID(), p.tenantId(), "USER", p.createdBy(), QUARANTINED_ACTION,
+                events.add(new AuditEvent(UUID.randomUUID(), p.tenantId(), "USER", p.createdBy(), QUARANTINED_ACTION,
                         "DOCUMENT", placed.documentId().toString(), at, correlationId, AuditOutcome.SUCCESS, json(details),
                         p.createdByName()));
             }
+            audit.appendAll(events);
             boolean finished = batch.scanned() < BATCH_SIZE;
             quarantine.advancePreparation(p.tenantId(), p.incidentId(), p.preparedCount() + batch.scanned(),
                     batch.lastDocumentId() == null ? p.cursorReceivedAt() : batch.lastReceivedAt(),
@@ -271,8 +297,7 @@ public class QuarantineService {
                     finished ? at : null);
             if (finished) {
                 // Prepared: when nothing is left in force (all released, or quarantined elsewhere), the incident ends.
-                Integer inForce = quarantine.countInForce(p.tenantId(), List.of(p.incidentId())).get(p.incidentId());
-                if (inForce == null || inForce == 0) {
+                if (counts(p.tenantId(), p.incidentId()).inForce() == 0) {
                     quarantine.closeIncident(p.tenantId(), p.incidentId(), at);
                     audit.append(new AuditEvent(UUID.randomUUID(), p.tenantId(), "SYSTEM", "vero", INCIDENT_CLOSED_ACTION,
                             INCIDENT_TARGET, p.incidentId().toString(), at, correlationId, AuditOutcome.SUCCESS, "{}"));
@@ -282,19 +307,91 @@ public class QuarantineService {
         });
     }
 
+    /**
+     * Task 0052: carries out approved whole releases, at most {@code maxBatches} batches of {@link #BATCH_SIZE} rows in
+     * all, oldest incident first. Each batch is its own transaction (rows released and audited together), so a stop
+     * loses nothing and nothing is released twice; the incident ends, and its filter's blocking with it, only when
+     * every document is released. Returns the number of batches that released or looked at something.
+     */
+    public int release(int maxBatches) {
+        int done = 0;
+        for (IncidentRef ref : quarantine.findReleasing(Math.max(1, maxBatches))) {
+            while (done < maxBatches) {
+                Boolean more = releaseBatch(ref, "quarantine-release-" + ref.incidentId());
+                if (more == null) break;
+                done++;
+                if (!more) break;
+            }
+            if (done >= maxBatches) break;
+        }
+        return done;
+    }
+
+    /** One release batch: null when there was nothing to do (or another worker has it), else whether more is left. */
+    private Boolean releaseBatch(IncidentRef ref, String correlationId) {
+        return transactions.execute(status -> {
+            ReleaseRequest request = quarantine.lockReleasing(ref.tenantId(), ref.incidentId()).orElse(null);
+            if (request == null || request.decidedBy() == null) return null;
+            Instant now = clock.instant();
+            // The release is the approver's: they are named on each row and in each audit event, as before.
+            Actor approver = new Actor(ref.tenantId(), request.decidedBy(), request.decidedByName(), null, correlationId);
+            List<Released> released = quarantine.releaseBatch(ref.tenantId(), ref.incidentId(), approver.actorId(),
+                    displayName(approver), request.reason(), request.requestId(), now, BATCH_SIZE);
+            List<AuditEvent> events = new ArrayList<>(released.size());
+            for (Released r : released) {
+                Instant at = now.isBefore(r.quarantinedAt()) ? r.quarantinedAt() : now;
+                Map<String, Object> details = new LinkedHashMap<>();
+                details.put("incidentId", ref.incidentId().toString());
+                details.put("quarantineId", r.quarantineId().toString());
+                details.put("requestId", request.requestId().toString());
+                events.add(event(approver, RELEASED_ACTION, "DOCUMENT", r.documentId().toString(), at, details));
+            }
+            audit.appendAll(events);
+            if (released.size() < BATCH_SIZE) {
+                closeIfEmpty(approver, ref.incidentId(), now);
+                return counts(ref.tenantId(), ref.incidentId()).inForce() > 0;
+            }
+            return true;
+        });
+    }
+
+    /**
+     * Task 0052: fills in the level of rows written before changeset 039 (at most {@code maxBatches} batches), so the
+     * incidents' counts by level are complete. Until then such a row counts as hidden to everyone below the highest
+     * clearance. Returns the number of batches done.
+     */
+    public int fillLevels(int maxBatches) {
+        int done = 0;
+        while (done < maxBatches) {
+            List<LevelGap> gaps = quarantine.findLevelGaps(BATCH_SIZE);
+            if (gaps.isEmpty()) break;
+            Map<UUID, List<LevelGap>> byTenant = new LinkedHashMap<>();
+            for (LevelGap g : gaps) byTenant.computeIfAbsent(g.tenantId(), k -> new ArrayList<>()).add(g);
+            for (Map.Entry<UUID, List<LevelGap>> e : byTenant.entrySet()) {
+                Map<UUID, SensitivityLevel> levels = levels(e.getKey(), e.getValue().stream().map(LevelGap::document).toList());
+                Map<UUID, SensitivityLevel> byRow = new LinkedHashMap<>();
+                for (LevelGap g : e.getValue()) byRow.put(g.quarantineId(), levels.get(g.document().documentId()));
+                transactions.executeWithoutResult(status -> quarantine.fillLevels(e.getKey(), byRow));
+            }
+            done++;
+            if (gaps.size() < BATCH_SIZE) break;
+        }
+        return done;
+    }
+
     // ------------------------------------------------------------------ review
 
-    /** Incidents, open first then newest, with the documents in force the person may review (others only counted). */
+    /** Incidents, open first then newest, with their counts as kept on them (task 0052: never the whole incident). */
     public List<IncidentSummary> incidents(Actor actor) {
         List<Incident> incidents = quarantine.findIncidents(actor.tenantId(), LIST_LIMIT);
-        Map<UUID, Integer> inForce = quarantine.countInForce(actor.tenantId(),
-                incidents.stream().map(Incident::incidentId).toList());
+        Map<UUID, Counts> counts = quarantine.counts(actor.tenantId(), incidents.stream().map(Incident::incidentId).toList());
         return incidents.stream().map(i -> {
             Progress progress = progress(actor.tenantId(), i.incidentId());
+            Counts c = counts.getOrDefault(i.incidentId(), Counts.NONE);
             return new IncidentSummary(i.incidentId(), i.name(), i.scope(), i.status(),
-                    i.createdByName(), i.createdAt(), i.closedAt(), inForce.getOrDefault(i.incidentId(), 0),
+                    i.createdByName(), i.createdAt(), i.closedAt(), narrow(c.inForce()),
                     quarantine.findPendingRequest(actor.tenantId(), i.incidentId()).isPresent(), progress.preparing(),
-                    progress.prepared(), progress.expected());
+                    progress.prepared(), progress.expected(), c.releasing() && i.open(), c.documents(), c.released());
         }).toList();
     }
 
@@ -310,54 +407,114 @@ public class QuarantineService {
                 .orElse(Progress.NONE);
     }
 
-    /**
-     * One incident for review: its documents of levels the person can open (at most {@link #REVIEW_LIMIT}, in force
-     * first, oldest first); the rest only counted. The counts cover the whole incident.
-     */
+    private Counts counts(UUID tenantId, UUID incidentId) {
+        return quarantine.counts(tenantId, List.of(incidentId)).getOrDefault(incidentId, Counts.NONE);
+    }
+
+    /** The first page of an incident for review. */
     public IncidentView incident(Actor actor, String incidentReference) {
+        return incident(actor, incidentReference, null);
+    }
+
+    /**
+     * Task 0052: one incident for review, a page of {@link #PAGE} of its documents at a time (in force first, then
+     * released; each oldest first), only those of levels the person can open; {@code after} is the page's start, as
+     * the previous page's {@code next} gave it. The counts come from the incident, never from reading it whole.
+     */
+    public IncidentView incident(Actor actor, String incidentReference, String after) {
         UUID incidentId = parse(incidentReference, SdvErrorCode.QUA_007, NO_INCIDENT);
+        PageKey from = pageKey(after);
         Incident incident = quarantine.findIncident(actor.tenantId(), incidentId)
                 .orElseThrow(() -> new CodedRefusal.NotFound(SdvErrorCode.QUA_007, NO_INCIDENT));
-        List<Quarantined> first = quarantine.findInIncident(actor.tenantId(), incidentId, REVIEW_LIMIT);
-        Map<UUID, SensitivityLevel> levels = levels(actor.tenantId(), first.stream().map(Quarantined::document).toList());
+        Counts c = counts(actor.tenantId(), incidentId);
+        Page page = page(actor, incidentId, from, PAGE);
         List<QuarantinedDocumentView> visible = new ArrayList<>();
-        for (Quarantined q : first) {
-            SensitivityLevel level = levels.get(q.document().documentId());
-            if (actor.clearance().canReviewQuarantined(level)) visible.add(QuarantinedDocumentView.of(q, level));
-        }
-        long total = quarantine.countInIncident(actor.tenantId(), incidentId);
-        int inForce = quarantine.countInForce(actor.tenantId(), List.of(incidentId)).getOrDefault(incidentId, 0);
-        long[] hidden = {0};
-        if (total <= first.size()) {
-            hidden[0] = first.size() - visible.size();
-        } else {
-            forEachPage(actor.tenantId(), incidentId, false, page -> {
-                Map<UUID, SensitivityLevel> l = levels(actor.tenantId(), page.stream().map(Quarantined::document).toList());
-                for (Quarantined q : page) {
-                    if (!actor.clearance().canReviewQuarantined(l.get(q.document().documentId()))) hidden[0]++;
-                }
-            });
-        }
+        for (Visible v : page.rows()) visible.add(QuarantinedDocumentView.of(v.row(), v.level()));
         ReleaseRequest pending = quarantine.findPendingRequest(actor.tenantId(), incidentId).orElse(null);
         Progress progress = progress(actor.tenantId(), incidentId);
         return new IncidentView(incident.incidentId(), incident.name(), incident.reason(), incident.scope(),
-                incident.status(), incident.createdByName(), incident.createdAt(), incident.closedAt(), inForce,
-                (int) Math.min(total, Integer.MAX_VALUE), (int) Math.min(hidden[0], Integer.MAX_VALUE), visible,
+                incident.status(), incident.createdByName(), incident.createdAt(), incident.closedAt(), narrow(c.inForce()),
+                narrow(c.documents()), narrow(hidden(actor, c)), visible,
                 pending == null ? null : pending.requestId(),
                 pending == null ? null : pending.requestedByName(), pending == null ? null : pending.expiresAt(),
-                progress.preparing(), progress.prepared(), progress.expected(), REVIEW_LIMIT);
+                progress.preparing(), progress.prepared(), progress.expected(), PAGE,
+                c.releasing() && incident.open(), c.released(), page.next());
     }
 
-    /** Every row of the incident (or those in force), a page at a time, so a large incident is never all in memory. */
-    private void forEachPage(UUID tenantId, UUID incidentId, boolean inForceOnly, Consumer<List<Quarantined>> each) {
-        UUID after = null;
+    /** Documents of levels the person can't open: counted from the incident, never listed. */
+    private static long hidden(Actor actor, Counts c) {
+        Set<SensitivityLevel> levels = reviewable(actor);
+        if (levels == null) return 0;
+        long shown = 0;
+        for (SensitivityLevel l : levels) shown += c.atLevel(l);
+        return Math.max(0, c.documents() - shown);
+    }
+
+    /** The levels the person reviews; null when they review every level (nothing to leave out). */
+    private static Set<SensitivityLevel> reviewable(Actor actor) {
+        Set<SensitivityLevel> levels = EnumSet.noneOf(SensitivityLevel.class);
+        for (SensitivityLevel l : SensitivityLevel.values()) if (actor.clearance().canReviewQuarantined(l)) levels.add(l);
+        return levels.size() == SensitivityLevel.values().length ? null : levels;
+    }
+
+    private record Visible(Quarantined row, SensitivityLevel level) { }
+
+    private record Page(List<Visible> rows, String next) { }
+
+    /**
+     * Up to {@code size} rows from {@code from}, in force first then released, of the levels the person reviews (as
+     * kept on the rows, then checked again against each document's level now: a level raised since is left out).
+     */
+    private Page page(Actor actor, UUID incidentId, PageKey from, int size) {
+        Set<SensitivityLevel> levels = reviewable(actor);
+        List<Quarantined> rows = new ArrayList<>();
+        PageKey key = from;
         while (true) {
-            List<Quarantined> page = quarantine.findInIncidentPage(tenantId, incidentId, inForceOnly, after, PAGE_SIZE);
-            if (page.isEmpty()) return;
-            each.accept(page);
-            if (page.size() < PAGE_SIZE) return;
-            after = page.getLast().quarantineId();
+            int want = size + 1 - rows.size();
+            List<Quarantined> got = quarantine.findPage(actor.tenantId(), incidentId, key, levels, want);
+            rows.addAll(got);
+            if (got.size() < want && key.inForce()) {
+                key = new PageKey(false, null, null, null);
+                continue;
+            }
+            break;
         }
+        String next = null;
+        if (rows.size() > size) {
+            rows = rows.subList(0, size);
+            Quarantined last = rows.getLast();
+            next = cursor(new PageKey(last.inForce(), last.quarantinedAt(), last.document().receivedAt(),
+                    last.document().documentId()));
+        }
+        Map<UUID, SensitivityLevel> now = levels(actor.tenantId(), rows.stream().map(Quarantined::document).toList());
+        List<Visible> visible = new ArrayList<>();
+        for (Quarantined q : rows) {
+            SensitivityLevel level = now.get(q.document().documentId());
+            if (actor.clearance().canReviewQuarantined(level)) visible.add(new Visible(q, level));
+        }
+        return new Page(visible, next);
+    }
+
+    /** The page position, as text the screen hands back (opaque to it). */
+    static String cursor(PageKey key) {
+        String raw = (key.inForce() ? "F" : "R") + "|" + key.quarantinedAt() + "|" + key.receivedAt() + "|" + key.documentId();
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(raw.getBytes(StandardCharsets.UTF_8));
+    }
+
+    static PageKey pageKey(String cursor) {
+        if (blank(cursor)) return PageKey.FIRST;
+        try {
+            String raw = new String(Base64.getUrlDecoder().decode(cursor.strip()), StandardCharsets.UTF_8);
+            String[] parts = raw.split("\\|", -1);
+            if (parts.length != 4 || !("F".equals(parts[0]) || "R".equals(parts[0]))) throw new IllegalArgumentException();
+            return new PageKey("F".equals(parts[0]), Instant.parse(parts[1]), Instant.parse(parts[2]), UUID.fromString(parts[3]));
+        } catch (IllegalArgumentException | DateTimeParseException ex) {
+            throw new CodedRefusal.BadRequest(SdvErrorCode.QUA_004, "This page of the incident isn't known. Start again from the first page.");
+        }
+    }
+
+    private static int narrow(long n) {
+        return (int) Math.min(n, Integer.MAX_VALUE);
     }
 
     // ------------------------------------------------------------------ release one document
@@ -381,7 +538,8 @@ public class QuarantineService {
                         .orElseThrow(() -> new InternalCheckFailed("A filter incident has no filter."));
                 UUID quarantineId = UUID.randomUUID();
                 quarantine.insertQuarantine(quarantineId, actor.tenantId(), p.incidentId(), documentId, p.createdBy(),
-                        p.createdByName() == null ? p.createdBy() : p.createdByName(), p.createdAt());
+                        p.createdByName() == null ? p.createdBy() : p.createdByName(), p.createdAt(), level,
+                        document.receivedAt());
                 Map<String, Object> placed = new LinkedHashMap<>();
                 placed.put("incidentId", p.incidentId().toString());
                 placed.put("quarantineId", quarantineId.toString());
@@ -425,24 +583,26 @@ public class QuarantineService {
             if (progress(actor.tenantId(), incidentId).preparing()) {
                 throw new CodedRefusal.Conflict(SdvErrorCode.QUA_010, PREPARING);
             }
-            long[] inForce = {0};
-            forEachPage(actor.tenantId(), incidentId, true, page -> {
-                Map<UUID, SensitivityLevel> levels = levels(actor.tenantId(), page.stream().map(Quarantined::document).toList());
-                for (Quarantined q : page) {
-                    if (!actor.clearance().canReviewQuarantined(levels.get(q.document().documentId()))) {
-                        throw new CodedRefusal.Forbidden(SdvErrorCode.QUA_002,
-                                "This incident holds documents of a level you can't open, so you can't ask for its release.");
-                    }
-                    inForce[0]++;
+            Counts c = counts(actor.tenantId(), incidentId);
+            if (c.releasing()) throw new CodedRefusal.Conflict(SdvErrorCode.QUA_010, RELEASING);
+            // Task 0052: from the incident's counts. Every document in force must be of a level the person reviews
+            // (one whose level isn't known yet counts as the highest).
+            Set<SensitivityLevel> levels = reviewable(actor);
+            if (levels != null) {
+                long reviewableInForce = 0;
+                for (SensitivityLevel l : levels) reviewableInForce += c.inForceAtLevel(l);
+                if (reviewableInForce < c.inForce()) {
+                    throw new CodedRefusal.Forbidden(SdvErrorCode.QUA_002,
+                            "This incident holds documents of a level you can't open, so you can't ask for its release.");
                 }
-            });
+            }
             ReleaseRequest request = new ReleaseRequest(UUID.randomUUID(), actor.tenantId(), incidentId, why,
                     actor.actorId(), displayName(actor), now, "PENDING", null, null, null,
                     now.plus(settings.pendingWindow(actor.tenantId())));
             quarantine.insertRequest(request);
             Map<String, Object> details = new LinkedHashMap<>();
             details.put("requestId", request.requestId().toString());
-            details.put("documentCount", inForce[0]);
+            details.put("documentCount", c.inForce());
             details.put("expiresAt", request.expiresAt().toString());
             append(actor, RELEASE_REQUESTED_ACTION, INCIDENT_TARGET, incidentId.toString(), now, details);
         });
@@ -460,12 +620,17 @@ public class QuarantineService {
                 .map(r -> requestView(actor.tenantId(), r)).toList();
     }
 
-    /** One request decided by a Business Admin who didn't make it; never in bulk. Approving releases every document. */
+    /**
+     * One request decided by a Business Admin who didn't make it; never in bulk. Task 0052: approving starts the whole
+     * release, which runs in batches in the background ({@link #release}); the first batch is released at once, so a
+     * small incident is released when this returns. The incident, and its filter's blocking, ends only when every
+     * document is released.
+     */
     public ReleaseRequestView decide(Actor actor, String requestReference, boolean approve) {
         UUID requestId = parse(requestReference, SdvErrorCode.QUA_010, NO_REQUEST);
         Instant now = clock.instant();
         transactions.executeWithoutResult(status -> expire(actor.tenantId(), now, actor.correlationId()));
-        return transactions.execute(status -> {
+        ReleaseRequest decided = transactions.execute(status -> {
             ReleaseRequest request = quarantine.lockRequest(actor.tenantId(), requestId)
                     .orElseThrow(() -> new CodedRefusal.NotFound(SdvErrorCode.QUA_010, NO_REQUEST));
             if (!"PENDING".equals(request.status())) {
@@ -483,139 +648,223 @@ public class QuarantineService {
             if (approve && incident.open() && progress(actor.tenantId(), incident.incidentId()).preparing()) {
                 throw new CodedRefusal.Conflict(SdvErrorCode.QUA_010, PREPARING);
             }
-            int released = 0;
-            if (approve && incident.open()) {
-                // Task 0051: every row in force at once (the request's reason is the release reason, kept here, never
-                // in the audit); each document's release is still audited.
-                for (Released r : quarantine.releaseAllInForce(actor.tenantId(), incident.incidentId(), actor.actorId(),
-                        displayName(actor), request.reason(), requestId, now)) {
-                    released++;
-                    Instant at = now.isBefore(r.quarantinedAt()) ? r.quarantinedAt() : now;
-                    Map<String, Object> details = new LinkedHashMap<>();
-                    details.put("incidentId", incident.incidentId().toString());
-                    details.put("quarantineId", r.quarantineId().toString());
-                    details.put("requestId", requestId.toString());
-                    append(actor, RELEASED_ACTION, "DOCUMENT", r.documentId().toString(), at, details);
-                }
-            }
+            Counts c = counts(actor.tenantId(), incident.incidentId());
             Map<String, Object> details = new LinkedHashMap<>();
             details.put("requestId", requestId.toString());
             details.put("requestedBy", request.requestedBy());
-            if (approve) details.put("releasedCount", released);
+            if (approve) details.put("documentCount", incident.open() ? c.inForce() : 0);
             append(actor, approve ? RELEASE_APPROVED_ACTION : RELEASE_DECLINED_ACTION, INCIDENT_TARGET,
                     incident.incidentId().toString(), now, details);
-            // Approved: the incident ends, and with it its filter's blocking (task 0051).
-            if (approve) closeIfEmpty(actor, incident.incidentId(), now);
-            ReleaseRequest decided = new ReleaseRequest(request.requestId(), request.tenantId(), request.incidentId(),
+            if (approve && incident.open()) {
+                // The request's reason is the release reason, kept on each row, never in the audit; each document's
+                // release is audited as it is released.
+                if (c.inForce() > 0) quarantine.startRelease(actor.tenantId(), incident.incidentId(), requestId);
+                else closeIfEmpty(actor, incident.incidentId(), now);
+            }
+            return new ReleaseRequest(request.requestId(), request.tenantId(), request.incidentId(),
                     request.reason(), request.requestedBy(), request.requestedByName(), request.requestedAt(), decision,
                     actor.actorId(), displayName(actor), now, request.expiresAt());
-            return requestView(actor.tenantId(), decided);
         });
+        if (approve) {
+            // The first batch now; a failure here is retried by the background job (nothing is lost, nothing twice).
+            try {
+                releaseBatch(new IncidentRef(actor.tenantId(), decided.incidentId()), actor.correlationId());
+            } catch (RuntimeException ex) {
+                // The documents stay quarantined until the job releases them.
+            }
+        }
+        return requestView(actor.tenantId(), decided);
     }
 
     // ------------------------------------------------------------------ exposure report
 
-    /**
-     * Per incident: documents by level, and per document who opened, printed or downloaded it before its quarantine.
-     * Task 0051: lists at most {@link #REVIEW_LIMIT} documents (the export has them all); the counts are complete.
-     */
+    /** The first page of the exposure report. */
     public ExposureReport exposure(Actor actor, String incidentReference) {
-        return exposure(actor, incidentReference, REVIEW_LIMIT);
+        return exposure(actor, incidentReference, null);
     }
 
-    private ExposureReport exposure(Actor actor, String incidentReference, Integer listLimit) {
+    /**
+     * Per incident: documents by level, and per document who opened, printed or downloaded it before its quarantine.
+     * Task 0052: a page of {@link #PAGE} documents at a time, in the review list's order; the counts come from the
+     * incident (levels the person can't open are counted, never listed). The export has every document.
+     */
+    public ExposureReport exposure(Actor actor, String incidentReference, String after) {
         UUID incidentId = parse(incidentReference, SdvErrorCode.QUA_007, NO_INCIDENT);
+        PageKey from = pageKey(after);
         Incident incident = quarantine.findIncident(actor.tenantId(), incidentId)
                 .orElseThrow(() -> new CodedRefusal.NotFound(SdvErrorCode.QUA_007, NO_INCIDENT));
+        Counts c = counts(actor.tenantId(), incidentId);
+        Page page = page(actor, incidentId, from, PAGE);
+        List<ExposureDocument> documents = exposureDocuments(actor, incidentId, page.rows());
+        Set<SensitivityLevel> levels = reviewable(actor);
+        long standard = levels == null || levels.contains(SensitivityLevel.STANDARD) ? c.standard() : 0;
+        long confidential = levels == null || levels.contains(SensitivityLevel.CONFIDENTIAL) ? c.confidential() : 0;
+        long highly = levels == null || levels.contains(SensitivityLevel.HIGHLY_CONFIDENTIAL) ? c.highlyConfidential() : 0;
+        long hidden = hidden(actor, c);
+        return new ExposureReport(incident.incidentId(), incident.name(), incident.status(), incident.createdAt(),
+                narrow(standard), narrow(confidential), narrow(highly), narrow(hidden), documents,
+                narrow(c.documents() - hidden), page.next(), PAGE);
+    }
+
+    private List<ExposureDocument> exposureDocuments(Actor actor, UUID incidentId, List<Visible> rows) {
         Map<UUID, List<ExposureEntry>> byDocument = new LinkedHashMap<>();
-        for (Exposure e : quarantine.findExposureInIncident(actor.tenantId(), incidentId)) {
+        for (Exposure e : quarantine.findExposure(actor.tenantId(), incidentId,
+                rows.stream().map(v -> v.row().document().documentId()).distinct().toList())) {
             byDocument.computeIfAbsent(e.documentId(), k -> new ArrayList<>())
                     .add(new ExposureEntry(e.action(), actionWords(e.action()), e.actorName() == null ? e.actorId() : e.actorName(), e.occurredAt()));
         }
-        Map<SensitivityLevel, Integer> counts = new EnumMap<>(SensitivityLevel.class);
-        for (SensitivityLevel l : SensitivityLevel.values()) counts.put(l, 0);
-        List<ExposureDocument> documents = new ArrayList<>();
-        int[] hidden = {0};
-        int[] visible = {0};
-        forEachPage(actor.tenantId(), incidentId, false, page -> {
-            Map<UUID, SensitivityLevel> levels = levels(actor.tenantId(), page.stream().map(Quarantined::document).toList());
-            for (Quarantined q : page) {
-                DocumentFacts d = q.document();
-                SensitivityLevel level = levels.get(d.documentId());
-                if (!actor.clearance().canReviewQuarantined(level)) {
-                    hidden[0]++;
-                    continue;
-                }
-                visible[0]++;
-                counts.merge(level, 1, Integer::sum);
-                if (listLimit != null && documents.size() >= listLimit) continue;
-                documents.add(new ExposureDocument(d.documentId(), d.primaryIdentifierLabel(), d.primaryIdentifier(), level,
-                        d.receivedAt(), d.pageCount(), q.quarantinedAt(), q.inForce(),
-                        byDocument.getOrDefault(d.documentId(), List.of())));
-            }
-        });
-        // Oldest quarantine first, then by received time (the pages come by quarantine ID).
-        documents.sort(java.util.Comparator.comparing(ExposureDocument::quarantinedAt)
-                .thenComparing(ExposureDocument::receivedAt, java.util.Comparator.nullsLast(java.util.Comparator.naturalOrder()))
-                .thenComparing(ExposureDocument::documentId));
-        return new ExposureReport(incident.incidentId(), incident.name(), incident.status(), incident.createdAt(),
-                counts.get(SensitivityLevel.STANDARD), counts.get(SensitivityLevel.CONFIDENTIAL),
-                counts.get(SensitivityLevel.HIGHLY_CONFIDENTIAL), hidden[0], documents, visible[0]);
+        List<ExposureDocument> documents = new ArrayList<>(rows.size());
+        for (Visible v : rows) {
+            Quarantined q = v.row();
+            DocumentFacts d = q.document();
+            documents.add(new ExposureDocument(d.documentId(), d.primaryIdentifierLabel(), d.primaryIdentifier(), v.level(),
+                    d.receivedAt(), d.pageCount(), q.quarantinedAt(), q.inForce(),
+                    byDocument.getOrDefault(d.documentId(), List.of())));
+        }
+        return documents;
     }
 
-    public record Export(byte[] csv, int rowCount, String filename, UUID reference, String fingerprint) { }
+    /** A whole export in memory (the tests; the web layer streams with {@link #openExposureExport}). */
+    public record Export(byte[] csv, long rowCount, String filename, UUID reference, String fingerprint) { }
 
-    /** The exposure report as CSV, with a reference and the SHA-256 of the file; the export is audited. */
     public Export exportExposure(Actor actor, String incidentReference) {
-        ExposureReport report = exposure(actor, incidentReference, null);
-        StringBuilder out = new StringBuilder("﻿").append(CSV_HEADER).append("\r\n");
-        int rows = 0;
-        for (ExposureDocument d : report.documents()) {
-            List<ExposureEntry> entries = d.exposure().isEmpty()
-                    ? List.of(new ExposureEntry(null, "Not opened, printed or downloaded", "", null)) : d.exposure();
-            for (ExposureEntry e : entries) {
-                out.append(AuditCsv.cell(report.name())).append(',')
-                        .append(AuditCsv.cell(d.documentId().toString())).append(',')
-                        .append(AuditCsv.cell(nullToEmpty(d.primaryIdentifierLabel()))).append(',')
-                        .append(AuditCsv.cell(nullToEmpty(d.primaryIdentifier()))).append(',')
-                        .append(AuditCsv.cell(levelWords(d.level()))).append(',')
-                        .append(AuditCsv.cell(d.receivedAt() == null ? "" : d.receivedAt().toString())).append(',')
-                        .append(d.pageCount() == null ? "" : d.pageCount().toString()).append(',')
-                        .append(AuditCsv.cell(e.what())).append(',')
-                        .append(AuditCsv.cell(nullToEmpty(e.person()))).append(',')
-                        .append(AuditCsv.cell(e.at() == null ? "" : e.at().toString())).append("\r\n");
-                rows++;
-            }
+        ExposureExport export = openExposureExport(actor, incidentReference);
+        java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+        try {
+            Written written = export.writeTo(out);
+            return new Export(out.toByteArray(), written.rowCount(), export.filename(), export.reference(), written.fingerprint());
+        } catch (IOException ex) {
+            throw new java.io.UncheckedIOException(ex);
         }
-        byte[] csv = out.toString().getBytes(StandardCharsets.UTF_8);
-        String fingerprint = sha256(csv);
+    }
+
+    /** What a finished export wrote: rows, documents and the SHA-256 of the file (also in the audit). */
+    public record Written(long rowCount, long documentCount, String fingerprint) { }
+
+    /**
+     * Task 0052: an exposure export ready to stream. Its reference and file name are known before the first byte; the
+     * start is already in the audit. {@link #writeTo} writes the CSV a page at a time, works out the fingerprint while
+     * writing, and records the finished export (rows, documents, fingerprint) in the audit.
+     */
+    public interface ExposureExport {
+        UUID reference();
+
+        String filename();
+
+        Written writeTo(OutputStream target) throws IOException;
+    }
+
+    private final class StreamedExposure implements ExposureExport {
+        private final Actor actor;
+        private final UUID incidentId;
+        private final String name;
+        private final UUID reference;
+        private final String filename;
+
+        private StreamedExposure(Actor actor, UUID incidentId, String name, UUID reference, String filename) {
+            this.actor = actor;
+            this.incidentId = incidentId;
+            this.name = name;
+            this.reference = reference;
+            this.filename = filename;
+        }
+
+        @Override public UUID reference() { return reference; }
+
+        @Override public String filename() { return filename; }
+
+        @Override public Written writeTo(OutputStream target) throws IOException {
+            MessageDigest digest = sha256();
+            DigestOutputStream hashed = new DigestOutputStream(target, digest);
+            Writer out = new BufferedWriter(new OutputStreamWriter(hashed, StandardCharsets.UTF_8), 64 * 1024);
+            out.write("﻿");
+            out.write(CSV_HEADER);
+            out.write("\r\n");
+            long rows = 0;
+            long documents = 0;
+            PageKey key = PageKey.FIRST;
+            while (true) {
+                Page page = page(actor, incidentId, key, EXPORT_PAGE);
+                for (ExposureDocument d : exposureDocuments(actor, incidentId, page.rows())) {
+                    documents++;
+                    List<ExposureEntry> entries = d.exposure().isEmpty()
+                            ? List.of(new ExposureEntry(null, "Not opened, printed or downloaded", "", null)) : d.exposure();
+                    for (ExposureEntry e : entries) {
+                        out.write(AuditCsv.cell(name));
+                        out.write(',');
+                        out.write(AuditCsv.cell(d.documentId().toString()));
+                        out.write(',');
+                        out.write(AuditCsv.cell(nullToEmpty(d.primaryIdentifierLabel())));
+                        out.write(',');
+                        out.write(AuditCsv.cell(nullToEmpty(d.primaryIdentifier())));
+                        out.write(',');
+                        out.write(AuditCsv.cell(levelWords(d.level())));
+                        out.write(',');
+                        out.write(AuditCsv.cell(d.receivedAt() == null ? "" : d.receivedAt().toString()));
+                        out.write(',');
+                        out.write(d.pageCount() == null ? "" : d.pageCount().toString());
+                        out.write(',');
+                        out.write(AuditCsv.cell(e.what()));
+                        out.write(',');
+                        out.write(AuditCsv.cell(nullToEmpty(e.person())));
+                        out.write(',');
+                        out.write(AuditCsv.cell(e.at() == null ? "" : e.at().toString()));
+                        out.write("\r\n");
+                        rows++;
+                    }
+                }
+                if (page.next() == null) break;
+                key = pageKey(page.next());
+            }
+            out.flush();
+            String fingerprint = HexFormat.of().formatHex(digest.digest());
+            Map<String, Object> details = new LinkedHashMap<>();
+            details.put("reference", reference.toString());
+            details.put("fingerprint", fingerprint);
+            details.put("rowCount", rows);
+            details.put("documentCount", documents);
+            append(actor, EXPOSURE_EXPORTED_ACTION, INCIDENT_TARGET, incidentId.toString(), clock.instant(), details);
+            return new Written(rows, documents, fingerprint);
+        }
+    }
+
+    /**
+     * Task 0052: starts an exposure export. The start is audited (with its reference) before any content leaves, so
+     * an export that stops part-way is still on record; the finished one is audited again with its fingerprint.
+     */
+    public ExposureExport openExposureExport(Actor actor, String incidentReference) {
+        UUID incidentId = parse(incidentReference, SdvErrorCode.QUA_007, NO_INCIDENT);
+        Incident incident = quarantine.findIncident(actor.tenantId(), incidentId)
+                .orElseThrow(() -> new CodedRefusal.NotFound(SdvErrorCode.QUA_007, NO_INCIDENT));
         UUID reference = UUID.randomUUID();
         Map<String, Object> details = new LinkedHashMap<>();
         details.put("reference", reference.toString());
-        details.put("fingerprint", fingerprint);
-        details.put("rowCount", rows);
-        details.put("documentCount", report.documents().size());
-        append(actor, EXPOSURE_EXPORTED_ACTION, INCIDENT_TARGET, report.incidentId().toString(), clock.instant(), details);
+        transactions.executeWithoutResult(status ->
+                append(actor, EXPOSURE_EXPORT_STARTED_ACTION, INCIDENT_TARGET, incidentId.toString(), clock.instant(), details));
         String filename = "vero-quarantine-exposure-" + LocalDate.now(clock.withZone(ZoneOffset.UTC)) + "-"
                 + reference.toString().substring(0, 8) + ".csv";
-        return new Export(csv, rows, filename, reference, fingerprint);
+        return new StreamedExposure(actor, incident.incidentId(), incident.name(), reference, filename);
     }
 
     // ------------------------------------------------------------------ views
 
     public record IncidentSummary(UUID incidentId, String name, String scope, String status, String createdByName,
                                   Instant createdAt, Instant closedAt, int documentsInForce, boolean releaseRequested,
-                                  boolean preparing, long preparedCount, Long expectedCount) { }
+                                  boolean preparing, long preparedCount, Long expectedCount, boolean releasing,
+                                  long documentCount, long releasedCount) { }
 
     /**
      * hiddenCount: documents of levels the person can't open (counted, never shown). Task 0051: preparing while the
-     * background job writes the rows (preparedCount of expectedCount looked at); documents lists at most listLimit.
+     * background job writes the rows (preparedCount of expectedCount looked at). Task 0052: documents is one page of at
+     * most listLimit; next starts the following page (null: this is the last); releasing while an approved whole
+     * release runs in the background (releasedCount of documentCount released so far).
      */
     public record IncidentView(UUID incidentId, String name, String reason, String scope, String status,
                                String createdByName, Instant createdAt, Instant closedAt, int documentsInForce,
                                int documentCount, int hiddenCount, List<QuarantinedDocumentView> documents,
                                UUID pendingRequestId, String pendingRequestedByName, Instant pendingExpiresAt,
-                               boolean preparing, long preparedCount, Long expectedCount, int listLimit) { }
+                               boolean preparing, long preparedCount, Long expectedCount, int listLimit,
+                               boolean releasing, long releasedCount, String next) { }
 
     public record QuarantinedDocumentView(UUID quarantineId, UUID documentId, String primaryIdentifierLabel,
                                           String primaryIdentifier, SensitivityLevel level, Instant receivedAt,
@@ -638,7 +887,7 @@ public class QuarantineService {
 
     public record ExposureReport(UUID incidentId, String name, String status, Instant createdAt, int standard,
                                  int confidential, int highlyConfidential, int hiddenCount,
-                                 List<ExposureDocument> documents, int documentCount) { }
+                                 List<ExposureDocument> documents, int documentCount, String next, int listLimit) { }
 
     public record ExposureDocument(UUID documentId, String primaryIdentifierLabel, String primaryIdentifier,
                                    SensitivityLevel level, Instant receivedAt, Integer pageCount, Instant quarantinedAt,
@@ -678,10 +927,10 @@ public class QuarantineService {
         return incident.incidentId();
     }
 
-    private void place(Actor actor, UUID incidentId, DocumentFacts document, Instant now) {
+    private void place(Actor actor, UUID incidentId, DocumentFacts document, SensitivityLevel level, Instant now) {
         UUID quarantineId = UUID.randomUUID();
         quarantine.insertQuarantine(quarantineId, actor.tenantId(), incidentId, document.documentId(), actor.actorId(),
-                displayName(actor), now);
+                displayName(actor), now, level, document.receivedAt());
         Map<String, Object> details = new LinkedHashMap<>();
         details.put("incidentId", incidentId.toString());
         details.put("quarantineId", quarantineId.toString());
@@ -691,7 +940,7 @@ public class QuarantineService {
     private void closeIfEmpty(Actor actor, UUID incidentId, Instant at) {
         // Task 0051: an incident still being prepared stays open (its filter quarantines the documents not yet written).
         if (progress(actor.tenantId(), incidentId).preparing()) return;
-        if (quarantine.countInForce(actor.tenantId(), List.of(incidentId)).getOrDefault(incidentId, 0) > 0) return;
+        if (counts(actor.tenantId(), incidentId).inForce() > 0) return;
         quarantine.closeIncident(actor.tenantId(), incidentId, at);
         append(actor, INCIDENT_CLOSED_ACTION, INCIDENT_TARGET, incidentId.toString(), at, new LinkedHashMap<>());
         // A request still waiting for an incident that is now empty has nothing left to release: it ends as expired.
@@ -720,26 +969,15 @@ public class QuarantineService {
         Incident incident = quarantine.findIncident(tenantId, r.incidentId())
                 .orElseThrow(() -> new InternalCheckFailed("A quarantine release request names no incident."));
         // Waiting: the documents still quarantined (what approving releases); decided: every document of the incident.
-        // Task 0051: counted a page at a time.
-        int[] n = {0, 0, 0, 0};
-        Instant[] range = {null, null};
-        forEachPage(tenantId, r.incidentId(), "PENDING".equals(r.status()), page -> {
-            Map<UUID, SensitivityLevel> levels = levels(tenantId, page.stream().map(Quarantined::document).toList());
-            for (Quarantined q : page) {
-                SensitivityLevel level = levels.get(q.document().documentId());
-                n[0]++;
-                if (level == SensitivityLevel.STANDARD) n[1]++;
-                else if (level == SensitivityLevel.CONFIDENTIAL) n[2]++;
-                else n[3]++;
-                Instant received = q.document().receivedAt();
-                if (received != null) {
-                    range[0] = range[0] == null || received.isBefore(range[0]) ? received : range[0];
-                    range[1] = range[1] == null || received.isAfter(range[1]) ? received : range[1];
-                }
-            }
-        });
-        return new ReleaseRequestView(r.requestId(), incident.incidentId(), incident.name(), n[0], n[1], n[2], n[3],
-                incident.createdAt(), range[0], range[1], r.requestedByName(), r.requestedAt(), r.expiresAt(), r.status(),
+        // Task 0052: from the incident's counts. A document whose level isn't known yet counts as Highly Confidential.
+        Counts c = counts(tenantId, r.incidentId());
+        boolean waiting = "PENDING".equals(r.status());
+        long total = waiting ? c.inForce() : c.documents();
+        long standard = waiting ? c.standardInForce() : c.standard();
+        long confidential = waiting ? c.confidentialInForce() : c.confidential();
+        long highly = Math.max(0, total - standard - confidential);
+        return new ReleaseRequestView(r.requestId(), incident.incidentId(), incident.name(), narrow(total), narrow(standard),
+                narrow(confidential), narrow(highly), incident.createdAt(), c.firstReceivedAt(), c.lastReceivedAt(), r.requestedByName(), r.requestedAt(), r.expiresAt(), r.status(),
                 r.decidedByName(), r.decidedAt());
     }
 
@@ -797,8 +1035,13 @@ public class QuarantineService {
 
     private void append(Actor actor, String action, String targetType, String targetId, Instant at,
                         Map<String, Object> details) {
-        audit.append(new AuditEvent(UUID.randomUUID(), actor.tenantId(), "USER", actor.actorId(), action, targetType,
-                targetId, at, actor.correlationId(), AuditOutcome.SUCCESS, json(details), actor.displayName()));
+        audit.append(event(actor, action, targetType, targetId, at, details));
+    }
+
+    private static AuditEvent event(Actor actor, String action, String targetType, String targetId, Instant at,
+                                    Map<String, Object> details) {
+        return new AuditEvent(UUID.randomUUID(), actor.tenantId(), "USER", actor.actorId(), action, targetType,
+                targetId, at, actor.correlationId(), AuditOutcome.SUCCESS, json(details), actor.displayName());
     }
 
     private static String json(Map<String, Object> details) {
@@ -809,9 +1052,9 @@ public class QuarantineService {
         }
     }
 
-    private static String sha256(byte[] bytes) {
+    private static MessageDigest sha256() {
         try {
-            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes));
+            return MessageDigest.getInstance("SHA-256");
         } catch (NoSuchAlgorithmException ex) {
             throw new InternalCheckFailed("SHA-256 is not available.");
         }

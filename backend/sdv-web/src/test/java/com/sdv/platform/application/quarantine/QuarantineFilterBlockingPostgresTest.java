@@ -168,7 +168,8 @@ class QuarantineFilterBlockingPostgresTest {
         assertEquals(4L * QuarantineService.BATCH_SIZE, p.preparedCount());
         Preparation fromTheStart = new Preparation(p.incidentId(), p.tenantId(), p.filter(), p.cutoffReceivedAt(),
                 p.expectedCount(), 0, null, null, null, p.createdBy(), p.createdByName(), p.createdAt(), p.status());
-        assertTrue(repository.prepareBatch(fromTheStart, QuarantineService.BATCH_SIZE, "rita", "Rita", Instant.now()).placed().isEmpty(),
+        assertTrue(repository.prepareBatch(fromTheStart, QuarantineService.BATCH_SIZE, "rita", "Rita", Instant.now(),
+                docs -> Map.of()).placed().isEmpty(),
                 "the first batch again: every one already has its row");
         QuarantineService restarted = service();
         while (restarted.prepare(5) > 0) { /* until done */ }
@@ -184,7 +185,8 @@ class QuarantineFilterBlockingPostgresTest {
         assertEquals(N, exposure.documentCount());
         assertEquals(N, exposure.standard() + exposure.confidential() + exposure.highlyConfidential());
         assertEquals(N / 10, exposure.highlyConfidential());
-        assertEquals(QuarantineService.REVIEW_LIMIT, exposure.documents().size());
+        assertEquals(QuarantineService.PAGE, exposure.documents().size());
+        assertNotNull(exposure.next());
         QuarantineService.Export export = quarantine.exportExposure(restricted, incident.incidentId().toString());
         assertEquals(N, export.rowCount(), "one row per document (the last one opened once, before)");
         assertTrue(new String(export.csv(), java.nio.charset.StandardCharsets.UTF_8).contains("Uma User"));
@@ -200,6 +202,7 @@ class QuarantineFilterBlockingPostgresTest {
         UUID request = quarantine.pendingReleaseRequests(as("ada", ADMIN)).getFirst().requestId();
         assertEquals(N - 1, quarantine.pendingReleaseRequests(as("ada", ADMIN)).getFirst().documentCount());
         quarantine.decide(as("ada", ADMIN), request.toString(), true);
+        while (quarantine.release(5) > 0) { /* the background release, to the end */ }
         assertTrue(repository.quarantined(T, ids).isEmpty());
         assertEquals("RELEASED", jdbc.queryForObject("select status from quarantine_incidents where incident_id=:id",
                 new MapSqlParameterSource("id", incident.incidentId()), String.class));

@@ -3,7 +3,7 @@
 import { describe, expect, it } from 'vitest'
 import { ApiRequestError } from '../api'
 import { errorWords } from './problemWords'
-import { UNAVAILABLE_SENTENCE, exportNote, filterProblem, inQuarantineCount, levelsLine, listedNote, nameReady, oldestFirst, plural, progressWords, reasonReady, scopeWords } from './quarantineWords'
+import { UNAVAILABLE_SENTENCE, exportNote, filterProblem, inQuarantineCount, levelsLine, nameReady, oldestFirst, pageNote, plural, progressWords, reasonReady, releaseWords, scopeWords } from './quarantineWords'
 import type { QuarantinedDocument } from './liveApi'
 
 const doc = (id: string, receivedAt: string | null, quarantinedAt = '2026-11-20T10:00:00Z'): QuarantinedDocument => ({
@@ -107,8 +107,19 @@ describe('no limit (task 0051)', () => {
     expect(inQuarantineCount({ preparing: false, expectedCount: 20000, documentsInForce: 19999 })).toBe(19999)
     expect(inQuarantineCount({ preparing: false, expectedCount: null, documentsInForce: 3 })).toBe(3)
   })
-  it('notes a limited list only when it is limited', () => {
-    expect(listedNote(500, 20000)).toBe('The first 500 of 20,000 are listed.')
-    expect(listedNote(12, 12)).toBeNull()
+  // Task 0052: the 0051 "first 500 of N" note is replaced by the page note (the lists now page through the incident).
+})
+
+describe('a million documents (task 0052)', () => {
+  it('says where a page sits, and nothing when one page shows all', () => {
+    expect(pageNote(1, 100, 20000)).toBe('Documents 1 to 100 of 20,000.')
+    expect(pageNote(101, 100, 1000000)).toBe('Documents 101 to 200 of 1,000,000.')
+    expect(pageNote(19901, 99, 20000)).toBe('Documents 19,901 to 19,999 of 20,000.')
+    expect(pageNote(1, 12, 12)).toBeNull()
+    expect(pageNote(201, 0, 200)).toBe('None more of 200.')
+  })
+  it('says how far a whole release has come, never more than all', () => {
+    expect(releaseWords(300000, 1000000)).toBe('300,000 of 1,000,000 released')
+    expect(releaseWords(12, 10)).toBe('10 of 10 released')
   })
 })

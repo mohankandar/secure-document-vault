@@ -40,5 +40,17 @@ public class QuarantinePreparationScheduler {
         } catch (RuntimeException ex) {
             log.warn("Quarantine preparation failed safely; the documents stay quarantined and a later run continues.", ex);
         }
+        // Task 0052: approved whole releases, in batches, and the levels of rows written before changeset 039.
+        try {
+            int batches = quarantine.release(batchesPerRun);
+            if (batches > 0) log.debug("Quarantine release released {} batches", batches);
+        } catch (RuntimeException ex) {
+            log.warn("Quarantine release failed safely; the documents stay quarantined and a later run continues.", ex);
+        }
+        try {
+            quarantine.fillLevels(batchesPerRun);
+        } catch (RuntimeException ex) {
+            log.warn("Filling in quarantine row levels failed safely; a later run continues.", ex);
+        }
     }
 }
