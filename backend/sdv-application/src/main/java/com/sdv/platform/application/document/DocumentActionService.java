@@ -116,7 +116,8 @@ public class DocumentActionService {
             audit.append(new AuditEvent(UUID.randomUUID(), tenantId, "USER", actorId,
                     "DOCUMENT_PRINTED", "DOCUMENT", document.documentId().toString(), clock.instant(), correlationId,
                     AuditOutcome.SUCCESS, "{\"currentApproved\":true,\"sensitivityLevel\":\"" + level.name() + "\""
-                            + (allowed.grantId() == null ? "" : ",\"accessRequestId\":\"" + allowed.grantId() + "\"") + "}"));
+                            + (allowed.grantId() == null ? "" : ",\"accessRequestId\":\"" + allowed.grantId() + "\"")
+                            + com.sdv.platform.application.access.AuditRoles.field(clearance) + "}"));
         } catch (RuntimeException ex) {
             if (allowed.grantId() != null) {
                 access.giveBack(document, DocumentAccessGuard.Attempt.PRINT, allowed.grantId(), actorId, correlationId,

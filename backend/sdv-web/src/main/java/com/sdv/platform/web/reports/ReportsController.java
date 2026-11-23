@@ -1,5 +1,6 @@
 package com.sdv.platform.web.reports;
 
+import com.sdv.platform.application.reports.ActivityReportService;
 import com.sdv.platform.application.reports.IntakeReportService;
 import com.sdv.platform.application.reports.SensitivityReportService;
 import com.sdv.platform.application.reports.StorageReportService;
@@ -34,6 +35,9 @@ import java.nio.charset.StandardCharsets;
  *       left out for this month so far (up to 366 days). {@code GET /sensitivity/export}: its CSV, audited.</li>
  *   <li>Task 0053: {@code GET /storage}: the Storage and retention report, from the counts kept in the background;
  *       {@code GET /storage/export}: its CSV, with a reference and its SHA-256 fingerprint, audited.</li>
+ *   <li>Task 0054: {@code GET /activity?from=&to=}: the Activity report (the last 7 days when both are left out, up to
+ *       92 days), from the kept days and the audit trail; {@code GET /activity/export}: its CSV, with a reference and
+ *       its SHA-256 fingerprint, audited.</li>
  * </ul>
  * Other refusals: SDV-RPT-002 (the day or range), SDV-RPT-003 (the sending system), SDV-RPT-004 (the tenant's time
  * zone), SDV-RPT-005 (too many lines, Daily intake only).
@@ -48,15 +52,17 @@ public class ReportsController {
     private final IntakeReportService reports;
     private final SensitivityReportService sensitivity;
     private final StorageReportService storage;
+    private final ActivityReportService activity;
 
     public ReportsController(SecurityContextFacade security, AuthorizationService authorization,
                              IntakeReportService reports, SensitivityReportService sensitivity,
-                             StorageReportService storage) {
+                             StorageReportService storage, ActivityReportService activity) {
         this.security = security;
         this.authorization = authorization;
         this.reports = reports;
         this.sensitivity = sensitivity;
         this.storage = storage;
+        this.activity = activity;
     }
 
     @GetMapping("/intake")
@@ -107,6 +113,21 @@ public class ReportsController {
     public ResponseEntity<byte[]> storageExport() {
         SdvPrincipal p = requireReports();
         StorageReportService.Export export = storage.export(p.tenantId(), p.subject(), MDC.get("correlationId"));
+        return registered(export.filename(), export.rowCount(), export.csv(), export.reference().toString(), export.fingerprint());
+    }
+
+    @GetMapping("/activity")
+    public ResponseEntity<ActivityReportService.ActivityReport> activity(@RequestParam(required = false) String from,
+                                                                       @RequestParam(required = false) String to) {
+        SdvPrincipal p = requireReports();
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore().cachePrivate().mustRevalidate()).body(activity.report(p.tenantId(), from, to));
+    }
+
+    @GetMapping("/activity/export")
+    public ResponseEntity<byte[]> activityExport(@RequestParam(required = false) String from,
+                                                 @RequestParam(required = false) String to) {
+        SdvPrincipal p = requireReports();
+        ActivityReportService.Export export = activity.export(p.tenantId(), p.subject(), MDC.get("correlationId"), from, to);
         return registered(export.filename(), export.rowCount(), export.csv(), export.reference().toString(), export.fingerprint());
     }
 

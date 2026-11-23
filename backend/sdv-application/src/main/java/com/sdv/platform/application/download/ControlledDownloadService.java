@@ -180,7 +180,7 @@ public class ControlledDownloadService {
                 UUID.randomUUID(), current.tenantId(), "USER", actorId,
                 "DOCUMENT_DOWNLOADED", "DOCUMENT", documentId.toString(),
                 clock.instant(), correlationId, AuditOutcome.SUCCESS,
-                successDetails(current, currentStorage, level, allowed.grantId())));
+                successDetails(current, currentStorage, level, allowed.grantId(), prepared.clearance())));
     }
 
     /**
@@ -265,7 +265,8 @@ public class ControlledDownloadService {
                 .orElseThrow(() -> unverified(documentId, "storage provider not installed"));
     }
 
-    private String successDetails(Document document, DocumentStorageRef storage, SensitivityLevel level, UUID grantId) {
+    private String successDetails(Document document, DocumentStorageRef storage, SensitivityLevel level, UUID grantId,
+                                  Clearance clearance) {
         try {
             Map<String, Object> safe = new LinkedHashMap<>();
             safe.put("contentSha256", document.contentSha256());
@@ -276,6 +277,9 @@ public class ControlledDownloadService {
             safe.put("sensitivityLevel", level.name());
             // Task 0028: the request whose one-use grant this download used (Highly Confidential only).
             if (grantId != null) safe.put("accessRequestId", grantId.toString());
+            // Task 0054: the roles, for the Activity report (as refusals record them since task 0033).
+            List<String> roles = com.sdv.platform.application.access.AuditRoles.of(clearance);
+            if (!roles.isEmpty()) safe.put("roles", roles);
             return json.writeValueAsString(safe);
         } catch (JsonProcessingException ex) {
             throw InternalCheckFailed.auditNotWritten("Could not serialize download audit details.", ex);

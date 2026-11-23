@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react'
 import { ChevronDown, ChevronRight, Download } from 'lucide-react'
 import { FailureNotice, describeFailure, exportFailureText, type Failure } from './CardError'
-import { intakeReport, intakeReportCsv, sensitivityReport, sensitivityReportCsv, storageReport, storageReportCsv, type IntakeDeliveryLine, type IntakeFilter, type IntakeReport, type IntakeSystemBlock, type SensitivityReport, type SensitivityRequestKind, type StorageReport } from './liveApi'
+import { intakeReport, intakeReportCsv, sensitivityReport, sensitivityReportCsv, storageReport, storageReportCsv, activityReport, activityReportCsv, type ActivityReport, type IntakeDeliveryLine, type IntakeFilter, type IntakeReport, type IntakeSystemBlock, type SensitivityReport, type SensitivityRequestKind, type StorageReport } from './liveApi'
 import type { SensitivityLevel } from '../api'
 import { bytesWords, countedWords, monthWords, ruleWords } from './storageWords'
 
@@ -73,13 +73,14 @@ function FailedCell({ line }: { line: IntakeDeliveryLine }) {
 
 /** Task 0033: the Reports tab with its two sub-tabs. The sub-tab is kept while the tab is open. */
 export function Reports() {
-  const [tab, setTab] = useState<'intake' | 'sensitivity' | 'storage'>('intake')
+  const [tab, setTab] = useState<'intake' | 'sensitivity' | 'storage' | 'activity'>('intake')
   const tabs = <div className="rpt-subtabs" role="tablist" aria-label="Reports">
     <button type="button" role="tab" aria-selected={tab === 'intake'} className={tab === 'intake' ? "on" : undefined} onClick={() => setTab('intake')}>Daily intake</button>
     <button type="button" role="tab" aria-selected={tab === 'sensitivity'} className={tab === 'sensitivity' ? "on" : undefined} onClick={() => setTab('sensitivity')}>Sensitivity</button>
     <button type="button" role="tab" aria-selected={tab === 'storage'} className={tab === 'storage' ? "on" : undefined} onClick={() => setTab('storage')}>Storage and retention</button>
+    <button type="button" role="tab" aria-selected={tab === 'activity'} className={tab === 'activity' ? "on" : undefined} onClick={() => setTab('activity')}>Activity</button>
   </div>
-  return tab === 'intake' ? <DailyIntake tabs={tabs} /> : tab === 'sensitivity' ? <SensitivityReportView tabs={tabs} /> : <StorageReportView tabs={tabs} />
+  return tab === 'intake' ? <DailyIntake tabs={tabs} /> : tab === 'sensitivity' ? <SensitivityReportView tabs={tabs} /> : tab === 'storage' ? <StorageReportView tabs={tabs} /> : <ActivityReportView tabs={tabs} />
 }
 
 function DailyIntake({ tabs }: { tabs: ReactNode }) {
@@ -541,4 +542,169 @@ function StorageReportView({ tabs }: { tabs: ReactNode }) {
 /** Task 0053: a registered export's note: the reference and the SHA-256 fingerprint, so the file matches the audit. */
 export function registeredNote(reference: string | null, fingerprint: string | null): string {
   return ['The file is saved. The export is recorded in the audit.', reference ? `Reference ${reference}.` : '', fingerprint ? `SHA-256 fingerprint ${fingerprint}.` : ''].filter(Boolean).join(' ')
+}
+
+/**
+ * Task 0054: the Activity sub-tab, from the audit trail. For a period (the last 7 days by default, the entity's days):
+ * opens, prints and downloads by role and level; opens refused by role; the busiest people by sign-in name, as on the
+ * Audit page; Highly Confidential approvals. Counts only: never content, file names, titles, record identifiers or
+ * reasons. The CSV carries a reference and its SHA-256 fingerprint, and the export is in the audit.
+ */
+function ActivityReportView({ tabs }: { tabs: ReactNode }) {
+  const [filter, setFilter] = useState<{ from?: string; to?: string }>({})
+  const [report, setReport] = useState<ActivityReport | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [failure, setFailure] = useState<Failure | null>(null)
+  const [refusal, setRefusal] = useState<string | null>(null)
+  const [reload, setReload] = useState(0)
+  const [periodOpen, setPeriodOpen] = useState(false)
+  const [exporting, setExporting] = useState(false)
+  const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null)
+
+  useEffect(() => {
+    let active = true
+    setLoading(true); setFailure(null); setRefusal(null)
+    activityReport(filter).then((r) => { if (active) setReport(r) }).catch((e) => {
+      if (!active) return
+      const words = describeFailure('The Activity report did not load', e)
+      if (words.kind === 'refusal' && words.code) setRefusal(words.text)
+      else setFailure({ words, kind: 'load', title: "The Activity report didn't load" })
+    }).finally(() => { if (active) setLoading(false) })
+    return () => { active = false }
+  }, [filter, reload])
+
+  const exportCsv = async () => {
+    if (!report) return
+    setExporting(true); setNote(null)
+    try {
+      const file = await activityReportCsv({ from: report.from, to: report.to })
+      const url = URL.createObjectURL(file.blob)
+      const link = document.createElement('a')
+      link.href = url; link.download = file.filename ?? `vero-activity-${report.from}-to-${report.to}.csv`
+      document.body.appendChild(link); link.click(); link.remove()
+      setTimeout(() => URL.revokeObjectURL(url), 1000)
+      setNote({ ok: true, text: registeredNote(file.reference, file.fingerprint) })
+    } catch (e) {
+      setNote({ ok: false, text: `The export didn’t work. ${exportFailureText('A report export failed', e)}` })
+    } finally { setExporting(false) }
+  }
+
+  const hint = report ? activityPeriodWords(report.from, report.to, report.today) : ''
+  const a = report?.approvals
+
+  return <>
+    <div className="rpt-bar">
+      {tabs}
+      <span className="grow" />
+      {report && <ActivityPeriodChip report={report} open={periodOpen} onOpen={setPeriodOpen} onChoose={(from, to) => { setPeriodOpen(false); setFilter({ from, to }) }} />}
+      <button type="button" className="v-btn" disabled={!report || loading || exporting} onClick={() => void exportCsv()}><Download size={15} aria-hidden />{exporting ? 'Exporting…' : 'Export CSV'}</button>
+    </div>
+    {note && <p role="status" className={note.ok ? 'faint' : 'rpt-bad'} style={{ fontSize: 13, margin: 0 }}>{note.text}</p>}
+    {refusal && <p role="alert" className="rpt-bad" style={{ fontSize: 13, margin: 0 }}>{refusal}</p>}
+    {failure && <FailureNotice failure={failure} loadTitle="The Activity report didn't load" onRetry={() => setReload((x) => x + 1)} />}
+    {loading && !report && !failure && <p className="faint">Loading the Activity report…</p>}
+
+    {report && a && <>
+      <section className="v-panel flush rpt-card" aria-label="Opened, printed and downloaded" aria-busy={loading}>
+        <div className="rpt-ch">Opened, printed and downloaded <span>{hint}, by role and level</span></div>
+        <table className="rpt-tbl">
+          <thead><tr><th>What</th><th>Role</th><th className="r">Standard</th><th className="r">Confidential</th><th className="r">Highly Confidential</th><th className="r">All</th></tr></thead>
+          <tbody>
+            {report.accessTotals.every((t) => t.total === 0) && <tr><td colSpan={6} className="faint">Nothing was opened, printed or downloaded {hint === 'the last 7 days' ? 'in the last 7 days' : 'in this period'}.</td></tr>}
+            {report.accessTotals.filter((t) => t.total > 0).map((t) => <Fragment key={t.kind}>
+              {report.access.filter((r) => r.kind === t.kind).map((r, i) => <tr key={t.kind + r.roles.join(',')}>
+                <td>{i === 0 ? accessWords(t.kind) : ''}</td><td title={r.roles.length ? undefined : 'Recorded before Vero wrote the role in the audit (task 0054)'}>{attemptRoleWords(r.roles)}</td>
+                <td className="r">{n(r.standard)}</td><td className="r">{n(r.confidential)}</td><td className="r">{n(r.highlyConfidential)}</td><td className="r">{n(r.total)}</td></tr>)}
+              <tr><td></td><td><b>Every role</b></td><td className="r"><b>{n(t.standard)}</b></td><td className="r"><b>{n(t.confidential)}</b></td><td className="r"><b>{n(t.highlyConfidential)}</b></td><td className="r"><b>{n(t.total)}</b></td></tr>
+            </Fragment>)}
+          </tbody>
+        </table>
+      </section>
+      <div className="rpt-grid">
+        <section className="v-panel flush rpt-card" aria-label="Opens refused">
+          <div className="rpt-ch">Opens refused <span>{hint}, by role</span></div>
+          <table className="rpt-tbl">
+            <thead><tr><th>Role</th><th className="r">For the level</th><th className="r">For a quarantine</th></tr></thead>
+            <tbody>
+              {report.refusals.length === 0 && <tr><td colSpan={3} className="faint">No open was refused.</td></tr>}
+              {report.refusals.map((r) => <tr key={r.roles.join(',') || '-'}><td>{attemptRoleWords(r.roles)}</td><td className="r">{n(r.level)}</td><td className="r">{n(r.quarantine)}</td></tr>)}
+            </tbody>
+          </table>
+          <div className="faint rpt-small rpt-cardnote">A legal hold never stops a document being opened, so it has no column.</div>
+        </section>
+        <section className="v-panel flush rpt-card" aria-label="Highly Confidential approvals">
+          <div className="rpt-ch">Highly Confidential approvals <span>{hint}</span></div>
+          <table className="rpt-tbl">
+            <tbody>
+              <tr><td>Print and download requests made</td><td className="r">{n(a.requested)}</td></tr>
+              <tr><td>Approved</td><td className="r">{n(a.approved)}</td></tr>
+              <tr><td>Declined</td><td className="r">{n(a.declined)}</td></tr>
+              <tr><td>Expired undecided</td><td className="r">{n(a.expired)}</td></tr>
+              <tr><td>One-time grants used</td><td className="r">{n(a.grantsUsed)}</td></tr>
+              <tr><td>One-time grants given back</td><td className="r">{n(a.grantsReturned)}</td></tr>
+            </tbody>
+          </table>
+        </section>
+      </div>
+      <section className="v-panel flush rpt-card" aria-label="Busiest people">
+        <div className="rpt-ch">Busiest people <span>the {ACTIVITY_BUSIEST} with the most opens, {hint}</span></div>
+        <table className="rpt-tbl">
+          <thead><tr><th>Person</th><th>Role</th><th className="r">Standard</th><th className="r">Confidential</th><th className="r">Highly Confidential</th><th className="r">Opens</th></tr></thead>
+          <tbody>
+            {report.busiest.length === 0 && <tr><td colSpan={6} className="faint">Nobody opened a document.</td></tr>}
+            {report.busiest.map((p, i) => <tr key={p.name + i}><td>{p.name}</td><td>{attemptRoleWords(p.roles)}</td><td className="r">{n(p.standard)}</td><td className="r">{n(p.confidential)}</td><td className="r">{n(p.highlyConfidential)}</td><td className="r"><b>{n(p.total)}</b></td></tr>)}
+          </tbody>
+        </table>
+        <div className="faint rpt-small rpt-cardnote">People by sign-in name, as on the Audit page. What they opened is in the audit trail.</div>
+      </section>
+    </>}
+  </>
+}
+
+/** The Activity report's period: the last 7 days, the last 30, or From/To up to 92 days, in the entity's days. */
+function ActivityPeriodChip({ report, open, onOpen, onChoose }: { report: ActivityReport; open: boolean; onOpen: (v: boolean) => void; onChoose: (from: string, to: string) => void }) {
+  const [from, setFrom] = useState(report.from)
+  const [to, setTo] = useState(report.to)
+  const box = useRef<HTMLDivElement>(null)
+  useEffect(() => { if (open) { setFrom(report.from); setTo(report.to) } }, [open, report.from, report.to])
+  useEffect(() => {
+    if (!open) return
+    const close = (e: MouseEvent) => { if (box.current && !box.current.contains(e.target as Node)) onOpen(false) }
+    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') onOpen(false) }
+    document.addEventListener('mousedown', close); window.addEventListener('keydown', esc)
+    return () => { document.removeEventListener('mousedown', close); window.removeEventListener('keydown', esc) }
+  }, [open, onOpen])
+  const span = from && to ? daysBetween(from, to) + 1 : 0
+  const problem = !from || !to ? 'Choose both days.' : span < 1 ? 'The last day is before the first.' : span > ACTIVITY_MAX_DAYS ? `At most ${ACTIVITY_MAX_DAYS} days.` : null
+  const zone = `${zoneWords(report.timeZone)} (entity)`
+  return (
+    <div className="rpt-daywrap" ref={box}>
+      <button type="button" className="rpt-chip" aria-haspopup="dialog" aria-expanded={open} title={`Days in ${zone}: ${report.timeZone}.`} onClick={() => onOpen(!open)}><b>Period</b> {activityPeriodWords(report.from, report.to, report.today)} <ChevronDown size={12} strokeWidth={2.4} aria-hidden /></button>
+      {open && <div className="rpt-pop" role="dialog" aria-label="Choose the period">
+        <div className="row" style={{ gap: 6, flexWrap: 'wrap' }}>
+          <button type="button" className="v-btn sm" onClick={() => onChoose(shiftDay(report.today, -6), report.today)}>Last 7 days</button>
+          <button type="button" className="v-btn sm" onClick={() => onChoose(shiftDay(report.today, -29), report.today)}>Last 30 days</button>
+          <button type="button" className="v-btn sm" onClick={() => onChoose(monthStart(report.today), report.today)}>This month</button>
+        </div>
+        <label className="rpt-field">From<input type="date" value={from} max={report.today} onChange={(e) => { setFrom(e.target.value); if (!to || e.target.value > to) setTo(e.target.value) }} /></label>
+        <label className="rpt-field">To<input type="date" value={to} max={report.today} onChange={(e) => setTo(e.target.value)} /></label>
+        <span className={problem ? 'rpt-bad' : 'faint'} style={{ fontSize: 12 }}>{problem ?? `${span} day${span === 1 ? '' : 's'}, in ${zone}. Up to ${ACTIVITY_MAX_DAYS}.`}</span>
+        <div className="row" style={{ gap: 6, justifyContent: 'flex-end' }}>
+          <button type="button" className="v-btn sm quiet" onClick={() => onOpen(false)}>Cancel</button>
+          <button type="button" className="v-btn sm primary" disabled={!!problem} onClick={() => onChoose(from, to)}>Show</button>
+        </div>
+      </div>}
+    </div>
+  )
+}
+
+const ACTIVITY_MAX_DAYS = 92
+const ACTIVITY_BUSIEST = 20
+const accessWords = (kind: 'OPENED' | 'PRINTED' | 'DOWNLOADED') => (kind === 'OPENED' ? 'Opened' : kind === 'PRINTED' ? 'Printed' : 'Downloaded')
+
+/** "the last 7 days", "the last 30 days", or the period's own words (as the Sensitivity report). */
+export function activityPeriodWords(from: string, to: string, today: string): string {
+  if (to === today && from === shiftDay(today, -6)) return 'the last 7 days'
+  if (to === today && from === shiftDay(today, -29)) return 'the last 30 days'
+  return periodWords(from, to, today)
 }

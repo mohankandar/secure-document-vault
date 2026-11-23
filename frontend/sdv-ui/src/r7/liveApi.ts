@@ -333,6 +333,26 @@ export const storageReport = () => roleApi<StorageReport>('/api/v1/admin/reports
 /** Every count, one line each, with its reference and SHA-256 fingerprint; the server records the export in the audit. */
 export const storageReportCsv = (): Promise<RegisteredExport> => contentExport('/api/v1/admin/reports/storage/export', 'businessAdmin')
 
+// ---- Task 0054: the Activity report (Business admin, counts only, from the audit trail) ----
+
+export type ActivityKind = 'OPENED' | 'PRINTED' | 'DOWNLOADED'
+export type ActivityReport = {
+  from: string; to: string; today: string; timeZone: string; timeZoneSource: 'TENANT' | 'INSTALL_DEFAULT'
+  /** The last day read from the counts kept; the rest of the period (today) comes from the audit trail now. */
+  keptThrough: string | null
+  /** roles empty: not recorded (before task 0054); levelNotRecorded: events without a level. */
+  access: { kind: ActivityKind; roles: string[]; standard: number; confidential: number; highlyConfidential: number; levelNotRecorded: number; total: number }[]
+  accessTotals: { kind: ActivityKind; standard: number; confidential: number; highlyConfidential: number; levelNotRecorded: number; total: number }[]
+  refusals: { roles: string[]; level: number; quarantine: number; total: number }[]
+  /** name: the sign-in name, as on the Audit page. */
+  busiest: { name: string; roles: string[]; standard: number; confidential: number; highlyConfidential: number; total: number }[]
+  approvals: { requested: number; approved: number; declined: number; expired: number; grantsUsed: number; grantsReturned: number }
+}
+const activityQuery = (f: { from?: string; to?: string }) => (f.from && f.to ? `?from=${encodeURIComponent(f.from)}&to=${encodeURIComponent(f.to)}` : '')
+export const activityReport = (f: { from?: string; to?: string }) => roleApi<ActivityReport>('/api/v1/admin/reports/activity' + activityQuery(f), 'businessAdmin')
+/** Every count, one line each, with its reference and SHA-256 fingerprint; the server records the export in the audit. */
+export const activityReportCsv = (f: { from?: string; to?: string }): Promise<RegisteredExport> => contentExport('/api/v1/admin/reports/activity/export' + activityQuery(f), 'businessAdmin')
+
 // ---- Task 0049: quarantine screens (the server side is task 0048) ----
 
 /** An incident in the list: documentsInForce is how many are still quarantined; never a reason here. */

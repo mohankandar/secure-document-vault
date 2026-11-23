@@ -1,0 +1,8 @@
+databaseChangeLog:
+  - changeSet:
+      id: 041-report-activity
+      author: sdv
+      changes:
+        - sqlFile:
+            path: db/changelog/041-report-activity.sql
+            relativeToChangelogFile: false
