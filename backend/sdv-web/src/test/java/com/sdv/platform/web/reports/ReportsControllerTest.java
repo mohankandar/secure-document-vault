@@ -62,10 +62,11 @@ class ReportsControllerTest {
     private final SensitivityReportService sensitivity = mock(SensitivityReportService.class);
     private final StewardNoticeService notices = mock(StewardNoticeService.class);
     private final StorageReportService storage = mock(StorageReportService.class);
+    private final com.sdv.platform.application.reports.ActivityReportService activity = mock(com.sdv.platform.application.reports.ActivityReportService.class);
     private final AuthorizationService authorization =
             new AuthorizationService(audit, new CapabilityPolicyService(mock(RoleCapabilityPolicyPort.class)));
     private final MockMvc mvc = MockMvcBuilders.standaloneSetup(
-                    new ReportsController(new SecurityContextFacade(), authorization, reports, sensitivity, storage),
+                    new ReportsController(new SecurityContextFacade(), authorization, reports, sensitivity, storage, activity),
                     new IntakeNoticeController(new SecurityContextFacade(), authorization, notices))
             .setControllerAdvice(new FoundationExceptionHandler())
             .setMessageConverters(new ByteArrayHttpMessageConverter(), new MappingJackson2HttpMessageConverter(JSON))
@@ -86,7 +87,9 @@ class ReportsControllerTest {
                 get("/api/v1/admin/reports/intake").param("from", "2026-11-01").param("to", "2026-11-20"),
                 get("/api/v1/admin/reports/intake/export"),
                 // Task 0053.
-                get("/api/v1/admin/reports/storage"), get("/api/v1/admin/reports/storage/export"));
+                get("/api/v1/admin/reports/storage"), get("/api/v1/admin/reports/storage/export"),
+                // Task 0054.
+                get("/api/v1/admin/reports/activity"), get("/api/v1/admin/reports/activity/export"));
     }
 
     @Test
@@ -99,7 +102,7 @@ class ReportsControllerTest {
                         .andExpect(jsonPath("$.message").value("Only a Business Admin can see the reports."));
             }
         }
-        verifyNoInteractions(reports, storage);
+        verifyNoInteractions(reports, storage, activity);
         ArgumentCaptor<AuditEvent> denied = ArgumentCaptor.forClass(AuditEvent.class);
         verify(audit, times(reportCalls().size() * (SdvRole.values().length - 1))).append(denied.capture());
         assertTrue(denied.getAllValues().stream().allMatch(e -> e.action().equals("AUTHORIZATION_DENIED")
@@ -278,6 +281,27 @@ class ReportsControllerTest {
                 .andExpect(header().string("X-SDV-Export-Reference", reference.toString()))
                 .andExpect(header().string("X-SDV-Export-Fingerprint", "a".repeat(64)))
                 .andExpect(header().string("X-SDV-Export-Rows", "1"))
+                .andExpect(content().bytes(CSV));
+    }
+
+    @Test
+    void theBusinessAdminGetsTheActivityReportAndItsRegisteredCsv() throws Exception {
+        signIn(SdvRole.BUSINESS_ADMIN);
+        when(activity.report(TENANT, "2026-11-17", "2026-11-23")).thenReturn(new com.sdv.platform.application.reports.ActivityReportService.ActivityReport(
+                "2026-11-17", "2026-11-23", "2026-11-23", "UTC", "INSTALL_DEFAULT", "2026-11-22", List.of(), List.of(), List.of(),
+                List.of(), new com.sdv.platform.application.reports.ActivityReportService.Approvals(2, 1, 0, 1, 1, 0)));
+        mvc.perform(get("/api/v1/admin/reports/activity").param("from", "2026-11-17").param("to", "2026-11-23"))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Cache-Control", org.hamcrest.Matchers.containsString("no-store")))
+                .andExpect(jsonPath("$.approvals.requested").value(2))
+                .andExpect(jsonPath("$.keptThrough").value("2026-11-22"));
+        UUID reference = UUID.randomUUID();
+        when(activity.export(eq(TENANT), eq("person-business_admin"), any(), isNull(), isNull())).thenReturn(
+                new com.sdv.platform.application.reports.ActivityReportService.Export(CSV, 1, "vero-activity-x.csv", reference, "b".repeat(64)));
+        mvc.perform(get("/api/v1/admin/reports/activity/export"))
+                .andExpect(status().isOk())
+                .andExpect(header().string("X-SDV-Export-Reference", reference.toString()))
+                .andExpect(header().string("X-SDV-Export-Fingerprint", "b".repeat(64)))
                 .andExpect(content().bytes(CSV));
     }
 }

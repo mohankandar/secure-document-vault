@@ -2056,6 +2056,43 @@ test.describe('SDV role-based screen capture', () => {
     await expect(page.getByRole('status').filter({ hasText: 'The file is saved.' })).toContainText(`SHA-256 fingerprint ${fingerprint}.`)
   })
 
+  // Task 0054: the Activity report, from the audit trail: counts only, people by sign-in name.
+  test('Reports: activity, by role and level, busiest people, approvals, CSV (task 0054)', async ({ page }, testInfo) => {
+    test.skip(!isDesktop(testInfo), 'Runs once per tour (desktop only).')
+    test.setTimeout(120_000)
+    const TENANT = 'bd960ee9-9d54-5053-9958-92aaa54893a6'
+    const as = (subject: string, roles: string) => ({ 'X-SDV-Tenant-Id': TENANT, 'X-SDV-Subject': subject, 'X-SDV-Roles': roles })
+    for (const [subject, roles] of [['local-business-user', 'BUSINESS_USER'], ['local-document-steward', 'DOCUMENT_STEWARD'], ['local-restricted-steward', 'RESTRICTED_STEWARD'], ['local-tenant-it-admin', 'IT_ADMIN'], ['local-platform-operations-admin', 'PLATFORM_OPERATIONS_ADMIN']]) {
+      for (const path of ['/api/v1/admin/reports/activity', '/api/v1/admin/reports/activity/export']) {
+        const r = await page.request.get(path, { headers: as(subject, roles) })
+        expect(r.status(), `${roles} on ${path}`).toBe(403)
+        expect((await r.json() as { code: string }).code).toBe('SDV-RPT-001')
+      }
+    }
+    const r = await page.request.get('/api/v1/admin/reports/activity', { headers: as('local-business-admin', 'BUSINESS_ADMIN') })
+    expect(r.ok(), 'the Business admin reads the Activity report').toBeTruthy()
+    const report = await r.json() as { accessTotals: { kind: string; total: number }[] }
+    expect(report.accessTotals.map((t) => t.kind)).toEqual(['OPENED', 'PRINTED', 'DOWNLOADED'])
+
+    await selectRole(page, 'Business Administrator')
+    await page.evaluate(() => { window.location.hash = '#/governance/reports' })
+    await page.getByRole('tablist', { name: 'Reports' }).getByRole('tab', { name: 'Activity' }).click()
+    await expect(page.getByRole('region', { name: 'Opened, printed and downloaded' })).toBeVisible({ timeout: 15000 })
+    for (const name of ['Opens refused', 'Highly Confidential approvals', 'Busiest people']) await expect(page.getByRole('region', { name })).toBeVisible()
+    await expect(page.getByRole('button', { name: /^Period the last 7 days/ })).toBeVisible()
+    await capture(page, testInfo, 'reports-activity')
+    const text = await page.locator('.v-main').innerText()
+    expect(text).not.toMatch(/\.pdf/i)
+
+    const [download] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Export CSV' }).click()])
+    expect(download.suggestedFilename()).toMatch(/^vero-activity-\d{4}-\d{2}-\d{2}-to-\d{4}-\d{2}-\d{2}-[0-9a-f]{8}\.csv$/)
+    const bytes = fs.readFileSync(await download.path() as string)
+    expect(bytes.toString('utf8').split('\r\n')[0]).toBe('﻿Section,Line,Level,Measure,Count,From,To,Time zone')
+    expect(bytes.toString('utf8')).not.toMatch(/\.pdf/i)
+    const fingerprint = (await import('node:crypto')).createHash('sha256').update(bytes).digest('hex')
+    await expect(page.getByRole('status').filter({ hasText: 'The file is saved.' })).toContainText(`SHA-256 fingerprint ${fingerprint}.`)
+  })
+
   // Task 0049: the quarantine screens, on the tour's own record (one Highly Confidential document), so no demo
   // document's history grows. Every quarantine it makes is released again before the step ends (and at its start, if
   // an earlier run stopped half-way), so the record is available afterwards. Released incidents stay as history.

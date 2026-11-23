@@ -125,7 +125,7 @@ public class DocumentViewerService {
                     documentId,
                     correlationId,
                     // Task 0031 (0.1): the effective level at the time of viewing, for the audit's level filter.
-                    "{\"pageCount\":" + pageCount + levelDetail(viewable) + "}");
+                    "{\"pageCount\":" + pageCount + levelDetail(viewable) + com.sdv.platform.application.access.AuditRoles.field(clearance) + "}");
             return new ViewerMetadata(document.documentId(), document.originalFilename(), pageCount, viewingId);
         } catch (IOException ex) {
             throw cantDraw(documentId, "open", ex);
