@@ -539,7 +539,7 @@ function RecordPanelBody({ record, summary, onOpen, source, action, needle }: { 
                 </button>
               </li>
             ))}
-            {/* Task 0049: a quarantined document this person can't open: only that it is temporarily unavailable. */}
+            {/* Task 0049: a quarantined document this person can't open: only that it is temporarily unavailable. Task 0051: nothing else. */}
             {unavailable.map((id) => (
               <li key={id}>
                 <button type="button" className="ws-doc locked" aria-label={`${UNAVAILABLE} document. ${UNAVAILABLE_SENTENCE}`}
@@ -547,7 +547,6 @@ function RecordPanelBody({ record, summary, onOpen, source, action, needle }: { 
                   <span className="lsheet" aria-hidden><Clock size={14} /></span>
                   <span className="grow" style={{ minWidth: 0 }}>
                     <strong>{UNAVAILABLE}</strong>
-                    <span>It comes back once it has been reviewed</span>
                   </span>
                 </button>
               </li>

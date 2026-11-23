@@ -29,12 +29,8 @@ $expected = @(
     @{ script='Test-SDV-BusinessExperience-A.ps1'; pass='PASS - SDV Business Experience Checkpoint A (Units 11-13) acceptance passed.' },
     @{ script='Test-SDV-BusinessExperience-B.ps1'; pass='PASS - SDV Business Experience Checkpoint B (Units 14-15) acceptance passed.' },
     @{ script='Test-SDV-ControlledActions-A-Unit16.ps1'; pass='PASS - SDV Controlled Document Actions Checkpoint A / Unit 16 acceptance passed.' },
-    @{ script='Test-SDV-ControlledActions-B-Units17-18.ps1'; pass='PASS - SDV Controlled Document Actions Checkpoint B (Units 17-18) acceptance passed.' },
-    @{ script='Test-SDV-EnterpriseReadiness-A-Units19-20.ps1'; pass='PASS - SDV Enterprise / Operational Readiness Checkpoint A (Units 19-20) acceptance passed.' },
-    @{ script='Test-SDV-EnterpriseReadiness-B-Unit21.ps1'; pass='PASS - SDV Enterprise / Operational Readiness Checkpoint B (Unit 21) acceptance passed.' },
-    @{ script='Test-SDV-EnterpriseReadiness-C-Unit22.ps1'; pass='PASS - SDV Enterprise / Operational Readiness Checkpoint C (Unit 22) acceptance passed.' },
-    @{ script='Test-SDV-EnterpriseReadiness-D-Unit23.ps1'; pass='PASS - SDV Enterprise / Operational Readiness Checkpoint D (Unit 23) acceptance passed.' },
-    @{ script='Test-SDV-EnterpriseReadiness-E-Unit24.ps1'; pass='PASS - SDV Enterprise / Operational Readiness Checkpoint E (Unit 24) acceptance passed.' }
+    @{ script='Test-SDV-ControlledActions-B-Units17-18.ps1'; pass='PASS - SDV Controlled Document Actions Checkpoint B (Units 17-18) acceptance passed.' }
+    # Task 0051: the Enterprise Readiness checks (Units 19-24) were retired; they used the identity Vero no longer has.
 )
 $acceptanceGroups = New-Object System.Collections.Generic.List[object]
 foreach ($entry in $expected) {

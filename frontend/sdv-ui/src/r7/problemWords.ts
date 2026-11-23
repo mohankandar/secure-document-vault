@@ -74,7 +74,7 @@ export const CODE_WORDS: Record<string, string> = {
   'SDV-HLD-006': 'This document was deleted or is being deleted, so it can’t be put on hold.',
   'SDV-HLD-007': 'This legal hold isn’t there any more. Open the list of holds again.',
   'SDV-HLD-008': 'This legal hold was already released. Reload the list of holds.',
-  'SDV-QUA-001': 'This document is temporarily unavailable. It comes back when the review is finished; if you need it urgently, ask a Document steward.',
+  'SDV-QUA-001': 'This document is temporarily unavailable.',
   'SDV-QUA-002': 'Only a Steward who can open this document’s level can quarantine, review or release it. Ask a Restricted steward.',
   'SDV-QUA-003': 'Only a Restricted steward can quarantine documents by filter. Quarantine them one at a time, or ask a Restricted steward.',
   'SDV-QUA-004': 'Something in the form isn’t right. Check the name, the reason (3 to 500 characters) and the filter, then try again.',

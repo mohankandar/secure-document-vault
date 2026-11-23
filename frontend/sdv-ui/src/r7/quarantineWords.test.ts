@@ -3,7 +3,7 @@
 import { describe, expect, it } from 'vitest'
 import { ApiRequestError } from '../api'
 import { errorWords } from './problemWords'
-import { UNAVAILABLE_SENTENCE, exportNote, filterProblem, levelsLine, nameReady, oldestFirst, plural, reasonReady, scopeWords } from './quarantineWords'
+import { UNAVAILABLE_SENTENCE, exportNote, filterProblem, inQuarantineCount, levelsLine, listedNote, nameReady, oldestFirst, plural, progressWords, reasonReady, scopeWords } from './quarantineWords'
 import type { QuarantinedDocument } from './liveApi'
 
 const doc = (id: string, receivedAt: string | null, quarantinedAt = '2026-11-20T10:00:00Z'): QuarantinedDocument => ({
@@ -89,5 +89,26 @@ describe('temporarily unavailable: never the level or why', () => {
     const w = errorWords(new ApiRequestError('HTTP 403', 403, 'ref-1', 'SDV-QUA-001'))
     expect(w.text).toMatch(/temporarily unavailable/)
     expect(w.text).not.toMatch(/confidential|standard/i)
+  })
+  it('says nothing else: not when it comes back, nor who reviews it (task 0051)', () => {
+    const w = errorWords(new ApiRequestError('HTTP 403', 403, 'ref-1', 'SDV-QUA-001'))
+    expect(w.text).toContain(UNAVAILABLE_SENTENCE)
+    expect(w.text).not.toMatch(/comes back|review|steward|urgent/i)
+  })
+})
+
+describe('no limit (task 0051)', () => {
+  it('says the progress with separators, never more than all', () => {
+    expect(progressWords(412000, 1000000)).toBe('412,000 of 1,000,000 done')
+    expect(progressWords(1200, 1000)).toBe('1,000 of 1,000 done')
+  })
+  it('counts every document the filter caught while the incident is prepared', () => {
+    expect(inQuarantineCount({ preparing: true, expectedCount: 20000, documentsInForce: 1000 })).toBe(20000)
+    expect(inQuarantineCount({ preparing: false, expectedCount: 20000, documentsInForce: 19999 })).toBe(19999)
+    expect(inQuarantineCount({ preparing: false, expectedCount: null, documentsInForce: 3 })).toBe(3)
+  })
+  it('notes a limited list only when it is limited', () => {
+    expect(listedNote(500, 20000)).toBe('The first 500 of 20,000 are listed.')
+    expect(listedNote(12, 12)).toBeNull()
   })
 })

@@ -63,3 +63,17 @@ export function exportNote(reference: string | null, fingerprint: string | null)
   if (fingerprint) parts.push(`SHA-256 fingerprint ${fingerprint}.`)
   return parts.join(' ')
 }
+
+/** Task 0051: counts with thousands separators, the same on every computer ("1,000,000"). */
+export const countWords = (n: number) => new Intl.NumberFormat('en-GB').format(n)
+
+/** Task 0051: a filter incident's background preparation: "412,000 of 1,000,000 done" (never more than all). */
+export const progressWords = (prepared: number, expected: number) => `${countWords(Math.min(prepared, expected))} of ${countWords(expected)} done`
+
+/** Task 0051: how many documents an incident quarantines: while it is prepared, every one the filter caught. */
+export const inQuarantineCount = (i: { preparing: boolean; expectedCount: number | null; documentsInForce: number }) =>
+  i.preparing && i.expectedCount != null ? Math.max(i.expectedCount, i.documentsInForce) : i.documentsInForce
+
+/** Task 0051: a list the server limited: "The first 500 of 20,000 are listed." or null when all are listed. */
+export const listedNote = (listed: number, total: number, what = 'are listed') =>
+  total > listed ? `The first ${countWords(listed)} of ${countWords(total)} ${what}.` : null
