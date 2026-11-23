@@ -1,5 +1,6 @@
 package com.sdv.platform.persistence.approvals;
 
+import com.sdv.platform.persistence.business.PrimaryIdentifierSql;
 import com.sdv.platform.domain.error.InternalCheckFailed;
 import com.sdv.platform.application.approvals.AccessRequestKind;
 import com.sdv.platform.application.approvals.AccessRequestStatus;
@@ -30,18 +31,8 @@ public class JdbcAccessRequestRepository implements AccessRequestRepository {
             requested_by_display_name, requested_at, status, decided_by, decided_by_display_name, decided_at,
             expires_at, used_at
             """;
-    /** The submission's first business-identifier value in display order (then by field key), and its label. */
-    static final String PRIMARY_IDENTIFIER = """
-            left join lateral (
-                select v.stored_value, f.display_label
-                  from business_metadata_values v
-                  join metadata_field_definitions f on f.definition_id=v.definition_id and f.business_identifier
-                  left join metadata_field_display_order o
-                    on o.tenant_id=v.tenant_id and o.source_id=f.source_id and o.field_key=v.field_key
-                 where v.tenant_id=d.tenant_id and v.submission_id=d.submission_id and btrim(v.stored_value)<>''
-                 order by o.display_position nulls last, v.field_key
-                 limit 1) pid on true
-            """;
+    /** The record's primary identifier of document d and its label: the one rule (task 0056). */
+    static final String PRIMARY_IDENTIFIER = PrimaryIdentifierSql.join("d.tenant_id", "d.submission_id");
 
     private final NamedParameterJdbcTemplate jdbc;
 

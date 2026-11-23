@@ -1,5 +1,6 @@
 package com.sdv.platform.application.operations;
 
+import com.sdv.platform.application.business.PrimaryIdentifierRule;
 import com.sdv.platform.application.port.BusinessRecordRepository;
 import com.sdv.platform.application.port.BusinessRecordRepository.MetadataSnapshot;
 import com.sdv.platform.application.port.IngestionSourceRepository;
@@ -8,7 +9,6 @@ import com.sdv.platform.domain.source.IngestionSource;
 import org.springframework.stereotype.Component;
 
 import java.util.Comparator;
-import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -49,9 +49,8 @@ public class ProblemRecordResolver {
             String sourceName = null;
             try {
                 sourceName = sources.findById(tenantId, sourceId).map(IngestionSource::displayName).orElse(null);
-                Map<String, Integer> order = new HashMap<>();
-                List<String> saved = definitions.findDisplayOrder(tenantId, sourceId);
-                for (int i = 0; i < saved.size(); i++) order.put(saved.get(i), i);
+                // The record number is the record's primary identifier: the one rule (task 0056).
+                Comparator<String> order = PrimaryIdentifierRule.fieldOrder(definitions.findDisplayOrder(tenantId, sourceId));
                 Map<UUID, List<MetadataSnapshot>> metadata = records.findMetadataSnapshots(tenantId, sourceId, submissionIds)
                         .stream().collect(Collectors.groupingBy(MetadataSnapshot::submissionId));
                 for (UUID submissionId : submissionIds) {
@@ -59,8 +58,7 @@ public class ProblemRecordResolver {
                     MetadataSnapshot identifier = values.stream()
                             .filter(MetadataSnapshot::businessIdentifier)
                             .filter(v -> v.storedValue() != null && !v.storedValue().isBlank())
-                            .min(Comparator.comparingInt((MetadataSnapshot v) -> order.getOrDefault(v.fieldKey(), Integer.MAX_VALUE))
-                                    .thenComparing(MetadataSnapshot::fieldKey))
+                            .min(Comparator.comparing(MetadataSnapshot::fieldKey, order))
                             .orElse(null);
                     result.put(submissionId, new ProblemRecord(
                             identifier == null ? null : identifier.storedValue(),

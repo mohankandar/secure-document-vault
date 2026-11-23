@@ -116,7 +116,8 @@ class RecordOpenAuditTest {
         assertTrue(s.contains("case when target_type='BUSINESS_RECORD' then safe_details->>'submissionId' end as record_submission_id"), s);
         // The lookup stays in the event's own tenant, and only a UUID-shaped value is ever cast.
         assertTrue(s.contains("where v.tenant_id=a.tenant_id"), s);
-        assertTrue(s.contains("v.submission_id = coalesce(d.submission_id, case when a.record_submission_id ~ :uuidPattern then a.record_submission_id::uuid end)"), s);
+        // Task 0056: through the shared primary-identifier join.
+        assertTrue(s.contains("v.submission_id=coalesce(d.submission_id, case when a.record_submission_id ~ :uuidPattern then a.record_submission_id::uuid end)"), s);
         assertTrue(s.contains("where tenant_id=:tenantId"), s);
         assertEquals(TENANT, params.getValue().getValue("tenantId"));
     }

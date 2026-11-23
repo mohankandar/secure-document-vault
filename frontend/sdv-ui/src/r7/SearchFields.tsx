@@ -191,6 +191,8 @@ export function SearchFields() {
           ))}</tbody>
         </table>
         <p className="faint sf-hint">Drag <GripVertical size={13} aria-hidden style={{ verticalAlign: '-2px' }} /> to set the order fields appear in Filters and in results.</p>
+        {/* Task 0056: the one primary-identifier rule, where the order is set. */}
+        <p className="faint sf-hint">The first identifier field in the order shown is the record's identifier on admin pages. Put your contract (or member, loan, patient) number first.</p>
       </section>
     </>}
 

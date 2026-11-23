@@ -1,5 +1,6 @@
 package com.sdv.platform.persistence.operations;
 
+import com.sdv.platform.persistence.business.PrimaryIdentifierSql;
 import com.sdv.platform.application.access.DocumentAccessGuard;
 import com.sdv.platform.application.port.AuditQueryPort;
 import com.sdv.platform.application.port.OperationalRepository;
@@ -110,23 +111,17 @@ public class JdbcOperationalRepository implements AuditQueryPort, OperationalRep
                 select a.*, d.ingested_at as doc_ingested_at, d.page_count as doc_page_count,
                        d.document_id as doc_document_id, d.source_id as doc_source_id,
                        d.submission_id as doc_submission_id, d.sensitivity_level as doc_sensitivity_level,
-                       (select v.stored_value
-                          from business_metadata_values v
-                          join metadata_field_definitions f on f.definition_id=v.definition_id and f.business_identifier
-                          left join metadata_field_display_order o
-                            on o.tenant_id=v.tenant_id and o.source_id=f.source_id and o.field_key=v.field_key
-                         where v.tenant_id=a.tenant_id
-                           and v.submission_id = coalesce(d.submission_id,
-                               case when a.record_submission_id ~ :uuidPattern then a.record_submission_id::uuid end)
-                         order by o.display_position nulls last, v.field_key
-                         limit 1) as record_number
+                       pid.stored_value as record_number
                   from (%s) a
                   left join documents d
                     on a.target_type='DOCUMENT' and a.target_id ~ :uuidPattern
                    and d.tenant_id=a.tenant_id
                    and d.document_id = (case when a.target_id ~ :uuidPattern then a.target_id::uuid end)
-                 order by a.occurred_at desc, a.audit_event_id desc
-                """.formatted(paged);
+                """.formatted(paged)
+                // The record number is the record's primary identifier: the one rule (task 0056).
+                + PrimaryIdentifierSql.join("a.tenant_id", "coalesce(d.submission_id, "
+                        + "case when a.record_submission_id ~ :uuidPattern then a.record_submission_id::uuid end)")
+                + " order by a.occurred_at desc, a.audit_event_id desc";
         return jdbc.query(withRecords, p, (rs, row) -> new AuditQueryPort.Row(new AuditEvent(
                 rs.getObject("audit_event_id", UUID.class), rs.getObject("tenant_id", UUID.class),
                 rs.getString("actor_type"), rs.getString("actor_id"), rs.getString("action"),

@@ -1,5 +1,6 @@
 package com.sdv.platform.persistence.quarantine;
 
+import com.sdv.platform.persistence.business.PrimaryIdentifierSql;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -34,18 +35,8 @@ import java.util.function.Function;
  */
 @Repository
 public class JdbcQuarantineRepository implements QuarantineRepository {
-    /** The record's primary identifier, as for legal holds: its first business identifier in display order. */
-    static final String PRIMARY_IDENTIFIER = """
-            left join lateral (
-                select v.stored_value, f.display_label
-                  from business_metadata_values v
-                  join metadata_field_definitions f on f.definition_id=v.definition_id and f.business_identifier
-                  left join metadata_field_display_order o
-                    on o.tenant_id=v.tenant_id and o.source_id=f.source_id and o.field_key=v.field_key
-                 where v.tenant_id=d.tenant_id and v.submission_id=d.submission_id and btrim(v.stored_value)<>''
-                 order by o.display_position nulls last, v.field_key
-                 limit 1) pid on true
-            """;
+    /** The record's primary identifier of document d and its label: the one rule (task 0056). */
+    static final String PRIMARY_IDENTIFIER = PrimaryIdentifierSql.join("d.tenant_id", "d.submission_id");
     static final String DOCUMENT_COLUMNS = """
             d.document_id, d.source_id, d.submission_id, d.status, d.sensitivity_level, d.ingested_at, d.page_count,
             pid.stored_value as primary_identifier, pid.display_label as primary_identifier_label

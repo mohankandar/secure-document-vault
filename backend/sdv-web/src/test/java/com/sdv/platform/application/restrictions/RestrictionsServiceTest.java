@@ -63,7 +63,8 @@ class RestrictionsServiceTest {
         when(repo.countLevelChanges(eq(T), any())).thenReturn(2L);
         when(repo.findSubmissionIdentifiers(eq(T), any())).thenReturn(Map.of(
                 SUB, new Identifier("Card number", "4000123412341234"), DOC_SUB, new Identifier("Contract number", "300000000009")));
-        when(repo.findPrimaryFields(eq(T), any())).thenReturn(Map.of(LOANS, "contractNumber"));
+        // Task 0056: a non-identifier field first; the contract number is the first identifier shown.
+        when(repo.findDisplayOrders(eq(T), any())).thenReturn(Map.of(LOANS, List.of("branch", "contractNumber", "customerId")));
         when(repo.findIdentifierLabels(eq(T), any())).thenReturn(Map.of(LOANS, Map.of("contractNumber", "Contract number", "customerId", "Customer ID")));
         when(repo.findWaitingLowerings(T)).thenReturn(new Waiting(2, NOW.minusSeconds(86_400)));
         when(repo.countHolds(T)).thenReturn(new Holds(4, 6));
@@ -100,6 +101,18 @@ class RestrictionsServiceTest {
         assertEquals("300000000009", o.changes().items().get(0).identifier());
         assertEquals("DOCUMENT", o.changes().items().get(0).scope());
         assertEquals("300000000001", o.changes().items().get(1).identifier());
+    }
+
+    @Test
+    void theDisplayOrderNotTheFieldKeyPicksThePrimaryIdentifier() {
+        // Task 0056: customerId is shown before contractNumber, though contractNumber comes first by field key.
+        when(repo.findDisplayOrders(eq(T), any())).thenReturn(Map.of(LOANS, List.of("branch", "customerId", "contractNumber")));
+        RestrictionsService.RestrictedRecord r = service.overview(T).records().items().getFirst();
+        assertEquals("Customer ID", r.identifierLabel());
+        assertEquals("C77", r.identifier());
+        // No saved display order: by field key.
+        when(repo.findDisplayOrders(eq(T), any())).thenReturn(Map.of());
+        assertEquals("300000000001", service.overview(T).records().items().getFirst().identifier());
     }
 
     @Test

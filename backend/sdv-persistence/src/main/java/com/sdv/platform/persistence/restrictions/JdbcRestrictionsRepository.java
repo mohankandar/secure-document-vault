@@ -1,5 +1,6 @@
 package com.sdv.platform.persistence.restrictions;
 
+import com.sdv.platform.persistence.business.PrimaryIdentifierSql;
 import com.sdv.platform.application.port.RestrictionsRepository;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
@@ -9,6 +10,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -85,19 +87,9 @@ public class JdbcRestrictionsRepository implements RestrictionsRepository {
     public Map<UUID, Identifier> findSubmissionIdentifiers(UUID tenantId, Collection<UUID> submissionIds) {
         Map<UUID, Identifier> out = new LinkedHashMap<>();
         if (submissionIds == null || submissionIds.isEmpty()) return out;
-        jdbc.query("""
-                select s.submission_id, pid.stored_value, pid.display_label
-                  from submissions s
-                  join lateral (
-                    select v.stored_value, f.display_label
-                      from business_metadata_values v
-                      join metadata_field_definitions f on f.definition_id=v.definition_id and f.business_identifier
-                      left join metadata_field_display_order o
-                        on o.tenant_id=v.tenant_id and o.source_id=f.source_id and o.field_key=v.field_key
-                     where v.tenant_id=s.tenant_id and v.submission_id=s.submission_id and btrim(v.stored_value)<>''
-                     order by o.display_position nulls last, v.field_key
-                     limit 1) pid on true
-                 where s.tenant_id=:t and s.submission_id in (:ids)
+        jdbc.query("select s.submission_id, pid.stored_value, pid.display_label from submissions s "
+                        + PrimaryIdentifierSql.join("s.tenant_id", "s.submission_id") + """
+                 where s.tenant_id=:t and s.submission_id in (:ids) and pid.stored_value is not null
                 """, new MapSqlParameterSource("t", tenantId).addValue("ids", List.copyOf(submissionIds)),
                 rs -> { out.put(rs.getObject("submission_id", UUID.class), new Identifier(rs.getString("display_label"), rs.getString("stored_value"))); });
         return out;
@@ -119,18 +111,16 @@ public class JdbcRestrictionsRepository implements RestrictionsRepository {
     }
 
     @Override
-    public Map<UUID, String> findPrimaryFields(UUID tenantId, Collection<UUID> sourceIds) {
-        Map<UUID, String> out = new LinkedHashMap<>();
+    public Map<UUID, List<String>> findDisplayOrders(UUID tenantId, Collection<UUID> sourceIds) {
+        Map<UUID, List<String>> out = new LinkedHashMap<>();
         if (sourceIds == null || sourceIds.isEmpty()) return out;
         jdbc.query("""
-                select distinct on (f.source_id) f.source_id, f.field_key
-                  from metadata_field_definitions f
-                  left join metadata_field_display_order o
-                    on o.tenant_id=f.tenant_id and o.source_id=f.source_id and o.field_key=f.field_key
-                 where f.tenant_id=:t and f.source_id in (:ids) and f.business_identifier
-                 order by f.source_id, o.display_position nulls last, f.field_key
-                """, new MapSqlParameterSource("t", tenantId).addValue("ids", List.copyOf(sourceIds)),
-                rs -> { out.put(rs.getObject("source_id", UUID.class), rs.getString("field_key")); });
+                select source_id, field_key from metadata_field_display_order
+                 where tenant_id=:t and source_id in (:ids)
+                 order by source_id, display_position
+                """, new MapSqlParameterSource("t", tenantId).addValue("ids", List.copyOf(sourceIds)), rs -> {
+            out.computeIfAbsent(rs.getObject("source_id", UUID.class), k -> new ArrayList<>()).add(rs.getString("field_key"));
+        });
         return out;
     }
 

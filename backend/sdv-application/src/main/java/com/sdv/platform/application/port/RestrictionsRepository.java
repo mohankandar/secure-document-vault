@@ -41,14 +41,14 @@ public interface RestrictionsRepository {
 
     long countLevelChanges(UUID tenantId, Instant since);
 
-    /** Each submission's primary identifier (its first business identifier in display order). */
+    /** Each submission's primary identifier (the one rule, PrimaryIdentifierRule); a submission without one is left out. */
     Map<UUID, Identifier> findSubmissionIdentifiers(UUID tenantId, Collection<UUID> submissionIds);
 
     /** Each sending system's identifier labels by field key (the record keys name fields by key). */
     Map<UUID, Map<String, String>> findIdentifierLabels(UUID tenantId, Collection<UUID> sourceIds);
 
-    /** Each sending system's primary identifier field (its first business identifier in display order). */
-    Map<UUID, String> findPrimaryFields(UUID tenantId, Collection<UUID> sourceIds);
+    /** Task 0056: each sending system's saved display order (field keys, first first); a system without one is left out. */
+    Map<UUID, List<String>> findDisplayOrders(UUID tenantId, Collection<UUID> sourceIds);
 
     Waiting findWaitingLowerings(UUID tenantId);
 

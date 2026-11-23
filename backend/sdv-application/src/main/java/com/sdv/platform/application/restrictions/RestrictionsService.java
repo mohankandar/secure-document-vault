@@ -1,5 +1,6 @@
 package com.sdv.platform.application.restrictions;
 
+import com.sdv.platform.application.business.PrimaryIdentifierRule;
 import com.sdv.platform.application.business.RecordKey;
 import com.sdv.platform.application.port.RestrictionsRepository;
 import com.sdv.platform.application.port.RestrictionsRepository.Holds;
@@ -22,6 +23,7 @@ import java.time.Instant;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -143,7 +145,7 @@ public class RestrictionsService {
     /** A record as a key (source and record key) or as a document's submission. */
     private record Ref(UUID sourceId, String recordKey, UUID submissionId) { }
 
-    private record Names(Map<UUID, Identifier> submissions, Map<UUID, String> primaryFields,
+    private record Names(Map<UUID, Identifier> submissions, Map<UUID, List<String>> displayOrders,
                          Map<UUID, Map<String, String>> labels) {
         static final Identifier UNKNOWN = new Identifier(null, null);
 
@@ -158,9 +160,10 @@ public class RestrictionsService {
             }
             if (parsed.submissionId() != null) return submissions.getOrDefault(parsed.submissionId(), UNKNOWN);
             if (parsed.identifiers().isEmpty()) return UNKNOWN;
-            String primary = primaryFields.get(ref.sourceId());
-            RecordKey.Part part = parsed.identifiers().stream().filter(p -> p.fieldKey().equals(primary)).findFirst()
-                    .orElse(parsed.identifiers().getFirst());
+            // The key's identifier values in the one rule's order (task 0056): the first is the primary identifier.
+            Comparator<String> order = PrimaryIdentifierRule.fieldOrder(displayOrders.getOrDefault(ref.sourceId(), List.of()));
+            RecordKey.Part part = parsed.identifiers().stream()
+                    .min(Comparator.comparing(RecordKey.Part::fieldKey, order)).orElseThrow();
             String label = labels.getOrDefault(ref.sourceId(), Map.of()).get(part.fieldKey());
             return new Identifier(label, part.normalizedValue());
         }
@@ -182,7 +185,7 @@ public class RestrictionsService {
             }
         }
         return new Names(restrictions.findSubmissionIdentifiers(tenantId, submissions),
-                restrictions.findPrimaryFields(tenantId, sources), restrictions.findIdentifierLabels(tenantId, sources));
+                restrictions.findDisplayOrders(tenantId, sources), restrictions.findIdentifierLabels(tenantId, sources));
     }
 
     // ------------------------------------------------------------------ page positions
