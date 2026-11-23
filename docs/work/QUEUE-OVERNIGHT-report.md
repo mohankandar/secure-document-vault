@@ -7,11 +7,11 @@ No other product's name or behaviour in code (all tasks; `ProductNameGuardTest` 
 | # | Task | Result | PR | Merge commit | Tests |
 |---|---|---|---|---|---|
 | 1 | 0041 Part B | **Done**: merged, tagged `sdv-ingestion-v1.1.0` (annotated, pushed) | #21 | `6fd09b5` | 607 backend, 20 frontend, clean install, schema upgrade, tour 25/0, CI green |
-| 2 | 0048 quarantine, server side | **Stopped before merge**: screen tour not run (see below) | #22 (open) | none | 634 backend (0 failures), 20 frontend, typecheck, schema upgrade from 036 and from 035 (9 PostgreSQL tests), clean install; CI: all checks green, `ci-passed` green |
+| 2 | 0048 quarantine, server side | **Done** in the morning: the owner ran the local schema step, then the tour passed (25/0) and the PR was merged | #22 | see git log | 634 backend (0 failures), 20 frontend, typecheck, schema upgrade from 036 and from 035 (9 PostgreSQL tests), clean install, tour 25/0; CI: all checks green, `ci-passed` green |
 | 3 | 0049 quarantine, screens | **Not started**: needs 0048 merged | none | none | none |
 | 4 | 0050 sealed audit report | **Not started**: needs 0049 merged | none | none | none |
 
-**Why 0048 stopped:** since 0041 the local start does not update the schema. Applying changeset 036 to the local `sdv` database (`.\Update-SDV-Schema.ps1 update`) was refused by the permission check, so Vero could not start and `ui:capture` could not run. That step is the owner's to do, like the seed reset.
+**Why 0048 stopped overnight:** since 0041 the local start does not update the schema. Applying changeset 036 to the local `sdv` database (`.\Update-SDV-Schema.ps1 update`) was refused by the permission check, so Vero could not start and `ui:capture` could not run. That step is the owner's to do, like the seed reset. On 2026-11-23 the owner ran it; the tour then passed with 25 passed, 0 failed, 11 skipped.
 
 ## Decisions taken overnight (0048)
 

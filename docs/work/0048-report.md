@@ -4,12 +4,7 @@ Branch `feature/quarantine` from `release/vero-r7` at `6fd09b5` (after 0041 was 
 
 ## Outcome
 
-**STOPPED before merge: the code is built and tested, but the screen tour could not run.** The local start no longer updates the schema itself (task 0041). Applying changeset 036 to the local `sdv` database (`.\Update-SDV-Schema.ps1 update`) was **refused by the permission check**, so the app could not start for `ui:capture`. Only the owner can run that step, as with the seed reset. By the queue rules the PR is left open and 0049 and 0050 (which depend on 0048 being merged) were not started.
-
-**To finish (owner):**
-1. `.\Update-SDV-Schema.ps1 update` on the local `sdv` database. It adds 036: three new, empty tables; no existing table or row changes.
-2. `.\start-local.cmd`, then `cd frontend/sdv-ui; npm run ui:capture`. Expect unchanged counts: no screens changed.
-3. If the tour passes and CI's `ci-passed` is green, merge the PR.
+**DONE: merged after the screen tour passed.** Overnight the tour could not run: applying changeset 036 to the local `sdv` database was refused by the permission check. On 2026-11-23 the owner ran `.\Update-SDV-Schema.ps1 update` on the local `sdv` database; then Vero started and the tour passed (25 passed, 0 failed, 11 skipped, as for 0041).
 
 ## What was done
 
@@ -85,9 +80,10 @@ No other product's name or behaviour in code. `ProductNameGuardTest` passes in t
 | `.\Test-SDV-SchemaUpgrade.ps1` (default `-From 036`) | PASS: 036 alone; 4n quarantine tables and their checks; 4f all 9 PostgreSQL-only tests pass, `QuarantinePostgresTest` included |
 | `.\Test-SDV-SchemaUpgrade.ps1 -From 035` | PASS (the older path still works) |
 | `.\Test-SDV-CleanInstall.ps1` | PASS |
-| `.\Update-SDV-Schema.ps1 update` on local `sdv` | **Refused by the permission check (not run)** |
-| `.\start-local.cmd` | Backend did not become healthy: the database is at 035, so it waits for the schema step. Stopped with `.\stop-local.cmd` (containers untouched) |
-| `npm run ui:capture` | **Not run** (app not started) |
+| `.\Update-SDV-Schema.ps1 update` on local `sdv` | Refused by the permission check overnight; run by the owner on 2026-11-23 |
+| `.\start-local.cmd` (overnight) | Backend did not become healthy: the database was at 035, so it waited for the schema step. Stopped with `.\stop-local.cmd` (containers untouched) |
+| `.\start-local.cmd` (after the owner's schema step) | Backend and frontend started |
+| `cd frontend/sdv-ui; npm run ui:capture` | PASS: 25 passed, 0 failed, 11 skipped |
 
 ## Tests: new
 
@@ -99,7 +95,7 @@ No other product's name or behaviour in code. `ProductNameGuardTest` passes in t
 
 ## Commits
 
-PR #22, commit `5ce499f` (plus this report update). CI on PR #22: backend, frontend, product-name-guard, sender-profile-contract and `ci-passed` all green. Not merged (see Outcome).
+PR #22, commit `5ce499f` (plus this report update). CI on PR #22: backend, frontend, product-name-guard, sender-profile-contract and `ci-passed` all green. Merged after the tour passed (see Outcome).
 
 ## Questions for the owner
 
