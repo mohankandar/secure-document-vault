@@ -1,0 +1,3 @@
+# Product-name guard (task 0042): the names of other products that must not appear in Vero.
+# One per line, matched in any case as a whole word. platform-core is allowed: it is a library name.
+LexaVault

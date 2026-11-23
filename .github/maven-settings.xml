@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Maven settings for CI (task 0042). The token is never in this file: it comes from the environment variable
+  GITHUB_PACKAGES_TOKEN, which the workflow fills from the repository secret PLATFORM_PACKAGES_TOKEN (a read-only
+  personal token with read:packages). Locally, ~/.m2/settings.xml has the same server entry; see
+  docs/install/PLATFORM_PACKAGES.md.
+-->
+<settings xmlns="http://maven.apache.org/SETTINGS/1.0.0"
+          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+          xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.0.0 https://maven.apache.org/xsd/settings-1.0.0.xsd">
+    <servers>
+        <server>
+            <id>github-platform-core</id>
+            <username>${env.GITHUB_ACTOR}</username>
+            <password>${env.GITHUB_PACKAGES_TOKEN}</password>
+        </server>
+    </servers>
+</settings>

@@ -1,0 +1,162 @@
+# Vero CI (task 0042). Runs on every push and pull request to release/vero-r7 and main.
+#
+# Branch protection requires one check: "ci-passed". It fails unless every job below succeeded, so a job that
+# fails, is cancelled or is skipped never lets a pull request through.
+#
+# platform-core comes from GitHub Packages with the repository secret PLATFORM_PACKAGES_TOKEN (the owner's read-only
+# token, read:packages only). It reaches Maven as GITHUB_PACKAGES_TOKEN, the same variable as on the laptop, through
+# .github/maven-settings.xml. No token is written in any file.
+name: CI
+
+on:
+  push:
+    branches: [release/vero-r7, main]
+  pull_request:
+    branches: [release/vero-r7, main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  MVN_CI_FLAGS: -B -ntp -s ${{ github.workspace }}/.github/maven-settings.xml
+
+jobs:
+  backend:
+    name: backend
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    services:
+      # Throwaway PostgreSQL 16 for the PostgreSQL-only tests (skipped locally). The tests accept only this URL:
+      # jdbc:postgresql://localhost:5433/sdv_schema_test. Trust authentication: the container lives for this job
+      # only and is reachable only from the runner, so no password exists at all.
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: sdv_schema_test
+          POSTGRES_USER: sdv_schema_owner
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U sdv_schema_owner -d sdv_schema_test"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      GITHUB_PACKAGES_TOKEN: ${{ secrets.PLATFORM_PACKAGES_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - name: Check the packages token is set
+        run: |
+          if [ -z "$GITHUB_PACKAGES_TOKEN" ]; then
+            echo "::error::Repository secret PLATFORM_PACKAGES_TOKEN is not set (read:packages token for platform-core)."
+            exit 1
+          fi
+      - name: Build the application jar (tests run in the full build below)
+        working-directory: backend
+        run: mvn $MVN_CI_FLAGS package -DskipTests
+      - name: Schema step on the scratch database
+        env:
+          # Trust authentication ignores the password; the schema step only needs one to be set.
+          SDV_SCHEMA_DB_PASSWORD: not-checked-trust-authentication
+        run: |
+          bash ./update-sdv-schema.sh update \
+            --url jdbc:postgresql://localhost:5433/sdv_schema_test --username sdv_schema_owner
+      - name: Full build and all tests, PostgreSQL-only tests included
+        working-directory: backend
+        env:
+          SDV_IT_JDBC_URL: jdbc:postgresql://localhost:5433/sdv_schema_test
+          SDV_IT_JDBC_USER: sdv_schema_owner
+          SDV_IT_JDBC_PASSWORD: not-checked-trust-authentication
+        run: mvn $MVN_CI_FLAGS clean verify
+      - name: Check the PostgreSQL-only tests ran
+        working-directory: backend
+        run: |
+          missing=0
+          for t in LegalHoldPostgresTest AccessRequestPostgresTest DuplicateIntakePostgresTest IntakeReportPostgresTest \
+                   SensitivityReportPostgresTest SignInConnectionPostgresTest UnidentifiedIntakeAttemptPostgresTest; do
+            report=$(find . -path '*/surefire-reports/TEST-*'"$t"'.xml' | head -1)
+            if [ -z "$report" ] || grep -q 'skipped="[1-9]' "$report" || grep -q 'tests="0"' "$report"; then
+              echo "::error::$t did not run"; missing=1
+            else
+              grep -o 'tests="[0-9]*"[^>]*skipped="[0-9]*"' "$report" | head -1 | sed "s/^/$t: /"
+            fi
+          done
+          exit $missing
+      - name: Keep the test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-test-reports
+          path: backend/**/target/surefire-reports/
+          retention-days: 14
+          if-no-files-found: ignore
+
+  frontend:
+    name: frontend
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: frontend/sdv-ui
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/sdv-ui/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run build
+
+  product-name-guard:
+    name: product-name-guard
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      GITHUB_PACKAGES_TOKEN: ${{ secrets.PLATFORM_PACKAGES_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - name: No other product's name in code, SQL, JSON, YAML, scripts or install guides
+        working-directory: backend
+        run: >-
+          mvn $MVN_CI_FLAGS -pl sdv-web -am test -Dtest=ProductNameGuardTest -Dsurefire.failIfNoSpecifiedTests=false
+
+  sender-profile-contract:
+    # Task 0041 fills this job: Vero's sender profile (platform-integration-profile/1) checked against
+    # sdv-ingestion-v1.openapi.json with platform-integration-testkit's ProfileContract. Until then it only says so.
+    name: sender-profile-contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - run: echo "Sender-profile contract tests are added by task 0041; nothing to run yet."
+
+  ci-passed:
+    name: ci-passed
+    if: always()
+    needs: [backend, frontend, product-name-guard, sender-profile-contract]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Every job succeeded
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "Job results: $RESULTS"
+          for r in $RESULTS; do
+            if [ "$r" != "success" ]; then echo "::error::A required job did not succeed ($r)"; exit 1; fi
+          done

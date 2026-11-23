@@ -41,8 +41,8 @@ if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
     throw 'npm is required on PATH.'
 }
 
-Write-Host 'Enterprise identity: external Maven dependency com.documentplatform.identity:*:0.2.0'
-Write-Host 'This build does not build enterprise-identity-parent; Maven resolves it from the configured/local artifact repository.'
+Write-Host 'Identity: platform-core released modules com.documentplatform.platform:platform-identity-* (platform-bom, see backend/pom.xml)'
+Write-Host 'Maven reads them from GitHub Packages (server github-platform-core, token in GITHUB_PACKAGES_TOKEN; docs/install/PLATFORM_PACKAGES.md).'
 
 Push-Location $Backend
 try {
