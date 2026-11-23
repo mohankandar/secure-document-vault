@@ -39,23 +39,25 @@ No other product's name or behaviour in code. `ProductNameGuardTest` passes in t
 
 | Command | Result |
 |---|---|
-| `.\Build-SDV-All.ps1` (final) | PASS: backend 671 tests, 0 failures, 0 errors, 19 skipped (the PostgreSQL-only tests; 0053: 662/18); frontend build OK. After it only `ActivityReportPostgresTest` changed (skipped in this build; it passed in the schema check below) |
+| `.\Build-SDV-All.ps1` (final) | PASS: backend 672 tests, 0 failures, 0 errors, 19 skipped (the PostgreSQL-only tests; 0053: 662/18); frontend build OK |
 | `cd frontend/sdv-ui; npm run typecheck` | PASS |
 | `cd frontend/sdv-ui; npm test` (PowerShell) | PASS: 61 tests (58 before, 3 new) |
 | `npx playwright test --list` | The new tour step is listed (the file compiles) |
-| `.\Test-SDV-SchemaUpgrade.ps1` (default `-From 041`) | PASS in 452 s; step 4s passed; step 4f passed every PostgreSQL test, `ActivityReportPostgresTest` included |
+| `.\Test-SDV-SchemaUpgrade.ps1` (default `-From 041`, final) | PASS in 460 s; step 4s passed; step 4f passed every PostgreSQL test, `ActivityReportPostgresTest` included |
 | Earlier runs of the schema check | FAIL six times, fixed one by one before the passing run. Mistakes in the new test: a wrong outcome name; a word check that matched "Level"; an entity left on a time zone, which broke `IntakeReportPostgresTest`; a seed that subtracted days in New York time and moved 702 opens across the 1 November clock change. One real problem: the month took 1,198 ms against the agreed 1,000 ms. I fixed its cause, not the limit: the kept counts are now a few rows a day, and the busiest people one row a person a day (`report_activity_people`) |
 | `.\Test-SDV-CleanInstall.ps1` | PASS in 111 s |
+| CI on the PR, first push | FAIL: `ActivityReportPostgresTest`, "the month took 1494 ms (agreed: 1000 ms)". CI's runner is slower than this machine (760 ms here then). I fixed the cause, not the limit, in a second commit. Today's part of the audit trail is now read once, not twice (the totals and the busiest list share it), and its roles are taken as recorded (the JSON text) and tidied in Java, not unpacked event by event in SQL. Here: 760 → 324 ms for 31 days, 528 → 209 ms for 7 days |
 | Local schema step and `npm run ui:capture` | **Not run**: the local schema step is refused in this session (see 0052) |
 
 
 ## Tests: counts, and any failures with their output
 
-- **New `ActivityReportServiceTest` (5):**
+- **New `ActivityReportServiceTest` (6):**
   - the last 7 days by default, in New York days: the closed days kept once, today from the audit trail;
   - a day is kept only after it has settled;
   - each section;
   - the period checks (SDV-RPT-002);
+  - today's part joins the kept days by role name (however the roles were recorded), and today's people go to the busiest list;
   - the CSV with its reference, fingerprint and audit.
 - **New `AuditRolesTest` (2):** role names only, sorted, once; nothing when there is no role.
 - **New `ActivityReportPostgresTest` (PostgreSQL; CI and schema check step 4f):**
@@ -73,10 +75,10 @@ No other product's name or behaviour in code. `ProductNameGuardTest` passes in t
 
 | Measure | ms |
 |---|---:|
-| Seed (test set-up) | 52,022 |
-| Keeping the 30 closed days (background, once) | 81,507 |
-| Report, 31 days (API; median of 3 after a warm-up) | 760 |
-| Report, the last 7 days (API) | 528 |
+| Seed (test set-up) | 50,873 |
+| Keeping the 30 closed days (background, once) | 73,007 |
+| Report, 31 days (API; median of 3 after a warm-up) | 324 |
+| Report, the last 7 days (API) | 209 |
 
 Most of each report's time is today's part, read from the audit trail (10,000 events here). A busier today costs more until the day is kept, 10 minutes after midnight.
 
@@ -97,7 +99,7 @@ Most of each report's time is today's part, read from the audit trail (10,000 ev
 
 ## Commits (hash and message), or "not committed"
 
-See the PR: one commit, "feat(reports): activity report (task 0054)".
+See the PR: two commits, "feat(reports): activity report (task 0054)" and "perf(reports): read today's audit part once (task 0054)".
 
 ## Not done, and why
 

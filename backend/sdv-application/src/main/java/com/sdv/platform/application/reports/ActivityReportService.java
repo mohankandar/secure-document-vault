@@ -6,6 +6,7 @@ import com.sdv.platform.application.audit.AuditCsv;
 import com.sdv.platform.application.port.ActivityReportRepository;
 import com.sdv.platform.application.port.ActivityReportRepository.Count;
 import com.sdv.platform.application.port.ActivityReportRepository.Person;
+import com.sdv.platform.application.port.ActivityReportRepository.Row;
 import com.sdv.platform.application.port.ActivityReportRepository.Window;
 import com.sdv.platform.application.port.AuditEventPort;
 import com.sdv.platform.application.port.IntakeReportRepository;
@@ -150,7 +151,33 @@ public class ActivityReportService {
         Map<String, long[]> refusals = new LinkedHashMap<>(); // roles -> level, quarantine
         long[] approvals = new long[6];
         long[] accessTotals = new long[ACCESS.size() * 4];
-        for (Count c : activity.count(tenantId, window)) {
+        // The audit part (today) is read once; its counts join the kept days' here, its people go to the busiest list.
+        List<Row> live = activity.live(tenantId, liveFrom, liveTo);
+        List<Count> counts = new ArrayList<>(activity.count(tenantId, window));
+        Map<String, long[]> livePeople = new LinkedHashMap<>();
+        Map<String, String[]> liveNames = new LinkedHashMap<>();
+        for (Row r : live) {
+            counts.add(new Count(r.kind(), r.roles(), r.level(), r.events()));
+            if (!"OPENED".equals(r.kind()) || r.actorId() == null) continue;
+            long[] n = livePeople.computeIfAbsent(r.actorId(), k -> new long[4]);
+            n[r.level() == null ? 3 : LEVELS.indexOf(r.level())] += r.events();
+            String[] who = liveNames.computeIfAbsent(r.actorId(), k -> new String[2]);
+            if (r.actorName() != null) who[0] = r.actorName();
+            who[1] = r.roles();
+        }
+        List<Person> today = new ArrayList<>();
+        livePeople.forEach((id, n) -> today.add(new Person(id, liveNames.get(id)[0], liveNames.get(id)[1], n[0], n[1], n[2],
+                n[0] + n[1] + n[2] + n[3])));
+        // The kept part and the audit part merge by the roles' names, however they were recorded.
+        Map<String, Long> merged = new LinkedHashMap<>();
+        for (Count c : counts) merged.merge(c.kind() + "|" + String.join(",", roles(c.roles())) + "|" + (c.level() == null ? "" : c.level()),
+                c.events(), Long::sum);
+        counts = new ArrayList<>();
+        for (Map.Entry<String, Long> e : merged.entrySet()) {
+            String[] k = e.getKey().split("\\|", -1);
+            counts.add(new Count(k[0], k[1], k[2].isEmpty() ? null : k[2], e.getValue()));
+        }
+        for (Count c : counts) {
             int levelColumn = c.level() == null ? 3 : LEVELS.indexOf(c.level());
             switch (c.kind()) {
                 case "OPENED", "PRINTED", "DOWNLOADED" -> {
@@ -184,7 +211,7 @@ public class ActivityReportService {
         refusals.forEach((r, n) -> refusalRows.add(new RefusalRow(roles(r), n[0], n[1], n[0] + n[1])));
         refusalRows.sort((a, b) -> Long.compare(b.total(), a.total()));
         List<PersonRow> people = new ArrayList<>();
-        for (Person p : activity.busiest(tenantId, window, BUSIEST)) {
+        for (Person p : activity.busiest(tenantId, window, today, BUSIEST)) {
             List<String> roles = p.roles() == null ? List.of() : Arrays.stream(p.roles().split(";"))
                     .flatMap(r -> roles(r).stream()).distinct().sorted().toList();
             String name = p.actorName() == null || p.actorName().isBlank() ? p.actorId() : p.actorName();
@@ -195,9 +222,11 @@ public class ActivityReportService {
                 refusalRows, people, new Approvals(approvals[0], approvals[1], approvals[2], approvals[3], approvals[4], approvals[5]));
     }
 
-    private static List<String> roles(String joined) {
-        if (joined == null || joined.isBlank()) return List.of();
-        return Arrays.stream(joined.split(",")).map(String::strip).filter(s -> !s.isEmpty()).toList();
+    /** Roles as recorded (a JSON array's text, or names joined by commas): fixed role names only, sorted, once. */
+    static List<String> roles(String recorded) {
+        if (recorded == null || recorded.isBlank()) return List.of();
+        return Arrays.stream(recorded.replaceAll("[\\[\\]\"\\s]", "").split(",")).filter(s -> s.matches("[A-Z_]{1,80}"))
+                .distinct().sorted().toList();
     }
 
     // ------------------------------------------------------------------ the CSV

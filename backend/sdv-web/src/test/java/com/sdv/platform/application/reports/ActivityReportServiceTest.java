@@ -67,7 +67,7 @@ class ActivityReportServiceTest {
                 new Count("EXPIRED", "", null, 1),
                 new Count("GRANT_USED", "", null, 2),
                 new Count("GRANT_RETURNED", "", null, 1)));
-        when(repo.busiest(eq(T), any(), eq(20))).thenReturn(List.of(
+        when(repo.busiest(eq(T), any(), any(), eq(20))).thenReturn(List.of(
                 new Person("bob@example.test", "Bob Person", "BUSINESS_USER", 30, 5, 0, 35),
                 new Person("dee@example.test", null, "DOCUMENT_STEWARD;DOCUMENT_STEWARD,RESTRICTED_STEWARD", 0, 0, 2, 2)));
         service = new ActivityReportService(repo, tenants, audit, tx, "UTC", Clock.fixed(NOW, ZoneOffset.UTC));
@@ -89,6 +89,7 @@ class ActivityReportServiceTest {
         assertEquals(LocalDate.parse("2026-11-22"), window.getValue().lastKeptDay());
         assertEquals(Instant.parse("2026-11-23T05:00:00Z"), window.getValue().liveFrom(), "today, from midnight in New York");
         assertEquals(NOW, window.getValue().liveTo());
+        verify(repo).live(T, Instant.parse("2026-11-23T05:00:00Z"), NOW);
         // A second report keeps nothing again.
         service.report(T, null, null);
         verify(repo, times(6)).keepDay(eq(T), any(), anyString(), any(), any(), any());
@@ -148,5 +149,22 @@ class ActivityReportServiceTest {
         assertEquals(ActivityReportService.EXPORT_ACTION, event.getValue().action());
         assertTrue(event.getValue().safeDetailsJson().contains(export.fingerprint()));
         assertTrue(export.filename().startsWith("vero-activity-2026-11-17-to-2026-11-23-"));
+    }
+
+    @Test
+    void todayFromTheAuditJoinsTheKeptDaysByRoleNameAndRanksPeopleWithIt() {
+        // Today, as recorded: roles as JSON text, in any order.
+        when(repo.live(eq(T), any(), any())).thenReturn(List.of(
+                new ActivityReportRepository.Row("OPENED", "[\"BUSINESS_USER\"]", "STANDARD", "carl@example.test", "Carl Person", 6),
+                new ActivityReportRepository.Row("REFUSED_LEVEL", "[\"RESTRICTED_STEWARD\", \"BUSINESS_USER\"]", "HIGHLY_CONFIDENTIAL", null, null, 1)));
+        ActivityReportService.ActivityReport r = service.report(T, null, null);
+        assertEquals(56, r.accessTotals().getFirst().total(), "50 kept and 6 today");
+        assertTrue(r.access().stream().anyMatch(a -> a.kind().equals("OPENED") && a.roles().equals(List.of("BUSINESS_USER")) && a.total() == 51),
+                "kept 'BUSINESS_USER' and today's '[\"BUSINESS_USER\"]' are one row");
+        assertTrue(r.refusals().stream().anyMatch(f -> f.roles().equals(List.of("BUSINESS_USER", "RESTRICTED_STEWARD")) && f.level() == 1), "sorted");
+        ArgumentCaptor<List<Person>> today = ArgumentCaptor.forClass(List.class);
+        verify(repo).busiest(eq(T), any(), today.capture(), eq(20));
+        assertEquals(List.of(new Person("carl@example.test", "Carl Person", "[\"BUSINESS_USER\"]", 6, 0, 0, 6)), today.getValue(),
+                "today's people go to the busiest list");
     }
 }

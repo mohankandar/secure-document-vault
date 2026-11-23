@@ -37,11 +37,14 @@ public class JdbcActivityReportRepository implements ActivityReportRepository {
             + "'SENSITIVE_ACCESS_GRANT_USED', 'SENSITIVE_ACCESS_GRANT_RETURNED')";
     private static final String LEVELS = "('STANDARD', 'CONFIDENTIAL', 'HIGHLY_CONFIDENTIAL')";
 
-    /** The audit events of {@code [:liveFrom, :liveTo)}, counted as the kept days are: kind, roles, level, actor, events. */
+    /**
+     * The audit events of {@code [:liveFrom, :liveTo)}, counted as the kept days are: kind, roles, level, actor, events.
+     * Roles are kept as recorded (the text of the event's JSON array, '' when none); the service reads them, so no
+     * event's details are unpacked here.
+     */
     static final String AUDIT_ROWS = """
             select k.kind,
-                   coalesce((select string_agg(r, ',' order by r) from jsonb_array_elements_text(
-                       case when jsonb_typeof(a.safe_details->'roles') = 'array' then a.safe_details->'roles' else '[]'::jsonb end) r), '') as roles,
+                   coalesce((a.safe_details->'roles')::text, '') as roles,
                    case when k.kind in ('OPENED', 'PRINTED', 'DOWNLOADED') and a.safe_details->>'sensitivityLevel' in\s""" + LEVELS + """
              then a.safe_details->>'sensitivityLevel'
                         when k.kind in ('REFUSED_LEVEL', 'REFUSED_QUARANTINE') and a.safe_details->>'level' in\s""" + LEVELS + """
@@ -130,57 +133,44 @@ public class JdbcActivityReportRepository implements ActivityReportRepository {
         return w.lastKeptDay() != null && !w.lastKeptDay().isBefore(w.firstDay());
     }
 
-    private static boolean live(Window w, MapSqlParameterSource p) {
-        boolean live = w.liveFrom() != null && w.liveTo() != null && w.liveFrom().isBefore(w.liveTo());
-        if (live) p.addValue("liveFrom", Timestamp.from(w.liveFrom())).addValue("liveTo", Timestamp.from(w.liveTo()));
-        return live;
-    }
-
     private static void keptDays(Window w, MapSqlParameterSource p) {
         p.addValue("firstDay", Date.valueOf(w.firstDay())).addValue("lastKeptDay", Date.valueOf(w.lastKeptDay()));
     }
 
-    /** The kept days' counts and the audit's counts of the window, in one shape (kind, roles, level, events). */
-    private static String rows(Window w, MapSqlParameterSource p) {
-        List<String> parts = new java.util.ArrayList<>();
-        if (kept(w)) {
-            keptDays(w, p);
-            parts.add("select kind, roles, level, events from report_activity_counts"
-                    + " where tenant_id=:tenantId and day between :firstDay and :lastKeptDay");
-        }
-        if (live(w, p)) parts.add("select kind, roles, level, events from (" + AUDIT_ROWS + ") live");
-        if (parts.isEmpty()) return "select null::text as kind, null::text as roles, null::text as level, 0::bigint as events where false";
-        return String.join(" union all ", parts);
-    }
-
-    /** The kept days' people and the audit's people of the window, in one shape. */
-    private static String people(Window w, MapSqlParameterSource p) {
-        List<String> parts = new java.util.ArrayList<>();
-        String columns = "actor_id, actor_name, roles, standard, confidential, ";
-        if (kept(w)) {
-            keptDays(w, p);
-            parts.add("select " + columns + "highly_confidential as highly, total from report_activity_people"
-                    + " where tenant_id=:tenantId and day between :firstDay and :lastKeptDay");
-        }
-        if (live(w, p)) parts.add("select " + columns + "highly, total from (" + PEOPLE_ROWS + ") live");
-        if (parts.isEmpty()) return "select null::text as actor_id, null::text as actor_name, null::text as roles, 0::bigint as standard, "
-                + "0::bigint as confidential, 0::bigint as highly, 0::bigint as total where false";
-        return String.join(" union all ", parts);
+    @Override
+    public List<Row> live(UUID tenantId, Instant from, Instant to) {
+        if (from == null || to == null || !from.isBefore(to)) return List.of();
+        return jdbc.query(AUDIT_ROWS, new MapSqlParameterSource().addValue("tenantId", tenantId)
+                        .addValue("liveFrom", Timestamp.from(from)).addValue("liveTo", Timestamp.from(to)),
+                (rs, row) -> new Row(rs.getString("kind"), rs.getString("roles"), rs.getString("level"), rs.getString("actor_id"),
+                        rs.getString("actor_name"), rs.getLong("events")));
     }
 
     @Override
     public List<Count> count(UUID tenantId, Window window) {
+        if (!kept(window)) return List.of();
         MapSqlParameterSource p = new MapSqlParameterSource().addValue("tenantId", tenantId);
-        return jdbc.query("with rows as (" + rows(window, p) + ") select kind, roles, level, sum(events) as events "
-                        + "from rows group by 1, 2, 3 order by 1, 2, 3", p,
+        keptDays(window, p);
+        return jdbc.query("select kind, roles, level, sum(events) as events from report_activity_counts"
+                        + " where tenant_id=:tenantId and day between :firstDay and :lastKeptDay group by 1, 2, 3 order by 1, 2, 3", p,
                 (rs, row) -> new Count(rs.getString("kind"), rs.getString("roles"), rs.getString("level"), rs.getLong("events")));
     }
 
     @Override
-    public List<Person> busiest(UUID tenantId, Window window, int limit) {
-        MapSqlParameterSource p = new MapSqlParameterSource().addValue("tenantId", tenantId).addValue("limit", limit);
+    public List<Person> busiest(UUID tenantId, Window window, List<Person> live, int limit) {
+        MapSqlParameterSource p = new MapSqlParameterSource().addValue("tenantId", tenantId).addValue("limit", limit)
+                .addValue("live", livePeople(live));
+        List<String> parts = new java.util.ArrayList<>();
+        if (kept(window)) {
+            keptDays(window, p);
+            parts.add("select actor_id, actor_name, roles, standard, confidential, highly_confidential as highly, total"
+                    + " from report_activity_people where tenant_id=:tenantId and day between :firstDay and :lastKeptDay");
+        }
+        // Today's people, worked out once by the service from the audit part, as one parameter.
+        parts.add("select actor_id, actor_name, roles, standard, confidential, highly, total from jsonb_to_recordset(cast(:live as jsonb))"
+                + " as x(actor_id text, actor_name text, roles text, standard bigint, confidential bigint, highly bigint, total bigint)");
         // Roles: the smallest and largest seen (a person rarely opens with more than one set of roles).
-        return jdbc.query("with rows as (" + people(window, p) + """
+        return jdbc.query("with rows as (" + String.join(" union all ", parts) + """
                 ) select actor_id, max(actor_name) as actor_name, min(roles) || ';' || max(roles) as roles,
                          sum(standard) as standard, sum(confidential) as confidential, sum(highly) as highly,
                          sum(total) as total
@@ -188,6 +178,28 @@ public class JdbcActivityReportRepository implements ActivityReportRepository {
                 """, p, (rs, row) -> new Person(rs.getString("actor_id"), rs.getString("actor_name"), rs.getString("roles"),
                 rs.getLong("standard"), rs.getLong("confidential"), rs.getLong("highly"), rs.getLong("total")));
     }
+
+    private static String livePeople(List<Person> live) {
+        List<Map<String, Object>> rows = new java.util.ArrayList<>();
+        for (Person x : live == null ? List.<Person>of() : live) {
+            Map<String, Object> r = new LinkedHashMap<>();
+            r.put("actor_id", x.actorId());
+            r.put("actor_name", x.actorName());
+            r.put("roles", x.roles() == null ? "" : x.roles());
+            r.put("standard", x.standard());
+            r.put("confidential", x.confidential());
+            r.put("highly", x.highlyConfidential());
+            r.put("total", x.total());
+            rows.add(r);
+        }
+        try {
+            return JSON.writeValueAsString(rows);
+        } catch (com.fasterxml.jackson.core.JsonProcessingException ex) {
+            throw new com.sdv.platform.domain.error.InternalCheckFailed("Today's people could not be passed to the busiest list.");
+        }
+    }
+
+    private static final com.fasterxml.jackson.databind.ObjectMapper JSON = new com.fasterxml.jackson.databind.ObjectMapper();
 
     @Override
     public List<UUID> findActiveTenants() {

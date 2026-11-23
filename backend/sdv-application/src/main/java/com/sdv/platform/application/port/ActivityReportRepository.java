@@ -33,9 +33,17 @@ public interface ActivityReportRepository {
     /** Counts one day from the audit trail ({@code [start, end)}) and keeps it, replacing what was kept. Returns events. */
     long keepDay(UUID tenantId, LocalDate day, String timeZone, Instant start, Instant end, Instant countedAt);
 
+    /** One group of the audit trail's events: kind, roles as recorded (JSON array text, '' when none), level, actor, events. */
+    record Row(String kind, String roles, String level, String actorId, String actorName, long events) { }
+
+    /** The kept days' counts of the window (its audit part is read with {@link #live}). */
     List<Count> count(UUID tenantId, Window window);
 
-    List<Person> busiest(UUID tenantId, Window window, int limit);
+    /** The audit trail of {@code [from, to)}, grouped as a kept day is (nothing when from isn't before to). */
+    List<Row> live(UUID tenantId, Instant from, Instant to);
+
+    /** The people with the most opens in the window's kept days and {@code live} (the audit part's people), best first. */
+    List<Person> busiest(UUID tenantId, Window window, List<Person> live, int limit);
 
     List<UUID> findActiveTenants();
 }
