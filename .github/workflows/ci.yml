@@ -83,7 +83,8 @@ jobs:
           missing=0
           for t in LegalHoldPostgresTest AccessRequestPostgresTest DuplicateIntakePostgresTest IntakeReportPostgresTest \
                    SensitivityReportPostgresTest PlatformIdentityPostgresTest SenderProfileServerContractTest \
-                   UnidentifiedIntakeAttemptPostgresTest QuarantinePostgresTest SealedAuditPostgresTest; do
+                   UnidentifiedIntakeAttemptPostgresTest QuarantinePostgresTest QuarantineFilterBlockingPostgresTest \
+                   SealedAuditPostgresTest; do
             report=$(find . -path '*/surefire-reports/TEST-*'"$t"'.xml' | head -1)
             if [ -z "$report" ] || grep -q 'skipped="[1-9]' "$report" || grep -q 'tests="0"' "$report"; then
               echo "::error::$t did not run"; missing=1

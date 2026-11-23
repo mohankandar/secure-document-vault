@@ -1,0 +1,8 @@
+databaseChangeLog:
+  - changeSet:
+      id: 038-quarantine-filter-blocking
+      author: sdv
+      changes:
+        - sqlFile:
+            path: db/changelog/038-quarantine-filter-blocking.sql
+            relativeToChangelogFile: false

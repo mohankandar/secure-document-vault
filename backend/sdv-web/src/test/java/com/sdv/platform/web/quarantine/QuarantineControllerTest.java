@@ -110,9 +110,10 @@ class QuarantineControllerTest {
         }
         verifyNoInteractions(service);
         signIn(SdvRole.RESTRICTED_STEWARD);
-        when(service.countMatching(any(), any())).thenReturn(new QuarantineService.MatchCount(3, 1000));
+        when(service.countMatching(any(), any())).thenReturn(new QuarantineService.MatchCount(3));
         mvc.perform(post("/api/v1/quarantine/filter/count").contentType(MediaType.APPLICATION_JSON).content(FILTER_BODY))
-                .andExpect(status().isOk()).andExpect(jsonPath("$.count").value(3));
+                .andExpect(status().isOk()).andExpect(jsonPath("$.count").value(3))
+                .andExpect(jsonPath("$.limit").doesNotExist()); // task 0051: no limit
         mvc.perform(post("/api/v1/quarantine/filter").contentType(MediaType.APPLICATION_JSON).content(FILTER_BODY))
                 .andExpect(status().isCreated());
         ArgumentCaptor<QuarantineService.FilterRequest> filter = ArgumentCaptor.forClass(QuarantineService.FilterRequest.class);

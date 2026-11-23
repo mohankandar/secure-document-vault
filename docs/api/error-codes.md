@@ -373,7 +373,7 @@ Task 0048. A Steward quarantines a document while a suspected leak or wrong deli
 
 - **HTTP status:** 403. Sent by every way of reaching a document (open, pages, previews, text search, tags, comments, activity, print, download, correct, level history) while it is quarantined.
 - **Meaning:** the document is quarantined. Only a Steward who can open its level may review it (open it and correct it); nobody prints or downloads it until it is released. The answer does not say the level or why. The refusal is audited as `DOCUMENT_ACCESS_REFUSED` with this code.
-- **What the user should do:** nothing for now. The document is temporarily unavailable and comes back when the review is finished. If you need it urgently, ask a Document Steward.
+- **What the user should do:** nothing for now. Vero says only that the document is temporarily unavailable, nothing else (task 0051). If you need it urgently, ask a Document Steward.
 - **What support should tell the customer:** this is working as intended. A Steward has quarantined the document for review; a Steward releases it, or a Business Admin approves the release of the whole incident.
 
 ### SDV-QUA-002: needs a Steward who can open the document's level

@@ -23,6 +23,19 @@ When the owner says "do the next SDV task":
 
 Do not edit task files. Do not start a later task while an earlier one has no report.
 
+## Local schema step (standing approval)
+
+Owner decision, task 0051. When a task adds Liquibase changesets, the session may run the schema step against the **local `sdv` database**, before it starts the app for the screen tour:
+
+```
+.\Update-SDV-Schema.ps1 update -Url jdbc:postgresql://localhost:5433/sdv -Username sdv
+```
+
+- **Only the local `sdv` database** (`localhost:5433/sdv`, container `sdv-postgres`). Never any other database, host or user. The scratch databases of the schema checks (`sdv_schema_test`, `sdv_install_test`) are made and dropped by their own scripts.
+- Only `update` (and `status` or `sql`, which change nothing). Never drop, reset, recreate or roll back the database. The `CLAUDE.md` rules on containers and volumes still hold.
+- The password goes in `SDV_SCHEMA_DB_PASSWORD`, read from where the local password is kept (the local-only `application-local.yml`). Never print it, and never put it in a report or a log.
+- Say in the report that the step was run, and which changesets it applied.
+
 ## Report layout
 
 ```

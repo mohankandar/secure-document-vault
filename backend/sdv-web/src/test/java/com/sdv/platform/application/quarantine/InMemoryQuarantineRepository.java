@@ -24,6 +24,8 @@ class InMemoryQuarantineRepository implements QuarantineRepository {
     final Map<UUID, Row> quarantines = new LinkedHashMap<>();
     final Map<UUID, ReleaseRequest> requests = new LinkedHashMap<>();
     final List<Exposure> exposure = new ArrayList<>();
+    /** Task 0051: filter incidents' filter, cut-off and progress. */
+    final Map<UUID, Preparation> preparations = new LinkedHashMap<>();
 
     static final class Row {
         UUID quarantineId, tenantId, incidentId, documentId, requestId;
@@ -41,6 +43,10 @@ class InMemoryQuarantineRepository implements QuarantineRepository {
     }
 
     @Override public boolean isQuarantined(UUID tenantId, UUID documentId) {
+        return hasRowInForce(tenantId, documentId) || blockingIncident(tenantId, documentId).isPresent();
+    }
+
+    private boolean hasRowInForce(UUID tenantId, UUID documentId) {
         return quarantines.values().stream().anyMatch(r -> r.tenantId.equals(tenantId) && r.documentId.equals(documentId) && r.releasedAt == null);
     }
 
@@ -76,7 +82,7 @@ class InMemoryQuarantineRepository implements QuarantineRepository {
 
     @Override public void insertQuarantine(UUID quarantineId, UUID tenantId, UUID incidentId, UUID documentId, String by,
                                            String byName, Instant at) {
-        if (isQuarantined(tenantId, documentId)) throw new IllegalStateException("uq_quarantined_documents_active");
+        if (hasRowInForce(tenantId, documentId)) throw new IllegalStateException("uq_quarantined_documents_active");
         Row r = new Row();
         r.quarantineId = quarantineId; r.tenantId = tenantId; r.incidentId = incidentId; r.documentId = documentId;
         r.by = by; r.byName = byName; r.at = at;
@@ -93,9 +99,127 @@ class InMemoryQuarantineRepository implements QuarantineRepository {
                 .findFirst().map(this::view);
     }
 
-    @Override public List<Quarantined> findInIncident(UUID tenantId, UUID incidentId) {
+    @Override public List<Quarantined> findInIncident(UUID tenantId, UUID incidentId, int limit) {
         return quarantines.values().stream().filter(r -> r.tenantId.equals(tenantId) && r.incidentId.equals(incidentId))
-                .sorted(Comparator.comparing((Row r) -> r.releasedAt != null).thenComparing(r -> r.at)).map(this::view).toList();
+                .sorted(Comparator.comparing((Row r) -> r.releasedAt != null).thenComparing(r -> r.at)).limit(limit)
+                .map(this::view).toList();
+    }
+
+    @Override public List<Quarantined> findInIncidentPage(UUID tenantId, UUID incidentId, boolean inForceOnly,
+                                                          UUID afterQuarantineId, int limit) {
+        return quarantines.values().stream().filter(r -> r.tenantId.equals(tenantId) && r.incidentId.equals(incidentId))
+                .filter(r -> !inForceOnly || r.releasedAt == null)
+                .filter(r -> afterQuarantineId == null || r.quarantineId.compareTo(afterQuarantineId) > 0)
+                .sorted(Comparator.comparing((Row r) -> r.quarantineId)).limit(limit).map(this::view).toList();
+    }
+
+    @Override public long countInIncident(UUID tenantId, UUID incidentId) {
+        return quarantines.values().stream().filter(r -> r.tenantId.equals(tenantId) && r.incidentId.equals(incidentId)).count();
+    }
+
+    @Override public List<Released> releaseAllInForce(UUID tenantId, UUID incidentId, String by, String byName, String reason,
+                                                      UUID requestId, Instant at) {
+        List<Released> out = new ArrayList<>();
+        for (Row r : quarantines.values()) {
+            if (!r.tenantId.equals(tenantId) || !r.incidentId.equals(incidentId) || r.releasedAt != null) continue;
+            release(tenantId, r.quarantineId, by, byName, reason, requestId, at.isBefore(r.at) ? r.at : at);
+            out.add(new Released(r.quarantineId, r.documentId, r.at));
+        }
+        return out;
+    }
+
+    // ------------------------------------------------------------------ task 0051: the filter, as the SQL has it
+
+    /** The filter's own conditions (dates, sending system, fields), as JdbcQuarantineRepository.matches. */
+    private static boolean fits(Doc d, Filter f) {
+        DocumentFacts x = d.facts();
+        if (f.receivedFrom() != null && x.receivedAt().isBefore(f.receivedFrom())) return false;
+        if (f.receivedTo() != null && !x.receivedAt().isBefore(f.receivedTo())) return false;
+        if (f.sourceId() != null && !f.sourceId().equals(x.sourceId())) return false;
+        for (Map.Entry<String, String> e : f.fields().entrySet()) {
+            if (!Objects.equals(d.fields().get(e.getKey()), e.getValue())) return false;
+        }
+        return true;
+    }
+
+    private boolean releasedSince(UUID tenantId, UUID documentId, Instant since) {
+        return quarantines.values().stream().anyMatch(r -> r.tenantId.equals(tenantId) && r.documentId.equals(documentId)
+                && r.releasedAt != null && !r.releasedAt.isBefore(since));
+    }
+
+    @Override public Optional<UUID> blockingIncident(UUID tenantId, UUID documentId) {
+        Doc d = documents.get(documentId);
+        if (d == null || !d.tenantId().equals(tenantId)) return Optional.empty();
+        return preparations.values().stream()
+                .filter(p -> p.tenantId().equals(tenantId) && "OPEN".equals(incidents.get(p.incidentId()).status()))
+                .filter(p -> fits(d, p.filter()) && !d.facts().receivedAt().isAfter(p.cutoffReceivedAt()))
+                .filter(p -> !releasedSince(tenantId, documentId, p.createdAt()))
+                .sorted(Comparator.comparing(Preparation::createdAt)).map(Preparation::incidentId).findFirst();
+    }
+
+    @Override public MatchStats matchStats(UUID tenantId, Filter filter) {
+        List<DocumentFacts> m = documents.values().stream().filter(d -> matches(tenantId, d, filter)).map(Doc::facts).toList();
+        return new MatchStats(m.size(), m.stream().map(DocumentFacts::receivedAt).max(Comparator.naturalOrder()).orElse(null));
+    }
+
+    @Override public void startFilterBlocking(UUID tenantId, UUID incidentId, Filter filter, Instant cutoffReceivedAt,
+                                              long expectedCount) {
+        Incident i = incidents.get(incidentId);
+        preparations.put(incidentId, new Preparation(incidentId, tenantId, filter, cutoffReceivedAt, expectedCount, 0, null,
+                null, null, i.createdBy(), i.createdByName(), i.createdAt(), i.status()));
+    }
+
+    @Override public Optional<Preparation> findPreparation(UUID tenantId, UUID incidentId) {
+        Preparation p = preparations.get(incidentId);
+        if (p == null || !p.tenantId().equals(tenantId)) return Optional.empty();
+        Incident i = incidents.get(incidentId);
+        return Optional.of(new Preparation(p.incidentId(), p.tenantId(), p.filter(), p.cutoffReceivedAt(), p.expectedCount(),
+                p.preparedCount(), p.preparedAt(), p.cursorReceivedAt(), p.cursorDocumentId(), p.createdBy(),
+                p.createdByName(), p.createdAt(), i.status()));
+    }
+
+    @Override public Optional<Preparation> lockPreparation(UUID tenantId, UUID incidentId) {
+        return findPreparation(tenantId, incidentId);
+    }
+
+    @Override public List<IncidentRef> findPreparing(int limit) {
+        return preparations.values().stream().filter(p -> p.preparedAt() == null && "OPEN".equals(incidents.get(p.incidentId()).status()))
+                .sorted(Comparator.comparing(Preparation::createdAt)).limit(limit)
+                .map(p -> new IncidentRef(p.tenantId(), p.incidentId())).toList();
+    }
+
+    /** Documents in (received, ID) order, as the SQL's cursor. */
+    private static final Comparator<DocumentFacts> RECEIVED = Comparator.comparing(DocumentFacts::receivedAt)
+            .thenComparing(DocumentFacts::documentId);
+
+    @Override public Batch prepareBatch(Preparation p, int size, String by, String byName, Instant at) {
+        DocumentFacts cursor = p.cursorDocumentId() == null ? null
+                : new DocumentFacts(p.cursorDocumentId(), null, null, null, null, p.cursorReceivedAt(), null, null, null);
+        List<Doc> scanned = documents.values().stream()
+                .filter(d -> d.tenantId().equals(p.tenantId()) && fits(d, p.filter())
+                        && !d.facts().receivedAt().isAfter(p.cutoffReceivedAt()))
+                .filter(d -> cursor == null || RECEIVED.compare(d.facts(), cursor) > 0)
+                .sorted(Comparator.comparing(Doc::facts, RECEIVED)).limit(size).toList();
+        List<Placed> placed = new ArrayList<>();
+        for (Doc d : scanned) {
+            UUID id = d.facts().documentId();
+            if (Set.of("EXPIRED_DELETED", "RETENTION_DELETING").contains(d.facts().status())) continue;
+            if (hasRowInForce(p.tenantId(), id) || releasedSince(p.tenantId(), id, p.createdAt())) continue;
+            UUID quarantineId = UUID.randomUUID();
+            insertQuarantine(quarantineId, p.tenantId(), p.incidentId(), id, by, byName, at);
+            placed.add(new Placed(quarantineId, id));
+        }
+        if (scanned.isEmpty()) return new Batch(0, List.of(), null, null);
+        DocumentFacts last = scanned.getLast().facts();
+        return new Batch(scanned.size(), placed, last.receivedAt(), last.documentId());
+    }
+
+    @Override public void advancePreparation(UUID tenantId, UUID incidentId, long preparedCount, Instant cursorReceivedAt,
+                                             UUID cursorDocumentId, Instant preparedAt) {
+        Preparation p = preparations.get(incidentId);
+        preparations.put(incidentId, new Preparation(p.incidentId(), p.tenantId(), p.filter(), p.cutoffReceivedAt(),
+                p.expectedCount(), preparedCount, preparedAt, cursorReceivedAt, cursorDocumentId, p.createdBy(),
+                p.createdByName(), p.createdAt(), p.status()));
     }
 
     @Override public Map<UUID, Integer> countInForce(UUID tenantId, List<UUID> incidentIds) {
@@ -127,11 +251,6 @@ class InMemoryQuarantineRepository implements QuarantineRepository {
             if (!Objects.equals(d.fields().get(e.getKey()), e.getValue())) return false;
         }
         return true;
-    }
-
-    @Override public List<DocumentFacts> findMatching(UUID tenantId, Filter filter, int limit) {
-        return documents.values().stream().filter(d -> matches(tenantId, d, filter)).map(Doc::facts)
-                .sorted(Comparator.comparing(DocumentFacts::receivedAt)).limit(limit).toList();
     }
 
     @Override public long countMatching(UUID tenantId, Filter filter) {
@@ -192,7 +311,13 @@ class InMemoryQuarantineRepository implements QuarantineRepository {
         return out;
     }
 
-    @Override public List<Exposure> findExposure(UUID tenantId, Map<UUID, Instant> before) {
+    @Override public List<Exposure> findExposureInIncident(UUID tenantId, UUID incidentId) {
+        Map<UUID, Instant> before = new LinkedHashMap<>();
+        for (Row r : quarantines.values()) {
+            if (r.tenantId.equals(tenantId) && r.incidentId.equals(incidentId)) {
+                before.merge(r.documentId, r.at, (a, b) -> a.isBefore(b) ? a : b);
+            }
+        }
         return exposure.stream().filter(e -> before.containsKey(e.documentId()) && e.occurredAt().isBefore(before.get(e.documentId())))
                 .toList();
     }

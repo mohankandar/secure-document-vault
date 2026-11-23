@@ -70,7 +70,10 @@ class RetentionLegalHoldTest {
                 + "and h.document_id=documents.document_id and h.released_at is null "
                 // Task 0048: a quarantine in force pauses the cleanup the same way.
                 + "union all select 1 from quarantined_documents q where q.tenant_id=documents.tenant_id "
-                + "and q.document_id=documents.document_id and q.released_at is null)";
+                + "and q.document_id=documents.document_id and q.released_at is null "
+                // Task 0051: and so does an open filter incident, before the document's row is written.
+                + "union all select 1 where exists (select 1 from quarantine_incidents qi where qi.tenant_id=documents.tenant_id "
+                + "and qi.status='OPEN' and qi.filter_received_from is not null";
 
         when(jdbc.query(anyString(), any(SqlParameterSource.class), any(RowMapper.class))).thenReturn(List.of());
         repository.findDueDocuments(100);

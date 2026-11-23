@@ -162,12 +162,8 @@ try {
         @{ name='Business Experience Checkpoint A'; script='Test-SDV-BusinessExperience-A.ps1' },
         @{ name='Business Experience Checkpoint B'; script='Test-SDV-BusinessExperience-B.ps1' },
         @{ name='Controlled Actions Unit 16'; script='Test-SDV-ControlledActions-A-Unit16.ps1' },
-        @{ name='Controlled Actions Units 17-18'; script='Test-SDV-ControlledActions-B-Units17-18.ps1' },
-        @{ name='Enterprise Readiness Units 19-20'; script='Test-SDV-EnterpriseReadiness-A-Units19-20.ps1' },
-        @{ name='Enterprise Readiness Unit 21'; script='Test-SDV-EnterpriseReadiness-B-Unit21.ps1' },
-        @{ name='Enterprise Readiness Unit 22'; script='Test-SDV-EnterpriseReadiness-C-Unit22.ps1' },
-        @{ name='Enterprise Readiness Unit 23'; script='Test-SDV-EnterpriseReadiness-D-Unit23.ps1' },
-        @{ name='Enterprise Readiness Unit 24'; script='Test-SDV-EnterpriseReadiness-E-Unit24.ps1' }
+        @{ name='Controlled Actions Units 17-18'; script='Test-SDV-ControlledActions-B-Units17-18.ps1' }
+        # Task 0051: the Enterprise Readiness checks (Units 19-24) were retired; they used the identity Vero no longer has.
     )
 
     foreach ($entry in $suite) {

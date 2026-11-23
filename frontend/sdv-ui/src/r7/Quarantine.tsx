@@ -11,7 +11,7 @@ import {
   quarantineIncidents, releaseQuarantinedDocument, requestIncidentRelease, schema, toSource,
   type ExposureReport, type QuarantineCount, type QuarantineFilter, type QuarantineIncident, type QuarantineIncidentSummary, type QuarantinedDocument,
 } from './liveApi'
-import { NAME_MAX, REASON_MAX, exportNote, filterProblem, levelsLine, nameReady, oldestFirst, plural, reasonReady, scopeWords } from './quarantineWords'
+import { NAME_MAX, REASON_MAX, countWords, exportNote, filterProblem, inQuarantineCount, levelsLine, listedNote, nameReady, oldestFirst, plural, progressWords, reasonReady, scopeWords } from './quarantineWords'
 
 /**
  * Task 0049: the Stewards' quarantine screens (the server side is task 0048). No canvas board yet: built from the
@@ -82,9 +82,11 @@ function IncidentTable({ rows, label, onOpen }: { rows: QuarantineIncidentSummar
       <tbody>{rows.map((i) => <tr key={i.incidentId}>
         <td className="lead" data-label="Incident"><strong style={{ fontWeight: 500 }}>{i.name}</strong>
           {i.releaseRequested && <> <Badge tone="warn">Release requested</Badge></>}
+          {i.preparing && <> <Badge tone="outline">Being prepared</Badge></>}
           {i.status !== 'OPEN' && <> <Badge>Released{i.closedAt ? ` ${fmtDate(i.closedAt)}` : ''}</Badge></>}</td>
         <td data-label="How">{scopeWords(i.scope)}</td>
-        <td data-label="In quarantine">{plural(i.documentsInForce, 'document')}</td>
+        <td data-label="In quarantine">{countWords(inQuarantineCount(i))} document{inQuarantineCount(i) === 1 ? '' : 's'}
+          {i.preparing && i.expectedCount != null && <span className="faint"> · {progressWords(i.preparedCount, i.expectedCount)}</span>}</td>
         <td data-label="Started by">{i.createdByName?.trim() || 'A Steward'}</td>
         <td data-label="Started" className="faint">{fmtDate(i.createdAt)}</td>
         <td className="act"><button type="button" className="v-btn sm" onClick={() => onOpen(i.incidentId)} aria-label={`Open incident ${i.name}`}>Open</button></td>
@@ -120,6 +122,13 @@ function IncidentDetail({ incidentId, onBack }: { incidentId: string; onBack: ()
     quarantineIncident(incidentId).then((i) => { if (active) { setIncident(i); setError(null) } }).catch((e) => { if (active) setError(loadFailed('The quarantine incident did not load', e)) })
     return () => { active = false }
   }, [incidentId, reload])
+  // Task 0051: while the incident is prepared in the background, read it again every few seconds to show the progress.
+  const preparing = !!incident?.preparing
+  useEffect(() => {
+    if (!preparing) return
+    const t = window.setInterval(() => setReload((x) => x + 1), 3000)
+    return () => window.clearInterval(t)
+  }, [preparing])
 
   const rows = useMemo(() => oldestFirst(incident?.documents ?? []), [incident])
   const back = <button type="button" className="v-btn quiet sm" onClick={onBack}><ArrowLeft size={16} aria-hidden />All incidents</button>
@@ -127,7 +136,11 @@ function IncidentDetail({ incidentId, onBack }: { incidentId: string; onBack: ()
   if (!incident) return <>{back}<Callout title="Loading">Reading the incident…</Callout></>
 
   const isOpen = incident.status === 'OPEN'
-  const mayAsk = isOpen && !incident.pendingRequestId && incident.documentsInForce > 0 && incident.hiddenCount === 0
+  // Task 0051: a whole release waits until the incident is prepared (the server refuses it before, SDV-QUA-010).
+  const mayAsk = isOpen && !incident.preparing && !incident.pendingRequestId && incident.documentsInForce > 0 && incident.hiddenCount === 0
+  const inQuarantine = inQuarantineCount(incident)
+  const reviewable = incident.documentCount - incident.hiddenCount
+  const limited = listedNote(rows.length, reviewable)
 
   const release = async (d: QuarantinedDocument) => {
     if (!reasonReady(reason) || busy) return
@@ -157,6 +170,7 @@ function IncidentDetail({ incidentId, onBack }: { incidentId: string; onBack: ()
         <div className="row wrap" style={{ gap: 10, alignItems: 'center' }}>
           <h2 className="grow" style={{ fontSize: 18, fontWeight: 600 }}>{incident.name}</h2>
           {isOpen ? <Badge tone="warn">Open</Badge> : <Badge>Released</Badge>}
+          {incident.preparing && <Badge tone="outline">Being prepared</Badge>}
           <button type="button" className="v-btn sm" onClick={() => setExposureOpen(true)}>Exposure report</button>
           {mayAsk && <button type="button" className="v-btn sm primary" disabled={busy} onClick={() => { setReason(''); setAsking(true) }}>Request release of whole incident</button>}
         </div>
@@ -164,17 +178,21 @@ function IncidentDetail({ incidentId, onBack }: { incidentId: string; onBack: ()
           <div><dt>Reason</dt><dd>{incident.reason}</dd></div>
           <div><dt>How</dt><dd>{scopeWords(incident.scope)}</dd></div>
           <div><dt>Started</dt><dd>{incident.createdByName?.trim() || 'A Steward'}, {whenWords(incident.createdAt)}</dd></div>
-          <div><dt>In quarantine</dt><dd>{plural(incident.documentsInForce, 'document')} of {incident.documentCount}</dd></div>
+          <div><dt>In quarantine</dt><dd>{incident.preparing ? `${countWords(inQuarantine)} document${inQuarantine === 1 ? '' : 's'}`
+            : `${countWords(incident.documentsInForce)} document${incident.documentsInForce === 1 ? '' : 's'} of ${countWords(incident.documentCount)}`}</dd></div>
+          {incident.preparing && incident.expectedCount != null && <div><dt>Prepared</dt><dd>{progressWords(incident.preparedCount, incident.expectedCount)}</dd></div>}
           {incident.closedAt && <div><dt>Released</dt><dd>{whenWords(incident.closedAt)}</dd></div>}
         </dl>
       </div>
     </section>
+    {incident.preparing && incident.expectedCount != null && <Banner tone="info" lead="Being prepared:">
+      {progressWords(incident.preparedCount, incident.expectedCount)}. Every matching document is quarantined already; the list below fills as Vero prepares it. You can review and release the documents listed. The whole incident can be released once it is ready.</Banner>}
     {incident.pendingRequestId && <Banner tone="info" lead="Release requested:">{incident.pendingRequestedByName?.trim() || 'A Steward'} asked to release the whole incident. A Business admin decides it under Approvals{incident.pendingExpiresAt ? `; it expires ${whenWords(incident.pendingExpiresAt)} if nobody does` : ''}.</Banner>}
     {incident.hiddenCount > 0 && <Banner tone="info" lead={`${plural(incident.hiddenCount, 'document')} not shown:`}>{incident.hiddenCount === 1 ? 'it is' : 'they are'} at a level you can&apos;t open. A Restricted steward reviews {incident.hiddenCount === 1 ? 'it' : 'them'}, and only they can ask to release the whole incident.</Banner>}
     {problem && <Callout tone="warn" title="Not done">{problem}</Callout>}
 
     <section className="v-panel flush" aria-label="Documents to review">
-      <header className="hold-head"><h2>Documents to review · {rows.length}</h2><span className="faint" style={{ fontSize: 13 }}>Oldest first · you can read and correct them; print and download wait until release</span></header>
+      <header className="hold-head"><h2>Documents to review · {countWords(Math.max(rows.length, reviewable))}</h2><span className="faint" style={{ fontSize: 13 }}>{limited ? `${limited} ` : ''}Oldest first · you can read and correct them; print and download wait until release</span></header>
       {rows.length === 0 ? <p className="muted" style={{ padding: 16 }}>No document here that you can open.</p>
         : <table className="v-table" aria-label="Quarantined documents"><thead><tr><th>Number</th><th>Level</th><th>Received</th><th>Pages</th><th>Quarantined</th><th>Status</th><th><span className="sr-only">Actions</span></th></tr></thead>
           <tbody>{rows.map((d) => <tr key={d.quarantineId}>
@@ -204,7 +222,7 @@ function IncidentDetail({ incidentId, onBack }: { incidentId: string; onBack: ()
       <button type="button" className="v-btn" disabled={busy} onClick={() => setAsking(false)}>Cancel</button>
       <button type="button" className="v-btn primary" disabled={busy || !reasonReady(reason)} onClick={() => void askRelease()}>{busy ? 'Sending…' : 'Send request'}</button>
     </>}>
-      <p>{plural(incident.documentsInForce, 'document')} in “{incident.name}” would be released at once, after a Business admin approves.</p>
+      <p>{countWords(incident.documentsInForce)} document{incident.documentsInForce === 1 ? '' : 's'} in “{incident.name}” would be released at once, after a Business admin approves.</p>
       <label className="v-field"><span>Why it can be released</span>
         <textarea className="v-input" rows={3} value={reason} maxLength={REASON_MAX} onChange={(e) => setReason(e.target.value)} placeholder="For example: Review finished, nothing exposed" /></label>
       <p className="muted">The Business admin sees the incident&apos;s name, counts, levels and dates, not your reason. Someone else must decide it.</p>
@@ -257,6 +275,7 @@ function ExposureDrawer({ incidentId, onClose }: { incidentId: string; onClose: 
             <div><span>Highly Confidential</span><strong>{report.highlyConfidential}</strong></div>
           </div>
           {report.hiddenCount > 0 && <p className="faint">{plural(report.hiddenCount, 'document')} at a level you can&apos;t open {report.hiddenCount === 1 ? 'is' : 'are'} counted but not listed.</p>}
+          {listedNote(report.documents.length, report.documentCount) && <p className="faint">{listedNote(report.documents.length, report.documentCount)} Export CSV has every one.</p>}
           {report.documents.length === 0 ? <p className="muted">No document to list.</p>
             : <ul className="q-exposure">{report.documents.map((d) => <li key={d.documentId}>
               <div className="row wrap" style={{ gap: 8, alignItems: 'center' }}>
@@ -302,8 +321,8 @@ function NewIncident({ onCancel, onCreated }: { onCancel: () => void; onCreated:
     return () => { active = false; window.clearTimeout(t) }
   }, [JSON.stringify(filter), recount]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const tooMany = !!count && count.count > count.limit
-  const ready = !!count && count.count > 0 && !tooMany && all && nameReady(name) && reasonReady(reason) && !busy
+  // Task 0051: no limit; whatever matches is quarantined.
+  const ready = !!count && count.count > 0 && all && nameReady(name) && reasonReady(reason) && !busy
   const set = (patch: Partial<QuarantineFilter>) => setFilter((f) => ({ ...f, ...patch }))
 
   const submit = async () => {
@@ -311,7 +330,8 @@ function NewIncident({ onCancel, onCreated }: { onCancel: () => void; onCreated:
     setBusy(true); setProblem(null)
     try {
       const incident = await quarantineByFilter(filter, count.count, name.trim(), reason.trim())
-      toast({ tone: 'ok', title: `${plural(incident.documentsInForce, 'document')} quarantined`, detail: `Incident “${incident.name}”. Everyone else sees ${incident.documentsInForce === 1 ? 'it' : 'them'} as temporarily unavailable.` })
+      const n = inQuarantineCount(incident)
+      toast({ tone: 'ok', title: `${countWords(n)} document${n === 1 ? '' : 's'} quarantined`, detail: `Incident “${incident.name}”. Everyone else sees ${n === 1 ? 'it' : 'them'} as temporarily unavailable.${incident.preparing ? ' The review list is being prepared.' : ''}` })
       onCreated(incident.incidentId)
     } catch (e) { setProblem(refusalText(e)); setRecount((x) => x + 1) }
     finally { setBusy(false) }
@@ -341,9 +361,8 @@ function NewIncident({ onCancel, onCreated }: { onCancel: () => void; onCreated:
         : countProblem ? <Callout tone="warn" title="Not counted">{countProblem}</Callout>
         : count && (count.count === 0
           ? <div className="hold-found warn" role="status"><AlertTriangle size={16} aria-hidden /><span>No document matches this filter</span></div>
-          : tooMany ? <div className="hold-found warn" role="status"><AlertTriangle size={16} aria-hidden /><span>{count.count} documents match. At most {count.limit} can be quarantined at once: narrow the dates.</span></div>
           : <div className="hold-found" role="status"><Check size={16} strokeWidth={2.2} aria-hidden />
-            <label className="v-check"><input type="checkbox" checked={all} onChange={(e) => setAll(e.target.checked)} />Select all {count.count} matching document{count.count === 1 ? '' : 's'}</label>
+            <label className="v-check"><input type="checkbox" checked={all} onChange={(e) => setAll(e.target.checked)} />Select all {countWords(count.count)} matching document{count.count === 1 ? '' : 's'}</label>
             <span className="faint" style={{ marginLeft: 'auto' }}>You won&apos;t see their titles or contents here</span></div>)}
       <div className="hold-fields">
         <label className="v-field" style={{ width: 300 }}><span>Incident name</span>
@@ -354,7 +373,7 @@ function NewIncident({ onCancel, onCreated }: { onCancel: () => void; onCreated:
       {problem && <Callout tone="warn" title="Not quarantined">{problem}</Callout>}
       <div className="row wrap" style={{ gap: 10, justifyContent: 'flex-end' }}>
         <button type="button" className="v-btn" disabled={busy} onClick={onCancel}>Cancel</button>
-        <button type="button" className="v-btn primary" disabled={!ready} onClick={() => void submit()}>{busy ? 'Quarantining…' : count && all ? `Quarantine ${plural(count.count, 'document')}` : 'Quarantine'}</button>
+        <button type="button" className="v-btn primary" disabled={!ready} onClick={() => void submit()}>{busy ? 'Quarantining…' : count && all ? `Quarantine ${countWords(count.count)} document${count.count === 1 ? '' : 's'}` : 'Quarantine'}</button>
       </div>
     </section>
   )

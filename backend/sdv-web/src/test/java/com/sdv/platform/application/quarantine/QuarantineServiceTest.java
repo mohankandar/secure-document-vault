@@ -189,7 +189,9 @@ class QuarantineServiceTest {
         refused("SDV-QUA-004", () -> service.countMatching(restricted,
                 new QuarantineService.FilterRequest("2026-11-01", "2026-11-30", SOURCE.toString(), Map.of("originalFilename", "a.pdf"))));
         refused("SDV-QUA-004", () -> service.quarantineByFilter(restricted, november(), null, "Leak", "Suspected leak"));
-        refused("SDV-QUA-004", () -> service.quarantineByFilter(restricted, november(), (long) QuarantineService.FILTER_MAX + 1, "Leak", "Suspected leak"));
+        // Task 0051: no limit; a count that doesn't match is still refused (nothing is quarantined).
+        refused("SDV-QUA-009", () -> service.quarantineByFilter(restricted, november(), 1_000_001L, "Leak", "Suspected leak"));
+        assertTrue(store.preparations.isEmpty());
         assertEquals(4, service.countMatching(restricted,
                 new QuarantineService.FilterRequest("2026-10-01", "2026-11-30", null, null)).count(), "dates alone");
     }
@@ -336,6 +338,134 @@ class QuarantineServiceTest {
         AuditEvent exported = events.stream().filter(e -> e.action().equals(QuarantineService.EXPOSURE_EXPORTED_ACTION)).findFirst().orElseThrow();
         assertTrue(exported.safeDetailsJson().contains(export.fingerprint()));
         assertTrue(exported.safeDetailsJson().contains(export.reference().toString()));
+    }
+
+    // ------------------------------------------------------------------ task 0051: no limit
+
+    /** {@code n} Standard documents received in November (one a minute from 2 Nov), same contract. */
+    private List<UUID> many(int n) {
+        List<UUID> ids = new ArrayList<>();
+        for (int i = 0; i < n; i++) {
+            UUID id = new UUID(0x5100_0000_0000_0000L, i + 1);
+            add(id, SensitivityLevel.STANDARD, Instant.parse("2026-11-02T00:00:00Z").plusSeconds(60L * i).toString(),
+                    "AVAILABLE", "300000000001");
+            ids.add(id);
+        }
+        return ids;
+    }
+
+    @Test
+    void everythingMatchingIsQuarantinedAtOnceAndTheRowsFollowInBatches() {
+        List<UUID> ids = many(QuarantineService.BATCH_SIZE + 500);
+        QuarantineService.Actor restricted = as("restricted", RESTRICTED);
+        long expected = ids.size() + 3L; // and STD, CONF, HIGH
+        assertEquals(expected, service.countMatching(restricted, november()).count(), "no limit on the count");
+
+        QuarantineService.IncidentView incident = service.quarantineByFilter(restricted, november(), expected, "Leak", "Suspected leak");
+        // One batch is written at once; every matching document is quarantined already, with or without its row.
+        assertTrue(incident.preparing(), "being prepared");
+        assertEquals(QuarantineService.BATCH_SIZE, incident.preparedCount());
+        assertEquals(expected, incident.expectedCount());
+        assertEquals(QuarantineService.BATCH_SIZE, store.quarantines.size());
+        assertTrue(ids.stream().allMatch(id -> store.isQuarantined(TENANT, id)), "blocked before its row exists");
+        assertEquals(ids.size(), store.quarantined(TENANT, ids).size(), "record views see them all as quarantined");
+        assertFalse(store.isQuarantined(TENANT, OLD), "October is outside the filter");
+        assertEquals(0, service.countMatching(restricted, november()).count(), "nothing left to quarantine");
+
+        // A whole release waits until the incident is prepared; the incident never closes while it is prepared.
+        refused("SDV-QUA-010", () -> service.requestIncidentRelease(restricted, incident.incidentId().toString(), "Done here"));
+
+        assertTrue(service.prepare(10) >= 1);
+        QuarantineService.IncidentView ready = service.incident(restricted, incident.incidentId().toString());
+        assertFalse(ready.preparing());
+        assertEquals(expected, ready.preparedCount());
+        assertEquals(expected, ready.documentsInForce());
+        assertEquals(expected, store.quarantines.size(), "each document has one row");
+        assertEquals(QuarantineService.REVIEW_LIMIT, ready.documents().size(), "the list is limited; the counts are not");
+        assertEquals(expected, count(QuarantineService.QUARANTINED_ACTION), "each row audited once");
+        assertEquals(0, service.prepare(10), "nothing left to do");
+    }
+
+    @Test
+    void aDocumentReceivedAfterTheCutOffIsNotCaught() {
+        QuarantineService.Actor restricted = as("restricted", RESTRICTED);
+        service.quarantineByFilter(restricted, november(), 3L, "Leak", "Suspected leak");
+        // Received later in November: it matches the filter but arrived after the confirmation.
+        UUID late = UUID.fromString("40000000-0000-0000-0000-000000000099");
+        add(late, SensitivityLevel.STANDARD, "2026-11-25T09:00:00Z", "AVAILABLE", "300000000001");
+        assertFalse(store.isQuarantined(TENANT, late));
+        service.prepare(10);
+        assertFalse(store.isQuarantined(TENANT, late), "the job doesn't write it either");
+        assertEquals(1, service.countMatching(restricted, november()).count(), "it can be quarantined on its own");
+    }
+
+    @Test
+    void theJobContinuesAfterARestartAndABatchRunTwiceWritesNothingTwice() {
+        List<UUID> ids = many(2 * QuarantineService.BATCH_SIZE + 10);
+        QuarantineService.Actor restricted = as("restricted", RESTRICTED);
+        long expected = ids.size() + 3L;
+        UUID incident = service.quarantineByFilter(restricted, november(), expected, "Leak", "Suspected leak").incidentId();
+        var p = store.findPreparation(TENANT, incident).orElseThrow();
+
+        // The same batch again (as if its commit had been lost after writing): nothing more is written.
+        var again = store.prepareBatch(new com.sdv.platform.application.port.QuarantineRepository.Preparation(p.incidentId(),
+                p.tenantId(), p.filter(), p.cutoffReceivedAt(), p.expectedCount(), 0, null, null, null, p.createdBy(),
+                p.createdByName(), p.createdAt(), p.status()), QuarantineService.BATCH_SIZE, "x", "x", NOW);
+        assertEquals(QuarantineService.BATCH_SIZE, again.scanned());
+        assertTrue(again.placed().isEmpty(), "every one already has its row");
+
+        // A restart: a new service on the same store continues after the last batch.
+        QuarantineService restarted = new QuarantineService(store, access, definitions, audit, ApprovalSettings.defaults(), tx, clock);
+        while (restarted.prepare(1) > 0) { /* one batch per run */ }
+        assertEquals(expected, store.quarantines.size());
+        assertEquals(expected, store.quarantines.values().stream().map(r -> r.documentId).distinct().count(), "no duplicates");
+        assertFalse(store.findPreparation(TENANT, incident).orElseThrow().preparing());
+    }
+
+    @Test
+    void aSingleReleaseFreesOneDocumentAndAWholeReleaseEndsTheFilter() {
+        List<UUID> ids = many(QuarantineService.BATCH_SIZE + 5);
+        QuarantineService.Actor restricted = as("restricted", RESTRICTED);
+        long expected = ids.size() + 3L;
+        UUID incident = service.quarantineByFilter(restricted, november(), expected, "Leak", "Suspected leak").incidentId();
+
+        // A document without its row yet: released, it is free even though the filter still matches it.
+        UUID noRowYet = ids.getLast();
+        assertTrue(store.findActive(TENANT, noRowYet).isEmpty());
+        service.releaseDocument(as("steward", STEWARD), noRowYet.toString(), "Checked, fine");
+        assertFalse(store.isQuarantined(TENANT, noRowYet));
+        // One with its row.
+        service.releaseDocument(as("steward", STEWARD), ids.getFirst().toString(), "Checked, fine");
+        assertFalse(store.isQuarantined(TENANT, ids.getFirst()));
+        assertEquals("OPEN", store.incidents.get(incident).status());
+
+        service.prepare(10);
+        assertFalse(store.isQuarantined(TENANT, noRowYet), "the job doesn't quarantine it again");
+        assertFalse(store.isQuarantined(TENANT, ids.getFirst()));
+
+        // The whole release: every row in force, and the filter no longer blocks anything.
+        service.requestIncidentRelease(restricted, incident.toString(), "Investigation closed");
+        UUID request = service.pendingReleaseRequests(as("admin", ADMIN)).getFirst().requestId();
+        assertEquals(expected - 2, service.pendingReleaseRequests(as("admin", ADMIN)).getFirst().documentCount());
+        service.decide(as("admin", ADMIN), request.toString(), true);
+        assertEquals("RELEASED", store.incidents.get(incident).status());
+        assertTrue(ids.stream().noneMatch(id -> store.isQuarantined(TENANT, id)));
+        assertFalse(store.isQuarantined(TENANT, HIGH));
+        assertEquals(expected, count(QuarantineService.RELEASED_ACTION), "each release audited: two single, the rest together");
+    }
+
+    @Test
+    void releasingEveryWrittenRowDoesNotEndAnIncidentStillBeingPrepared() {
+        List<UUID> ids = many(QuarantineService.BATCH_SIZE + 1);
+        QuarantineService.Actor restricted = as("restricted", RESTRICTED);
+        UUID incident = service.quarantineByFilter(restricted, november(), ids.size() + 3L, "Leak", "Suspected leak").incidentId();
+        for (var r : List.copyOf(store.quarantines.values())) {
+            service.releaseDocument(restricted, r.documentId.toString(), "Checked, fine");
+        }
+        assertEquals("OPEN", store.incidents.get(incident).status(), "the documents not yet written are still quarantined");
+        assertTrue(store.isQuarantined(TENANT, ids.getLast()));
+        service.prepare(10);
+        assertEquals("OPEN", store.incidents.get(incident).status(), "its last rows are in force");
     }
 
     // ------------------------------------------------------------------ audit

@@ -2095,7 +2095,8 @@ test.describe('SDV role-based screen capture', () => {
       await row.click()
       const panel = page.getByRole('complementary', { name: 'Record inspector' })
       await expect(panel.getByRole('button', { name: /^Temporarily unavailable document/ })).toBeVisible({ timeout: 15000 })
-      expect(await panel.innerText()).not.toMatch(/Highly Confidential|quarantin|Tour check of the quarantine/i)
+      // Task 0051: under "Temporarily unavailable", nothing else.
+      expect(await panel.innerText()).not.toMatch(/Highly Confidential|quarantin|Tour check of the quarantine|comes back|reviewed/i)
       await capture(page, testInfo, 'quarantine-unavailable-business-user')
 
       // 6. Daniel (Document steward): the incident, with the Highly Confidential document counted, not shown.
