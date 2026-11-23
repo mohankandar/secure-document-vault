@@ -58,6 +58,7 @@ public final class CapabilityDenied extends AccessDeniedException implements Cod
             case VIEW_INTAKE_REPORTS -> "seeing reports";
             case QUARANTINE_DOCUMENTS -> "quarantining and reviewing documents";
             case QUARANTINE_BY_FILTER -> "quarantining documents by filter";
+            case GENERATE_AUDIT_REPORT -> "generating and verifying the sealed audit report";
         };
     }
 }

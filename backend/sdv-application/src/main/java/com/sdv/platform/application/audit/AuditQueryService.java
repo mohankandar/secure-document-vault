@@ -244,6 +244,23 @@ public class AuditQueryService {
      * sensitivityLevel (task 0030, item 6): only events that recorded this level for their document when they
      * happened. Exactly STANDARD, CONFIDENTIAL or HIGHLY_CONFIDENTIAL; anything else is refused with SDV-SEN-019.
      */
+    /**
+     * Task 0050: the events of a sealed audit report: the list's own filters over the whole period, oldest first, as
+     * the audit list names them (never a file name or title). At most {@link #EXPORT_MAX_ROWS}; a bigger report is
+     * refused with {@link ExportTooLargeException}. Not audited here: the report service records the report itself.
+     */
+    public List<AuditEntry> sealedEntries(UUID tenantId, SearchRequest search) {
+        if (tenantId == null) throw new InternalCheckFailed("tenantId is required.");
+        if (search == null) throw new InternalCheckFailed("report filters are required.");
+        if (search.cursor() != null && !search.cursor().isBlank()) throw new IllegalArgumentException("A report always covers its whole period.");
+        validate(search);
+        List<AuditQueryPort.Row> rows = query.findRows(tenantId, filter(search, null, null, null), EXPORT_MAX_ROWS + 1);
+        if (rows.size() > EXPORT_MAX_ROWS) throw new ExportTooLargeException(EXPORT_TOO_BIG);
+        List<AuditEntry> entries = new java.util.ArrayList<>(entries(tenantId, rows));
+        entries.sort(java.util.Comparator.comparing(AuditEntry::occurredAt).thenComparing(e -> e.auditEventId().toString()));
+        return List.copyOf(entries);
+    }
+
     public record SearchRequest(
             String action,
             AuditOutcome outcome,

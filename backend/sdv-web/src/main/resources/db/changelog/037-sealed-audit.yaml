@@ -1,0 +1,13 @@
+databaseChangeLog:
+  - changeSet:
+      id: 037-sealed-audit
+      author: sdv
+      changes:
+        - sqlFile:
+            path: db/changelog/037-sealed-audit.sql
+            relativeToChangelogFile: false
+        # The function, the triggers and the revokes hold dollar-quoted bodies, so they are sent as one statement.
+        - sqlFile:
+            path: db/changelog/037-sealed-audit-append-only.sql
+            relativeToChangelogFile: false
+            splitStatements: false

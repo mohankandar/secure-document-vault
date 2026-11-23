@@ -100,3 +100,6 @@ databaseChangeLog:
 
   - include:
       file: db/changelog/036-quarantine.yaml
+
+  - include:
+      file: db/changelog/037-sealed-audit.yaml

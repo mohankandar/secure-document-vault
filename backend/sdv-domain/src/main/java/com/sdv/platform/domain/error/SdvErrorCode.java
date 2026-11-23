@@ -126,6 +126,22 @@ public enum SdvErrorCode {
     QUA_010("SDV-QUA-010"),
     /** Task 0048: the document is not quarantined (409). */
     QUA_011("SDV-QUA-011"),
+    /** Task 0050: the sealed audit report needs a Business Admin or IT Admin (403). */
+    AUD_010("SDV-AUD-010"),
+    /** Task 0050: the report's dates are missing, not days, or the first comes after the last (400). */
+    AUD_011("SDV-AUD-011"),
+    /** Task 0050: a filter of the report is not valid (400). */
+    AUD_012("SDV-AUD-012"),
+    /** Task 0050: the report would hold more than 10,000 events; nothing was generated (400). */
+    AUD_013("SDV-AUD-013"),
+    /** Task 0050: no report of this entity has this reference (404). */
+    AUD_014("SDV-AUD-014"),
+    /** Task 0050: the fingerprint to verify is not 64 hexadecimal characters (400). */
+    AUD_015("SDV-AUD-015"),
+    /** Task 0050: the report could not be recorded in the register or the audit, so it was not handed out (500). */
+    AUD_016("SDV-AUD-016"),
+    /** Task 0050: the database refused changing or removing an audit row or a report: they are append-only (500). */
+    AUD_017("SDV-AUD-017"),
     /** Task 0027: finding, placing, releasing or listing legal holds needs MANAGE_LEGAL_HOLD (Business Admin) (403). */
     HLD_001("SDV-HLD-001"),
     /** Task 0027: a legal hold's reason is missing, shorter than 3 or longer than 500 characters (400). */

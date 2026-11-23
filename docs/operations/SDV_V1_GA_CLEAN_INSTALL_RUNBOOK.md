@@ -260,7 +260,7 @@ running app, local mode and the schema step).
 | User | Used by | Rights |
 |---|---|---|
 | Owner, for example `vero_owner` | The schema step only | Owns the database (or at least schema `public`): creates and changes tables and indexes |
-| App, for example `vero_app` | The running Vero (`SDV_DB_USERNAME`, `SDV_DB_PASSWORD`) | Connect, and `SELECT`, `INSERT`, `UPDATE`, `DELETE` on the tables. No create, no alter |
+| App, for example `vero_app` | The running Vero (`SDV_DB_USERNAME`, `SDV_DB_PASSWORD`) | Connect, and `SELECT`, `INSERT`, `UPDATE`, `DELETE` on the tables, except the audit trail (`audit_events`) and the audit report register (`audit_reports`): `SELECT` and `INSERT` only. No create, no alter |
 
 Once, when the database is created (as a PostgreSQL superuser or the owner):
 
@@ -278,7 +278,11 @@ alter default privileges for role vero_owner in schema public
   grant select, insert, update, delete on tables to vero_app;
 ```
 
-Vero has no sequences, functions or triggers of its own, so these table rights are all the app user needs.
+Vero has no sequences of its own, so these table rights are all the app user needs. Since changeset 037 (task 0050) the
+audit trail is append-only: one function (`sdv_refuse_append_only_change`) and its triggers refuse `UPDATE`, `DELETE`
+and `TRUNCATE` on `audit_events` and `audit_reports` for everyone, the owner included, and the schema step takes those
+rights back from every other user (the default privileges above give them to new tables). Do not grant them again;
+the triggers refuse them anyway.
 `Test-SDV-CleanInstall.ps1` checks that Vero runs with such a user.
 
 ### The schema step

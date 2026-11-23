@@ -16,13 +16,15 @@ export type Capability =
   | 'VIEW_INTAKE_REPORTS'
   // Task 0049: quarantine (task 0048). Both Stewards quarantine one document; only a Restricted steward by filter.
   | 'QUARANTINE_DOCUMENTS' | 'QUARANTINE_BY_FILTER'
+  // Task 0050: the sealed audit report (Business admin and IT admin; there is no auditor role).
+  | 'GENERATE_AUDIT_REPORT'
 
 /** The capabilities the R7 screens know about; the session's other capabilities are ignored by `can`. */
 export const KNOWN_CAPABILITIES: readonly Capability[] = [
   'SEARCH_RECORDS', 'VIEW_PDF', 'PERMANENT_REDACTION', 'DOWNLOAD_CURRENT_PDF', 'PRINT_DOCUMENT', 'ADD_DOCUMENT_TAG', 'ADD_DOCUMENT_COMMENT',
   'CONFIGURE_ROLE_PERMISSIONS', 'CONFIGURE_RETENTION', 'CONFIGURE_METADATA_SEARCH', 'CONFIGURE_BUSINESS_LIMITS',
   'VIEW_CONFIDENTIAL', 'VIEW_HIGHLY_CONFIDENTIAL', 'CHANGE_SENSITIVITY_LEVEL', 'REQUEST_SENSITIVE_ACCESS',
-  'APPROVE_SENSITIVE_ACCESS', 'MANAGE_LEGAL_HOLD', 'VIEW_INTAKE_REPORTS', 'QUARANTINE_DOCUMENTS', 'QUARANTINE_BY_FILTER',
+  'APPROVE_SENSITIVE_ACCESS', 'MANAGE_LEGAL_HOLD', 'VIEW_INTAKE_REPORTS', 'QUARANTINE_DOCUMENTS', 'QUARANTINE_BY_FILTER', 'GENERATE_AUDIT_REPORT',
 ]
 
 /** Each role the server can name (code) and the areas it opens. */

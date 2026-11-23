@@ -446,6 +446,66 @@ Task 0048. A Steward quarantines a document while a suspected leak or wrong deli
 - **What the user should do:** refresh the incident; the document is already available.
 - **What support should tell the customer:** this is working as intended.
 
+## Audit report (AUD)
+
+Task 0050. The sealed audit report: a Business Admin or IT Admin generates it for a period and the Audit list's filters, as a CSV for machines and a PDF for people, and hands it over. There is no auditor role. Every report is kept in a register with the SHA-256 fingerprint of its CSV, and its generation is audited (`AUDIT_REPORT_GENERATED`). Endpoints are under `/api/v1/audit-reports`. Codes SDV-AUD-001 to -003 are reserved for the audit list (see "Failure catalog" below).
+
+### SDV-AUD-010: the audit report is for a Business Admin or IT Admin
+
+- **HTTP status:** 403. Sent by every `/api/v1/audit-reports` endpoint.
+- **Meaning:** only a Business Admin or IT Admin may generate, list, download or verify a sealed audit report. Nothing was generated or read. The refusal is audited as `AUTHORIZATION_DENIED` (capability `GENERATE_AUDIT_REPORT`).
+- **What the user should do:** ask a Business Admin or your IT team to generate the report and hand it to you.
+- **What support should tell the customer:** this is working as intended. Vero has no auditor role: an admin hands the sealed report over, so nobody outside it can change what Vero recorded.
+
+### SDV-AUD-011: the report's days are not valid
+
+- **HTTP status:** 400. Sent by `POST /api/v1/audit-reports`.
+- **Meaning:** the first or last day is missing, is not a day (YYYY-MM-DD), or the first day comes after the last. Days are whole days in UTC, both included. Nothing was generated.
+- **What the user should do:** choose the first and last day again, then generate the report.
+- **What support should tell the customer:** the request named no valid period. Days are sent as YYYY-MM-DD.
+
+### SDV-AUD-012: a filter of the report is not valid
+
+- **HTTP status:** 400. Sent by `POST /api/v1/audit-reports`.
+- **Meaning:** a filter is too long, the result is not Done, Refused or Failed (`SUCCESS`, `DENIED`, `FAILED`), the action is not an action code, or the level is not one of the three level names. Nothing was generated.
+- **What the user should do:** change or clear the filter, then generate the report again.
+- **What support should tell the customer:** the filters are those of the Audit list and are checked the same way.
+
+### SDV-AUD-013: the report would be too large
+
+- **HTTP status:** 400. Sent by `POST /api/v1/audit-reports`.
+- **Meaning:** the period and filters cover more than 10,000 audit events, the most one report holds. Nothing was generated or registered.
+- **What the user should do:** choose fewer days or more filters, and generate several reports if needed.
+- **What support should tell the customer:** one report holds at most 10,000 events; split the period.
+
+### SDV-AUD-014: no audit report has this reference
+
+- **HTTP status:** 404. Sent by `GET /api/v1/audit-reports/{reportId}/csv` and `/pdf`.
+- **Meaning:** there is no report with this reference in this entity. Reports of other entities are never shown.
+- **What the user should do:** open the list of audit reports again and choose the report there.
+- **What support should tell the customer:** the reference is wrong or belongs to another entity.
+
+### SDV-AUD-015: the fingerprint is not valid
+
+- **HTTP status:** 400. Sent by `POST /api/v1/audit-reports/verify`.
+- **Meaning:** a fingerprint is 64 characters, the digits 0 to 9 and the letters a to f (the SHA-256 of the report's CSV file). Nothing was checked.
+- **What the user should do:** choose the CSV file itself, or paste the whole fingerprint from the report's PDF.
+- **What support should tell the customer:** the fingerprint is printed on the report's PDF and sent with the file (`X-SDV-Export-Fingerprint`).
+
+### SDV-AUD-016: the report could not be recorded
+
+- **HTTP status:** 500. Sent by `POST /api/v1/audit-reports`.
+- **Meaning:** the report or its audit event could not be written, so the report was not handed out (fail closed). Nothing is in the register.
+- **What the user should do:** try again in a few minutes. If it keeps happening, tell your IT team the reference shown.
+- **What support should tell the customer:** check the database from the log line with the reference; the report can be generated again once it works.
+
+### SDV-AUD-017: audit records can't be changed or removed
+
+- **HTTP status:** none: this is the database's own refusal, in the message of the refused statement. If Vero itself ever met it, the answer is a 500 with a reference.
+- **Meaning:** the audit trail (`audit_events`) and the report register (`audit_reports`) are append-only. Since changeset 037, triggers refuse `UPDATE`, `DELETE` and `TRUNCATE` for everyone, the owner included, and the running app's user has only `SELECT` and `INSERT` on them.
+- **What the user should do:** nothing. Audit records are kept as they were written.
+- **What support should tell the customer:** this is working as intended. Clean-up or test scripts that delete audit rows must leave them; the database will not remove them.
+
 ## Approvals (APR)
 
 Sent by the access requests of task 0028: a Restricted steward's request to print or download one Highly Confidential document (`POST /api/v1/business/documents/{id}/access-requests`), a Steward's own list (`GET /api/v1/business/access-requests`), and the Business Admin's approvals (`/api/v1/admin/access-requests`). A Steward's request to lower a level is made with `…/sensitivity/lower-request` (see the SEN codes) and is decided here.

@@ -10,6 +10,7 @@ import { Approvals, waitingWithReleases, type WaitingSummary } from './Approvals
 import { LegalHolds } from './LegalHolds'
 import { incidentReleaseRequests, pendingRequests } from './liveApi'
 import { Reports } from './Reports'
+import { AuditReports } from './AuditReports'
 
 export function AreaFrame({ crumbs, title, lede, actions, children, attention = [], counts = {}, sub }: { crumbs: string[]; title: string; lede: ReactNode; actions?: ReactNode; children: ReactNode; attention?: string[]; /** task 0030: a count pill per tab id */ counts?: Record<string, { count: number; label: string }>; sub?: ReactNode }) {
   const { route, navigate } = useStore()
@@ -31,6 +32,8 @@ const LEDE: Record<string, string> = {
   metadata: 'Which fields people can search, how they match, and what a record is called.',
   // Task 0032, board Reports-Intake.
   reports: 'Counts only. No document contents, titles or names.',
+  // Task 0050: the sealed audit report.
+  'audit-report': 'A sealed copy of the audit for a period, to hand to an auditor. Nobody can change what Vero recorded.',
 }
 
 export function Governance() {
@@ -57,6 +60,7 @@ export function Governance() {
       {route.tab === 'metadata' && <SearchFields />}
       {route.tab === 'approvals' && <Approvals onWaiting={setWaiting} />}
       {route.tab === 'reports' && <Reports />}
+      {route.tab === 'audit-report' && <AuditReports />}
     </AreaFrame>
   )
 }

@@ -119,10 +119,10 @@ class PlatformIdentityPostgresTest {
     @AfterAll
     static void clean() {
         if (db == null) return;
-        db.update("delete from audit_events where tenant_id in (?, ?, ?)", ACTIVE, NEW, DEMO);
+        // Task 0050: audit rows are append-only (the database refuses to delete them), so they stay, and so do the
+        // entities they name. The scratch database is made new for every run.
         db.update("delete from retention_policy_versions where tenant_id in (?, ?, ?)", ACTIVE, NEW, DEMO);
         db.update("delete from ingestion_sources where tenant_id in (?, ?, ?)", ACTIVE, NEW, DEMO);
-        db.update("delete from tenants where tenant_id in (?, ?, ?)", ACTIVE, NEW, DEMO);
         db.update("delete from idn_machine_binding where tenant_id = ?", TENANT);
         db.update("delete from idn_group_grant where slot_id in (?, ?, ?)", ACTIVE_SLOT, NEW_SLOT, DEMO_SLOT);
         db.update("delete from idn_login_connection where tenant_id = ?", TENANT);
