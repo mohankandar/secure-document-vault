@@ -99,7 +99,7 @@ No other product's name or behaviour in code. `ProductNameGuardTest` passes in t
 
 ## Commits
 
-See the PR. Not merged (see Outcome).
+PR #22, commit `5ce499f` (plus this report update). CI on PR #22: backend, frontend, product-name-guard, sender-profile-contract and `ci-passed` all green. Not merged (see Outcome).
 
 ## Questions for the owner
 
