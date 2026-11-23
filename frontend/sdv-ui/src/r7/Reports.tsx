@@ -1,7 +1,9 @@
 import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react'
 import { ChevronDown, ChevronRight, Download } from 'lucide-react'
 import { FailureNotice, describeFailure, exportFailureText, type Failure } from './CardError'
-import { intakeReport, intakeReportCsv, sensitivityReport, sensitivityReportCsv, type IntakeDeliveryLine, type IntakeFilter, type IntakeReport, type IntakeSystemBlock, type SensitivityReport, type SensitivityRequestKind } from './liveApi'
+import { intakeReport, intakeReportCsv, sensitivityReport, sensitivityReportCsv, storageReport, storageReportCsv, type IntakeDeliveryLine, type IntakeFilter, type IntakeReport, type IntakeSystemBlock, type SensitivityReport, type SensitivityRequestKind, type StorageReport } from './liveApi'
+import type { SensitivityLevel } from '../api'
+import { bytesWords, countedWords, monthWords, ruleWords } from './storageWords'
 
 /**
  * Task 0032, board Reports-Intake: the Business admin's Reports tab, Daily intake. Task 0033, board
@@ -71,12 +73,13 @@ function FailedCell({ line }: { line: IntakeDeliveryLine }) {
 
 /** Task 0033: the Reports tab with its two sub-tabs. The sub-tab is kept while the tab is open. */
 export function Reports() {
-  const [tab, setTab] = useState<'intake' | 'sensitivity'>('intake')
+  const [tab, setTab] = useState<'intake' | 'sensitivity' | 'storage'>('intake')
   const tabs = <div className="rpt-subtabs" role="tablist" aria-label="Reports">
     <button type="button" role="tab" aria-selected={tab === 'intake'} className={tab === 'intake' ? "on" : undefined} onClick={() => setTab('intake')}>Daily intake</button>
     <button type="button" role="tab" aria-selected={tab === 'sensitivity'} className={tab === 'sensitivity' ? "on" : undefined} onClick={() => setTab('sensitivity')}>Sensitivity</button>
+    <button type="button" role="tab" aria-selected={tab === 'storage'} className={tab === 'storage' ? "on" : undefined} onClick={() => setTab('storage')}>Storage and retention</button>
   </div>
-  return tab === 'intake' ? <DailyIntake tabs={tabs} /> : <SensitivityReportView tabs={tabs} />
+  return tab === 'intake' ? <DailyIntake tabs={tabs} /> : tab === 'sensitivity' ? <SensitivityReportView tabs={tabs} /> : <StorageReportView tabs={tabs} />
 }
 
 function DailyIntake({ tabs }: { tabs: ReactNode }) {
@@ -411,4 +414,131 @@ function PeriodChip({ report, open, onOpen, onChoose }: { report: SensitivityRep
       </div>}
     </div>
   )
+}
+
+const LEVEL_NAMES: [SensitivityLevel, string, string][] = [['STANDARD', 's', 'Standard'], ['CONFIDENTIAL', 'c', 'Confidential'], ['HIGHLY_CONFIDENTIAL', 'hc', 'Highly Confidential']]
+const levelName = (level: SensitivityLevel | null) => LEVEL_NAMES.find(([l]) => l === level)?.[2] ?? 'All levels'
+
+/**
+ * Task 0053: the Storage and retention sub-tab. Counts only: sending systems, levels, retention rules and numbers.
+ * The counts are worked out in the background (they read every document) and the screen shows when; it never reads
+ * the documents itself. The CSV carries a reference and its SHA-256 fingerprint, and the export is in the audit.
+ */
+function StorageReportView({ tabs }: { tabs: ReactNode }) {
+  const [report, setReport] = useState<StorageReport | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [failure, setFailure] = useState<Failure | null>(null)
+  const [refusal, setRefusal] = useState<string | null>(null)
+  const [reload, setReload] = useState(0)
+  const [exporting, setExporting] = useState(false)
+  const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null)
+
+  useEffect(() => {
+    let active = true
+    setLoading(true); setFailure(null); setRefusal(null)
+    storageReport().then((r) => { if (active) setReport(r) }).catch((e) => {
+      if (!active) return
+      const words = describeFailure('The Storage and retention report did not load', e)
+      if (words.kind === 'refusal' && words.code) setRefusal(words.text)
+      else setFailure({ words, kind: 'load', title: "The Storage and retention report didn't load" })
+    }).finally(() => { if (active) setLoading(false) })
+    return () => { active = false }
+  }, [reload])
+
+  const exportCsv = async () => {
+    setExporting(true); setNote(null)
+    try {
+      const file = await storageReportCsv()
+      const url = URL.createObjectURL(file.blob)
+      const link = document.createElement('a')
+      link.href = url; link.download = file.filename ?? `vero-storage-${new Date().toISOString().slice(0, 10)}.csv`
+      document.body.appendChild(link); link.click(); link.remove()
+      setTimeout(() => URL.revokeObjectURL(url), 1000)
+      setNote({ ok: true, text: registeredNote(file.reference, file.fingerprint) })
+    } catch (e) {
+      setNote({ ok: false, text: `The export didn’t work. ${exportFailureText('A report export failed', e)}` })
+    } finally { setExporting(false) }
+  }
+
+  const bySystem = new Map<string, { name: string; rows: StorageReport['stored'] }>()
+  for (const s of report?.stored ?? []) {
+    const e = bySystem.get(s.sourceId) ?? { name: s.sendingSystem, rows: [] }
+    e.rows.push(s); bySystem.set(s.sourceId, e)
+  }
+  const most = Math.max(1, ...(report?.growth ?? []).map((m) => m.documents))
+  const h = report?.heldBack
+
+  return <>
+    <div className="rpt-bar">
+      {tabs}
+      <span className="grow" />
+      {report && <span className="rpt-chip" title={`Worked out in ${n(report.tookMs)} ms, every ${report.recountMinutes} minutes. Months in ${report.timeZone}.`}><b>Counts</b> {countedWords(report.countedAt)}</span>}
+      <button type="button" className="v-btn" disabled={!report || loading} onClick={() => setReload((x) => x + 1)}>Refresh</button>
+      <button type="button" className="v-btn" disabled={!report || loading || exporting} onClick={() => void exportCsv()}><Download size={15} aria-hidden />{exporting ? 'Exporting…' : 'Export CSV'}</button>
+    </div>
+    {note && <p role="status" className={note.ok ? 'faint' : 'rpt-bad'} style={{ fontSize: 13, margin: 0 }}>{note.text}</p>}
+    {refusal && <p role="alert" className="rpt-bad" style={{ fontSize: 13, margin: 0 }}>{refusal}</p>}
+    {failure && <FailureNotice failure={failure} loadTitle="The Storage and retention report didn't load" onRetry={() => setReload((x) => x + 1)} />}
+    {loading && !report && !failure && <p className="faint">Loading the Storage and retention report…</p>}
+
+    {report && h && <>
+      <section className="v-panel flush rpt-card" aria-label="Storage now" aria-busy={loading}>
+        <div className="rpt-ch">Storage now <span>by sending system and level, {countedWords(report.countedAt)}</span></div>
+        <table className="rpt-tbl">
+          <thead><tr><th>Sending system</th><th>Level</th><th className="r">Documents</th><th className="r">Pages</th><th className="r">Stored</th></tr></thead>
+          <tbody>
+            {bySystem.size === 0 && <tr><td colSpan={5} className="faint">No document is stored.</td></tr>}
+            {[...bySystem.entries()].map(([id, s]) => <Fragment key={id}>{s.rows.map((r, i) =>
+              <tr key={r.level}><td>{i === 0 ? s.name : ''}</td><td>{levelName(r.level)}</td><td className="r">{n(r.documents)}</td><td className="r">{n(r.pages)}</td><td className="r" title={`${n(r.bytes)} bytes`}>{bytesWords(r.bytes)}</td></tr>)}</Fragment>)}
+            {report.totals.map((t, i) => <tr key={t.level ?? 'all'}><td>{i === 0 ? 'All sending systems' : ''}</td><td>{levelName(t.level)}</td><td className="r">{n(t.documents)}</td><td className="r">{n(t.pages)}</td><td className="r" title={`${n(t.bytes)} bytes`}>{bytesWords(t.bytes)}</td></tr>)}
+            <tr><td><b>Total</b></td><td>All levels</td><td className="r"><b>{n(report.total.documents)}</b></td><td className="r"><b>{n(report.total.pages)}</b></td><td className="r" title={`${n(report.total.bytes)} bytes`}><b>{bytesWords(report.total.bytes)}</b></td></tr>
+          </tbody>
+        </table>
+      </section>
+      <div className="rpt-grid">
+        <section className="v-panel flush rpt-card" aria-label="Growth">
+          <div className="rpt-ch">Growth <span>received per month, last 12 months</span></div>
+          <table className="rpt-tbl">
+            <thead><tr><th>Month</th><th>Documents</th><th className="r">Pages</th><th className="r">Stored</th></tr></thead>
+            <tbody>{[...report.growth].reverse().map((m) => <tr key={m.month}>
+              <td>{monthWords(m.month)}</td>
+              <td><div className="rpt-barrow"><div className="rpt-track" role="img" aria-label={`${monthWords(m.month)}: ${n(m.documents)} documents (${n(m.standard)} Standard, ${n(m.confidential)} Confidential, ${n(m.highlyConfidential)} Highly Confidential)`}><i className="s" style={{ width: `${share(m.documents, most)}%` }} /></div><span className="rpt-num">{n(m.documents)}</span></div></td>
+              <td className="r">{n(m.pages)}</td><td className="r" title={`${n(m.bytes)} bytes`}>{bytesWords(m.bytes)}</td></tr>)}</tbody>
+          </table>
+          <div className="faint rpt-small rpt-cardnote">At each document&apos;s level now. A document deleted since still counts in the month it arrived.</div>
+        </section>
+        <div className="stack" style={{ gap: 14 }}>
+          <section className="v-panel flush rpt-card" aria-label="Due for deletion">
+            <div className="rpt-ch">Due for deletion <span>end of retention, from now</span></div>
+            <table className="rpt-tbl">
+              <thead><tr><th>Retention rule</th><th className="r">Stored</th><th className="r">30 days</th><th className="r">60 days</th><th className="r">90 days</th></tr></thead>
+              <tbody>
+                {report.retention.length === 0 && <tr><td colSpan={5} className="faint">No document is stored.</td></tr>}
+                {report.retention.map((r) => <tr key={r.retentionDays ?? 'forever'}><td>{ruleWords(r)}</td><td className="r">{n(r.stored)}</td>
+                  {r.keptForever ? <td colSpan={3} className="r faint">Never due</td> : <><td className="r">{n(r.within30 ?? 0)}</td><td className="r">{n(r.within60 ?? 0)}</td><td className="r">{n(r.within90 ?? 0)}</td></>}</tr>)}
+              </tbody>
+            </table>
+            <div className="faint rpt-small rpt-cardnote">Each document keeps the retention it was given when it arrived. The 60 and 90 days include the earlier ones.</div>
+          </section>
+          <section className="v-panel flush rpt-card" aria-label="Held back from deletion">
+            <div className="rpt-ch">Held back from deletion <span>past their retention, kept</span></div>
+            <table className="rpt-tbl">
+              <tbody>
+                <tr><td>Legal hold</td><td className="r">{n(h.legalHold)}</td></tr>
+                <tr><td>Quarantine</td><td className="r">{n(h.quarantine)}</td></tr>
+                <tr><td>Legal hold and quarantine</td><td className="r">{n(h.both)}</td></tr>
+                <tr><td><b>Held back</b></td><td className="r"><b>{n(h.total)}</b></td></tr>
+              </tbody>
+            </table>
+            <div className="faint rpt-small rpt-cardnote">They are deleted once nothing holds them back. Which documents, and why, stays on the Legal holds and Quarantine pages.</div>
+          </section>
+        </div>
+      </div>
+    </>}
+  </>
+}
+
+/** Task 0053: a registered export's note: the reference and the SHA-256 fingerprint, so the file matches the audit. */
+export function registeredNote(reference: string | null, fingerprint: string | null): string {
+  return ['The file is saved. The export is recorded in the audit.', reference ? `Reference ${reference}.` : '', fingerprint ? `SHA-256 fingerprint ${fingerprint}.` : ''].filter(Boolean).join(' ')
 }

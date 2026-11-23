@@ -1,0 +1,8 @@
+databaseChangeLog:
+  - changeSet:
+      id: 040-report-storage
+      author: sdv
+      changes:
+        - sqlFile:
+            path: db/changelog/040-report-storage.sql
+            relativeToChangelogFile: false

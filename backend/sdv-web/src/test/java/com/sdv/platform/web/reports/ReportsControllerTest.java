@@ -7,6 +7,7 @@ import com.sdv.platform.application.port.SensitivityReportRepository;
 import com.sdv.platform.application.reports.IntakeReportService;
 import com.sdv.platform.application.reports.SensitivityReportService;
 import com.sdv.platform.application.reports.StewardNoticeService;
+import com.sdv.platform.application.reports.StorageReportService;
 import com.sdv.platform.domain.audit.AuditEvent;
 import com.sdv.platform.domain.audit.AuditOutcome;
 import com.sdv.platform.domain.error.CodedRefusal;
@@ -60,10 +61,11 @@ class ReportsControllerTest {
     private final IntakeReportService reports = mock(IntakeReportService.class);
     private final SensitivityReportService sensitivity = mock(SensitivityReportService.class);
     private final StewardNoticeService notices = mock(StewardNoticeService.class);
+    private final StorageReportService storage = mock(StorageReportService.class);
     private final AuthorizationService authorization =
             new AuthorizationService(audit, new CapabilityPolicyService(mock(RoleCapabilityPolicyPort.class)));
     private final MockMvc mvc = MockMvcBuilders.standaloneSetup(
-                    new ReportsController(new SecurityContextFacade(), authorization, reports, sensitivity),
+                    new ReportsController(new SecurityContextFacade(), authorization, reports, sensitivity, storage),
                     new IntakeNoticeController(new SecurityContextFacade(), authorization, notices))
             .setControllerAdvice(new FoundationExceptionHandler())
             .setMessageConverters(new ByteArrayHttpMessageConverter(), new MappingJackson2HttpMessageConverter(JSON))
@@ -82,7 +84,9 @@ class ReportsControllerTest {
     private static List<RequestBuilder> reportCalls() {
         return List.of(get("/api/v1/admin/reports/intake"),
                 get("/api/v1/admin/reports/intake").param("from", "2026-11-01").param("to", "2026-11-20"),
-                get("/api/v1/admin/reports/intake/export"));
+                get("/api/v1/admin/reports/intake/export"),
+                // Task 0053.
+                get("/api/v1/admin/reports/storage"), get("/api/v1/admin/reports/storage/export"));
     }
 
     @Test
@@ -95,7 +99,7 @@ class ReportsControllerTest {
                         .andExpect(jsonPath("$.message").value("Only a Business Admin can see the reports."));
             }
         }
-        verifyNoInteractions(reports);
+        verifyNoInteractions(reports, storage);
         ArgumentCaptor<AuditEvent> denied = ArgumentCaptor.forClass(AuditEvent.class);
         verify(audit, times(reportCalls().size() * (SdvRole.values().length - 1))).append(denied.capture());
         assertTrue(denied.getAllValues().stream().allMatch(e -> e.action().equals("AUTHORIZATION_DENIED")
@@ -253,5 +257,27 @@ class ReportsControllerTest {
         mvc.perform(post("/api/v1/business/intake-notices/read").contentType("application/json")
                         .content("{\"noticeIds\":[\"" + other + "\"]}"))
                 .andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("SDV-INT-002"));
+    }
+
+    @Test
+    void theBusinessAdminGetsTheStorageReportAndItsRegisteredCsv() throws Exception {
+        signIn(SdvRole.BUSINESS_ADMIN);
+        when(storage.report(TENANT)).thenReturn(new StorageReportService.StorageReport("2026-11-23T10:00:00Z", 120, 15, "UTC",
+                "INSTALL_DEFAULT", List.of(), List.of(), List.of(), new StorageReportService.Total(null, 3, 9, 300), List.of(),
+                List.of(), List.of(), new StorageReportService.Held(1, 0, 0, 1)));
+        mvc.perform(get("/api/v1/admin/reports/storage"))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Cache-Control", org.hamcrest.Matchers.containsString("no-store")))
+                .andExpect(jsonPath("$.total.documents").value(3))
+                .andExpect(jsonPath("$.heldBack.legalHold").value(1));
+        UUID reference = UUID.randomUUID();
+        when(storage.export(eq(TENANT), eq("person-business_admin"), any())).thenReturn(new StorageReportService.Export(
+                CSV, 1, "vero-storage-2026-11-23-abcdef12.csv", reference, "a".repeat(64)));
+        mvc.perform(get("/api/v1/admin/reports/storage/export"))
+                .andExpect(status().isOk())
+                .andExpect(header().string("X-SDV-Export-Reference", reference.toString()))
+                .andExpect(header().string("X-SDV-Export-Fingerprint", "a".repeat(64)))
+                .andExpect(header().string("X-SDV-Export-Rows", "1"))
+                .andExpect(content().bytes(CSV));
     }
 }

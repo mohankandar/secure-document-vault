@@ -109,3 +109,6 @@ databaseChangeLog:
 
   - include:
       file: db/changelog/039-quarantine-scale.yaml
+
+  - include:
+      file: db/changelog/040-report-storage.yaml
