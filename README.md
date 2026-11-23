@@ -51,6 +51,15 @@ From the repository root on Windows PowerShell:
 .\build-all.cmd
 ```
 
+**One-time setup:** the backend reads released platform-core modules from GitHub Packages, which needs a personal
+token with `read:packages` in the environment variable `GITHUB_PACKAGES_TOKEN` and a `github-platform-core` server
+in `~/.m2/settings.xml` (outside every repository). See [docs/install/PLATFORM_PACKAGES.md](docs/install/PLATFORM_PACKAGES.md).
+
+CI (GitHub Actions, `.github/workflows/ci.yml`) runs on every push and pull request to `release/vero-r7` and `main`:
+the full backend build with all tests (PostgreSQL-only tests included), the frontend typecheck and build, and the
+product-name guard (`ProductNameGuardTest`: no other product's name in code, SQL, JSON, YAML, scripts or install
+guides; exceptions only in `backend/sdv-web/src/test/resources/product-name-guard/exceptions.txt` with a reason).
+
 ## Start local environment
 
 ```powershell

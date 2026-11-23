@@ -13,9 +13,8 @@
     <name>sdv-security</name>
     <dependencies>
         <dependency>
-            <groupId>com.documentplatform.identity</groupId>
-            <artifactId>enterprise-identity-spring</artifactId>
-            <version>${enterprise.identity.version}</version>
+            <groupId>com.documentplatform.platform</groupId>
+            <artifactId>platform-identity-spring</artifactId>
         </dependency>
         <dependency>
             <groupId>com.sdv.platform</groupId>
