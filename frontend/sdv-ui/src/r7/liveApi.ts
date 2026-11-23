@@ -317,18 +317,19 @@ export const sensitivityReportCsv = (f: IntakeFilter) => contentBinary('/api/v1/
 
 /** An incident in the list: documentsInForce is how many are still quarantined; never a reason here. */
 /** Task 0051: preparing while the background job writes the rows of a filter incident (preparedCount of expectedCount looked at). */
-export type QuarantineIncidentSummary = { incidentId: string; name: string; scope: 'DOCUMENT' | 'FILTER'; status: 'OPEN' | 'RELEASED'; createdByName: string | null; createdAt: string; closedAt: string | null; documentsInForce: number; releaseRequested: boolean; preparing: boolean; preparedCount: number; expectedCount: number | null }
+export type QuarantineIncidentSummary = { incidentId: string; name: string; scope: 'DOCUMENT' | 'FILTER'; status: 'OPEN' | 'RELEASED'; createdByName: string | null; createdAt: string; closedAt: string | null; documentsInForce: number; releaseRequested: boolean; preparing: boolean; preparedCount: number; expectedCount: number | null; /** task 0052: an approved whole release runs in the background */ releasing: boolean; documentCount: number; releasedCount: number }
 /** One quarantined document as a reviewer sees it: never a title, file name or content. */
 export type QuarantinedDocument = { quarantineId: string; documentId: string; primaryIdentifierLabel: string | null; primaryIdentifier: string | null; level: SensitivityLevel | null; receivedAt: string | null; pageCount: number | null; quarantinedByName: string | null; quarantinedAt: string; inForce: boolean; releasedByName: string | null; releasedAt: string | null }
 /** hiddenCount: documents at levels this person can't open, counted and never shown. */
-export type QuarantineIncident = { incidentId: string; name: string; reason: string; scope: 'DOCUMENT' | 'FILTER'; status: 'OPEN' | 'RELEASED'; createdByName: string | null; createdAt: string; closedAt: string | null; documentsInForce: number; documentCount: number; hiddenCount: number; documents: QuarantinedDocument[]; pendingRequestId: string | null; pendingRequestedByName: string | null; pendingExpiresAt: string | null; preparing: boolean; preparedCount: number; expectedCount: number | null; /** task 0051: documents lists at most this many */ listLimit: number }
+export type QuarantineIncident = { incidentId: string; name: string; reason: string; scope: 'DOCUMENT' | 'FILTER'; status: 'OPEN' | 'RELEASED'; createdByName: string | null; createdAt: string; closedAt: string | null; documentsInForce: number; documentCount: number; hiddenCount: number; documents: QuarantinedDocument[]; pendingRequestId: string | null; pendingRequestedByName: string | null; pendingExpiresAt: string | null; preparing: boolean; preparedCount: number; expectedCount: number | null; /** task 0052: documents is one page of at most this many */ listLimit: number; releasing: boolean; releasedCount: number; /** task 0052: where the next page starts; null on the last page */ next: string | null }
 /** The filter: received days (YYYY-MM-DD, whole UTC days, both needed), a sending system, field values (exact). */
 export type QuarantineFilter = { receivedFrom: string; receivedTo: string; sourceId?: string; fields?: Record<string, string> }
 /** Task 0051: no limit; the count alone. */
 export type QuarantineCount = { count: number }
 const quarantinePath = '/api/v1/quarantine'
 export const quarantineIncidents = () => roleApi<QuarantineIncidentSummary[]>(quarantinePath + '/incidents', 'steward')
-export const quarantineIncident = (id: string) => roleApi<QuarantineIncident>(quarantinePath + '/incidents/' + encodeURIComponent(id), 'steward')
+/** Task 0052: a page at a time; after is the previous page's next (omitted: the first page). */
+export const quarantineIncident = (id: string, after?: string | null) => roleApi<QuarantineIncident>(quarantinePath + '/incidents/' + encodeURIComponent(id) + (after ? '?after=' + encodeURIComponent(after) : ''), 'steward')
 /** Into a new incident (name and reason) or an open one (incidentId; no reason needed). */
 export const quarantineDocument = (documentId: string, into: { incidentId: string } | { name: string; reason: string }) =>
   roleApi<QuarantineIncident>(quarantinePath + '/documents', 'steward', { method: 'POST', body: JSON.stringify({ documentId, ...into }) })
@@ -347,9 +348,9 @@ export const requestIncidentRelease = (incidentId: string, reason: string) =>
 /** what: the server's words for the action ("Opened", "Printed", "Downloaded"). */
 export type ExposureEntry = { action: string; what: string; person: string; at: string }
 export type ExposureDocument = { documentId: string; primaryIdentifierLabel: string | null; primaryIdentifier: string | null; level: SensitivityLevel | null; receivedAt: string | null; pageCount: number | null; quarantinedAt: string; inForce: boolean; exposure: ExposureEntry[] }
-export type ExposureReport = { incidentId: string; name: string; status: 'OPEN' | 'RELEASED'; createdAt: string; standard: number; confidential: number; highlyConfidential: number; hiddenCount: number; documents: ExposureDocument[]; /** task 0051: all the documents counted; documents lists at most 500 (the CSV has them all) */ documentCount: number }
-export const quarantineExposure = (incidentId: string) => roleApi<ExposureReport>(quarantinePath + '/incidents/' + encodeURIComponent(incidentId) + '/exposure', 'steward')
-/** The CSV with its reference and SHA-256 fingerprint; the server records the export in the audit. */
+export type ExposureReport = { incidentId: string; name: string; status: 'OPEN' | 'RELEASED'; createdAt: string; standard: number; confidential: number; highlyConfidential: number; hiddenCount: number; documents: ExposureDocument[]; /** all the documents counted; task 0052: documents is one page (the CSV has them all) */ documentCount: number; next: string | null; listLimit: number }
+export const quarantineExposure = (incidentId: string, after?: string | null) => roleApi<ExposureReport>(quarantinePath + '/incidents/' + encodeURIComponent(incidentId) + '/exposure' + (after ? '?after=' + encodeURIComponent(after) : ''), 'steward')
+/** The CSV with its reference and SHA-256 fingerprint; the server records the export in the audit. Task 0052: it streams, so the fingerprint is worked out here from the file received (the audit has the server's). */
 export const quarantineExposureCsv = (incidentId: string): Promise<RegisteredExport> => contentExport(quarantinePath + '/incidents/' + encodeURIComponent(incidentId) + '/exposure/export', 'steward')
 
 /** A whole-incident release waiting for a Business admin: counts, levels and dates; never a reason. */

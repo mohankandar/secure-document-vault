@@ -257,7 +257,26 @@ public class JdbcFoundationRepository implements TenantRepository, IngestionSour
 
     @Override
     public void append(AuditEvent event) {
-        var p = new MapSqlParameterSource()
+        jdbc.update(INSERT_AUDIT, auditParameters(event));
+    }
+
+    /** Task 0052: one batched insert for many events (the same statement and values as {@link #append}). */
+    @Override
+    public void appendAll(java.util.List<AuditEvent> events) {
+        if (events == null || events.isEmpty()) return;
+        jdbc.batchUpdate(INSERT_AUDIT, events.stream().map(JdbcFoundationRepository::auditParameters)
+                .toArray(MapSqlParameterSource[]::new));
+    }
+
+    private static final String INSERT_AUDIT = """
+            insert into audit_events(audit_event_id, tenant_id, actor_type, actor_id, action, target_type,
+                                     target_id, occurred_at, correlation_id, outcome, safe_details, actor_display_name)
+            values (:id, :tenantId, :actorType, :actorId, :action, :targetType,
+                    :targetId, :occurredAt, :correlationId, :outcome, cast(:safeDetails as jsonb), :actorDisplayName)
+            """;
+
+    private static MapSqlParameterSource auditParameters(AuditEvent event) {
+        return new MapSqlParameterSource()
                 .addValue("id", event.auditEventId())
                 .addValue("tenantId", event.tenantId())
                 .addValue("actorType", event.actorType())
@@ -271,12 +290,6 @@ public class JdbcFoundationRepository implements TenantRepository, IngestionSour
                 .addValue("safeDetails", event.safeDetailsJson())
                 .addValue("actorDisplayName", event.actorDisplayName() == null || event.actorDisplayName().isBlank()
                         ? null : event.actorDisplayName().strip().substring(0, Math.min(300, event.actorDisplayName().strip().length())));
-        jdbc.update("""
-                insert into audit_events(audit_event_id, tenant_id, actor_type, actor_id, action, target_type,
-                                         target_id, occurred_at, correlation_id, outcome, safe_details, actor_display_name)
-                values (:id, :tenantId, :actorType, :actorId, :action, :targetType,
-                        :targetId, :occurredAt, :correlationId, :outcome, cast(:safeDetails as jsonb), :actorDisplayName)
-                """, p);
     }
 
     private static String sourceSelect() {

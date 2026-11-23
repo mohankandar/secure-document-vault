@@ -74,6 +74,15 @@ export const progressWords = (prepared: number, expected: number) => `${countWor
 export const inQuarantineCount = (i: { preparing: boolean; expectedCount: number | null; documentsInForce: number }) =>
   i.preparing && i.expectedCount != null ? Math.max(i.expectedCount, i.documentsInForce) : i.documentsInForce
 
-/** Task 0051: a list the server limited: "The first 500 of 20,000 are listed." or null when all are listed. */
-export const listedNote = (listed: number, total: number, what = 'are listed') =>
-  total > listed ? `The first ${countWords(listed)} of ${countWords(total)} ${what}.` : null
+/**
+ * Task 0052: where a page sits in the whole list: "Documents 101 to 200 of 20,000." (first is the number of the page's
+ * first document, from 1); null when one page shows them all.
+ */
+export function pageNote(first: number, shown: number, total: number): string | null {
+  if (first <= 1 && shown >= total) return null
+  if (shown === 0) return `None more of ${countWords(total)}.`
+  return `Documents ${countWords(first)} to ${countWords(first + shown - 1)} of ${countWords(total)}.`
+}
+
+/** Task 0052: a whole release running in the background: "300,000 of 1,000,000 released" (never more than all). */
+export const releaseWords = (released: number, total: number) => `${countWords(Math.min(released, total))} of ${countWords(total)} released`

@@ -14,7 +14,6 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.time.Instant;
-import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -23,6 +22,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Function;
 
 /**
  * Task 0048: quarantine tables (changeset 036). Every statement is limited to one entity (tenant_id), except
@@ -170,14 +170,18 @@ public class JdbcQuarantineRepository implements QuarantineRepository {
 
     @Override
     public void insertQuarantine(UUID quarantineId, UUID tenantId, UUID incidentId, UUID documentId, String by,
-                                 String byName, Instant at) {
-        jdbc.update("""
+                                 String byName, Instant at, SensitivityLevel level, Instant receivedAt) {
+        // The received time is the document's own (receivedAt is what the caller read; the row takes the stored one).
+        int inserted = jdbc.update("""
                 insert into quarantined_documents(quarantine_id, tenant_id, incident_id, document_id, quarantined_by,
-                    quarantined_by_display_name, quarantined_at)
-                values (:id, :tenantId, :incidentId, :documentId, :by, :byName, :at)
+                    quarantined_by_display_name, quarantined_at, level, received_at)
+                select :id, d.tenant_id, :incidentId, d.document_id, :by, :byName, :at, :level, d.ingested_at
+                  from documents d where d.tenant_id=:tenantId and d.document_id=:documentId
                 """, new MapSqlParameterSource().addValue("id", quarantineId).addValue("tenantId", tenantId)
                 .addValue("incidentId", incidentId).addValue("documentId", documentId).addValue("by", by)
-                .addValue("byName", byName).addValue("at", Timestamp.from(at)));
+                .addValue("byName", byName).addValue("at", Timestamp.from(at))
+                .addValue("level", (level == null ? SensitivityLevel.HIGHLY_CONFIDENTIAL : level).name()));
+        if (inserted != 1) throw new InternalCheckFailed("A quarantine row could not be written.");
     }
 
     private static final String QUARANTINED = "select q.quarantine_id, q.incident_id, q.quarantined_by, "
@@ -189,43 +193,6 @@ public class JdbcQuarantineRepository implements QuarantineRepository {
     public Optional<Quarantined> findActive(UUID tenantId, UUID documentId) {
         return jdbc.query(QUARANTINED + " where q.tenant_id=:tenantId and q.document_id=:documentId and q.released_at is null",
                 document(tenantId, documentId), (rs, row) -> quarantined(rs)).stream().findFirst();
-    }
-
-    @Override
-    public List<Quarantined> findInIncident(UUID tenantId, UUID incidentId, int limit) {
-        return jdbc.query(QUARANTINED + " where q.tenant_id=:tenantId and q.incident_id=:id "
-                        + "order by (q.released_at is not null), q.quarantined_at, d.ingested_at, d.document_id limit :limit",
-                incident(tenantId, incidentId).addValue("limit", limit), (rs, row) -> quarantined(rs));
-    }
-
-    @Override
-    public List<Quarantined> findInIncidentPage(UUID tenantId, UUID incidentId, boolean inForceOnly,
-                                                UUID afterQuarantineId, int limit) {
-        MapSqlParameterSource p = incident(tenantId, incidentId).addValue("limit", limit);
-        StringBuilder sql = new StringBuilder(QUARANTINED + " where q.tenant_id=:tenantId and q.incident_id=:id");
-        if (inForceOnly) sql.append(" and q.released_at is null");
-        if (afterQuarantineId != null) { sql.append(" and q.quarantine_id > :after"); p.addValue("after", afterQuarantineId); }
-        sql.append(" order by q.quarantine_id limit :limit");
-        return jdbc.query(sql.toString(), p, (rs, row) -> quarantined(rs));
-    }
-
-    @Override
-    public long countInIncident(UUID tenantId, UUID incidentId) {
-        Long n = jdbc.queryForObject("select count(*) from quarantined_documents where tenant_id=:tenantId and incident_id=:id",
-                incident(tenantId, incidentId), Long.class);
-        return n == null ? 0 : n;
-    }
-
-    @Override
-    public Map<UUID, Integer> countInForce(UUID tenantId, List<UUID> incidentIds) {
-        Map<UUID, Integer> out = new LinkedHashMap<>();
-        if (incidentIds.isEmpty()) return out;
-        jdbc.query("""
-                select incident_id, count(*) from quarantined_documents
-                 where tenant_id=:tenantId and incident_id in (:ids) and released_at is null group by incident_id
-                """, new MapSqlParameterSource().addValue("tenantId", tenantId).addValue("ids", incidentIds),
-                rs -> { out.put(rs.getObject(1, UUID.class), rs.getInt(2)); });
-        return out;
     }
 
     @Override
@@ -241,21 +208,6 @@ public class JdbcQuarantineRepository implements QuarantineRepository {
                 .addValue("requestId", requestId).addValue("at", Timestamp.from(at)));
         if (updated > 1) throw new InternalCheckFailed("A quarantine release changed more than one row.");
         return updated == 1;
-    }
-
-    @Override
-    public List<Released> releaseAllInForce(UUID tenantId, UUID incidentId, String by, String byName, String reason,
-                                            UUID requestId, Instant at) {
-        return jdbc.query("""
-                update quarantined_documents
-                   set released_by=:by, released_by_display_name=:byName, released_at=greatest(:at, quarantined_at),
-                       release_reason=:reason, release_request_id=:requestId
-                 where tenant_id=:tenantId and incident_id=:id and released_at is null
-                returning quarantine_id, document_id, quarantined_at
-                """, incident(tenantId, incidentId).addValue("by", by).addValue("byName", byName)
-                .addValue("reason", reason).addValue("requestId", requestId).addValue("at", Timestamp.from(at)),
-                (rs, row) -> new Released(rs.getObject(1, UUID.class), rs.getObject(2, UUID.class),
-                        rs.getTimestamp(3).toInstant()));
     }
 
     /** The filter's own conditions on {@code d}: received dates, sending system, field values (normalized, as search). */
@@ -342,31 +294,40 @@ public class JdbcQuarantineRepository implements QuarantineRepository {
     }
 
     @Override
-    public Batch prepareBatch(Preparation p, int size, String by, String byName, Instant at) {
+    public Batch prepareBatch(Preparation p, int size, String by, String byName, Instant at,
+                              Function<List<DocumentFacts>, Map<UUID, SensitivityLevel>> levels) {
         MapSqlParameterSource params = new MapSqlParameterSource().addValue("tenantId", p.tenantId())
                 .addValue("cutoff", Timestamp.from(p.cutoffReceivedAt())).addValue("size", size);
-        StringBuilder scan = new StringBuilder("select d.document_id, d.ingested_at from documents d where d.tenant_id=:tenantId"
+        StringBuilder scan = new StringBuilder("select d.document_id, d.source_id, d.submission_id, d.status, "
+                + "d.sensitivity_level, d.ingested_at from documents d where d.tenant_id=:tenantId"
                 + " and d.ingested_at <= :cutoff" + matches(p.filter(), params));
         if (p.cursorReceivedAt() != null) {
             scan.append(" and (d.ingested_at, d.document_id) > (:cursorAt, :cursorId)");
             params.addValue("cursorAt", Timestamp.from(p.cursorReceivedAt())).addValue("cursorId", p.cursorDocumentId());
         }
         scan.append(" order by d.ingested_at, d.document_id limit :size");
-        List<UUID> ids = new ArrayList<>();
-        Instant[] last = new Instant[1];
-        jdbc.query(scan.toString(), params, rs -> {
-            ids.add(rs.getObject(1, UUID.class));
-            last[0] = rs.getTimestamp(2).toInstant();
+        List<DocumentFacts> scanned = jdbc.query(scan.toString(), params, (rs, row) -> {
+            String level = rs.getString("sensitivity_level");
+            return new DocumentFacts(rs.getObject("document_id", UUID.class), rs.getObject("source_id", UUID.class),
+                    rs.getObject("submission_id", UUID.class), rs.getString("status"),
+                    level == null ? null : SensitivityLevel.valueOf(level), instant(rs, "ingested_at"), null, null, null);
         });
-        if (ids.isEmpty()) return new Batch(0, List.of(), null, null);
+        if (scanned.isEmpty()) return new Batch(0, List.of(), null, null);
+        Map<UUID, SensitivityLevel> known = levels.apply(scanned);
+        List<UUID> ids = scanned.stream().map(DocumentFacts::documentId).toList();
+        // A level not worked out counts as the highest (fail closed).
+        List<String> levelNames = ids.stream()
+                .map(id -> (known == null ? null : known.get(id)))
+                .map(l -> (l == null ? SensitivityLevel.HIGHLY_CONFIDENTIAL : l).name()).toList();
         // Each one still blocked by this incident and with no quarantine in force gets its row (none twice: the
         // unique index on rows in force, and a release since the confirmation frees the document).
         List<Placed> placed = jdbc.query("""
                 insert into quarantined_documents(quarantine_id, tenant_id, incident_id, document_id, quarantined_by,
-                    quarantined_by_display_name, quarantined_at)
-                select gen_random_uuid(), d.tenant_id, :incidentId, d.document_id, :by, :byName, :at
-                  from documents d
-                 where d.tenant_id=:tenantId and d.document_id in (:ids) and %s
+                    quarantined_by_display_name, quarantined_at, level, received_at)
+                select gen_random_uuid(), d.tenant_id, :incidentId, d.document_id, :by, :byName, :at, l.level, d.ingested_at
+                  from unnest(cast(:ids as uuid[]), cast(:levels as text[])) as l(document_id, level)
+                  join documents d on d.tenant_id=:tenantId and d.document_id=l.document_id
+                 where %s
                    and not exists (select 1 from quarantined_documents q
                                     where q.tenant_id=d.tenant_id and q.document_id=d.document_id and q.released_at is null)
                    and not exists (select 1 from quarantined_documents r
@@ -376,10 +337,12 @@ public class JdbcQuarantineRepository implements QuarantineRepository {
                 on conflict (tenant_id, document_id) where released_at is null do nothing
                 returning quarantine_id, document_id
                 """.formatted(NOT_DELETED), new MapSqlParameterSource().addValue("tenantId", p.tenantId())
-                .addValue("incidentId", p.incidentId()).addValue("ids", ids).addValue("by", by).addValue("byName", byName)
+                .addValue("incidentId", p.incidentId()).addValue("ids", array(ids)).addValue("levels", array(levelNames))
+                .addValue("by", by).addValue("byName", byName)
                 .addValue("at", Timestamp.from(at)).addValue("createdAt", Timestamp.from(p.createdAt())),
                 (rs, row) -> new Placed(rs.getObject(1, UUID.class), rs.getObject(2, UUID.class)));
-        return new Batch(ids.size(), placed, last[0], ids.getLast());
+        DocumentFacts last = scanned.getLast();
+        return new Batch(scanned.size(), placed, last.receivedAt(), last.documentId());
     }
 
     @Override
@@ -473,21 +436,156 @@ public class JdbcQuarantineRepository implements QuarantineRepository {
                 """, incident(tenantId, incidentId), (rs, row) -> request(rs));
     }
 
+    // ------------------------------------------------------------------ task 0052: a million documents
+
+    private static final String COUNTS = """
+            select incident_id, document_count, released_count, standard_count, confidential_count,
+                   highly_confidential_count, standard_in_force, confidential_in_force, highly_confidential_in_force,
+                   first_received_at, last_received_at, release_request_id
+              from quarantine_incidents
+            """;
+
     @Override
-    public List<Exposure> findExposureInIncident(UUID tenantId, UUID incidentId) {
-        // One query for the whole incident: each document's accesses before its first quarantine in the incident.
+    public Map<UUID, Counts> counts(UUID tenantId, List<UUID> incidentIds) {
+        Map<UUID, Counts> out = new LinkedHashMap<>();
+        if (incidentIds == null || incidentIds.isEmpty()) return out;
+        jdbc.query(COUNTS + " where tenant_id=:tenantId and incident_id in (:ids)",
+                new MapSqlParameterSource().addValue("tenantId", tenantId).addValue("ids", incidentIds),
+                rs -> { out.put(rs.getObject("incident_id", UUID.class), counts(rs)); });
+        return out;
+    }
+
+    @Override
+    public List<Quarantined> findPage(UUID tenantId, UUID incidentId, PageKey from, Set<SensitivityLevel> levels,
+                                      int limit) {
+        MapSqlParameterSource p = incident(tenantId, incidentId).addValue("limit", limit);
+        StringBuilder sql = new StringBuilder(QUARANTINED + " where q.tenant_id=:tenantId and q.incident_id=:id and q.released_at is ")
+                .append(from.inForce() ? "null" : "not null");
+        if (!from.atStart()) {
+            sql.append(" and (q.quarantined_at, q.received_at, q.document_id) > (:at, :received, :documentId)");
+            p.addValue("at", Timestamp.from(from.quarantinedAt())).addValue("received", Timestamp.from(from.receivedAt()))
+                    .addValue("documentId", from.documentId());
+        }
+        if (levels != null) {
+            if (levels.isEmpty()) return List.of();
+            sql.append(" and q.level in (:levels)");
+            p.addValue("levels", levels.stream().map(Enum::name).toList());
+        }
+        sql.append(" order by q.quarantined_at, q.received_at, q.document_id limit :limit");
+        return jdbc.query(sql.toString(), p, (rs, row) -> quarantined(rs));
+    }
+
+    @Override
+    public List<Exposure> findExposure(UUID tenantId, UUID incidentId, Collection<UUID> documentIds) {
+        if (documentIds == null || documentIds.isEmpty()) return List.of();
+        // Each document's accesses before its first quarantine in the incident (idx_quarantined_documents_document,
+        // then idx_audit_events_target).
         return jdbc.query("""
                 with q as (select document_id, min(quarantined_at) as quarantined_at from quarantined_documents
-                            where tenant_id=:tenantId and incident_id=:id group by document_id)
+                            where tenant_id=:tenantId and incident_id=:id and document_id in (:ids) group by document_id)
                 select a.target_id, a.actor_id, a.actor_display_name, a.action, a.occurred_at
                   from q join audit_events a on a.tenant_id=:tenantId and a.target_type='DOCUMENT'
                        and a.target_id=q.document_id::text
                  where a.action in ('DOCUMENT_VIEW_OPENED', 'DOCUMENT_PRINTED', 'DOCUMENT_DOWNLOADED')
                    and a.outcome='SUCCESS' and a.occurred_at < q.quarantined_at
                  order by a.target_id, a.occurred_at, a.audit_event_id
-                """, incident(tenantId, incidentId),
+                """, incident(tenantId, incidentId).addValue("ids", List.copyOf(documentIds)),
                 (rs, row) -> new Exposure(UUID.fromString(rs.getString(1)), rs.getString(2), rs.getString(3),
                         rs.getString(4), rs.getTimestamp(5).toInstant()));
+    }
+
+    @Override
+    public void startRelease(UUID tenantId, UUID incidentId, UUID requestId) {
+        int updated = jdbc.update("""
+                update quarantine_incidents set release_request_id=:requestId
+                 where tenant_id=:tenantId and incident_id=:id and status='OPEN' and release_request_id is null
+                """, incident(tenantId, incidentId).addValue("requestId", requestId));
+        if (updated != 1) throw new InternalCheckFailed("The release of a quarantine incident could not be started.");
+    }
+
+    @Override
+    public List<IncidentRef> findReleasing(int limit) {
+        return jdbc.query("""
+                select tenant_id, incident_id from quarantine_incidents
+                 where release_request_id is not null and status='OPEN'
+                 order by created_at, incident_id limit :limit
+                """, new MapSqlParameterSource("limit", limit),
+                (rs, row) -> new IncidentRef(rs.getObject(1, UUID.class), rs.getObject(2, UUID.class)));
+    }
+
+    @Override
+    public Optional<ReleaseRequest> lockReleasing(UUID tenantId, UUID incidentId) {
+        List<UUID> locked = jdbc.query("""
+                select release_request_id from quarantine_incidents
+                 where tenant_id=:tenantId and incident_id=:id and status='OPEN' and release_request_id is not null
+                 for update skip locked
+                """, incident(tenantId, incidentId), (rs, row) -> rs.getObject(1, UUID.class));
+        if (locked.isEmpty()) return Optional.empty();
+        return jdbc.query(REQUEST + " where tenant_id=:tenantId and request_id=:id",
+                new MapSqlParameterSource().addValue("tenantId", tenantId).addValue("id", locked.getFirst()),
+                (rs, row) -> request(rs)).stream().findFirst();
+    }
+
+    @Override
+    public List<Released> releaseBatch(UUID tenantId, UUID incidentId, String by, String byName, String reason,
+                                       UUID requestId, Instant at, int size) {
+        return jdbc.query("""
+                update quarantined_documents q
+                   set released_by=:by, released_by_display_name=:byName, released_at=greatest(:at, q.quarantined_at),
+                       release_reason=:reason, release_request_id=:requestId
+                  from (select quarantine_id from quarantined_documents
+                         where tenant_id=:tenantId and incident_id=:id and released_at is null
+                         order by quarantined_at, received_at, document_id limit :size
+                         for update) next
+                 where q.quarantine_id=next.quarantine_id and q.released_at is null
+                returning q.quarantine_id, q.document_id, q.quarantined_at
+                """, incident(tenantId, incidentId).addValue("by", by).addValue("byName", byName)
+                .addValue("reason", reason).addValue("requestId", requestId).addValue("at", Timestamp.from(at))
+                .addValue("size", size),
+                (rs, row) -> new Released(rs.getObject(1, UUID.class), rs.getObject(2, UUID.class),
+                        rs.getTimestamp(3).toInstant()));
+    }
+
+    @Override
+    public List<LevelGap> findLevelGaps(int limit) {
+        return jdbc.query("select q.tenant_id as gap_tenant_id, q.quarantine_id as gap_quarantine_id, " + DOCUMENT_COLUMNS
+                        + " from quarantined_documents q join documents d on d.tenant_id=q.tenant_id and d.document_id=q.document_id "
+                        + PRIMARY_IDENTIFIER + " where q.level is null order by q.quarantine_id limit :limit",
+                new MapSqlParameterSource("limit", limit),
+                (rs, row) -> new LevelGap(rs.getObject("gap_tenant_id", UUID.class), rs.getObject("gap_quarantine_id", UUID.class),
+                        facts(rs, "")));
+    }
+
+    @Override
+    public void fillLevels(UUID tenantId, Map<UUID, SensitivityLevel> levelsByQuarantineId) {
+        if (levelsByQuarantineId == null || levelsByQuarantineId.isEmpty()) return;
+        List<UUID> ids = List.copyOf(levelsByQuarantineId.keySet());
+        List<String> levels = ids.stream().map(id -> levelsByQuarantineId.get(id))
+                .map(l -> (l == null ? SensitivityLevel.HIGHLY_CONFIDENTIAL : l).name()).toList();
+        jdbc.update("""
+                update quarantined_documents q set level=l.level
+                  from unnest(cast(:ids as uuid[]), cast(:levels as text[])) as l(quarantine_id, level)
+                 where q.tenant_id=:tenantId and q.quarantine_id=l.quarantine_id and q.level is null
+                """, new MapSqlParameterSource().addValue("tenantId", tenantId).addValue("ids", array(ids))
+                .addValue("levels", array(levels)));
+    }
+
+    /** A PostgreSQL array literal of UUIDs or level names (no quoting needed for either). */
+    private static String array(List<?> values) {
+        StringBuilder out = new StringBuilder("{");
+        for (Object v : values) {
+            if (out.length() > 1) out.append(',');
+            out.append(v);
+        }
+        return out.append('}').toString();
+    }
+
+    private static Counts counts(ResultSet rs) throws SQLException {
+        return new Counts(rs.getLong("document_count"), rs.getLong("released_count"), rs.getLong("standard_count"),
+                rs.getLong("confidential_count"), rs.getLong("highly_confidential_count"), rs.getLong("standard_in_force"),
+                rs.getLong("confidential_in_force"), rs.getLong("highly_confidential_in_force"),
+                instant(rs, "first_received_at"), instant(rs, "last_received_at"),
+                rs.getObject("release_request_id", UUID.class));
     }
 
     // ------------------------------------------------------------------ mapping

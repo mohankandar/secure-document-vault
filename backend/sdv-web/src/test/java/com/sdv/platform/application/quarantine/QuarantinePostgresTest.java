@@ -150,7 +150,7 @@ class QuarantinePostgresTest {
 
         // 3. The database itself keeps one quarantine in force per document.
         assertThrows(DataIntegrityViolationException.class, () -> repository.insertQuarantine(UUID.randomUUID(), T1,
-                byFilter.incidentId(), A, "rita", null, Instant.now()));
+                byFilter.incidentId(), A, "rita", null, Instant.now(), com.sdv.platform.domain.document.SensitivityLevel.STANDARD, Instant.now()));
 
         // 4. The guard refuses others, never saying the level.
         com.sdv.platform.domain.document.Document a = ingestion.findDocumentByIdForTenant(T1, A).orElseThrow();

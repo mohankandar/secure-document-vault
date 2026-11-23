@@ -1,6 +1,7 @@
 package com.sdv.platform.application.quarantine;
 
 import com.sdv.platform.application.port.QuarantineRepository;
+import com.sdv.platform.domain.document.SensitivityLevel;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -30,8 +31,13 @@ class InMemoryQuarantineRepository implements QuarantineRepository {
     static final class Row {
         UUID quarantineId, tenantId, incidentId, documentId, requestId;
         String by, byName, releasedBy, releasedByName, reason;
-        Instant at, releasedAt;
+        Instant at, releasedAt, receivedAt;
+        /** Task 0052: the level kept on the row (null: written before changeset 039). */
+        SensitivityLevel level;
     }
+
+    /** Task 0052: the approved whole release being carried out, by incident. */
+    final Map<UUID, UUID> releasing = new LinkedHashMap<>();
 
     void add(UUID tenantId, DocumentFacts facts, Map<String, String> fields) {
         documents.put(facts.documentId(), new Doc(tenantId, facts, fields));
@@ -81,11 +87,14 @@ class InMemoryQuarantineRepository implements QuarantineRepository {
     }
 
     @Override public void insertQuarantine(UUID quarantineId, UUID tenantId, UUID incidentId, UUID documentId, String by,
-                                           String byName, Instant at) {
+                                           String byName, Instant at, SensitivityLevel level, Instant receivedAt) {
         if (hasRowInForce(tenantId, documentId)) throw new IllegalStateException("uq_quarantined_documents_active");
         Row r = new Row();
         r.quarantineId = quarantineId; r.tenantId = tenantId; r.incidentId = incidentId; r.documentId = documentId;
         r.by = by; r.byName = byName; r.at = at;
+        r.level = level == null ? SensitivityLevel.HIGHLY_CONFIDENTIAL : level;
+        Instant received = documents.get(documentId).facts().receivedAt();
+        r.receivedAt = received == null ? Instant.EPOCH : received;
         quarantines.put(quarantineId, r);
     }
 
@@ -99,33 +108,94 @@ class InMemoryQuarantineRepository implements QuarantineRepository {
                 .findFirst().map(this::view);
     }
 
-    @Override public List<Quarantined> findInIncident(UUID tenantId, UUID incidentId, int limit) {
+    /** The review order within a part: quarantined, then received, then document. */
+    private static final Comparator<Row> ORDER = Comparator.comparing((Row r) -> r.at).thenComparing(r -> r.receivedAt)
+            .thenComparing(r -> r.documentId);
+
+    @Override public List<Quarantined> findPage(UUID tenantId, UUID incidentId, PageKey from, Set<SensitivityLevel> levels,
+                                                int limit) {
+        Row start = null;
+        if (!from.atStart()) {
+            start = new Row();
+            start.at = from.quarantinedAt(); start.receivedAt = from.receivedAt(); start.documentId = from.documentId();
+        }
+        Row after = start;
         return quarantines.values().stream().filter(r -> r.tenantId.equals(tenantId) && r.incidentId.equals(incidentId))
-                .sorted(Comparator.comparing((Row r) -> r.releasedAt != null).thenComparing(r -> r.at)).limit(limit)
-                .map(this::view).toList();
+                .filter(r -> (r.releasedAt == null) == from.inForce())
+                .filter(r -> levels == null || (r.level != null && levels.contains(r.level)))
+                .filter(r -> after == null || ORDER.compare(r, after) > 0)
+                .sorted(ORDER).limit(limit).map(this::view).toList();
     }
 
-    @Override public List<Quarantined> findInIncidentPage(UUID tenantId, UUID incidentId, boolean inForceOnly,
-                                                          UUID afterQuarantineId, int limit) {
-        return quarantines.values().stream().filter(r -> r.tenantId.equals(tenantId) && r.incidentId.equals(incidentId))
-                .filter(r -> !inForceOnly || r.releasedAt == null)
-                .filter(r -> afterQuarantineId == null || r.quarantineId.compareTo(afterQuarantineId) > 0)
-                .sorted(Comparator.comparing((Row r) -> r.quarantineId)).limit(limit).map(this::view).toList();
+    @Override public Map<UUID, Counts> counts(UUID tenantId, List<UUID> incidentIds) {
+        Map<UUID, Counts> out = new LinkedHashMap<>();
+        for (UUID id : incidentIds) {
+            Incident i = incidents.get(id);
+            if (i == null || !i.tenantId().equals(tenantId)) continue;
+            long total = 0, released = 0;
+            long[] all = new long[3], inForce = new long[3];
+            Instant first = null, last = null;
+            for (Row r : quarantines.values()) {
+                if (!r.tenantId.equals(tenantId) || !r.incidentId.equals(id)) continue;
+                total++;
+                if (r.releasedAt != null) released++;
+                if (r.level != null) {
+                    all[r.level.ordinal()]++;
+                    if (r.releasedAt == null) inForce[r.level.ordinal()]++;
+                }
+                first = first == null || r.receivedAt.isBefore(first) ? r.receivedAt : first;
+                last = last == null || r.receivedAt.isAfter(last) ? r.receivedAt : last;
+            }
+            out.put(id, new Counts(total, released, all[0], all[1], all[2], inForce[0], inForce[1], inForce[2], first, last,
+                    i.open() ? releasing.get(id) : null));
+        }
+        return out;
     }
 
-    @Override public long countInIncident(UUID tenantId, UUID incidentId) {
-        return quarantines.values().stream().filter(r -> r.tenantId.equals(tenantId) && r.incidentId.equals(incidentId)).count();
+    @Override public void startRelease(UUID tenantId, UUID incidentId, UUID requestId) {
+        Incident i = incidents.get(incidentId);
+        if (i == null || !i.open() || releasing.containsKey(incidentId)) throw new IllegalStateException("startRelease");
+        releasing.put(incidentId, requestId);
     }
 
-    @Override public List<Released> releaseAllInForce(UUID tenantId, UUID incidentId, String by, String byName, String reason,
-                                                      UUID requestId, Instant at) {
+    @Override public List<IncidentRef> findReleasing(int limit) {
+        return releasing.keySet().stream().map(incidents::get).filter(Incident::open)
+                .sorted(Comparator.comparing(Incident::createdAt)).limit(limit)
+                .map(i -> new IncidentRef(i.tenantId(), i.incidentId())).toList();
+    }
+
+    @Override public Optional<ReleaseRequest> lockReleasing(UUID tenantId, UUID incidentId) {
+        Incident i = incidents.get(incidentId);
+        if (i == null || !i.tenantId().equals(tenantId) || !i.open() || !releasing.containsKey(incidentId)) return Optional.empty();
+        return Optional.ofNullable(requests.get(releasing.get(incidentId)));
+    }
+
+    @Override public List<Released> releaseBatch(UUID tenantId, UUID incidentId, String by, String byName, String reason,
+                                                 UUID requestId, Instant at, int size) {
+        List<Row> next = quarantines.values().stream()
+                .filter(r -> r.tenantId.equals(tenantId) && r.incidentId.equals(incidentId) && r.releasedAt == null)
+                .sorted(ORDER).limit(size).toList();
         List<Released> out = new ArrayList<>();
-        for (Row r : quarantines.values()) {
-            if (!r.tenantId.equals(tenantId) || !r.incidentId.equals(incidentId) || r.releasedAt != null) continue;
+        for (Row r : next) {
             release(tenantId, r.quarantineId, by, byName, reason, requestId, at.isBefore(r.at) ? r.at : at);
             out.add(new Released(r.quarantineId, r.documentId, r.at));
         }
         return out;
+    }
+
+    @Override public List<LevelGap> findLevelGaps(int limit) {
+        return quarantines.values().stream().filter(r -> r.level == null)
+                .sorted(Comparator.comparing((Row r) -> r.quarantineId)).limit(limit)
+                .map(r -> new LevelGap(r.tenantId, r.quarantineId, documents.get(r.documentId).facts())).toList();
+    }
+
+    @Override public void fillLevels(UUID tenantId, Map<UUID, SensitivityLevel> levelsByQuarantineId) {
+        levelsByQuarantineId.forEach((id, level) -> {
+            Row r = quarantines.get(id);
+            if (r != null && r.tenantId.equals(tenantId) && r.level == null) {
+                r.level = level == null ? SensitivityLevel.HIGHLY_CONFIDENTIAL : level;
+            }
+        });
     }
 
     // ------------------------------------------------------------------ task 0051: the filter, as the SQL has it
@@ -192,7 +262,8 @@ class InMemoryQuarantineRepository implements QuarantineRepository {
     private static final Comparator<DocumentFacts> RECEIVED = Comparator.comparing(DocumentFacts::receivedAt)
             .thenComparing(DocumentFacts::documentId);
 
-    @Override public Batch prepareBatch(Preparation p, int size, String by, String byName, Instant at) {
+    @Override public Batch prepareBatch(Preparation p, int size, String by, String byName, Instant at,
+                                        java.util.function.Function<List<DocumentFacts>, Map<UUID, SensitivityLevel>> levels) {
         DocumentFacts cursor = p.cursorDocumentId() == null ? null
                 : new DocumentFacts(p.cursorDocumentId(), null, null, null, null, p.cursorReceivedAt(), null, null, null);
         List<Doc> scanned = documents.values().stream()
@@ -200,13 +271,14 @@ class InMemoryQuarantineRepository implements QuarantineRepository {
                         && !d.facts().receivedAt().isAfter(p.cutoffReceivedAt()))
                 .filter(d -> cursor == null || RECEIVED.compare(d.facts(), cursor) > 0)
                 .sorted(Comparator.comparing(Doc::facts, RECEIVED)).limit(size).toList();
+        Map<UUID, SensitivityLevel> known = scanned.isEmpty() ? Map.of() : levels.apply(scanned.stream().map(Doc::facts).toList());
         List<Placed> placed = new ArrayList<>();
         for (Doc d : scanned) {
             UUID id = d.facts().documentId();
             if (Set.of("EXPIRED_DELETED", "RETENTION_DELETING").contains(d.facts().status())) continue;
             if (hasRowInForce(p.tenantId(), id) || releasedSince(p.tenantId(), id, p.createdAt())) continue;
             UUID quarantineId = UUID.randomUUID();
-            insertQuarantine(quarantineId, p.tenantId(), p.incidentId(), id, by, byName, at);
+            insertQuarantine(quarantineId, p.tenantId(), p.incidentId(), id, by, byName, at, known.get(id), d.facts().receivedAt());
             placed.add(new Placed(quarantineId, id));
         }
         if (scanned.isEmpty()) return new Batch(0, List.of(), null, null);
@@ -220,14 +292,6 @@ class InMemoryQuarantineRepository implements QuarantineRepository {
         preparations.put(incidentId, new Preparation(p.incidentId(), p.tenantId(), p.filter(), p.cutoffReceivedAt(),
                 p.expectedCount(), preparedCount, preparedAt, cursorReceivedAt, cursorDocumentId, p.createdBy(),
                 p.createdByName(), p.createdAt(), p.status()));
-    }
-
-    @Override public Map<UUID, Integer> countInForce(UUID tenantId, List<UUID> incidentIds) {
-        Map<UUID, Integer> out = new LinkedHashMap<>();
-        for (Row r : quarantines.values()) {
-            if (r.tenantId.equals(tenantId) && incidentIds.contains(r.incidentId) && r.releasedAt == null) out.merge(r.incidentId, 1, Integer::sum);
-        }
-        return out;
     }
 
     @Override public boolean release(UUID tenantId, UUID quarantineId, String by, String byName, String reason, UUID requestId,
@@ -311,14 +375,15 @@ class InMemoryQuarantineRepository implements QuarantineRepository {
         return out;
     }
 
-    @Override public List<Exposure> findExposureInIncident(UUID tenantId, UUID incidentId) {
+    @Override public List<Exposure> findExposure(UUID tenantId, UUID incidentId, Collection<UUID> documentIds) {
         Map<UUID, Instant> before = new LinkedHashMap<>();
         for (Row r : quarantines.values()) {
             if (r.tenantId.equals(tenantId) && r.incidentId.equals(incidentId)) {
                 before.merge(r.documentId, r.at, (a, b) -> a.isBefore(b) ? a : b);
             }
         }
-        return exposure.stream().filter(e -> before.containsKey(e.documentId()) && e.occurredAt().isBefore(before.get(e.documentId())))
+        return exposure.stream().filter(e -> documentIds.contains(e.documentId()))
+                .filter(e -> before.containsKey(e.documentId()) && e.occurredAt().isBefore(before.get(e.documentId())))
                 .toList();
     }
 }

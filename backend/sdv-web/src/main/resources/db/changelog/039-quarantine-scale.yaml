@@ -1,0 +1,13 @@
+databaseChangeLog:
+  - changeSet:
+      id: 039-quarantine-scale
+      author: sdv
+      changes:
+        - sqlFile:
+            path: db/changelog/039-quarantine-scale.sql
+            relativeToChangelogFile: false
+        # The trigger functions hold dollar-quoted bodies, so they are sent as one statement.
+        - sqlFile:
+            path: db/changelog/039-quarantine-counts-trigger.sql
+            relativeToChangelogFile: false
+            splitStatements: false

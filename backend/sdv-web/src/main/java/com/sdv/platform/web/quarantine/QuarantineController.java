@@ -21,6 +21,9 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import jakarta.servlet.http.HttpServletResponse;
+import java.io.IOException;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.nio.charset.StandardCharsets;
@@ -91,9 +94,10 @@ public class QuarantineController {
     }
 
     @GetMapping("/incidents/{incidentId}")
-    public ResponseEntity<QuarantineService.IncidentView> incident(@PathVariable String incidentId) {
+    public ResponseEntity<QuarantineService.IncidentView> incident(@PathVariable String incidentId,
+                                                                   @RequestParam(name = "after", required = false) String after) {
         QuarantineService.Actor actor = actor(Capability.QUARANTINE_DOCUMENTS, SdvErrorCode.QUA_002, REFUSED);
-        return noStore(HttpStatus.OK, quarantine.incident(actor, incidentId));
+        return noStore(HttpStatus.OK, quarantine.incident(actor, incidentId, after));
     }
 
     @PostMapping("/incidents/{incidentId}/release-request")
@@ -104,23 +108,28 @@ public class QuarantineController {
     }
 
     @GetMapping("/incidents/{incidentId}/exposure")
-    public ResponseEntity<QuarantineService.ExposureReport> exposure(@PathVariable String incidentId) {
+    public ResponseEntity<QuarantineService.ExposureReport> exposure(@PathVariable String incidentId,
+                                                                     @RequestParam(name = "after", required = false) String after) {
         QuarantineService.Actor actor = actor(Capability.QUARANTINE_DOCUMENTS, SdvErrorCode.QUA_002, REFUSED);
-        return noStore(HttpStatus.OK, quarantine.exposure(actor, incidentId));
+        return noStore(HttpStatus.OK, quarantine.exposure(actor, incidentId, after));
     }
 
+    /**
+     * Task 0052: the CSV streams row by row, whatever the size. The reference is sent first; the row count and the
+     * SHA-256 fingerprint can only be known at the end, so they are recorded in the audit (the screen works out the
+     * same fingerprint from the file it received). Refusals come before the first byte, as before.
+     */
     @GetMapping("/incidents/{incidentId}/exposure/export")
-    public ResponseEntity<byte[]> exportExposure(@PathVariable String incidentId) {
+    public void exportExposure(@PathVariable String incidentId, HttpServletResponse response) throws IOException {
         QuarantineService.Actor actor = actor(Capability.QUARANTINE_DOCUMENTS, SdvErrorCode.QUA_002, REFUSED);
-        QuarantineService.Export export = quarantine.exportExposure(actor, incidentId);
-        return ResponseEntity.ok()
-                .contentType(new MediaType("text", "csv", StandardCharsets.UTF_8))
-                .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.attachment().filename(export.filename()).build().toString())
-                .header(HttpHeaders.CACHE_CONTROL, "no-store")
-                .header("X-SDV-Export-Rows", Integer.toString(export.rowCount()))
-                .header("X-SDV-Export-Reference", export.reference().toString())
-                .header("X-SDV-Export-Fingerprint", export.fingerprint())
-                .body(export.csv());
+        QuarantineService.ExposureExport export = quarantine.openExposureExport(actor, incidentId);
+        response.setStatus(HttpStatus.OK.value());
+        response.setContentType(new MediaType("text", "csv", StandardCharsets.UTF_8).toString());
+        response.setHeader(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.attachment().filename(export.filename()).build().toString());
+        response.setHeader(HttpHeaders.CACHE_CONTROL, "no-store");
+        response.setHeader("X-SDV-Export-Reference", export.reference().toString());
+        export.writeTo(response.getOutputStream());
+        response.flushBuffer();
     }
 
     private QuarantineService.Actor filterActor() {

@@ -393,8 +393,8 @@ Task 0048. A Steward quarantines a document while a suspected leak or wrong deli
 ### SDV-QUA-004: name, reason or filter not valid
 
 - **HTTP status:** 400. Sent by quarantine, release, release request and filter endpoints.
-- **Meaning:** the incident name is missing or longer than 200 characters, a reason is shorter than 3 or longer than 500 characters, or the filter is not usable: the received dates are missing or not `YYYY-MM-DD`, the "to" date is before the "from" date, a field is given without a sending system, a field can't be searched, a value is too long, the count wasn't taken, or more than 1000 documents match. Nothing was changed.
-- **What the user should do:** correct what the message names and try again. For more than 1000 documents, narrow the dates and quarantine in parts.
+- **Meaning:** the incident name is missing or longer than 200 characters, a reason is shorter than 3 or longer than 500 characters, or the filter is not usable: the received dates are missing or not `YYYY-MM-DD`, the "to" date is before the "from" date, a field is given without a sending system, a field can't be searched, a value is too long, or the count wasn't taken; or (task 0052) a page of an incident list was asked for from a position Vero didn't give. Nothing was changed.
+- **What the user should do:** correct what the message names and try again. For a page that isn't known, open the incident again from its first page.
 - **What support should tell the customer:** the request was incomplete; the message says which part. Filters match field values exactly, as search stores them.
 
 ### SDV-QUA-005: no document with this reference
@@ -421,7 +421,7 @@ Task 0048. A Steward quarantines a document while a suspected leak or wrong deli
 ### SDV-QUA-008: incident already released
 
 - **HTTP status:** 409. Sent by add to incident and request release.
-- **Meaning:** every document of the incident was released, so the incident is closed. Nothing can be added to it or asked for it.
+- **Meaning:** every document of the incident was released, so the incident is closed; or (task 0052) its approved whole release is running in the background. Nothing can be added to it or asked for it.
 - **What the user should do:** start a new incident for the document.
 - **What support should tell the customer:** this is working as intended; a released incident stays as history.
 
@@ -435,7 +435,7 @@ Task 0048. A Steward quarantines a document while a suspected leak or wrong deli
 ### SDV-QUA-010: the release request can't be made or decided
 
 - **HTTP status:** 409 (404 for an unknown request). Sent by request release and by the Business Admin's approve and decline.
-- **Meaning:** a request to release the incident is already waiting; or the request was already decided or expired; or the person deciding made the request. Nobody decides their own request, and these requests are decided one at a time. Nothing was changed.
+- **Meaning:** a request to release the incident is already waiting; or the request was already decided or expired; or the person deciding made the request; or the incident is still being prepared, or (task 0052) is already being released. Nobody decides their own request, and these requests are decided one at a time. Nothing was changed.
 - **What the user should do:** wait for the request that is waiting, or ask again if it expired. A Business Admin who made the request asks another Business Admin to decide it.
 - **What support should tell the customer:** this is working as intended. Release requests expire like other requests (7 days unless set otherwise).
 

@@ -67,6 +67,7 @@ export const AUDIT_SENTENCES: Record<string, Sentence> = {
   QUARANTINE_RELEASE_APPROVED: (w) => `${w} approved releasing a whole quarantine incident`,
   QUARANTINE_RELEASE_DECLINED: (w) => `${w} declined releasing a whole quarantine incident`,
   QUARANTINE_RELEASE_EXPIRED: () => 'A request to release a quarantine incident expired',
+  QUARANTINE_EXPOSURE_EXPORT_STARTED: (w) => `${w} started exporting a quarantine exposure report`,
   QUARANTINE_EXPOSURE_EXPORTED: (w) => `${w} exported a quarantine exposure report`,
   // Task 0050: the sealed audit report.
   AUDIT_REPORT_GENERATED: (w, _f, d) => (n(d.rowCount) != null ? `${w} generated a sealed audit report of ${n(d.rowCount)} event${n(d.rowCount) === 1 ? '' : 's'}` : `${w} generated a sealed audit report`),

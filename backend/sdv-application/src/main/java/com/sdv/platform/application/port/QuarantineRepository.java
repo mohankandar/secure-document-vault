@@ -70,6 +70,50 @@ public interface QuarantineRepository extends QuarantineLookup {
     /** The filter count and the latest received time among the matches (the cut-off), in one look. */
     record MatchStats(long count, Instant latestReceivedAt) { }
 
+    /**
+     * Task 0052: an incident's counts, kept on the incident as its rows are written and released (changeset 039), so
+     * no screen reads the whole incident. Levels are each document's level when it was quarantined; a row written
+     * before 039 has no level until the background job fills it in (counted in {@code documents} only).
+     * {@code releasingRequestId}: the approved whole release the background job is carrying out, if any.
+     */
+    record Counts(long documents, long released, long standard, long confidential, long highlyConfidential,
+                  long standardInForce, long confidentialInForce, long highlyConfidentialInForce,
+                  Instant firstReceivedAt, Instant lastReceivedAt, UUID releasingRequestId) {
+        public static final Counts NONE = new Counts(0, 0, 0, 0, 0, 0, 0, 0, null, null, null);
+
+        public long inForce() { return documents - released; }
+
+        public long atLevel(SensitivityLevel level) {
+            return switch (level) {
+                case STANDARD -> standard;
+                case CONFIDENTIAL -> confidential;
+                case HIGHLY_CONFIDENTIAL -> highlyConfidential;
+            };
+        }
+
+        public long inForceAtLevel(SensitivityLevel level) {
+            return switch (level) {
+                case STANDARD -> standardInForce;
+                case CONFIDENTIAL -> confidentialInForce;
+                case HIGHLY_CONFIDENTIAL -> highlyConfidentialInForce;
+            };
+        }
+
+        public boolean releasing() { return releasingRequestId != null; }
+    }
+
+    /**
+     * Task 0052: where a page of an incident starts. The incident is read in force first, then released; each part
+     * oldest first: quarantined, then received, then document. {@code null} position: the start of that part.
+     */
+    record PageKey(boolean inForce, Instant quarantinedAt, Instant receivedAt, UUID documentId) {
+        public static final PageKey FIRST = new PageKey(true, null, null, null);
+        public boolean atStart() { return quarantinedAt == null; }
+    }
+
+    /** Task 0052: a row written before changeset 039, still without its level. */
+    record LevelGap(UUID tenantId, UUID quarantineId, DocumentFacts document) { }
+
     Optional<DocumentFacts> lockDocument(UUID tenantId, UUID documentId);
 
     void insertIncident(Incident incident);
@@ -82,13 +126,15 @@ public interface QuarantineRepository extends QuarantineLookup {
 
     void closeIncident(UUID tenantId, UUID incidentId, Instant closedAt);
 
+    /** Task 0052: with the document's level now and its received time (the incident's counts follow). */
     void insertQuarantine(UUID quarantineId, UUID tenantId, UUID incidentId, UUID documentId, String by, String byName,
-                          Instant at);
+                          Instant at, SensitivityLevel level, Instant receivedAt);
 
     /** The document's quarantine in force, if any. */
     Optional<Quarantined> findActive(UUID tenantId, UUID documentId);
 
-    Map<UUID, Integer> countInForce(UUID tenantId, List<UUID> incidentIds);
+    /** Task 0052: the incidents' counts as kept on them; an incident not found is left out. */
+    Map<UUID, Counts> counts(UUID tenantId, List<UUID> incidentIds);
 
     boolean release(UUID tenantId, UUID quarantineId, String by, String byName, String reason, UUID requestId, Instant at);
 
@@ -129,9 +175,11 @@ public interface QuarantineRepository extends QuarantineLookup {
     /**
      * Writes the rows of the next {@code size} documents after the cursor: each one still blocked by this incident's
      * filter and with no quarantine in force gets its row; deleted ones and ones quarantined elsewhere are skipped.
-     * Running it again for the same documents writes nothing.
+     * Running it again for the same documents writes nothing. Task 0052: {@code levels} gives the documents' levels
+     * now (kept on each row for the incident's counts).
      */
-    Batch prepareBatch(Preparation preparation, int size, String by, String byName, Instant at);
+    Batch prepareBatch(Preparation preparation, int size, String by, String byName, Instant at,
+                       java.util.function.Function<List<DocumentFacts>, Map<UUID, SensitivityLevel>> levels);
 
     /** Moves the cursor after a batch; {@code preparedAt} not null: the incident is prepared. */
     void advancePreparation(UUID tenantId, UUID incidentId, long preparedCount, Instant cursorReceivedAt,
@@ -140,19 +188,34 @@ public interface QuarantineRepository extends QuarantineLookup {
     /** The open filter incident whose filter quarantines the document now (it may have no row yet). */
     Optional<UUID> blockingIncident(UUID tenantId, UUID documentId);
 
-    /** The incident's rows, in force first, oldest first, at most {@code limit} (the review list). */
-    List<Quarantined> findInIncident(UUID tenantId, UUID incidentId, int limit);
+    // ------------------------------------------------------------------ task 0052: a million documents
 
-    /** A page of the incident's rows after {@code afterQuarantineId} (by quarantine ID), for counting large incidents. */
-    List<Quarantined> findInIncidentPage(UUID tenantId, UUID incidentId, boolean inForceOnly, UUID afterQuarantineId,
-                                         int limit);
+    /**
+     * Up to {@code limit} rows of one part of the incident (in force, or released, as {@code from} says), after
+     * {@code from}'s position, oldest first. {@code levels}: only rows kept at these levels; null: every row.
+     */
+    List<Quarantined> findPage(UUID tenantId, UUID incidentId, PageKey from, java.util.Set<SensitivityLevel> levels,
+                               int limit);
 
-    long countInIncident(UUID tenantId, UUID incidentId);
+    /** Opened, printed or downloaded before each document's first quarantine in this incident, oldest first. */
+    List<Exposure> findExposure(UUID tenantId, UUID incidentId, java.util.Collection<UUID> documentIds);
 
-    /** Releases every row in force of the incident at once; returns them. */
-    List<Released> releaseAllInForce(UUID tenantId, UUID incidentId, String by, String byName, String reason,
-                                     UUID requestId, Instant at);
+    /** Marks the incident's approved whole release as started; the background job carries it out. */
+    void startRelease(UUID tenantId, UUID incidentId, UUID requestId);
 
-    /** Opened, printed or downloaded before each document's quarantine in this incident, oldest first. */
-    List<Exposure> findExposureInIncident(UUID tenantId, UUID incidentId);
+    /** Open incidents with a whole release being carried out, oldest first, across entities (the background job). */
+    List<IncidentRef> findReleasing(int limit);
+
+    /** Locks the incident for one release batch; empty when another worker holds it, or nothing is being released. */
+    Optional<ReleaseRequest> lockReleasing(UUID tenantId, UUID incidentId);
+
+    /** Releases the next {@code size} rows in force of the incident, oldest first; returns them. */
+    List<Released> releaseBatch(UUID tenantId, UUID incidentId, String by, String byName, String reason, UUID requestId,
+                                Instant at, int size);
+
+    /** Rows written before changeset 039 still without a level, across entities (the background job). */
+    List<LevelGap> findLevelGaps(int limit);
+
+    /** Fills in the levels of those rows (only rows still without one; the incident's counts follow). */
+    void fillLevels(UUID tenantId, Map<UUID, SensitivityLevel> levelsByQuarantineId);
 }

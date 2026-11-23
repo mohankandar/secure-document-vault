@@ -11,7 +11,7 @@ import {
   quarantineIncidents, releaseQuarantinedDocument, requestIncidentRelease, schema, toSource,
   type ExposureReport, type QuarantineCount, type QuarantineFilter, type QuarantineIncident, type QuarantineIncidentSummary, type QuarantinedDocument,
 } from './liveApi'
-import { NAME_MAX, REASON_MAX, countWords, exportNote, filterProblem, inQuarantineCount, levelsLine, listedNote, nameReady, oldestFirst, plural, progressWords, reasonReady, scopeWords } from './quarantineWords'
+import { NAME_MAX, REASON_MAX, countWords, exportNote, filterProblem, inQuarantineCount, levelsLine, nameReady, oldestFirst, pageNote, plural, progressWords, reasonReady, releaseWords, scopeWords } from './quarantineWords'
 
 /**
  * Task 0049: the Stewards' quarantine screens (the server side is task 0048). No canvas board yet: built from the
@@ -83,10 +83,12 @@ function IncidentTable({ rows, label, onOpen }: { rows: QuarantineIncidentSummar
         <td className="lead" data-label="Incident"><strong style={{ fontWeight: 500 }}>{i.name}</strong>
           {i.releaseRequested && <> <Badge tone="warn">Release requested</Badge></>}
           {i.preparing && <> <Badge tone="outline">Being prepared</Badge></>}
+          {i.releasing && <> <Badge tone="outline">Being released</Badge></>}
           {i.status !== 'OPEN' && <> <Badge>Released{i.closedAt ? ` ${fmtDate(i.closedAt)}` : ''}</Badge></>}</td>
         <td data-label="How">{scopeWords(i.scope)}</td>
         <td data-label="In quarantine">{countWords(inQuarantineCount(i))} document{inQuarantineCount(i) === 1 ? '' : 's'}
-          {i.preparing && i.expectedCount != null && <span className="faint"> · {progressWords(i.preparedCount, i.expectedCount)}</span>}</td>
+          {i.preparing && i.expectedCount != null && <span className="faint"> · {progressWords(i.preparedCount, i.expectedCount)}</span>}
+          {i.releasing && <span className="faint"> · {releaseWords(i.releasedCount, i.documentCount)}</span>}</td>
         <td data-label="Started by">{i.createdByName?.trim() || 'A Steward'}</td>
         <td data-label="Started" className="faint">{fmtDate(i.createdAt)}</td>
         <td className="act"><button type="button" className="v-btn sm" onClick={() => onOpen(i.incidentId)} aria-label={`Open incident ${i.name}`}>Open</button></td>
@@ -116,19 +118,22 @@ function IncidentDetail({ incidentId, onBack }: { incidentId: string; onBack: ()
   const [reason, setReason] = useState('')
   const [exposureOpen, setExposureOpen] = useState(false)
   const [viewing, setViewing] = useState<QuarantinedDocument | null>(null)
+  // Task 0052: the list comes a page at a time. after: where this page starts (null: the first); first: its number.
+  const [page, setPage] = useState<{ after: string | null; first: number }>({ after: null, first: 1 })
 
   useEffect(() => {
     let active = true
-    quarantineIncident(incidentId).then((i) => { if (active) { setIncident(i); setError(null) } }).catch((e) => { if (active) setError(loadFailed('The quarantine incident did not load', e)) })
+    quarantineIncident(incidentId, page.after).then((i) => { if (active) { setIncident(i); setError(null) } }).catch((e) => { if (active) setError(loadFailed('The quarantine incident did not load', e)) })
     return () => { active = false }
-  }, [incidentId, reload])
-  // Task 0051: while the incident is prepared in the background, read it again every few seconds to show the progress.
-  const preparing = !!incident?.preparing
+  }, [incidentId, reload, page])
+  // Task 0051: while the incident is prepared in the background (task 0052: or released), read it again every few
+  // seconds to show the progress.
+  const working = !!incident?.preparing || !!incident?.releasing
   useEffect(() => {
-    if (!preparing) return
+    if (!working) return
     const t = window.setInterval(() => setReload((x) => x + 1), 3000)
     return () => window.clearInterval(t)
-  }, [preparing])
+  }, [working])
 
   const rows = useMemo(() => oldestFirst(incident?.documents ?? []), [incident])
   const back = <button type="button" className="v-btn quiet sm" onClick={onBack}><ArrowLeft size={16} aria-hidden />All incidents</button>
@@ -137,10 +142,15 @@ function IncidentDetail({ incidentId, onBack }: { incidentId: string; onBack: ()
 
   const isOpen = incident.status === 'OPEN'
   // Task 0051: a whole release waits until the incident is prepared (the server refuses it before, SDV-QUA-010).
-  const mayAsk = isOpen && !incident.preparing && !incident.pendingRequestId && incident.documentsInForce > 0 && incident.hiddenCount === 0
+  const mayAsk = isOpen && !incident.preparing && !incident.releasing && !incident.pendingRequestId && incident.documentsInForce > 0 && incident.hiddenCount === 0
   const inQuarantine = inQuarantineCount(incident)
   const reviewable = incident.documentCount - incident.hiddenCount
-  const limited = listedNote(rows.length, reviewable)
+  const where = pageNote(page.first, rows.length, reviewable)
+  const next = incident.next
+  const paging = (page.after || next) ? <div className="row wrap" style={{ gap: 8, justifyContent: 'flex-end', padding: '10px 16px' }}>
+    {page.after && <button type="button" className="v-btn sm" onClick={() => setPage({ after: null, first: 1 })}>First page</button>}
+    {next && <button type="button" className="v-btn sm" onClick={() => setPage({ after: next, first: page.first + rows.length })}>Next {incident.listLimit}</button>}
+  </div> : null
 
   const release = async (d: QuarantinedDocument) => {
     if (!reasonReady(reason) || busy) return
@@ -181,18 +191,21 @@ function IncidentDetail({ incidentId, onBack }: { incidentId: string; onBack: ()
           <div><dt>In quarantine</dt><dd>{incident.preparing ? `${countWords(inQuarantine)} document${inQuarantine === 1 ? '' : 's'}`
             : `${countWords(incident.documentsInForce)} document${incident.documentsInForce === 1 ? '' : 's'} of ${countWords(incident.documentCount)}`}</dd></div>
           {incident.preparing && incident.expectedCount != null && <div><dt>Prepared</dt><dd>{progressWords(incident.preparedCount, incident.expectedCount)}</dd></div>}
+          {incident.releasing && <div><dt>Released</dt><dd>{releaseWords(incident.releasedCount, incident.documentCount)}</dd></div>}
           {incident.closedAt && <div><dt>Released</dt><dd>{whenWords(incident.closedAt)}</dd></div>}
         </dl>
       </div>
     </section>
     {incident.preparing && incident.expectedCount != null && <Banner tone="info" lead="Being prepared:">
       {progressWords(incident.preparedCount, incident.expectedCount)}. Every matching document is quarantined already; the list below fills as Vero prepares it. You can review and release the documents listed. The whole incident can be released once it is ready.</Banner>}
+    {incident.releasing && <Banner tone="info" lead="Being released:">
+      {releaseWords(incident.releasedCount, incident.documentCount)}. A Business admin approved the release of the whole incident; Vero releases the documents in batches. Each document is available again once it is released. The incident ends when every one is released.</Banner>}
     {incident.pendingRequestId && <Banner tone="info" lead="Release requested:">{incident.pendingRequestedByName?.trim() || 'A Steward'} asked to release the whole incident. A Business admin decides it under Approvals{incident.pendingExpiresAt ? `; it expires ${whenWords(incident.pendingExpiresAt)} if nobody does` : ''}.</Banner>}
     {incident.hiddenCount > 0 && <Banner tone="info" lead={`${plural(incident.hiddenCount, 'document')} not shown:`}>{incident.hiddenCount === 1 ? 'it is' : 'they are'} at a level you can&apos;t open. A Restricted steward reviews {incident.hiddenCount === 1 ? 'it' : 'them'}, and only they can ask to release the whole incident.</Banner>}
     {problem && <Callout tone="warn" title="Not done">{problem}</Callout>}
 
     <section className="v-panel flush" aria-label="Documents to review">
-      <header className="hold-head"><h2>Documents to review · {countWords(Math.max(rows.length, reviewable))}</h2><span className="faint" style={{ fontSize: 13 }}>{limited ? `${limited} ` : ''}Oldest first · you can read and correct them; print and download wait until release</span></header>
+      <header className="hold-head"><h2>Documents to review · {countWords(Math.max(rows.length, reviewable))}</h2><span className="faint" style={{ fontSize: 13 }}>{where ? `${where} ` : ''}Oldest first · you can read and correct them; print and download wait until release</span></header>
       {rows.length === 0 ? <p className="muted" style={{ padding: 16 }}>No document here that you can open.</p>
         : <table className="v-table" aria-label="Quarantined documents"><thead><tr><th>Number</th><th>Level</th><th>Received</th><th>Pages</th><th>Quarantined</th><th>Status</th><th><span className="sr-only">Actions</span></th></tr></thead>
           <tbody>{rows.map((d) => <tr key={d.quarantineId}>
@@ -207,6 +220,7 @@ function IncidentDetail({ incidentId, onBack }: { incidentId: string; onBack: ()
               {d.inForce && <button type="button" className="v-btn sm" disabled={busy} onClick={() => { setReason(''); setReleasing(d) }} aria-label={`Release ${d.primaryIdentifier ?? 'document'}`}>Release</button>}
             </span></td>
           </tr>)}</tbody></table>}
+      {paging}
     </section>
 
     {releasing && <Dialog title="Release this document?" onClose={() => { if (!busy) setReleasing(null) }} footer={<>
@@ -239,11 +253,13 @@ function ExposureDrawer({ incidentId, onClose }: { incidentId: string; onClose: 
   const [reload, setReload] = useState(0)
   const [exporting, setExporting] = useState(false)
   const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null)
+  // Task 0052: a page at a time, as the review list.
+  const [page, setPage] = useState<{ after: string | null; first: number }>({ after: null, first: 1 })
   useEffect(() => {
     let active = true
-    quarantineExposure(incidentId).then((r) => { if (active) { setReport(r); setError(null) } }).catch((e) => { if (active) setError(loadFailed('The exposure report did not load', e)) })
+    quarantineExposure(incidentId, page.after).then((r) => { if (active) { setReport(r); setError(null) } }).catch((e) => { if (active) setError(loadFailed('The exposure report did not load', e)) })
     return () => { active = false }
-  }, [incidentId, reload])
+  }, [incidentId, reload, page])
 
   const exportCsv = async () => {
     setExporting(true); setNote(null)
@@ -275,7 +291,7 @@ function ExposureDrawer({ incidentId, onClose }: { incidentId: string; onClose: 
             <div><span>Highly Confidential</span><strong>{report.highlyConfidential}</strong></div>
           </div>
           {report.hiddenCount > 0 && <p className="faint">{plural(report.hiddenCount, 'document')} at a level you can&apos;t open {report.hiddenCount === 1 ? 'is' : 'are'} counted but not listed.</p>}
-          {listedNote(report.documents.length, report.documentCount) && <p className="faint">{listedNote(report.documents.length, report.documentCount)} Export CSV has every one.</p>}
+          {pageNote(page.first, report.documents.length, report.documentCount) && <p className="faint">{pageNote(page.first, report.documents.length, report.documentCount)} Export CSV has every one.</p>}
           {report.documents.length === 0 ? <p className="muted">No document to list.</p>
             : <ul className="q-exposure">{report.documents.map((d) => <li key={d.documentId}>
               <div className="row wrap" style={{ gap: 8, alignItems: 'center' }}>
@@ -285,6 +301,10 @@ function ExposureDrawer({ incidentId, onClose }: { incidentId: string; onClose: 
               {d.exposure.length === 0 ? <p className="faint">Nobody opened, printed or downloaded it before.</p>
                 : <ol className="q-entries">{d.exposure.map((x, i) => <li key={i}><b>{x.what}</b> · {x.person} · <span className="faint">{fmtDateTime(x.at)}</span></li>)}</ol>}
             </li>)}</ul>}
+          {(page.after || report.next) && <div className="row wrap" style={{ gap: 8, justifyContent: 'flex-end' }}>
+            {page.after && <button type="button" className="v-btn sm" onClick={() => setPage({ after: null, first: 1 })}>First page</button>}
+            {report.next && <button type="button" className="v-btn sm" onClick={() => setPage({ after: report.next, first: page.first + report.documents.length })}>Next {report.listLimit}</button>}
+          </div>}
         </>}
     </Drawer>
   )

@@ -123,6 +123,7 @@ public final class AuditSentences {
             case "QUARANTINE_RELEASE_APPROVED" -> w + " approved releasing a whole quarantine incident";
             case "QUARANTINE_RELEASE_DECLINED" -> w + " declined releasing a whole quarantine incident";
             case "QUARANTINE_RELEASE_EXPIRED" -> "A request to release a quarantine incident expired";
+            case "QUARANTINE_EXPOSURE_EXPORT_STARTED" -> w + " started exporting a quarantine exposure report";
             case "QUARANTINE_EXPOSURE_EXPORTED" -> w + " exported a quarantine exposure report";
             // Task 0050: the sealed audit report.
             case "AUDIT_REPORT_GENERATED" -> w + " generated a sealed audit report" + (number(d, "rowCount") != null ? " of " + number(d, "rowCount") + (Long.valueOf(1).equals(number(d, "rowCount")) ? " event" : " events") : "");

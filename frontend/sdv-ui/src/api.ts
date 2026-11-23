@@ -151,14 +151,33 @@ export async function contentExport(path: string, persona: LocalPersona): Promis
   const response = await binaryResponse(path, persona)
   const disposition = response.headers.get('Content-Disposition') ?? ''
   const named = /filename="?([A-Za-z0-9._-]{1,120})"?/.exec(disposition)?.[1] ?? null
-  const fingerprint = response.headers.get('X-SDV-Export-Fingerprint')
+  const sent = response.headers.get('X-SDV-Export-Fingerprint')
   const rows = response.headers.get('X-SDV-Export-Rows')
+  const reference = referenceOf(response.headers.get('X-SDV-Export-Reference')) ?? null
+  let blob: Blob
+  try {
+    blob = await response.blob()
+  } catch {
+    throw new ApiRequestError("The download didn't finish.", response.status, reference ?? undefined, DOWNLOAD_STOPPED)
+  }
+  // Task 0052: a streamed export can't send its fingerprint ahead of the file; it is worked out here from the file.
+  const fingerprint = sent ? (/^[0-9a-f]{64}$/i.test(sent) ? sent.toLowerCase() : null) : await fileFingerprint(blob)
   return {
-    blob: await response.blob(),
+    blob,
     filename: named,
-    reference: referenceOf(response.headers.get('X-SDV-Export-Reference')) ?? null,
-    fingerprint: fingerprint && /^[0-9a-f]{64}$/i.test(fingerprint) ? fingerprint.toLowerCase() : null,
+    reference,
+    fingerprint,
     rows: rows && /^\d{1,9}$/.test(rows) ? Number(rows) : null,
+  }
+}
+
+/** The SHA-256 of a file received, as 64 lowercase hexadecimal characters; null where the browser can't work it out. */
+async function fileFingerprint(blob: Blob): Promise<string | null> {
+  try {
+    const digest = await crypto.subtle.digest('SHA-256', await blob.arrayBuffer())
+    return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('')
+  } catch {
+    return null
   }
 }
 
