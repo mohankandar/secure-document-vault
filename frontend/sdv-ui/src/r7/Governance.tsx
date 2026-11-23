@@ -6,9 +6,9 @@ import { ActionError, LoadErrorCard, toFailure, type Failure } from './CardError
 import { Badge, Banner, Callout, PageHead, Panel, Switch, Tabs } from './ui'
 import { getRolePolicy, saveRolePolicy, type RolePolicy } from './liveApi'
 import { SearchFields } from './SearchFields'
-import { Approvals, waitingSummary, type WaitingSummary } from './Approvals'
+import { Approvals, waitingWithReleases, type WaitingSummary } from './Approvals'
 import { LegalHolds } from './LegalHolds'
-import { pendingRequests } from './liveApi'
+import { incidentReleaseRequests, pendingRequests } from './liveApi'
 import { Reports } from './Reports'
 
 export function AreaFrame({ crumbs, title, lede, actions, children, attention = [], counts = {}, sub }: { crumbs: string[]; title: string; lede: ReactNode; actions?: ReactNode; children: ReactNode; attention?: string[]; /** task 0030: a count pill per tab id */ counts?: Record<string, { count: number; label: string }>; sub?: ReactNode }) {
@@ -43,7 +43,7 @@ export function Governance() {
   useEffect(() => {
     if (!approver || route.tab === 'approvals') return
     let active = true
-    pendingRequests().then((l) => { if (active) setWaiting(waitingSummary(l)) }).catch(() => { if (active) setWaiting(null) })
+    Promise.all([pendingRequests(), incidentReleaseRequests().catch(() => [])]).then(([l, r]) => { if (active) setWaiting(waitingWithReleases(l, r)) }).catch(() => { if (active) setWaiting(null) })
     return () => { active = false }
   }, [approver, route.tab])
   const counts: Record<string, { count: number; label: string }> = waiting && waiting.count > 0 ? { approvals: { count: waiting.count, label: `${waiting.count} waiting` } } : {}

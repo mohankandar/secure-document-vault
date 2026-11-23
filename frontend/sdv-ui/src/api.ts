@@ -142,6 +142,26 @@ export async function contentDownload(path: string, persona: LocalPersona): Prom
   return blob
 }
 
+/**
+ * Task 0049: an export the server registers: the file, its name from Content-Disposition, and the reference,
+ * fingerprint (SHA-256) and row count the server sent in its X-SDV-Export-* headers (null when absent).
+ */
+export type RegisteredExport = { blob: Blob; filename: string | null; reference: string | null; fingerprint: string | null; rows: number | null }
+export async function contentExport(path: string, persona: LocalPersona): Promise<RegisteredExport> {
+  const response = await binaryResponse(path, persona)
+  const disposition = response.headers.get('Content-Disposition') ?? ''
+  const named = /filename="?([A-Za-z0-9._-]{1,120})"?/.exec(disposition)?.[1] ?? null
+  const fingerprint = response.headers.get('X-SDV-Export-Fingerprint')
+  const rows = response.headers.get('X-SDV-Export-Rows')
+  return {
+    blob: await response.blob(),
+    filename: named,
+    reference: referenceOf(response.headers.get('X-SDV-Export-Reference')) ?? null,
+    fingerprint: fingerprint && /^[0-9a-f]{64}$/i.test(fingerprint) ? fingerprint.toLowerCase() : null,
+    rows: rows && /^\d{1,9}$/.test(rows) ? Number(rows) : null,
+  }
+}
+
 async function binaryResponse(path: string, persona: LocalPersona): Promise<Response> {
   const enterpriseHeaders = await bearerHeaders()
   const response = await send(path, {
@@ -211,6 +231,8 @@ export type RecordSummary = {
   matchedFields?: { fieldKey: string; displayLabel: string; value: string }[]
   /** Task 0026: the highest level among this record's documents this person can't open; null when none. */
   restrictedLevel?: SensitivityLevel | null
+  /** Task 0048: documents of this record that are temporarily unavailable (quarantined) to this person; never a level. */
+  unavailableDocumentCount?: number
 }
 
 /** Task 0024/0026: a document's sensitivity level. */
@@ -243,6 +265,8 @@ export type RecordDocument = {
   sensitivityLevel?: SensitivityLevel
   /** The higher of its own level and its record's level. */
   effectiveSensitivityLevel?: SensitivityLevel
+  /** Task 0048: quarantined; only a reviewer (a Steward who can open its level) gets it in this list. */
+  quarantined?: boolean
 }
 
 export type IncompleteSubmission = {
@@ -270,4 +294,6 @@ export type BusinessRecord = {
   /** Task 0026: documents this person can't open; they are not in `documents`. */
   lockedDocuments?: LockedDocument[]
   restrictedLevel?: SensitivityLevel | null
+  /** Task 0048: quarantined documents this person can't open: the reference only, never a level. */
+  unavailableDocuments?: { documentId: string }[]
 }

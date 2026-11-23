@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Building2, FileSearch, House, Layers, Search, ServerCog, ShieldCheck, CornerDownLeft, UserRound } from 'lucide-react'
+import { Building2, FileSearch, House, Layers, Search, ServerCog, ShieldAlert, ShieldCheck, CornerDownLeft, UserRound } from 'lucide-react'
 import { AREA_TABS, StoreProvider, useStore } from './store'
 import { type AreaId, type RoleId } from './model'
 import { opSummary } from './liveApi'
@@ -12,6 +12,7 @@ import { Home } from './Home'
 import { Governance } from './Governance'
 import { TenantAdmin } from './TenantAdmin'
 import { Operations } from './Operations'
+import { Quarantine } from './Quarantine'
 import { DesignSystem } from './DesignSystem'
 import { PRODUCT_NAME } from './brand'
 import { TopBar, type TopBarTab } from './topbar/TopBar'
@@ -23,6 +24,7 @@ const showDevelopmentUtilities = import.meta.env.DEV
 const AREA_META: Record<AreaId, { label: string; tab: string; short: string; Icon: typeof Search }> = {
   home: { label: 'Home', tab: 'Home', short: 'Home', Icon: House },
   workspace: { label: 'Records workspace', tab: 'Records', short: 'Records', Icon: FileSearch },
+  quarantine: { label: 'Quarantine', tab: 'Quarantine', short: 'Quarantine', Icon: ShieldAlert },
   governance: { label: 'Business administration', tab: 'Business administration', short: 'Governance', Icon: ShieldCheck },
   tenant: { label: 'IT', tab: 'IT', short: 'IT', Icon: Building2 },
   operations: { label: 'Platform operations', tab: 'Platform operations', short: 'Operations', Icon: ServerCog },
@@ -185,7 +187,7 @@ function ShellInner() {
   const localPersona: LocalPersona | null = localMode ? (getLocalTestPersona() ?? role.id) : null
   const person = accountPerson(liveSession, heldRoles.map((r) => r.id), localPersona)
 
-  const allowed = (route.area === 'system' && showDevelopmentUtilities) || ((route.area === 'workspace' || route.area === 'home') && !!liveSession?.capabilities.includes('SEARCH_RECORDS')) || (route.area === 'governance' && !!liveSession && ['CONFIGURE_ROLE_PERMISSIONS','CONFIGURE_RETENTION','CONFIGURE_METADATA_SEARCH','CONFIGURE_BUSINESS_LIMITS','APPROVE_SENSITIVE_ACCESS','MANAGE_LEGAL_HOLD','VIEW_INTAKE_REPORTS'].some(c=>liveSession.capabilities.includes(c))) || (route.area === 'tenant' && !!liveSession?.capabilities.includes('CONFIGURE_INGESTION_SOURCES')) || (route.area === 'operations' && !!liveSession?.capabilities.includes('VIEW_TECHNICAL_FAILURES'))
+  const allowed = (route.area === 'system' && showDevelopmentUtilities) || ((route.area === 'workspace' || route.area === 'home') && !!liveSession?.capabilities.includes('SEARCH_RECORDS')) || (route.area === 'governance' && !!liveSession && ['CONFIGURE_ROLE_PERMISSIONS','CONFIGURE_RETENTION','CONFIGURE_METADATA_SEARCH','CONFIGURE_BUSINESS_LIMITS','APPROVE_SENSITIVE_ACCESS','MANAGE_LEGAL_HOLD','VIEW_INTAKE_REPORTS'].some(c=>liveSession.capabilities.includes(c))) || (route.area === 'quarantine' && !!liveSession?.capabilities.includes('QUARANTINE_DOCUMENTS')) || (route.area === 'tenant' && !!liveSession?.capabilities.includes('CONFIGURE_INGESTION_SOURCES')) || (route.area === 'operations' && !!liveSession?.capabilities.includes('VIEW_TECHNICAL_FAILURES'))
   return (
     <div className="r7">
       <div className="v-app">
@@ -233,6 +235,7 @@ function ShellInner() {
             route.area === 'system' ? <DesignSystem /> :
             route.area === 'governance' ? <Governance /> :
             route.area === 'tenant' ? <TenantAdmin /> :
+            route.area === 'quarantine' ? <Quarantine /> :
             route.area === 'operations' ? <Operations /> : null}
         </main>
         <BottomNav onOpenAccount={() => setAccountOpen(true)} onOpenPalette={() => setPalette(true)} />

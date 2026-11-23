@@ -20,6 +20,8 @@ let searchRequestSeq = 0
 export const AREA_TABS: Record<AreaId, { id: string; label: string }[]> = {
   home: [{ id: 'home', label: 'Home' }],
   workspace: [{ id: 'search', label: 'Search' }],
+  // Task 0049: the Stewards' quarantine incidents (task 0048).
+  quarantine: [{ id: 'incidents', label: 'Quarantine' }],
   // Labels only; the addresses (#/governance/access …) stay the same.
   // Task 0030: Legal holds after Keeping documents, Approvals (boards Sens-LegalHold and Sens-Approvals). Task 0032: Reports last.
   governance: [{ id: 'access', label: 'People & roles' }, { id: 'roles', label: 'Roles & permissions' }, { id: 'retention', label: 'Keeping documents' }, { id: 'holds', label: 'Legal holds' }, { id: 'metadata', label: 'Search fields' }, { id: 'approvals', label: 'Approvals' }, { id: 'reports', label: 'Reports' }],
@@ -45,7 +47,7 @@ export const useStore = () => {
   return value
 }
 
-const AREA_ORDER: AreaId[] = ['home', 'workspace', 'governance', 'tenant', 'operations']
+const AREA_ORDER: AreaId[] = ['home', 'workspace', 'quarantine', 'governance', 'tenant', 'operations']
 
 /** The role the session names first, in this order; Business user when it names none of them. */
 const primaryRole = (roles: string[]): RoleId =>

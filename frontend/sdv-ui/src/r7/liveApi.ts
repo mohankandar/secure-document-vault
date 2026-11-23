@@ -1,4 +1,4 @@
-import { roleApi, contentBinary, contentDownload, type SessionInfo, type SearchSchema, type SearchResponse, type BusinessRecord, type RecordSummary, type SearchSource, type SensitivityLevel } from '../api'
+import { roleApi, contentBinary, contentDownload, contentExport, type RegisteredExport, type SessionInfo, type SearchSchema, type SearchResponse, type BusinessRecord, type RecordSummary, type SearchSource, type SensitivityLevel } from '../api'
 import type { Field, Source, RecordItem, Doc } from './model'
 
 export const session = () => roleApi<SessionInfo>('/api/v1/session', 'business')
@@ -51,7 +51,7 @@ export function toSummary(r: RecordSummary, sourceId:string):RecordItem {
 export function toRecord(r: BusinessRecord):RecordItem {
   const ids=fields(r.identifiers)
   const docs:Doc[]=r.documents.map(d=>({id:d.documentId,submissionId:d.submissionId,filename:d.originalFilename,kind:d.originalFilename,pages:d.pageCount ?? 0,redacted:!!d.redacted,
-    ingestedAt:d.ingestedAt,expiresAt:d.expiresAt || '',level:d.effectiveSensitivityLevel ?? d.sensitivityLevel,ownLevel:d.sensitivityLevel}))
+    ingestedAt:d.ingestedAt,expiresAt:d.expiresAt || '',level:d.effectiveSensitivityLevel ?? d.sensitivityLevel,ownLevel:d.sensitivityLevel,quarantined:d.quarantined === true}))
   // Task 0026: documents this person can't open come apart, with only a reference and a level.
   const locked=(r.lockedDocuments ?? []).map(d=>({id:d.documentId,level:d.effectiveSensitivityLevel}))
   // A record can have several incomplete submissions: add up the counts and list every missing document.
@@ -59,7 +59,7 @@ export function toRecord(r: BusinessRecord):RecordItem {
   const incomplete=open.length?{expectedCount:open.reduce((n,s)=>n+s.expectedCount,0),receivedCount:open.reduce((n,s)=>n+s.receivedCount,0),missing:open.flatMap(s=>s.missingSourceDocumentIds ?? [])}:null
   return {ref:r.recordRef,sourceId:r.sourceId,identifiers:ids,metadata:fields(r.metadata),
     title:recordName(r.title,ids,r.recordRef),updatedAt:r.latestSubmissionAt,
-    incomplete:incomplete?{expected:incomplete.expectedCount,received:incomplete.receivedCount,missing:incomplete.missing}:null,docs,locked,
+    incomplete:incomplete?{expected:incomplete.expectedCount,received:incomplete.receivedCount,missing:incomplete.missing}:null,docs,locked,unavailable:(r.unavailableDocuments ?? []).map(d=>d.documentId),
     recordLevel:r.recordSensitivityLevel ?? null}
 }
 
@@ -312,3 +312,47 @@ export type SensitivityReport = {
 export const sensitivityReport = (f: IntakeFilter) => roleApi<SensitivityReport>('/api/v1/admin/reports/sensitivity' + intakeQuery(f), 'businessAdmin')
 /** Every count, one line each; the server records the export in the audit. */
 export const sensitivityReportCsv = (f: IntakeFilter) => contentBinary('/api/v1/admin/reports/sensitivity/export' + intakeQuery(f), 'businessAdmin')
+
+// ---- Task 0049: quarantine screens (the server side is task 0048) ----
+
+/** An incident in the list: documentsInForce is how many are still quarantined; never a reason here. */
+export type QuarantineIncidentSummary = { incidentId: string; name: string; scope: 'DOCUMENT' | 'FILTER'; status: 'OPEN' | 'RELEASED'; createdByName: string | null; createdAt: string; closedAt: string | null; documentsInForce: number; releaseRequested: boolean }
+/** One quarantined document as a reviewer sees it: never a title, file name or content. */
+export type QuarantinedDocument = { quarantineId: string; documentId: string; primaryIdentifierLabel: string | null; primaryIdentifier: string | null; level: SensitivityLevel | null; receivedAt: string | null; pageCount: number | null; quarantinedByName: string | null; quarantinedAt: string; inForce: boolean; releasedByName: string | null; releasedAt: string | null }
+/** hiddenCount: documents at levels this person can't open, counted and never shown. */
+export type QuarantineIncident = { incidentId: string; name: string; reason: string; scope: 'DOCUMENT' | 'FILTER'; status: 'OPEN' | 'RELEASED'; createdByName: string | null; createdAt: string; closedAt: string | null; documentsInForce: number; documentCount: number; hiddenCount: number; documents: QuarantinedDocument[]; pendingRequestId: string | null; pendingRequestedByName: string | null; pendingExpiresAt: string | null }
+/** The filter: received days (YYYY-MM-DD, whole UTC days, both needed), a sending system, field values (exact). */
+export type QuarantineFilter = { receivedFrom: string; receivedTo: string; sourceId?: string; fields?: Record<string, string> }
+export type QuarantineCount = { count: number; limit: number }
+const quarantinePath = '/api/v1/quarantine'
+export const quarantineIncidents = () => roleApi<QuarantineIncidentSummary[]>(quarantinePath + '/incidents', 'steward')
+export const quarantineIncident = (id: string) => roleApi<QuarantineIncident>(quarantinePath + '/incidents/' + encodeURIComponent(id), 'steward')
+/** Into a new incident (name and reason) or an open one (incidentId; no reason needed). */
+export const quarantineDocument = (documentId: string, into: { incidentId: string } | { name: string; reason: string }) =>
+  roleApi<QuarantineIncident>(quarantinePath + '/documents', 'steward', { method: 'POST', body: JSON.stringify({ documentId, ...into }) })
+export const releaseQuarantinedDocument = (documentId: string, reason: string) =>
+  roleApi<QuarantinedDocument>(quarantinePath + '/documents/' + encodeURIComponent(documentId) + '/release', 'steward', { method: 'POST', body: JSON.stringify({ reason }) })
+const filterBody = (f: QuarantineFilter) => ({ receivedFrom: f.receivedFrom, receivedTo: f.receivedTo, sourceId: f.sourceId || undefined,
+  fields: Object.fromEntries(Object.entries(f.fields ?? {}).map(([k, v]) => [k, v.trim()]).filter(([, v]) => v.length > 0)) })
+/** Restricted steward only: how many documents the filter matches now. */
+export const countQuarantineFilter = (f: QuarantineFilter) => roleApi<QuarantineCount>(quarantinePath + '/filter/count', 'restricted', { method: 'POST', body: JSON.stringify(filterBody(f)) })
+/** Quarantines exactly expectedCount documents, or nothing (SDV-QUA-009 when the count changed). */
+export const quarantineByFilter = (f: QuarantineFilter, expectedCount: number, name: string, reason: string) =>
+  roleApi<QuarantineIncident>(quarantinePath + '/filter', 'restricted', { method: 'POST', body: JSON.stringify({ ...filterBody(f), expectedCount, name, reason }) })
+export const requestIncidentRelease = (incidentId: string, reason: string) =>
+  roleApi<QuarantineIncident>(quarantinePath + '/incidents/' + encodeURIComponent(incidentId) + '/release-request', 'steward', { method: 'POST', body: JSON.stringify({ reason }) })
+
+/** what: the server's words for the action ("Opened", "Printed", "Downloaded"). */
+export type ExposureEntry = { action: string; what: string; person: string; at: string }
+export type ExposureDocument = { documentId: string; primaryIdentifierLabel: string | null; primaryIdentifier: string | null; level: SensitivityLevel | null; receivedAt: string | null; pageCount: number | null; quarantinedAt: string; inForce: boolean; exposure: ExposureEntry[] }
+export type ExposureReport = { incidentId: string; name: string; status: 'OPEN' | 'RELEASED'; createdAt: string; standard: number; confidential: number; highlyConfidential: number; hiddenCount: number; documents: ExposureDocument[] }
+export const quarantineExposure = (incidentId: string) => roleApi<ExposureReport>(quarantinePath + '/incidents/' + encodeURIComponent(incidentId) + '/exposure', 'steward')
+/** The CSV with its reference and SHA-256 fingerprint; the server records the export in the audit. */
+export const quarantineExposureCsv = (incidentId: string): Promise<RegisteredExport> => contentExport(quarantinePath + '/incidents/' + encodeURIComponent(incidentId) + '/exposure/export', 'steward')
+
+/** A whole-incident release waiting for a Business admin: counts, levels and dates; never a reason. */
+export type IncidentReleaseRequest = { requestId: string; incidentId: string; incidentName: string; documentCount: number; standard: number; confidential: number; highlyConfidential: number; incidentCreatedAt: string; firstReceivedAt: string | null; lastReceivedAt: string | null; requestedByName: string; requestedAt: string; expiresAt: string; status: string; decidedByName: string | null; decidedAt: string | null }
+export const incidentReleaseRequests = () => roleApi<IncidentReleaseRequest[]>('/api/v1/admin/quarantine-releases', 'businessAdmin')
+/** One at a time: there is no bulk decision for these. */
+export const decideIncidentRelease = (requestId: string, decision: 'approve' | 'decline') =>
+  roleApi<IncidentReleaseRequest>('/api/v1/admin/quarantine-releases/' + encodeURIComponent(requestId) + '/' + decision, 'businessAdmin', { method: 'POST' })
