@@ -43,7 +43,8 @@ public class AuthorizationService {
         return new com.sdv.platform.application.access.Clearance(
                 capabilities.has(principal, Capability.VIEW_CONFIDENTIAL),
                 capabilities.has(principal, Capability.VIEW_HIGHLY_CONFIDENTIAL),
-                principal.roles().stream().map(Enum::name).toList());
+                principal.roles().stream().map(Enum::name).toList(),
+                capabilities.has(principal, Capability.QUARANTINE_DOCUMENTS));
     }
 
     private void safeDeniedAudit(SdvPrincipal principal, Capability capability) {

@@ -6,6 +6,7 @@ import com.sdv.platform.domain.error.CodedRefusal;
 import com.sdv.platform.domain.error.InternalCheckFailed;
 import com.sdv.platform.domain.error.SdvErrorCode;
 import com.sdv.platform.application.access.Clearance;
+import com.sdv.platform.application.access.QuarantineLookup;
 import com.sdv.platform.application.port.AuditEventPort;
 import com.sdv.platform.application.port.BusinessRecordRepository;
 import com.sdv.platform.application.port.BusinessRecordRepository.AnywhereCriterion;
@@ -70,8 +71,19 @@ public class BusinessExperienceService {
     private final MetadataFieldDefinitionRepository definitions;
     private final BusinessRecordRepository records;
     private final AuditEventPort audit;
+    /* Task 0048: which documents are quarantined now (search rows and the record panel show them as unavailable). */
+    private final QuarantineLookup quarantine;
     private final BusinessRecordRefCodec refs = new BusinessRecordRefCodec();
     private final Clock clock;
+
+    public BusinessExperienceService(
+            TenantRepository tenants,
+            IngestionSourceRepository sources,
+            MetadataFieldDefinitionRepository definitions,
+            BusinessRecordRepository records,
+            AuditEventPort audit) {
+        this(tenants, sources, definitions, records, audit, QuarantineLookup.NONE, Clock.systemUTC());
+    }
 
     @Autowired
     public BusinessExperienceService(
@@ -79,8 +91,9 @@ public class BusinessExperienceService {
             IngestionSourceRepository sources,
             MetadataFieldDefinitionRepository definitions,
             BusinessRecordRepository records,
-            AuditEventPort audit) {
-        this(tenants, sources, definitions, records, audit, Clock.systemUTC());
+            AuditEventPort audit,
+            QuarantineLookup quarantine) {
+        this(tenants, sources, definitions, records, audit, quarantine, Clock.systemUTC());
     }
 
     BusinessExperienceService(
@@ -90,11 +103,23 @@ public class BusinessExperienceService {
             BusinessRecordRepository records,
             AuditEventPort audit,
             Clock clock) {
+        this(tenants, sources, definitions, records, audit, QuarantineLookup.NONE, clock);
+    }
+
+    BusinessExperienceService(
+            TenantRepository tenants,
+            IngestionSourceRepository sources,
+            MetadataFieldDefinitionRepository definitions,
+            BusinessRecordRepository records,
+            AuditEventPort audit,
+            QuarantineLookup quarantine,
+            Clock clock) {
         this.tenants = tenants;
         this.sources = sources;
         this.definitions = definitions;
         this.records = records;
         this.audit = audit;
+        this.quarantine = Objects.requireNonNull(quarantine, "quarantine");
         this.clock = clock;
     }
 
@@ -484,7 +509,7 @@ public class BusinessExperienceService {
                         + "\",\"submissionId\":\"" + aggregate.submissions().getFirst().submissionId()
                         + "\",\"submissionCount\":"
                         + view.submissionCount() + ",\"availableDocumentCount\":"
-                        + (view.documents().size() + view.lockedDocuments().size())
+                        + (view.documents().size() + view.lockedDocuments().size() + view.unavailableDocuments().size())
                         + (view.lockedDocuments().isEmpty() ? "" : ",\"lockedDocumentCount\":" + view.lockedDocuments().size())
                         + "}"));
         return view;
@@ -626,13 +651,13 @@ public class BusinessExperienceService {
                     tenantId, source.sourceId(), identifiers);
         }
         if (memberIds.isEmpty()) {
-            return new RecordAggregate(source, identity, List.of(), List.of(), List.of(), List.of(), Map.of());
+            return new RecordAggregate(source, identity, List.of(), List.of(), List.of(), List.of(), Map.of(), Set.of());
         }
 
         List<Submission> submissions = records.findSubmissionsByIds(
                 tenantId, source.sourceId(), memberIds);
         if (submissions.isEmpty()) {
-            return new RecordAggregate(source, identity, List.of(), List.of(), List.of(), List.of(), Map.of());
+            return new RecordAggregate(source, identity, List.of(), List.of(), List.of(), List.of(), Map.of(), Set.of());
         }
 
         List<UUID> ids = submissions.stream().map(Submission::submissionId).toList();
@@ -643,7 +668,9 @@ public class BusinessExperienceService {
         Map<UUID, Integer> documentCounts = records.countDocuments(tenantId, source.sourceId(), ids).stream()
                 .collect(Collectors.toMap(DocumentCount::submissionId, DocumentCount::documentCount));
 
-        return new RecordAggregate(source, identity, submissions, metadata, documents, expected, documentCounts);
+        Set<UUID> quarantined = documents.isEmpty() ? Set.of()
+                : quarantine.quarantined(tenantId, documents.stream().map(AvailableDocumentSnapshot::documentId).toList());
+        return new RecordAggregate(source, identity, submissions, metadata, documents, expected, documentCounts, quarantined);
     }
 
     private static SensitivityLevel levelOf(Map<String, SensitivityLevel> recordLevels, RecordAggregate aggregate) {
@@ -692,25 +719,39 @@ public class BusinessExperienceService {
                 expected,
                 received,
                 matchedFields,
-                restrictedLevel(aggregate.documents(), recordLevel, clearance));
+                // Task 0048: a quarantined document shows no level to anyone here; it is counted as unavailable.
+                restrictedLevel(aggregate.notQuarantined(), recordLevel, clearance),
+                aggregate.quarantined().size());
     }
 
     private BusinessExperienceView.RecordView recordView(RecordAggregate aggregate, SensitivityLevel recordLevel,
                                                           List<String> titleFields, Clearance clearance) {
         List<BusinessExperienceView.FieldValue> metadata = latestMetadata(aggregate);
         List<BusinessExperienceView.FieldValue> identifiers = displayIdentifiers(aggregate, metadata);
+        // Task 0048: a quarantined document is listed as unavailable (its reference only, no level, no reason),
+        // except to a reviewer who can open its level: they see it with the others, marked quarantined.
+        List<BusinessExperienceView.UnavailableDocument> unavailable = aggregate.documents().stream()
+                .filter(document -> aggregate.quarantined().contains(document.documentId()))
+                .filter(document -> !clearance.canReviewQuarantined(SensitivityLevel.effective(document.sensitivityLevel(), recordLevel)))
+                .map(document -> new BusinessExperienceView.UnavailableDocument(document.documentId()))
+                .toList();
+        Set<UUID> unavailableIds = unavailable.stream().map(BusinessExperienceView.UnavailableDocument::documentId)
+                .collect(Collectors.toSet());
         List<BusinessExperienceView.LockedDocument> locked = aggregate.documents().stream()
+                .filter(document -> !unavailableIds.contains(document.documentId()))
                 .filter(document -> !clearance.canOpen(SensitivityLevel.effective(document.sensitivityLevel(), recordLevel)))
                 .map(document -> new BusinessExperienceView.LockedDocument(document.documentId(),
                         SensitivityLevel.effective(document.sensitivityLevel(), recordLevel).name()))
                 .toList();
         List<BusinessExperienceView.DocumentSummary> documents = aggregate.documents().stream()
+                .filter(document -> !unavailableIds.contains(document.documentId()))
                 .filter(document -> clearance.canOpen(SensitivityLevel.effective(document.sensitivityLevel(), recordLevel)))
                 .map(document -> new BusinessExperienceView.DocumentSummary(
                         document.documentId(), document.submissionId(), document.sourceDocumentId(),
                         document.originalFilename(), document.ingestedAt(), document.availableAt(), document.expiresAt(),
                         document.pageCount(), document.redacted(), document.sensitivityLevel().name(),
-                        SensitivityLevel.effective(document.sensitivityLevel(), recordLevel).name()))
+                        SensitivityLevel.effective(document.sensitivityLevel(), recordLevel).name(),
+                        aggregate.quarantined().contains(document.documentId())))
                 .toList();
 
         Map<UUID, List<ExpectedDocumentSnapshot>> expectedBySubmission = aggregate.expected().stream()
@@ -750,7 +791,9 @@ public class BusinessExperienceService {
                 attention,
                 recordLevel == null ? null : recordLevel.name(),
                 locked,
-                restrictedLevel(aggregate.documents(), recordLevel, clearance));
+                restrictedLevel(aggregate.documents().stream()
+                        .filter(document -> !unavailableIds.contains(document.documentId())).toList(), recordLevel, clearance),
+                unavailable);
     }
 
     /**
@@ -884,7 +927,8 @@ public class BusinessExperienceService {
             List<MetadataSnapshot> metadata,
             List<AvailableDocumentSnapshot> documents,
             List<ExpectedDocumentSnapshot> expected,
-            Map<UUID, Integer> documentCounts) {
+            Map<UUID, Integer> documentCounts,
+            Set<UUID> quarantined) {
         RecordAggregate {
             submissions = submissions.stream()
                     .sorted(Comparator.comparing(Submission::createdAt).reversed()
@@ -898,6 +942,12 @@ public class BusinessExperienceService {
                     .toList();
             expected = List.copyOf(expected);
             documentCounts = Map.copyOf(documentCounts);
+            quarantined = Set.copyOf(quarantined);
+        }
+
+        /** Task 0048: the documents not quarantined now. */
+        List<AvailableDocumentSnapshot> notQuarantined() {
+            return documents.stream().filter(document -> !quarantined.contains(document.documentId())).toList();
         }
     }
 }

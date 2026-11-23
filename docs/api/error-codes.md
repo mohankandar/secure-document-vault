@@ -365,6 +365,87 @@ Sent by the Business Admin's legal-hold endpoints, `/api/v1/admin/legal-holds` (
 - **What the user should do:** nothing; the hold is no longer in place. Reload the list of holds.
 - **What support should tell the customer:** the hold was already released; the audit shows who released it and when (`LEGAL_HOLD_RELEASED`). The document will be deleted at the next daily cleanup if its retention date has passed.
 
+## Quarantine (QUA)
+
+Task 0048. A Steward quarantines a document while a suspected leak or wrong delivery is looked into. Endpoints are under `/api/v1/quarantine` (Stewards) and `/api/v1/admin/quarantine-releases` (Business Admin). Reasons are kept with the quarantine, never in the audit trail.
+
+### SDV-QUA-001: document temporarily unavailable
+
+- **HTTP status:** 403. Sent by every way of reaching a document (open, pages, previews, text search, tags, comments, activity, print, download, correct, level history) while it is quarantined.
+- **Meaning:** the document is quarantined. Only a Steward who can open its level may review it (open it and correct it); nobody prints or downloads it until it is released. The answer does not say the level or why. The refusal is audited as `DOCUMENT_ACCESS_REFUSED` with this code.
+- **What the user should do:** nothing for now. The document is temporarily unavailable and comes back when the review is finished. If you need it urgently, ask a Document Steward.
+- **What support should tell the customer:** this is working as intended. A Steward has quarantined the document for review; a Steward releases it, or a Business Admin approves the release of the whole incident.
+
+### SDV-QUA-002: needs a Steward who can open the document's level
+
+- **HTTP status:** 403. Sent by every `/api/v1/quarantine` endpoint.
+- **Meaning:** the person is not a Document Steward or Restricted Steward, or the document (or one in the incident) has a level they can't open. Highly Confidential documents are quarantined, reviewed and released only by a Restricted Steward. Nothing was changed. A missing role is audited as `AUTHORIZATION_DENIED`.
+- **What the user should do:** ask a Steward who can open the document's level, or a Restricted Steward, to do it.
+- **What support should tell the customer:** this is working as intended. Quarantine is a Steward task, limited to the levels the Steward can open. Role membership comes from the customer's own sign-in groups.
+
+### SDV-QUA-003: quarantine by filter is for a Restricted Steward
+
+- **HTTP status:** 403. Sent by `POST /api/v1/quarantine/filter/count` and `POST /api/v1/quarantine/filter`.
+- **Meaning:** only a Restricted Steward may quarantine every document matching a filter (an incident-wide quarantine). Nothing was counted or changed. The refusal is audited as `AUTHORIZATION_DENIED` (capability `QUARANTINE_BY_FILTER`).
+- **What the user should do:** quarantine the documents one at a time, or ask a Restricted Steward to quarantine by filter.
+- **What support should tell the customer:** this is working as intended. Incident-wide quarantine is kept to Restricted Stewards.
+
+### SDV-QUA-004: name, reason or filter not valid
+
+- **HTTP status:** 400. Sent by quarantine, release, release request and filter endpoints.
+- **Meaning:** the incident name is missing or longer than 200 characters, a reason is shorter than 3 or longer than 500 characters, or the filter is not usable: the received dates are missing or not `YYYY-MM-DD`, the "to" date is before the "from" date, a field is given without a sending system, a field can't be searched, a value is too long, the count wasn't taken, or more than 1000 documents match. Nothing was changed.
+- **What the user should do:** correct what the message names and try again. For more than 1000 documents, narrow the dates and quarantine in parts.
+- **What support should tell the customer:** the request was incomplete; the message says which part. Filters match field values exactly, as search stores them.
+
+### SDV-QUA-005: no document with this reference
+
+- **HTTP status:** 404. Sent by quarantine one document and release one document.
+- **Meaning:** no document of this entity has the reference. Nothing was changed.
+- **What the user should do:** open the document again from its record and try once more.
+- **What support should tell the customer:** the reference is wrong or belongs to another entity.
+
+### SDV-QUA-006: already quarantined, or deleted
+
+- **HTTP status:** 409. Sent by quarantine one document.
+- **Meaning:** the document is already quarantined (each document is in at most one quarantine at a time), or the retention cleanup deleted it or is deleting it. Nothing was changed.
+- **What the user should do:** look at the incident it is already in, in the quarantine list.
+- **What support should tell the customer:** this is working as intended; the document is already quarantined, or no longer stored.
+
+### SDV-QUA-007: no incident with this reference
+
+- **HTTP status:** 404. Sent by the incident, release request, exposure and add-to-incident endpoints.
+- **Meaning:** no quarantine incident of this entity has the reference. Nothing was changed.
+- **What the user should do:** open the incident again from the quarantine list.
+- **What support should tell the customer:** the reference is wrong or belongs to another entity.
+
+### SDV-QUA-008: incident already released
+
+- **HTTP status:** 409. Sent by add to incident and request release.
+- **Meaning:** every document of the incident was released, so the incident is closed. Nothing can be added to it or asked for it.
+- **What the user should do:** start a new incident for the document.
+- **What support should tell the customer:** this is working as intended; a released incident stays as history.
+
+### SDV-QUA-009: the matching documents changed
+
+- **HTTP status:** 409. Sent by `POST /api/v1/quarantine/filter`.
+- **Meaning:** the number of documents matching the filter is not the number the person counted and selected (documents arrived, were deleted, or were quarantined meanwhile). Nothing was quarantined.
+- **What the user should do:** count the matching documents again, check the number, and select them all again.
+- **What support should tell the customer:** Vero quarantines exactly what the person saw counted, never more or fewer; counting again fixes it.
+
+### SDV-QUA-010: the release request can't be made or decided
+
+- **HTTP status:** 409 (404 for an unknown request). Sent by request release and by the Business Admin's approve and decline.
+- **Meaning:** a request to release the incident is already waiting; or the request was already decided or expired; or the person deciding made the request. Nobody decides their own request, and these requests are decided one at a time. Nothing was changed.
+- **What the user should do:** wait for the request that is waiting, or ask again if it expired. A Business Admin who made the request asks another Business Admin to decide it.
+- **What support should tell the customer:** this is working as intended. Release requests expire like other requests (7 days unless set otherwise).
+
+### SDV-QUA-011: document not quarantined
+
+- **HTTP status:** 409. Sent by release one document.
+- **Meaning:** the document isn't quarantined now (it was released, perhaps by someone else at the same moment). Nothing was changed.
+- **What the user should do:** refresh the incident; the document is already available.
+- **What support should tell the customer:** this is working as intended.
+
 ## Approvals (APR)
 
 Sent by the access requests of task 0028: a Restricted steward's request to print or download one Highly Confidential document (`POST /api/v1/business/documents/{id}/access-requests`), a Steward's own list (`GET /api/v1/business/access-requests`), and the Business Admin's approvals (`/api/v1/admin/access-requests`). A Steward's request to lower a level is made with `…/sensitivity/lower-request` (see the SEN codes) and is decided here.

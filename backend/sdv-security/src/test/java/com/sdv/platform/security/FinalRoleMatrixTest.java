@@ -25,8 +25,12 @@ class FinalRoleMatrixTest {
         Set<Capability> steward = EnumSet.of(
                 Capability.SEARCH_RECORDS, Capability.VIEW_PDF, Capability.PERMANENT_REDACTION,
                 Capability.DOWNLOAD_CURRENT_PDF, Capability.PRINT_DOCUMENT, Capability.ADD_DOCUMENT_TAG,
-                Capability.ADD_DOCUMENT_COMMENT, Capability.VIEW_CONFIDENTIAL, Capability.CHANGE_SENSITIVITY_LEVEL);
+                Capability.ADD_DOCUMENT_COMMENT, Capability.VIEW_CONFIDENTIAL, Capability.CHANGE_SENSITIVITY_LEVEL,
+                // Task 0048: both stewards quarantine and review (levels they can open); filter quarantine is the
+                // Restricted Steward's only.
+                Capability.QUARANTINE_DOCUMENTS);
         EnumSet<Capability> restricted = EnumSet.copyOf(steward);
+        restricted.add(Capability.QUARANTINE_BY_FILTER);
         restricted.add(Capability.VIEW_HIGHLY_CONFIDENTIAL);
         restricted.add(Capability.REQUEST_SENSITIVE_ACCESS);
         EXPECTED.put(SdvRole.BUSINESS_USER, EnumSet.of(Capability.SEARCH_RECORDS, Capability.VIEW_PDF));
@@ -78,6 +82,8 @@ class FinalRoleMatrixTest {
         rows.put("3.4 Approve or decline requests", new Object[]{Capability.APPROVE_SENSITIVE_ACCESS, "000100"});
         rows.put("3.4 Place and release legal holds", new Object[]{Capability.MANAGE_LEGAL_HOLD, "000100"});
         rows.put("Task 0032: Reports tab, seen by Business admin only", new Object[]{Capability.VIEW_INTAKE_REPORTS, "000100"});
+        rows.put("Task 0048: Quarantine and review", new Object[]{Capability.QUARANTINE_DOCUMENTS, "011000"});
+        rows.put("Task 0048: Quarantine by filter (whole incident)", new Object[]{Capability.QUARANTINE_BY_FILTER, "001000"});
         List<SdvRole> columns = List.of(SdvRole.BUSINESS_USER, SdvRole.DOCUMENT_STEWARD, SdvRole.RESTRICTED_STEWARD,
                 SdvRole.BUSINESS_ADMIN, SdvRole.IT_ADMIN, SdvRole.PLATFORM_OPERATIONS_ADMIN);
         assertEquals(EnumSet.allOf(SdvRole.class), EnumSet.copyOf(columns), "every role has a column");
@@ -110,7 +116,8 @@ class FinalRoleMatrixTest {
                         Capability.ADD_DOCUMENT_TAG,
                         Capability.ADD_DOCUMENT_COMMENT,
                         Capability.VIEW_CONFIDENTIAL,
-                        Capability.CHANGE_SENSITIVITY_LEVEL),
+                        Capability.CHANGE_SENSITIVITY_LEVEL,
+                        Capability.QUARANTINE_DOCUMENTS),
                 RoleCapabilities.capabilities(EnumSet.of(SdvRole.DOCUMENT_STEWARD)));
 
         assertEquals(

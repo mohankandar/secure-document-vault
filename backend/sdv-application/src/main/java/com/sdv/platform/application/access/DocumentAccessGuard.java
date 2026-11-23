@@ -40,6 +40,15 @@ public class DocumentAccessGuard {
     public static final String APPROVAL_NEEDED_MESSAGE =
             "Printing or downloading a Highly Confidential document needs a Business Admin's approval, used once "
                     + "within its time. Ask for one, then try again.";
+    /** Task 0048: what everyone but a quarantined document's reviewers is told: never its level or why. */
+    public static final String UNAVAILABLE_MESSAGE = "This document is temporarily unavailable.";
+    /**
+     * Task 0048: what a reviewer may do with a quarantined document: read it and correct it (redaction), so it can be
+     * released. Never print, download, tag, comment, change its level or ask for access while it is quarantined.
+     */
+    static final java.util.Set<Attempt> REVIEW_ATTEMPTS = java.util.EnumSet.of(Attempt.OPEN, Attempt.PAGE,
+            Attempt.PREVIEWS, Attempt.TEXT_SEARCH, Attempt.TAGS, Attempt.COMMENTS, Attempt.ACTIVITY, Attempt.REDACT,
+            Attempt.LEVEL_HISTORY);
 
     /**
      * What the person tried; written in the refusal's audit event. Task 0028: CHANGE_LEVEL (raise or ask to lower)
@@ -51,6 +60,7 @@ public class DocumentAccessGuard {
     private final BusinessRecordRepository records;
     private final AuditEventPort audit;
     private final SensitiveAccessGrants grants;
+    private final QuarantineLookup quarantine;
     private final Clock clock;
 
     /** No grants: every Highly Confidential print and download is refused. */
@@ -62,16 +72,30 @@ public class DocumentAccessGuard {
         this(records, audit, SensitiveAccessGrants.NONE, clock);
     }
 
-    @Autowired
+
     public DocumentAccessGuard(BusinessRecordRepository records, AuditEventPort audit, SensitiveAccessGrants grants) {
         this(records, audit, grants, Clock.systemUTC());
     }
 
     public DocumentAccessGuard(BusinessRecordRepository records, AuditEventPort audit, SensitiveAccessGrants grants,
                                Clock clock) {
+        this(records, audit, grants, QuarantineLookup.NONE, clock);
+    }
+
+    /** Task 0048: with the quarantine store, as Vero runs. */
+    @Autowired
+    public DocumentAccessGuard(BusinessRecordRepository records, AuditEventPort audit, SensitiveAccessGrants grants,
+                               QuarantineLookup quarantine) {
+        this(records, audit, grants, quarantine, Clock.systemUTC());
+    }
+
+    public DocumentAccessGuard(BusinessRecordRepository records, AuditEventPort audit, SensitiveAccessGrants grants,
+                               QuarantineLookup quarantine,
+                               Clock clock) {
         this.records = records;
         this.audit = audit;
         this.grants = Objects.requireNonNull(grants, "grants");
+        this.quarantine = Objects.requireNonNull(quarantine, "quarantine");
         this.clock = clock;
     }
 
@@ -93,6 +117,14 @@ public class DocumentAccessGuard {
                                             String actorId, String correlationId) {
         Objects.requireNonNull(clearance, "clearance");
         SensitivityLevel level = effectiveLevel(document);
+        // Task 0048: a quarantined document only for its reviewers, and only to read and correct it. Everyone else is
+        // told it is temporarily unavailable (never its level or why); checked before the level, so the answer is the
+        // same whatever the level.
+        if (quarantine.isQuarantined(document.tenantId(), document.documentId())
+                && !(clearance.canReviewQuarantined(level) && REVIEW_ATTEMPTS.contains(attempt))) {
+            refuse(document, level, attempt, SdvErrorCode.QUA_001, clearance, actorId, correlationId);
+            throw new CodedRefusal.Forbidden(SdvErrorCode.QUA_001, UNAVAILABLE_MESSAGE);
+        }
         if (!clearance.canOpen(level)) {
             refuse(document, level, attempt, SdvErrorCode.SEN_008, clearance, actorId, correlationId);
             throw new CodedRefusal.Forbidden(SdvErrorCode.SEN_008, RESTRICTED_MESSAGE);
@@ -146,6 +178,11 @@ public class DocumentAccessGuard {
         } catch (RuntimeException ex) {
             return false;
         }
+    }
+
+    /** Task 0048: the ones of these documents that are quarantined now (for record views and search rows). */
+    public java.util.Set<UUID> quarantined(UUID tenantId, java.util.Collection<UUID> documentIds) {
+        return quarantine.quarantined(tenantId, documentIds);
     }
 
     /** A document described in a list (audit and problem views): enough to work out its effective level. */

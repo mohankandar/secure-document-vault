@@ -15,7 +15,9 @@ import java.util.Objects;
  * Sensitivity report can count attempts by role. They never decide anything here: two clearances that open the same
  * levels are equal, whatever their roles. Empty when not known (then the event names no role).
  */
-public record Clearance(boolean confidential, boolean highlyConfidential, List<String> roles) {
+/* Task 0048: {@code reviewsQuarantine}: the person may review quarantined documents (QUARANTINE_DOCUMENTS), still only
+ * the levels they can open. */
+public record Clearance(boolean confidential, boolean highlyConfidential, List<String> roles, boolean reviewsQuarantine) {
     /** Standard documents only: the most restrictive clearance, used wherever none is given. */
     public static final Clearance STANDARD_ONLY = new Clearance(false, false);
     public static final Clearance ALL = new Clearance(true, true);
@@ -24,8 +26,12 @@ public record Clearance(boolean confidential, boolean highlyConfidential, List<S
         roles = roles == null ? List.of() : roles.stream().filter(Objects::nonNull).sorted().distinct().toList();
     }
 
+    public Clearance(boolean confidential, boolean highlyConfidential, List<String> roles) {
+        this(confidential, highlyConfidential, roles, false);
+    }
+
     public Clearance(boolean confidential, boolean highlyConfidential) {
-        this(confidential, highlyConfidential, List.of());
+        this(confidential, highlyConfidential, List.of(), false);
     }
 
     /** False for a missing level: what can't be classified is never opened. */
@@ -49,7 +55,12 @@ public record Clearance(boolean confidential, boolean highlyConfidential, List<S
         return highest;
     }
 
-    /** The levels opened decide equality; the roles are only written in audit events. */
+    /** Task 0048: may review this quarantined document: a reviewer who can open its level. */
+    public boolean canReviewQuarantined(SensitivityLevel level) {
+        return reviewsQuarantine && canOpen(level);
+    }
+
+    /** The levels opened decide equality; the roles are only written in audit events (and review rights are checked apart). */
     @Override
     public boolean equals(Object other) {
         return other instanceof Clearance c && c.confidential == confidential && c.highlyConfidential == highlyConfidential;

@@ -104,6 +104,28 @@ public enum SdvErrorCode {
     ENT_001("SDV-ENT-001", false, true),
     /** Task 0041: the person has no Business Admin grant on that entity slot, so may not activate it (403). INFO line. */
     ENT_002("SDV-ENT-002", false, true),
+    /** Task 0048: the document is quarantined and this person is not one of its reviewers (403). INFO line. */
+    QUA_001("SDV-QUA-001", false, true),
+    /** Task 0048: quarantining, reviewing or releasing needs a Steward who can open the document's level (403). INFO. */
+    QUA_002("SDV-QUA-002", false, true),
+    /** Task 0048: quarantine by filter (a whole incident) is for a Restricted Steward only (403). INFO line. */
+    QUA_003("SDV-QUA-003", false, true),
+    /** Task 0048: the incident name, a reason, or the filter is missing or not valid (400). */
+    QUA_004("SDV-QUA-004"),
+    /** Task 0048: no document of this entity has this reference, or it was deleted (404). */
+    QUA_005("SDV-QUA-005"),
+    /** Task 0048: the document is already quarantined (409). */
+    QUA_006("SDV-QUA-006"),
+    /** Task 0048: no incident of this entity has this reference (404). */
+    QUA_007("SDV-QUA-007"),
+    /** Task 0048: the incident is released, so nothing can be added to it or asked for it (409). */
+    QUA_008("SDV-QUA-008"),
+    /** Task 0048: the number of matching documents changed since it was counted; count again (409). */
+    QUA_009("SDV-QUA-009"),
+    /** Task 0048: the release request can't be made or decided: one is waiting, it is decided or expired, or it is the person's own (409). */
+    QUA_010("SDV-QUA-010"),
+    /** Task 0048: the document is not quarantined (409). */
+    QUA_011("SDV-QUA-011"),
     /** Task 0027: finding, placing, releasing or listing legal holds needs MANAGE_LEGAL_HOLD (Business Admin) (403). */
     HLD_001("SDV-HLD-001"),
     /** Task 0027: a legal hold's reason is missing, shorter than 3 or longer than 500 characters (400). */

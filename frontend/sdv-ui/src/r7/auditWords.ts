@@ -26,6 +26,7 @@ const CAPABILITY_WORDS: Record<string, string> = {
   CONFIGURE_ROLE_PERMISSIONS: 'change roles & permissions', CONFIGURE_RETENTION: 'change how long documents are kept',
   CONFIGURE_METADATA_SEARCH: 'change search fields', CONFIGURE_INGESTION_SOURCES: 'change sending systems',
   CONFIGURE_STORAGE_KEY_PROVIDER: 'change storage', VIEW_TECHNICAL_FAILURES: 'see problems and the audit', VIEW_INTAKE_REPORTS: 'see the reports',
+  QUARANTINE_DOCUMENTS: 'quarantine documents', QUARANTINE_BY_FILTER: 'quarantine documents by filter',
 }
 
 type Sentence = (who: string, file: string, d: Record<string, unknown>, e: OpsAuditEvent) => string
@@ -57,6 +58,16 @@ export const AUDIT_SENTENCES: Record<string, Sentence> = {
   DOCUMENT_RETENTION_DELETE_FAILED: (_w, f) => `Vero couldn't delete ${f} when its time was up`,
   LEGAL_HOLD_PLACED: (w, f) => `${w} put ${f} on legal hold`,
   LEGAL_HOLD_RELEASED: (w, f) => `${w} released the legal hold on ${f}`,
+  // Task 0048: quarantine. The incident name and reasons stay in the quarantine tables, never in the audit.
+  QUARANTINE_INCIDENT_CREATED: (w, _f, d) => (n(d.documentCount) != null ? `${w} started a quarantine incident of ${docs(n(d.documentCount))}` : `${w} started a quarantine incident`),
+  DOCUMENT_QUARANTINED: (w, f) => `${w} quarantined ${f}`,
+  DOCUMENT_QUARANTINE_RELEASED: (w, f, d) => (d.requestId != null ? `${w} released ${f} from quarantine, as approved` : `${w} released ${f} from quarantine`),
+  QUARANTINE_INCIDENT_CLOSED: () => 'A quarantine incident ended: every document in it was released',
+  QUARANTINE_RELEASE_REQUESTED: (w) => `${w} asked to release a whole quarantine incident`,
+  QUARANTINE_RELEASE_APPROVED: (w) => `${w} approved releasing a whole quarantine incident`,
+  QUARANTINE_RELEASE_DECLINED: (w) => `${w} declined releasing a whole quarantine incident`,
+  QUARANTINE_RELEASE_EXPIRED: () => 'A request to release a quarantine incident expired',
+  QUARANTINE_EXPOSURE_EXPORTED: (w) => `${w} exported a quarantine exposure report`,
   BUSINESS_RECORD_OPENED: (w) => `${w} opened a record`,
   // Task 0022: a search across all fields says so ("searched all fields"); the text itself is never stored.
   BUSINESS_SEARCH: (w, _f, d) => { const what = d.anywhere === true ? 'searched all fields' : 'searched records'; return n(d.resultCount) != null ? `${w} ${what} and found ${n(d.resultCount)}` : `${w} ${what}` },
@@ -108,7 +119,7 @@ export const RESULT_WORDS: Record<string, string> = { SUCCESS: 'Done', DENIED: '
 export const ACTIVITY_GROUPS: { id: string; label: string; actions?: string[]; outcome?: string }[] = [
   { id: 'reading', label: 'Opening and reading', actions: ['DOCUMENT_VIEW_OPENED', 'DOCUMENT_PAGE_VIEWED', 'BUSINESS_RECORD_OPENED', 'BUSINESS_SEARCH', 'BUSINESS_RECENT_RECORDS_LISTED', 'AUDIT_VIEWED'] },
   { id: 'downloads', label: 'Downloads, prints and exports', actions: ['DOCUMENT_DOWNLOADED', 'DOCUMENT_DOWNLOAD_FAILED', 'DOCUMENT_PRINTED', 'SENSITIVE_ACCESS_GRANT_USED', 'SENSITIVE_ACCESS_GRANT_RETURNED','AUDIT_EXPORTED', 'INTAKE_REPORT_EXPORTED', 'SENSITIVITY_REPORT_EXPORTED'] },
-  { id: 'changes', label: 'Changes to documents', actions: ['DOCUMENT_TAG_ADDED', 'DOCUMENT_COMMENT_ADDED', 'DOCUMENT_PERMANENTLY_REDACTED', 'DOCUMENT_REDACTION_FAILED', 'DOCUMENT_RETENTION_DELETED', 'DOCUMENT_RETENTION_DELETE_FAILED', 'LEGAL_HOLD_PLACED', 'LEGAL_HOLD_RELEASED'] },
+  { id: 'changes', label: 'Changes to documents', actions: ['DOCUMENT_TAG_ADDED', 'DOCUMENT_COMMENT_ADDED', 'DOCUMENT_PERMANENTLY_REDACTED', 'DOCUMENT_REDACTION_FAILED', 'DOCUMENT_RETENTION_DELETED', 'DOCUMENT_RETENTION_DELETE_FAILED', 'LEGAL_HOLD_PLACED', 'LEGAL_HOLD_RELEASED', 'DOCUMENT_QUARANTINED', 'DOCUMENT_QUARANTINE_RELEASED'] },
   { id: 'settings', label: 'Settings changes', actions: ['ROLE_CAPABILITIES_UPDATED', 'RETENTION_POLICY_UPDATED', 'METADATA_BEHAVIOR_REVISED', 'METADATA_DISPLAY_ORDER_UPDATED', 'RECORD_TITLE_FIELDS_UPDATED', 'METADATA_FIELD_CREATED', 'METADATA_FIELD_REVISED', 'SOURCE_FIELD_DEFINED', 'SOURCE_FIELD_REVISED', 'INGESTION_SOURCE_CREATED', 'INGESTION_SOURCE_UPDATED', 'STORAGE_VOLUME_CREATED', 'STORAGE_VOLUME_UPDATED', 'STORAGE_FOLDER_CHECKED', 'ENTITY_ACTIVATED'] },
   { id: 'deliveries', label: 'Deliveries', actions: ['SUBMISSION_CREATED', 'DOCUMENT_RECEIVED', 'DOCUMENT_DUPLICATE_RECEIVED', 'DOCUMENT_UNCORRECTED_COPY_RECEIVED', 'INTAKE_REFUSED', 'STEWARD_NOTICE_READ', 'DOCUMENT_AVAILABLE', 'DOCUMENT_PROCESSING_FAILED'] },
   { id: 'refused', label: 'Refused', outcome: 'DENIED' },
