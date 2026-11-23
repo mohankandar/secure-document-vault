@@ -29,10 +29,13 @@ public final class RoleCapabilities {
         MAPPING.put(SdvRole.BUSINESS_ADMIN, EnumSet.of(
                 Capability.CONFIGURE_METADATA_SEARCH, Capability.CONFIGURE_RETENTION,
                 Capability.CONFIGURE_BUSINESS_LIMITS, Capability.CONFIGURE_ROLE_PERMISSIONS,
-                Capability.APPROVE_SENSITIVE_ACCESS, Capability.MANAGE_LEGAL_HOLD, Capability.VIEW_INTAKE_REPORTS));
+                Capability.APPROVE_SENSITIVE_ACCESS, Capability.MANAGE_LEGAL_HOLD, Capability.VIEW_INTAKE_REPORTS,
+                // Task 0050: the sealed audit report (no auditor role: an admin generates it and hands it over).
+                Capability.GENERATE_AUDIT_REPORT));
         MAPPING.put(SdvRole.IT_ADMIN, EnumSet.of(
                 Capability.CONFIGURE_INGESTION_SOURCES, Capability.CONFIGURE_TENANT_AUTH,
-                Capability.CONFIGURE_STORAGE_KEY_PROVIDER, Capability.VIEW_TECHNICAL_FAILURES));
+                Capability.CONFIGURE_STORAGE_KEY_PROVIDER, Capability.VIEW_TECHNICAL_FAILURES,
+                Capability.GENERATE_AUDIT_REPORT));
         MAPPING.put(SdvRole.PLATFORM_OPERATIONS_ADMIN, EnumSet.of(
                 Capability.VIEW_TECHNICAL_FAILURES));
     }

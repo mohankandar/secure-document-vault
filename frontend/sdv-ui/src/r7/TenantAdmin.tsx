@@ -4,6 +4,7 @@ import { Storage } from './Storage'
 import { Problems } from './Problems'
 import { SignIn } from './SignIn'
 import { About } from './About'
+import { AuditReports } from './AuditReports'
 import { liveStorage } from './liveApi'
 import { AREA_TABS, useStore } from './store'
 import { AreaFrame } from './Governance'
@@ -14,6 +15,7 @@ const LEDE: Record<string, string> = {
   authentication: 'The sign-in your people use. It is set during installation.',
   integrations: 'The systems that send documents to Vero, and what they send.',
   problems: 'Documents that could not be stored, and deliveries still missing documents. Read only.',
+  'audit-report': 'A sealed copy of the audit for a period, to hand to an auditor. Nobody can change what Vero recorded.',
   about: 'The facts support will ask for.',
 }
 
@@ -33,6 +35,7 @@ export function TenantAdmin() {
       {route.tab === 'authentication' && <SignIn />}
       {route.tab === 'integrations' && <Integrations />}
       {route.tab === 'problems' && <Problems role="tenantIt" />}
+      {route.tab === 'audit-report' && <AuditReports />}
       {route.tab === 'about' && <About role="tenantIt" />}
     </AreaFrame>
   )

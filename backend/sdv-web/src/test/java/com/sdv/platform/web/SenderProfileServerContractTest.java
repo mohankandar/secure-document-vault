@@ -161,10 +161,10 @@ class SenderProfileServerContractTest {
 
     static void clean() {
         if (db == null) return;
-        db.update("delete from audit_events where tenant_id = ?", ENTITY);
+        // Task 0050: audit rows are append-only (the database refuses to delete them), so they stay, and so does the
+        // entity they name. The scratch database is made new for every run.
         db.update("delete from unidentified_intake_attempts where tenant_id = ?", ENTITY);
         db.update("delete from ingestion_sources where tenant_id = ?", ENTITY);
-        db.update("delete from tenants where tenant_id = ?", ENTITY);
         db.update("delete from idn_machine_binding where tenant_id = ?", TENANT);
         db.update("delete from idn_login_connection where tenant_id = ?", TENANT);
         db.update("delete from idn_entity where tenant_id = ?", TENANT);

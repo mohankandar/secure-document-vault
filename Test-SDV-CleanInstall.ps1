@@ -405,6 +405,20 @@ alter default privileges for role $owner in schema public grant select, insert, 
     Assert-That ($alter.Code -ne 0 -and $alter.Err -match 'must be owner') 'the app user must not be able to alter tables'
     $null = Invoke-Sql -Database $db -User $app -Environment @{ PGPASSWORD = $appPassword } -Sql 'begin; select count(*) from tenants; delete from tenants where false; rollback;'
     Write-Step '   App user: no create, no alter; select and delete allowed' 0 'checked'
+    # Task 0050: the audit trail and the report register are append-only. The app user may read and add, never change
+    # or remove (changeset 037 took those rights back), and the triggers refuse it for the owner too.
+    $null = Invoke-Sql -Database $db -User $app -Environment @{ PGPASSWORD = $appPassword } -Sql 'begin; select count(*) from audit_events; select count(*) from audit_reports; rollback;'
+    foreach ($statement in @('update audit_events set action = action where false;', 'delete from audit_events where false;',
+                             'update audit_reports set row_count = row_count where false;', 'delete from audit_reports where false;')) {
+        $r = Invoke-Sql -Database $db -User $app -Environment @{ PGPASSWORD = $appPassword } -Sql $statement -AllowFailure
+        Assert-That ($r.Code -ne 0 -and $r.Err -match 'permission denied') "the app user must not be able to run: $statement"
+    }
+    $tenantForAudit = (Invoke-Sql -Database $db -Sql "select tenant_id from tenants limit 1;").Out.Trim()
+    if ($tenantForAudit) {
+        $ownerChange = Invoke-Sql -Database $db -Sql "begin; insert into audit_events(audit_event_id, tenant_id, actor_type, actor_id, action, target_type, target_id, outcome) values (gen_random_uuid(), '$tenantForAudit', 'SYSTEM', 'clean-install-check', 'CLEAN_INSTALL_CHECK', 'TENANT', '$tenantForAudit', 'SUCCESS'); delete from audit_events where actor_id = 'clean-install-check'; rollback;" -AllowFailure
+        Assert-That ($ownerChange.Code -ne 0 -and $ownerChange.Err -match 'append-only') 'the owner must not be able to delete an audit row either'
+    }
+    Write-Step '   Audit trail: append-only (app user: select and insert only; triggers refuse update and delete)' 0 'checked'
 
     # ------------------------------------------------------------ 3. start after the update
     # Table reads outside Liquibase's own tables, to show the background jobs really ran as the read/write user

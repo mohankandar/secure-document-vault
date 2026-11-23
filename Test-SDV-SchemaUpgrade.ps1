@@ -1,7 +1,9 @@
 <#
 .SYNOPSIS
   Repeatable upgrade check for task 0024: a database at an earlier schema moves to this version's schema with its data
-  unchanged. -From 036 (the default, task 0048) starts at 035 and checks changeset 036 (the quarantine tables: there,
+  unchanged. -From 037 (the default, task 0050) starts at 036 and checks changeset 037 (the audit report register; the
+  audit trail and the register append-only: the owner's UPDATE and DELETE refused), then runs every PostgreSQL-only test
+  (SealedAuditPostgresTest included). Earlier: -From 036 (task 0048) starts at 035 and checks changeset 036 (the quarantine tables: there,
   empty, their checks refuse bad rows), then runs every PostgreSQL-only test (QuarantinePostgresTest included). Earlier:
   -From 035 (task 0041) starts at 034 and checks changeset 035 (the old identity tables dropped)
   and platform-core's identity and licensing runs, then runs every PostgreSQL-only test (PlatformIdentityPostgresTest
@@ -69,8 +71,8 @@
 param(
     [string]$Jar,
     # The first changeset the upgrade applies; the scratch database is built up to the one before it.
-    [ValidateSet('026', '027', '028', '029', '030', '031', '032', '033', '034', '035', '036')]
-    [string]$From = '036',
+    [ValidateSet('026', '027', '028', '029', '030', '031', '032', '033', '034', '035', '036', '037')]
+    [string]$From = '037',
     # Drop a scratch database and role left by an earlier run of this script that could not clean up.
     [switch]$DropLeftover
 )
@@ -82,7 +84,7 @@ $db = 'sdv_schema_test'
 $owner = 'sdv_schema_owner'
 $hostUrl = 'jdbc:postgresql://localhost:5433/' + $db
 # In order. The upgrade applies every changeset from -From on.
-$checked = @('022-retention-policy-creator-name', '023-document-sensitivity-level', '024-record-sensitivity-levels', '025-role-separation', '026-legal-holds', '027-access-requests', '028-sensitivity-level-changes', '029-document-duplicate-receipts', '030-tenant-time-zone', '031-intake-report-indexes', '032-steward-notices', '033-unidentified-intake-attempts', '034-unidentified-intake-attempt-counts', '035-drop-old-identity', '036-quarantine')
+$checked = @('022-retention-policy-creator-name', '023-document-sensitivity-level', '024-record-sensitivity-levels', '025-role-separation', '026-legal-holds', '027-access-requests', '028-sensitivity-level-changes', '029-document-duplicate-receipts', '030-tenant-time-zone', '031-intake-report-indexes', '032-steward-notices', '033-unidentified-intake-attempts', '034-unidentified-intake-attempt-counts', '035-drop-old-identity', '036-quarantine', '037-sealed-audit')
 $start = [array]::IndexOf(($checked | ForEach-Object { $_.Substring(0, 3) }), $From)
 $newChangesets = @($checked[$start..($checked.Count - 1)])
 $newChangeset = $newChangesets[0]
@@ -107,6 +109,11 @@ $has036 = $newChangesets -contains '036-quarantine'
 $quarantineTables = @('quarantine_incidents', 'quarantined_documents', 'quarantine_release_requests')
 $hasQuarantineTablesSql = "select count(*) from information_schema.tables where table_name in ('quarantine_incidents', 'quarantined_documents', 'quarantine_release_requests');"
 $quarantineTablesBefore = if ($has036) { '0' } else { '3' }
+# Task 0050: 037 adds the report register and makes it and the audit trail append-only (a function and four triggers).
+$has037 = $newChangesets -contains '037-sealed-audit'
+$hasReportTableSql = "select count(*) from information_schema.tables where table_name = 'audit_reports';"
+$hasAppendOnlySql = "select count(*) from pg_trigger where tgname in ('trg_audit_events_append_only', 'trg_audit_events_no_truncate', 'trg_audit_reports_append_only', 'trg_audit_reports_no_truncate');"
+$reportTableBefore = if ($has037) { '0' } else { '1' }
 $platformRuns = @('identity V1 (platform-core)', 'identity V2 (platform-core)', 'identity V3 (platform-core)', 'licensing V1 (platform-core)')
 # Task 0033: an uncorrected copy received at the previous version, which 032 must turn into one stored notice.
 $oldCopyEvent = '50000000-0000-0000-0000-0000000000c1'
@@ -180,7 +187,7 @@ function Invoke-SchemaStep([string[]]$StepArgs) {
 $otherTablesSql = @"
 select string_agg(t.relname || '=' || (xpath('/row/c/text()', query_to_xml(format('select count(*) || '':'' || coalesce(md5(string_agg(x::text, ''|'' order by x::text)), '''') as c from %I x', t.relname), false, true, '')))[1]::text, ',' order by t.relname)
   from pg_stat_user_tables t
- where t.relname not like 'idn_%' and t.relname not like 'lic_%' and t.relname not in ('enterprise_identity_connections', 'enterprise_identity_connection_history', 'documents', 'record_sensitivity_levels', 'role_conflict_problems', 'role_group_mappings_seen', 'role_mapping_notices', 'legal_holds', 'access_requests', 'sensitivity_level_changes', 'document_duplicate_receipts', 'tenants', 'steward_notices', 'unidentified_intake_attempts', 'quarantine_incidents', 'quarantined_documents', 'quarantine_release_requests', 'databasechangelog', 'databasechangeloglock');
+ where t.relname not like 'idn_%' and t.relname not like 'lic_%' and t.relname not in ('enterprise_identity_connections', 'enterprise_identity_connection_history', 'documents', 'record_sensitivity_levels', 'role_conflict_problems', 'role_group_mappings_seen', 'role_mapping_notices', 'legal_holds', 'access_requests', 'sensitivity_level_changes', 'document_duplicate_receipts', 'tenants', 'steward_notices', 'unidentified_intake_attempts', 'quarantine_incidents', 'quarantined_documents', 'quarantine_release_requests', 'audit_reports', 'databasechangelog', 'databasechangeloglock');
 "@
 # Task 0032: tenants with every column it had before 030 (030 adds time_zone, null for every existing tenant).
 $tenantsOldColumnsSql = "select count(*) || ':' || md5(string_agg((to_jsonb(x) - 'time_zone')::text, '|' order by x.tenant_id)) from tenants x;"
@@ -278,8 +285,10 @@ revoke all on database $db from public;
     Assert-That ((Get-Value $hasAttemptTableSql) -eq $attemptTableBefore) "unidentified_intake_attempts should $(if ($has033) { 'not ' })exist at the previous version"
     Assert-That ((Get-Value $hasAttemptCountSql) -eq $attemptCountBefore) "unidentified_intake_attempts.attempt_count and last_seen_at should $(if ($has034) { 'not ' })exist at the previous version"
     Assert-That ((Get-Value $hasQuarantineTablesSql) -eq $quarantineTablesBefore) "the quarantine tables should $(if ($has036) { 'not ' })exist at the previous version"
+    Assert-That ((Get-Value $hasReportTableSql) -eq $reportTableBefore) "audit_reports should $(if ($has037) { 'not ' })exist at the previous version"
+    Assert-That ((Get-Value $hasAppendOnlySql) -eq $(if ($has037) { '0' } else { '4' })) "the append-only triggers should $(if ($has037) { 'not ' })exist at the previous version"
     $prevCount = Get-Value 'select count(*) from databasechangelog;'
-    $missing = @(); if ($has023) { $missing += 'no sensitivity_level' }; if ($has024) { $missing += 'no record_sensitivity_levels' }; if ($has025) { $missing += 'no role tables' }; if ($has026) { $missing += 'no legal_holds' }; if ($has027) { $missing += 'no access_requests' }; if ($has028) { $missing += 'no sensitivity_level_changes' }; if ($has029) { $missing += 'no document_duplicate_receipts' }; if ($has030) { $missing += 'no tenants.time_zone' }; if ($has031) { $missing += 'no report indexes' }; if ($has032) { $missing += 'no steward_notices' }; if ($has033) { $missing += 'no unidentified_intake_attempts' }; if ($has034) { $missing += 'no attempt counts' }; if ($has036) { $missing += 'no quarantine tables' }
+    $missing = @(); if ($has023) { $missing += 'no sensitivity_level' }; if ($has024) { $missing += 'no record_sensitivity_levels' }; if ($has025) { $missing += 'no role tables' }; if ($has026) { $missing += 'no legal_holds' }; if ($has027) { $missing += 'no access_requests' }; if ($has028) { $missing += 'no sensitivity_level_changes' }; if ($has029) { $missing += 'no document_duplicate_receipts' }; if ($has030) { $missing += 'no tenants.time_zone' }; if ($has031) { $missing += 'no report indexes' }; if ($has032) { $missing += 'no steward_notices' }; if ($has033) { $missing += 'no unidentified_intake_attempts' }; if ($has034) { $missing += 'no attempt counts' }; if ($has036) { $missing += 'no quarantine tables' }; if ($has037) { $missing += 'no audit report register, audit not append-only' }
     Write-Step "1. Previous version (changesets up to $($lastPrevious.Substring(0, 3)))" $w.Elapsed.TotalSeconds "$prevCount changesets, last $last, $($missing -join ', ')"
 
     # ------------------------------------------------------------ 2. data at the previous version
@@ -442,6 +451,12 @@ insert into unidentified_intake_attempts(attempt_id, tenant_id, occurred_at, cal
             Assert-That ($upgradeText.Contains($c)) "the reviewable SQL lacks $c"
         }
     }
+    if ($has037) {
+        foreach ($c in @('create table audit_reports', 'ck_audit_reports_fingerprint', 'create function sdv_refuse_append_only_change',
+                'trg_audit_events_append_only', 'trg_audit_reports_append_only', 'revoke update, delete, truncate')) {
+            Assert-That ($upgradeText.Contains($c)) "the reviewable SQL lacks $c"
+        }
+    }
     Assert-That (-not ($upgradeText -match "::$lastPrevious::")) 'the reviewable SQL repeats an already applied changeset'
     Assert-That ((Get-Value $hasColumnSql) -eq $hasColumn) 'sql changed the database (documents)'
     Assert-That ((Get-Value $hasTableSql) -eq $recordTableBefore) 'sql changed the database (record_sensitivity_levels)'
@@ -456,6 +471,7 @@ insert into unidentified_intake_attempts(attempt_id, tenant_id, occurred_at, cal
     Assert-That ((Get-Value $hasAttemptTableSql) -eq $attemptTableBefore) 'sql changed the database (unidentified_intake_attempts)'
     Assert-That ((Get-Value $hasAttemptCountSql) -eq $attemptCountBefore) 'sql changed the database (attempt counts)'
     Assert-That ((Get-Value $hasQuarantineTablesSql) -eq $quarantineTablesBefore) 'sql changed the database (quarantine tables)'
+    Assert-That ((Get-Value $hasReportTableSql) -eq $reportTableBefore) 'sql changed the database (audit_reports)'
     Write-Step '3b. Schema step sql (the SQL to review)' $sq.Seconds "only $($newChangesets.ForEach({ $_.Substring(0, 3) }) -join ' and '); database unchanged"
 
     $up = Invoke-SchemaStep @('update')
@@ -746,7 +762,31 @@ rollback;
         Write-Step '4n. After 036: quarantine tables' $w.Elapsed.TotalSeconds 'three tables, empty; checks refuse a bad name, reason, scope or status, a second quarantine in force, an unknown document, a release without a reason, a second waiting request, deciding your own, approving without a decider'
         $w = [System.Diagnostics.Stopwatch]::StartNew()
     }
-    if ($has027 -or $has028 -or $has029 -or $has030 -or $has031 -or $has032 -or $has033 -or $has034 -or $has035 -or $has036) {
+    if ($has037) {
+        # Task 0050: the register exists and is empty; the audit trail and the register refuse UPDATE, DELETE and
+        # TRUNCATE for the owner too; the scratch owner keeps SELECT and INSERT.
+        $tenant = '10000000-0000-0000-0000-000000000001'
+        # A row to refuse changes on: a row trigger fires only for the rows a statement touches.
+        $null = Invoke-Sql -Database $db -AsOwner -Sql "insert into audit_events(audit_event_id, tenant_id, actor_type, actor_id, action, target_type, target_id, outcome) values (gen_random_uuid(), '$tenant', 'SYSTEM', 'upgrade-check', 'UPGRADE_CHECK', 'TENANT', '$tenant', 'SUCCESS');"
+        Assert-That ((Get-Value $hasReportTableSql) -eq '1') 'audit_reports was not created'
+        Assert-That ((Get-Value 'select count(*) from audit_reports;') -eq '0') 'audit_reports should start empty'
+        Assert-That ((Get-Value $hasAppendOnlySql) -eq '4') 'the four append-only triggers were not created'
+        $auditRows = Get-Value 'select count(*) from audit_events;'
+        foreach ($bad in @('update audit_events set action = action;', 'delete from audit_events;', 'truncate audit_reports;',
+                "insert into audit_reports(report_id, tenant_id, generated_by, generated_at, range_from, range_to, row_count, fingerprint, csv) values (gen_random_uuid(), '$tenant', 'stan', now(), now(), now() - interval '1 day', 0, repeat('a', 64), 'x');",
+                "insert into audit_reports(report_id, tenant_id, generated_by, generated_at, range_from, range_to, row_count, fingerprint, csv) values (gen_random_uuid(), '$tenant', 'stan', now(), now() - interval '1 day', now(), 0, 'not-a-fingerprint', 'x');")) {
+            $r = Invoke-Sql -Database $db -AsOwner -Sql $bad -AllowFailure
+            Assert-That ($r.Code -ne 0) "the audit tables should refuse: $bad"
+        }
+        foreach ($bad in @('update audit_events set action = action;', 'delete from audit_events;')) {
+            $r = Invoke-Sql -Database $db -AsOwner -Sql $bad -AllowFailure
+            Assert-That ($r.Err -match 'append-only') "the refusal should say append-only: $bad"
+        }
+        Assert-That ((Get-Value 'select count(*) from audit_events;') -eq $auditRows) 'an audit row was changed or removed'
+        Write-Step '4o. After 037: audit report register, append-only audit' $w.Elapsed.TotalSeconds 'register there and empty; UPDATE, DELETE and TRUNCATE refused for the owner; a bad range or fingerprint refused'
+        $w = [System.Diagnostics.Stopwatch]::StartNew()
+    }
+    if ($has027 -or $has028 -or $has029 -or $has030 -or $has031 -or $has032 -or $has033 -or $has034 -or $has035 -or $has036 -or $has037) {
 
         # The application's own repositories and services against this database: holds and the retention cleanup
         # (LegalHoldPostgresTest), requests, grants, expiry and the table's checks (AccessRequestPostgresTest), exact
@@ -756,9 +796,9 @@ rollback;
         $w = [System.Diagnostics.Stopwatch]::StartNew()
         $mvn = (Get-Command mvn.cmd -ErrorAction Stop).Source
         $it = Invoke-Native -File $mvn -Arguments @('-o', '-f', (Join-Path $root 'backend\pom.xml'), '-pl', 'sdv-web', '-am', 'test',
-            '-Dtest=LegalHoldPostgresTest,AccessRequestPostgresTest,DuplicateIntakePostgresTest,IntakeReportPostgresTest,SensitivityReportPostgresTest,PlatformIdentityPostgresTest,SenderProfileServerContractTest,UnidentifiedIntakeAttemptPostgresTest,QuarantinePostgresTest', '-Dsurefire.failIfNoSpecifiedTests=false') -Environment @{
+            '-Dtest=LegalHoldPostgresTest,AccessRequestPostgresTest,DuplicateIntakePostgresTest,IntakeReportPostgresTest,SensitivityReportPostgresTest,PlatformIdentityPostgresTest,SenderProfileServerContractTest,UnidentifiedIntakeAttemptPostgresTest,QuarantinePostgresTest,SealedAuditPostgresTest', '-Dsurefire.failIfNoSpecifiedTests=false') -Environment @{
             SDV_IT_JDBC_URL = $hostUrl; SDV_IT_JDBC_USER = $owner; SDV_IT_JDBC_PASSWORD = $ownerPassword }
-        foreach ($test in @('application.legalhold.LegalHoldPostgresTest', 'application.approvals.AccessRequestPostgresTest', 'application.document.DuplicateIntakePostgresTest', 'application.reports.IntakeReportPostgresTest', 'application.reports.SensitivityReportPostgresTest', 'application.identity.PlatformIdentityPostgresTest', 'web.SenderProfileServerContractTest', 'application.reports.UnidentifiedIntakeAttemptPostgresTest', 'application.quarantine.QuarantinePostgresTest')) {
+        foreach ($test in @('application.legalhold.LegalHoldPostgresTest', 'application.approvals.AccessRequestPostgresTest', 'application.document.DuplicateIntakePostgresTest', 'application.reports.IntakeReportPostgresTest', 'application.reports.SensitivityReportPostgresTest', 'application.identity.PlatformIdentityPostgresTest', 'web.SenderProfileServerContractTest', 'application.reports.UnidentifiedIntakeAttemptPostgresTest', 'application.quarantine.QuarantinePostgresTest', 'application.audit.SealedAuditPostgresTest')) {
             $itLine = ($it.Out -split "`n" | Where-Object { $_ -match ('Tests run: .* in com\.sdv\.platform\.' + [regex]::Escape($test)) } | Select-Object -First 1)
             # Task 0039 part 2: UnidentifiedIntakeAttemptPostgresTest has two tests (the flood of 1,000 requests).
             $wantRun = switch ($test) { 'application.reports.UnidentifiedIntakeAttemptPostgresTest' { 2 } 'application.identity.PlatformIdentityPostgresTest' { 5 } default { 1 } }

@@ -10,12 +10,18 @@ import java.util.List;
  * quoted, and a cell that a spreadsheet would run as a formula (starting with = + - @, tab or carriage return) is prefixed with an apostrophe.
  */
 public final class AuditCsv {
-    static final String HEADER = "When (UTC),What happened,Person,Record,Result,Action code,Document ID,Level,Received (UTC),Pages";
+    public static final String HEADER = "When (UTC),What happened,Person,Record,Result,Action code,Document ID,Level,Received (UTC),Pages";
 
     private AuditCsv() { }
 
     public static byte[] write(List<AuditQueryService.AuditEntry> entries) {
         StringBuilder out = new StringBuilder("﻿").append(HEADER).append("\r\n");
+        appendRows(out, entries);
+        return out.toString().getBytes(StandardCharsets.UTF_8);
+    }
+
+    /** Task 0050: the same rows, for the sealed audit report (after its stamp). */
+    public static void appendRows(StringBuilder out, List<AuditQueryService.AuditEntry> entries) {
         for (AuditQueryService.AuditEntry e : entries) {
             out.append(cell(e.occurredAt().toString())).append(',')
                     .append(cell(AuditSentences.sentence(e))).append(',')
@@ -28,7 +34,6 @@ public final class AuditCsv {
                     .append(cell(e.documentReceivedAt() == null ? null : e.documentReceivedAt().toString())).append(',')
                     .append(cell(e.documentPageCount() == null ? null : e.documentPageCount().toString())).append("\r\n");
         }
-        return out.toString().getBytes(StandardCharsets.UTF_8);
     }
 
     /** Task 0032: also used by the Daily intake CSV, with the same formula guard. */

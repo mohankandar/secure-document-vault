@@ -31,6 +31,7 @@ public final class AuditSentences {
             Map.entry("VIEW_INTAKE_REPORTS", "see the reports"),
             Map.entry("QUARANTINE_DOCUMENTS", "quarantine documents"),
             Map.entry("QUARANTINE_BY_FILTER", "quarantine documents by filter"),
+            Map.entry("GENERATE_AUDIT_REPORT", "generate the sealed audit report"),
             Map.entry("VIEW_TECHNICAL_FAILURES", "see problems and the audit"));
 
     /** Task 0026: what a refused DOCUMENT_ACCESS_REFUSED tried, in words. */
@@ -123,6 +124,10 @@ public final class AuditSentences {
             case "QUARANTINE_RELEASE_DECLINED" -> w + " declined releasing a whole quarantine incident";
             case "QUARANTINE_RELEASE_EXPIRED" -> "A request to release a quarantine incident expired";
             case "QUARANTINE_EXPOSURE_EXPORTED" -> w + " exported a quarantine exposure report";
+            // Task 0050: the sealed audit report.
+            case "AUDIT_REPORT_GENERATED" -> w + " generated a sealed audit report" + (number(d, "rowCount") != null ? " of " + number(d, "rowCount") + (Long.valueOf(1).equals(number(d, "rowCount")) ? " event" : " events") : "");
+            case "AUDIT_REPORT_DOWNLOADED" -> w + " downloaded a copy of a sealed audit report" + ("PDF".equals(text(d, "format")) ? " (PDF)" : "CSV".equals(text(d, "format")) ? " (CSV)" : "");
+            case "AUDIT_REPORT_VERIFIED" -> d.path("matches").asBoolean(false) ? w + " verified a file: it matches a sealed audit report" : w + " checked a file: it matches no sealed audit report";
             // Task 0028: level changes and approvals. Levels in words; the reason stays in the details.
             case "DOCUMENT_SENSITIVITY_RAISED" -> w + " raised " + f + " to " + levelWords(text(d, "to"));
             case "DOCUMENT_SENSITIVITY_LOWERED" -> w + " approved lowering " + f + " to " + levelWords(text(d, "to"));

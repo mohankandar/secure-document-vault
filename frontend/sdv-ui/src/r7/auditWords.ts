@@ -68,6 +68,10 @@ export const AUDIT_SENTENCES: Record<string, Sentence> = {
   QUARANTINE_RELEASE_DECLINED: (w) => `${w} declined releasing a whole quarantine incident`,
   QUARANTINE_RELEASE_EXPIRED: () => 'A request to release a quarantine incident expired',
   QUARANTINE_EXPOSURE_EXPORTED: (w) => `${w} exported a quarantine exposure report`,
+  // Task 0050: the sealed audit report.
+  AUDIT_REPORT_GENERATED: (w, _f, d) => (n(d.rowCount) != null ? `${w} generated a sealed audit report of ${n(d.rowCount)} event${n(d.rowCount) === 1 ? '' : 's'}` : `${w} generated a sealed audit report`),
+  AUDIT_REPORT_DOWNLOADED: (w, _f, d) => `${w} downloaded a copy of a sealed audit report${d.format === 'PDF' ? ' (PDF)' : d.format === 'CSV' ? ' (CSV)' : ''}`,
+  AUDIT_REPORT_VERIFIED: (w, _f, d) => (d.matches === true ? `${w} verified a file: it matches a sealed audit report` : `${w} checked a file: it matches no sealed audit report`),
   BUSINESS_RECORD_OPENED: (w) => `${w} opened a record`,
   // Task 0022: a search across all fields says so ("searched all fields"); the text itself is never stored.
   BUSINESS_SEARCH: (w, _f, d) => { const what = d.anywhere === true ? 'searched all fields' : 'searched records'; return n(d.resultCount) != null ? `${w} ${what} and found ${n(d.resultCount)}` : `${w} ${what}` },

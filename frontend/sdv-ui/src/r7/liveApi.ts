@@ -356,3 +356,19 @@ export const incidentReleaseRequests = () => roleApi<IncidentReleaseRequest[]>('
 /** One at a time: there is no bulk decision for these. */
 export const decideIncidentRelease = (requestId: string, decision: 'approve' | 'decline') =>
   roleApi<IncidentReleaseRequest>('/api/v1/admin/quarantine-releases/' + encodeURIComponent(requestId) + '/' + decision, 'businessAdmin', { method: 'POST' })
+
+// ---- Task 0050: the sealed audit report (Business admin and IT admin) ----
+
+/** A report as the register lists it: from and to are the period's start and its end (the day after the last day, UTC). */
+export type AuditReport = { reportId: string; generatedBy: string; generatedAt: string; from: string; to: string; filters: Record<string, string>; rowCount: number; fingerprint: string }
+/** from and to: days (YYYY-MM-DD, UTC), both included; the rest are the Audit list's filters, each optional. */
+export type AuditReportRequest = { from: string; to: string; outcome?: string; recordNumber?: string; sensitivityLevel?: string }
+export type AuditReportVerification = { matches: boolean; fingerprint: string; report: AuditReport | null }
+const auditReportPath = '/api/v1/audit-reports'
+export const auditReports = () => roleApi<AuditReport[]>(auditReportPath, 'businessAdmin')
+/** Generates, registers and audits the report; the files are downloaded from it afterwards. */
+export const generateAuditReport = (r: AuditReportRequest) => roleApi<AuditReport>(auditReportPath, 'businessAdmin', { method: 'POST', body: JSON.stringify({
+  from: r.from, to: r.to, outcome: r.outcome || undefined, recordNumber: r.recordNumber?.trim() || undefined, sensitivityLevel: r.sensitivityLevel || undefined }) })
+/** The sealed CSV, exactly as generated, or its PDF; each copy is audited. */
+export const auditReportFile = (reportId: string, format: 'csv' | 'pdf'): Promise<RegisteredExport> => contentExport(auditReportPath + '/' + encodeURIComponent(reportId) + '/' + format, 'businessAdmin')
+export const verifyAuditReport = (fingerprint: string) => roleApi<AuditReportVerification>(auditReportPath + '/verify', 'businessAdmin', { method: 'POST', body: JSON.stringify({ fingerprint }) })

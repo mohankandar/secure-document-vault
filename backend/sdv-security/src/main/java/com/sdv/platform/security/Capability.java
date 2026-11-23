@@ -33,5 +33,7 @@ public enum Capability {
     /** Task 0048: quarantine a document, review quarantined documents, release one, ask to release an incident, read the exposure report. Stewards; levels as for opening. */
     QUARANTINE_DOCUMENTS,
     /** Task 0048: quarantine a whole incident by filter. Restricted Steward only. */
-    QUARANTINE_BY_FILTER
+    QUARANTINE_BY_FILTER,
+    /** Task 0050: generate, list, download and verify the sealed audit report. Business Admin and IT Admin; there is no auditor role. */
+    GENERATE_AUDIT_REPORT
 }
