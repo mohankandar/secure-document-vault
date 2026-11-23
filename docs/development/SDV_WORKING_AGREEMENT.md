@@ -14,7 +14,7 @@ This agreement must remain in the SDV repository and must be reviewed before imp
 
 SDV is a completely independent application and product.
 
-SDV must not share implementation with LexaVault or any other product, including:
+SDV must not share implementation with any other product, including:
 
 - source code;
 - common libraries or shared JARs;
@@ -24,7 +24,7 @@ SDV must not share implementation with LexaVault or any other product, including
 - deployment units;
 - runtime dependencies.
 
-LexaVault may be a highly compatible upstream producer, but compatibility exists only through published external contracts and conventions.
+Another product may be a highly compatible upstream producer, but compatibility exists only through published external contracts and conventions.
 
 ## 3. Primary Responsibility Split
 

@@ -62,17 +62,17 @@ export async function asRole(page: Page, role: string, width: number, height: nu
   await page.setViewportSize({ width, height })
   await page.goto('/')
   await expect(accountButton(page)).toBeVisible({ timeout: 15000 })
-  // The account button names the role in words ("Tenant IT administrator"); switch only when it is another role.
-  const ROLE_WORDS: Record<string, string> = { 'Business User': 'Business user', 'Document Steward': 'Document steward', 'Restricted Steward': 'Restricted steward', 'Business Administrator': 'Business administrator', 'Tenant IT Administrator': 'Tenant IT administrator', 'Platform Operations Administrator': 'Platform operations administrator' }
+  // The account button names the role in words ("IT administrator"); switch only when it is another role.
+  const ROLE_WORDS: Record<string, string> = { 'Business User': 'Business user', 'Document Steward': 'Document steward', 'Restricted Steward': 'Restricted steward', 'Business Administrator': 'Business administrator', 'IT Administrator': 'IT administrator', 'Platform Operations Administrator': 'Platform operations administrator' }
   if (!((await accountButton(page).getAttribute('aria-label')) ?? '').endsWith(', ' + (ROLE_WORDS[role] ?? role))) {
     await accountButton(page).click()
     await Promise.all([page.waitForEvent('load'), page.getByLabel('Local test role').selectOption({ label: role })])
     await expect(accountButton(page)).toBeVisible({ timeout: 15000 })
   }
   // Every compare run starts the same way: the canvas's loan system (Seed-SDV-Canvas-Demo.ps1) as the remembered choice.
-  const schema = await (await page.request.get('/api/v1/business/search-schema', { headers: { 'X-SDV-Tenant-Id': '11111111-1111-1111-1111-111111111111', 'X-SDV-Subject': 'local-business-user', 'X-SDV-Roles': 'BUSINESS_USER' } })).json() as { sources: { sourceId: string; displayName: string }[] }
-  const lexa = schema.sources.find((s) => s.displayName === CANVAS_SOURCE) ?? schema.sources.find((s) => s.displayName === 'LexaVault')
-  if (lexa) await page.evaluate((id) => window.localStorage.setItem('vero.records.sourceId', id), lexa.sourceId)
+  const schema = await (await page.request.get('/api/v1/business/search-schema', { headers: { 'X-SDV-Tenant-Id': 'bd960ee9-9d54-5053-9958-92aaa54893a6', 'X-SDV-Subject': 'local-business-user', 'X-SDV-Roles': 'BUSINESS_USER' } })).json() as { sources: { sourceId: string; displayName: string }[] }
+  const remembered = schema.sources.find((s) => s.displayName === CANVAS_SOURCE) ?? schema.sources.find((s) => s.displayName === 'Redaction Service')
+  if (remembered) await page.evaluate((id) => window.localStorage.setItem('vero.records.sourceId', id), remembered.sourceId)
   await page.evaluate(() => window.localStorage.setItem('sdv.r7.theme', 'light'))
   await page.reload()
   await expect(accountButton(page)).toBeVisible({ timeout: 15000 })
@@ -175,7 +175,7 @@ const adminPage = (role: string, hash: string, height: number, then?: (page: Pag
   if (then) await then(page)
   await page.waitForLoadState('networkidle')
 }
-const BA = 'Business Administrator', IT = 'Tenant IT Administrator', OPS = 'Platform Operations Administrator'
+const BA = 'Business Administrator', IT = 'IT Administrator', OPS = 'Platform Operations Administrator'
 
 export const ADMIN_BOARDS: (Board & { setUp: (page: Page) => Promise<void> })[] = [
   { name: 'admin-integrations', index: 1, height: 900, setUp: adminPage(IT, '#/tenant/integrations', 900, async (page) => {

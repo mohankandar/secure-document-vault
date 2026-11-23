@@ -1,0 +1,8 @@
+databaseChangeLog:
+  - changeSet:
+      id: 035-drop-old-identity
+      author: sdv
+      changes:
+        - sqlFile:
+            path: db/changelog/035-drop-old-identity.sql
+            relativeToChangelogFile: false

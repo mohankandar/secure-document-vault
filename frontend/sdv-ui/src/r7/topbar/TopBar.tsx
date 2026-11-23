@@ -2,7 +2,7 @@ import type { ReactNode } from 'react'
 import { Search } from 'lucide-react'
 import './topbar.css'
 
-// Product-neutral top bar: data in, events out. No SDV logic lives here, so LexaVault can reuse it.
+// Product-neutral top bar: data in, events out. No Vero business logic lives here.
 
 export type TopBarTab = { id: string; label: string; /** e.g. items needing attention */ count?: number; countLabel?: string }
 

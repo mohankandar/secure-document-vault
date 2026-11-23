@@ -13,7 +13,7 @@
   - Organization: the local demo tenant is named "Acme Lending".
   - Storage: "primary-a" in use (.runtime\demo-storage) and "primary-b" on standby (.runtime\demo-storage-b).
     An existing "Local demo volume" is renamed primary-a.
-  - LexaVault (the source the screen tour uses), with Contract Number, Member Number, Service Entity, First Name,
+  - Redaction Service (the source the screen tour uses), with Contract Number, Member Number, Service Entity, First Name,
     Last Name (contains) and Loan Type; Record title First Name + Last Name. Records:
       100000000001-100000000003 (names added in the database, as before), 300000000076-300000000078 (Ava, Noah and
       Mia Patel), 300000000094-300000000096 (the Problems demo), and, task 0023:
@@ -51,7 +51,7 @@
   filled (its canvas-demo deliveries are there) and Vero at -Base is using that database. Through the API, as a
   person would (so each change is audited), it puts back:
   - Roles & permissions: Business user without Download, Print, Tags, Comments and Redact; Document steward with all five.
-  - LexaVault receiving, and the seed's field settings (for example Last Name "Contains").
+  - Redaction Service receiving, and the seed's field settings (for example Last Name "Contains").
   - Waiting requests: every waiting request the seed did not make is declined.
   - Levels: the seed's levels on its documents and on 300000000002 (whole contract); every other document and contract
     Standard. A raise is made by "local-demo-reset"; a lowering is asked by "local-demo-reset" and approved by Priya
@@ -94,7 +94,7 @@ if (-not $StandbyStorageFolder) { $StandbyStorageFolder = Join-Path $ScriptFolde
 if ($Base -notmatch '^http://(localhost|127\.0\.0\.1)[:/]') { throw 'The canvas demo data is for the local development stack only.' }
 foreach ($f in @($PdfPath, $FourteenPagePdfPath)) { if (-not (Test-Path -LiteralPath $f -PathType Leaf)) { throw "Demo PDF not found: $f" } }
 
-$Tenant = '11111111-1111-1111-1111-111111111111'
+$Tenant = 'bd960ee9-9d54-5053-9958-92aaa54893a6'
 $Correlation = 'canvas-demo-seed-' + ([guid]::NewGuid().ToString('N')).Substring(0, 10)
 function Ok([string]$Message) { Write-Host "  [OK  ] $Message" -ForegroundColor Green }
 # Task 0035: a step that can't run because the data has moved on is skipped, never failed; the end of the run lists them.
@@ -119,7 +119,7 @@ function Db([string]$Sql) { (& docker exec sdv-postgres psql -U sdv -d $Database
 function Lit([string]$s) { "'" + $s.Replace("'", "''") + "'" }
 
 $admin = Headers 'local-demo-business-admin' 'BUSINESS_ADMIN'
-$it = Headers 'local-demo-tenant-it' 'TENANT_IT_ADMIN'
+$it = Headers 'local-demo-tenant-it' 'IT_ADMIN'
 $steward = Headers 'local-document-steward' 'DOCUMENT_STEWARD'
 
 # A field that is already there is left as it is (each save adds a field version and an audit event). With -Reset, a
@@ -186,20 +186,99 @@ function Deliver([string]$SourceId, [string]$SubKey, [hashtable]$Metadata, [stri
 }
 
 Write-Host "=== SDV DEMO DATA (local only, database $Database) ==="
-try { $health = Invoke-RestMethod -Uri "$Base/actuator/health" -TimeoutSec 5 } catch { throw "SDV is not reachable at $Base. Start it with .\start-local.cmd" }
-if ($health.status -ne 'UP') { throw "SDV is not UP at $Base" }
+try { $health = Invoke-RestMethod -Uri "$Base/actuator/health" -TimeoutSec 5 } catch { throw "SDV is not reachable at $Base. Start it with .\start-local.cmd (run .\Update-SDV-Schema.ps1 update first on a database older than this version)" }
+if ($health.status -ne 'UP') { throw "SDV is not UP at $Base. If the database is older than this version, run .\Update-SDV-Schema.ps1 update -Url jdbc:postgresql://localhost:5433/$Database -Username sdv, then restart." }
+$info = Invoke-RestMethod -Uri "$Base/api/v1/system/info" -TimeoutSec 10
+if (@($info.activeProfiles) -notcontains 'local') { throw "The demo data is for a Vero in local mode; Vero at $Base runs with profiles $(@($info.activeProfiles) -join ', ')." }
+
+# ---- Task 0041: the demo entities come from platform-core setup and Vero's demo step, never from a changeset ----
+# Setup loads the demo licence (signed by the development key in dev\setup, which no release trusts), the customer,
+# the two entity slots, the local login connection, the role grants and the client bindings. The demo step activates
+# both slots and makes Vero's rows for them (entity UUIDs derived from the slot IDs). Both are safe to run again. The
+# database user and password are the local profile's (application-local.yml), set for these two runs only.
+$SetupRuntime = Join-Path $ScriptFolder '.runtime\setup'
+New-Item -ItemType Directory -Force -Path $SetupRuntime | Out-Null
+$localUrl = "jdbc:postgresql://localhost:5433/$Database"
+# Their log lines go to stderr; Windows PowerShell would stop on them, so only the exit codes decide here.
+$stopOnStderr = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+$env:PLATFORM_SETUP_DB_URL = $localUrl; $env:PLATFORM_SETUP_DB_USER = 'sdv'; $env:PLATFORM_SETUP_DB_PASSWORD = 'sdv_local_only'
+try {
+    $setupOut = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $ScriptFolder 'setup.ps1') apply `
+        -Licence (Join-Path $ScriptFolder 'dev\setup\licence-vero-demo.json') -Signin (Join-Path $ScriptFolder 'dev\setup\signin-vero-demo.json') `
+        -Development --no-customer-keys --run-log (Join-Path $SetupRuntime 'platform-setup-runs.log') `
+        --config-out (Join-Path $SetupRuntime 'platform-tenant.properties') 2>&1
+    $setupExit = $LASTEXITCODE
+} finally {
+    Remove-Item Env:PLATFORM_SETUP_DB_URL, Env:PLATFORM_SETUP_DB_USER, Env:PLATFORM_SETUP_DB_PASSWORD -ErrorAction SilentlyContinue
+}
+if ($setupExit -ne 0 -and $setupExit -ne 3) { throw "Setup failed (exit $setupExit):`n$($setupOut -join "`n")" }
+Ok "Setup applied: demo licence, customer, entity slots, login connection, grants, client bindings$(if ($setupExit -eq 3) { ' (some items need a flag; see the plan)' })"
+$webJar = @(Get-ChildItem -Path (Join-Path $ScriptFolder 'backend\sdv-web\target') -Filter 'sdv-web-*.jar' -File | Where-Object { $_.Name -notlike '*.original' })[0].FullName
+$env:SDV_DEMO_DB_URL = $localUrl; $env:SDV_DEMO_DB_USERNAME = 'sdv'; $env:SDV_DEMO_DB_PASSWORD = 'sdv_local_only'
+try {
+    $demoOut = & java -cp $webJar '-Dloader.main=com.sdv.platform.web.install.DemoStep' org.springframework.boot.loader.launch.PropertiesLauncher `
+        apply --keys (Join-Path $ScriptFolder 'dev\setup\development-trusted-keys.json') 2>&1
+    $demoExit = $LASTEXITCODE
+} finally {
+    Remove-Item Env:SDV_DEMO_DB_URL, Env:SDV_DEMO_DB_USERNAME, Env:SDV_DEMO_DB_PASSWORD -ErrorAction SilentlyContinue
+}
+$ErrorActionPreference = $stopOnStderr
+if ($demoExit -ne 0) { throw "The demo step failed (exit $demoExit):`n$($demoOut -join "`n")" }
+Ok 'Demo step: entities ENT-VERO-DEMO-0001 (Acme Lending) and ENT-VERO-DEMO-0002 activated'
+
 $tenantRow = Db "select count(*) from tenants where tenant_id='$Tenant';"
-if ([int]$tenantRow -ne 1) { throw "The local demo tenant is not in database $Database. Is the app at $Base started on it (local profile)?" }
+if ([int]$tenantRow -ne 1) { throw "The local demo entity is not in database $Database. Is the app at $Base started on it (local profile)?" }
+
+# Task 0041 (owner answer 7): -Reset removes the two demo entities of the old local seed changeset (fixed UUIDs, no
+# platform-core entity behind them) and everything recorded for them, in the local database only. Nothing else.
+$LegacyDemoEntities = @('11111111-1111-1111-1111-111111111111', '22222222-2222-2222-2222-222222222222')
+$legacyRows = [int](Db "select count(*) from tenants where tenant_id in ('$($LegacyDemoEntities -join "','")');")
+$switchedOver = $false
+if ($Reset -and $legacyRows -gt 0) {
+    $legacySql = @"
+do `$`$
+declare
+  ids uuid[] := array['$($LegacyDemoEntities -join "','")']::uuid[];
+  t record; blocked int; pass int := 0;
+begin
+  loop
+    pass := pass + 1; blocked := 0;
+    for t in select c.table_name from information_schema.columns c
+             join information_schema.tables b on b.table_schema = c.table_schema and b.table_name = c.table_name and b.table_type = 'BASE TABLE'
+             where c.table_schema = 'public' and c.column_name = 'tenant_id' and c.data_type = 'uuid' and c.table_name <> 'tenants'
+               and c.table_name not like 'idn_%' and c.table_name not like 'lic_%' loop
+      begin
+        execute format('delete from %I where tenant_id = any(`$1)', t.table_name) using ids;
+      exception when foreign_key_violation then blocked := blocked + 1;
+      end;
+    end loop;
+    exit when blocked = 0 or pass > 30;
+  end loop;
+  if blocked > 0 then raise exception 'rows of the old demo entities are still referenced'; end if;
+  delete from tenants where tenant_id = any(ids);
+end `$`$;
+"@
+    $null = Db $legacySql
+    $left = [int](Db "select count(*) from tenants where tenant_id in ('$($LegacyDemoEntities -join "','")');")
+    if ($left -ne 0) { throw 'The old demo entities could not be removed.' }
+    Fixed "Old demo entities (local seed changeset) and their records removed: $legacyRows"
+    $switchedOver = $true
+}
 
 # ---- Task 0035: the reset's safety checks, then the settings it puts back ----
+if ($Reset -and $switchedOver -and [int](Db "select count(*) from submissions where tenant_id='$Tenant' and source_submission_id like 'canvas-demo-%';") -eq 0) {
+    # Task 0041: the first reset after the switch-over: the new demo entity is empty, so there is nothing to put back.
+    Ok 'Reset: the demo entity is new; the seed fills it'
+    $Reset = $false
+}
 if ($Reset) {
     $info = Invoke-RestMethod -Uri "$Base/api/v1/system/info" -TimeoutSec 10
     if (@($info.activeProfiles) -notcontains 'local') { throw "Reset refused: Vero at $Base is not in local mode (profiles: $(@($info.activeProfiles) -join ', '))." }
     $demoDeliveries = [int](Db "select count(*) from submissions where tenant_id='$Tenant' and source_submission_id like 'canvas-demo-%';")
     if ($demoDeliveries -eq 0) { throw "Reset refused: database $Database holds no delivery of this seed, so it is not a demo database. On a new demo database run .\Seed-SDV-Canvas-Demo.ps1 without -Reset." }
     # Vero at -Base must be using -Database: the loan system's ID in the database is the one the API lists.
-    $losInDb = Db "select source_id from ingestion_sources where tenant_id='$Tenant' and source_key='loanOrigination';"
-    $losInApi = [string](Sources | Where-Object { $_.sourceKey -eq 'loanOrigination' } | Select-Object -First 1).sourceId
+    $losInDb = Db "select source_id from ingestion_sources where tenant_id='$Tenant' and source_key='loan-origination';"
+    $losInApi = [string](Sources | Where-Object { $_.sourceKey -eq 'loan-origination' } | Select-Object -First 1).sourceId
     if (-not $losInDb -or $losInDb -ne $losInApi) { throw "Reset refused: Vero at $Base does not use database $Database (its Loan Origination System is not the one in that database)." }
     Ok "Reset allowed: local mode, demo database $Database ($demoDeliveries demo deliveries), used by Vero at $Base"
 
@@ -234,40 +313,40 @@ if (-not $inUse) {
 }
 Ok 'Volume in use: primary-a'
 
-# ---- LexaVault and its records (Seed-SDV-Demo-Records.ps1) ----
-$lexa = EnsureSource 'lexaVault' 'LexaVault' 'OAUTH2_CLIENT_CREDENTIALS' 'local-demo/lexavault-client'
-# Task 0035: receiving, as the loan system below (a paused LexaVault refuses the record seed's deliveries).
-if ($lexa.status -ne 'ACTIVE') { $lexa = SetSourceStatus $lexa 'ACTIVE'; Fixed 'LexaVault receiving again' }
-$LexaId = [string]$lexa.sourceId
+# ---- Redaction Service and its records (Seed-SDV-Demo-Records.ps1) ----
+$redaction = EnsureSource 'redaction-service' 'Redaction Service' 'OAUTH2_CLIENT_CREDENTIALS' 'local-demo/redaction-service-client'
+# Task 0035: receiving, as the loan system below (a paused Redaction Service refuses the record seed's deliveries).
+if ($redaction.status -ne 'ACTIVE') { $redaction = SetSourceStatus $redaction 'ACTIVE'; Fixed 'Redaction Service receiving again' }
+$RedactionId = [string]$redaction.sourceId
 # The fields as the tour expects them, before the record seed (which then leaves them as they are).
-EnsureField $LexaId 'contractNumber' 'Contract Number' 'TEXT' $true $true 'DIGITS_ONLY' 'EXACT'
-EnsureField $LexaId 'memberNumber' 'Member Number' 'TEXT' $true $true 'DIGITS_ONLY' 'EXACT'
-EnsureField $LexaId 'serviceEntity' 'Service Entity' 'TEXT' $true $true 'TRIM' 'EXACT'
-EnsureField $LexaId 'firstName' 'First Name' 'TEXT' $false $false 'TRIM' 'EXACT'
-EnsureField $LexaId 'lastName' 'Last Name' 'TEXT' $false $false 'TRIM' 'PARTIAL'
-EnsureField $LexaId 'loanType' 'Loan Type' 'TEXT' $false $false 'TRIM' 'EXACT'
+EnsureField $RedactionId 'contractNumber' 'Contract Number' 'TEXT' $true $true 'DIGITS_ONLY' 'EXACT'
+EnsureField $RedactionId 'memberNumber' 'Member Number' 'TEXT' $true $true 'DIGITS_ONLY' 'EXACT'
+EnsureField $RedactionId 'serviceEntity' 'Service Entity' 'TEXT' $true $true 'TRIM' 'EXACT'
+EnsureField $RedactionId 'firstName' 'First Name' 'TEXT' $false $false 'TRIM' 'EXACT'
+EnsureField $RedactionId 'lastName' 'Last Name' 'TEXT' $false $false 'TRIM' 'PARTIAL'
+EnsureField $RedactionId 'loanType' 'Loan Type' 'TEXT' $false $false 'TRIM' 'EXACT'
 $recordSeed = Join-Path $ScriptFolder 'Seed-SDV-Demo-Records.ps1'
-$seedArgs = @{ Base = $Base; Database = $Database; SourceDisplayName = 'LexaVault'; PdfPath = $PdfPath }
+$seedArgs = @{ Base = $Base; Database = $Database; SourceDisplayName = 'Redaction Service'; PdfPath = $PdfPath }
 & $recordSeed @seedArgs
 & $recordSeed @seedArgs -FreshTestData -Count 3
 & $recordSeed @seedArgs -ProblemDemo
 
 # Task 0023: the two records that existed only in one machine's database.
-$null = Deliver $LexaId 'demo-incomplete-300000000090' @{ contractNumber = '300000000090'; memberNumber = '20000000090'; serviceEntity = '001'; firstName = 'Omar'; lastName = 'Patelli'; loanType = 'Mortgage' } `
+$null = Deliver $RedactionId 'demo-incomplete-300000000090' @{ contractNumber = '300000000090'; memberNumber = '20000000090'; serviceEntity = '001'; firstName = 'Omar'; lastName = 'Patelli'; loanType = 'Mortgage' } `
     @('Appraisal report', 'Insurance certificate') @(@{ id = 'Appraisal report'; file = 'Appraisal Report.pdf'; path = $PdfPath }) '300000000090 Omar Patelli (1 of 2 documents)'
-$null = Deliver $LexaId 'demo-14-pages-300000000092' @{ contractNumber = '300000000092'; memberNumber = '20000000092'; serviceEntity = '001'; firstName = 'Lena'; lastName = 'Patel'; loanType = 'Mortgage' } `
+$null = Deliver $RedactionId 'demo-14-pages-300000000092' @{ contractNumber = '300000000092'; memberNumber = '20000000092'; serviceEntity = '001'; firstName = 'Lena'; lastName = 'Patel'; loanType = 'Mortgage' } `
     @('loan-file') @(@{ id = 'loan-file'; file = 'loan-file.pdf'; path = $FourteenPagePdfPath }) '300000000092 Lena Patel (14-page document)'
-Ok 'LexaVault: 300000000090 and 300000000092'
+Ok 'Redaction Service: 300000000090 and 300000000092'
 
 # The stored field order must name every field (the screen tour puts it back as it found it).
-$null = EnsureKeys $LexaId 'display-order' @('contractNumber', 'firstName', 'lastName', 'memberNumber', 'serviceEntity', 'loanType')
-$null = EnsureKeys $LexaId 'record-title' @('firstName', 'lastName')
-Ok 'LexaVault field order (Loan Type last) and Record title: First Name + Last Name'
+$null = EnsureKeys $RedactionId 'display-order' @('contractNumber', 'firstName', 'lastName', 'memberNumber', 'serviceEntity', 'loanType')
+$null = EnsureKeys $RedactionId 'record-title' @('firstName', 'lastName')
+Ok 'Redaction Service field order (Loan Type last) and Record title: First Name + Last Name'
 
-# Names for the deliveries that were sent without them, and a loan type on every LexaVault delivery. Written as a
+# Names for the deliveries that were sent without them, and a loan type on every Redaction Service delivery. Written as a
 # delivery would have stored them (trimmed text: stored and normalized values are the same).
 $names = @{ '100000000001' = @('Jordan', 'Ellis'); '100000000002' = @('Priya', 'Shah'); '100000000003' = @('Marcus', 'Lee') }
-function AddValue([string]$SubmissionId, [string]$Key, [string]$Value, [string]$SourceId = $LexaId) {
+function AddValue([string]$SubmissionId, [string]$Key, [string]$Value, [string]$SourceId = $RedactionId) {
     $null = Db @"
 insert into business_metadata_values (metadata_value_id, tenant_id, submission_id, definition_id, field_key, definition_version, stored_value, normalized_value, source_id)
 select gen_random_uuid(), d.tenant_id, '$SubmissionId', d.definition_id, d.field_key, d.version, $(Lit $Value), $(Lit $Value), d.source_id
@@ -277,7 +356,7 @@ where d.tenant_id='$Tenant' and d.source_id='$SourceId' and d.field_key='$Key' a
 order by d.version desc limit 1;
 "@
 }
-$rows = Db "select s.submission_id || '|' || coalesce((select v.normalized_value from business_metadata_values v where v.submission_id=s.submission_id and v.field_key='contractNumber'),'') from submissions s where s.tenant_id='$Tenant' and s.source_id='$LexaId' order by s.created_at, s.submission_id;"
+$rows = Db "select s.submission_id || '|' || coalesce((select v.normalized_value from business_metadata_values v where v.submission_id=s.submission_id and v.field_key='contractNumber'),'') from submissions s where s.tenant_id='$Tenant' and s.source_id='$RedactionId' order by s.created_at, s.submission_id;"
 $index = 0
 foreach ($line in ($rows -split "`n" | Where-Object { $_.Trim() })) {
     $sid, $contract = $line.Trim().Split('|')
@@ -285,10 +364,10 @@ foreach ($line in ($rows -split "`n" | Where-Object { $_.Trim() })) {
     AddValue $sid 'loanType' $(if ($index % 3 -eq 2) { 'Auto' } else { 'Mortgage' })
     $index++
 }
-Ok "LexaVault: names on 100000000001-100000000003, a loan type on $index deliveries"
+Ok "Redaction Service: names on 100000000001-100000000003, a loan type on $index deliveries"
 
 # Task 0023: what the tour reads as a business user on 100000000001's Terms and Conditions.pdf: a tag and a comment.
-$termsId = Db "select d.document_id from documents d join submissions s on s.submission_id=d.submission_id and s.tenant_id=d.tenant_id where d.tenant_id='$Tenant' and s.source_id='$LexaId' and d.source_document_id='r3-demo-doc-100000000001-3' limit 1;"
+$termsId = Db "select d.document_id from documents d join submissions s on s.submission_id=d.submission_id and s.tenant_id=d.tenant_id where d.tenant_id='$Tenant' and s.source_id='$RedactionId' and d.source_document_id='r3-demo-doc-100000000001-3' limit 1;"
 if (-not $termsId) { throw 'Demo document r3-demo-doc-100000000001-3 (Terms and Conditions.pdf) was not found.' }
 $tags = @(ApiList "/api/v1/business/documents/$termsId/tags" $steward)
 if (-not ($tags | Where-Object { $_.tag -eq 'e2e-demo' })) {
@@ -302,7 +381,7 @@ if ($comments.Count -eq 0) {
 Ok 'A comment on 100000000001 Terms and Conditions.pdf'
 
 # ---- Loan Origination System, delivered last ----
-$los = EnsureSource 'loanOrigination' 'Loan Origination System' 'OAUTH2_CLIENT_CREDENTIALS' 'vault/loan-origination-client'
+$los = EnsureSource 'loan-origination' 'Loan Origination System' 'OAUTH2_CLIENT_CREDENTIALS' 'vault/loan-origination-client'
 $los = SetSourceStatus $los 'ACTIVE'
 $LosId = [string]$los.sourceId
 EnsureField $LosId 'contractNumber' 'Contract number' 'TEXT' $true $true 'DIGITS_ONLY' 'EXACT'
@@ -355,7 +434,7 @@ if (-not ($volumes | Where-Object { $_.volume.displayName -eq 'primary-b' })) {
     $null = Api 'POST' '/api/v1/admin/storage-volumes' $it @{ displayName = 'primary-b'; rootPath = $StandbyStorageFolder; state = 'ACTIVE'; priority = $priority; warningPercent = 80; stopWritePercent = 95 }
 }
 Ok 'Standby volume: primary-b'
-$tr = EnsureSource 'titleRecords' 'Title Records' 'OAUTH2_CLIENT_CREDENTIALS' 'vault/title-records-client'
+$tr = EnsureSource 'title-records' 'Title Records' 'OAUTH2_CLIENT_CREDENTIALS' 'vault/title-records-client'
 $null = SetSourceStatus $tr 'DISABLED' # the canvas shows Title Records paused
 Ok 'Sending system: Title Records (paused)'
 

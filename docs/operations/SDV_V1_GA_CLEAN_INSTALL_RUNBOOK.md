@@ -121,7 +121,7 @@ PASS - SDV V1.0.0 GA clean-install acceptance passed.
 
 ### Minimal encrypted business lifecycle
 
-- Tenant IT creates a storage volume and producer source;
+- IT creates a storage volume and producer source;
 - business metadata fields are configured;
 - the standalone HTTP producer submits a PDF;
 - create/document retry remains idempotent;
@@ -170,8 +170,8 @@ Once the clean-machine acceptance passes:
 
 From task 0013 on, **starting Vero never changes the database**. The customer's database team applies Vero's
 database changes themselves with the **schema step**, using their own database owner account. Vero's team never
-needs that password. Only local mode on a developer computer (`start-local.cmd`) still updates the database at
-start-up.
+needs that password. Task 0041: local mode on a developer computer uses the schema step too (it no longer updates the
+database at start-up).
 
 When the database doesn't match the Vero version, Vero starts but serves only its health and system information.
 The startup log and Platform operations › Health say one of:
@@ -193,7 +193,7 @@ meanwhile.
 
 ### Behind a proxy or load balancer: `SDV_TRUSTED_PROXIES`
 
-Tenant IT's Problems page lists intake requests Vero couldn't link to a sending system, for example a failed
+IT's Problems page lists intake requests Vero couldn't link to a sending system, for example a failed
 sign-in, with the caller's network address. By default that is the address Vero's server sees: behind a proxy or load
 balancer, the proxy's.
 
@@ -285,7 +285,9 @@ Vero has no sequences, functions or triggers of its own, so these table rights a
 
 It is in the Vero application package: `Update-SDV-Schema.ps1` (Windows) or `update-sdv-schema.sh` (Linux), next
 to the application jar (`sdv-web-<version>.jar`; use `-Jar` / `--jar` if it is elsewhere). It needs Java 21 and
-runs the Liquibase bundled in the jar. It always uses the `production` context, so local test data can never be
+runs the Liquibase bundled in the jar, then, in their own runs with their own history tables, platform-core's
+identity tables (`db/platform/identity`, history `idn_schema_history`) and licensing tables (`db/platform/licensing`,
+history `lic_schema_history`; licensing is not turned on). It always uses the `production` context, so no test data can be
 added, and it can't be changed.
 
 The connection comes from parameters or environment variables:
@@ -316,11 +318,16 @@ Exit codes: 0 done, 2 wrong use (nothing was tried), 3 the database is newer tha
    - don't wrap the whole file in one transaction (for example, no `psql -1`): changeset 018 builds indexes with
      `CREATE INDEX CONCURRENTLY`, which can't run inside a transaction;
    - the file also records each changeset in `databasechangelog`; that table is how Vero checks the version.
+   - the file starts with platform-core's identity and licensing SQL. Vero checks their versions in
+     `idn_schema_version` and `lic_schema_version`; when a later release has a platform run to do, `update` starts
+     its history (`idn_schema_history`, `lic_schema_history`) at the version the tables are at.
 4. **Update:** `.\Update-SDV-Schema.ps1 update`. It ends with "Done: N changesets applied. You can start Vero now."
 5. **Start Vero** with the app user. The log says "Database schema check: the database matches this Vero version".
    Health shows no database notice.
 
 Running `status` or `update` again is safe: when nothing is left it says "Up to date".
+
+Then load sign-in, entities and sending systems with the setup command: `docs/install/SETUP.md`.
 
 ### Checking it on a test computer
 

@@ -9,8 +9,8 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 $Root = $PSScriptRoot
 $Base = 'http://localhost:8280'
-$Tenant1 = '11111111-1111-1111-1111-111111111111'
-$Tenant2 = '22222222-2222-2222-2222-222222222222'
+$Tenant1 = 'bd960ee9-9d54-5053-9958-92aaa54893a6'
+$Tenant2 = '9b233c00-fe6e-582c-a9de-c1fa46f87254'
 $Suffix = ([guid]::NewGuid().ToString('N')).Substring(0, 10)
 $SourceKey = "ingest-a-$Suffix"
 $SourceId = $null
@@ -73,9 +73,9 @@ function InvokeJson([string]$Method, [string]$Uri, [hashtable]$Headers, [object]
     }
 }
 
-$it1 = UserHeaders $Tenant1 'ingest-a-it-1' 'TENANT_IT_ADMIN'
+$it1 = UserHeaders $Tenant1 'ingest-a-it-1' 'IT_ADMIN'
 $biz1 = UserHeaders $Tenant1 'ingest-a-biz-1' 'BUSINESS_ADMIN'
-$it2 = UserHeaders $Tenant2 'ingest-a-it-2' 'TENANT_IT_ADMIN'
+$it2 = UserHeaders $Tenant2 'ingest-a-it-2' 'IT_ADMIN'
 
 Write-Host ''
 Write-Host '=== SDV SECURE INGESTION CHECKPOINT A (UNITS 5, 7, 8) ==='
@@ -116,7 +116,7 @@ try {
     }
     $source = Invoke-RestMethod -Uri "$Base/api/v1/admin/ingestion-sources" -Method Post -Headers $it1 -ContentType 'application/json' -Body ($sourceBody | ConvertTo-Json -Depth 8) -TimeoutSec 10
     $SourceId = [string]$source.sourceId
-    Require (-not [string]::IsNullOrWhiteSpace($SourceId)) 'Tenant IT created disposable ingestion source'
+    Require (-not [string]::IsNullOrWhiteSpace($SourceId)) 'IT created disposable ingestion source'
 
     $field = @{
         displayLabel = 'Contract Number'

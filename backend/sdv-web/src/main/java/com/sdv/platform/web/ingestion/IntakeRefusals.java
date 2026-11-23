@@ -41,7 +41,7 @@ import java.util.regex.Pattern;
  *       it), the upload's own ID as sent (sourceDocumentId or Idempotency-Key), the status and the code. The Daily
  *       intake report counts it under that system. A status query ({@code GET}) delivers nothing and is not counted.</li>
  *   <li><b>No known sending system</b> (no sign-in, a refused token, a person's sign-in, a sending system the tenant
- *       doesn't have): one row in unidentified_intake_attempts, for Tenant IT's Problems: the time, the caller's
+ *       doesn't have): one row in unidentified_intake_attempts, for IT's Problems: the time, the caller's
  *       network address, the address called (IDs blanked), the method, the status, the code and the reference; the
  *       tenant only when a verified sign-in named it.</li>
  * </ul>

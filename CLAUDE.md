@@ -12,7 +12,6 @@ Related repositories on this machine:
 |---|---|---|
 | SDV (this one) | `C:\dev\sdv\secure-document-vault` | `release/vero-r7` |
 | LexaVault | `C:\dev\lexavault\secure-document-platform` | `feature/lexavault-r1b-tenant-identity` |
-| Enterprise Identity (shared library) | `C:\dev\shared\enterprise-identity-parent` | `main` |
 
 The agreed UI changes are in the Lexavault project document `SDV-UI-Review-Findings.md`; each one reaches this repository as a task in `docs/work/`.
 
@@ -26,6 +25,8 @@ The agreed UI changes are in the Lexavault project document `SDV-UI-Review-Findi
 **Branches**
 - One branch per piece of work, taken from `release/vero-r7`.
 - Do not commit to `main`. Do not push, merge or rewrite history unless the owner says so in the session.
+
+**Independence.** Vero carries no other product's name or behaviour in code, tests, scripts or install guides. Other products reach Vero only through its published APIs. The product-name guard (`ProductNameGuardTest`) enforces it.
 
 **Secrets**
 - No secrets in the repository, in logs or in the chat.

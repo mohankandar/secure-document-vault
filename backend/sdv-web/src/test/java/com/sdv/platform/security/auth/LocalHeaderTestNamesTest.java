@@ -37,7 +37,7 @@ class LocalHeaderTestNamesTest {
         assertEquals("Daniel Reyes", signIn("local-document-steward", "DOCUMENT_STEWARD", null).displayName());
         assertEquals("Maya Okafor", signIn("local-business-user", "BUSINESS_USER", null).displayName());
         assertEquals("Dana Ruiz", signIn("local-restricted-steward", "RESTRICTED_STEWARD", null).displayName(), "task 0029");
-        assertEquals("Ari Lindqvist", signIn("local-administrator", "TENANT_IT_ADMIN,BUSINESS_ADMIN", null).displayName());
+        assertEquals("Ari Lindqvist", signIn("local-administrator", "IT_ADMIN,BUSINESS_ADMIN", null).displayName());
         assertEquals("Aiko Tanaka", signIn("local-platform-operations-admin", "PLATFORM_OPERATIONS_ADMIN", null).displayName());
         for (String subject : LocalHeaderAuthenticationFilter.LOCAL_TEST_NAMES.keySet()) {
             assertFalse(LocalHeaderAuthenticationFilter.LOCAL_TEST_NAMES.get(subject).isBlank(), subject);

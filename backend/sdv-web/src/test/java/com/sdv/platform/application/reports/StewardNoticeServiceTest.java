@@ -37,7 +37,7 @@ class StewardNoticeServiceTest {
     private UUID notice(String identifier) {
         UUID id = UUID.randomUUID();
         repo.notices.add(new StewardNoticeRepository.StoredNotice(id, "UNCORRECTED_COPY_RECEIVED",
-                NOW.minusSeconds(repo.notices.size() * 60L), UUID.randomUUID(), "LexaVault", identifier, "Contract number"));
+                NOW.minusSeconds(repo.notices.size() * 60L), UUID.randomUUID(), "Redaction Service", identifier, "Contract number"));
         return id;
     }
 
@@ -50,7 +50,7 @@ class StewardNoticeServiceTest {
         assertEquals("An uncorrected copy of a corrected document was sent again; nothing was stored", dee.notices().get(0).message());
         assertEquals("300000000001", dee.notices().get(0).primaryIdentifier());
         assertEquals("Contract number", dee.notices().get(0).primaryIdentifierLabel());
-        assertEquals("LexaVault", dee.notices().get(0).sendingSystem());
+        assertEquals("Redaction Service", dee.notices().get(0).sendingSystem());
 
         assertEquals(1, service.markRead(TENANT, "dee", "corr", List.of(first)));
         assertEquals(List.of(second), service.unread(TENANT, "dee").notices().stream().map(StewardNoticeService.Notice::noticeId).toList());

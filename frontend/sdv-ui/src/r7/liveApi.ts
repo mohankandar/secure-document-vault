@@ -116,7 +116,7 @@ export const getMetadataDisplayOrder=(sourceId:string)=>roleApi<string[]>('/api/
 export const saveMetadataDisplayOrder=(sourceId:string,fieldKeys:string[])=>roleApi<string[]>('/api/v1/admin/metadata-sources/'+encodeURIComponent(sourceId)+'/display-order','businessAdmin',{method:'PUT',body:JSON.stringify({fieldKeys})})
 
 export type ItSource={sourceId:string;sourceKey:string;displayName:string;status:'ACTIVE'|'DISABLED';authType:'OAUTH2_CLIENT_CREDENTIALS'|'JWT_BEARER'|'MTLS';credentialReference:string;createdAt:string;updatedAt:string;limits?:{maxPdfBytes?:number|null;maxPagesPerPdf?:number|null;maxDocumentsPerSubmission?:number|null;maxAggregateSubmissionBytes?:number|null;incompleteAttentionHours?:number|null}}
-/** Business search settings come with each field; Tenant IT reads them but cannot change them. */
+/** Business search settings come with each field; IT reads them but cannot change them. */
 export type ItField={fieldKey:string;displayLabel:string;fieldType:string;required:boolean;normalization:string;version:number;businessIdentifier?:boolean;searchable?:boolean;searchMode?:'EXACT'|'PREFIX'|'PARTIAL'}
 export const itSources=()=>roleApi<ItSource[]>('/api/v1/admin/ingestion-sources','tenantIt')
 /** The standard limits: what applies when a sending system sets none of its own (task 0019 follow-up). */
@@ -135,9 +135,15 @@ export const itSourceSummary=(id:string)=>roleApi<ItSourceSummary>('/api/v1/admi
 
 export type LiveStorageVolume={volume:{volumeId:string;displayName:string;rootPath:string;state:string;priority:number;warningPercent:number;stopWritePercent:number};capacity?:{totalBytes:number|null;usableBytes:number|null;usedPercent:number|null;writable:boolean};observationError?:string|null;warningThresholdReached:boolean;stopWriteThresholdReached:boolean}
 export const liveStorage=()=>roleApi<LiveStorageVolume[]>('/api/v1/admin/storage-volumes','tenantIt')
-export type IdentityConnection={connectionId:string;displayName:string;providerId:string;issuerUri:string;browserClientId:string;apiAudience:string;status:string;configurationVersion:number;providerType?:string;updatedAt?:string|null;lastTestedAt?:string|null;lastTestStatus:string|null;lastTestMessage:string|null}
-export type IdentityOverview={active:IdentityConnection|null;staged:IdentityConnection|null;rollbackCandidates:IdentityConnection[];activationSupported:boolean;activationMaxTestAgeSeconds:number}
-export const identityOverview=()=>roleApi<IdentityOverview>('/api/v1/admin/enterprise-identity','tenantIt')
+/** Task 0041 (owner answer 6): the login connection in use, read only; setup changes it. */
+export type IdentityConnection={connectionId:string;providerId:string;providerType:string;issuerUri:string;browserClientId:string|null;apiAudience:string;status:string;configurationVersion:number}
+export type IdentityOverview={active:IdentityConnection|null;changedBySetupOnly:boolean}
+export const identityOverview=()=>roleApi<IdentityOverview>('/api/v1/admin/login-connection','tenantIt')
+/** Task 0041 (owner answer 5): the entities this sign-in may work in; current is null until one is chosen. */
+export type SessionEntities={current:string|null;entities:{entityId:string;name:string}[];activatableSlots:string[]}
+export const sessionEntities=()=>roleApi<SessionEntities>('/api/v1/session/entities','business')
+/** Audited by the server (ENTITY_SWITCHED) in the entity switched to, which this request names. */
+export const entitySwitched=(from:string|null)=>roleApi<void>('/api/v1/session/entity-switch','business',{method:'POST',body:JSON.stringify({from})})
 /** databaseSchema: checked once when Vero started. state CURRENT, OLDER, NEWER or UNREACHABLE; message is the plain sentence. */
 export type SystemInfo={productName:string;version:string;status:string;activeProfiles:string[];timestamp:string;databaseSchema?:{state:string;message:string}}
 export const systemInfo=(role:'tenantIt'|'platform'='tenantIt')=>roleApi<SystemInfo>('/api/v1/system/info',role)
@@ -152,7 +158,7 @@ export type OpsDetail=OpSummary & {storageVolumes:{volumeId:string;displayName:s
 /** address: the Vero address called, IDs blanked; callerAddress: the network address the request came from. */
 /** Task 0039 part 2: one row per caller address, address and code per minute; count = requests, lastSeenAt = the last of them. */
 export type UnidentifiedIntakeAttempt={attemptId:string;tenantId:string|null;occurredAt:string;lastSeenAt:string;count:number;callerAddress:string|null;method:string;address:string;status:number;code:string;reference:string}
-/** Tenant IT reads the same summary for its read-only Problems tab. */
+/** IT reads the same summary for its read-only Problems tab. */
 export const opsDetail=(role:'platform'|'tenantIt'='platform')=>roleApi<OpsDetail>('/api/v1/operations/summary',role)
 export type OpsAuditEvent={auditEventId:string;occurredAt:string;action:string;outcome:string;actorId:string;actorType:string;targetType:string;targetId:string;correlationId:string|null;safeDetailsJson:string|null;
   /** Null for events before migration 020 (show actorId). */ actorDisplayName?:string|null;

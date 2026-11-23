@@ -96,7 +96,7 @@ class RecordTitleSettingTest {
 
     @Test
     void everyOtherRoleIsRefusedAndNothingIsStored() {
-        for (SdvRole role : List.of(SdvRole.BUSINESS_USER, SdvRole.DOCUMENT_STEWARD, SdvRole.TENANT_IT_ADMIN, SdvRole.PLATFORM_OPERATIONS_ADMIN)) {
+        for (SdvRole role : List.of(SdvRole.BUSINESS_USER, SdvRole.DOCUMENT_STEWARD, SdvRole.IT_ADMIN, SdvRole.PLATFORM_OPERATIONS_ADMIN)) {
             signIn(role);
             assertThrows(AccessDeniedException.class, () -> controller.updateRecordTitleFields(SOURCE, keys("firstName")), role.name());
             assertThrows(AccessDeniedException.class, () -> controller.getRecordTitleFields(SOURCE), role.name());

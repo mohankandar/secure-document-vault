@@ -1,0 +1,10 @@
+# Format: platform-role-mapping/1
+# Product: SDV
+# Demo values only: the groups of the local development login server (realm document-platform-local).
+# entity_name stays empty: the Business Admin names each entity when activating it (the demo step does it here).
+entity_id,entity_name,group,role
+ENT-VERO-DEMO-0001,,BusinessUsers,BUSINESS_USER
+ENT-VERO-DEMO-0001,,DocumentStewards,DOCUMENT_STEWARD
+ENT-VERO-DEMO-0001,,BusinessAdmins,BUSINESS_ADMIN
+ENT-VERO-DEMO-0001,,TenantITAdmins,IT_ADMIN
+ENT-VERO-DEMO-0002,,BusinessAdmins,BUSINESS_ADMIN

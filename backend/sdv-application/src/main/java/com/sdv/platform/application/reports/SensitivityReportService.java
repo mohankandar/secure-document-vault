@@ -276,7 +276,7 @@ public class SensitivityReportService {
             case "DOCUMENT_STEWARD" -> "Document steward";
             case "RESTRICTED_STEWARD" -> "Restricted steward";
             case "BUSINESS_ADMIN" -> "Business admin";
-            case "TENANT_IT_ADMIN" -> "Tenant IT admin";
+            case "IT_ADMIN" -> "IT admin";
             case "PLATFORM_OPERATIONS_ADMIN" -> "Platform operations admin";
             default -> role;
         };

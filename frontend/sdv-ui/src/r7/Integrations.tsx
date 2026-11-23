@@ -10,7 +10,7 @@ import {
 // Task 0010 Part A and A2 (finding 14): sending systems in words, and a three-step editor.
 
 type Kind = { type: string; normalization: string; label: string }
-/** Kinds of value Tenant IT can choose; each is a field type plus how Vero tidies the value. */
+/** Kinds of value IT can choose; each is a field type plus how Vero tidies the value. */
 export const KINDS: Kind[] = [
   { type: 'TEXT', normalization: 'NONE', label: 'Text' },
   { type: 'TEXT', normalization: 'TRIM', label: 'Text, spaces trimmed' },
@@ -97,7 +97,7 @@ export function Integrations() {
       setSelectedId((id) => (rows.some((r) => r.sourceId === id) ? id : rows[0]?.sourceId ?? ''))
       rows.forEach((r) => itSourceSummary(r.sourceId).then((s) => { if (live) setSummaries((all) => ({ ...all, [r.sourceId]: s })) }, () => { if (live) setSummaries((all) => ({ ...all, [r.sourceId]: null })) }))
     }).catch((e) => { if (live) { setError(loadFailed('Integrations did not load', e)); setLoaded(true) } })
-    identityOverview().then((o) => { if (live) setIdp(o.active?.displayName || undefined) }, () => undefined)
+    identityOverview().then((o) => { if (live) setIdp(o.active?.providerId || undefined) }, () => undefined)
     return () => { live = false }
   }, [reload])
   useEffect(() => {

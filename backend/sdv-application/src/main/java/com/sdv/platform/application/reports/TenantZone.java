@@ -21,7 +21,7 @@ record TenantZone(ZoneId zone, String source) {
             return new TenantZone(ZoneId.of(own), TENANT);
         } catch (DateTimeException ex) {
             throw new CodedRefusal.Conflict(SdvErrorCode.RPT_004,
-                    "The tenant's time zone setting is not a time zone Vero knows, so the report can't work out its days. Ask Tenant IT to correct it.");
+                    "The tenant's time zone setting is not a time zone Vero knows, so the report can't work out its days. Ask IT to correct it.");
         }
     }
 }

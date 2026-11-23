@@ -11,7 +11,7 @@ import java.util.UUID;
 /**
  * Task 0039: the intake's checks of the sending system and of the submission it names, with their codes.
  * <ul>
- *   <li>SDV-INT-005 (403): the token's sending system isn't one of the tenant's, or Tenant IT paused it. One answer for
+ *   <li>SDV-INT-005 (403): the token's sending system isn't one of the tenant's, or IT paused it. One answer for
  *       both; the WARN line says which, with the source ID. It used to be 404 or 409.</li>
  *   <li>SDV-INT-004 (404): no submission of this sending system has this ID. It used to be 404 NOT_FOUND.</li>
  * </ul>

@@ -1,0 +1,11 @@
+{
+  "format": "platform-licence-keys/1",
+  "keys": [
+    {
+      "algorithm": "Ed25519",
+      "development": true,
+      "keyId": "vero-dev-demo-1",
+      "publicKey": "MCowBQYDK2VwAyEAvg5g6iWSHLtMwMwHvxiMlpP2S6G/qSGegxIVKyIj7TQ="
+    }
+  ]
+}

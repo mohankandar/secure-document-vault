@@ -10,8 +10,8 @@ Set-StrictMode -Version Latest
 
 $Root = $PSScriptRoot
 $Base = 'http://localhost:8280'
-$Tenant1 = '11111111-1111-1111-1111-111111111111'
-$Tenant2 = '22222222-2222-2222-2222-222222222222'
+$Tenant1 = 'bd960ee9-9d54-5053-9958-92aaa54893a6'
+$Tenant2 = '9b233c00-fe6e-582c-a9de-c1fa46f87254'
 $Suffix = ([guid]::NewGuid().ToString('N')).Substring(0, 10)
 $SourceId = $null
 $VolumeId = $null
@@ -96,7 +96,7 @@ try {
     Require ((DbScalar "select count(*) from databasechangelog where id='006-business-experience-checkpoint-a';") -eq '1') 'Frozen migration 006 remains applied once'
     Require ((Test-Path $Pdf)) 'Two-page PDF fixture is present'
 
-    $it = UserHeaders $Tenant1 'unit16-it' 'TENANT_IT_ADMIN'
+    $it = UserHeaders $Tenant1 'unit16-it' 'IT_ADMIN'
     $admin = UserHeaders $Tenant1 'unit16-admin' 'BUSINESS_ADMIN'
     $business = UserHeaders $Tenant1 'unit16-business' 'BUSINESS_USER'
     $steward = UserHeaders $Tenant1 'unit16-steward' 'DOCUMENT_STEWARD'
@@ -116,7 +116,7 @@ try {
             incompleteAttentionHours = 24
         }
     }
-    Require ($source.StatusCode -eq 201) 'Tenant IT created disposable Unit 16 source'
+    Require ($source.StatusCode -eq 201) 'IT created disposable Unit 16 source'
     $SourceId = [string]$source.Body.sourceId
 
     SaveField $admin 'contractNumber' 'Contract Number' $true
@@ -128,7 +128,7 @@ try {
         state = 'ACTIVE'
         priority = 1
     }
-    Require ($volume.StatusCode -eq 201) 'Tenant IT created disposable ciphertext volume'
+    Require ($volume.StatusCode -eq 201) 'IT created disposable ciphertext volume'
     $VolumeId = [string]$volume.Body.volume.volumeId
 
     $sourceHeaders = SourceHeaders $Tenant1 $SourceId 'unit16-producer'
@@ -175,7 +175,7 @@ try {
     Require ((InvokeJson 'POST' $redactionUri @{} $request).StatusCode -eq 401) 'Unauthenticated corrective redaction is denied'
     Require ((InvokeJson 'POST' $redactionUri $business $request).StatusCode -eq 403) 'BUSINESS_USER cannot permanently redact'
     Require ((InvokeJson 'POST' $redactionUri $admin $request).StatusCode -eq 403) 'BUSINESS_ADMIN cannot permanently redact by default'
-    Require ((InvokeJson 'POST' $redactionUri $it $request).StatusCode -eq 403) 'TENANT_IT_ADMIN cannot permanently redact'
+    Require ((InvokeJson 'POST' $redactionUri $it $request).StatusCode -eq 403) 'IT_ADMIN cannot permanently redact'
     Require ((InvokeJson 'POST' $redactionUri $platform $request).StatusCode -eq 403) 'PLATFORM_OPERATIONS_ADMIN cannot permanently redact'
     Require ((InvokeJson 'POST' $redactionUri $foreignSteward $request).StatusCode -eq 404) 'Cross-tenant Document Steward cannot redact another tenant document'
 

@@ -27,12 +27,13 @@ import java.util.function.Function;
  * <pre>
  *   status               lists the changesets that would run (changes nothing)
  *   sql --output FILE    writes the SQL that update would run, for teams that review and run it themselves
- *   update               applies the changesets
+ *   update               applies the changesets, then platform-core's identity and licensing runs (task 0041)
  * </pre>
  *
  * The connection comes from SDV_SCHEMA_DB_URL and SDV_SCHEMA_DB_USERNAME (or --url / --username); the password from
  * SDV_SCHEMA_DB_PASSWORD or, when that is not set, a prompt. Vero never stores them. The context is always
- * "production" and cannot be changed, so the local seed data can never run through this step.
+ * "production" and cannot be changed. Task 0041: the step also runs platform-core's own Flyway runs (identity, licensing
+ * tables), each with its own history table (PlatformSchemaRuns); the local profile uses this step too (owner answer 10).
  * Exit codes: 0 done, 2 wrong usage, 3 database newer than this version, 1 any other failure.
  */
 public final class SchemaStep {
@@ -139,7 +140,13 @@ public final class SchemaStep {
             writer.write("-- Vero schema step: SQL for " + before.missing().size() + " changesets (context production).\n");
             writer.write("-- Run it as the database owner, without wrapping the whole file in one transaction:\n");
             writer.write("-- CREATE INDEX CONCURRENTLY (changeset 018) can't run inside a transaction.\n");
-            liquibase(connection).update(new Contexts(SchemaVersion.PRODUCTION_CONTEXT), new LabelExpression(), writer);
+            // Vero's own changesets (Liquibase), then (task 0041) platform-core's identity and licensing runs, in the
+            // order update runs them. Liquibase must not close the file before the platform part is written.
+            liquibase(connection).update(new Contexts(SchemaVersion.PRODUCTION_CONTEXT), new LabelExpression(),
+                    new java.io.FilterWriter(writer) {
+                        @Override public void close() throws java.io.IOException { flush(); }
+                    });
+            PlatformSchemaRuns.writeSql(connection, writer);
         }
         System.out.println("Wrote the SQL for " + before.missing().size() + " changesets to " + output + ". Nothing was changed in the database.");
         return 0;
@@ -152,6 +159,8 @@ public final class SchemaStep {
         }
         System.out.println("Applying " + before.missing().size() + " changesets...");
         liquibase(connection).update(new Contexts(SchemaVersion.PRODUCTION_CONTEXT), new LabelExpression());
+        // Task 0041: then platform-core's own runs, each with its own history table (identity, licensing tables).
+        PlatformSchemaRuns.migrate(connection);
         SchemaVersion.Status after = SchemaVersion.check(connection);
         if (!after.current()) {
             System.err.println("After the update the database still doesn't match: " + after.message());

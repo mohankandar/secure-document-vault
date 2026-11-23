@@ -7,18 +7,18 @@ import { PRODUCT_NAME } from './brand'
 import { TechDetails, fmtDateTime } from './ui'
 import { fmtWhen } from './opsWords'
 
-// Task 0012 Part D (change 10): one page for the facts support asks for, replacing Tenant IT › Environment and
+// Task 0012 Part D (change 10): one page for the facts support asks for, replacing IT › Environment and
 // Platform operations › Configuration. "Copy details for support" holds no documents and no personal data.
 
 type Info = Awaited<ReturnType<typeof systemInfo>> & { productCode?: string; correlationId?: string | null }
 
 const hostOf = (url: string) => { try { return new URL(url).host } catch { return url } }
 
-/** The sign-in in words. Tenant IT can read the connection in use; Platform operations sees only the address. */
+/** The sign-in in words. IT can read the connection in use; Platform operations sees only the address. */
 function signInWords(identity: IdentityOverview | null): string {
   const s = signInSummary()
   if (s.kind === 'local') return 'Local test sign-in (this computer only)'
-  if (identity?.active) return `${identity.active.displayName} (${hostOf(identity.active.issuerUri)})`
+  if (identity?.active) return `${identity.active.providerId} (${hostOf(identity.active.issuerUri)})`
   return s.address ? `Through ${hostOf(s.address)}` : 'Your company’s sign-in'
 }
 

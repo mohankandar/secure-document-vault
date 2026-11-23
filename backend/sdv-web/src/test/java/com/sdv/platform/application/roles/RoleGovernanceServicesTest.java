@@ -20,7 +20,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
-/** Task 0025: the role-conflict record (rule 1) and the audited change of the Restricted Steward groups (rule 3). */
+/** Task 0025: the role-conflict record (rule 1). Task 0041: rule 3 (the watched group setting) went with that setting. */
 class RoleGovernanceServicesTest {
     private static final UUID T1 = UUID.fromString("11111111-1111-1111-1111-111111111111");
     private static final UUID T2 = UUID.fromString("22222222-2222-2222-2222-222222222222");
@@ -30,84 +30,12 @@ class RoleGovernanceServicesTest {
     private final RoleGovernancePort store = mock(RoleGovernancePort.class);
     private final AuditEventPort audit = mock(AuditEventPort.class);
     private final Clock clock = Clock.fixed(NOW, ZoneOffset.UTC);
-    private final RoleMappingWatchService watch = new RoleMappingWatchService(store, audit, clock);
     private final RoleConflictService conflicts = new RoleConflictService(store, audit, clock);
 
     private List<AuditEvent> audited() {
         ArgumentCaptor<AuditEvent> events = ArgumentCaptor.forClass(AuditEvent.class);
         verify(audit, atLeast(0)).append(events.capture());
         return events.getAllValues();
-    }
-
-    @Test
-    void theFirstStartWithGroupsIsAChangeForEveryTenant() throws Exception {
-        when(store.findRecordedGroups("RESTRICTED_STEWARD")).thenReturn(Optional.empty());
-        when(store.tenantIds()).thenReturn(List.of(T1, T2));
-
-        assertTrue(watch.check("RESTRICTED_STEWARD", List.of(" vero-restricted ", "hc-readers", "vero-restricted")));
-
-        List<AuditEvent> events = audited();
-        assertEquals(2, events.size());
-        assertEquals(List.of(T1, T2), events.stream().map(AuditEvent::tenantId).toList());
-        AuditEvent event = events.get(0);
-        assertEquals("ROLE_GROUP_MAPPING_CHANGED", event.action());
-        assertEquals("SYSTEM", event.actorType());
-        assertEquals("ROLE", event.targetType());
-        assertEquals("RESTRICTED_STEWARD", event.targetId());
-        assertEquals(AuditOutcome.SUCCESS, event.outcome());
-        JsonNode details = JSON.readTree(event.safeDetailsJson());
-        assertTrue(details.get("groupsBefore").isNull());
-        assertEquals("[\"hc-readers\",\"vero-restricted\"]", details.get("groupsAfter").toString());
-        verify(store, times(2)).addNotice(argThat(n -> n.roleName().equals("RESTRICTED_STEWARD") && n.groupsBefore() == null
-                && n.groupsAfter().equals(List.of("hc-readers", "vero-restricted")) && n.createdAt().equals(NOW)));
-        verify(store).saveRecordedGroups("RESTRICTED_STEWARD", List.of("hc-readers", "vero-restricted"), NOW);
-    }
-
-    @Test
-    void theSameGroupsInAnotherOrderAreNoChange() {
-        when(store.findRecordedGroups("RESTRICTED_STEWARD")).thenReturn(Optional.of(List.of("vero-restricted", "hc-readers")));
-        assertFalse(watch.check("RESTRICTED_STEWARD", List.of("hc-readers", "vero-restricted")));
-        verifyNoInteractions(audit);
-        verify(store, never()).addNotice(any());
-        verify(store, never()).saveRecordedGroups(anyString(), anyList(), any());
-    }
-
-    @Test
-    void aChangedGroupIsAuditedWithBeforeAndAfter() throws Exception {
-        when(store.findRecordedGroups("RESTRICTED_STEWARD")).thenReturn(Optional.of(List.of("vero-restricted")));
-        when(store.tenantIds()).thenReturn(List.of(T1));
-        assertTrue(watch.check("RESTRICTED_STEWARD", List.of("vero-restricted", "everyone")));
-        JsonNode details = JSON.readTree(audited().get(0).safeDetailsJson());
-        assertEquals("[\"vero-restricted\"]", details.get("groupsBefore").toString());
-        assertEquals("[\"everyone\",\"vero-restricted\"]", details.get("groupsAfter").toString());
-        verify(store).addNotice(argThat(n -> n.tenantId().equals(T1) && n.groupsBefore().equals(List.of("vero-restricted"))));
-    }
-
-    @Test
-    void removingEveryGroupIsAChangeToo() {
-        when(store.findRecordedGroups("RESTRICTED_STEWARD")).thenReturn(Optional.of(List.of("vero-restricted")));
-        when(store.tenantIds()).thenReturn(List.of(T1));
-        assertTrue(watch.check("RESTRICTED_STEWARD", List.of()));
-        verify(store).addNotice(argThat(n -> n.groupsAfter().isEmpty()));
-        verify(store).saveRecordedGroups("RESTRICTED_STEWARD", List.of(), NOW);
-    }
-
-    @Test
-    void theFirstStartWithoutGroupsOnlyRecordsThat() {
-        when(store.findRecordedGroups("RESTRICTED_STEWARD")).thenReturn(Optional.empty());
-        assertFalse(watch.check("RESTRICTED_STEWARD", List.of()));
-        verifyNoInteractions(audit);
-        verify(store, never()).addNotice(any());
-        verify(store).saveRecordedGroups("RESTRICTED_STEWARD", List.of(), NOW);
-    }
-
-    @Test
-    void aFailedAuditFailsTheCheck() {
-        when(store.findRecordedGroups("RESTRICTED_STEWARD")).thenReturn(Optional.empty());
-        when(store.tenantIds()).thenReturn(List.of(T1));
-        doThrow(new IllegalStateException("db down")).when(audit).append(any());
-        assertThrows(IllegalStateException.class, () -> watch.check("RESTRICTED_STEWARD", List.of("g")));
-        verify(store, never()).saveRecordedGroups(anyString(), anyList(), any());
     }
 
     @Test

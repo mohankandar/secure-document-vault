@@ -57,10 +57,12 @@ class LiquibaseSeedContextTest {
     }
 
     @Test
-    void theLocalProfileStillMigratesAtStartup() throws Exception {
-        assertEquals("true", property(true, "spring.liquibase.enabled"));
+    void theLocalProfileDoesNotMigrateAtStartupEither() throws Exception {
+        // Task 0041 (owner answer 10): local runs the schema step too.
+        assertEquals("false", property(true, "spring.liquibase.enabled"));
+        assertEquals("false", property(true, "spring.flyway.enabled"));
+        assertEquals("false", property(false, "spring.flyway.enabled"));
     }
-
     @Test
     void theProductionContextCannotBeOverriddenFromTheEnvironment() throws Exception {
         // The old SDV_LIQUIBASE_CONTEXTS placeholder is gone: the value is the literal "production".
@@ -87,10 +89,9 @@ class LiquibaseSeedContextTest {
     }
 
     @Test
-    void theLocalProfileUsesTheLocalContext() throws Exception {
-        assertEquals("local", liquibaseContexts(true));
+    void theLocalProfileUsesTheProductionContextToo() throws Exception {
+        assertEquals("production", liquibaseContexts(true));
     }
-
     @Test
     void aNonLocalStartRunsNoLocalSeedData() throws Exception {
         Set<String> running = runningIds(liquibaseContexts(false));
@@ -104,23 +105,15 @@ class LiquibaseSeedContextTest {
     }
 
     @Test
-    void theLocalProfileStillRunsTheSeedAndEverySchemaChangeRunsInBoth() throws Exception {
-        Set<String> local = runningIds(liquibaseContexts(true));
+    void noChangesetIsLocalOnlyAndEveryOneRunsInProduction() throws Exception {
+        // Task 0041 (owner answer 3): the local seed (002) is gone; demo entities come from setup and the demo step.
         Set<String> production = runningIds(liquibaseContexts(false));
-        assertTrue(local.contains(LOCAL_SEED));
         for (ChangeSet cs : changeSets()) {
-            boolean contextFree = cs.getContextFilter() == null || cs.getContextFilter().isEmpty();
-            if (contextFree) {
-                assertTrue(production.contains(cs.getId()), cs.getId() + " must run outside the local profile");
-                assertTrue(local.contains(cs.getId()), cs.getId() + " must run with the local profile");
-            }
+            assertTrue(cs.getContextFilter() == null || cs.getContextFilter().isEmpty(), cs.getId() + " has a context");
+            assertTrue(production.contains(cs.getId()), cs.getId() + " must run in production");
         }
+        assertFalse(runningIds(null).contains(LOCAL_SEED));
         assertTrue(production.contains("018-search-date-indexes"));
-    }
-
-    @Test
-    void withoutAnyContextLiquibaseWouldRunTheSeed() throws Exception {
-        // The behaviour this change guards against: no context means every changeset runs.
-        assertTrue(runningIds(null).contains(LOCAL_SEED));
+        assertTrue(production.contains("035-drop-old-identity"));
     }
 }

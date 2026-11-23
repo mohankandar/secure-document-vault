@@ -153,14 +153,14 @@ Every error from Vero comes back with one body: a short, stable `code`, a plain 
 ### SDV-ROL-001: permission a role may never have
 
 - **HTTP status:** 400. Sent by Roles & permissions (`PUT /api/v1/admin/role-capabilities`).
-- **Meaning:** the change would give a role a permission that Vero's separation rules forbid. Business Admin, Tenant IT Admin and Platform Operations can never be given `VIEW_CONFIDENTIAL`, `VIEW_HIGHLY_CONFIDENTIAL` or `REQUEST_SENSITIVE_ACCESS`. Document Steward and Restricted Steward can never be given `APPROVE_SENSITIVE_ACCESS`. The message names the role and the permission. Nothing was changed, for any role in the request. The refusal is audited.
+- **Meaning:** the change would give a role a permission that Vero's separation rules forbid. Business Admin, IT Admin and Platform Operations can never be given `VIEW_CONFIDENTIAL`, `VIEW_HIGHLY_CONFIDENTIAL` or `REQUEST_SENSITIVE_ACCESS`. Document Steward and Restricted Steward can never be given `APPROVE_SENSITIVE_ACCESS`. The message names the role and the permission. Nothing was changed, for any role in the request. The refusal is audited.
 - **What the user should do:** leave that permission off for that role. A person who needs it must be given a role that has it.
 - **What support should tell the customer:** this is a fixed safety rule, not a setting. People who look after the system or approve requests must not also read restricted documents, and the people who read them must not approve their own requests.
 
 ### SDV-ROL-002: role whose permissions are fixed
 
 - **HTTP status:** 400. Sent by Roles & permissions.
-- **Meaning:** the change names a role whose permissions can't be changed in Vero: Restricted Steward, Business Admin, Tenant IT Admin or Platform Operations. Only Business User and Document Steward can be changed there. Nothing was changed. The refusal is audited.
+- **Meaning:** the change names a role whose permissions can't be changed in Vero: Restricted Steward, Business Admin, IT Admin or Platform Operations. Only Business User and Document Steward can be changed there. Nothing was changed. The refusal is audited.
 - **What the user should do:** change only Business User and Document Steward.
 - **What support should tell the customer:** these roles have a fixed set of permissions. Who holds them is decided in the customer's sign-in system (its groups), not in Vero.
 
@@ -174,7 +174,7 @@ Every error from Vero comes back with one body: a short, stable `code`, a plain 
 ### SDV-ROL-004: sign-in with roles that can never be held together
 
 - **HTTP status:** 401 at sign-in. Task 0038: with the one error body and the message "The roles from this sign-in can never be held together, so none of them were given. Ask your IT team to correct your sign-in groups." (before, the code started the error description and there was no body). One INFO line with the reference.
-- **Meaning:** the person's sign-in groups give Restricted Steward together with Business Admin, Tenant IT Admin or Platform Operations. Vero gives neither of the conflicting roles, and here no other role was left, so the sign-in was refused. The conflict is recorded for the Tenant IT Admin (`GET /api/v1/admin/role-conflicts`) and audited as `ROLE_CONFLICT_DETECTED`. When the person has other roles too, they sign in with those only and get no error.
+- **Meaning:** the person's sign-in groups give Restricted Steward together with Business Admin, IT Admin or Platform Operations. Vero gives neither of the conflicting roles, and here no other role was left, so the sign-in was refused. The conflict is recorded for the IT Admin (`GET /api/v1/admin/role-conflicts`) and audited as `ROLE_CONFLICT_DETECTED`. When the person has other roles too, they sign in with those only and get no error.
 - **What the user should do:** ask your IT team to take you out of one of the two groups.
 - **What support should tell the customer:** someone is in the sign-in group for Restricted Steward and in an admin group at the same time. Vero never allows that. Their IT team must remove the person from one of the groups; the role conflict list names the person.
 
@@ -227,23 +227,23 @@ Task 0038. A sign-in Vero refuses gets the one error body. The message is a fixe
 ### SDV-AUT-005: sign-in claims not usable
 
 - **HTTP status:** 401. It used to be 401 with Vero's English description.
-- **Meaning:** the token was checked, but a claim Vero needs is missing, isn't text, is too long, or isn't a UUID (the subject, the tenant or the sending system), or one token claims to be both a person and a sending system. Message: "Your sign-in is missing details Vero needs. Your IT team can fix this." One WARN line names the claim, never its value.
+- **Meaning:** the token was checked, but a claim Vero needs is missing, isn't text or is too long (the subject, the groups list), the client-ID claims (`azp`, `client_id`, `cid`) name different clients, or a client set up as a sending system also sends groups (a token is a person or a sending system, not both). Task 0041: a sending system's entity and source come from its client binding, not from claims, so a missing tenant or source claim is no longer this code. Message: "Your sign-in is missing details Vero needs. Your IT team can fix this." One WARN line names the claim, never its value.
 - **What the user should do:** tell your IT team.
 - **What support should tell the customer:** the sign-in hub isn't sending a detail Vero needs; the log names the claim. Their IT team adds or corrects the claim mapper in the sign-in hub.
 
 ### SDV-AUT-006: no sign-in connection for this issuer
 
 - **HTTP status:** 401. It used to be 401 with "No ACTIVE persisted OIDC connection matches…".
-- **Meaning:** the token is good, but no ACTIVE sign-in connection in Vero matches its issuer and audience, so Vero can't tell which organisation it belongs to. Message: "Vero isn't set up to accept this sign-in. Your IT team can fix this." One WARN line with the issuer's host, the provider and the audience.
+- **Meaning:** the token is good, but no customer has an ACTIVE login connection for Vero with its issuer, audience and provider (task 0041: loaded by the setup command from the sign-in file into `idn_login_connection`). Message: "Vero isn't set up to accept this sign-in. Your IT team can fix this." One WARN line with the issuer's host, the provider and the audience.
 - **What the user should do:** tell your IT team.
-- **What support should tell the customer:** the sign-in connection isn't active in Vero. Tenant IT checks Identity settings (activate the tested connection, or roll back to the previous one).
+- **What support should tell the customer:** the login connection isn't loaded or doesn't match. IT runs the setup command with the sign-in file (issuer, `providerId` equal to `SDV_AUTH_JWT_PROVIDER_ID`, API audience).
 
 ### SDV-AUT-007: no Vero role from the sign-in groups
 
 - **HTTP status:** 401. It used to be 401 with "Authenticated identity has no mapped SDV role.".
 - **Meaning:** the person signed in, but none of their sign-in groups gives a Vero role. Message: "You're signed in, but you don't have access to Vero. Ask your IT team to add you to a Vero group." It says nothing about other accounts. One INFO line with the reference and the subject (the user's or client's ID, task 0039, so IT knows who was refused); never the token, the groups, the name or another claim.
 - **What the user should do:** ask your IT team to add you to a Vero group.
-- **What support should tell the customer:** the person needs to be in one of the Vero sign-in groups (the `sdv.auth.jwt.role-mappings.*` settings name them).
+- **What support should tell the customer:** the person needs to be in a group the role mapping file grants a Vero role in an ACTIVE entity (task 0041: loaded by the setup command into `idn_group_grant`). A grant of a role Vero doesn't have, or of the platform role, gives nothing.
 
 ### SDV-AUT-008: local test sign-in headers not valid
 
@@ -259,14 +259,51 @@ Task 0038. A sign-in Vero refuses gets the one error body. The message is a fixe
 - **What the user should do:** contact your IT team.
 - **What support should tell the customer:** their organisation's Vero account is suspended or the sign-in hub sends the wrong tenant. The log line says which. Escalate to Vero operations to reactivate the tenant, or correct the sign-in hub's tenant claim.
 
-## Sign-in connections (IDP)
+### SDV-AUT-010: choose an entity
 
-### SDV-IDP-007: more than one active sign-in connection
+- **HTTP status:** 409. Added in task 0041.
+- **Meaning:** the person may work in more than one entity and the request chose none (`X-SDV-Entity-Id`), or it chose one that isn't theirs or isn't an entity ID. Also every request of a person who has not chosen yet, other than the entity list (`GET /api/v1/session/entities`) and activation. Message: "Choose which entity to work in first." One INFO line says which case.
+- **What the user should do:** choose the entity in the account menu.
+- **What support should tell the customer:** the person has roles in several entities; Vero shows the entity chooser. If it keeps coming back, the browser's stored entity is no longer theirs: choose again.
 
-- **HTTP status:** 409 when Tenant IT saves a sign-in connection draft (`PUT /api/v1/admin/enterprise-identity/draft`), activates it or rolls back to it while another tenant's ACTIVE connection already has the same issuer, audience and provider. 500 at sign-in if two such ACTIVE connections are found anyway (data changed by hand). Task 0038: confirmed by test that two ACTIVE rows made every sign-in for that issuer a 500 SDV-SYS-013; the database's unique index (`uq_sdv_eic_active_binding`) normally prevents them, and an activation it stops is now this code (it would have been 503 SDV-SYS-014).
-- **Meaning:** one issuer, audience and provider can belong to one organisation only, or a sign-in can't tell which organisation it is for. At save: "Another organisation's active sign-in connection in Vero already uses this issuer and audience, so this one can't be saved or used. Give Vero an audience of your own in your sign-in service, or contact Vero operations." Nothing was saved; the answer names no other organisation, and the WARN line names the other tenant. At sign-in: "Vero can't sign you in because its sign-in setup is inconsistent. Your IT team has been told." with one ERROR line naming the issuer and both tenants.
-- **What the user should do:** Tenant IT gives Vero its own audience (client) in the sign-in service, or contacts Vero operations. At sign-in: tell your IT team.
-- **What support should tell the customer:** two organisations are set up with the same sign-in issuer and audience. Vero operations disables all but one connection (recovery runbook) and the other organisation uses its own audience.
+### SDV-AUT-011: client not set up as a sending system
+
+- **HTTP status:** 401. Added in task 0041. Recorded as an unidentified intake attempt (Problems).
+- **Meaning:** a sending system's token was checked, but its client ID has no ACTIVE client binding for Vero (setup's client-binding file), or the bound entity or the customer's login connection is not ACTIVE. Also a token with neither a binding nor groups on an intake address. Message: "This client isn't set up to send documents to Vero. Your IT team can fix this." One WARN line names the client ID (never a secret) and, when bound, its slot.
+- **What the user should do:** tell your IT team.
+- **What support should tell the customer:** add the client ID to the client-binding file (`client_id,entity_slot,source,description`) and run setup, or activate the entity.
+
+### SDV-AUT-012: token claim not the client binding's
+
+- **HTTP status:** 401. Added in task 0041. Recorded as an unidentified intake attempt.
+- **Meaning:** the sending system's token carries `sdv_entity_id`, `sdv_source_id` or `sdv_source_key`, and the value is not the entity or source its client binding gives (or isn't a UUID). These claims are optional; when sent they must match. Message: "The entity or sending system in this token doesn't match how this client is set up in Vero. Your IT team can fix this." One WARN line names the claim and the client ID, never the value.
+- **What the user should do:** tell your IT team.
+- **What support should tell the customer:** remove the claim from the client's token, or correct it (or the client-binding file) so both name the same entity and sending system.
+
+### SDV-AUT-013: sending system of the binding not in Vero
+
+- **HTTP status:** 401. Added in task 0041. Recorded as an unidentified intake attempt.
+- **Meaning:** the client binding names a source key (for example `redaction-service`) that the bound entity has no sending system for in Vero. Message: "The sending system this client is set up for doesn't exist in Vero. Your IT team can fix this." One WARN line names the client ID, the source key and the entity.
+- **What the user should do:** tell your IT team.
+- **What support should tell the customer:** the IT Admin adds the sending system with that key in Integrations, or the binding file is corrected.
+
+## Entities (ENT)
+
+Sent by the Business Admin's activation address, `POST /api/v1/admin/entities/{slotId}/activate` (task 0041). The setup command loads the licence's entity slots as not activated; the Business Admin activates and names each.
+
+### SDV-ENT-001: entity can't be activated
+
+- **HTTP status:** 409.
+- **Meaning:** platform-core refused the activation: no licence in force, the licence doesn't list the slot, the slot is unknown or already activated, or the name is empty, longer than 200 characters or taken. The message is platform-core's sentence; it names the slot, never the typed name. One INFO line with the reason.
+- **What the user should do:** do what the message says (another name, or ask IT to install the licence).
+- **What support should tell the customer:** the licence must be stored by setup and list the slot; names are unique per customer.
+
+### SDV-ENT-002: not a Business Admin of this entity
+
+- **HTTP status:** 403.
+- **Meaning:** the person's groups don't give Business Admin on that slot (role mapping file), so they may not activate it. Message: "Only a Business Admin of <slot> can activate it." One INFO line.
+- **What the user should do:** ask your IT team for the Business Admin group of that entity.
+- **What support should tell the customer:** add the person's group to the role mapping file as `BUSINESS_ADMIN` for that slot and run setup.
 
 ## Legal hold (HLD)
 
@@ -466,7 +503,7 @@ INT-004 to INT-018 are sent by the sending systems' addresses (`/api/v1/ingestio
 
 **Recorded, every time** (task 0039). Every error answer on these addresses is recorded in one place, also the ones Spring gives before Vero's code runs (SDV-SYS-015: JSON that doesn't parse, a missing `X-SDV-Filename`, a content type other than PDF), the sign-in refusals and the 5xx failures:
 - a sending system Vero knows (a verified sending-system sign-in whose system is one of the tenant's, active or paused): a delivery, upload or finishing retry is counted by the Daily intake report under that system, as **refused** (4xx, audit event `INTAKE_REFUSED`) or **failed** (5xx, `INTAKE_FAILED`), with the code it got. A status query (`GET`) delivers nothing and isn't counted.
-- no known sending system (no sign-in, a refused token, a person's sign-in, a sending system the tenant doesn't have): it is listed for Tenant IT and Platform operations under Problems, "Unidentified intake attempts", with the time, the address called (IDs blanked), the caller's network address, the status, the code and the reference; never anything from a token. Without a verified tenant an attempt is shown to every tenant's Tenant IT; with one, to that tenant's only. Kept 30 days; Problems shows the last 7.
+- no known sending system (no sign-in, a refused token, a person's sign-in, a sending system the tenant doesn't have): it is listed for IT and Platform operations under Problems, "Unidentified intake attempts", with the time, the address called (IDs blanked), the caller's network address, the status, the code and the reference; never anything from a token. Without a verified tenant an attempt is shown to every tenant's IT; with one, to that tenant's only. Kept 30 days; Problems shows the last 7.
   - Task 0039 part 2: one line per caller address, address called and code **per minute** (and per tenant, method and status), with how many times and the last time; the reference is the first request's (every request's is in the log). Parts of an address that aren't Vero's own words are blanked, an unknown method is `OTHER`, and past 100 lines in a minute new callers are counted together as "(many addresses)", so a flood can't grow the list without bound. Task 0040: the 100 is the setting `SDV_UNIDENTIFIED_ATTEMPTS_MAX_ROWS_PER_MINUTE` (1 to 10000, default 100).
   - The caller's address is the one Vero's server sees. Behind a proxy or load balancer, `SDV_TRUSTED_PROXIES` lists the proxies' IP addresses and, since task 0040, address ranges (CIDR, IPv4 or IPv6, for example `10.0.4.0/24`); only from those is `X-Forwarded-For` read. Empty by default: the header is ignored.
 - a failure while Vero's database is away can't be recorded; it is in Vero's log only.
@@ -481,9 +518,9 @@ INT-004 to INT-018 are sent by the sending systems' addresses (`/api/v1/ingestio
 ### SDV-INT-005: sending system unknown or paused
 
 - **HTTP status:** 403, the same for both. It used to be 404 `NOT_FOUND` "Ingestion source not found." or 409 `CONFLICT` "Ingestion source is not active.".
-- **Meaning:** the sign-in names a sending system that isn't one of the tenant's, or Tenant IT paused it. Message: "This sending system is paused or not set up in Vero. Nothing was stored." One WARN line with the source ID and which of the two it is.
-- **What the user should do:** Tenant IT reactivates the sending system (Integrations), or corrects the client's source claim in the sign-in service.
-- **What support should tell the customer:** the sending system is paused in Vero, or its sign-in names a system Vero doesn't know; the log line says which. Tenant IT checks Integrations.
+- **Meaning:** the sign-in names a sending system that isn't one of the tenant's, or IT paused it. Message: "This sending system is paused or not set up in Vero. Nothing was stored." One WARN line with the source ID and which of the two it is.
+- **What the user should do:** IT reactivates the sending system (Integrations), or corrects the client's source claim in the sign-in service.
+- **What support should tell the customer:** the sending system is paused in Vero, or its sign-in names a system Vero doesn't know; the log line says which. IT checks Integrations.
 
 ### SDV-INT-006: submission request incomplete
 
@@ -503,7 +540,7 @@ INT-004 to INT-018 are sent by the sending systems' addresses (`/api/v1/ingestio
 
 - **HTTP status:** 400. It used to be 400 `BAD_REQUEST`.
 - **Meaning:** a metadata field this sending system doesn't have, a required field left out or blank, a field sent as `null`, or a value that isn't a single JSON value (an object or a list). The message names the field, never the value. Nothing was created.
-- **What the user should do:** send the fields Tenant IT set up for the sending system, or ask Tenant IT to add the field.
+- **What the user should do:** send the fields IT set up for the sending system, or ask IT to add the field.
 - **What support should tell the customer:** the sending system and Vero's field setup disagree about a field; the message names it.
 
 ### SDV-INT-009: metadata value not valid
@@ -511,14 +548,14 @@ INT-004 to INT-018 are sent by the sending systems' addresses (`/api/v1/ingestio
 - **HTTP status:** 400. It used to be 400 `BAD_REQUEST`.
 - **Meaning:** a value of the wrong type, or one that breaks its field's pattern, range or length. The message names the field and the rule, never the value (a parser's own message, which could repeat the value, is never sent). The INFO line has the field and the rule. Nothing was created.
 - **What the user should do:** the sending system corrects the value.
-- **What support should tell the customer:** a field's value breaks the rule Tenant IT set for it; the message names the field and the rule.
+- **What support should tell the customer:** a field's value breaks the rule IT set for it; the message names the field and the rule.
 
 ### SDV-INT-010: a field's own rule can't be used
 
 - **HTTP status:** 500. It used to be 409 `CONFLICT`, which told the sending system to change a request that was fine.
-- **Meaning:** the rule Tenant IT stored for a field (its pattern, a length, its rules as a whole) can't be used, so the submission can't be checked. Message: "Vero's setup for field '<key>' is broken, so this submission can't be checked. Nothing was stored. Your IT team has been told." One ERROR line with the field and which rule. The Daily intake report counts it as failed.
+- **Meaning:** the rule IT stored for a field (its pattern, a length, its rules as a whole) can't be used, so the submission can't be checked. Message: "Vero's setup for field '<key>' is broken, so this submission can't be checked. Nothing was stored. Your IT team has been told." One ERROR line with the field and which rule. The Daily intake report counts it as failed.
 - **What the user should do:** tell your IT team; send the submission again once the field is fixed.
-- **What support should tell the customer:** a field's rule in Vero is broken; Tenant IT corrects it (Integrations, the sending system's fields), then the sending system sends again.
+- **What support should tell the customer:** a field's rule in Vero is broken; IT corrects it (Integrations, the sending system's fields), then the sending system sends again.
 
 ### SDV-INT-011: submission retry differs from the first
 
@@ -545,7 +582,7 @@ INT-004 to INT-018 are sent by the sending systems' addresses (`/api/v1/ingestio
 
 - **HTTP status:** 413. It used to be 413 `PDF_TOO_LARGE`.
 - **Meaning:** the PDF is bigger than the limit for the tenant or the sending system. The message gives the limit in bytes. Nothing was stored.
-- **What the user should do:** send a smaller file, or ask Tenant IT to raise the sending system's limit.
+- **What the user should do:** send a smaller file, or ask IT to raise the sending system's limit.
 - **What support should tell the customer:** the file is over the size limit; nothing was stored.
 
 ### SDV-INT-015: not a PDF
@@ -605,7 +642,7 @@ Sent by the Business Admin's reports: the Daily intake report (task 0032, `GET /
 
 - **HTTP status:** 409. Sent by every report endpoint.
 - **Meaning:** the tenant's time zone setting (`tenants.time_zone`, or the install default `SDV_DEFAULT_TIME_ZONE` when the tenant has none) is not a time zone Vero knows, so "today" can't be worked out. Vero refuses the report rather than guess. Nothing was read.
-- **What the user should do:** tell Tenant IT.
+- **What the user should do:** tell IT.
 - **What support should tell the customer:** set the time zone to an IANA name such as `America/New_York` or `Europe/London`. A wrong install default also stops the server from starting.
 
 ### SDV-RPT-005: too much for one report
@@ -691,13 +728,6 @@ Task 0037: SYS-003 to SYS-012 are start-up codes. A start that stops prints one 
 - **What the user should do:** nothing; Vero is not running. Tell the IT team.
 - **What support should tell the customer:** the default time zone is written wrongly. Set an IANA name such as `America/New_York` and start Vero again.
 
-### SDV-SYS-011: sign-in recovery at start refused
-
-- **HTTP status:** none; Vero doesn't start.
-- **Meaning:** the one-time sign-in recovery (`sdv.auth.jwt.recovery.enabled=true`) was asked for and couldn't be applied: its settings are incomplete or not UUIDs, the database doesn't match, the request ID was already used, or the target isn't a disabled known-good connection. The ERROR block says which check failed.
-- **What the user should do:** nothing; Vero is not running. Tell the IT team.
-- **What support should tell the customer:** the emergency sign-in recovery could not be applied; the log says why. Correct the recovery settings, or remove them to start normally, and follow the recovery runbook.
-
 ### SDV-SYS-012: start-up work needs the database
 
 - **HTTP status:** none.
@@ -754,7 +784,7 @@ Task 0037: SYS-003 to SYS-012 are start-up codes. A start that stops prints one 
 - **HTTP status:** 503. Sent by the document upload (`POST /api/v1/ingestion/submissions/{id}/documents`), corrective redaction and the storage placement preview. It used to be 409 `CONFLICT`, and intake counted it as a refusal.
 - **Meaning:** every ACTIVE storage volume is full, at its stop-write level, or can't be written or read. Nothing was stored. Message: "Vero has no storage space for new documents right now. Nothing was stored; send it again later."
 - **What the user should do:** a sending system sends the document again later. A person tells the IT team.
-- **What support should tell the customer:** Vero's storage is full. Tenant IT frees space, adds a volume, or raises the stop-write level; then senders re-send. Vero logs an ERROR line with the reference.
+- **What support should tell the customer:** Vero's storage is full. IT frees space, adds a volume, or raises the stop-write level; then senders re-send. Vero logs an ERROR line with the reference.
 
 ### SDV-STO-004: storage type not installed
 
@@ -766,7 +796,7 @@ Task 0037: SYS-003 to SYS-012 are start-up codes. A start that stops prints one 
 ### SDV-STO-005: storage volume settings not valid
 
 - **HTTP status:** 400. Task 0037: sent by the storage placement preview (`GET /api/v1/admin/storage-volumes/placement-preview?requiredBytes=…`) when `requiredBytes` is negative. It used to be 400 `BAD_REQUEST` with an internal sentence. The other volume settings keep `BAD_REQUEST` until the storage fix task gives them this code.
-- **Meaning:** a value Tenant IT sent for storage is missing or out of range. Nothing was changed. Message: "requiredBytes must be 0 or more."
+- **Meaning:** a value IT sent for storage is missing or out of range. Nothing was changed. Message: "requiredBytes must be 0 or more."
 - **What the user should do:** correct the value the message names and try again.
 - **What support should tell the customer:** a storage setting is out of range; the message says which.
 
@@ -806,7 +836,7 @@ Every one writes one log line with the reference and the exact cause: ERROR for 
 - **HTTP status:** 503 (it was 422 until owner answer 1 to report 0043). No `Retry-After`.
 - **Meaning:** the viewer couldn't read the document: its storage details or its storage volume are missing, the storage provider isn't installed, storage couldn't be read, or the key service failed. The message is "Vero couldn't read this document from storage. Try again later." ERROR line with the reference, the document ID and which step failed. Nothing was shown.
 - **What the user should do:** try again later. If it keeps happening, give the IT team the reference.
-- **What support should tell the customer:** a storage or key service problem. Tenant IT checks Storage on Operations and the key service; the log line with the reference names the step.
+- **What support should tell the customer:** a storage or key service problem. IT checks Storage on Operations and the key service; the log line with the reference names the step.
 
 ### SDV-DOC-004: the stored copy failed its check before viewing
 
@@ -900,7 +930,7 @@ Task 0034 went through the code flow by flow and listed every point where someth
   - `RET`: retention.
   - `AUD`: audit log.
   - `ADM`: admin screens for sending systems, fields and roles.
-  - `IDP`: the sign-in connection set up by Tenant IT.
+  - `IDP`: the sign-in connection set up by IT.
   - Existing areas continue their own numbering, for example `INT` from 004 and `ROL` from 006.
 - **Kind** is one of:
   - **never reached us**: refused before Vero's own code ran;
@@ -1049,6 +1079,7 @@ Task 0034 went through the code flow by flow and listed every point where someth
 - **L1 tells the customer:** the default time zone is written wrongly.
 
 #### SDV-SYS-011 (released in task 0037): sign-in recovery at start refused
+- **Retired in task 0041:** the sign-in recovery went with Vero's own login connections; a connection is changed only by setup. The code is no longer sent.
 - **Released:** now sent (task 0037); its section is above. The notes below are what task 0034 found, kept for the list of lines.
 - **Where:** `OidcKnownGoodRecovery.java:35`, `:37`, `:38` (`UUID.fromString` with no message of its own); `JdbcOidcConnectionBindingRepository.java:124`, `:126`, `:128`, `:129`, `:131`, `:136`, `:140`, `:144`.
 - **Trigger:** the recovery settings are incomplete, the database doesn't match, the request ID was already used, or the target isn't a disabled known-good connection.
@@ -1236,13 +1267,13 @@ Task 0034 went through the code flow by flow and listed every point where someth
 #### SDV-AUT-006 (released in task 0038): no sign-in connection for this issuer
 - **Released:** now sent (task 0038); its section is above. The notes below are what task 0034 found, kept for the list of lines.
 - **Where:** `EnterpriseJwtAuthenticationConverter.java:159`, `:162`.
-- **Trigger:** the token's issuer or audience matches no ACTIVE connection set up by Tenant IT.
+- **Trigger:** the token's issuer or audience matches no ACTIVE connection set up by IT.
 - **Today:** 401 `invalid_token`, "No ACTIVE persisted OIDC connection matches…". Generic: yes.
 - **Kind:** needs a person.
 - **User sees:** "Vero isn't set up to accept this sign-in. Your IT team can fix this. (SDV-AUT-006)"
 - **IT admin and log:** WARN with the code, the reference and the issuer's host.
-- **Fix:** Tenant IT activates the connection (Identity settings).
-- **L1 tells the customer:** the sign-in connection isn't active in Vero. Tenant IT checks Identity settings.
+- **Fix:** IT activates the connection (Identity settings).
+- **L1 tells the customer:** the sign-in connection isn't active in Vero. IT checks Identity settings.
 
 #### SDV-AUT-007 (released in task 0038): no Vero role from the sign-in groups
 - **Released:** now sent (task 0038); its section is above. The notes below are what task 0034 found, kept for the list of lines.
@@ -1317,13 +1348,13 @@ The watch folder and polling intake are **not in this repository**. Sending syst
 #### SDV-INT-005 (released in task 0039): sending system unknown or paused
 - **Released:** now sent (task 0039); its section is above. The notes below are what task 0034 found, kept for the list of lines.
 - **Where:** `DocumentIntakeService.java:553`, `:555`, `SubmissionService.java:251`, `:253`.
-- **Trigger:** the token's source ID isn't a sending system of the tenant (404), or Tenant IT paused it (409).
+- **Trigger:** the token's source ID isn't a sending system of the tenant (404), or IT paused it (409).
 - **Today:** 404 `NOT_FOUND` or 409 `CONFLICT` "Ingestion source is not active." Generic: yes.
 - **Kind:** not authorised (paused), or needs a person (unknown).
 - **User sees:** "This sending system is paused or not set up in Vero. Nothing was stored. (SDV-INT-005)", with 403.
 - **IT admin and log:** WARN with the code, the reference and the source ID.
-- **Fix:** Tenant IT reactivates the sending system (Integrations), or corrects the client's source claim.
-- **L1 tells the customer:** the sending system is paused in Vero, or its sign-in names a system Vero doesn't know. Tenant IT checks Integrations.
+- **Fix:** IT reactivates the sending system (Integrations), or corrects the client's source claim.
+- **L1 tells the customer:** the sending system is paused in Vero, or its sign-in names a system Vero doesn't know. IT checks Integrations.
 
 #### SDV-INT-006 (released in task 0039): submission request incomplete
 - **Released:** now sent (task 0039); its section is above. The notes below are what task 0034 found, kept for the list of lines.
@@ -1355,7 +1386,7 @@ The watch folder and polling intake are **not in this repository**. Sending syst
 - **Kind:** reached but refused.
 - **User sees:** today's message, plus "(SDV-INT-008)".
 - **IT admin and log:** INFO with the code, the reference and the field key.
-- **Fix:** the sender sends the fields Tenant IT set up, or Tenant IT adds the field.
+- **Fix:** the sender sends the fields IT set up, or IT adds the field.
 - **L1 tells the customer:** the sending system and Vero's field setup disagree about a field; the message names it.
 
 #### SDV-INT-009 (released in task 0039): metadata value not valid
@@ -1367,7 +1398,7 @@ The watch folder and polling intake are **not in this repository**. Sending syst
 - **User sees:** today's message, plus "(SDV-INT-009)".
 - **IT admin and log:** INFO with the code, the reference, the field key and the rule.
 - **Fix:** the sender corrects the value.
-- **L1 tells the customer:** a field value breaks the rule Tenant IT set for it; the message names the field and the rule.
+- **L1 tells the customer:** a field value breaks the rule IT set for it; the message names the field and the rule.
 
 #### SDV-INT-010 (released in task 0039): a field's own rules are broken
 - **Released:** now sent (task 0039); its section is above. The notes below are what task 0034 found, kept for the list of lines.
@@ -1377,8 +1408,8 @@ The watch folder and polling intake are **not in this repository**. Sending syst
 - **Kind:** needs a person.
 - **User sees:** "Vero's setup for field '<key>' is broken, so this submission can't be checked. Nothing was stored. Your IT team has been told. (SDV-INT-010)"
 - **IT admin and log:** ERROR with the code, the reference, the field key and which rule.
-- **Fix:** Tenant IT corrects the field's rule.
-- **L1 tells the customer:** a field's rule in Vero is broken; Tenant IT fixes it, then the sender re-sends.
+- **Fix:** IT corrects the field's rule.
+- **L1 tells the customer:** a field's rule in Vero is broken; IT fixes it, then the sender re-sends.
 
 #### SDV-INT-011 (released in task 0039): submission retry differs from the first
 - **Released:** now sent (task 0039); its section is above. The notes below are what task 0034 found, kept for the list of lines.
@@ -1421,7 +1452,7 @@ The watch folder and polling intake are **not in this repository**. Sending syst
 - **Kind:** reached but refused.
 - **User sees:** today's message, plus "(SDV-INT-014)".
 - **IT admin and log:** INFO with the code, the reference and the limit.
-- **Fix:** send a smaller file, or Tenant IT raises the sending system's limit.
+- **Fix:** send a smaller file, or IT raises the sending system's limit.
 - **L1 tells the customer:** the file is over the size limit; nothing was stored.
 
 #### SDV-INT-015 (released in task 0039): not a PDF
@@ -1478,7 +1509,7 @@ The watch folder and polling intake are **not in this repository**. Sending syst
 - **User sees (sending system):** `processingErrorCode: SDV-PRC-001` with "Vero received the document but couldn't find its stored copy. It will be shown under Problems; retry with retry-finalization."
 - **IT admin and log:** ERROR with the code, the reference, the document ID and which piece was missing.
 - **Fix:** check the storage volume, then retry-finalization.
-- **L1 tells the customer:** the document arrived but its stored copy is missing. Tenant IT checks the storage volume on Problems, then the sender retries.
+- **L1 tells the customer:** the document arrived but its stored copy is missing. IT checks the storage volume on Problems, then the sender retries.
 
 #### SDV-PRC-002 (proposed): stored copy doesn't match what was received
 - **Where:** `DocumentFinalizationService.java:144`, `:147`, `:150`, `:153`, `:260`, `:264` (and decryption failures, KEY-004), recorded as `DURABLE_OBJECT_VALIDATION_FAILED`.
@@ -1528,8 +1559,8 @@ The watch folder and polling intake are **not in this repository**. Sending syst
 - **Kind:** needs a person.
 - **User sees (sending system):** "Vero has no storage space for new documents right now. Nothing was stored; send it again later. (SDV-STO-001)", with 503.
 - **IT admin and log:** ERROR with the code, the reference and each volume's reason (full, stop-write, unwritable, unreadable).
-- **Fix:** Tenant IT frees space, adds a volume, or raises the stop-write level.
-- **L1 tells the customer:** Vero's storage is full. Tenant IT adds or frees storage; senders re-send.
+- **Fix:** IT frees space, adds a volume, or raises the stop-write level.
+- **L1 tells the customer:** Vero's storage is full. IT adds or frees storage; senders re-send.
 
 #### SDV-STO-002 (proposed): writing to storage failed
 - **Where:** `LocalFilesystemStorageProvider.java:33`, `:57-58`, `:70`, plus `IOException`s from the file system (disk full, permission) during `store`. Called from `DocumentIntakeService.java:191` and `CorrectiveRedactionService.java`.
@@ -1538,8 +1569,8 @@ The watch folder and polling intake are **not in this repository**. Sending syst
 - **Kind:** outside dependency down.
 - **User sees (sending system):** "Vero couldn't write to its storage. Nothing was stored; send it again later. Ref <id>. (SDV-STO-002)", with 503.
 - **IT admin and log:** ERROR with the code, the reference, the volume ID and the reason.
-- **Fix:** Tenant IT checks the volume (Storage), then senders re-send.
-- **L1 tells the customer:** storage refused a write. Tenant IT checks the volume's health.
+- **Fix:** IT checks the volume (Storage), then senders re-send.
+- **L1 tells the customer:** storage refused a write. IT checks the volume's health.
 
 #### SDV-STO-003 (proposed): storage safety check failed
 - **Where:** `LocalFilesystemStorageProvider.java:90-92`, `:96`, `:99`, `:102`.
@@ -1565,8 +1596,8 @@ The watch folder and polling intake are **not in this repository**. Sending syst
 #### SDV-STO-005 (released in task 0037): storage volume settings not valid
 - **Released:** now sent (task 0037); its section is above. The notes below are what task 0034 found, kept for the list of lines.
 - **Where:** `StorageVolumeAdminService.java:75`, `:76`, `:110`, `:112`, `:113`, `:166`, `:197`, `:198`, `:202`, `:203`, `:204`; `StorageAdminController.java:50`; `LocalFilesystemVolumeProbe.java:28`, `:36-37`, `:111`, `:114-115`.
-- **Trigger:** Tenant IT enters a missing, out-of-range, overlapping or unwritable value for a volume.
-- **Today:** 400 `BAD_REQUEST` with a plain message (`:37` includes the folder path Tenant IT typed). Generic: yes.
+- **Trigger:** IT enters a missing, out-of-range, overlapping or unwritable value for a volume.
+- **Today:** 400 `BAD_REQUEST` with a plain message (`:37` includes the folder path IT typed). Generic: yes.
 - **Kind:** reached but refused.
 - **User sees:** today's message, plus "(SDV-STO-005)".
 - **IT admin and log:** INFO with the code and the reference.
@@ -1683,7 +1714,7 @@ The watch folder and polling intake are **not in this repository**. Sending syst
 - **User sees:** "Vero couldn't read this document from storage. Try again later. Ref <id>. (SDV-DOC-003)"
 - **IT admin and log:** ERROR with the code, the reference, the document ID and the cause.
 - **Fix:** check the storage volume.
-- **L1 tells the customer:** a storage problem; Tenant IT checks Storage on Operations.
+- **L1 tells the customer:** a storage problem; IT checks Storage on Operations.
 
 #### SDV-DOC-004 (released in task 0043): stored copy failed its check before viewing
 - **Released:** now sent; its section is under "Viewing, print and download (DOC)" or "Search (SCH)" above. The notes below are what task 0034 found, kept for the list of lines.
@@ -1937,13 +1968,13 @@ The released RPT codes cover the reports. Gaps: internal checks in the Sensitivi
 
 #### SDV-ADM-005 (proposed): field not defined yet
 - **Where:** `MetadataFieldAdminService.java:211`.
-- **Trigger:** a Business Admin changes a field Tenant IT hasn't defined.
+- **Trigger:** a Business Admin changes a field IT hasn't defined.
 - **Today:** 404 `NOT_FOUND`, with a good message. Generic: yes.
 - **Kind:** needs a person.
 - **User sees:** today's message, plus "(SDV-ADM-005)".
 - **IT admin and log:** INFO.
-- **Fix:** Tenant IT defines the field first.
-- **L1 tells the customer:** Tenant IT must add the field before it can be set up for search.
+- **Fix:** IT defines the field first.
+- **L1 tells the customer:** IT must add the field before it can be set up for search.
 
 #### SDV-ADM-006 (proposed): Roles & permissions request malformed
 - **Where:** `RoleCapabilityAdminController.java:49`, `:99`; `CapabilityPolicyService.java:73`. (Rule refusals: SDV-ROL-001 to 003.)
@@ -2016,6 +2047,7 @@ The released RPT codes cover the reports. Gaps: internal checks in the Sensitivi
 - **L1 tells the customer:** Vero couldn't reach their sign-in service from its server; check the address and the firewall.
 
 #### SDV-IDP-007 (released in task 0038): more than one active sign-in connection
+- **Retired in task 0041:** platform-core allows one ACTIVE login connection per customer and product (unique index), and a sign-in that matches more than one entity asks the person to choose (SDV-AUT-010). The code is no longer sent.
 - **Released:** now sent (task 0038); its section is above. The notes below are what task 0034 found, kept for the list of lines.
 - **Where:** `JdbcOidcConnectionBindingRepository.java:28` (read at every sign-in, from `EnterpriseJwtAuthenticationConverter.java:160`).
 - **Trigger:** data changed by hand so that two connections are active for one issuer.
@@ -2176,7 +2208,7 @@ These failures are caught and not passed on. Each is safe as it is, but most lea
 | Vault token (env or token file, in the secret store) | Key service | **Read once.** | Read at start; empty or unreadable stops the start. Never re-read, so an expired token fails every document action until restart (KEY-003). |
 | Storage volumes (local folders) | Upload, finishing, viewer, download, redaction, retention | **No.** | Checked per upload (`StoragePlacementService`), on Operations and Storage, and by the capacity banner. Not in readiness. |
 | Sign-in hub: issuer and JWKS (`SDV_AUTH_JWT_*`, Keycloak `lexa-keycloak`) | Every signed-in request | **Settings only.** | `EnterpriseJwtConfiguration` checks the form of the settings (HTTPS, UUID). JWKS is first fetched at the first sign-in (AUT-004). Task 0038: readiness fetches the keys (signInKeys), and a sign-in while they can't be fetched is 503 AUT-004. With `SDV_AUTH_MODE` at its default `disabled`, Vero starts and refuses everyone (SYS-006). |
-| Issuer discovery (`/.well-known/openid-configuration`) | Identity settings, Test | No | Only when Tenant IT presses Test (IDP-006). |
+| Issuer discovery (`/.well-known/openid-configuration`) | Identity settings, Test | No | Only when IT presses Test (IDP-006). |
 | Install settings (approvals, retention time, default time zone, recovery) | Start | **Yes.** | Each stops the start when wrong (SYS-007 to 011). |
 | Bundled changelog | Schema check | **Yes.** | SYS-004. |
 | Watch folder, polling | n/a | n/a | Not in this repository. |
@@ -2191,7 +2223,7 @@ No other outbound calls exist. The only HTTP clients are in `VaultTransitKeyProt
   - `SchemaStep.java:66` refuses a password on the command line.
   - Watch points:
     - `DatabaseSchemaCheck.java:53` logs PostgreSQL's message, which can name the database user and host (not the password);
-    - `OidcDiscoveryTester.java:46` returns raw exception text to Tenant IT (IDP-006).
+    - `OidcDiscoveryTester.java:46` returns raw exception text to IT (IDP-006).
 - **Document content and redacted values.** None found in messages.
   - Metadata and search messages name the field key, never the value (`MetadataValueValidator`, `BusinessExperienceService.java:494-506`).
   - The one producer value repeated is a `sourceDocumentId` (`SubmissionService.java:276`).

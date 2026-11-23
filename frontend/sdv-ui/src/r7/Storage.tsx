@@ -18,11 +18,11 @@ export function fmtBytes(n: number | null | undefined): string {
 const usable = (v: LiveStorageVolume) => v.volume.state === 'ACTIVE' && !!v.capacity?.writable && !v.stopWriteThresholdReached && !v.observationError
 const byPriority = (a: LiveStorageVolume, b: LiveStorageVolume) => a.volume.priority - b.volume.priority || (a.capacity?.usedPercent ?? 100) - (b.capacity?.usedPercent ?? 100)
 
-/** A state Tenant IT set on purpose, in the words both Platform operations and Tenant IT see (task 0020, item 4). */
+/** A state IT set on purpose, in the words both Platform operations and IT see (task 0020, item 4). */
 export function onPurposeWord(state: string): string | null {
-  if (state === 'OFFLINE') return 'Offline (set by Tenant IT)'
-  if (state === 'READ_ONLY') return 'Read only (set by Tenant IT)'
-  if (state === 'DRAINING') return 'Being emptied (set by Tenant IT)'
+  if (state === 'OFFLINE') return 'Offline (set by IT)'
+  if (state === 'READ_ONLY') return 'Read only (set by IT)'
+  if (state === 'DRAINING') return 'Being emptied (set by IT)'
   return null
 }
 
@@ -81,7 +81,7 @@ export function Storage() {
         <tbody>{items.map((v) => {
           const pct = v.capacity?.usedPercent
           const role = roles.role(v)
-          // A volume Tenant IT set offline on purpose is grey, not red.
+          // A volume IT set offline on purpose is grey, not red.
           const tone = v.volume.state !== 'ACTIVE' ? '' : v.observationError || v.stopWriteThresholdReached ? 'r' : v.warningThresholdReached ? 'y' : role.startsWith('In use') ? 'g' : ''
           return <tr key={v.volume.volumeId} aria-label={v.volume.displayName}>
             <td className="lead" data-label="Volume"><strong>{v.volume.displayName}</strong><div className="mono faint st-folder">{v.volume.rootPath}</div></td>

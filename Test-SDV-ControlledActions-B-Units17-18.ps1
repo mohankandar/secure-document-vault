@@ -10,8 +10,8 @@ Set-StrictMode -Version Latest
 
 $Root = $PSScriptRoot
 $Base = 'http://localhost:8280'
-$Tenant1 = '11111111-1111-1111-1111-111111111111'
-$Tenant2 = '22222222-2222-2222-2222-222222222222'
+$Tenant1 = 'bd960ee9-9d54-5053-9958-92aaa54893a6'
+$Tenant2 = '9b233c00-fe6e-582c-a9de-c1fa46f87254'
 $Suffix = ([guid]::NewGuid().ToString('N')).Substring(0, 10)
 $SourceId = $null
 $VolumeId = $null
@@ -133,7 +133,7 @@ try {
     Require ((DbScalar "select count(*) from databasechangelog where id='007-permanent-corrective-redaction';") -eq '1') 'Frozen Unit 16 migration 007 remains applied once'
     Require ((Test-Path $Pdf)) 'Two-page PDF fixture is present'
 
-    $it = UserHeaders $Tenant1 'unit17-18-it' 'TENANT_IT_ADMIN'
+    $it = UserHeaders $Tenant1 'unit17-18-it' 'IT_ADMIN'
     $admin = UserHeaders $Tenant1 'unit17-18-admin' 'BUSINESS_ADMIN'
     $business = UserHeaders $Tenant1 'unit17-18-business' 'BUSINESS_USER'
     $steward = UserHeaders $Tenant1 'unit17-18-steward' 'DOCUMENT_STEWARD'
@@ -153,7 +153,7 @@ try {
             incompleteAttentionHours = 24
         }
     }
-    Require ($source.StatusCode -eq 201) 'Tenant IT created disposable source'
+    Require ($source.StatusCode -eq 201) 'IT created disposable source'
     $SourceId = [string]$source.Body.sourceId
     SaveField $admin 'contractNumber' 'Contract Number' $true
     SaveField $admin 'memberName' 'Member Name' $false
@@ -164,14 +164,14 @@ try {
         state = 'ACTIVE'
         priority = 1
     }
-    Require ($volume.StatusCode -eq 201) 'Tenant IT created disposable ciphertext volume'
+    Require ($volume.StatusCode -eq 201) 'IT created disposable ciphertext volume'
     $VolumeId = [string]$volume.Body.volume.volumeId
 
     Write-Host ''
     Write-Host '=== PHASE 2 - Unit 18 retention policy snapshot behavior ==='
 
     Require ((InvokeJson 'GET' "$Base/api/v1/admin/retention-policy" $business $null).StatusCode -eq 403) 'BUSINESS_USER cannot configure retention'
-    Require ((InvokeJson 'GET' "$Base/api/v1/admin/retention-policy" $it $null).StatusCode -eq 403) 'TENANT_IT_ADMIN does not receive business retention configuration capability'
+    Require ((InvokeJson 'GET' "$Base/api/v1/admin/retention-policy" $it $null).StatusCode -eq 403) 'IT_ADMIN does not receive business retention configuration capability'
     Require ((InvokeJson 'GET' "$Base/api/v1/admin/retention-policy" $platform $null).StatusCode -eq 403) 'PLATFORM_OPERATIONS_ADMIN does not receive tenant retention configuration capability'
 
     $policy30 = InvokeJson 'PUT' "$Base/api/v1/admin/retention-policy" $admin @{ defaultRetentionDays = 30 }
@@ -204,7 +204,7 @@ try {
     Require ((InvokeJson 'GET' $downloadUri @{} $null).StatusCode -eq 401) 'Unauthenticated download is denied'
     Require ((InvokeJson 'GET' $downloadUri $business $null).StatusCode -eq 403) 'BUSINESS_USER cannot download by default'
     Require ((InvokeJson 'GET' $downloadUri $admin $null).StatusCode -eq 403) 'BUSINESS_ADMIN cannot download by default'
-    Require ((InvokeJson 'GET' $downloadUri $it $null).StatusCode -eq 403) 'TENANT_IT_ADMIN cannot download'
+    Require ((InvokeJson 'GET' $downloadUri $it $null).StatusCode -eq 403) 'IT_ADMIN cannot download'
     Require ((InvokeJson 'GET' $downloadUri $platform $null).StatusCode -eq 403) 'PLATFORM_OPERATIONS_ADMIN cannot download'
     Require ((InvokeJson 'GET' $downloadUri $foreignSteward $null).StatusCode -eq 404) 'Cross-tenant Document Steward cannot download another tenant document'
 

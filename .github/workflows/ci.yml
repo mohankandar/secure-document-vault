@@ -82,7 +82,8 @@ jobs:
         run: |
           missing=0
           for t in LegalHoldPostgresTest AccessRequestPostgresTest DuplicateIntakePostgresTest IntakeReportPostgresTest \
-                   SensitivityReportPostgresTest SignInConnectionPostgresTest UnidentifiedIntakeAttemptPostgresTest; do
+                   SensitivityReportPostgresTest PlatformIdentityPostgresTest SenderProfileServerContractTest \
+                   UnidentifiedIntakeAttemptPostgresTest; do
             report=$(find . -path '*/surefire-reports/TEST-*'"$t"'.xml' | head -1)
             if [ -z "$report" ] || grep -q 'skipped="[1-9]' "$report" || grep -q 'tests="0"' "$report"; then
               echo "::error::$t did not run"; missing=1
@@ -138,13 +139,33 @@ jobs:
           mvn $MVN_CI_FLAGS -pl sdv-web -am test -Dtest=ProductNameGuardTest -Dsurefire.failIfNoSpecifiedTests=false
 
   sender-profile-contract:
-    # Task 0041 fills this job: Vero's sender profile (platform-integration-profile/1) checked against
-    # sdv-ingestion-v1.openapi.json with platform-integration-testkit's ProfileContract. Until then it only says so.
+    # Task 0041: Vero's sender profile (docs/api/sdv-ingestion-v1.profile.json, platform-integration-profile/1) passes
+    # platform-core's validator and fits sdv-ingestion-v1.openapi.json (platform-integration-testkit's ProfileContract).
+    # The same kit runs the profile against a running Vero in the backend job (SenderProfileServerContractTest, which
+    # needs its PostgreSQL service).
     name: sender-profile-contract
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 20
+    env:
+      GITHUB_PACKAGES_TOKEN: ${{ secrets.PLATFORM_PACKAGES_TOKEN }}
     steps:
-      - run: echo "Sender-profile contract tests are added by task 0041; nothing to run yet."
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - name: The sender profile against the format and the published contract
+        working-directory: backend
+        run: >-
+          mvn $MVN_CI_FLAGS -pl sdv-web -am test -Dtest=SenderProfileContractTest -Dsurefire.failIfNoSpecifiedTests=false
+      - name: Check the profile tests ran
+        working-directory: backend
+        run: |
+          report=$(find . -path '*/surefire-reports/TEST-*SenderProfileContractTest.xml' | head -1)
+          if [ -z "$report" ] || grep -q 'tests="0"' "$report" || grep -q 'skipped="[1-9]' "$report"; then
+            echo "::error::SenderProfileContractTest did not run"; exit 1
+          fi
 
   ci-passed:
     name: ci-passed

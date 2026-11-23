@@ -9,8 +9,8 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 $Root = $PSScriptRoot
 $Base = 'http://localhost:8280'
-$Tenant1 = '11111111-1111-1111-1111-111111111111'
-$Tenant2 = '22222222-2222-2222-2222-222222222222'
+$Tenant1 = 'bd960ee9-9d54-5053-9958-92aaa54893a6'
+$Tenant2 = '9b233c00-fe6e-582c-a9de-c1fa46f87254'
 $Suffix = ([guid]::NewGuid().ToString('N')).Substring(0, 10)
 $SourceKey = "foundation-$Suffix"
 $SourceId = $null
@@ -70,10 +70,10 @@ function DbScalar([string]$Sql) {
     return (& docker exec sdv-postgres psql -U sdv -d sdv -tAc $Sql | Out-String).Trim()
 }
 
-$it1 = Headers $Tenant1 'foundation-it-1' 'TENANT_IT_ADMIN'
+$it1 = Headers $Tenant1 'foundation-it-1' 'IT_ADMIN'
 $biz1 = Headers $Tenant1 'foundation-biz-1' 'BUSINESS_ADMIN'
-$both1 = Headers $Tenant1 'foundation-both-1' 'TENANT_IT_ADMIN,BUSINESS_ADMIN'
-$it2 = Headers $Tenant2 'foundation-it-2' 'TENANT_IT_ADMIN'
+$both1 = Headers $Tenant1 'foundation-both-1' 'IT_ADMIN,BUSINESS_ADMIN'
+$it2 = Headers $Tenant2 'foundation-it-2' 'IT_ADMIN'
 $biz2 = Headers $Tenant2 'foundation-biz-2' 'BUSINESS_ADMIN'
 
 Write-Host ''
@@ -125,12 +125,12 @@ try {
     Require ((HttpStatus 'GET' "$Base/api/v1/admin/ingestion-sources" $biz1) -eq 403) 'Business Admin cannot configure ingestion sources by default'
 
     $context = Invoke-RestMethod -Uri "$Base/api/v1/admin/foundation/context" -Headers $both1 -TimeoutSec 5
-    Require (@($context.capabilities) -contains 'CONFIGURE_INGESTION_SOURCES') 'Multi-role principal receives Tenant IT capability'
+    Require (@($context.capabilities) -contains 'CONFIGURE_INGESTION_SOURCES') 'Multi-role principal receives IT capability'
     Require (@($context.capabilities) -contains 'CONFIGURE_METADATA_SEARCH') 'Multi-role principal receives Business Admin capability'
     Require (-not (@($context.capabilities) -contains 'VIEW_PDF')) 'Administrative roles do not implicitly receive PDF view capability'
 
     Write-Host ''
-    Write-Host '=== PHASE 3 - Tenant IT ingestion-source administration ==='
+    Write-Host '=== PHASE 3 - IT ingestion-source administration ==='
     $sourceBody = @{
         sourceKey = $SourceKey
         displayName = "Foundation Acceptance $Suffix"
@@ -143,7 +143,7 @@ try {
     }
     $source = Invoke-RestMethod -Uri "$Base/api/v1/admin/ingestion-sources" -Method Post -Headers $it1 -ContentType 'application/json' -Body ($sourceBody | ConvertTo-Json -Depth 8) -TimeoutSec 10
     $SourceId = [string]$source.sourceId
-    Require (-not [string]::IsNullOrWhiteSpace($SourceId)) 'Tenant IT created an ingestion source'
+    Require (-not [string]::IsNullOrWhiteSpace($SourceId)) 'IT created an ingestion source'
     Require ($source.sourceKey -eq $SourceKey) 'Source stable key was persisted'
     Require ($source.tenantId -eq $Tenant1) 'Source is owned by authenticated tenant'
     Require ((HttpStatus 'GET' "$Base/api/v1/admin/ingestion-sources/$SourceId" $it2) -eq 404) 'Second tenant cannot retrieve first tenant source'
@@ -161,7 +161,7 @@ try {
 
     Write-Host ''
     Write-Host '=== PHASE 4 - Business metadata configuration and history ==='
-    Require ((HttpStatus 'GET' "$Base/api/v1/admin/ingestion-sources/$SourceId/metadata-fields" $it1) -eq 403) 'Tenant IT cannot configure business metadata by default'
+    Require ((HttpStatus 'GET' "$Base/api/v1/admin/ingestion-sources/$SourceId/metadata-fields" $it1) -eq 403) 'IT cannot configure business metadata by default'
 
     $fieldV1 = @{
         displayLabel = 'Contract Number'

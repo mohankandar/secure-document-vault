@@ -61,6 +61,13 @@ public final class SchemaVersion {
     /** The changesets of this version: every one (any context) and the ones a production install must have. */
     public record Shipped(List<Key> production, Set<Key> all) { }
 
+    /**
+     * Task 0041: changesets this version no longer ships but knows. A database that ran one is not "newer" because of
+     * it. 002 was the local seed (context local, two fixed demo entities); entities now come from setup and the demo
+     * step (owner answer 3). Removing it from the file leaves its rows where it ran; the demo reset clears those.
+     */
+    public static final Set<Key> RETIRED = Set.of(new Key("002-local-foundation-seed", "sdv"));
+
     private SchemaVersion() { }
 
     public static Shipped shipped() {
@@ -76,6 +83,7 @@ public final class SchemaVersion {
                 all.add(key);
                 if (production.accepts(cs).isAccepted()) required.add(key);
             }
+            all.addAll(RETIRED);
             return new Shipped(List.copyOf(required), Set.copyOf(all));
         } catch (Exception e) {
             throw new StartupFailure(SdvErrorCode.SYS_004, "The changelog " + MASTER + " inside the package could not be read: "
@@ -107,7 +115,58 @@ public final class SchemaVersion {
         return keys;
     }
 
+    /**
+     * Task 0041: one of platform-core's own Flyway runs that the schema step makes beside Liquibase, each with its own
+     * history table (owner answer 1, item 2). Its tables carry their version in {@code versionTable}.
+     */
+    public record PlatformRun(String name, String location, String historyTable, String versionTable, int version) {
+        /** The pseudo changeset key of version {@code v}, for status lines and the startup check. */
+        Key key(int v) { return new Key(name + " V" + v, "platform-core"); }
+    }
+
+    public static final PlatformRun IDENTITY = new PlatformRun("identity",
+            com.documentplatform.identity.jdbc.IdentitySchema.LOCATION,
+            com.documentplatform.identity.jdbc.IdentitySchema.HISTORY_TABLE,
+            com.documentplatform.identity.jdbc.IdentitySchema.VERSION_TABLE,
+            com.documentplatform.identity.jdbc.IdentitySchema.VERSION);
+    /** Licensing tables only: Vero does not turn licensing on (owner answers 1 and 15). */
+    public static final PlatformRun LICENSING = new PlatformRun("licensing",
+            com.documentplatform.licensing.jdbc.LicensingSchema.LOCATION,
+            com.documentplatform.licensing.jdbc.LicensingSchema.HISTORY_TABLE,
+            com.documentplatform.licensing.jdbc.LicensingSchema.VERSION_TABLE,
+            com.documentplatform.licensing.jdbc.LicensingSchema.VERSION);
+    /** In the order the schema step runs them, after Liquibase. */
+    public static final List<PlatformRun> PLATFORM_RUNS = List.of(IDENTITY, LICENSING);
+
+    /** The version a platform run's tables are at: 0 when its version table is missing or empty. */
+    public static int platformVersion(Connection connection, PlatformRun run) throws SQLException {
+        try (PreparedStatement exists = connection.prepareStatement("select to_regclass(?) is not null")) {
+            exists.setString(1, run.versionTable());
+            try (ResultSet rs = exists.executeQuery()) {
+                rs.next();
+                if (!rs.getBoolean(1)) return 0;
+            }
+        }
+        try (PreparedStatement select = connection.prepareStatement("select coalesce(max(version), 0) from " + run.versionTable());
+             ResultSet rs = select.executeQuery()) {
+            rs.next();
+            return rs.getInt(1);
+        }
+    }
+
+    /** Liquibase's changesets, then each platform run: the versions missing, or one this Vero version doesn't know. */
     public static Status check(Connection connection) throws SQLException {
-        return compare(shipped(), applied(connection));
+        Status liquibase = compare(shipped(), applied(connection));
+        List<Key> missing = new ArrayList<>(liquibase.missing());
+        List<Key> unknown = new ArrayList<>(liquibase.unknown());
+        int applied = liquibase.applied();
+        for (PlatformRun run : PLATFORM_RUNS) {
+            int have = platformVersion(connection, run);
+            if (have > run.version()) unknown.add(run.key(have));
+            for (int v = have + 1; v <= run.version(); v++) missing.add(run.key(v));
+            applied += Math.min(have, run.version());
+        }
+        State state = !unknown.isEmpty() ? State.NEWER : !missing.isEmpty() ? State.OLDER : State.CURRENT;
+        return new Status(state, List.copyOf(missing), List.copyOf(unknown), applied);
     }
 }

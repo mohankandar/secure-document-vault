@@ -109,12 +109,7 @@ try {
     $null = Get-Content -LiteralPath (Join-Path $Root 'docs\api\schemas\sdv-ingestion-submission-v1.schema.json') -Raw | ConvertFrom-Json
     Ok 'Frozen producer JSON Schema remains machine-readable'
 
-    $runtimeFiles = @(
-        Get-ChildItem -LiteralPath (Join-Path $Root 'backend') -Recurse -File | Where-Object { $_.Extension -in @('.java','.yaml','.yml','.properties','.xml') }
-        Get-ChildItem -LiteralPath (Join-Path $Root 'frontend\sdv-ui\src') -Recurse -File | Where-Object { $_.Extension -in @('.ts','.tsx') }
-    )
-    $runtimeText = ($runtimeFiles | ForEach-Object { Get-Content -LiteralPath $_.FullName -Raw }) -join "`n"
-    Require ($runtimeText -notmatch '(?i)lexavault') 'Frozen runtime source remains independent from LexaVault'
+    # Independence from other products: the product-name guard (ProductNameGuardTest, task 0042) now does this check.
 
     # Unit 21 FIX1 is a frozen authentication-mode isolation invariant. The local
     # header filter must not exist as a bean in enterprise-jwt/disabled modes;

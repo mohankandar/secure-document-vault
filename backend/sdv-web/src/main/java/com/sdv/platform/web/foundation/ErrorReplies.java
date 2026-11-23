@@ -87,9 +87,6 @@ public final class ErrorReplies {
     private static volatile BusyAnswers busy = new BusyAnswers();
     /** PostgreSQL's SQL state "too_many_connections": the server has no connection left for Vero. */
     static final String TOO_MANY_CONNECTIONS = "53300";
-    /** Task 0038: two ACTIVE sign-in connections match one sign-in (data changed outside Vero). */
-    static final String IDP_007_SIGN_IN_MESSAGE =
-            "Vero can't sign you in because its sign-in setup is inconsistent. Your IT team has been told.";
 
     private ErrorReplies() { }
 
@@ -118,7 +115,6 @@ public final class ErrorReplies {
         if (ex instanceof InternalCheckFailed check) {
             String message = switch (check.errorCode()) {
                 case SYS_017 -> SYS_017_MESSAGE;
-                case IDP_007 -> IDP_007_SIGN_IN_MESSAGE;
                 default -> SYS_016_MESSAGE;
             };
             return new Reply(HttpStatus.INTERNAL_SERVER_ERROR, check.errorCode(), message);

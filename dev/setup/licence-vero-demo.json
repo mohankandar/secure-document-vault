@@ -1,0 +1,46 @@
+{
+  "format": "platform-licence/1",
+  "licence": {
+    "customer": "Acme Lending (demo)",
+    "deployment": "ON_PREM",
+    "entitySlots": [
+      {
+        "allowances": [
+          {
+            "amount": 100000,
+            "product": "SDV",
+            "type": "PAGES_PER_MONTH"
+          }
+        ],
+        "slotId": "ENT-VERO-DEMO-0001"
+      },
+      {
+        "allowances": [
+          {
+            "amount": 100000,
+            "product": "SDV",
+            "type": "PAGES_PER_MONTH"
+          }
+        ],
+        "slotId": "ENT-VERO-DEMO-0002"
+      }
+    ],
+    "issuedAt": "2026-11-22T00:00:00Z",
+    "keyId": "vero-dev-demo-1",
+    "kind": "NON_PRODUCTION",
+    "licenceId": "LIC-VERO-DEMO-0001",
+    "products": [
+      "SDV"
+    ],
+    "startsOn": "2026-01-01",
+    "tenantId": "TEN-VERO-DEMO-0001",
+    "type": "PERPETUAL",
+    "updatesUntil": "2036-12-31",
+    "version": 1
+  },
+  "signature": {
+    "algorithm": "Ed25519",
+    "payloadSha256": "fe2f6572f249daf6197f6713b61e0b492aa7a1a7137f20ceda65e96fa9783c5b",
+    "value": "6rvm3N8yDS88r+78nYGLV+ciMZueE2ui7H5B8yXu/DOChC7dXRWoBTYN/gQpffUjaFmIOjTol8d2USt8f6UFDA=="
+  }
+}

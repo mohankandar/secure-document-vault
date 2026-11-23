@@ -11,7 +11,7 @@ $Root = $PSScriptRoot
 $Base = 'http://localhost:8280'
 $Node2Base = 'http://localhost:8281'
 $RestoreBase = 'http://localhost:8282'
-$Tenant = '11111111-1111-1111-1111-111111111111'
+$Tenant = 'bd960ee9-9d54-5053-9958-92aaa54893a6'
 $Suffix = ([guid]::NewGuid().ToString('N')).Substring(0, 10)
 $Pdf = Join-Path $Root 'test-tools\fixtures\business-viewer-two-page.pdf'
 $Jar = Join-Path $Root 'backend\sdv-web\target\sdv-web-0.1.0-SNAPSHOT.jar'
@@ -172,7 +172,7 @@ try {
     Require ((DbScalar 'sdv' "select count(*) from databasechangelog where id='009-audit-operations-readiness';") -eq '1') 'Frozen migration 009 remains applied once'
     Require (Test-Path $Pdf) 'Two-page recovery PDF fixture is present'
 
-    $it = UserHeaders 'u22-it' 'TENANT_IT_ADMIN'
+    $it = UserHeaders 'u22-it' 'IT_ADMIN'
     $admin = UserHeaders 'u22-admin' 'BUSINESS_ADMIN'
     $business = UserHeaders 'u22-user' 'BUSINESS_USER'
 
@@ -180,7 +180,7 @@ try {
         sourceKey="u22-$Suffix"; displayName="Unit 22 Source $Suffix"; authType='OAUTH2_CLIENT_CREDENTIALS'; credentialReference="external://u22/$Suffix"
         limits=@{ maxPdfBytes=10485760; maxPagesPerPdf=2000; maxDocumentsPerSubmission=10; maxAggregateSubmissionBytes=20971520; incompleteAttentionHours=24 }
     }
-    Require ($source.StatusCode -eq 201) 'Tenant IT created disposable Unit 22 source'
+    Require ($source.StatusCode -eq 201) 'IT created disposable Unit 22 source'
     $SourceId=[string]$source.Body.sourceId
     SaveField $admin 'contractNumber' 'Contract Number' $true
     SaveField $admin 'memberName' 'Member Name' $false
@@ -188,7 +188,7 @@ try {
     $volume = InvokeJson 'POST' "$Base/api/v1/admin/storage-volumes" $it @{
         displayName="Unit 22 Recovery Volume $Suffix"; rootPath=$StorageRoot; state='ACTIVE'; priority=1; warningPercent=90; stopWritePercent=95
     }
-    Require ($volume.StatusCode -eq 201) 'Tenant IT created disposable recovery storage volume'
+    Require ($volume.StatusCode -eq 201) 'IT created disposable recovery storage volume'
     $VolumeId=[string]$volume.Body.volume.volumeId
 
     $sourceHeaders = SourceHeaders $SourceId 'u22-producer'

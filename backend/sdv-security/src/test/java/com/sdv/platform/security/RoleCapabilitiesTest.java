@@ -17,14 +17,14 @@ class RoleCapabilitiesTest {
 
     @Test
     void tenantItAdminDoesNotImplicitlyReceiveDocumentAccess() {
-        var roles = EnumSet.of(SdvRole.TENANT_IT_ADMIN);
+        var roles = EnumSet.of(SdvRole.IT_ADMIN);
         assertTrue(RoleCapabilities.has(roles, Capability.CONFIGURE_INGESTION_SOURCES));
         assertFalse(RoleCapabilities.has(roles, Capability.VIEW_PDF));
     }
 
     @Test
     void multipleRolesComposeCapabilities() {
-        var roles = EnumSet.of(SdvRole.BUSINESS_ADMIN, SdvRole.TENANT_IT_ADMIN);
+        var roles = EnumSet.of(SdvRole.BUSINESS_ADMIN, SdvRole.IT_ADMIN);
         var capabilities = RoleCapabilities.capabilities(roles);
         assertTrue(capabilities.contains(Capability.CONFIGURE_METADATA_SEARCH));
         assertTrue(capabilities.contains(Capability.CONFIGURE_INGESTION_SOURCES));

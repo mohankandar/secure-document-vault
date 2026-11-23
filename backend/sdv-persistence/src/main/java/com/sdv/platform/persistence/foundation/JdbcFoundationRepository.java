@@ -53,6 +53,47 @@ public class JdbcFoundationRepository implements TenantRepository, IngestionSour
     }
 
     @Override
+    public List<Tenant> findActive() {
+        return jdbc.query("""
+                select tenant_id, tenant_key, display_name, status, default_retention_days,
+                       max_pdf_bytes, max_pages_per_pdf, max_documents_per_submission,
+                       max_aggregate_submission_bytes, incomplete_attention_hours,
+                       storage_warning_percent, storage_stop_write_percent, created_at, updated_at
+                  from tenants
+                 where status = 'ACTIVE'
+                 order by display_name, tenant_id
+                """, new MapSqlParameterSource(), tenantMapper());
+    }
+
+    @Override
+    public boolean createEntity(UUID tenantId, String tenantKey, String displayName) {
+        boolean created = jdbc.update("""
+                insert into tenants(tenant_id, tenant_key, display_name, status)
+                values (:tenantId, :tenantKey, :displayName, 'ACTIVE')
+                on conflict (tenant_id) do nothing
+                """, params("tenantId", tenantId).addValue("tenantKey", tenantKey).addValue("displayName", displayName)) == 1;
+        jdbc.update(INITIAL_RETENTION_POLICY, params("tenantId", tenantId));
+        return created;
+    }
+
+    /**
+     * Task 0041: every entity has a retention policy history (Keeping documents reads its current version). Changeset
+     * 013 gave each entity that existed then its first version; an entity activated later gets the same first version
+     * here: keep forever until a Business Admin sets a rule. Safe to run again: only when the entity has none.
+     */
+    public static final String INITIAL_RETENTION_POLICY = """
+            insert into retention_policy_versions(
+                policy_version_id, tenant_id, version, policy_name, description,
+                retention_days, effective_from, effective_until, created_by, created_at)
+            select md5(t.tenant_id::text || ':retention:initial')::uuid, t.tenant_id, 1, 'Initial retention policy',
+                   'Made when the entity was activated: documents are kept until a Business Admin sets a rule.',
+                   t.default_retention_days, t.created_at, null, 'SYSTEM_ACTIVATION', t.created_at
+              from tenants t
+             where t.tenant_id = :tenantId
+               and not exists (select 1 from retention_policy_versions r where r.tenant_id = t.tenant_id)
+            """;
+
+    @Override
     public List<IngestionSource> findAll(UUID tenantId) {
         return jdbc.query(sourceSelect() + " where tenant_id = :tenantId order by source_key",
                 params("tenantId", tenantId), sourceMapper());

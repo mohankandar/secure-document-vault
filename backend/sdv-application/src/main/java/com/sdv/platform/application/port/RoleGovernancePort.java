@@ -15,9 +15,6 @@ public interface RoleGovernancePort {
                                List<String> heldRoles, List<String> withheldRoles, List<String> brokenRules,
                                Instant firstSeenAt, Instant lastSeenAt, long occurrences) { }
 
-    /** A change to the login groups that give a watched role, for one tenant's Business Admin. Before is null at first. */
-    record RoleMappingNotice(UUID noticeId, UUID tenantId, String roleName, List<String> groupsBefore,
-                             List<String> groupsAfter, Instant createdAt) { }
 
     /**
      * Adds the problem, or, when the same person, source and held roles are already recorded, updates its last-seen
@@ -34,14 +31,4 @@ public interface RoleGovernancePort {
      */
     List<RoleConflictProblem> endRoleConflicts(UUID tenantId, String subject, String resolvedFrom);
 
-    /** The login groups last recorded for {@code roleName}; empty when nothing was ever recorded. */
-    Optional<List<String>> findRecordedGroups(String roleName);
-
-    void saveRecordedGroups(String roleName, List<String> groups, Instant recordedAt);
-
-    List<UUID> tenantIds();
-
-    void addNotice(RoleMappingNotice notice);
-
-    List<RoleMappingNotice> findNotices(UUID tenantId, int limit);
 }

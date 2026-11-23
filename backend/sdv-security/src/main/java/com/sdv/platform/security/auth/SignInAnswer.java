@@ -34,6 +34,17 @@ public record SignInAnswer(int status, SdvErrorCode code, String message, String
     public static final String SIGN_IN_OFF = "Sign-in is switched off for Vero, so nobody can sign in yet. Your IT team "
             + "has been told.";
     public static final String ROLE_LACKS_THIS = "Your role doesn't include this action. Ask someone who has it.";
+    /** Task 0041 (SDV-AUT-010). */
+    public static final String CHOOSE_ENTITY = "Choose which entity to work in first.";
+    /** Task 0041 (SDV-AUT-011). */
+    public static final String NOT_A_SENDING_SYSTEM = "This client isn't set up to send documents to Vero. Your IT team can "
+            + "fix this.";
+    /** Task 0041 (SDV-AUT-012). */
+    public static final String CLAIM_NOT_BINDING = "The entity or sending system in this token doesn't match how this "
+            + "client is set up in Vero. Your IT team can fix this.";
+    /** Task 0041 (SDV-AUT-013). */
+    public static final String SOURCE_NOT_SET_UP = "The sending system this client is set up for doesn't exist in Vero. "
+            + "Your IT team can fix this.";
 
     public SignInAnswer {
         Objects.requireNonNull(code, "code");

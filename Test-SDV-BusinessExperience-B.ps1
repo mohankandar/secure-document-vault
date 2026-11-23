@@ -10,8 +10,8 @@ Set-StrictMode -Version Latest
 
 $Root = $PSScriptRoot
 $Base = 'http://localhost:8280'
-$Tenant1 = '11111111-1111-1111-1111-111111111111'
-$Tenant2 = '22222222-2222-2222-2222-222222222222'
+$Tenant1 = 'bd960ee9-9d54-5053-9958-92aaa54893a6'
+$Tenant2 = '9b233c00-fe6e-582c-a9de-c1fa46f87254'
 $Suffix = ([guid]::NewGuid().ToString('N')).Substring(0, 10)
 $SourceId = $null
 $VolumeId = $null
@@ -101,7 +101,7 @@ try {
     Require ((DbScalar "select count(*) from databasechangelog where id='006-business-experience-checkpoint-a';") -eq '1') 'Frozen Business Experience Checkpoint A migration 006 remains applied once'
     Require ((Test-Path $Pdf)) 'Two-page viewer acceptance PDF fixture is present'
 
-    $it = UserHeaders $Tenant1 'business-b-it' 'TENANT_IT_ADMIN'
+    $it = UserHeaders $Tenant1 'business-b-it' 'IT_ADMIN'
     $admin = UserHeaders $Tenant1 'business-b-admin' 'BUSINESS_ADMIN'
     $business = UserHeaders $Tenant1 'business-b-user' 'BUSINESS_USER'
     $steward = UserHeaders $Tenant1 'business-b-steward' 'DOCUMENT_STEWARD'
@@ -122,7 +122,7 @@ try {
             incompleteAttentionHours = 24
         }
     }
-    Require ($source.StatusCode -eq 201) 'Tenant IT created disposable viewer source'
+    Require ($source.StatusCode -eq 201) 'IT created disposable viewer source'
     $SourceId = [string]$source.Body.sourceId
 
     SaveField $admin 'contractNumber' 'Contract Number' $true
@@ -134,7 +134,7 @@ try {
         state = 'ACTIVE'
         priority = 1
     }
-    Require ($volume.StatusCode -eq 201) 'Tenant IT created disposable viewer ciphertext volume'
+    Require ($volume.StatusCode -eq 201) 'IT created disposable viewer ciphertext volume'
     $VolumeId = [string]$volume.Body.volume.volumeId
 
     $sourceHeaders = SourceHeaders $Tenant1 $SourceId 'business-b-producer'
@@ -175,10 +175,10 @@ try {
         'CONFIGURE_METADATA_SEARCH','CONFIGURE_RETENTION','CONFIGURE_BUSINESS_LIMITS'
     ) 'BUSINESS_ADMIN')
 
-    [void](RequireExactCapabilities 'TENANT_IT_ADMIN' @(
+    [void](RequireExactCapabilities 'IT_ADMIN' @(
         'CONFIGURE_INGESTION_SOURCES','CONFIGURE_TENANT_AUTH',
         'CONFIGURE_STORAGE_KEY_PROVIDER','VIEW_TECHNICAL_FAILURES'
-    ) 'TENANT_IT_ADMIN')
+    ) 'IT_ADMIN')
 
     [void](RequireExactCapabilities 'PLATFORM_OPERATIONS_ADMIN' @(
         'VIEW_TECHNICAL_FAILURES'
@@ -211,7 +211,7 @@ try {
     Require ($multiMetadata.StatusCode -eq 200) 'Explicit admin + Business User multi-role gains viewer only through content role'
 
     Require ((InvokeJson 'GET' $viewerUri $admin $null).StatusCode -eq 403) 'BUSINESS_ADMIN alone cannot view PDFs'
-    Require ((InvokeJson 'GET' $viewerUri $it $null).StatusCode -eq 403) 'TENANT_IT_ADMIN alone cannot view PDFs'
+    Require ((InvokeJson 'GET' $viewerUri $it $null).StatusCode -eq 403) 'IT_ADMIN alone cannot view PDFs'
     Require ((InvokeJson 'GET' $viewerUri $platform $null).StatusCode -eq 403) 'PLATFORM_OPERATIONS_ADMIN alone cannot view PDFs'
     Require ((InvokeJson 'GET' $viewerUri $foreignBusiness $null).StatusCode -eq 404) 'Cross-tenant Business User cannot view another tenant document'
 

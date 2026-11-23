@@ -11,7 +11,7 @@ Set-StrictMode -Version Latest
 
 $Root = (Resolve-Path $PSScriptRoot).Path.TrimEnd([IO.Path]::DirectorySeparatorChar)
 $Base = 'http://localhost:8280'
-$Tenant = '11111111-1111-1111-1111-111111111111'
+$Tenant = 'bd960ee9-9d54-5053-9958-92aaa54893a6'
 $Suffix = ([guid]::NewGuid().ToString('N')).Substring(0,10)
 $CorrelationId = "ga-clean-$Suffix"
 $DbVolume = "sdv-ga-$Suffix-postgres"
@@ -204,7 +204,7 @@ try {
 
     Write-Host ''
     Write-Host '=== PHASE 4 - Minimal encrypted business lifecycle ==='
-    $it = UserHeaders 'ga-it' 'TENANT_IT_ADMIN'
+    $it = UserHeaders 'ga-it' 'IT_ADMIN'
     $admin = UserHeaders 'ga-admin' 'BUSINESS_ADMIN'
     $business = UserHeaders 'ga-user' 'BUSINESS_USER'
 

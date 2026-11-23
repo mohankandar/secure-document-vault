@@ -210,7 +210,7 @@ public class MetadataFieldAdminService {
         }
 
         MetadataFieldDefinition previous = definitions.findCurrent(tenantId, sourceId, fieldKey)
-                .orElseThrow(() -> new NoSuchElementException("Source field is not defined. Tenant IT must define it before Business Administration can configure search behavior."));
+                .orElseThrow(() -> new NoSuchElementException("Source field is not defined. IT must define it before Business Administration can configure search behavior."));
         refuseIfRecordIdentityChanges(tenantId, sourceId, fieldKey, java.util.Optional.of(previous),
                 command.businessIdentifier(), command.normalization());
         Instant now = clock.instant();

@@ -7,8 +7,8 @@ import java.util.Set;
 /**
  * Task 0025, 3a: "a person holding any of {@code roles} can never also hold any of {@code neverWith}".
  *
- * <p>Generic over the role type and free of product names, so the rule can move into the shared Enterprise Identity
- * module later. Products supply their rules as data.
+ * <p>Generic over the role type and free of product names, so the rule can move into platform-core
+ * later. Products supply their rules as data.
  *
  * @param id        a stable name for the rule, used in audit details and problem records
  * @param roles     one side of the rule

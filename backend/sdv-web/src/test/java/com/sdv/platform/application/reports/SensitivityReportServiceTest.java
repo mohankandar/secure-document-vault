@@ -32,7 +32,7 @@ import static org.mockito.Mockito.*;
  */
 class SensitivityReportServiceTest {
     private static final UUID TENANT = UUID.fromString("11111111-1111-1111-1111-111111111111");
-    private static final UUID LV = UUID.fromString("22222222-0000-0000-0000-000000000001");
+    private static final UUID RS = UUID.fromString("22222222-0000-0000-0000-000000000001");
     private static final UUID LOS = UUID.fromString("22222222-0000-0000-0000-000000000002");
     private static final Instant NOW = Instant.parse("2026-11-01T02:00:00Z");
     private static final String NY = "America/New_York";
@@ -46,7 +46,7 @@ class SensitivityReportServiceTest {
     }
 
     private void seed() {
-        tenant.systems.add(new IntakeReportRepository.SendingSystem(LV, "LexaVault"));
+        tenant.systems.add(new IntakeReportRepository.SendingSystem(RS, "Redaction Service"));
         tenant.systems.add(new IntakeReportRepository.SendingSystem(LOS, "=HYPERLINK(\"x\")"));
         repo.levels = new SensitivityReportRepository.DocumentLevels(1_204_330, 78_412, 26_058, 412, 4);
         repo.requests.add(new SensitivityReportRepository.RequestCount("DOWNLOAD", "APPROVED", 63));
@@ -96,14 +96,14 @@ class SensitivityReportServiceTest {
     void thePeriodBoundaryIsInTheTenantsTimeZoneAndItsOwnSettingWins() {
         seed();
         tenant.zone = "Asia/Tokyo";
-        SensitivityReportService.SensitivityReport r = service(NY).report(TENANT, "2026-11-01", "2026-11-01", LV.toString());
+        SensitivityReportService.SensitivityReport r = service(NY).report(TENANT, "2026-11-01", "2026-11-01", RS.toString());
         // 1 November in Tokyo is 15:00 UTC on 31 October to 15:00 UTC on 1 November.
         assertEquals(Instant.parse("2026-10-31T15:00:00Z"), repo.from);
         assertEquals(Instant.parse("2026-11-01T15:00:00Z"), repo.to);
         assertEquals("TENANT", r.timeZoneSource());
         assertEquals("2026-11-01", r.today(), "11:00 on 1 November in Tokyo");
-        assertEquals(LV, repo.source);
-        assertEquals(LV, r.sourceId());
+        assertEquals(RS, repo.source);
+        assertEquals(RS, r.sourceId());
     }
 
     @Test

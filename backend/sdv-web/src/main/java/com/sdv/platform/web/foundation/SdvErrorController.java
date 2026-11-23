@@ -26,7 +26,7 @@ import java.util.Objects;
  * log line). A bare 401 is SDV-AUT-001 and a bare 403 SDV-ROL-006.
  * <p>
  * Task 0039: an answer to an intake address is recorded ({@link IntakeRefusals}): a failed sign-in there has no known
- * sending system, so it goes to Tenant IT's Problems as an unidentified intake attempt.
+ * sending system, so it goes to IT's Problems as an unidentified intake attempt.
  */
 @RestController
 public class SdvErrorController implements ErrorController {

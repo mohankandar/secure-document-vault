@@ -7,7 +7,7 @@ Set-StrictMode -Version Latest
 $Root=$PSScriptRoot
 $Base='http://localhost:8280'
 $Node2Base='http://localhost:8281'
-$Tenant='11111111-1111-1111-1111-111111111111'
+$Tenant='bd960ee9-9d54-5053-9958-92aaa54893a6'
 $Suffix=([guid]::NewGuid().ToString('N')).Substring(0,10)
 $Pdf=Join-Path $Root 'test-tools\fixtures\business-viewer-two-page.pdf'
 $Jar=Join-Path $Root 'backend\sdv-web\target\sdv-web-0.1.0-SNAPSHOT.jar'
@@ -157,7 +157,7 @@ try {
     $opsSource=Get-Content -LiteralPath (Join-Path $Root 'backend\sdv-application\src\main\java\com\sdv\platform\application\operations\OperationsService.java') -Raw
     Require ($opsSource -notmatch 'safeLong\(' -and $opsSource -notmatch 'safeList\(') 'Operational summary no longer masks repository failures with -1/empty safe fallbacks'
 
-    $it=UserHeaders 'u24-it' 'TENANT_IT_ADMIN'
+    $it=UserHeaders 'u24-it' 'IT_ADMIN'
     $admin=UserHeaders 'u24-admin' 'BUSINESS_ADMIN'
     $business=UserHeaders 'u24-business' 'BUSINESS_USER'
     $steward=UserHeaders 'u24-steward' 'DOCUMENT_STEWARD'

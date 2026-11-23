@@ -20,7 +20,7 @@ import static org.junit.jupiter.api.Assertions.*;
 class StartupCodesTest {
     static final Set<SdvErrorCode> START_UP = EnumSet.of(SdvErrorCode.SYS_001, SdvErrorCode.SYS_002, SdvErrorCode.SYS_003,
             SdvErrorCode.SYS_004, SdvErrorCode.SYS_005, SdvErrorCode.SYS_006, SdvErrorCode.SYS_007, SdvErrorCode.SYS_008,
-            SdvErrorCode.SYS_009, SdvErrorCode.SYS_010, SdvErrorCode.SYS_011, SdvErrorCode.SYS_012, SdvErrorCode.KEY_001);
+            SdvErrorCode.SYS_009, SdvErrorCode.SYS_010, SdvErrorCode.SYS_012, SdvErrorCode.KEY_001);
 
     private static SdvErrorCode code(Executable start) {
         return assertThrows(StartupFailure.class, start).errorCode();

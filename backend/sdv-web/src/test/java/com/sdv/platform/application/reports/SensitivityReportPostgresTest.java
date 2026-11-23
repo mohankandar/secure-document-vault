@@ -40,7 +40,7 @@ import static org.junit.jupiter.api.Assertions.*;
 class SensitivityReportPostgresTest {
     private static final UUID T = UUID.fromString("10000000-0000-0000-0000-0000000005e1");
     private static final UUID TX = UUID.fromString("10000000-0000-0000-0000-0000000005e2");
-    private static final UUID LV = UUID.fromString("20000000-0000-0000-0000-0000000005e1");
+    private static final UUID RS = UUID.fromString("20000000-0000-0000-0000-0000000005e1");
     private static final UUID LOS = UUID.fromString("20000000-0000-0000-0000-0000000005e2");
     private static final UUID XS = UUID.fromString("20000000-0000-0000-0000-0000000005e3");
     private static final Instant NOW = Instant.parse("2026-11-21T15:00:00Z");
@@ -135,7 +135,7 @@ class SensitivityReportPostgresTest {
         boolean used = "USED".equals(status);
         String level = kind.startsWith("LOWER") ? "'STANDARD'" : "null";
         String target = "LOWER_RECORD_LEVEL".equals(kind)
-                ? "null, '" + LV + "', '" + contract(C1) + "', '" + RecordKey.sha256(contract(C1)) + "'"
+                ? "null, '" + RS + "', '" + contract(C1) + "', '" + RecordKey.sha256(contract(C1)) + "'"
                 : "'" + document + "', null, null, null";
         sql("insert into access_requests(request_id, tenant_id, kind, document_id, source_id, record_key, record_key_sha256, requested_level, "
                 + "reason, requested_by, requested_at, status, decided_by, decided_at, expires_at, used_at) values ('" + UUID.randomUUID()
@@ -165,31 +165,31 @@ class SensitivityReportPostgresTest {
         tenant(T, "sens-0033");
         tenant(TX, "sens-0033-other");
         sql("update tenants set time_zone='America/New_York' where tenant_id='" + T + "'");
-        source(T, LV, "loans", "LexaVault");
+        source(T, RS, "loans", "Redaction Service");
         source(T, LOS, "origination", "Loan Origination System");
         source(TX, XS, "other", "Another tenant system");
 
-        // ---- Documents. Contract C1 at LexaVault is Highly Confidential as a record: both its deliveries count at that level.
-        UUID s1 = submission(T, LV, "s1", "contractNumber", C1);
-        UUID s2 = submission(T, LV, "s2", "contractNumber", C1);
-        UUID s3 = submission(T, LV, "s3", "contractNumber", C2);
-        UUID s4 = submission(T, LV, "s4");
-        UUID s6 = submission(T, LV, "s6", "contractNumber", C1, "customerId", "CUST-9");
+        // ---- Documents. Contract C1 at Redaction Service is Highly Confidential as a record: both its deliveries count at that level.
+        UUID s1 = submission(T, RS, "s1", "contractNumber", C1);
+        UUID s2 = submission(T, RS, "s2", "contractNumber", C1);
+        UUID s3 = submission(T, RS, "s3", "contractNumber", C2);
+        UUID s4 = submission(T, RS, "s4");
+        UUID s6 = submission(T, RS, "s6", "contractNumber", C1, "customerId", "CUST-9");
         UUID s5 = submission(T, LOS, "s5", "contractNumber", C1);
-        UUID d1 = document(T, LV, s1, "d1", "STANDARD", "AVAILABLE");
-        UUID d2 = document(T, LV, s1, "d2", "CONFIDENTIAL", "AVAILABLE");
-        UUID d3 = document(T, LV, s1, "d3", "STANDARD", "EXPIRED_DELETED");
-        document(T, LV, s1, "d4", "STANDARD", "PROCESSING_FAILED");
-        document(T, LV, s2, "d5", "STANDARD", "RECEIVED");
-        UUID d6 = document(T, LV, s3, "d6", "HIGHLY_CONFIDENTIAL", "AVAILABLE");
-        document(T, LV, s4, "d7", "STANDARD", "AVAILABLE");
+        UUID d1 = document(T, RS, s1, "d1", "STANDARD", "AVAILABLE");
+        UUID d2 = document(T, RS, s1, "d2", "CONFIDENTIAL", "AVAILABLE");
+        UUID d3 = document(T, RS, s1, "d3", "STANDARD", "EXPIRED_DELETED");
+        document(T, RS, s1, "d4", "STANDARD", "PROCESSING_FAILED");
+        document(T, RS, s2, "d5", "STANDARD", "RECEIVED");
+        UUID d6 = document(T, RS, s3, "d6", "HIGHLY_CONFIDENTIAL", "AVAILABLE");
+        document(T, RS, s4, "d7", "STANDARD", "AVAILABLE");
         // Another identifier value besides C1: another record, so the C1 level does not reach it.
-        document(T, LV, s6, "d9", "STANDARD", "AVAILABLE");
+        document(T, RS, s6, "d9", "STANDARD", "AVAILABLE");
         // The same contract number from the other sending system is that system's own record.
         UUID d8 = document(T, LOS, s5, "d8", "STANDARD", "AVAILABLE");
-        recordLevel(T, LV, contract(C1), "HIGHLY_CONFIDENTIAL");
-        recordLevel(T, LV, RecordKey.ofSubmission(s4), "CONFIDENTIAL");
-        recordLevel(T, LV, contract(C2), "STANDARD");
+        recordLevel(T, RS, contract(C1), "HIGHLY_CONFIDENTIAL");
+        recordLevel(T, RS, RecordKey.ofSubmission(s4), "CONFIDENTIAL");
+        recordLevel(T, RS, contract(C2), "STANDARD");
         hold(T, d1, true);
         hold(T, d6, false);
         hold(T, d3, true);
@@ -218,21 +218,21 @@ class SensitivityReportPostgresTest {
         request(TX, "DOWNLOAD", xd, "PENDING", false, "2026-11-10T10:00:00Z", "2026-11-17T10:00:00Z", "rx");
 
         // ---- Level changes.
-        UUID c1Level = id("level-" + LV + contract(C1));
+        UUID c1Level = id("level-" + RS + contract(C1));
         event(T, "USER", "dee", "DOCUMENT_SENSITIVITY_RAISED", "DOCUMENT", d2, "2026-11-02T10:00:00Z", "SUCCESS", "{\"to\":\"CONFIDENTIAL\"}");
-        event(T, "USER", "dee", "RECORD_SENSITIVITY_RAISED", "RECORD_SENSITIVITY", c1Level, "2026-11-02T11:00:00Z", "SUCCESS", "{\"sourceId\":\"" + LV + "\"}");
-        event(T, "SOURCE", "loans", "RECORD_SENSITIVITY_RAISED", "RECORD_SENSITIVITY", c1Level, "2026-11-03T10:00:00Z", "SUCCESS", "{\"sourceId\":\"" + LV + "\",\"setBy\":\"SOURCE\"}");
+        event(T, "USER", "dee", "RECORD_SENSITIVITY_RAISED", "RECORD_SENSITIVITY", c1Level, "2026-11-02T11:00:00Z", "SUCCESS", "{\"sourceId\":\"" + RS + "\"}");
+        event(T, "SOURCE", "loans", "RECORD_SENSITIVITY_RAISED", "RECORD_SENSITIVITY", c1Level, "2026-11-03T10:00:00Z", "SUCCESS", "{\"sourceId\":\"" + RS + "\",\"setBy\":\"SOURCE\"}");
         event(T, "SOURCE", "origination", "DOCUMENT_SENSITIVITY_RAISED", "DOCUMENT", d8, "2026-11-03T11:00:00Z", "SUCCESS", "{\"setBy\":\"SOURCE\"}");
         // Part 2: a contract's first level above Standard from a delivery counts as set by a sending system (the
         // migration case); a first level at Standard, or one naming no level, changes nothing and is not counted.
-        event(T, "SOURCE", "loans", "RECORD_SENSITIVITY_SET", "RECORD_SENSITIVITY", c1Level, "2026-11-03T12:00:00Z", "SUCCESS", "{\"sourceId\":\"" + LV + "\",\"level\":\"HIGHLY_CONFIDENTIAL\",\"setBy\":\"SOURCE\"}");
+        event(T, "SOURCE", "loans", "RECORD_SENSITIVITY_SET", "RECORD_SENSITIVITY", c1Level, "2026-11-03T12:00:00Z", "SUCCESS", "{\"sourceId\":\"" + RS + "\",\"level\":\"HIGHLY_CONFIDENTIAL\",\"setBy\":\"SOURCE\"}");
         event(T, "SOURCE", "origination", "RECORD_SENSITIVITY_SET", "RECORD_SENSITIVITY", UUID.randomUUID(), "2026-11-03T12:30:00Z", "SUCCESS", "{\"sourceId\":\"" + LOS + "\",\"level\":\"CONFIDENTIAL\",\"setBy\":\"SOURCE\"}");
-        event(T, "SOURCE", "loans", "RECORD_SENSITIVITY_SET", "RECORD_SENSITIVITY", UUID.randomUUID(), "2026-11-03T12:40:00Z", "SUCCESS", "{\"sourceId\":\"" + LV + "\",\"level\":\"STANDARD\",\"setBy\":\"SOURCE\"}");
-        event(T, "SOURCE", "loans", "RECORD_SENSITIVITY_SET", "RECORD_SENSITIVITY", UUID.randomUUID(), "2026-11-03T12:50:00Z", "SUCCESS", "{\"sourceId\":\"" + LV + "\"}");
+        event(T, "SOURCE", "loans", "RECORD_SENSITIVITY_SET", "RECORD_SENSITIVITY", UUID.randomUUID(), "2026-11-03T12:40:00Z", "SUCCESS", "{\"sourceId\":\"" + RS + "\",\"level\":\"STANDARD\",\"setBy\":\"SOURCE\"}");
+        event(T, "SOURCE", "loans", "RECORD_SENSITIVITY_SET", "RECORD_SENSITIVITY", UUID.randomUUID(), "2026-11-03T12:50:00Z", "SUCCESS", "{\"sourceId\":\"" + RS + "\"}");
         // Before the period (23:59 on 31 October in New York) and another tenant's: not counted in November.
-        event(T, "SOURCE", "loans", "RECORD_SENSITIVITY_SET", "RECORD_SENSITIVITY", UUID.randomUUID(), "2026-11-01T03:59:00Z", "SUCCESS", "{\"sourceId\":\"" + LV + "\",\"level\":\"CONFIDENTIAL\",\"setBy\":\"SOURCE\"}");
+        event(T, "SOURCE", "loans", "RECORD_SENSITIVITY_SET", "RECORD_SENSITIVITY", UUID.randomUUID(), "2026-11-01T03:59:00Z", "SUCCESS", "{\"sourceId\":\"" + RS + "\",\"level\":\"CONFIDENTIAL\",\"setBy\":\"SOURCE\"}");
         event(TX, "SOURCE", "other", "RECORD_SENSITIVITY_SET", "RECORD_SENSITIVITY", UUID.randomUUID(), "2026-11-03T12:00:00Z", "SUCCESS", "{\"sourceId\":\"" + XS + "\",\"level\":\"HIGHLY_CONFIDENTIAL\",\"setBy\":\"SOURCE\"}");
-        event(T, "SOURCE", "loans", "RECORD_SENSITIVITY_KEPT", "RECORD_SENSITIVITY", c1Level, "2026-11-03T13:00:00Z", "SUCCESS", "{\"sourceId\":\"" + LV + "\"}");
+        event(T, "SOURCE", "loans", "RECORD_SENSITIVITY_KEPT", "RECORD_SENSITIVITY", c1Level, "2026-11-03T13:00:00Z", "SUCCESS", "{\"sourceId\":\"" + RS + "\"}");
         event(T, "USER", "priya", "DOCUMENT_SENSITIVITY_LOWERED", "DOCUMENT", d2, "2026-11-04T10:00:00Z", "SUCCESS", "{}");
         event(T, "USER", "priya", "RECORD_SENSITIVITY_LOWERED", "RECORD_SENSITIVITY", UUID.randomUUID(), "2026-11-04T11:00:00Z", "SUCCESS", "{\"sourceId\":\"" + LOS + "\"}");
         event(T, "USER", "dee", "DOCUMENT_SENSITIVITY_RAISED", "DOCUMENT", d2, "2026-11-01T03:59:00Z", "SUCCESS", "{}");
@@ -275,12 +275,12 @@ class SensitivityReportPostgresTest {
         assertEquals("Contract number", all.primaryIdentifierLabel());
 
         // ---- One sending system at a time.
-        SensitivityReportService.SensitivityReport lv = service.report(T, "2026-11-01", "2026-11-30", LV.toString());
-        assertEquals(new SensitivityReportService.Documents(1, 1, 4, 6, 3, 1), lv.documents());
-        assertEquals(new SensitivityReportService.RequestRow("PRINT", 0, 0, 1, 1), lv.requests().get(1));
-        assertEquals(new SensitivityReportService.RequestRow("LOWER_RECORD_LEVEL", 0, 0, 0, 1), lv.requests().get(3));
-        assertEquals(new SensitivityReportRepository.LevelChanges(2, 2, 1), lv.levelChanges());
-        assertEquals(2, lv.attempts().size());
+        SensitivityReportService.SensitivityReport rs = service.report(T, "2026-11-01", "2026-11-30", RS.toString());
+        assertEquals(new SensitivityReportService.Documents(1, 1, 4, 6, 3, 1), rs.documents());
+        assertEquals(new SensitivityReportService.RequestRow("PRINT", 0, 0, 1, 1), rs.requests().get(1));
+        assertEquals(new SensitivityReportService.RequestRow("LOWER_RECORD_LEVEL", 0, 0, 0, 1), rs.requests().get(3));
+        assertEquals(new SensitivityReportRepository.LevelChanges(2, 2, 1), rs.levelChanges());
+        assertEquals(2, rs.attempts().size());
         SensitivityReportService.SensitivityReport los = service.report(T, "2026-11-01", "2026-11-30", LOS.toString());
         assertEquals(new SensitivityReportService.Documents(1, 0, 0, 1, 0, 0), los.documents());
         assertEquals(new SensitivityReportService.RequestRow("PRINT", 0, 1, 0, 0), los.requests().get(1));

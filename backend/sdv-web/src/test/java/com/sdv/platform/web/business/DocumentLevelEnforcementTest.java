@@ -90,7 +90,7 @@ class DocumentLevelEnforcementTest {
     enum Function { OPEN, PAGE_IMAGE, THUMBNAILS, TEXT_SEARCH, PRINT, DOWNLOAD, REDACT, TAGS, ADD_TAG, COMMENTS, ADD_COMMENT, ACTIVITY }
 
     private static final List<SdvRole> ROLES = List.of(SdvRole.BUSINESS_USER, SdvRole.DOCUMENT_STEWARD,
-            SdvRole.RESTRICTED_STEWARD, SdvRole.BUSINESS_ADMIN, SdvRole.TENANT_IT_ADMIN, SdvRole.PLATFORM_OPERATIONS_ADMIN);
+            SdvRole.RESTRICTED_STEWARD, SdvRole.BUSINESS_ADMIN, SdvRole.IT_ADMIN, SdvRole.PLATFORM_OPERATIONS_ADMIN);
 
     /**
      * ROLE-MATRIX.md 3.1, one string per role in the order of {@link #ROLES}, each giving Standard, Confidential and

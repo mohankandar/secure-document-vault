@@ -67,7 +67,7 @@ const PEOPLE_ROLES: { name: string; purpose: string; claim: string; changeable: 
   { name: 'Document steward', purpose: 'Everything a business user does, plus download and permanent redaction', claim: 'DOCUMENT_STEWARD', changeable: true },
   { name: 'Restricted steward', purpose: 'Everything a document steward does, plus highly confidential documents. Never also an admin', claim: 'RESTRICTED_STEWARD', changeable: false },
   { name: 'Business admin', purpose: 'Rules for roles, keeping documents and search fields', claim: 'BUSINESS_ADMIN', changeable: false },
-  { name: 'Tenant IT', purpose: 'Storage, sign-in and the systems that send documents', claim: 'TENANT_IT_ADMIN', changeable: false },
+  { name: 'IT', purpose: 'Storage, sign-in and the systems that send documents', claim: 'IT_ADMIN', changeable: false },
 ]
 
 function PeopleTab() {

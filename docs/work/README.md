@@ -33,6 +33,7 @@ Branch:
 Outcome: DONE / STOPPED / PARTLY DONE
 
 ## What was done
+## No other product's name or behaviour in code: yes / no (and where)
 ## Commands run and results
 ## Tests: counts, and any failures with their output
 ## Files changed

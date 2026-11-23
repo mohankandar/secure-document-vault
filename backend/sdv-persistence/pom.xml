@@ -16,6 +16,12 @@
             <groupId>com.documentplatform.platform</groupId>
             <artifactId>platform-identity-core</artifactId>
         </dependency>
+        <!-- Task 0041: the idn_ stores (sign-in lookup, grants, client bindings, entities). Brings platform-licensing
+             (plain Java), read only for slot activation (owner answer 15); licensing is not turned on. -->
+        <dependency>
+            <groupId>com.documentplatform.platform</groupId>
+            <artifactId>platform-identity-jdbc</artifactId>
+        </dependency>
         <dependency>
             <groupId>com.sdv.platform</groupId>
             <artifactId>sdv-domain</artifactId>

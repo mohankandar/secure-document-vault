@@ -43,7 +43,7 @@ class ProblemsAndAuditRecordsTest {
 
     private void knownRecord() {
         IngestionSource source = mock(IngestionSource.class);
-        when(source.displayName()).thenReturn("LexaVault");
+        when(source.displayName()).thenReturn("Redaction Service");
         when(sources.findById(TENANT, SOURCE)).thenReturn(Optional.of(source));
         when(definitions.findDisplayOrder(TENANT, SOURCE)).thenReturn(List.of("memberNumber", "contractNumber", "lastName"));
         when(definitions.findRecordTitleFields(TENANT, SOURCE)).thenReturn(List.of("firstName", "lastName"));
@@ -62,7 +62,7 @@ class ProblemsAndAuditRecordsTest {
         assertEquals("Member Number", found.recordNumberLabel());
         // Task 0028, 0.1: admin views never carry the record title; the title fields are not even read.
         verify(definitions, never()).findRecordTitleFields(any(), any());
-        assertEquals("LexaVault", found.sourceName());
+        assertEquals("Redaction Service", found.sourceName());
     }
 
     @Test
@@ -81,7 +81,7 @@ class ProblemsAndAuditRecordsTest {
         assertNotNull(unknown);
         assertNull(unknown.recordNumber());
 
-        assertEquals("LexaVault", unknown.sourceName());
+        assertEquals("Redaction Service", unknown.sourceName());
 
         // In the summary: a failing lookup never drops the problem itself.
         OperationalRepository ops = mock(OperationalRepository.class);
@@ -174,7 +174,7 @@ class ProblemsAndAuditRecordsTest {
 
     /**
      * Task 0040 part 2 (owner answer 4 to report 0040 part 2): Problems carries the count of busy answers (503
-     * SDV-SYS-018), in the last hour and since start, so sustained busy is visible to Tenant IT. None without a count.
+     * SDV-SYS-018), in the last hour and since start, so sustained busy is visible to IT. None without a count.
      */
     @Test
     void problemsCarryTheBusyAnswerCount() throws Exception {

@@ -1,12 +1,8 @@
 package com.sdv.platform.web.startup;
 
-import com.sdv.platform.application.port.AuditEventPort;
 import com.sdv.platform.application.port.DatabaseStartupWork;
-import com.sdv.platform.application.port.RoleGovernancePort;
-import com.sdv.platform.application.roles.RoleMappingWatchService;
 import com.sdv.platform.domain.error.SdvErrorCode;
 import com.sdv.platform.domain.error.StartupFailure;
-import com.sdv.platform.security.auth.enterprise.RestrictedStewardMappingWatcher;
 import com.sdv.platform.web.schema.DatabaseSchemaCheckAccess;
 import com.sdv.platform.web.schema.SchemaVersion;
 import org.junit.jupiter.api.Test;
@@ -25,27 +21,27 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
 /**
- * Task 0037, item 3 (SDV-SYS-012): the start-up work that needs the database, with RestrictedStewardMappingWatcher
- * among it, waits for the schema check like the rest of Vero.
+ * Task 0037, item 3 (SDV-SYS-012): the start-up work that needs the database waits for the schema check like the rest
+ * of Vero. Task 0041: shown with a neutral job (the Restricted Steward group watch it used went with its setting).
  */
 class DatabaseStartupWorkRunnerTest {
 
-    /** The watcher over a sign-in group store whose database is missing, until {@code up}. */
+    /** A start-up job that reads the database, which is missing until {@code up}. */
     private static final class Watcher {
-        final RoleGovernancePort store = mock(RoleGovernancePort.class);
-        final AuditEventPort audit = mock(AuditEventPort.class);
-        final RestrictedStewardMappingWatcher watcher =
-                new RestrictedStewardMappingWatcher(new RoleMappingWatchService(store, audit), "vero-restricted");
-
-        Watcher() {
-            when(store.findRecordedGroups(any())).thenThrow(new CannotGetJdbcConnectionException("Failed to obtain JDBC Connection",
-                    new SQLException("Connection to 127.0.0.1:5433 refused.", "08001")));
-        }
+        final AtomicInteger calls = new AtomicInteger();
+        volatile boolean up;
+        final DatabaseStartupWork watcher = new DatabaseStartupWork() {
+            @Override public String name() { return "a database start-up job"; }
+            @Override public void run() {
+                calls.incrementAndGet();
+                if (!up) throw new CannotGetJdbcConnectionException("Failed to obtain JDBC Connection",
+                        new SQLException("Connection to 127.0.0.1:5433 refused.", "08001"));
+            }
+        };
 
         void up() {
-            reset(store);
-            when(store.findRecordedGroups(any())).thenReturn(Optional.empty());
-            when(store.tenantIds()).thenReturn(List.of());
+            up = true;
+            calls.set(0);
         }
     }
 
@@ -65,14 +61,14 @@ class DatabaseStartupWorkRunnerTest {
         DatabaseStartupWorkRunner runner = new DatabaseStartupWorkRunner(db.check(), List.of(w.watcher), () -> stops.add(() -> { }));
 
         assertDoesNotThrow(() -> runner.run(new DefaultApplicationArguments()), "the start goes on");
-        verify(w.store, never()).findRecordedGroups(any());
+        assertEquals(0, w.calls.get());
 
         w.up();
         db.comesBack(SchemaVersion.State.CURRENT);
-        verify(w.store, times(1)).findRecordedGroups("RESTRICTED_STEWARD");
+        assertEquals(1, w.calls.get());
         assertTrue(stops.isEmpty());
         db.comesBack(SchemaVersion.State.CURRENT);
-        verify(w.store, times(1)).findRecordedGroups("RESTRICTED_STEWARD");
+        assertEquals(1, w.calls.get());
     }
 
     @Test

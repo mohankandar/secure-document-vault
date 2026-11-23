@@ -10,8 +10,8 @@ Set-StrictMode -Version Latest
 
 $Root = $PSScriptRoot
 $Base = 'http://localhost:8280'
-$Tenant1 = '11111111-1111-1111-1111-111111111111'
-$Tenant2 = '22222222-2222-2222-2222-222222222222'
+$Tenant1 = 'bd960ee9-9d54-5053-9958-92aaa54893a6'
+$Tenant2 = '9b233c00-fe6e-582c-a9de-c1fa46f87254'
 $Suffix = ([guid]::NewGuid().ToString('N')).Substring(0, 10)
 $SourceId = $null
 $VolumeId = $null
@@ -88,19 +88,19 @@ try {
     Require ((DbScalar "select count(*) from databasechangelog where id='008-controlled-download-retention';") -eq '1') 'Frozen migration 008 remains applied once'
     Require (Test-Path $Pdf) 'Two-page PDF fixture is present'
 
-    $it = UserHeaders $Tenant1 'ops-tenant-it' 'TENANT_IT_ADMIN'
+    $it = UserHeaders $Tenant1 'ops-tenant-it' 'IT_ADMIN'
     $admin = UserHeaders $Tenant1 'ops-business-admin' 'BUSINESS_ADMIN'
-    $techAdmin = UserHeaders $Tenant1 'ops-tech-admin' 'TENANT_IT_ADMIN,BUSINESS_ADMIN'
+    $techAdmin = UserHeaders $Tenant1 'ops-tech-admin' 'IT_ADMIN,BUSINESS_ADMIN'
     $platform = UserHeaders $Tenant1 'ops-platform' 'PLATFORM_OPERATIONS_ADMIN'
     $business = UserHeaders $Tenant1 'ops-business-user' 'BUSINESS_USER'
     $steward = UserHeaders $Tenant1 'ops-steward' 'DOCUMENT_STEWARD'
-    $foreignTech = UserHeaders $Tenant2 'foreign-tech' 'TENANT_IT_ADMIN'
+    $foreignTech = UserHeaders $Tenant2 'foreign-tech' 'IT_ADMIN'
 
     $source = InvokeJson 'POST' "$Base/api/v1/admin/ingestion-sources" $it @{
         sourceKey="ops-a-$Suffix"; displayName="Operations Source $Suffix"; authType='OAUTH2_CLIENT_CREDENTIALS'
         credentialReference="vault://ops/$Suffix"; limits=@{ incompleteAttentionHours=24 }
     }
-    Require ($source.StatusCode -eq 201) 'Tenant IT created disposable source'
+    Require ($source.StatusCode -eq 201) 'IT created disposable source'
     $SourceId=[string]$source.Body.sourceId
     SaveField $admin 'contractNumber' 'Contract Number' $true
     SaveField $admin 'memberName' 'Member Name' $false
@@ -108,7 +108,7 @@ try {
     $volume = InvokeJson 'POST' "$Base/api/v1/admin/storage-volumes" $it @{
         displayName="Operations Volume $Suffix"; rootPath=$StorageRoot; state='ACTIVE'; priority=1; warningPercent=90; stopWritePercent=95
     }
-    Require ($volume.StatusCode -eq 201) 'Tenant IT created disposable storage volume'
+    Require ($volume.StatusCode -eq 201) 'IT created disposable storage volume'
     $VolumeId=[string]$volume.Body.volume.volumeId
     $used = [int]$volume.Body.capacity.usedPercent
     $warning = [Math]::Max(1, [Math]::Min(99, $used))
@@ -117,7 +117,7 @@ try {
     $volUpdate = InvokeJson 'PUT' "$Base/api/v1/admin/storage-volumes/$VolumeId" $it @{
         displayName="Operations Volume $Suffix"; state='ACTIVE'; priority=1; warningPercent=$warning; stopWritePercent=$stop
     }
-    Require ($volUpdate.StatusCode -eq 200) 'Tenant IT configured capacity warning for operational validation'
+    Require ($volUpdate.StatusCode -eq 200) 'IT configured capacity warning for operational validation'
 
     $sourceHeaders = SourceHeaders $Tenant1 $SourceId 'ops-producer'
     $good = CreateSubmissionAndUpload $sourceHeaders 'ops-good' 1 $true
@@ -136,7 +136,7 @@ try {
     Write-Host ''
     Write-Host '=== PHASE 2 - Unit 19 audit model and tenant-scoped views ==='
     $audit = InvokeJson 'GET' "$Base/api/v1/operations/audit-events?limit=2" $techAdmin $null
-    Require ($audit.StatusCode -eq 200) 'Tenant IT can open tenant audit view'
+    Require ($audit.StatusCode -eq 200) 'IT can open tenant audit view'
     Require (@($audit.Body.events).Count -eq 2) 'Audit view honors bounded page size'
     Require ($audit.Body.hasMore -eq $true -and -not [string]::IsNullOrWhiteSpace([string]$audit.Body.nextCursor)) 'Audit view provides stable cursor pagination'
     $older = InvokeJson 'GET' "$Base/api/v1/operations/audit-events?limit=2&cursor=$([uri]::EscapeDataString([string]$audit.Body.nextCursor))" $techAdmin $null
@@ -162,7 +162,7 @@ try {
     Write-Host ''
     Write-Host '=== PHASE 3 - Unit 20 operational health / failures / stuck workflow ==='
     $summary = InvokeJson 'GET' "$Base/api/v1/operations/summary" $techAdmin $null
-    Require ($summary.StatusCode -eq 200) 'Tenant IT can open operational summary'
+    Require ($summary.StatusCode -eq 200) 'IT can open operational summary'
     Require ($summary.Body.application.status -eq 'UP') 'Application operational check is UP'
     Require ($summary.Body.database.status -eq 'UP') 'Database operational check is UP'
     Require ($summary.Body.keyService.status -eq 'UP') 'Vault/key-service operational check is UP'
@@ -189,11 +189,11 @@ try {
     $readOnly = InvokeJson 'PUT' "$Base/api/v1/admin/storage-volumes/$VolumeId" $it @{
         displayName="Operations Volume $Suffix"; state='READ_ONLY'; priority=1; warningPercent=$warning; stopWritePercent=$stop
     }
-    Require ($readOnly.StatusCode -eq 200 -and $readOnly.Body.volume.state -eq 'READ_ONLY') 'Tenant IT operational action can place a volume READ_ONLY'
+    Require ($readOnly.StatusCode -eq 200 -and $readOnly.Body.volume.state -eq 'READ_ONLY') 'IT operational action can place a volume READ_ONLY'
     $active = InvokeJson 'PUT' "$Base/api/v1/admin/storage-volumes/$VolumeId" $it @{
         displayName="Operations Volume $Suffix"; state='ACTIVE'; priority=1; warningPercent=$warning; stopWritePercent=$stop
     }
-    Require ($active.StatusCode -eq 200 -and $active.Body.volume.state -eq 'ACTIVE') 'Tenant IT operational action can restore volume ACTIVE'
+    Require ($active.StatusCode -eq 200 -and $active.Body.volume.state -eq 'ACTIVE') 'IT operational action can restore volume ACTIVE'
     Require ((DbScalar "select count(*) from audit_events where tenant_id='$Tenant1' and action='STORAGE_VOLUME_UPDATED' and target_id='$VolumeId';") -ge '2') 'Technical storage actions are append-audited'
 
     Write-Host ''
@@ -207,7 +207,7 @@ try {
     Require ($appSource -match 'capacityBanner' -and $appSource -match 'Storage capacity') 'Frontend renders all-user capacity warning banner'
     Require ($appSource -match 'CONFIGURE_STORAGE_KEY_PROVIDER' -and $appSource -match 'READ_ONLY') 'Frontend provides capability-gated storage admin actions'
     Require ($apiSource -match "if \(!import\.meta\.env\.DEV\) return \{\}") 'Production frontend still does not inject local authentication headers'
-    Require ($appSource -notmatch 'LexaVault') 'Units 19-20 introduce no LexaVault coupling'
+    # Independence from other products: the product-name guard (ProductNameGuardTest, task 0042) now does this check.
 
     Write-Host ''
     Write-Host '=== RESULT ==='

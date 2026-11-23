@@ -1,24 +1,4 @@
 # Product-name guard (task 0042): files that may still hold another product's name, each with a reason.
 # One per line: path from the repository root (forward slashes) | reason.
 # A listed file that no longer holds a name fails the guard: remove its line when it is fixed.
-# Every entry below is a known use that task 0041 (independence clean-up, board LV-4) removes.
-Seed-SDV-Canvas-Demo.ps1 | demo sender named after another product; renamed to "Redaction Service", fixed in 0041
-Seed-SDV-Demo-Records.ps1 | demo sender named after another product; renamed to "Redaction Service", fixed in 0041
-Test-SDV-DemoSeed.ps1 | checks the demo sender's old name; renamed to "Redaction Service", fixed in 0041
-Start-SDV-WSL.sh | closing message names another product; fixed in 0041
-Stop-SDV-WSL.sh | closing message names another product; fixed in 0041
-Test-SDV-BusinessExperience-A.ps1 | older independence check spells the name; replaced by this guard, fixed in 0041
-Test-SDV-EnterpriseReadiness-A-Units19-20.ps1 | older independence check spells the name; replaced by this guard, fixed in 0041
-Test-SDV-EnterpriseReadiness-D-Unit23.ps1 | older independence check spells the name; replaced by this guard, fixed in 0041
-Test-SDV-V1-Release-Readiness-Unit25.ps1 | older independence check spells the name; replaced by this guard, fixed in 0041
-backend/sdv-security/src/test/java/com/sdv/platform/security/separation/RoleSeparationPolicyTest.java | comment names another product as a role-name example; fixed in 0041
-backend/sdv-web/src/test/java/com/sdv/platform/application/operations/ProblemsAndAuditRecordsTest.java | test data uses the demo sender's old name; renamed to "Redaction Service", fixed in 0041
-backend/sdv-web/src/test/java/com/sdv/platform/application/reports/IntakeReportPostgresTest.java | test data uses the demo sender's old name; renamed to "Redaction Service", fixed in 0041
-backend/sdv-web/src/test/java/com/sdv/platform/application/reports/IntakeReportServiceTest.java | test data uses the demo sender's old name; renamed to "Redaction Service", fixed in 0041
-backend/sdv-web/src/test/java/com/sdv/platform/application/reports/SensitivityReportPostgresTest.java | test data uses the demo sender's old name; renamed to "Redaction Service", fixed in 0041
-backend/sdv-web/src/test/java/com/sdv/platform/application/reports/SensitivityReportServiceTest.java | test data uses the demo sender's old name; renamed to "Redaction Service", fixed in 0041
-backend/sdv-web/src/test/java/com/sdv/platform/application/reports/StewardNoticeServiceTest.java | test data uses the demo sender's old name; renamed to "Redaction Service", fixed in 0041
-frontend/sdv-ui/e2e/sdv-screen-tour.spec.ts | screen tour uses the demo sender's old name; renamed to "Redaction Service", fixed in 0041
-frontend/sdv-ui/e2e/ui-compare.spec.ts | looks up the demo sender by its old name; renamed to "Redaction Service", fixed in 0041
-frontend/sdv-ui/src/r7/topbar/AccountMenu.tsx | comment "so another product can reuse it" (apps share no UI code); reworded, fixed in 0041
-frontend/sdv-ui/src/r7/topbar/TopBar.tsx | comment "so another product can reuse it" (apps share no UI code); reworded, fixed in 0041
+# Task 0041 (independence clean-up, board LV-4) removed every entry; the list is empty and should stay so.

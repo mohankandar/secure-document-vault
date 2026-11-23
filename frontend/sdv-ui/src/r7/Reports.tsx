@@ -182,7 +182,7 @@ function DailyIntake({ tabs }: { tabs: ReactNode }) {
           </tbody>
         </table>
       </section>
-      <p className="faint rpt-foot">Refused and failed deliveries from a known sending system are counted here, with the code each got; only failures while Vero&apos;s database was away can&apos;t be (they are in Vero&apos;s log). Attempts Vero couldn&apos;t link to a sending system (for example a failed sign-in) are listed for Tenant IT under Problems.</p>
+      <p className="faint rpt-foot">Refused and failed deliveries from a known sending system are counted here, with the code each got; only failures while Vero&apos;s database was away can&apos;t be (they are in Vero&apos;s log). Attempts Vero couldn&apos;t link to a sending system (for example a failed sign-in) are listed for IT under Problems.</p>
       <p className="faint rpt-foot">Each delivery shows the request ID its sending system used, so the line can be matched with that system's own report. Duplicates are files whose checksum matches one already received; they are acknowledged to the sender and counted; no second copy is kept. Refusal codes are explained in the error code list.</p>
     </>}
   </>
@@ -253,7 +253,7 @@ export function periodHint(from: string, to: string, today: string): string {
 
 const ROLE_WORDS: Record<string, string> = {
   BUSINESS_USER: 'Business user', DOCUMENT_STEWARD: 'Document steward', RESTRICTED_STEWARD: 'Restricted steward',
-  BUSINESS_ADMIN: 'Business admin', TENANT_IT_ADMIN: 'Tenant IT admin', PLATFORM_OPERATIONS_ADMIN: 'Platform operations admin',
+  BUSINESS_ADMIN: 'Business admin', IT_ADMIN: 'IT admin', PLATFORM_OPERATIONS_ADMIN: 'Platform operations admin',
 }
 /** The roles an attempt was made with, in words; attempts recorded before task 0033 name none. */
 export const attemptRoleWords = (roles: string[]) => (roles.length ? roles.map((r) => ROLE_WORDS[r] ?? r).join(' and ') : 'Role not recorded')

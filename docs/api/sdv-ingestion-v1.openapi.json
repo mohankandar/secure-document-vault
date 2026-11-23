@@ -2,8 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Vero (Secure Document Vault) Ingestion API",
-    "version": "1.0.0",
-    "description": "The contract for sending systems: create a submission, upload its PDFs, read their state. Sign-in is an OAuth2 client-credentials token from the customer's sign-in server; the tenant and the sending system come from the verified token, never from a request header. Every error has the same body (Error) with a stable code. Each answer below says whether to send the request again (x-sdv-retry). The versioning policy, the sender's guide and the changelog are in docs/api/README.md. The build checks this file against the running API (IngestionContractTest).",
+    "version": "1.1.0",
+    "description": "The contract for sending systems: create a submission, upload its PDFs, read their state. Sign-in is an OAuth2 client-credentials token from the customer's sign-in server; the entity and the sending system come from the verified token's client ID (its client binding, set up by the customer's IT with Vero's setup command), never from a request header. Every error has the same body (Error) with a stable code. Each answer below says whether to send the request again (x-sdv-retry). The versioning policy, the sender's guide and the changelog are in docs/api/README.md. The build checks this file against the running API (IngestionContractTest).",
     "contact": {"name": "Vero team"}
   },
   "servers": [
@@ -25,7 +25,7 @@
           "503": {
             "description": "Not ready. Don't send meanwhile. Busy (SDV-SYS-018, status BUSY): wait the seconds in the Retry-After header, then ask again. Otherwise (no code, no Retry-After) Vero is unavailable: wait with back-off and ask again.",
             "x-sdv-retry": "yes",
-            "x-sdv-codes": ["SDV-SYS-018"],
+            "x-sdv-codes": ["SDV-SYS-018"], "x-error-codes": ["SDV-SYS-018"],
             "headers": {"Retry-After": {"$ref": "#/components/headers/RetryAfter"}},
             "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Readiness"}, "examples": {
               "busy": {"value": {"status": "BUSY", "code": "SDV-SYS-018", "message": "Vero is too busy to take this request just now. Try again in a few seconds."}},
@@ -54,7 +54,7 @@
           "200": {"description": "Already received: a retry of the same request. The same submission, idempotentReplay true. Treat it as created.", "headers": {"X-Correlation-Id": {"$ref": "#/components/headers/CorrelationId"}}, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/SubmissionResponse"}}}},
           "400": {
             "description": "Refused: the request is not valid. Nothing was created. Don't send it again unchanged; correct what the message names.",
-            "x-sdv-codes": ["SDV-INT-006", "SDV-INT-007", "SDV-INT-008", "SDV-INT-009", "SDV-SEN-002", "SDV-SEN-006", "SDV-SYS-015"],
+            "x-sdv-codes": ["SDV-INT-006", "SDV-INT-007", "SDV-INT-008", "SDV-INT-009", "SDV-SEN-002", "SDV-SEN-006", "SDV-SYS-015"], "x-error-codes": ["SDV-INT-006", "SDV-INT-007", "SDV-INT-008", "SDV-INT-009", "SDV-SEN-002", "SDV-SEN-006", "SDV-SYS-015"],
             "headers": {"X-Correlation-Id": {"$ref": "#/components/headers/CorrelationId"}},
             "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}, "example": {"code": "SDV-SEN-002", "message": "recordSensitivityLevel must be one of STANDARD, CONFIDENTIAL, HIGHLY_CONFIDENTIAL (exactly, in capitals); leave it out for no record level.", "reference": "6f1c0f0e-5b7a-4c1e-9f4e-2d8a7c3b1e90", "timestamp": "2026-11-20T10:00:00Z"}}}
           },
@@ -63,7 +63,7 @@
           "406": {"$ref": "#/components/responses/NotAcceptable"},
           "409": {
             "description": "Refused: a submission with this sourceSubmissionId already exists with a different body. Nothing was changed. Don't send it again unchanged; repeat the first request exactly, or use a new sourceSubmissionId.",
-            "x-sdv-codes": ["SDV-INT-011", "SDV-SEN-004"],
+            "x-sdv-codes": ["SDV-INT-011", "SDV-SEN-004"], "x-error-codes": ["SDV-INT-011", "SDV-SEN-004"],
             "headers": {"X-Correlation-Id": {"$ref": "#/components/headers/CorrelationId"}},
             "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}
           },
@@ -71,7 +71,7 @@
           "429": {"$ref": "#/components/responses/TooManyRequestsFromGateway"},
           "500": {
             "description": "Failed inside Vero. Nothing was created. SDV-SYS-013 and SDV-SYS-017: send it again later. SDV-SYS-016 and SDV-INT-010: keep it and send it again once Vero's IT team has fixed the cause.",
-            "x-sdv-codes": ["SDV-SYS-013", "SDV-SYS-016", "SDV-SYS-017", "SDV-INT-010"],
+            "x-sdv-codes": ["SDV-SYS-013", "SDV-SYS-016", "SDV-SYS-017", "SDV-INT-010"], "x-error-codes": ["SDV-SYS-013", "SDV-SYS-016", "SDV-SYS-017", "SDV-INT-010"],
             "headers": {"X-Correlation-Id": {"$ref": "#/components/headers/CorrelationId"}},
             "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}
           },
@@ -89,7 +89,7 @@
           "200": {"description": "The submission.", "headers": {"X-Correlation-Id": {"$ref": "#/components/headers/CorrelationId"}}, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/SubmissionResponse"}}}},
           "400": {
             "description": "Refused: the parameter is missing, blank or longer than 200 characters. Don't send it again unchanged.",
-            "x-sdv-codes": ["SDV-SYS-015", "SDV-INT-006"],
+            "x-sdv-codes": ["SDV-SYS-015", "SDV-INT-006"], "x-error-codes": ["SDV-SYS-015", "SDV-INT-006"],
             "headers": {"X-Correlation-Id": {"$ref": "#/components/headers/CorrelationId"}},
             "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}
           },
@@ -148,7 +148,7 @@
           "200": {"description": "Nothing new stored, and that is success; don't send it again. Either already received (a retry of the same upload: receiptAcknowledgement RECEIVED, idempotentReplay true) or DUPLICATE_ALREADY_STORED (the same file, same SHA-256, from this sending system for the same record in a new delivery: duplicate true, documentId is the document Vero already has).", "headers": {"X-Correlation-Id": {"$ref": "#/components/headers/CorrelationId"}}, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/DocumentReceipt"}}}},
           "400": {
             "description": "Refused: the upload is not valid. Nothing was stored. Don't send it again unchanged; correct what the message names. SDV-INT-016 here: the document would take the submission over its total size limit; send it on a new submission.",
-            "x-sdv-codes": ["SDV-SEN-001", "SDV-SEN-005", "SDV-INT-012", "SDV-INT-013", "SDV-INT-015", "SDV-INT-016", "SDV-SYS-015"],
+            "x-sdv-codes": ["SDV-SEN-001", "SDV-SEN-005", "SDV-INT-012", "SDV-INT-013", "SDV-INT-015", "SDV-INT-016", "SDV-SYS-015"], "x-error-codes": ["SDV-SEN-001", "SDV-SEN-005", "SDV-INT-012", "SDV-INT-013", "SDV-INT-015", "SDV-INT-016", "SDV-SYS-015"],
             "headers": {"X-Correlation-Id": {"$ref": "#/components/headers/CorrelationId"}},
             "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}, "example": {"code": "SDV-SEN-001", "message": "X-SDV-Sensitivity-Level must be one of STANDARD, CONFIDENTIAL, HIGHLY_CONFIDENTIAL (exactly, in capitals); leave it out for STANDARD.", "reference": "6f1c0f0e-5b7a-4c1e-9f4e-2d8a7c3b1e90", "timestamp": "2026-11-20T10:00:00Z"}}}
           },
@@ -158,13 +158,13 @@
           "406": {"$ref": "#/components/responses/NotAcceptable"},
           "409": {
             "description": "Refused. Nothing was stored. SDV-INT-016: the submission already has all its documents; send it on a new submission. SDV-INT-017, SDV-SEN-003: a document with this identity is already stored with other content, file name or level; repeat the first upload exactly, or use a new identity.",
-            "x-sdv-codes": ["SDV-INT-016", "SDV-INT-017", "SDV-SEN-003"],
+            "x-sdv-codes": ["SDV-INT-016", "SDV-INT-017", "SDV-SEN-003"], "x-error-codes": ["SDV-INT-016", "SDV-INT-017", "SDV-SEN-003"],
             "headers": {"X-Correlation-Id": {"$ref": "#/components/headers/CorrelationId"}},
             "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}
           },
           "413": {
             "description": "Refused: the PDF is larger than the limit for the tenant or the sending system; the message gives the limit in bytes. Nothing was stored. Don't send it again unchanged.",
-            "x-sdv-codes": ["SDV-INT-014"],
+            "x-sdv-codes": ["SDV-INT-014"], "x-error-codes": ["SDV-INT-014"],
             "headers": {"X-Correlation-Id": {"$ref": "#/components/headers/CorrelationId"}},
             "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}
           },
@@ -173,7 +173,7 @@
           "500": {"$ref": "#/components/responses/ServerFailureWithAudit"},
           "503": {
             "description": "Vero can't take the upload right now. Nothing was stored. SDV-SYS-018: Vero is busy; wait the seconds in the Retry-After header and send the same upload again. Every other code here means unavailable and has no Retry-After: SDV-SYS-001, SDV-SYS-002, SDV-SYS-014, SDV-AUT-004 and SDV-STO-001 (Vero's storage is full): wait with back-off (check readiness) and send the same upload again. SDV-STO-004: storage for this tenant isn't available; the installer must fix it; keep the document and send it again after the fix.",
-            "x-sdv-codes": ["SDV-SYS-001", "SDV-SYS-002", "SDV-SYS-014", "SDV-SYS-018", "SDV-AUT-004", "SDV-STO-001", "SDV-STO-004"],
+            "x-sdv-codes": ["SDV-SYS-001", "SDV-SYS-002", "SDV-SYS-014", "SDV-SYS-018", "SDV-AUT-004", "SDV-STO-001", "SDV-STO-004"], "x-error-codes": ["SDV-SYS-001", "SDV-SYS-002", "SDV-SYS-014", "SDV-SYS-018", "SDV-AUT-004", "SDV-STO-001", "SDV-STO-004"],
             "headers": {"X-Correlation-Id": {"$ref": "#/components/headers/CorrelationId"}, "Retry-After": {"$ref": "#/components/headers/RetryAfter"}},
             "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}
           }
@@ -216,14 +216,14 @@
           "403": {"$ref": "#/components/responses/Forbidden"},
           "404": {
             "description": "Refused: no document of this submission has this ID. Don't send it again unchanged.",
-            "x-sdv-codes": ["SDV-INT-018"],
+            "x-sdv-codes": ["SDV-INT-018"], "x-error-codes": ["SDV-INT-018"],
             "headers": {"X-Correlation-Id": {"$ref": "#/components/headers/CorrelationId"}},
             "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}
           },
           "406": {"$ref": "#/components/responses/NotAcceptable"},
           "409": {
             "description": "Refused: the document is in a state that can't be finished again (the message names it, for example PROCESSING). Don't send it again unchanged; read the document's state first.",
-            "x-sdv-codes": ["SDV-INT-018"],
+            "x-sdv-codes": ["SDV-INT-018"], "x-error-codes": ["SDV-INT-018"],
             "headers": {"X-Correlation-Id": {"$ref": "#/components/headers/CorrelationId"}},
             "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}
           },
@@ -240,24 +240,31 @@
         "type": "http",
         "scheme": "bearer",
         "bearerFormat": "JWT",
-        "description": "An OAuth2 client-credentials access token (a signed JWT) from the customer's sign-in server, one client per sending system. Vero checks: the signature against the server's published keys; iss equals Vero's SDV_AUTH_JWT_ISSUER; aud contains SDV_AUTH_JWT_AUDIENCE; exp and nbf (and, when SDV_AUTH_JWT_MAX_TOKEN_LIFETIME_SECONDS is set, exp minus iat at most that). Claims a sending system's token must carry: sub (the client's ID, 1 to 300 characters); the tenant-ID claim (SDV_AUTH_JWT_TENANT_CLAIM, default sdv_tenant_id) with the tenant's UUID; the source-ID claim (SDV_AUTH_JWT_SOURCE_ID_CLAIM, default sdv_source_id) with the sending system's UUID; both claims as JSON strings of at most 100 characters. It must not carry the groups claim (SDV_AUTH_JWT_GROUPS_CLAIM). The source-ID claim is what makes a token a sending system's: without it the token is read as a person's sign-in (see x-sdv-sign-in-answers). A planned change (the entity and sending system found from the client ID, before the first customer install) is described in docs/api/README.md.",
+        "description": "An OAuth2 client-credentials access token (a signed JWT) from the customer's sign-in server, one client per sending system. Vero checks: the signature against the server's published keys; iss equals Vero's SDV_AUTH_JWT_ISSUER; aud contains SDV_AUTH_JWT_AUDIENCE; exp and nbf (and, when SDV_AUTH_JWT_MAX_TOKEN_LIFETIME_SECONDS is set, exp minus iat at most that). Since 1.1.0 a standard token is enough: no custom claim is needed. Vero reads the client ID (the first of azp, client_id, cid that the token carries; all present must agree) and finds its client binding, which the customer's IT sets up with Vero's setup command (client-binding file: client ID, entity slot, sending system). The binding gives the entity and the sending system. The optional claims sdv_entity_id, sdv_source_id and sdv_source_key may be sent; when present they must match the binding. The token must not carry the groups claim. The 1.0.0 claim sdv_tenant_id is ignored; 'tenant' is now 'entity'.",
         "x-sdv-required-claims": {
           "iss": "Equals SDV_AUTH_JWT_ISSUER. Wrong: 401 SDV-AUT-003.",
           "aud": "Contains SDV_AUTH_JWT_AUDIENCE. Missing or wrong: 401 SDV-AUT-003.",
           "exp": "In the future (and nbf, when present, in the past). Expired: 401 SDV-AUT-003.",
-          "sub": "The client's ID, 1 to 300 characters. Missing or too long: 401 SDV-AUT-005.",
-          "sdv_tenant_id": "The tenant-ID claim (name set by SDV_AUTH_JWT_TENANT_CLAIM): the tenant's UUID as a string. Missing, not a string, too long or not a UUID: 401 SDV-AUT-005. A tenant Vero doesn't have, or a suspended one: 403 SDV-AUT-009.",
-          "sdv_source_id": "The source-ID claim (name set by SDV_AUTH_JWT_SOURCE_ID_CLAIM): the sending system's UUID as a string. Not a string, too long or not a UUID: 401 SDV-AUT-005. Missing or blank: the token is read as a person's (401 SDV-AUT-006 or SDV-AUT-007, or 403 SDV-AUT-002). A sending system that isn't the tenant's, or is paused: 403 SDV-INT-005."
+          "sub": "1 to 300 characters. Missing or too long: 401 SDV-AUT-005.",
+          "azp / client_id / cid": "The client ID, as the sign-in server issues it (Keycloak: azp and client_id; Okta: cid). Claims that disagree: 401 SDV-AUT-005. No active client binding, or its entity or the customer's login connection not active: 401 SDV-AUT-011."
+        },
+        "x-sdv-optional-claims": {
+          "sdv_entity_id": "The entity's UUID as a string. When present it must be the binding's entity, else 401 SDV-AUT-012.",
+          "sdv_source_id": "The sending system's UUID as a string. When present it must be the binding's sending system, else 401 SDV-AUT-012.",
+          "sdv_source_key": "The sending system's key (for example redaction-service). When present it must be the binding's, else 401 SDV-AUT-012."
         },
         "x-sdv-sign-in-answers": [
           {"case": "No Authorization header", "status": 401, "code": "SDV-AUT-001"},
           {"case": "Token expired, not yet valid, wrong signature, wrong issuer, wrong audience, lifetime too long, not a JWT, or an Authorization header that isn't 'Bearer <token>'", "status": 401, "code": "SDV-AUT-003"},
-          {"case": "sub missing or too long; tenant-ID claim missing or not a UUID; source-ID claim not a UUID; both the source-ID claim and the groups claim present", "status": 401, "code": "SDV-AUT-005"},
-          {"case": "No source-ID claim and Vero has no active sign-in connection for the issuer (read as a person)", "status": 401, "code": "SDV-AUT-006"},
-          {"case": "No source-ID claim and no Vero role from the groups (read as a person)", "status": 401, "code": "SDV-AUT-007"},
+          {"case": "sub missing or too long; client-ID claims that disagree; a bound client whose token also carries groups", "status": 401, "code": "SDV-AUT-005"},
+          {"case": "The client ID has no active client binding (and the token has no groups), or the binding's entity or the login connection isn't active", "status": 401, "code": "SDV-AUT-011"},
+          {"case": "sdv_entity_id, sdv_source_id or sdv_source_key present but not the binding's", "status": 401, "code": "SDV-AUT-012"},
+          {"case": "The binding names a sending system the entity doesn't have in Vero", "status": 401, "code": "SDV-AUT-013"},
+          {"case": "A token with groups (read as a person's) and no active login connection for the issuer", "status": 401, "code": "SDV-AUT-006"},
+          {"case": "A token with groups (read as a person's) that gives no Vero role", "status": 401, "code": "SDV-AUT-007"},
           {"case": "A person's sign-in with a Vero role", "status": 403, "code": "SDV-AUT-002"},
-          {"case": "Tenant not found or suspended", "status": 403, "code": "SDV-AUT-009"},
-          {"case": "Sending system not the tenant's, or paused", "status": 403, "code": "SDV-INT-005"},
+          {"case": "Entity not found or suspended", "status": 403, "code": "SDV-AUT-009"},
+          {"case": "Sending system paused", "status": 403, "code": "SDV-INT-005"},
           {"case": "The sign-in server's keys can't be fetched", "status": 503, "code": "SDV-AUT-004"},
           {"case": "Sign-in is switched off in this Vero (SDV_AUTH_MODE=disabled)", "status": 401, "code": "SDV-SYS-006"}
         ]
@@ -296,7 +303,7 @@
           "sourceSubmissionId": {"type": "string", "minLength": 1, "maxLength": 200, "description": "Your stable ID for this submission. A retry sends the same one."},
           "expectedDocumentCount": {"type": "integer", "minimum": 1, "description": "How many documents will be uploaded. At most the tenant's or the sending system's limit (400 SDV-INT-007)."},
           "expectedDocuments": {"type": "array", "uniqueItems": true, "description": "Optional list of the documents to come, by your sourceDocumentId; at most expectedDocumentCount entries. A complete list (expectedDocumentCount entries) makes X-SDV-Source-Document-Id required on each upload.", "items": {"$ref": "#/components/schemas/ExpectedDocumentRequest"}},
-          "metadata": {"type": "object", "description": "The fields Tenant IT set up for this sending system, by key. Unknown keys and missing required fields are refused (400 SDV-INT-008); a value that breaks its field's rule too (400 SDV-INT-009).", "additionalProperties": {"$ref": "#/components/schemas/ScalarMetadataValue"}},
+          "metadata": {"type": "object", "description": "The fields IT set up for this sending system, by key. Unknown keys and missing required fields are refused (400 SDV-INT-008); a value that breaks its field's rule too (400 SDV-INT-009).", "additionalProperties": {"$ref": "#/components/schemas/ScalarMetadataValue"}},
           "recordSensitivityLevel": {"allOf": [{"$ref": "#/components/schemas/SensitivityLevel"}], "description": "Optional level for the whole record this submission belongs to (the submissions of this sending system with the same identifier values). Sets the record's first level or raises it; a lower or equal value is ignored and audited, not refused. Not exactly one of the names, also blank, lower case or not a string: 400 SDV-SEN-002. A retry must send the same value or none as the first: 409 SDV-SEN-004."}
         }
       },
@@ -396,37 +403,37 @@
     "responses": {
       "BadRequestShape": {
         "description": "Refused: an ID in the address isn't a UUID. Don't send it again unchanged.",
-        "x-sdv-codes": ["SDV-SYS-015"],
+        "x-sdv-codes": ["SDV-SYS-015"], "x-error-codes": ["SDV-SYS-015"],
         "headers": {"X-Correlation-Id": {"$ref": "#/components/headers/CorrelationId"}},
         "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}
       },
       "Unauthorized": {
-        "description": "Sign-in refused. Nothing was read or stored. SDV-AUT-001, SDV-AUT-003: get a new token and send once more; if refused again, stop and alert. SDV-AUT-005, SDV-AUT-006, SDV-AUT-007, SDV-SYS-006: the sign-in setup must be fixed first; keep the delivery and send it again after. A refused token also gets WWW-Authenticate: Bearer error=\"invalid_token\", error_description=\"<code>\".",
-        "x-sdv-codes": ["SDV-AUT-001", "SDV-AUT-003", "SDV-AUT-005", "SDV-AUT-006", "SDV-AUT-007", "SDV-SYS-006"],
+        "description": "Sign-in refused. Nothing was read or stored. SDV-AUT-001, SDV-AUT-003: get a new token and send once more; if refused again, stop and alert. SDV-AUT-005, SDV-AUT-006, SDV-AUT-007, SDV-AUT-011, SDV-AUT-012, SDV-AUT-013, SDV-SYS-006: the sign-in setup must be fixed first; keep the delivery and send it again after. A refused token also gets WWW-Authenticate: Bearer error=\"invalid_token\", error_description=\"<code>\".",
+        "x-sdv-codes": ["SDV-AUT-001", "SDV-AUT-003", "SDV-AUT-005", "SDV-AUT-006", "SDV-AUT-007", "SDV-AUT-011", "SDV-AUT-012", "SDV-AUT-013", "SDV-SYS-006"], "x-error-codes": ["SDV-AUT-001", "SDV-AUT-003", "SDV-AUT-005", "SDV-AUT-006", "SDV-AUT-007", "SDV-AUT-011", "SDV-AUT-012", "SDV-AUT-013", "SDV-SYS-006"],
         "headers": {"X-Correlation-Id": {"$ref": "#/components/headers/CorrelationId"}, "WWW-Authenticate": {"schema": {"type": "string"}}},
         "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}
       },
       "Forbidden": {
         "description": "Signed in, but not allowed here. Nothing was read or stored. A person must fix it first (a person's sign-in was used; the tenant is suspended; the sending system is paused or not the tenant's); keep the delivery and send it again after.",
-        "x-sdv-codes": ["SDV-AUT-002", "SDV-AUT-009", "SDV-INT-005"],
+        "x-sdv-codes": ["SDV-AUT-002", "SDV-AUT-009", "SDV-INT-005"], "x-error-codes": ["SDV-AUT-002", "SDV-AUT-009", "SDV-INT-005"],
         "headers": {"X-Correlation-Id": {"$ref": "#/components/headers/CorrelationId"}},
         "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}
       },
       "NoSuchSubmission": {
         "description": "Refused: no submission of this sending system has this ID (or sourceSubmissionId). Don't send it again unchanged; create the submission first, or check the ID.",
-        "x-sdv-codes": ["SDV-INT-004"],
+        "x-sdv-codes": ["SDV-INT-004"], "x-error-codes": ["SDV-INT-004"],
         "headers": {"X-Correlation-Id": {"$ref": "#/components/headers/CorrelationId"}},
         "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}
       },
       "NotAcceptable": {
         "description": "The Accept header asks for a format Vero can't answer in. Vero finds this only when it writes the answer, so the work may already be done (a submission created, a document stored). Send the same request again with Accept application/json (or */*, or no Accept header): a create or an upload is then answered 200 as already received.",
-        "x-sdv-codes": ["SDV-SYS-015"],
+        "x-sdv-codes": ["SDV-SYS-015"], "x-error-codes": ["SDV-SYS-015"],
         "headers": {"X-Correlation-Id": {"$ref": "#/components/headers/CorrelationId"}},
         "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}
       },
       "UnsupportedMediaType": {
         "description": "Refused: the body's Content-Type isn't the one this operation takes. Nothing was stored. Don't send it again unchanged.",
-        "x-sdv-codes": ["SDV-SYS-015"],
+        "x-sdv-codes": ["SDV-SYS-015"], "x-error-codes": ["SDV-SYS-015"],
         "headers": {"X-Correlation-Id": {"$ref": "#/components/headers/CorrelationId"}},
         "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}
       },
@@ -437,19 +444,19 @@
       },
       "ServerFailure": {
         "description": "Failed inside Vero. SDV-SYS-013: send it again later. SDV-SYS-016: Vero found an inconsistency; send it again once Vero's IT team has looked at the reference.",
-        "x-sdv-codes": ["SDV-SYS-013", "SDV-SYS-016"],
+        "x-sdv-codes": ["SDV-SYS-013", "SDV-SYS-016"], "x-error-codes": ["SDV-SYS-013", "SDV-SYS-016"],
         "headers": {"X-Correlation-Id": {"$ref": "#/components/headers/CorrelationId"}},
         "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}
       },
       "ServerFailureWithAudit": {
         "description": "Failed inside Vero; nothing was stored or changed. SDV-SYS-013 and SDV-SYS-017 (the audit couldn't be written, so nothing was done): send it again later. SDV-SYS-016: send it again once Vero's IT team has looked at the reference.",
-        "x-sdv-codes": ["SDV-SYS-013", "SDV-SYS-016", "SDV-SYS-017"],
+        "x-sdv-codes": ["SDV-SYS-013", "SDV-SYS-016", "SDV-SYS-017"], "x-error-codes": ["SDV-SYS-013", "SDV-SYS-016", "SDV-SYS-017"],
         "headers": {"X-Correlation-Id": {"$ref": "#/components/headers/CorrelationId"}},
         "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}
       },
       "Unavailable": {
         "description": "Vero can't take the request right now. Send the same request again. SDV-SYS-018: Vero is busy; wait the seconds in the Retry-After header first. Every other code here means unavailable and has no Retry-After; wait with back-off (check readiness): SDV-SYS-001, SDV-SYS-002: Vero's database is being upgraded. SDV-SYS-014: the database can't be reached. SDV-AUT-004: the sign-in server's keys can't be fetched.",
-        "x-sdv-codes": ["SDV-SYS-001", "SDV-SYS-002", "SDV-SYS-014", "SDV-SYS-018", "SDV-AUT-004"],
+        "x-sdv-codes": ["SDV-SYS-001", "SDV-SYS-002", "SDV-SYS-014", "SDV-SYS-018", "SDV-AUT-004"], "x-error-codes": ["SDV-SYS-001", "SDV-SYS-002", "SDV-SYS-014", "SDV-SYS-018", "SDV-AUT-004"],
         "headers": {"X-Correlation-Id": {"$ref": "#/components/headers/CorrelationId"}, "Retry-After": {"$ref": "#/components/headers/RetryAfter"}},
         "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}
       }
@@ -478,13 +485,16 @@
   "x-sdv-answers": {
     "401 SDV-AUT-001": {"retry": "new-token", "summary": "No token."},
     "401 SDV-AUT-003": {"retry": "new-token", "summary": "Token expired, not yet valid, badly signed, for another issuer or audience, too long-lived, or not a JWT."},
-    "401 SDV-AUT-005": {"retry": "after-fix", "summary": "A claim Vero needs is missing or not usable (sub, tenant ID, source ID), or the token has both the source-ID and the groups claim."},
-    "401 SDV-AUT-006": {"retry": "after-fix", "summary": "The token has no source-ID claim, so it was read as a person's, and Vero has no active sign-in connection for its issuer."},
-    "401 SDV-AUT-007": {"retry": "after-fix", "summary": "The token has no source-ID claim, so it was read as a person's, and it gives no Vero role."},
+    "401 SDV-AUT-005": {"retry": "after-fix", "summary": "A claim Vero needs is missing or not usable (sub), the client-ID claims disagree, or a bound client's token also carries groups."},
+    "401 SDV-AUT-006": {"retry": "after-fix", "summary": "The token has groups, so it was read as a person's, and Vero has no active login connection for its issuer."},
+    "401 SDV-AUT-007": {"retry": "after-fix", "summary": "The token has groups, so it was read as a person's, and it gives no Vero role."},
+    "401 SDV-AUT-011": {"retry": "after-fix", "summary": "The client ID has no active client binding, or its entity or the login connection isn't active."},
+    "401 SDV-AUT-012": {"retry": "after-fix", "summary": "An entity or source claim was sent and isn't the client binding's."},
+    "401 SDV-AUT-013": {"retry": "after-fix", "summary": "The client binding names a sending system the entity doesn't have in Vero."},
     "401 SDV-SYS-006": {"retry": "after-fix", "summary": "Sign-in is switched off in this Vero."},
     "403 SDV-AUT-002": {"retry": "after-fix", "summary": "A person's sign-in on a sending system's address."},
-    "403 SDV-AUT-009": {"retry": "after-fix", "summary": "The tenant doesn't exist in Vero or is suspended."},
-    "403 SDV-INT-005": {"retry": "after-fix", "summary": "The sending system isn't one of the tenant's, or Tenant IT paused it."},
+    "403 SDV-AUT-009": {"retry": "after-fix", "summary": "The entity doesn't exist in Vero or is suspended."},
+    "403 SDV-INT-005": {"retry": "after-fix", "summary": "IT paused the sending system."},
     "400 SDV-INT-006": {"retry": "no", "summary": "Submission incomplete: no body, expectedDocumentCount below 1, sourceSubmissionId missing or longer than 200."},
     "400 SDV-INT-007": {"retry": "no", "summary": "Document list not valid: over the limit, more entries than the count, an entry missing, too long or twice."},
     "400 SDV-INT-008": {"retry": "no", "summary": "A metadata field unknown, missing, blank, null, or not a single value."},
@@ -512,7 +522,7 @@
     "500 SDV-SYS-013": {"retry": "yes", "summary": "Unexpected failure inside Vero."},
     "500 SDV-SYS-016": {"retry": "after-fix", "summary": "An internal check failed; retrying usually gives the same answer."},
     "500 SDV-SYS-017": {"retry": "yes", "summary": "The audit couldn't be written, so nothing was done."},
-    "500 SDV-INT-010": {"retry": "after-fix", "summary": "Tenant IT's rule for a metadata field is broken."},
+    "500 SDV-INT-010": {"retry": "after-fix", "summary": "IT's rule for a metadata field is broken."},
     "503 SDV-SYS-001": {"retry": "yes", "summary": "Vero's database is older than Vero (upgrade under way)."},
     "503 SDV-SYS-002": {"retry": "yes", "summary": "Vero's database is newer than Vero."},
     "503 SDV-SYS-014": {"retry": "yes", "summary": "Vero's database can't be reached."},

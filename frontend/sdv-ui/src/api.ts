@@ -1,6 +1,25 @@
 import { bearerHeaders, expireOidcSession, isLocalSecurityMode, isOidcSecurityMode } from './auth'
 
-const LOCAL_TENANT_ID = '11111111-1111-1111-1111-111111111111'
+/** Task 0041: the local demo entity, slot ENT-VERO-DEMO-0001; its UUID is derived from the slot ID (entityIds.test.ts). */
+export const LOCAL_DEMO_ENTITY_ID = 'bd960ee9-9d54-5053-9958-92aaa54893a6'
+/** The demo's second entity, slot ENT-VERO-DEMO-0002. */
+export const LOCAL_ISOLATION_ENTITY_ID = '9b233c00-fe6e-582c-a9de-c1fa46f87254'
+
+/** Task 0041 (owner answer 5): the entity the person works in, kept in this browser. Not sensitive. */
+const ENTITY_KEY = 'sdv.r7.entity'
+const UUID_SHAPE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+export const getChosenEntity = (): string | null => {
+  try { const v = window.localStorage.getItem(ENTITY_KEY); return v && UUID_SHAPE.test(v) ? v : null } catch { return null }
+}
+export const setChosenEntity = (id: string | null) => {
+  try { if (id && UUID_SHAPE.test(id)) window.localStorage.setItem(ENTITY_KEY, id); else window.localStorage.removeItem(ENTITY_KEY) } catch { /* storage unavailable: the chooser shows again */ }
+}
+/** The entity header: X-SDV-Entity-Id with OIDC sign-in (checked by the server, never trusted). */
+const entityHeaders = (): Record<string, string> => {
+  if (!isOidcSecurityMode()) return {}
+  const chosen = getChosenEntity()
+  return chosen ? { 'X-SDV-Entity-Id': chosen } : {}
+}
 
 export type LocalPersona = 'admin' | 'business' | 'steward' | 'restricted' | 'businessAdmin' | 'tenantIt' | 'platform'
 
@@ -21,7 +40,7 @@ const localHeaders = (persona: LocalPersona): Record<string, string> => {
   // Explicitly local-only testing; production and OIDC never accept a selected test identity.
   const selected = getLocalTestPersona()
   const localTestRole = import.meta.env.DEV && window.location.hostname === 'localhost' ? import.meta.env.VITE_LOCAL_TEST_ROLE : ''
-  const effectivePersona: LocalPersona = selected ?? (localTestRole === 'BUSINESS_USER' ? 'business' : localTestRole === 'BUSINESS_ADMIN' ? 'businessAdmin' : localTestRole === 'TENANT_IT_ADMIN' ? 'tenantIt' : localTestRole === 'PLATFORM_OPERATIONS_ADMIN' ? 'platform' : localTestRole === 'DOCUMENT_STEWARD' ? 'steward' : localTestRole === 'RESTRICTED_STEWARD' ? 'restricted' : persona)
+  const effectivePersona: LocalPersona = selected ?? (localTestRole === 'BUSINESS_USER' ? 'business' : localTestRole === 'BUSINESS_ADMIN' ? 'businessAdmin' : localTestRole === 'IT_ADMIN' ? 'tenantIt' : localTestRole === 'PLATFORM_OPERATIONS_ADMIN' ? 'platform' : localTestRole === 'DOCUMENT_STEWARD' ? 'steward' : localTestRole === 'RESTRICTED_STEWARD' ? 'restricted' : persona)
   const identity = effectivePersona === 'steward'
     ? { subject: 'local-document-steward', roles: 'DOCUMENT_STEWARD' }
     : effectivePersona === 'restricted'
@@ -31,12 +50,12 @@ const localHeaders = (persona: LocalPersona): Record<string, string> => {
       : effectivePersona === 'businessAdmin'
       ? { subject: 'local-business-admin', roles: 'BUSINESS_ADMIN' }
       : effectivePersona === 'tenantIt'
-        ? { subject: 'local-tenant-it-admin', roles: 'TENANT_IT_ADMIN' }
+        ? { subject: 'local-tenant-it-admin', roles: 'IT_ADMIN' }
         : effectivePersona === 'platform'
           ? { subject: 'local-platform-operations-admin', roles: 'PLATFORM_OPERATIONS_ADMIN' }
-          : { subject: 'local-administrator', roles: 'TENANT_IT_ADMIN,BUSINESS_ADMIN' }
+          : { subject: 'local-administrator', roles: 'IT_ADMIN,BUSINESS_ADMIN' }
   return {
-    'X-SDV-Tenant-Id': LOCAL_TENANT_ID,
+    'X-SDV-Tenant-Id': getChosenEntity() ?? LOCAL_DEMO_ENTITY_ID,
     'X-SDV-Subject': identity.subject,
     'X-SDV-Roles': identity.roles,
   }
@@ -82,6 +101,7 @@ async function request<T>(path: string, persona: LocalPersona, init?: RequestIni
     headers: {
       'Content-Type': 'application/json',
       ...localHeaders(persona),
+      ...entityHeaders(),
       ...(init?.headers ?? {}),
       ...enterpriseHeaders,
     },
@@ -126,7 +146,7 @@ async function binaryResponse(path: string, persona: LocalPersona): Promise<Resp
   const enterpriseHeaders = await bearerHeaders()
   const response = await send(path, {
     method: 'GET',
-    headers: { ...localHeaders(persona), ...enterpriseHeaders },
+    headers: { ...localHeaders(persona), ...entityHeaders(), ...enterpriseHeaders },
     cache: 'no-store',
     credentials: 'same-origin',
   })

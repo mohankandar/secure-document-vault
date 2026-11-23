@@ -21,7 +21,7 @@ Do not declare recovery successful if any one component is unavailable.
 
 ## 2. Backup policy ownership
 
-- Tenant-managed/on-prem deployment: Tenant IT owns schedule, retention, media/location, encryption, off-site copy, RPO/RTO and restore drills.
+- Tenant-managed/on-prem deployment: IT owns schedule, retention, media/location, encryption, off-site copy, RPO/RTO and restore drills.
 - Operator-hosted deployment: Platform Operations owns those controls.
 
 SDV does not silently copy plaintext PDFs into a backup area. Protected storage remains ciphertext.
