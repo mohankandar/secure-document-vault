@@ -2591,7 +2591,9 @@ test.describe('SDV role-based screen capture', () => {
       'Problems',
       'About',
     ])
-    await expect(page.getByRole('tablist', { name: 'IT sections' }).getByRole('tab', { name: 'Audit' })).toHaveCount(0)
+    // IT has no Audit (event list) tab; its Audit report tab (task 0050) is a different tab, so match the name exactly.
+    await expect(page.getByRole('tablist', { name: 'IT sections' }).getByRole('tab', { name: 'Audit', exact: true })).toHaveCount(0)
+    await expect(page.getByRole('tablist', { name: 'IT sections' }).getByRole('tab', { name: 'Audit report', exact: true })).toHaveCount(1)
     await problemsChecks(page, testInfo, 'IT')
     await integrationsChecks(page, testInfo)
     await storageChecks(page, testInfo)
