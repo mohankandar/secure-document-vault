@@ -219,7 +219,7 @@ Write-Host 'Waiting for SDV backend health...'
 $backendUp = $false
 for ($i = 0; $i -lt 60; $i++) {
     try {
-        $health = Invoke-RestMethod -Uri 'http://localhost:8280/actuator/health' -TimeoutSec 2
+        $health = Invoke-RestMethod -Uri 'http://127.0.0.1:8280/actuator/health' -TimeoutSec 2
         if ($health.status -eq 'UP') { $backendUp = $true; break }
     } catch { }
     Start-Sleep -Seconds 1
@@ -262,7 +262,7 @@ Set-Content -Path $FrontendPid -Value $frontendProcess.Id -Encoding ASCII
 $frontendUp = $false
 for ($i = 0; $i -lt 40; $i++) {
     try {
-        $response = Invoke-WebRequest -Uri 'http://localhost:5183' -UseBasicParsing -TimeoutSec 2
+        $response = Invoke-WebRequest -Uri 'http://127.0.0.1:5183' -UseBasicParsing -TimeoutSec 2
         if ($response.StatusCode -eq 200) { $frontendUp = $true; break }
     } catch { }
     Start-Sleep -Seconds 1
