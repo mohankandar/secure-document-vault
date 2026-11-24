@@ -1,6 +1,6 @@
 package com.sdv.platform.web.install;
 
-import com.documentplatform.licensing.TrustedKeys;
+import com.documentplatform.licensing.LicenceBuild;
 import com.documentplatform.licensing.usage.UsageLedger;
 import com.sdv.platform.web.security.PlatformIdentityConfigurationAccess;
 
@@ -14,7 +14,7 @@ import java.util.Map;
 public final class DemoStepAccess {
     private DemoStepAccess() { }
 
-    public static int apply(DataSource ds, TrustedKeys keys, Map<String, String> slots) throws Exception {
+    public static int apply(DataSource ds, LicenceBuild keys, Map<String, String> slots) throws Exception {
         PrintStream quiet = new PrintStream(OutputStream.nullOutputStream());
         return new DemoStep(quiet, quiet, Clock.systemUTC()).apply(ds, keys, slots);
     }

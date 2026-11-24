@@ -121,13 +121,19 @@ public final class OidcJwtAuthenticationConverter implements Converter<Jwt, Abst
      * ({@code idtyp}), when there is one, must say "app". And, when the installer names a claim (the login system's own mark), it
      * must be there with exactly that value; {@code {client}} in the value stands for the client ID.
      */
-    public record MachineTokens(String requiredClaim, String requiredValue) {
+    public record MachineTokens(String requiredClaim, String requiredValue, List<String> userClaims) {
         /** Claims of a person's sign-in session, or of a groups list the login system left out. */
         static final List<String> USER_ONLY = List.of("sid", "auth_time", "nonce", "at_hash", "c_hash", "s_hash", "amr",
                 "_claim_names", "hasgroups");
-        public static final MachineTokens DEFAULT = new MachineTokens("", "");
+        /**
+         * Task 0067 (platform-core 0.7.0, its push callers' rule): claims that name a person. An installer whose login
+         * system puts one into its machine tokens can leave it out; {@link #USER_ONLY} always counts.
+         */
+        public static final List<String> PERSON_NAMING = List.of("email", "upn", "given_name", "family_name", "name", "uid");
+        public static final MachineTokens DEFAULT = new MachineTokens("", "", PERSON_NAMING);
 
         public MachineTokens {
+            userClaims = userClaims.stream().map(String::trim).filter(c -> !c.isEmpty()).toList();
             requiredClaim = requiredClaim == null ? "" : requiredClaim.trim();
             requiredValue = requiredValue == null ? "" : requiredValue.trim();
             if (requiredClaim.isEmpty() != requiredValue.isEmpty() || requiredClaim.length() > 100 || requiredValue.length() > 300) {
@@ -139,6 +145,9 @@ public final class OidcJwtAuthenticationConverter implements Converter<Jwt, Abst
         String problem(Jwt jwt, String clientId) {
             for (String claim : USER_ONLY) {
                 if (jwt.hasClaim(claim)) return "claim=" + claim + " belongs to a person's sign-in";
+            }
+            for (String claim : userClaims) {
+                if (jwt.hasClaim(claim)) return "claim=" + claim + " names a person";
             }
             if (jwt.hasClaim("idtyp") && !"app".equals(jwt.getClaim("idtyp"))) return "claim=idtyp is not an application's";
             if (!requiredClaim.isEmpty() && !requiredValue.replace("{client}", clientId).equals(jwt.getClaim(requiredClaim))) {

@@ -136,11 +136,11 @@ class PlatformIdentityPostgresTest {
 
     @Test
     void theSchemaStepMadeTheIdentityAndLicensingTablesWithTheirOwnHistory() {
-        // Task 0057: platform-core 0.6.1's identity schema is version 4 (idn_platform_grant); licensing stays at 1.
-        assertEquals(4, IdentitySchema.VERSION);
-        assertEquals(4, db.queryForObject("select max(version) from idn_schema_version", Integer.class));
-        assertEquals(1, db.queryForObject("select max(version) from lic_schema_version", Integer.class));
-        assertTrue(db.queryForObject("select count(*) from idn_schema_history where success", Integer.class) >= 4);
+        // Task 0067: platform-core 0.7.0's identity schema is version 5, licensing 2.
+        assertEquals(5, IdentitySchema.VERSION);
+        assertEquals(5, db.queryForObject("select max(version) from idn_schema_version", Integer.class));
+        assertEquals(2, db.queryForObject("select max(version) from lic_schema_version", Integer.class));
+        assertTrue(db.queryForObject("select count(*) from idn_schema_history where success", Integer.class) >= 5);
         assertEquals(1, db.queryForObject("select count(*) from pg_tables where tablename = 'idn_platform_grant'", Integer.class));
         assertTrue(db.queryForObject("select count(*) from lic_schema_history where success", Integer.class) >= 1);
         assertEquals(0, db.queryForObject("select count(*) from pg_tables where tablename in ('enterprise_identity_connections', "
@@ -228,14 +228,15 @@ class PlatformIdentityPostgresTest {
                 new ClockGuard(Clock.systemUTC(), new PostgresLastSeenStore(ds)), DemoStepAccess.noUsage(), "SDV", null)
                 .store(DevelopmentLicences.sign(licence, key.getPrivate()));
 
-        assertEquals(0, DemoStepAccess.apply(ds, keys, Map.of(DEMO_SLOT, "PG demo entity")));
+        var build = com.documentplatform.licensing.LicenceBuild.of(keys, true, Instant.parse("2026-01-01T00:00:00Z"));
+        assertEquals(0, DemoStepAccess.apply(ds, build, Map.of(DEMO_SLOT, "PG demo entity")));
         assertEquals("ACTIVE", db.queryForObject("select status from idn_entity where slot_id = ?", String.class, DEMO_SLOT));
         assertEquals("PG demo entity", db.queryForObject("select display_name from tenants where tenant_id = ?", String.class, DEMO));
         assertEquals(1, db.queryForObject("select count(*) from audit_events where tenant_id = ? and action = 'ENTITY_ACTIVATED'", Integer.class, DEMO));
-        assertEquals(0, DemoStepAccess.apply(ds, keys, Map.of(DEMO_SLOT, "PG demo entity")), "a rerun changes nothing");
+        assertEquals(0, DemoStepAccess.apply(ds, build, Map.of(DEMO_SLOT, "PG demo entity")), "a rerun changes nothing");
         assertEquals(1, db.queryForObject("select count(*) from audit_events where tenant_id = ? and action = 'ENTITY_ACTIVATED'", Integer.class, DEMO));
 
-        TrustedKeys production = TrustedKeys.of(Map.of("pg-dev-1", key.getPublic()));
+        var production = com.documentplatform.licensing.LicenceBuild.of(TrustedKeys.of(Map.of("pg-dev-1", key.getPublic())), false, Instant.parse("2026-01-01T00:00:00Z"));
         assertEquals(2, DemoStepAccess.apply(ds, production, Map.of(DEMO_SLOT, "PG demo entity")),
                 "the demo step refuses a licence that is not signed by a development key");
     }

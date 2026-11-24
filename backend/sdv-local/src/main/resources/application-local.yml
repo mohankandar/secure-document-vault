@@ -16,9 +16,6 @@ server:
 sdv:
   auth:
     mode: ${SDV_AUTH_MODE:local-header}
-  # Task 0041: the development trusted-keys file, so the demo licence's slots can be activated (local only).
-  identity:
-    trusted-keys-file: ${SDV_TRUSTED_KEYS_FILE:dev/setup/development-trusted-keys.json}
   # Task 0062: the demo seed keeps its volumes under .runtime.
   storage:
     allowed-roots: ${SDV_STORAGE_ALLOWED_ROOTS:.runtime;data}

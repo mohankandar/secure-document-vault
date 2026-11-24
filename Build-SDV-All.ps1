@@ -1,5 +1,8 @@
 [CmdletBinding()]
 param(
+    # Task 0067: a release build trusts only the release licence keys. Without this it is a DEVELOPMENT build, which
+    # trusts the demo licence and must never be given to a customer.
+    [switch]$Release,
     # Task 0086: test only the backend modules this branch changes (against -Base), the modules they need and the
     # modules that use them, and build the frontend only if it changed. Maven runs in parallel (-T 1C), tests only: no
     # jar. Not a replacement for the full build; anything it can't place in a module runs the full build instead.
@@ -52,7 +55,7 @@ function Get-QuickPlan {
     # be tested against old jars or none.
     $uses = @{}
     foreach ($module in $known) {
-        [xml]$modulePom = Get-Content -LiteralPath (Join-Path $Backend "$modulepom.xml") -Raw
+        [xml]$modulePom = Get-Content -LiteralPath (Join-Path $Backend "$module/pom.xml") -Raw
         $uses[$module] = @($modulePom.SelectNodes("//*[local-name()='dependency']/*[local-name()='artifactId']") | ForEach-Object { $_.InnerText })
     }
     do {
@@ -92,6 +95,8 @@ if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
 Write-Host 'Identity: platform-core released modules com.documentplatform.platform:platform-identity-* (platform-bom, see backend/pom.xml)'
 Write-Host 'Maven reads them from GitHub Packages (server github-platform-core, token in GITHUB_PACKAGES_TOKEN; docs/install/PLATFORM_PACKAGES.md).'
 
+if ($Quick -and $Release) { throw '-Quick makes no jar: use -Release without it.' }
+
 $plan = $null
 if ($Quick) {
     $plan = Get-QuickPlan
@@ -101,7 +106,7 @@ if ($Quick) {
 if ($null -eq $plan) {
     Push-Location $Backend
     try {
-        Invoke-Step 'Backend Maven reactor build' { & mvn clean verify }
+        Invoke-Step 'Backend Maven reactor build' { & mvn clean verify "-Dlicence.build=$(if ($Release) { 'release' } else { 'development' })" }
     } finally {
         Pop-Location
     }
@@ -109,7 +114,7 @@ if ($null -eq $plan) {
     Push-Location $Backend
     try {
         $list = $plan.Modules -join ','
-        Invoke-Step "Backend tests: $list and the modules they need" { & mvn -T 1C -pl $list -am test }
+        Invoke-Step "Backend tests: $list and the modules they need" { & mvn -T 1C -pl $list -am test "-Dlicence.build=$(if ($Release) { 'release' } else { 'development' })" }
     } finally {
         Pop-Location
     }
@@ -146,5 +151,6 @@ if ($null -ne $plan) {
     return
 }
 Write-Host "BUILD SUCCESS"
+if (-not $Release) { Write-Host "DEVELOPMENT BUILD: it trusts the demo licence. Not for customers (use -Release)." }
 Write-Host "Backend jar: backend\sdv-web\target\sdv-web-0.1.0-SNAPSHOT.jar"
 Write-Host "Frontend dist: frontend\sdv-ui\dist"

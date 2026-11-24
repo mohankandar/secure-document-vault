@@ -112,6 +112,19 @@ jobs:
           SDV_IT_JDBC_USER: sdv_schema_owner
           SDV_IT_JDBC_PASSWORD: not-checked-trust-authentication
         run: mvn $MVN_CI_FLAGS -o clean verify "-Dsurefire.excludesFile=$GITHUB_WORKSPACE/.github/ci/scale-tests.txt"
+      - name: The release build holds no development licence key
+        working-directory: backend
+        run: |
+          for jar in sdv-web/target/sdv-web-*.jar sdv-setup/target/sdv-setup-*.jar; do
+            if unzip -l "$jar" | grep -q 'META-INF/platform/licence-build.properties' \
+               && unzip -p "$jar" '*META-INF/platform/licence-build.properties' | grep -q 'development-keys=true'; then
+              echo "::error::$jar is a development build"; exit 1
+            fi
+            if unzip -l "$jar" | grep -q 'META-INF/platform/licence-keys.json' \
+               && unzip -p "$jar" '*META-INF/platform/licence-keys.json' | grep -q '"development": *true'; then
+              echo "::error::$jar trusts a development key"; exit 1
+            fi
+          done
       - name: Check the PostgreSQL-only tests ran
         working-directory: backend
         run: |

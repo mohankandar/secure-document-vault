@@ -38,6 +38,22 @@ class VeroSetupFilesTest {
 
     /** {@code env}: the setup command's environment (database settings), never the process's own. */
     static Run setup(Map<String, String> env, String... args) {
+        return setup(developmentBuild(), env, args);
+    }
+
+    /** Task 0067: what a development build of Vero trusts (backend/licence-build/development). */
+    static com.documentplatform.licensing.LicenceBuild developmentBuild() {
+        try {
+            return com.documentplatform.licensing.LicenceBuild.of(com.documentplatform.licensing.TrustedKeys.parse(Files.readString(
+                    DEVELOPMENT.resolve("licence-keys.json"))), true, java.time.Instant.parse("2026-01-01T00:00:00Z"));
+        } catch (java.io.IOException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    static final Path DEVELOPMENT = ROOT.resolve("backend/licence-build/development/META-INF/platform");
+
+    static Run setup(com.documentplatform.licensing.LicenceBuild build, Map<String, String> env, String... args) {
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         ByteArrayOutputStream err = new ByteArrayOutputStream();
         Path log;
@@ -48,20 +64,20 @@ class VeroSetupFilesTest {
         }
         List<String> all = new java.util.ArrayList<>(List.of(args));
         all.addAll(List.of("--run-log", log.toString()));
-        int exit = new SetupCommand(env, Clock.systemUTC()).run(all,
+        int exit = new SetupCommand(env, Clock.systemUTC(), build).run(all,
                 new PrintStream(out, true, StandardCharsets.UTF_8), new PrintStream(err, true, StandardCharsets.UTF_8));
         return new Run(exit, out.toString(StandardCharsets.UTF_8), err.toString(StandardCharsets.UTF_8));
     }
 
-    static String[] demoPlan(String keys) {
+    static String[] demoPlan() {
         return new String[]{"plan", "--licence", DEV.resolve("licence-vero-demo.json").toString(),
                 "--signin", DEV.resolve("signin-vero-demo.json").toString(), "--product", "SDV",
-                "--keys", keys, "--product-roles", PRODUCT_ROLES.toString(), "--no-customer-keys"};
+                "--product-roles", PRODUCT_ROLES.toString(), "--no-customer-keys"};
     }
 
     @Test
     void theDemoFilesPassEveryCheckUpToTheDatabase() {
-        Run run = setup(demoPlan(DEV.resolve("development-trusted-keys.json").toString()));
+        Run run = setup(demoPlan());
         assertTrue(run.out().startsWith("Setup plan for product SDV, customer TEN-VERO-DEMO-0001, licence LIC-VERO-DEMO-0001 v1 (NON_PRODUCTION)"), run.out() + run.err());
         assertEquals(2, run.exit(), run.err());
         assertTrue(run.err().startsWith("SETUP_DB_SETTINGS_MISSING") || run.err().contains("SETUP_DB_SETTINGS_MISSING"), run.err());
@@ -69,11 +85,18 @@ class VeroSetupFilesTest {
 
     @Test
     void withoutTheDevelopmentKeyTheDemoLicenceIsRefused() throws Exception {
-        Path empty = Files.createTempFile("keys", ".json");
-        Files.writeString(empty, "{\"format\": \"platform-licence-keys/1\", \"keys\": []}");
-        Run run = setup(demoPlan(empty.toString()));
+        // A release build: its own keys only. The same development keys in a build that isn't a development build count for nothing.
+        var other = com.documentplatform.licensing.TrustedKeys.of(Map.of("release-1", DevelopmentLicences.newKey().getPublic()));
+        Run run = setup(com.documentplatform.licensing.LicenceBuild.of(other, false, java.time.Instant.parse("2026-01-01T00:00:00Z")), Map.of(), demoPlan());
         assertEquals(2, run.exit());
-        assertTrue(run.err().contains("SETUP_KEYS_INVALID") || run.err().contains("SETUP_LICENCE_REFUSED"), run.err());
+        assertTrue(run.err().contains("SETUP_LICENCE_REFUSED"), run.err());
+        org.junit.jupiter.api.Assertions.assertThrows(RuntimeException.class, () -> com.documentplatform.licensing.LicenceBuild.of(developmentBuild().keys(), false, java.time.Instant.now()));
+        // No option brings a key in.
+        List<String> withKeys = new java.util.ArrayList<>(List.of(demoPlan()));
+        withKeys.addAll(List.of("--keys", DEVELOPMENT.resolve("licence-keys.json").toString()));
+        Run refused = setup(withKeys.toArray(String[]::new));
+        assertEquals(2, refused.exit());
+        assertTrue(refused.err().contains("SETUP_BAD_OPTION"), refused.err());
     }
 
     @Test
@@ -102,7 +125,7 @@ class VeroSetupFilesTest {
         Files.copy(DEV.resolve("client-bindings-SDV.csv"), dir.resolve("client-bindings-SDV.csv"));
         Files.writeString(dir.resolve("role-mapping-SDV.csv"),
                 Files.readString(DEV.resolve("role-mapping-SDV.csv")) + (extraRow == null ? "" : extraRow + "\r\n"));
-        String[] plan = demoPlan(DEV.resolve("development-trusted-keys.json").toString());
+        String[] plan = demoPlan();
         plan[4] = dir.resolve("signin-vero-demo.json").toString();
         return plan;
     }
@@ -126,12 +149,22 @@ class VeroSetupFilesTest {
     }
 
     @Test
-    void theDevelopmentKeyIsNeverInsideAShippedJar() {
-        // The setup tool's own classpath holds no trusted-keys file; the app's resources hold none either (C7).
-        assertNull(getClass().getClassLoader().getResource("development-trusted-keys.json"));
-        assertNull(getClass().getClassLoader().getResource("trusted-keys.json"));
-        assertFalse(Files.exists(ROOT.resolve("backend/sdv-web/src/main/resources/development-trusted-keys.json")));
-        assertFalse(Files.exists(ROOT.resolve("backend/sdv-web/src/main/resources/trusted-keys.json")));
+    void theDevelopmentKeyIsNeverInsideAShippedJar() throws Exception {
+        // Task 0067: the Maven default is a release build, whose folder holds no development key; the app's and the setup
+        // tool's own resources hold no keys at all. (CI looks inside the jars.)
+        assertTrue(Files.readString(ROOT.resolve("backend/pom.xml")).contains("<licence.build>release</licence.build>"));
+        Path release = ROOT.resolve("backend/licence-build/release");
+        if (Files.exists(release)) {
+            try (var files = Files.walk(release)) {
+                for (Path f : files.filter(Files::isRegularFile).toList()) {
+                    assertFalse(Files.readString(f).contains("development"), f.toString());
+                }
+            }
+        }
+        for (String module : List.of("sdv-web", "sdv-setup")) {
+            assertFalse(Files.exists(ROOT.resolve("backend/" + module + "/src/main/resources/META-INF/platform")), module);
+        }
+        assertTrue(Files.readString(DEVELOPMENT.resolve("licence-build.properties")).contains("development-keys=true"));
     }
 
     @Test

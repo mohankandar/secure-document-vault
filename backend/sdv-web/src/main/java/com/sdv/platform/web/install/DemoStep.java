@@ -7,7 +7,8 @@ import com.documentplatform.identity.store.ActivationOutcome;
 import com.documentplatform.identity.store.SlotActivation;
 import com.documentplatform.licensing.LicenceException;
 import com.documentplatform.licensing.LicenceService;
-import com.documentplatform.licensing.TrustedKeys;
+import com.documentplatform.licensing.LicenceBuild;
+import com.sdv.platform.web.security.VeroLicenceBuild;
 import com.sdv.platform.web.UsageReporting;
 import com.sdv.platform.web.security.PlatformIdentityConfiguration;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
@@ -34,7 +35,7 @@ import java.util.function.Function;
  * command after setup, never at startup. It replaces the local seed changeset (002).
  *
  * <ol>
- *   <li>Checks that the licence setup stored is signed by a <b>development</b> key of the given trusted-keys file:
+ *   <li>Checks that the licence setup stored is signed by a <b>development</b> key of this build (task 0067):
  *       the demo step never runs against a customer's licence.</li>
  *   <li>Activates each demo entity slot with its name through platform-core's {@link SlotActivation} (what a Business
  *       Admin does in the app), and makes Vero's row for it (table {@code tenants}, same UUID, derived from the slot).
@@ -42,7 +43,7 @@ import java.util.function.Function;
  * </ol>
  *
  * <pre>
- * demo-step apply --keys development-trusted-keys.json [--slot ENT-...=Name ...]
+ * demo-step apply [--slot ENT-...=Name ...]
  * </pre>
  * Default slots: {@code ENT-VERO-DEMO-0001=Acme Lending} and {@code ENT-VERO-DEMO-0002=Local Isolation Entity}.
  * Running it again changes nothing. Database settings in the environment only: {@code SDV_DEMO_DB_URL},
@@ -70,17 +71,15 @@ public final class DemoStep {
         System.exit(new DemoStep(System.out, System.err, Clock.systemUTC()).run(args, System.getenv()::get));
     }
 
-    record Options(Path keys, Map<String, String> slots) { }
+    record Options(Map<String, String> slots) { }
 
     static Options parse(String[] args) {
         if (args.length == 0 || !"apply".equals(args[0])) throw new IllegalArgumentException("The first word must be apply.");
-        Path keys = null;
         Map<String, String> slots = new LinkedHashMap<>();
         for (int i = 1; i < args.length; i += 2) {
             if (i + 1 >= args.length) throw new IllegalArgumentException("Missing value after " + args[i] + ".");
             String value = args[i + 1];
             switch (args[i]) {
-                case "--keys" -> keys = Path.of(value);
                 case "--slot" -> {
                     int eq = value.indexOf('=');
                     if (eq < 0 || !EntityUuid.isSlotId(value.substring(0, eq))) {
@@ -91,9 +90,8 @@ public final class DemoStep {
                 default -> throw new IllegalArgumentException("Unknown option " + args[i] + ".");
             }
         }
-        if (keys == null) throw new IllegalArgumentException("--keys is required (the development trusted-keys file).");
         if (slots.isEmpty()) slots.putAll(new java.util.TreeMap<>(DEFAULT_SLOTS));
-        return new Options(keys, slots);
+        return new Options(slots);
     }
 
     int run(String[] args, Function<String, String> env) {
@@ -111,24 +109,22 @@ public final class DemoStep {
             err.println("DEMO_DB_SETTINGS_MISSING: set SDV_DEMO_DB_URL (jdbc:postgresql:...), SDV_DEMO_DB_USERNAME and SDV_DEMO_DB_PASSWORD.");
             return 2;
         }
-        TrustedKeys keys;
-        try {
-            keys = TrustedKeys.parse(Files.readString(options.keys(), StandardCharsets.UTF_8));
-        } catch (Exception e) {
-            err.println("DEMO_KEYS_UNREADABLE: the trusted-keys file " + options.keys() + " could not be read.");
+        LicenceBuild build = VeroLicenceBuild.load().orElse(null);
+        if (build == null) {
+            err.println("DEMO_NOT_A_DEVELOPMENT_BUILD: this Vero build trusts no licence key. Build with Build-SDV-All.ps1 (a development build).");
             return 2;
         }
         DataSource ds = new DriverManagerDataSource(url, user, password);
         try {
-            return apply(ds, keys, options.slots());
+            return apply(ds, build, options.slots());
         } catch (SQLException | RuntimeException e) {
             err.println("DEMO_FAILED: " + e.getClass().getSimpleName() + (e instanceof SQLException sql ? " (SQL state " + sql.getSQLState() + ")" : ""));
             return 1;
         }
     }
 
-    int apply(DataSource ds, TrustedKeys keys, Map<String, String> slots) throws SQLException {
-        LicenceService licence = PlatformIdentityConfiguration.readOnlyLicence(ds, keys);
+    int apply(DataSource ds, LicenceBuild build, Map<String, String> slots) throws SQLException {
+        LicenceService licence = PlatformIdentityConfiguration.readOnlyLicence(ds, build);
         String keyId;
         try {
             keyId = licence.status().licence().keyId();
@@ -136,7 +132,7 @@ public final class DemoStep {
             err.println("DEMO_NO_LICENCE: no licence that these keys verify is stored (" + e.code() + "). Run setup apply first.");
             return 2;
         }
-        if (!keys.isDevelopmentKey(keyId)) {
+        if (!build.keys().isDevelopmentKey(keyId)) {
             err.println("DEMO_NOT_A_DEMO_LICENCE: the stored licence is not signed by a development key; the demo step runs only on demo installs.");
             return 2;
         }
