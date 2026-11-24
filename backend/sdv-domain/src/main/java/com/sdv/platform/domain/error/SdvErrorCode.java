@@ -158,6 +158,12 @@ public enum SdvErrorCode {
     HLD_007("SDV-HLD-007"),
     /** Task 0027: the legal hold was already released (409). */
     HLD_008("SDV-HLD-008"),
+    /** Task 0066: the document was put on legal hold while it was being redacted; send the redaction again to ask for approval (409). */
+    HLD_009("SDV-HLD-009"),
+    /** Task 0066: no sealed original of this document has this reference, or it was destroyed (404). */
+    HLD_010("SDV-HLD-010"),
+    /** Task 0066: the sealed original of a held document is for Restricted Stewards only (403). */
+    HLD_011("SDV-HLD-011"),
     /** Task 0028: asking to print or download a Highly Confidential document needs REQUEST_SENSITIVE_ACCESS (403). */
     APR_001("SDV-APR-001"),
     /** Task 0028: a request's reason is missing, shorter than 3 or longer than 500 characters (400). */
@@ -188,6 +194,8 @@ public enum SdvErrorCode {
     APR_014("SDV-APR-014"),
     /** Task 0028: a person's own requests are listed for Stewards only (CHANGE_SENSITIVITY_LEVEL) (403). */
     APR_015("SDV-APR-015"),
+    /** Task 0066: the redaction no longer applies: the document changed since it was asked for, or is gone (409). */
+    APR_017("SDV-APR-017"),
     /** Task 0032: intake notices (an uncorrected copy sent again) are for Document stewards (403). */
     INT_001("SDV-INT-001"),
     /** Task 0033: no notice of this tenant has this reference (404). */

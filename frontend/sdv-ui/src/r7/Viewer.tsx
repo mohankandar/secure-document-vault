@@ -5,6 +5,7 @@ import { BUSINESS_LIMITS, type Doc, type RecordItem, type Redaction } from './mo
 import { ApiRequestError } from '../api'
 import { failureText } from './CardError'
 import { Badge, Callout, Dialog, Drawer, Tabs, TechDetails, actorWords, auditEventLabel, fmtDate, fmtDateTime, fmtRel, fmtShortDate } from './ui'
+import { SealedOriginalBar } from './SealedOriginal'
 import { viewerMetadata, viewerPage, viewerSearch, record as fetchRecord, toRecord, documentActivity, type LiveDocumentActivity, type ViewerSearch, documentTags, documentComments, createDocumentTag, createDocumentComment, type LiveTag, type LiveComment, secureDownload, recordPrintEvent, permanentRedaction, viewerPreviews, myRequests, documentLevelHistory, LEVEL_NAMES, type MyRequest, type LevelHistoryEntry } from './liveApi'
 import { LOCKED_MESSAGE, LevelBadge, LevelDialog, RequestItem, RequestPopover, pendingOf, recordWord, validGrant, whenWords } from './Sensitivity'
 import { markViewed, unseenDecisions, useSeenRevision } from './Notices'
@@ -250,8 +251,9 @@ export function Viewer({ record, results, docId, onClose, recordTitle, backLabel
     if(actionBusy || !can('PERMANENT_REDACTION'))return
     setActionBusy(true);setRedactionFailure('')
     try {
-      await permanentRedaction(doc.id,reason,marks.map(m=>({pageNumber:m.page,x:m.x/100,y:m.y/100,width:m.w/100,height:m.h/100})))
+      const done = await permanentRedaction(doc.id,reason,marks.map(m=>({pageNumber:m.page,x:m.x/100,y:m.y/100,width:m.w/100,height:m.h/100})))
       setMarks([]);setRedacting(false);setReview(false);setQuery('');setSearchResults(null)
+      if (done.status === 'APPROVAL_REQUESTED') { refreshRequests(); toast({ title: 'Sent for approval', detail: 'This document is on legal hold. A Business admin approves the redaction first; nothing was changed yet.' }); return }
       setRenderRevision(n=>n+1)
       setPageCount(0)
       viewerMetadata(doc.id).then(m=>{setViewingId(m.viewingId ?? '');setPageCount(m.pageCount)}).catch(e=>setViewerFailure(docFailure('Viewer: document did not reopen', e)))
@@ -407,6 +409,7 @@ export function Viewer({ record, results, docId, onClose, recordTitle, backLabel
           <span className="grow" style={{ fontSize: 13 }}><strong>Quarantined.</strong> Everyone else sees it as temporarily unavailable. You can read and correct it; print, download, tags, comments and level changes wait until it is released.</span>
         </div>
       )}
+      {!redacting && can('REQUEST_SENSITIVE_ACCESS') && <SealedOriginalBar documentId={doc.id} revision={renderRevision} />}
       {redacting && (
         <div className="vw-bar" style={{ minHeight: 48, background: 'var(--danger-soft)', borderColor: 'color-mix(in oklab, var(--danger) 30%, transparent)' }}>
           <ShieldAlert size={18} aria-hidden style={{ color: 'var(--danger)', marginLeft: 8, flex: 'none' }} />
@@ -553,7 +556,7 @@ function RedactionReview({ doc, marks, onCancel, onApply, busy, failure }: { doc
     <Dialog title="Apply permanent redaction" onClose={onCancel}
       footer={<><button type="button" className="v-btn" onClick={onCancel}>Back to marking</button><button type="button" className="v-btn danger" disabled={!ready || busy} onClick={() => onApply(reason.trim())}>{busy?'Applying…':'Apply permanent redaction'}</button></>}>
       <Callout tone="bad" title="This permanently replaces the current PDF">
-        Marked areas are removed for every user and the original is not kept. Use this only to remove content that should never have been stored.
+        Marked areas are removed for every user and the original is not kept. Use this only to remove content that should never have been stored. If the document is on legal hold, a Business admin must approve first, and the original stays sealed until the hold is released.
       </Callout>
       <dl className="v-kv">
         <div><dt>Document</dt><dd>{doc.kind} · <span className="mono">{doc.id}</span></dd></div>
@@ -562,7 +565,7 @@ function RedactionReview({ doc, marks, onCancel, onApply, busy, failure }: { doc
       <label className="v-field">
         <span>Corrective reason<span className="v-hint">Required</span></span>
         <textarea className="v-textarea" value={reason} maxLength={500} onChange={(e) => setReason(e.target.value)} placeholder="e.g. Member SSN captured in error on page 1, section 4." />
-        <small>{reason.trim().length < 10 ? 'At least 10 characters. Stored with the audit event.' : `${reason.trim().length}/500`}</small>
+        <small>{reason.trim().length < 10 ? 'At least 10 characters. Kept with the redaction, not in the audit.' : `${reason.trim().length}/500`}</small>
       </label>
       <label className="v-check">
         <input type="checkbox" checked={confirmed} onChange={(e) => setConfirmed(e.target.checked)} />

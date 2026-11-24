@@ -43,9 +43,10 @@ public class CorrectiveRedactionController {
 
         RedactionResult result = redaction.redact(
                 principal.tenantId(), documentId, request.reason(), request.confirmed(),
-                regions, authorization.clearance(principal), principal.subject(), MDC.get("correlationId"));
+                regions, authorization.clearance(principal), principal.subject(), principal.displayName(), MDC.get("correlationId"));
 
-        return ResponseEntity.ok()
+        // Task 0066: 202 when a Business Admin must approve first (the document is on legal hold).
+        return ResponseEntity.status(RedactionResult.APPROVAL_REQUESTED.equals(result.status()) ? 202 : 200)
                 .cacheControl(CacheControl.noStore().cachePrivate().mustRevalidate())
                 .body(result);
     }

@@ -1,5 +1,10 @@
 package com.sdv.platform.application.redaction;
 
+import com.sdv.platform.domain.error.SdvErrorCode;
+import com.sdv.platform.domain.error.CodedRefusal;
+import com.sdv.platform.domain.document.SensitivityLevel;
+import com.sdv.platform.application.port.HeldRedactionRepository;
+import com.sdv.platform.application.approvals.AccessRequestService;
 import com.sdv.platform.application.access.ActiveTenant;
 
 import com.sdv.platform.domain.error.InternalCheckFailed;
@@ -47,6 +52,8 @@ public class CorrectiveRedactionService {
     private final DocumentAccessGuard access;
     private final TransactionTemplate transactions;
     private final PdfWork work;
+    private final HeldRedactionRepository held;
+    private final AccessRequestService requests;
     private final ObjectMapper json = new ObjectMapper();
     private final Clock clock = Clock.systemUTC();
 
@@ -63,7 +70,11 @@ public class CorrectiveRedactionService {
             AuditEventPort audit,
             PlatformTransactionManager transactionManager,
             DocumentAccessGuard access,
-            PdfWork work) {
+            PdfWork work,
+            HeldRedactionRepository held,
+            AccessRequestService requests) {
+        this.held = Objects.requireNonNull(held, "held");
+        this.requests = Objects.requireNonNull(requests, "requests");
         this.work = Objects.requireNonNull(work, "work");
         this.tenants = tenants;
         this.sources = sources;
@@ -83,7 +94,7 @@ public class CorrectiveRedactionService {
 
     public RedactionResult redact(UUID tenantId, UUID documentId, String reason, boolean confirmed,
                                   List<RedactionRegion> requestedRegions, Clearance clearance,
-                                  String actorId, String correlationId) {
+                                  String actorId, String actorName, String correlationId) {
         if (!confirmed) throw new IllegalArgumentException("Permanent corrective redaction requires explicit confirmation.");
         String normalizedReason = normalizeReason(reason);
         List<RedactionRegion> regions = normalizeRegions(requestedRegions);
@@ -93,7 +104,7 @@ public class CorrectiveRedactionService {
         Document current = documents.findDocumentByIdForTenant(tenantId, documentId)
                 .orElseThrow(() -> new NoSuchElementException("Document not found."));
         // Task 0026: before anything else about the document is looked at or changed.
-        access.requireOpenable(current, clearance, DocumentAccessGuard.Attempt.REDACT, actorId, correlationId);
+        SensitivityLevel level = access.requireOpenable(current, clearance, DocumentAccessGuard.Attempt.REDACT, actorId, correlationId);
 
         if (current.status() == DocumentStatus.REDACTION_PROCESSING) {
             RedactionOperation pending = redactions.findPending(tenantId, documentId)
@@ -117,6 +128,60 @@ public class CorrectiveRedactionService {
         if (current.status() != DocumentStatus.AVAILABLE) {
             throw new IllegalStateException("Only AVAILABLE documents may be permanently redacted.");
         }
+        // Task 0066: on legal hold, a Business Admin approves first. Nothing is changed now.
+        if (held.onHold(tenantId, documentId)) {
+            AccessRequestService.RequestView asked = requests.requestHeldRedaction(tenantId, actorId, actorName, current, level,
+                    normalizedReason, regionsJson, regions.size(), correlationId);
+            return new RedactionResult(null, documentId, RedactionResult.APPROVAL_REQUESTED, regions.size(), null,
+                    current.expiresAt(), asked.requestId());
+        }
+        return replace(current, normalizedReason, regions, regionsJson, requestSha, actorId, correlationId, null);
+    }
+
+    /** Task 0066: how often an approved redaction is tried before it is given up. */
+    static final int MAX_ATTEMPTS = 5;
+
+    public record ApplySweepResult(int taken, int applied, int failed) { }
+
+    /** Task 0066: applies approved redactions of held documents; the originals are sealed. */
+    public ApplySweepResult applyApproved(int limit) {
+        int applied = 0, failed = 0;
+        List<HeldRedactionRepository.Approved> taken = held.claimApproved(limit);
+        for (HeldRedactionRepository.Approved a : taken) {
+            String correlationId = "held-redaction-" + a.requestId();
+            Document current = documents.findDocumentByIdForTenant(a.tenantId(), a.documentId()).orElse(null);
+            if (current != null && current.status() == DocumentStatus.REDACTION_PROCESSING) {
+                // Another redaction, or this one already staged: the recovery sweep finishes it.
+                held.releaseClaim(a.tenantId(), a.requestId());
+                continue;
+            }
+            int regionCount = 0;
+            try {
+                if (current == null || current.status() != DocumentStatus.AVAILABLE
+                        || !Objects.equals(current.contentSha256(), a.contentSha256())) {
+                    held.giveUp(a.tenantId(), a.requestId());
+                    throw new IllegalStateException("The document changed since the redaction was asked for.");
+                }
+                List<RedactionRegion> regions = normalizeRegions(json.readValue(a.regionsJson(),
+                        new com.fasterxml.jackson.core.type.TypeReference<List<RedactionRegion>>() { }));
+                regionCount = regions.size();
+                replace(current, a.reason(), regions, toJson(regions), requestSha256(a.reason(), regions), a.requestedBy(),
+                        correlationId, a.requestId());
+                applied++;
+            } catch (RuntimeException | JsonProcessingException ex) {
+                failed++;
+                // replace() audits its own failures; these never reached it.
+                if (regionCount == 0) safeFailureAudit(a.tenantId(), a.documentId(), a.requestedBy(), null, 0, correlationId, ex);
+                if (a.attempts() >= MAX_ATTEMPTS) held.giveUp(a.tenantId(), a.requestId());
+            }
+        }
+        return new ApplySweepResult(taken.size(), applied, failed);
+    }
+
+    /** accessRequestId: the approved request of a held document (its original is sealed); null: the original is deleted. */
+    private RedactionResult replace(Document current, String normalizedReason, List<RedactionRegion> regions, String regionsJson,
+                                    String requestSha, String actorId, String correlationId, UUID accessRequestId) {
+        UUID tenantId = current.tenantId(), documentId = current.documentId();
 
         Tenant tenant = ActiveTenant.require(tenants, tenantId);
         IngestionSource source = sources.findById(tenantId, current.sourceId())
@@ -170,7 +235,7 @@ public class CorrectiveRedactionService {
                     envelope.encryptedSizeBytes(), envelope.ciphertextSha256(),
                     envelope.cryptoProfile(), envelope.cryptoVersion(), envelope.keyProviderId(),
                     envelope.protectedDataKeyReference(), envelope.keyProviderVersion(),
-                    newContentSha, sanitized.length, clock.instant());
+                    newContentSha, sanitized.length, clock.instant(), accessRequestId);
 
             Boolean stageResult = transactions.execute(status -> stage(operation, oldStorage, oldCrypto));
             staged = Boolean.TRUE.equals(stageResult);
@@ -242,6 +307,11 @@ public class CorrectiveRedactionService {
                 .orElseThrow(() -> new NoSuchElementException("Document not found."));
         if (locked.status() != DocumentStatus.AVAILABLE
                 || !Objects.equals(locked.contentSha256(), operation.oldContentSha256())) return false;
+        // Task 0066: under the same row lock as placing a hold; a hold placed meanwhile needs the approval.
+        if (operation.accessRequestId() == null && held.onHold(operation.tenantId(), operation.documentId())) {
+            throw new CodedRefusal.Conflict(SdvErrorCode.HLD_009,
+                    "This document was just put on legal hold, so it was not changed. Send the redaction again to ask for approval.");
+        }
 
         DocumentStorageRef currentStorage = documents.findStorageRef(operation.tenantId(), operation.documentId())
                 .orElseThrow(() -> new IllegalStateException("Document storage metadata disappeared."));
@@ -260,6 +330,14 @@ public class CorrectiveRedactionService {
         StorageProvider newProvider = provider(operation.newProviderId());
         verifyReplacementObject(operation, newVolume, newProvider);
 
+        Instant completedAt = clock.instant();
+        RedactionResult result = transactions.execute(status ->
+                finalizeTransaction(operation, regionCount, correlationId, completedAt));
+        if (result == null) throw new RedactionFailedException("Corrective redaction finalization returned no result.");
+        return result;
+    }
+
+    private void deleteOriginal(RedactionOperation operation) {
         StorageVolume oldVolume = volumes.findById(operation.tenantId(), operation.oldStorageVolumeId())
                 .orElseThrow(() -> new RedactionFailedException("Original storage volume is unavailable."));
         StorageProvider oldProvider = provider(operation.oldProviderId());
@@ -273,12 +351,6 @@ public class CorrectiveRedactionService {
             throw new RedactionFailedException(
                     "Permanent redaction cannot complete until the prior ciphertext is removed.", ex);
         }
-
-        Instant completedAt = clock.instant();
-        RedactionResult result = transactions.execute(status ->
-                finalizeTransaction(operation, regionCount, correlationId, completedAt));
-        if (result == null) throw new RedactionFailedException("Corrective redaction finalization returned no result.");
-        return result;
     }
 
     private RedactionResult finalizeTransaction(RedactionOperation expected, int regionCount,
@@ -296,6 +368,23 @@ public class CorrectiveRedactionService {
             throw new IllegalStateException("Document is not in corrective-redaction processing state.");
         }
 
+        // Task 0066: decided here, under the document's row lock (placing a hold takes the same one): a held document's
+        // original is sealed, also when the hold came while the redaction was running; any other is deleted now.
+        UUID sealedId = null;
+        if (expected.accessRequestId() == null && !held.onHold(expected.tenantId(), expected.documentId())) {
+            deleteOriginal(expected);
+        } else {
+            DocumentCryptoMetadata oldCrypto = documents.findCryptoMetadata(expected.tenantId(), expected.documentId())
+                    .orElseThrow(() -> new RedactionFailedException("Document crypto metadata is unavailable."));
+            sealedId = UUID.randomUUID();
+            held.insertSealed(new HeldRedactionRepository.Sealed(sealedId, expected.accessRequestId(),
+                    new DocumentStorageRef(expected.documentId(), expected.tenantId(), expected.oldProviderId(),
+                            expected.oldStorageVolumeId(), expected.oldObjectKey(), expected.oldEncryptedSizeBytes(),
+                            expected.oldIntegrityValue()),
+                    oldCrypto, expected.oldContentSha256(), expected.oldContentSizeBytes(), completedAt));
+            if (expected.accessRequestId() != null) held.markApplied(expected.tenantId(), expected.accessRequestId(), completedAt);
+        }
+
         redactions.finalizeReplacement(
                 expected.tenantId(), expected.documentId(), expected.oldContentSha256(),
                 expected.newContentSha256(), expected.newContentSizeBytes(),
@@ -310,14 +399,14 @@ public class CorrectiveRedactionService {
         audit.append(new AuditEvent(
                 UUID.randomUUID(), expected.tenantId(), "USER", expected.actorId(),
                 "DOCUMENT_PERMANENTLY_REDACTED", "DOCUMENT", expected.documentId().toString(),
-                completedAt, correlationId, AuditOutcome.SUCCESS, successAuditJson(expected, regionCount)));
+                completedAt, correlationId, AuditOutcome.SUCCESS, successAuditJson(expected, regionCount, sealedId)));
 
         redactions.deletePending(expected.tenantId(), expected.operationId());
 
         Document updated = documents.findDocumentByIdForTenant(expected.tenantId(), expected.documentId())
                 .orElseThrow(() -> new InternalCheckFailed("Redacted document could not be reloaded."));
         return new RedactionResult(expected.operationId(), expected.documentId(), updated.status().name(),
-                regionCount, updated.contentSha256(), updated.expiresAt());
+                regionCount, updated.contentSha256(), updated.expiresAt(), expected.accessRequestId());
     }
 
     private byte[] verifiedPlaintext(Document document, DocumentStorageRef storageRef,
@@ -424,7 +513,7 @@ public class CorrectiveRedactionService {
         catch (JsonProcessingException ex) { throw new InternalCheckFailed("Could not serialize redaction regions.", ex); }
     }
 
-    private String successAuditJson(RedactionOperation op, int regionCount) {
+    private String successAuditJson(RedactionOperation op, int regionCount, UUID sealedId) {
         // Task 0062: the reason (free text) and the regions stay in document_redaction_operations; the event holds its ID.
         try {
             Map<String,Object> safe = new LinkedHashMap<>();
@@ -435,6 +524,8 @@ public class CorrectiveRedactionService {
             safe.put("oldCiphertextSha256", op.oldIntegrityValue());
             safe.put("newCiphertextSha256", op.newIntegrityValue());
             safe.put("retentionPreserved", true);
+            if (op.accessRequestId() != null) safe.put("accessRequestId", op.accessRequestId().toString());
+            if (sealedId != null) safe.put("sealedOriginalId", sealedId.toString());
             return json.writeValueAsString(safe);
         } catch (JsonProcessingException ex) {
             throw InternalCheckFailed.auditNotWritten("Could not serialize redaction audit details.", ex);

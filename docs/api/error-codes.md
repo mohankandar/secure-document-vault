@@ -307,7 +307,7 @@ Sent by the Business Admin's activation address, `POST /api/v1/admin/entities/{s
 
 ## Legal hold (HLD)
 
-Sent by the Business Admin's legal-hold endpoints, `/api/v1/admin/legal-holds` (task 0027). A document on legal hold is never deleted by the daily retention cleanup; corrective redaction still works on it.
+Sent by the Business Admin's legal-hold endpoints, `/api/v1/admin/legal-holds` (task 0027). A document on legal hold is never deleted by the daily retention cleanup. Task 0066 (owner decision 2026-11-23): it is permanently redacted only with a Business Admin's approval; the original is then kept sealed, for Restricted Stewards only, until no hold is in place any more, and is destroyed after that.
 
 ### SDV-HLD-001: legal holds need the Business Admin
 
@@ -364,6 +364,27 @@ Sent by the Business Admin's legal-hold endpoints, `/api/v1/admin/legal-holds` (
 - **Meaning:** the hold was already released (perhaps by someone else a moment earlier). Nothing was changed. Task 0037: when two Business Admins release the same hold at the same moment, the second gets this code with "This hold was already released." (it used to be 500 SDV-SYS-016). Every HLD-008 refusal is audited as `LEGAL_HOLD_RELEASE_REFUSED` (outcome DENIED, with the code).
 - **What the user should do:** nothing; the hold is no longer in place. Reload the list of holds.
 - **What support should tell the customer:** the hold was already released; the audit shows who released it and when (`LEGAL_HOLD_RELEASED`). The document will be deleted at the next daily cleanup if its retention date has passed.
+
+### SDV-HLD-009: put on legal hold during a redaction
+
+- **HTTP status:** 409. Task 0066: `POST /api/v1/business/documents/{id}/redactions`.
+- **Meaning:** the document was put on legal hold after the redaction was started and before it was applied. Nothing was changed.
+- **What the user should do:** send the redaction again; it then asks a Business Admin for approval.
+- **What support should tell the customer:** this is working as intended: a held document is redacted only with approval.
+
+### SDV-HLD-010: no such sealed original
+
+- **HTTP status:** 404. Task 0066: the sealed-original endpoints (`…/documents/{id}/sealed-originals`).
+- **Meaning:** no sealed original of this document has this reference, or it was destroyed after the last hold was released.
+- **What the user should do:** reload the document.
+- **What support should tell the customer:** the audit shows when it was destroyed (`SEALED_ORIGINAL_DESTROYED`). It can't come back.
+
+### SDV-HLD-011: sealed originals are for Restricted Stewards
+
+- **HTTP status:** 403. Task 0066: the sealed-original endpoints.
+- **Meaning:** the person is not a Restricted Steward. Nothing was shown. The refusal is audited as `DOCUMENT_ACCESS_REFUSED`.
+- **What the user should do:** ask a Restricted Steward.
+- **What support should tell the customer:** this is working as intended, whatever the document's level. Admins never see it.
 
 ## Quarantine (QUA)
 
@@ -614,6 +635,13 @@ Sent by the access requests of task 0028: a Restricted steward's request to prin
 - **Meaning:** only Stewards make requests, so only they have a list of their own. Nothing was read. The refusal is audited as `AUTHORIZATION_DENIED` (capability `CHANGE_SENSITIVITY_LEVEL`).
 - **What the user should do:** nothing; their role makes no requests.
 - **What support should tell the customer:** this is working as intended.
+
+### SDV-APR-017: the redaction no longer applies
+
+- **HTTP status:** 409. Task 0066: approving a redaction of a document on legal hold.
+- **Meaning:** the document changed since the redaction was asked for (another redaction), or it isn't available. Nothing was changed; the refusal is audited.
+- **What the user should do:** decline the request. The Steward can ask again.
+- **What support should tell the customer:** the marked areas belonged to an earlier version of the document.
 
 ## Intake (INT)
 

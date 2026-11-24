@@ -60,7 +60,7 @@ export function useSeenRevision(): number {
 
 /** "Download on 300000000003 approved · use by tomorrow 18:54". */
 export function noticeLine(r: MyRequest): string {
-  const what = r.kind === 'PRINT' ? 'Print' : r.kind === 'DOWNLOAD' ? 'Download'
+  const what = r.kind === 'REDACT_HELD' ? 'Redaction on legal hold' : r.kind === 'PRINT' ? 'Print' : r.kind === 'DOWNLOAD' ? 'Download'
     : r.kind === 'LOWER_LEVEL' ? `Lower to ${r.requestedLevel ? LEVEL_NAMES[r.requestedLevel] : 'a lower level'}`
       : `Lower the whole contract to ${r.requestedLevel ? LEVEL_NAMES[r.requestedLevel] : 'a lower level'}`
   const where = r.primaryIdentifier ? ` on ${r.primaryIdentifier}` : ''

@@ -191,11 +191,37 @@ public class AccessRequestService {
         return create(request, details, correlationId);
     }
 
+    /**
+     * Task 0066: a redaction of a document on legal hold, to be approved by a Business Admin. The caller ({@code
+     * CorrectiveRedactionService}) has checked that the person may redact the document. The reason stays in the request.
+     */
+    public RequestView requestHeldRedaction(UUID tenantId, String actorId, String actorName, Document document,
+                                            SensitivityLevel level, String reason, String regionsJson, int regionCount,
+                                            String correlationId) {
+        requireTenant(tenantId);
+        requireActor(actorId);
+        String why = reasonOf(reason, SdvErrorCode.APR_002);
+        Instant now = clock.instant();
+        grants.expireDue(tenantId, correlationId);
+        AccessRequest request = new AccessRequest(UUID.randomUUID(), tenantId, AccessRequestKind.REDACT_HELD,
+                document.documentId(), null, null, null, why, actorId, blankToNull(actorName), now,
+                AccessRequestStatus.PENDING, null, null, null, now.plus(settings.pendingWindow(tenantId)), null);
+        Map<String, Object> details = new LinkedHashMap<>();
+        details.put("level", level.name());
+        details.put("regionCount", regionCount);
+        return create(request, details, () -> requests.insertHeldRedaction(request, regionsJson, document.contentSha256()), correlationId);
+    }
+
     private RequestView create(AccessRequest request, Map<String, Object> extra, String correlationId) {
+        return create(request, extra, () -> { }, correlationId);
+    }
+
+    private RequestView create(AccessRequest request, Map<String, Object> extra, Runnable withIt, String correlationId) {
         return transactions.execute(status -> {
             if (!requests.insertPending(request)) {
                 throw new CodedRefusal.Conflict(SdvErrorCode.APR_004, "You already have this request waiting.");
             }
+            withIt.run();
             Map<String, Object> details = new LinkedHashMap<>();
             details.put("accessRequestId", request.requestId().toString());
             details.put("kind", request.kind().name());
@@ -446,6 +472,10 @@ public class AccessRequestService {
                     throw new CodedRefusal.Conflict(SdvErrorCode.APR_009,
                             "A request for a whole record is decided on its own, not with others.");
                 }
+                if (bulk && r.kind() == AccessRequestKind.REDACT_HELD) {
+                    throw new CodedRefusal.Conflict(SdvErrorCode.APR_009,
+                            "A redaction of a document on legal hold is decided on its own, not with others.");
+                }
                 Map<String, Object> details = new LinkedHashMap<>();
                 details.put("accessRequestId", r.requestId().toString());
                 details.put("kind", r.kind().name());
@@ -470,6 +500,13 @@ public class AccessRequestService {
                         stillWaiting(requests.decide(tenantId, requestId, AccessRequestStatus.APPROVED, actorId, blankToNull(actorName),
                                 now, r.expiresAt()));
                         details.put("requestedLevel", r.requestedLevel().name());
+                    }
+                    case REDACT_HELD -> {
+                        // Task 0066: under the document's row lock; the background job applies it.
+                        requests.lockDocument(tenantId, r.documentId()).orElseThrow(AccessRequestService::redactionNoLongerApplies);
+                        if (!requests.approveHeldRedaction(tenantId, requestId, r.documentId())) throw redactionNoLongerApplies();
+                        stillWaiting(requests.decide(tenantId, requestId, AccessRequestStatus.APPROVED, actorId, blankToNull(actorName),
+                                now, r.expiresAt()));
                     }
                     case LOWER_RECORD_LEVEL -> {
                         lowerRecord(r, actorId, actorName, now, correlationId);
@@ -538,6 +575,11 @@ public class AccessRequestService {
         return new CodedRefusal.Conflict(SdvErrorCode.APR_011,
                 "This lowering no longer applies: the level has changed since it was asked for, or the document is gone. "
                         + "Decline it.");
+    }
+
+    private static CodedRefusal.Conflict redactionNoLongerApplies() {
+        return new CodedRefusal.Conflict(SdvErrorCode.APR_017,
+                "This redaction no longer applies: the document has changed since it was asked for, or isn't available. Decline it.");
     }
 
     /** A refused decision is audited on its own (the decision itself was rolled back). Never stops the refusal. */
@@ -609,7 +651,7 @@ public class AccessRequestService {
             }
         }
         throw new CodedRefusal.BadRequest(SdvErrorCode.APR_012,
-                "The request kind must be one of PRINT, DOWNLOAD, LOWER_LEVEL, LOWER_RECORD_LEVEL (exactly, in capitals).");
+                "The request kind must be one of PRINT, DOWNLOAD, LOWER_LEVEL, LOWER_RECORD_LEVEL, REDACT_HELD (exactly, in capitals).");
     }
 
     private static Set<AccessRequestKind> kinds(String text) {

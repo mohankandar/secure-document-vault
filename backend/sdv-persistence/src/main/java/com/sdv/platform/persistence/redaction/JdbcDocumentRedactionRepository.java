@@ -136,7 +136,7 @@ public class JdbcDocumentRedactionRepository implements DocumentRedactionReposit
                     new_encrypted_size_bytes, new_integrity_value,
                     new_crypto_profile, new_crypto_version, new_key_provider_id,
                     new_protected_data_key_reference, new_key_provider_version,
-                    new_content_sha256, new_content_size_bytes, created_at)
+                    new_content_sha256, new_content_size_bytes, created_at, access_request_id)
                 values (
                     :operationId, :tenantId, :documentId, :sourceId, :submissionId,
                     :actorId, :requestSha256, :reason, cast(:regionsJson as jsonb),
@@ -146,7 +146,7 @@ public class JdbcDocumentRedactionRepository implements DocumentRedactionReposit
                     :newEncryptedSize, :newIntegrity,
                     :newCryptoProfile, :newCryptoVersion, :newKeyProviderId,
                     :newProtectedReference, :newKeyProviderVersion,
-                    :newContentSha, :newContentSize, current_timestamp)
+                    :newContentSha, :newContentSize, current_timestamp, :accessRequestId)
                 """, operationParams(op));
     }
 
@@ -240,7 +240,8 @@ public class JdbcDocumentRedactionRepository implements DocumentRedactionReposit
                 .addValue("newCryptoVersion", op.newCryptoVersion()).addValue("newKeyProviderId", op.newKeyProviderId())
                 .addValue("newProtectedReference", op.newProtectedDataKeyReference())
                 .addValue("newKeyProviderVersion", op.newKeyProviderVersion())
-                .addValue("newContentSha", op.newContentSha256()).addValue("newContentSize", op.newContentSizeBytes());
+                .addValue("newContentSha", op.newContentSha256()).addValue("newContentSize", op.newContentSizeBytes())
+                .addValue("accessRequestId", op.accessRequestId());
     }
 
     private static String documentSelect() {
@@ -278,7 +279,7 @@ public class JdbcDocumentRedactionRepository implements DocumentRedactionReposit
                        new_provider_id, new_storage_volume_id, new_object_key,
                        new_encrypted_size_bytes, new_integrity_value, new_crypto_profile, new_crypto_version,
                        new_key_provider_id, new_protected_data_key_reference, new_key_provider_version,
-                       new_content_sha256, new_content_size_bytes, created_at
+                       new_content_sha256, new_content_size_bytes, created_at, access_request_id
                   from document_redaction_operations
                 """;
     }
@@ -298,6 +299,7 @@ public class JdbcDocumentRedactionRepository implements DocumentRedactionReposit
                 rs.getString("new_crypto_profile"), rs.getInt("new_crypto_version"),
                 rs.getString("new_key_provider_id"), rs.getString("new_protected_data_key_reference"),
                 rs.getString("new_key_provider_version"), rs.getString("new_content_sha256"),
-                rs.getLong("new_content_size_bytes"), rs.getTimestamp("created_at").toInstant());
+                rs.getLong("new_content_size_bytes"), rs.getTimestamp("created_at").toInstant(),
+                rs.getObject("access_request_id", UUID.class));
     }
 }

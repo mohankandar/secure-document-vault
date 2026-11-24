@@ -196,7 +196,8 @@ class DocumentLevelEnforcementTest {
                     mock(TenantRepository.class), sources, documents, mock(DocumentRedactionRepository.class),
                     mock(StorageVolumeRepository.class), mock(StoragePlacementService.class), List.of(),
                     mock(StreamingCryptoPort.class), mock(PdfSanitizingRedactor.class), audit,
-                    mock(PlatformTransactionManager.class), guard, com.sdv.platform.application.pdf.PdfWork.defaults()));
+                    mock(PlatformTransactionManager.class), guard, com.sdv.platform.application.pdf.PdfWork.defaults(),
+                    mock(com.sdv.platform.application.port.HeldRedactionRepository.class), mock(com.sdv.platform.application.approvals.AccessRequestService.class)));
             business = new BusinessExperienceController(security, authorization, new BusinessExperienceService(
                     tenants, sources, definitions, records, audit));
         }

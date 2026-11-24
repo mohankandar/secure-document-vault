@@ -9,7 +9,9 @@ public enum AccessRequestKind {
     PRINT(Scope.DOCUMENT),
     DOWNLOAD(Scope.DOCUMENT),
     LOWER_LEVEL(Scope.DOCUMENT),
-    LOWER_RECORD_LEVEL(Scope.RECORD);
+    LOWER_RECORD_LEVEL(Scope.RECORD),
+    /** Task 0066: permanently redact a document on legal hold. Decided on its own, applied by Vero once approved. */
+    REDACT_HELD(Scope.DOCUMENT);
 
     /** One document ("One document") or the whole record ("Whole contract"). */
     public enum Scope { DOCUMENT, RECORD }

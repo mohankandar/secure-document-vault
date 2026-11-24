@@ -21,6 +21,19 @@ public interface AccessRequestRepository {
      */
     boolean insertPending(AccessRequest request);
 
+    /** Task 0066: what a REDACT_HELD request asks for, written with the request. */
+    default void insertHeldRedaction(AccessRequest request, String regionsJson, String contentSha256) {
+        throw new com.sdv.platform.domain.error.InternalCheckFailed("Redactions of held documents are not available here.");
+    }
+
+    /**
+     * Task 0066: marks the request's redaction approved, for the background job. Call with the document's row locked:
+     * false when the document is no longer available in the version the redaction was asked for.
+     */
+    default boolean approveHeldRedaction(UUID tenantId, UUID requestId, UUID documentId) {
+        return false;
+    }
+
     /** The request, with its row locked until the transaction ends; empty when unknown. */
     Optional<AccessRequest> lock(UUID tenantId, UUID requestId);
 
