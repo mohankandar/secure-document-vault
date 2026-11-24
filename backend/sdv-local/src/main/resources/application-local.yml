@@ -1,4 +1,7 @@
 spring:
+  config:
+    # Task 0076: the owner's login file beside the repository; a check script names its own.
+    import: "optional:file:${SDV_VAULT_LOGIN_FILE:../secrets/vero-vault-approle.properties}"
   # Task 0041 (owner answer 10): the local profile no longer migrates at startup either. Run the schema step first
   # (.\Update-SDV-Schema.ps1 update), then setup and the demo step (.\Seed-SDV-Canvas-Demo.ps1 -Reset does all three).
   datasource:

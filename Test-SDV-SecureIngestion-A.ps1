@@ -87,8 +87,6 @@ try {
         & (Join-Path $Root 'Build-SDV-All.ps1')
         if ($LASTEXITCODE -ne 0) { throw 'Build failed.' }
         Ok 'Backend + frontend build passed'
-        Require (Test-Path (Join-Path $Root 'backend\sdv-crypto\target\surefire-reports\TEST-com.sdv.platform.crypto.enc.SdvEnc001StreamingCryptoTest.xml')) 'SDV-ENC-001 crypto tests executed'
-        Require (Test-Path (Join-Path $Root 'backend\sdv-crypto\target\surefire-reports\TEST-com.sdv.platform.crypto.key.VaultTransitKeyProtectionProviderTest.xml')) 'Vault tenant-key naming test executed'
         Require (Test-Path (Join-Path $Root 'backend\sdv-storage\target\surefire-reports\TEST-com.sdv.platform.storage.local.LocalFilesystemStorageProviderTest.xml')) 'Local filesystem storage-provider tests executed'
         Require (Test-Path (Join-Path $Root 'backend\sdv-application\target\surefire-reports\TEST-com.sdv.platform.application.storage.StoragePlacementServiceTest.xml')) 'Storage placement/capacity tests executed'
         Require (Test-Path (Join-Path $Root 'backend\sdv-application\target\surefire-reports\TEST-com.sdv.platform.application.submission.SubmissionServiceTest.xml')) 'Submission idempotency/metadata-history tests executed'

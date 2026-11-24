@@ -145,10 +145,11 @@ $packagedSettings = [ordered]@{
     SDV_AUTH_JWT_ISSUER = 'https://sign-in.invalid/realms/vero-check'
     SDV_AUTH_JWT_JWK_SET_URI = "http://127.0.0.1:$KeysPort/certs"
     SDV_AUTH_JWT_AUDIENCE = 'vero-clean-install'
-    SDV_KEY_PROVIDER = 'vault'
+    # Task 0076: an address where nothing listens, and a login that is no secret: Vero starts without calling the key service.
     SDV_CUSTOMER_ID = 'TEN-VERO-DEMO-0001'
-    SDV_VAULT_BASE_URL = 'http://127.0.0.1:8299'
-    SDV_VAULT_TOKEN_FILE = $placeholderToken
+    SDV_KEY_SERVICE_ADDRESS = 'http://127.0.0.1:8299'
+    PLATFORM_CRYPTO_VAULT_LOGIN = 'TOKEN_FILE'
+    PLATFORM_CRYPTO_VAULT_TOKENFILE = $placeholderToken
 }
 
 # Starts the Vero process with the scratch database and the packaged settings; $Override replaces some of them.
@@ -427,7 +428,7 @@ alter default privileges for role $owner in schema public grant select, insert, 
     # ------------------------------------------------------------ 2e, 2f. task 0037 (moved here by task 0075: without tables and licence the platform's own checks stop the start first): packaged start, something switched off
     $t = Assert-StartRefused 'start-0-sign-in-off' @{ SDV_AUTH_MODE = 'disabled' } 'SDV-SYS-006'
     Write-Step '2e. Packaged start with sign-in switched off: refused' $t 'SDV-SYS-006, exit code not 0, port never answered, no stack trace'
-    $t = Assert-StartRefused 'start-0-key-service-off' @{ SDV_KEY_PROVIDER = 'disabled' } 'SDV-KEY-001'
+    $t = Assert-StartRefused 'start-0-key-service-off' @{ SDV_CRYPTO_ENABLED = 'false' } 'SDV-KEY-001'
     Write-Step '2f. Packaged start with the key service switched off: refused' $t 'SDV-KEY-001, exit code not 0, port never answered, no stack trace'
 
     # ------------------------------------------------------------ 3. start after the update

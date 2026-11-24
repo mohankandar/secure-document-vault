@@ -72,7 +72,17 @@ class VeroSetupFilesTest {
     static String[] demoPlan() {
         return new String[]{"plan", "--licence", DEV.resolve("licence-vero-demo.json").toString(),
                 "--signin", DEV.resolve("signin-vero-demo.json").toString(), "--product", "SDV",
-                "--product-roles", PRODUCT_ROLES.toString(), "--no-customer-keys"};
+                "--product-roles", PRODUCT_ROLES.toString()};
+    }
+
+    /** Task 0076: the same plan without a key service, for the tests against a database only: a copy of the roles file with optional keys. */
+    static String[] withoutKeyService(String[] plan) throws Exception {
+        Path roles = Files.createTempFile("product-roles", ".json");
+        Files.writeString(roles, Files.readString(PRODUCT_ROLES).replace("\"required\"", "\"optional\""));
+        List<String> all = new java.util.ArrayList<>(List.of(plan));
+        all.set(all.indexOf(PRODUCT_ROLES.toString()), roles.toString());
+        all.add("--no-customer-keys");
+        return all.toArray(String[]::new);
     }
 
     @Test
@@ -100,12 +110,12 @@ class VeroSetupFilesTest {
     }
 
     @Test
-    void theShippedProductRolesFileIsVerosAndKeysAreOptional() throws Exception {
+    void theShippedProductRolesFileIsVerosAndKeysAreRequired() throws Exception {
         // Task 0057: platform-core 0.6.0 made its ProductRoles reader package-private. Setup itself reads the file
         // (theDemoFilesPassEveryCheckUpToTheDatabase), so only Vero's own promises are checked here.
         String roles = Files.readString(PRODUCT_ROLES).replaceAll("\\s+", "");
         assertTrue(roles.contains("\"productCode\":\"SDV\""), roles);
-        assertTrue(roles.contains("\"customerKeys\":\"optional\""), "customerKeys optional until Vero uses platform-crypto (owner answer 12)");
+        assertTrue(roles.contains("\"customerKeys\":\"required\""), "task 0076: documents need the customer's keys");
         assertTrue(roles.contains("\"platformRoles\":[\"PLATFORM_OPERATIONS_ADMIN\"]"), roles);
     }
 

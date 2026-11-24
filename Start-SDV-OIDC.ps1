@@ -8,8 +8,8 @@ param(
     [string]$ProviderId = 'customer-oidc',
     [string]$WebClientId = 'sdv-web',
     [string]$WebRedirectUri = 'http://localhost:5183/',
-    # Task 0041 (Part B 6): the persistent sdv-vault, as Start-SDV-Local.ps1 uses it. Only the path of the restricted
-    # application token file is passed on, never the token. Default: SDV_VAULT_TOKEN_FILE, then ..\secrets\sdv-app.token
+    # Task 0041 (Part B 6): the persistent sdv-vault, as Start-SDV-Local.ps1 uses it. Only the path of Vero's
+    # login file (task 0076) is passed on, never what is in it. Default: SDV_VAULT_LOGIN_FILE, then ..\secrets\vero-vault-approle.properties
     # beside (never inside) the repository.
     [string]$VaultTokenFile = ''
 )
@@ -25,7 +25,7 @@ Set-StrictMode -Version Latest
 $Root = $PSScriptRoot
 $VaultUrl = 'http://127.0.0.1:8200'
 if (-not $VaultTokenFile) {
-    $VaultTokenFile = if ($env:SDV_VAULT_TOKEN_FILE) { $env:SDV_VAULT_TOKEN_FILE } else { Join-Path (Split-Path -Parent $Root) 'secrets\sdv-app.token' }
+    $VaultTokenFile = if ($env:SDV_VAULT_LOGIN_FILE) { $env:SDV_VAULT_LOGIN_FILE } else { Join-Path (Split-Path -Parent $Root) 'secrets\vero-vault-approle.properties' }
 }
 $Runtime = Join-Path $Root '.runtime'
 $BackendPid = Join-Path $Runtime 'backend.pid'
@@ -114,7 +114,7 @@ if (-not (Test-Path (Join-Path $Frontend 'node_modules'))) { throw 'Frontend dep
 New-Item -ItemType Directory -Force -Path $Runtime | Out-Null
 
 if (-not (Test-Path -LiteralPath $VaultTokenFile -PathType Leaf) -or (Get-Item -LiteralPath $VaultTokenFile).Length -eq 0) {
-    throw "Application Vault token file is missing or empty: $VaultTokenFile"
+    throw "Vero's Vault login file is missing or empty: $VaultTokenFile"
 }
 $VaultTokenFile = (Resolve-Path -LiteralPath $VaultTokenFile).Path
 $rootPrefix = $Root.TrimEnd('\', '/') + [IO.Path]::DirectorySeparatorChar
@@ -195,15 +195,13 @@ $issuerEscaped = $IssuerUri.Replace("'", "''")
 $jwkEscaped = $JwkSetUri.Replace("'", "''")
 $audienceEscaped = $Audience.Replace("'", "''")
 $providerEscaped = $ProviderId.Replace("'", "''")
-$tokenFileEscaped = $VaultTokenFile.Replace("'", "''")
+$tokenFileEscaped = $VaultTokenFile.Replace('\', '/').Replace("'", "''")
 # The backend reads the restricted token from the file itself; the token is never on a command line or in a variable.
 $backendCommand = @"
 `$Host.UI.RawUI.WindowTitle = 'SDV Backend - OIDC'
 Set-Location -LiteralPath '$rootEscaped'
-`$env:SDV_KEY_PROVIDER = 'vault'
-`$env:SDV_VAULT_BASE_URL = '$VaultUrl'
-Remove-Item Env:SDV_VAULT_TOKEN -ErrorAction SilentlyContinue
-`$env:SDV_VAULT_TOKEN_FILE = '$tokenFileEscaped'
+`$env:SDV_KEY_SERVICE_ADDRESS = '$VaultUrl'
+`$env:SDV_VAULT_LOGIN_FILE = '$tokenFileEscaped'
 `$env:SDV_AUTH_MODE = 'enterprise-jwt'
 `$env:SDV_AUTH_JWT_ISSUER = '$issuerEscaped'
 `$env:SDV_AUTH_JWT_JWK_SET_URI = '$jwkEscaped'

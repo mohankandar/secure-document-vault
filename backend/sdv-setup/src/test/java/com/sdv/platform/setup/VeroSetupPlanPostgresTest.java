@@ -26,7 +26,7 @@ class VeroSetupPlanPostgresTest {
 
     @Test
     void theDemoPlanGrantsThePlatformOperationsAdminInEveryEntity() throws Exception {
-        VeroSetupFilesTest.Run run = VeroSetupFilesTest.setup(database(), VeroSetupFilesTest.demoPlanWithMapping(null));
+        VeroSetupFilesTest.Run run = VeroSetupFilesTest.setup(database(), VeroSetupFilesTest.withoutKeyService(VeroSetupFilesTest.demoPlanWithMapping(null)));
         assertEquals(0, run.exit(), run.out() + run.err());
         assertTrue(run.out().contains("platform grant SDV (every entity): group \"PlatformOperations\" -> PLATFORM_OPERATIONS_ADMIN"),
                 run.out());
@@ -36,7 +36,7 @@ class VeroSetupPlanPostgresTest {
     @Test
     void anEntityRoleOnAPlatformLevelRowRefusesTheFile() throws Exception {
         VeroSetupFilesTest.Run run = VeroSetupFilesTest.setup(database(),
-                VeroSetupFilesTest.demoPlanWithMapping("*,,BusinessAdmins,BUSINESS_ADMIN"));
+                VeroSetupFilesTest.withoutKeyService(VeroSetupFilesTest.demoPlanWithMapping("*,,BusinessAdmins,BUSINESS_ADMIN")));
         assertEquals(2, run.exit(), run.out() + run.err());
         assertTrue(run.err().contains("SETUP_ENTITY_ROLE_PLATFORM_WIDE"), run.err());
     }
@@ -44,7 +44,7 @@ class VeroSetupPlanPostgresTest {
     @Test
     void aPlatformRoleOnAnEntityRowRefusesTheFile() throws Exception {
         VeroSetupFilesTest.Run run = VeroSetupFilesTest.setup(database(),
-                VeroSetupFilesTest.demoPlanWithMapping("ENT-VERO-DEMO-0001,,PlatformOperations,PLATFORM_OPERATIONS_ADMIN"));
+                VeroSetupFilesTest.withoutKeyService(VeroSetupFilesTest.demoPlanWithMapping("ENT-VERO-DEMO-0001,,PlatformOperations,PLATFORM_OPERATIONS_ADMIN")));
         assertEquals(2, run.exit(), run.out() + run.err());
         assertTrue(run.err().contains("SETUP_PLATFORM_ROLE_ON_ENTITY"), run.err());
     }
