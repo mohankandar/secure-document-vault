@@ -48,7 +48,7 @@ export function whenWords(iso: string, withTime = true, now: Date = new Date()):
 }
 
 const KIND_WORDS = (r: MyRequest, word: string) =>
-  r.kind === 'REDACT_HELD' ? 'Redact on legal hold' : r.kind === 'PRINT' ? 'Print' : r.kind === 'DOWNLOAD' ? 'Download'
+  r.kind === 'REDACT_HELD' ? 'Redact on legal hold' : r.kind === 'RELEASE_HOLD' ? 'Release a legal hold' : r.kind === 'PRINT' ? 'Print' : r.kind === 'DOWNLOAD' ? 'Download'
     : r.kind === 'LOWER_LEVEL' ? `Lower to ${r.requestedLevel ? LEVEL_NAMES[r.requestedLevel] : 'a lower level'}`
       : `Lower ${word} to ${r.requestedLevel ? LEVEL_NAMES[r.requestedLevel] : 'a lower level'}`
 

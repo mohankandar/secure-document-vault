@@ -145,6 +145,7 @@ later release.
 | `SDV_AUTH_JWT_GROUPS_CLAIM` | The claim with the person's groups (default `groups`) |
 | `SDV_AUTH_JWT_CLIENT_ID_CLAIMS` | Where a sending system's client ID is (default `azp,client_id,cid`) |
 | `SDV_AUTH_JWT_MACHINE_CLAIM`, `SDV_AUTH_JWT_MACHINE_CLAIM_VALUE` | Task 0062, recommended: the mark your login system puts on a client's own (client-credentials) token, so that only those count as a sending system's. `{client}` in the value is the client ID. Keycloak: `preferred_username` and `service-account-{client}`. Entra ID: `idtyp` and `app`. Without it, Vero still refuses a bound client's token that has claims of a person's sign-in or that name a person (`SDV_AUTH_JWT_PERSON_CLAIMS`, default `email,upn,given_name,family_name,name,uid`). Also: give a sending system's client no browser, device or password sign-in |
+| `SDV_AUTH_JWT_MAX_TOKEN_LIFETIME_SECONDS`, `SDV_AUTH_BROWSER_SCOPE` | Task 0065: see the runbook, "Sign-in in the browser" and "All settings" |
 | `SDV_OUTBOUND_INSTALLATION` | Task 0057: `on-premises` (default) or `hosted`, for platform-core's outbound rules that the test sign-in uses |
 | `SDV_OUTBOUND_ALLOW_INTERNAL_ADDRESSES` | `true` only if your login system is at an internal address (default `false`: the test sign-in refuses internal and cloud-metadata addresses, `OUT_ADDRESS_BLOCKED`) |
 | `PLATFORM_OUTBOUND_PROXY_*`, `PLATFORM_OUTBOUND_PRIVATE_CA_FILE` | Your proxy and private certificate authority, if Vero reaches the login system through them (platform-core's outbound settings) |

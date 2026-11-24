@@ -97,7 +97,7 @@ public class JdbcSensitivityReportRepository implements SensitivityReportReposit
                        count(*) as n
                   from access_requests r
                   left join documents d on d.tenant_id=r.tenant_id and d.document_id=r.document_id
-                 where r.tenant_id=:tenantId and r.kind<>'REDACT_HELD' and r.requested_at>=:from and r.requested_at<:to""" + source + """
+                 where r.tenant_id=:tenantId and r.kind not in ('REDACT_HELD', 'RELEASE_HOLD') and r.requested_at>=:from and r.requested_at<:to""" + source + """
 
                  group by 1, 2
                 """, p, (rs, row) -> new RequestCount(rs.getString("kind"), rs.getString("outcome"), rs.getLong("n")));

@@ -287,6 +287,34 @@ Task 0038. A sign-in Vero refuses gets the one error body. The message is a fixe
 - **What the user should do:** tell your IT team.
 - **What support should tell the customer:** the IT Admin adds the sending system with that key in Integrations, or the binding file is corrected.
 
+### SDV-AUT-014: browser sign-in is not set up
+
+- **HTTP status:** 503. Task 0065: `GET /api/v1/session/sign-in`.
+- **Meaning:** sign-in is switched off, or no active login connection with a browser client fits Vero's settings (provider, issuer, audience). Also when the API audience is the browser client's own ID, or two customers' connections differ. WARN line.
+- **What the user should do:** tell the IT team.
+- **What support should tell the customer:** check `SDV_AUTH_MODE`, the `SDV_AUTH_JWT_*` settings and the sign-in file (`browserClientId`), and run setup again. The log says which.
+
+### SDV-AUT-015: the login system can't be reached
+
+- **HTTP status:** 503 from `GET /api/v1/session/sign-in`; on the screen also when the browser can't reach the login system's token address. Task 0065.
+- **Meaning:** Vero couldn't read the login system's discovery document, or the browser got no answer (network, or the login system doesn't allow Vero's web origin).
+- **What the user should do:** try again later.
+- **What support should tell the customer:** use Test sign-in. If that passes, the login system must allow Vero's address as a web origin (CORS) for the browser client. An internal login system needs `SDV_OUTBOUND_ALLOW_INTERNAL_ADDRESSES=true`.
+
+### SDV-AUT-016: the sign-in answer doesn't belong to this browser
+
+- **HTTP status:** screen only. Task 0065.
+- **Meaning:** the answer's state is missing, used, older than 10 minutes or another browser's, or it comes from another issuer. Nothing was sent to the login system.
+- **What the user should do:** start again.
+- **What support should tell the customer:** usual after waiting long on the login page, the Back button, or a bookmark of it.
+
+### SDV-AUT-017: the login system refused the sign-in
+
+- **HTTP status:** screen only. Task 0065.
+- **Meaning:** the login system answered with an error, or didn't accept the code. Its own text is not shown.
+- **What the user should do:** start again; if it stays, tell the IT team.
+- **What support should tell the customer:** look in the login system's own log: the person may not be assigned to the client, or the client is not a public one with PKCE and the right redirect address.
+
 ## Entities (ENT)
 
 Sent by the Business Admin's activation address, `POST /api/v1/admin/entities/{slotId}/activate` (task 0041). The setup command loads the licence's entity slots as not activated; the Business Admin activates and names each.
@@ -353,14 +381,14 @@ Sent by the Business Admin's legal-hold endpoints, `/api/v1/admin/legal-holds` (
 
 ### SDV-HLD-007: no such legal hold
 
-- **HTTP status:** 404. Sent by release hold (`POST /api/v1/admin/legal-holds/{holdId}/release`).
+- **HTTP status:** 404. Sent by ask to release a hold (`POST /api/v1/admin/legal-holds/{holdId}/release`).
 - **Meaning:** `holdId` is not a hold reference, or names no hold of the person's own organization. Nothing was changed.
 - **What the user should do:** open the list of holds in place again and release the hold from there.
 - **What support should tell the customer:** the reference sent doesn't match a hold of theirs. The list of holds in place gives the right one.
 
 ### SDV-HLD-008: legal hold already released
 
-- **HTTP status:** 409. Sent by release hold (`POST /api/v1/admin/legal-holds/{holdId}/release`).
+- **HTTP status:** 409. Sent by ask to release a hold (`POST /api/v1/admin/legal-holds/{holdId}/release`) and, task 0071, by the approval of that request.
 - **Meaning:** the hold was already released (perhaps by someone else a moment earlier). Nothing was changed. Task 0037: when two Business Admins release the same hold at the same moment, the second gets this code with "This hold was already released." (it used to be 500 SDV-SYS-016). Every HLD-008 refusal is audited as `LEGAL_HOLD_RELEASE_REFUSED` (outcome DENIED, with the code).
 - **What the user should do:** nothing; the hold is no longer in place. Reload the list of holds.
 - **What support should tell the customer:** the hold was already released; the audit shows who released it and when (`LEGAL_HOLD_RELEASED`). The document will be deleted at the next daily cleanup if its retention date has passed.
@@ -385,6 +413,13 @@ Sent by the Business Admin's legal-hold endpoints, `/api/v1/admin/legal-holds` (
 - **Meaning:** the person is not a Restricted Steward. Nothing was shown. The refusal is audited as `DOCUMENT_ACCESS_REFUSED`.
 - **What the user should do:** ask a Restricted Steward.
 - **What support should tell the customer:** this is working as intended, whatever the document's level. Admins never see it.
+
+### SDV-HLD-012: who placed the hold doesn't approve its release
+
+- **HTTP status:** 403. Task 0071: approve (`POST /api/v1/admin/access-requests/{id}/approve`) of a request to release a legal hold.
+- **Meaning:** the person placed the hold. They may ask for its release or decline a request, but another Business Admin approves it. The hold stays.
+- **What the user should do:** ask another Business Admin to decide it in Approvals.
+- **What support should tell the customer:** this is working as intended: nobody places and lifts a hold alone. The entity needs at least two Business Admins.
 
 ## Quarantine (QUA)
 
@@ -466,6 +501,13 @@ Task 0048. A Steward quarantines a document while a suspected leak or wrong deli
 - **Meaning:** the document isn't quarantined now (it was released, perhaps by someone else at the same moment). Nothing was changed.
 - **What the user should do:** refresh the incident; the document is already available.
 - **What support should tell the customer:** this is working as intended.
+
+### SDV-QUA-012: too many single releases in a day
+
+- **HTTP status:** 409. Task 0071: release one document.
+- **Meaning:** the person released 25 documents of this incident one by one in the last 24 hours. Nothing was released.
+- **What the user should do:** ask for the release of the whole incident, or go on tomorrow.
+- **What support should tell the customer:** this is working as intended: many documents are released through the whole-incident release, which a Business Admin approves.
 
 ## Audit report (AUD)
 
@@ -986,6 +1028,7 @@ Task 0037: SYS-003 to SYS-012 are start-up codes. A start that stops prints one 
 - **HTTP status:** 503, with a `Retry-After` header in seconds (the setting `SDV_BUSY_RETRY_AFTER_SECONDS`, 1 to 300, default 5; another value stops the start with SDV-SYS-005). Task 0040 part 2: any request. It is the only answer from Vero that carries `Retry-After`, and Vero never answers 429. Before, these requests got 503 SDV-SYS-014, which said the database couldn't be reached.
 - **Meaning:** Vero is too busy to take the request: the database is there, but no connection was free for this request. Task 0063: also when no place is free for reading a PDF (`SDV_PDF_*` settings). Vero tells the two apart from the cause. Busy is: the connection pool waited its full time (HikariCP's `connectionTimeout`, 30 s by default) and no new connection had failed; or PostgreSQL refused a new connection because it has none left (SQL state 53300, too_many_connections). When connections to the database fail, it is SDV-SYS-014 as before. Message: "Vero is too busy to take this request just now. Try again in a few seconds."
 - **What the user should do:** wait the seconds in `Retry-After`, then send the same request again. A sending system does this without alerting; a retry of a create or an upload is never stored twice. A person tries again in a few seconds.
+- **Task 0071:** also for intake requests above the limit of a sending system (`SDV_INTAKE_REQUESTS_PER_MINUTE`, 6,000 a minute unless set).
 - **What support should tell the customer:** Vero had more work at once than its database connections allow. If it happens often, raise `SDV_DB_POOL_MAX` (10 by default) within the database's own connection limit, or spread the senders' load. While the pool stays full for more than 2 s, readiness (`/actuator/health/readiness`) answers `503 {"status":"BUSY","code":"SDV-SYS-018",…}` with `Retry-After` too (only when busy is the one reason; every other readiness 503 has no code and no `Retry-After`). A readiness probe is not counted as a busy answer. Each such answer writes one WARN line (not ERROR: busy is expected under load) with the code, the reference, the exception classes and the SQL state (never the SQL). Problems shows how many busy answers Vero gave in the last hour and since it started.
 
 ### SDV-SYS-019: the request is too large
@@ -1132,6 +1175,13 @@ Every one writes one log line with the reference and the exact cause: ERROR for 
 - **Meaning:** more pages than the limit of its sending system, or a picture larger than Vero draws (60 million pixels). Message: "This document is too large to view here."
 - **What the user should do:** download it if the role allows.
 - **What support should tell the customer:** the log says which limit. IT can raise the page limit in Integrations.
+
+### SDV-DOC-014: print again
+
+- **HTTP status:** 409. Task 0071: page images (`…/viewer/pages/{n}?printId=…`) of a Highly Confidential document.
+- **Meaning:** the pages were asked for in print quality without a print of one's own, made with an approval in the last 15 minutes.
+- **What the user should do:** print the document again. Another approval is needed if the one for the earlier print was used.
+- **What support should tell the customer:** the audit shows the print (`DOCUMENT_PRINTED`) and its approval.
 
 ## Search (SCH)
 

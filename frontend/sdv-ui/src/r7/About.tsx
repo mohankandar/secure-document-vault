@@ -47,7 +47,7 @@ export function About({ role }: { role: 'platform' | 'tenantIt' }) {
     ['Checked', fmtWhen(info.timestamp)],
   ]
   const technical: [string, string][] = [
-    ['Active profiles', info.activeProfiles.join(', ') || 'None'],
+    ['Active profiles', info.activeProfiles ? info.activeProfiles.join(', ') || 'None' : 'Not shown to your role'],
     ['Build', `${info.productCode ?? 'SDV'} ${info.version} (${info.productName})`],
     ['Correlation ID of this check', info.correlationId ?? '—'],
   ]

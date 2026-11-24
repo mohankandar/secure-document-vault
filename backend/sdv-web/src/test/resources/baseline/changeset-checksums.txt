@@ -41,3 +41,4 @@
 041-report-activity sdv 9:24877cff52ed020b09a12e60245dc18b
 042-restrictions-indexes sdv 9:c75a5c469e8f7d63adb1afbba74325f8
 043-held-redaction sdv 9:c6ea0cd61c08ef04d64d2ce7e4a141f7
+044-hold-release sdv 9:991477d2d2e79ad19aa61f01ce5e0a5a

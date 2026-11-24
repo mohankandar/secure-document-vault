@@ -342,10 +342,9 @@ alter default privileges for role $owner in schema public grant select, insert, 
     # ------------------------------------------------------------ 1. start against the empty database
     $s = Start-Vero 'start-1-empty'
     Assert-That ($s.Health.Status -eq 503) "health should be 503 DOWN on an empty database, was $($s.Health.Status)"
-    $info = (Get-Http '/api/v1/system/info').Body | ConvertFrom-Json
-    Assert-That ($info.databaseSchema.state -eq 'OLDER') "system info should say OLDER, said $($info.databaseSchema.state)"
+    # Task 0071: system information needs sign-in; the sentence is in the refusals and the log (below).
+    Assert-That ((Get-Http '/api/v1/system/info').Status -eq 401) 'system info without sign-in should get 401'
     $older = 'The database is older than this Vero version. Ask your database team to run the schema step (install guide, "Update the database").'
-    Assert-That ($info.databaseSchema.message -eq $older) 'system info message differs from the agreed sentence'
     $gated = Get-Http '/api/v1/operations/summary'
     Assert-That ($gated.Status -eq 503 -and $gated.Body -like '*SDV-SYS-001*') "a protected request should get 503 SDV-SYS-001 (was DATABASE_OLDER before task 0036), got $($gated.Status)"
     Wait-Watching 3   # let the background jobs' 1 s initial delay pass: they must stay off
@@ -427,8 +426,7 @@ alter default privileges for role $owner in schema public grant select, insert, 
     $readsBefore = [long]((Invoke-Sql -Database $db -Sql $readsSql).Out -split "`n" | Where-Object { $_.Trim() } | Select-Object -Last 1)
     $s = Start-Vero 'start-2-updated'
     Assert-That ($s.Health.Status -eq 200) "health should be 200 after the update, was $($s.Health.Status): $($s.Health.Body)"
-    $info = (Get-Http '/api/v1/system/info').Body | ConvertFrom-Json
-    Assert-That ($info.databaseSchema.state -eq 'CURRENT' -and $info.status -eq 'UP') "system info should say CURRENT, said $($info.databaseSchema.state)"
+    Assert-That ((Get-Http '/api/v1/system/info').Status -eq 401) 'system info without sign-in should get 401'
     $protected = Get-Http '/api/v1/operations/summary'
     Assert-That ($protected.Status -eq 401) "with the gate open a request without sign-in should get 401, got $($protected.Status)"
     Wait-Watching 4   # let the cleanup and redaction-recovery jobs run once as the read/write user
@@ -469,7 +467,7 @@ alter default privileges for role $owner in schema public grant select, insert, 
     $gated = Get-Http '/api/v1/operations/summary'
     $gatedBody = $gated.Body | ConvertFrom-Json
     Assert-That ($gated.Status -eq 503 -and $gatedBody.code -eq 'SDV-SYS-014' -and $gatedBody.reference) "a request should get 503 SDV-SYS-014 with a reference while the database is away, got $($gated.Status) $($gated.Body)"
-    Assert-That ((Get-Http '/api/v1/system/info').Body -like '*UNREACHABLE*') 'system info should say UNREACHABLE'
+    Assert-That ((Get-Http '/api/v1/system/info').Status -eq 401) 'system info without sign-in should get 401'
     $log = Get-Content -Raw $s.Log
     Assert-That ($log -match "ERROR .* SDV-SYS-003 Vero couldn't reach its database at start\..*127\.0\.0\.1:$RelayPort") 'no SDV-SYS-003 ERROR line with the host and port'
     Assert-That (-not $log.Contains($appPassword)) 'the database password is in the log'

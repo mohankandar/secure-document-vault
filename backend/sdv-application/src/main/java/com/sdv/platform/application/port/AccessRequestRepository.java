@@ -21,6 +21,28 @@ public interface AccessRequestRepository {
      */
     boolean insertPending(AccessRequest request);
 
+    /** Task 0071: the hold a RELEASE_HOLD request is about; written with it. */
+    default boolean insertHoldRelease(AccessRequest request, UUID holdId) {
+        throw new com.sdv.platform.domain.error.InternalCheckFailed("Hold releases are not available here.");
+    }
+
+    /** The hold of a RELEASE_HOLD request. */
+    default Optional<UUID> holdOf(UUID tenantId, UUID requestId) {
+        return Optional.empty();
+    }
+
+    /** Whether someone's request to release this hold waits (the hold's row is locked by the caller). */
+    default boolean holdReleaseWaiting(UUID tenantId, UUID holdId, Instant now) {
+        return false;
+    }
+
+    /** Waiting RELEASE_HOLD requests: the hold, who asked and when. */
+    default List<HoldReleaseWaiting> holdReleasesWaiting(UUID tenantId, Instant now) {
+        return List.of();
+    }
+
+    record HoldReleaseWaiting(UUID holdId, UUID requestId, String requestedBy, Instant requestedAt) { }
+
     /** Task 0066: what a REDACT_HELD request asks for, written with the request. */
     default void insertHeldRedaction(AccessRequest request, String regionsJson, String contentSha256) {
         throw new com.sdv.platform.domain.error.InternalCheckFailed("Redactions of held documents are not available here.");

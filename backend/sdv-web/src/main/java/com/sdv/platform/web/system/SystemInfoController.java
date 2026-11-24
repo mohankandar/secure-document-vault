@@ -1,5 +1,7 @@
 package com.sdv.platform.web.system;
 
+import com.sdv.platform.security.auth.SecurityContextFacade;
+import com.sdv.platform.security.SdvRole;
 import com.sdv.platform.web.schema.DatabaseSchemaCheck;
 import com.sdv.platform.web.schema.SchemaVersion;
 import org.slf4j.MDC;
@@ -18,8 +20,10 @@ import java.util.Optional;
 public final class SystemInfoController {
     private final Environment environment;
     private final DatabaseSchemaCheck schemaCheck;
+    private final SecurityContextFacade security;
 
-    public SystemInfoController(Environment environment, DatabaseSchemaCheck schemaCheck) {
+    public SystemInfoController(Environment environment, DatabaseSchemaCheck schemaCheck, SecurityContextFacade security) {
+        this.security = security;
         this.environment = environment;
         this.schemaCheck = schemaCheck;
     }
@@ -30,14 +34,17 @@ public final class SystemInfoController {
                 .orElse("development");
         List<String> profiles = Arrays.asList(environment.getActiveProfiles());
         SchemaVersion.Status schema = schemaCheck.status();
+        // Task 0071: signed in only; how it runs and the database's state only for who looks after it.
+        boolean technical = security.requirePrincipal().roles().stream()
+                .anyMatch(r -> r == SdvRole.IT_ADMIN || r == SdvRole.PLATFORM_OPERATIONS_ADMIN);
 
         return new SystemInfo(
                 "SDV",
                 "Secure Document Vault",
                 version,
                 schema.current() ? "UP" : "DOWN",
-                profiles,
-                new DatabaseSchema(schema.state().name(), schema.message()),
+                technical ? profiles : null,
+                technical ? new DatabaseSchema(schema.state().name(), schema.message()) : null,
                 MDC.get("correlationId"),
                 Instant.now());
     }

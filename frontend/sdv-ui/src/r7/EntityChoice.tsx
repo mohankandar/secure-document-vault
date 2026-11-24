@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { ApiRequestError, getChosenEntity, setChosenEntity } from '../api'
+import { RESTART_EVENT, isLocalSecurityMode } from '../auth'
 import { entitySwitched, sessionEntities, type SessionEntities } from './liveApi'
 
 // Task 0041 (owner answer 5): the minimum entity choice. The person lands on the entity used last (kept in this
@@ -27,7 +28,12 @@ export function useSessionEntities(): SessionEntities | null {
 export function switchEntity(to: string, from: string | null) {
   if (to === from) return
   setChosenEntity(to)
-  entitySwitched(from).catch(() => undefined).finally(() => window.location.reload())
+  entitySwitched(from).catch(() => undefined).finally(() => {
+    // Task 0065: the sign-in is in memory, so the app starts again without a reload (SignInGate gives it a new key, and
+    // nothing of the old entity stays mounted). On the route's area; an open record or document belongs to the old entity.
+    if (isLocalSecurityMode()) window.location.reload()
+    else window.dispatchEvent(new Event(RESTART_EVENT))
+  })
 }
 
 /** Shown instead of the app while no entity is chosen and more than one is open, or none is activated yet. */

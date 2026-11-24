@@ -50,7 +50,8 @@ public class SecurePdfViewerController {
             @PathVariable UUID documentId,
             @PathVariable int pageNumber,
             @RequestParam(defaultValue = "1.0") double scale,
-            @RequestParam(required = false) String viewingId) {
+            @RequestParam(required = false) String viewingId,
+            @RequestParam(required = false) String printId) {
         SdvPrincipal principal = requireView();
         DocumentViewerService.PageImage page = viewer.renderPage(
                 principal.tenantId(),
@@ -59,6 +60,9 @@ public class SecurePdfViewerController {
                 pageNumber,
                 scale,
                 parseViewingId(viewingId),
+                // Task 0071: a malformed print ID is none of the person's prints, not "no print".
+                printId == null || printId.isBlank() ? null : java.util.Objects.requireNonNullElse(parseViewingId(printId), new UUID(0, 0)),
+                principal.displayName(),
                 principal.subject(),
                 correlationId());
 

@@ -55,8 +55,9 @@ class LegalHoldControllerTest {
 
     private final AuditEventPort audit = mock(AuditEventPort.class);
     private final LegalHoldService service = mock(LegalHoldService.class);
+    private final com.sdv.platform.application.approvals.AccessRequestService requests = mock(com.sdv.platform.application.approvals.AccessRequestService.class);
     private final MockMvc mvc = MockMvcBuilders.standaloneSetup(new LegalHoldController(new SecurityContextFacade(),
-                    new AuthorizationService(audit, new CapabilityPolicyService(mock(RoleCapabilityPolicyPort.class))), service))
+                    new AuthorizationService(audit, new CapabilityPolicyService(mock(RoleCapabilityPolicyPort.class))), service, requests))
             .setControllerAdvice(new FoundationExceptionHandler())
             .setMessageConverters(new MappingJackson2HttpMessageConverter(JSON))
             .build();
@@ -91,15 +92,16 @@ class LegalHoldControllerTest {
                     get("/api/v1/admin/legal-holds/documents").param("identifier", "300000000001"),
                     post("/api/v1/admin/legal-holds").contentType(MediaType.APPLICATION_JSON)
                             .content("{\"documentId\":\"" + DOCUMENT + "\",\"reason\":\"Litigation\"}"),
+                    get("/api/v1/admin/legal-holds/release-requests"),
                     post("/api/v1/admin/legal-holds/" + HOLD + "/release"))) {
                 mvc.perform(request).andExpect(status().isForbidden())
                         .andExpect(jsonPath("$.code").value("SDV-HLD-001"))
                         .andExpect(jsonPath("$.message").value("Only a Business Admin can manage legal holds."));
             }
         }
-        verifyNoInteractions(service);
+        verifyNoInteractions(service, requests);
         ArgumentCaptor<AuditEvent> denied = ArgumentCaptor.forClass(AuditEvent.class);
-        verify(audit, times(4 * (SdvRole.values().length - 1))).append(denied.capture());
+        verify(audit, times(5 * (SdvRole.values().length - 1))).append(denied.capture());
         assertTrue(denied.getAllValues().stream().allMatch(e -> e.action().equals("AUTHORIZATION_DENIED")
                 && e.outcome() == AuditOutcome.DENIED && e.targetId().equals("MANAGE_LEGAL_HOLD")));
     }
@@ -109,7 +111,6 @@ class LegalHoldControllerTest {
         signIn(SdvRole.BUSINESS_ADMIN);
         when(service.place(eq(TENANT), eq("person-business_admin"), eq("Pat Person"), eq(DOCUMENT.toString()), eq("Litigation"), any()))
                 .thenReturn(view());
-        when(service.release(eq(TENANT), eq("person-business_admin"), eq("Pat Person"), eq(HOLD.toString()), any())).thenReturn(view());
         when(service.active(TENANT)).thenReturn(List.of(view()));
         when(service.find(TENANT, "300000000001")).thenReturn(List.of(new LegalHoldService.HoldDocumentView(DOCUMENT,
                 "300000000001", "Contract number", SensitivityLevel.STANDARD, NOW, 3, false, null)));
@@ -130,8 +131,11 @@ class LegalHoldControllerTest {
                 keys(JSON.readTree(found.getResponse().getContentAsString()).get(0)));
 
         mvc.perform(get("/api/v1/admin/legal-holds")).andExpect(status().isOk()).andExpect(jsonPath("$[0].holdId").value(HOLD.toString()));
-        mvc.perform(post("/api/v1/admin/legal-holds/" + HOLD + "/release")).andExpect(status().isOk());
-        verify(service).release(eq(TENANT), eq("person-business_admin"), eq("Pat Person"), eq(HOLD.toString()), any());
+        // Task 0071: a release is a request; nothing is released here.
+        mvc.perform(post("/api/v1/admin/legal-holds/" + HOLD + "/release").contentType(MediaType.APPLICATION_JSON).content("{\"reason\":\"Case closed\"}"))
+                .andExpect(status().isAccepted());
+        verify(requests).requestHoldRelease(eq(TENANT), eq("person-business_admin"), eq("Pat Person"), eq(HOLD.toString()), eq("Case closed"), any());
+        verify(service, never()).release(any(), any(), any(), any(), any());
         verify(audit, never()).append(any());
     }
 
@@ -143,7 +147,7 @@ class LegalHoldControllerTest {
                         com.sdv.platform.domain.error.SdvErrorCode.HLD_004, "No document has this reference."));
         mvc.perform(post("/api/v1/admin/legal-holds").contentType(MediaType.APPLICATION_JSON).content("{}"))
                 .andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("SDV-HLD-004"));
-        when(service.release(any(), any(), any(), any(), any()))
+        when(requests.requestHoldRelease(any(), any(), any(), any(), any(), any()))
                 .thenThrow(new com.sdv.platform.domain.error.CodedRefusal.Conflict(
                         com.sdv.platform.domain.error.SdvErrorCode.HLD_008, "This legal hold was already released."));
         mvc.perform(post("/api/v1/admin/legal-holds/x/release"))

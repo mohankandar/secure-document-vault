@@ -245,16 +245,10 @@ if ($frontendListener) {
 }
 
 $frontendEscaped = $Frontend.Replace("'", "''")
-$webClientEscaped = $WebClientId.Replace("'", "''")
-$webRedirectEscaped = $WebRedirectUri.Replace("'", "''")
 $frontendCommand = @"
 `$Host.UI.RawUI.WindowTitle = 'SDV Frontend - OIDC'
 Set-Location -LiteralPath '$frontendEscaped'
 `$env:VITE_SECURITY_MODE = 'OIDC'
-`$env:VITE_OIDC_ISSUER = '$issuerEscaped'
-`$env:VITE_OIDC_CLIENT_ID = '$webClientEscaped'
-`$env:VITE_OIDC_REDIRECT_URI = '$webRedirectEscaped'
-`$env:VITE_OIDC_SCOPE = 'openid profile email'
 Write-Host 'SDV frontend LOCAL/OIDC console. Close this window to stop the frontend.' -ForegroundColor Cyan
 npm run dev -- --host 127.0.0.1
 "@

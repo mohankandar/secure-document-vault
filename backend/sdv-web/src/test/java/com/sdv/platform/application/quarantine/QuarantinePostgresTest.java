@@ -219,7 +219,14 @@ class QuarantinePostgresTest {
                 + "' and status='APPROVED' and decided_by='ada'"));
 
         // Leave nothing due or quarantined, so LegalHoldPostgresTest's own counts of the cleanup (same database) hold.
+        UUID last = repository.findActive(T1, A).orElseThrow().incidentId();
+        Instant dayAgo = Instant.now().minus(java.time.Duration.ofDays(1));
+        long before = repository.countSingleReleases(T1, last, "stan", dayAgo);
         quarantine.releaseDocument(as(T1, "stan", STEWARD), A.toString(), "Checked, fine");
+        // Task 0071: single releases are counted and listed.
+        assertEquals(before + 1, repository.countSingleReleases(T1, last, "stan", dayAgo));
+        assertEquals(0, repository.countSingleReleases(T1, last, "nobody", dayAgo));
+        assertEquals(A, repository.findSingleReleases(T1, last, 5).getFirst().document().documentId());
         sql("update documents set expires_at = now() + interval '30 days' where tenant_id in ('" + T1 + "','" + T2 + "')"
                 + " and status <> 'EXPIRED_DELETED'");
     }

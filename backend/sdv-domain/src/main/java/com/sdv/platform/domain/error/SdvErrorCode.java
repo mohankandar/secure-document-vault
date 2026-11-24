@@ -97,6 +97,14 @@ public enum SdvErrorCode {
     AUT_012("SDV-AUT-012", true),
     /** Task 0041: the client binding names a source key the entity has no sending system for in Vero (401). WARN. */
     AUT_013("SDV-AUT-013", true),
+    /** Task 0065: browser sign-in is not set up, or no login connection is in use (503). WARN line. */
+    AUT_014("SDV-AUT-014", false, Log.WARN),
+    /** Task 0065: the login system's addresses can't be read (503), or the browser can't reach it. WARN line. */
+    AUT_015("SDV-AUT-015", false, Log.WARN),
+    /** Task 0065: the login system's answer doesn't belong to this browser's sign-in (screen only). */
+    AUT_016("SDV-AUT-016"),
+    /** Task 0065: the login system refused the sign-in (screen only). */
+    AUT_017("SDV-AUT-017"),
     /**
      * Task 0041: the entity slot can't be activated (not in the licence, no licence in force, already activated, name
      * not usable or taken); the answer names the reason (409). INFO line.
@@ -126,6 +134,8 @@ public enum SdvErrorCode {
     QUA_010("SDV-QUA-010"),
     /** Task 0048: the document is not quarantined (409). */
     QUA_011("SDV-QUA-011"),
+    /** Task 0071: this person released as many of the incident's documents one by one as a day allows (409). */
+    QUA_012("SDV-QUA-012"),
     /** Task 0050: the sealed audit report needs a Business Admin or IT Admin (403). */
     AUD_010("SDV-AUD-010"),
     /** Task 0050: the report's dates are missing, not days, or the first comes after the last (400). */
@@ -164,6 +174,8 @@ public enum SdvErrorCode {
     HLD_010("SDV-HLD-010"),
     /** Task 0066: the sealed original of a held document is for Restricted Stewards only (403). */
     HLD_011("SDV-HLD-011"),
+    /** Task 0071: the Business Admin who placed a hold doesn't decide its release; another one does (403). */
+    HLD_012("SDV-HLD-012"),
     /** Task 0028: asking to print or download a Highly Confidential document needs REQUEST_SENSITIVE_ACCESS (403). */
     APR_001("SDV-APR-001"),
     /** Task 0028: a request's reason is missing, shorter than 3 or longer than 500 characters (400). */
@@ -269,6 +281,8 @@ public enum SdvErrorCode {
     DOC_012("SDV-DOC-012", false, Log.WARN),
     /** Task 0063: the document has more pages, or a larger picture, than Vero shows (422). */
     DOC_013("SDV-DOC-013", false, Log.WARN),
+    /** Task 0071: pages in print quality need this person's own print, made with an approval, in the last 15 minutes (409). */
+    DOC_014("SDV-DOC-014", false, true),
     /** Task 0043: the search criteria aren't valid (400). DEBUG line; messages name a field's key, never a value. */
     SCH_001("SDV-SCH-001", false, Log.DEBUG),
     /** Task 0043: the record reference is malformed or names no record of this tenant (400 or 404). INFO line. */

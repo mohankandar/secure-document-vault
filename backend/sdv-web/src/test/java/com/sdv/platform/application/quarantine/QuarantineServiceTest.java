@@ -228,6 +228,42 @@ class QuarantineServiceTest {
                 incident.incidentId().toString(), null, null));
     }
 
+    /** Task 0071: 25 of one incident in a day, each person; the creator sees every one. */
+    @Test
+    void releasingOneByOneIsLimitedAndTheCreatorSeesIt() {
+        List<UUID> ids = many(QuarantineService.SINGLE_RELEASES_A_DAY + 5);
+        QuarantineService.Actor steward = as("steward", STEWARD), restricted = as("restricted", RESTRICTED);
+        String incident = service.quarantineByFilter(restricted, november(), ids.size() + 3L, "Leak", "Suspected leak").incidentId().toString();
+        for (int i = 0; i < QuarantineService.SINGLE_RELEASES_A_DAY; i++) service.releaseDocument(steward, ids.get(i).toString(), "Checked, fine");
+        String next = ids.get(QuarantineService.SINGLE_RELEASES_A_DAY).toString();
+        refused("SDV-QUA-012", () -> service.releaseDocument(steward, next, "Checked, fine"));
+        assertTrue(store.isQuarantined(TENANT, UUID.fromString(next)));
+        service.releaseDocument(as("steward2", STEWARD), next, "Checked, fine");
+        clock.now = clock.now.plus(java.time.Duration.ofDays(1)).plusSeconds(1);
+        service.releaseDocument(steward, ids.getLast().toString(), "Checked, fine");
+
+        List<QuarantineService.SingleRelease> seen = service.incident(restricted, incident).singleReleases();
+        assertEquals(QuarantineService.SINGLE_RELEASES_A_DAY + 2, seen.size());
+        assertEquals("steward Person", seen.getFirst().releasedByName(), "newest first");
+        assertNotNull(seen.getFirst().primaryIdentifier());
+        assertNull(service.incident(steward, incident).singleReleases(), "only its creator");
+    }
+
+    /** Task 0071: an incident with nothing a Steward can open doesn't exist for them. */
+    @Test
+    void anIncidentIsKnownOnlyToWhoCanOpenOneOfItsDocuments() {
+        String high = service.quarantineDocument(as("restricted", RESTRICTED), HIGH.toString(), null, "Person X", "Suspected leak").incidentId().toString();
+        QuarantineService.Actor steward = as("steward", STEWARD);
+        assertTrue(service.incidents(steward).isEmpty());
+        refused("SDV-QUA-007", () -> service.incident(steward, high));
+        refused("SDV-QUA-007", () -> service.exposure(steward, high));
+        refused("SDV-QUA-007", () -> service.openExposureExport(steward, high));
+        assertEquals(1, service.incidents(as("restricted2", RESTRICTED)).size());
+        service.quarantineDocument(as("restricted", RESTRICTED), STD.toString(), high, null, null);
+        assertEquals("Person X", service.incidents(steward).getFirst().name());
+        assertEquals(1, service.incident(steward, high).documents().size());
+    }
+
     // ------------------------------------------------------------------ whole-incident release
 
     @Test
@@ -472,7 +508,8 @@ class QuarantineServiceTest {
         QuarantineService.Actor restricted = as("restricted", RESTRICTED);
         UUID incident = service.quarantineByFilter(restricted, november(), ids.size() + 3L, "Leak", "Suspected leak").incidentId();
         for (var r : List.copyOf(store.quarantines.values())) {
-            service.releaseDocument(restricted, r.documentId.toString(), "Checked, fine");
+            // Task 0071: a person releases 25 a day one by one, so each is released by another.
+            service.releaseDocument(as("restricted" + r.documentId, RESTRICTED), r.documentId.toString(), "Checked, fine");
         }
         assertEquals("OPEN", store.incidents.get(incident).status(), "the documents not yet written are still quarantined");
         assertTrue(store.isQuarantined(TENANT, ids.getLast()));

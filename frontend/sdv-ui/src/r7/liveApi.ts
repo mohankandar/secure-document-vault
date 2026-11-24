@@ -81,8 +81,8 @@ async function againWhenBusy<T>(ask: () => Promise<T>): Promise<T> {
 }
 export const viewerPreviews = (id: string, first: number, count: number, viewingId: string) => againWhenBusy(() => roleApi<ViewerPreviews>(viewerPath(id) + '/previews?first=' + first + '&count=' + count + '&viewingId=' + encodeURIComponent(viewingId), 'business'))
 export const viewerMetadata = (id:string) => roleApi<ViewerMetadata>(viewerPath(id), 'business')
-export const viewerPage = (id:string, page:number, scale:number, viewingId:string) =>
-  againWhenBusy(() => contentBinary(viewerPath(id) + '/pages/' + page + '?scale=' + scale + '&viewingId=' + encodeURIComponent(viewingId), 'business'))
+export const viewerPage = (id:string, page:number, scale:number, viewingId:string, printId?:string) =>
+  againWhenBusy(() => contentBinary(viewerPath(id) + '/pages/' + page + '?scale=' + scale + '&viewingId=' + encodeURIComponent(viewingId) + (printId ? '&printId=' + encodeURIComponent(printId) : ''), 'business'))
 export const viewerSearch = (id:string, q:string, viewingId:string) =>
   againWhenBusy(() => roleApi<ViewerSearch>(viewerPath(id) + '/search?q=' + encodeURIComponent(q) + '&viewingId=' + encodeURIComponent(viewingId), 'business'))
 
@@ -100,7 +100,8 @@ export const createDocumentComment = (id:string,comment:string) => roleApi<LiveC
 
 /** Task 0043: checked for being complete; a short file fails with SDV-DOC-009. */
 export const secureDownload = (id:string) => contentDownload('/api/v1/business/documents/'+encodeURIComponent(id)+'/download','business')
-export const recordPrintEvent = (id:string) => roleApi<void>('/api/v1/business/documents/'+encodeURIComponent(id)+'/print-event','business',{method:'POST'})
+/** Task 0071: printId gets a Highly Confidential document's pages in print quality, for 15 minutes. */
+export const recordPrintEvent = (id:string) => roleApi<{printId:string}>('/api/v1/business/documents/'+encodeURIComponent(id)+'/print-event','business',{method:'POST'})
 export type CorrectionRegion = {pageNumber:number;x:number;y:number;width:number;height:number}
 /** Task 0066: the sealed originals of a document redacted on legal hold (Restricted Stewards; reading only). */
 export type SealedOriginal = { sealedId: string; sealedAt: string }
@@ -165,7 +166,7 @@ export const sessionEntities=()=>roleApi<SessionEntities>('/api/v1/session/entit
 /** Audited by the server (ENTITY_SWITCHED) in the entity switched to, which this request names. */
 export const entitySwitched=(from:string|null)=>roleApi<void>('/api/v1/session/entity-switch','business',{method:'POST',body:JSON.stringify({from})})
 /** databaseSchema: checked once when Vero started. state CURRENT, OLDER, NEWER or UNREACHABLE; message is the plain sentence. */
-export type SystemInfo={productName:string;version:string;status:string;activeProfiles:string[];timestamp:string;databaseSchema?:{state:string;message:string}}
+export type SystemInfo={productName:string;version:string;status:string;/** IT and Platform operations only (task 0071) */activeProfiles:string[]|null;timestamp:string;databaseSchema?:{state:string;message:string}}
 export const systemInfo=(role:'tenantIt'|'platform'='tenantIt')=>roleApi<SystemInfo>('/api/v1/system/info',role)
 export type OpsDetail=OpSummary & {storageVolumes:{volumeId:string;displayName:string;state:string;health:string;usedPercent:number|null;writable:boolean;warningThresholdReached:boolean;stopWriteThresholdReached:boolean;observationError:string|null;rootPath?:string;priority?:number;warningPercent?:number;stopWritePercent?:number;totalBytes?:number|null;usableBytes?:number|null;observedAt?:string|null}[];processingFailures:{documentId:string;submissionId:string;sourceId:string;errorCode:string;processingAttemptCount:number;ingestedAt:string;
   /** Task 0027 (0.4): never a file name; the effective level (null if unknown) and the page count instead. */ pageCount?:number|null;sensitivityLevel?:SensitivityLevel|null}[];stuckDocuments:{documentId:string;submissionId:string;status:string;stateSince:string;processingErrorCode:string|null;ingestedAt?:string;pageCount?:number|null;sensitivityLevel?:SensitivityLevel|null}[];attentionSubmissions:{submissionId:string;sourceSubmissionId:string;status:string;expectedDocumentCount:number;receivedDocumentCount:number;lastActivityAt:string;attentionHours:number;sourceId?:string}[];
@@ -211,8 +212,8 @@ export const raiseLevel = (scope: LevelScope, id: string, level: SensitivityLeve
 export const askToLowerLevel = (scope: LevelScope, id: string, level: SensitivityLevel, reason: string) =>
   roleApi<LevelChangeResult>(levelPath(scope, id) + '/lower-request', 'business', { method: 'POST', body: JSON.stringify({ level, reason }) })
 
-/** REDACT_HELD (task 0066): permanently redact a document on legal hold. */
-export type AccessRequestKind = 'PRINT' | 'DOWNLOAD' | 'LOWER_LEVEL' | 'LOWER_RECORD_LEVEL' | 'REDACT_HELD'
+/** REDACT_HELD (task 0066): permanently redact a document on legal hold. RELEASE_HOLD (task 0071): release a legal hold. */
+export type AccessRequestKind = 'PRINT' | 'DOWNLOAD' | 'LOWER_LEVEL' | 'LOWER_RECORD_LEVEL' | 'REDACT_HELD' | 'RELEASE_HOLD'
 export type AccessRequestStatus = 'PENDING' | 'APPROVED' | 'DECLINED' | 'USED' | 'EXPIRED'
 /**
  * One of the signed-in Steward's own requests. expiresAt: while PENDING, when it expires undecided; once a print or
@@ -282,7 +283,10 @@ export const holdDocuments = (identifier: string) => roleApi<HoldDocument[]>('/a
 /** Holds in place, newest first (at most 200). */
 export const activeHolds = () => roleApi<LegalHold[]>('/api/v1/admin/legal-holds', 'businessAdmin')
 export const placeHold = (documentId: string, reason: string) => roleApi<LegalHold>('/api/v1/admin/legal-holds', 'businessAdmin', { method: 'POST', body: JSON.stringify({ documentId, reason }) })
-export const releaseHold = (holdId: string) => roleApi<LegalHold>('/api/v1/admin/legal-holds/' + encodeURIComponent(holdId) + '/release', 'businessAdmin', { method: 'POST' })
+/** Task 0071: a request that another Business admin decides in Approvals; not the one who placed the hold. */
+export const requestHoldRelease = (holdId: string, reason: string) => roleApi<MyRequest>('/api/v1/admin/legal-holds/' + encodeURIComponent(holdId) + '/release', 'businessAdmin', { method: 'POST', body: JSON.stringify({ reason }) })
+export type HoldReleaseWaiting = { holdId: string; requestId: string; requestedBy: string; requestedAt: string }
+export const holdReleaseRequests = () => roleApi<HoldReleaseWaiting[]>('/api/v1/admin/legal-holds/release-requests', 'businessAdmin')
 
 // ---- Task 0032: the Business admin's Reports tab (Daily intake) and the Stewards' intake notices ----
 
@@ -402,7 +406,8 @@ export type QuarantineIncidentSummary = { incidentId: string; name: string; scop
 /** One quarantined document as a reviewer sees it: never a title, file name or content. */
 export type QuarantinedDocument = { quarantineId: string; documentId: string; primaryIdentifierLabel: string | null; primaryIdentifier: string | null; level: SensitivityLevel | null; receivedAt: string | null; pageCount: number | null; quarantinedByName: string | null; quarantinedAt: string; inForce: boolean; releasedByName: string | null; releasedAt: string | null }
 /** hiddenCount: documents at levels this person can't open, counted and never shown. */
-export type QuarantineIncident = { incidentId: string; name: string; reason: string; scope: 'DOCUMENT' | 'FILTER'; status: 'OPEN' | 'RELEASED'; createdByName: string | null; createdAt: string; closedAt: string | null; documentsInForce: number; documentCount: number; hiddenCount: number; documents: QuarantinedDocument[]; pendingRequestId: string | null; pendingRequestedByName: string | null; pendingExpiresAt: string | null; preparing: boolean; preparedCount: number; expectedCount: number | null; /** task 0052: documents is one page of at most this many */ listLimit: number; releasing: boolean; releasedCount: number; /** task 0052: where the next page starts; null on the last page */ next: string | null }
+export type QuarantineIncident = { incidentId: string; name: string; reason: string; scope: 'DOCUMENT' | 'FILTER'; status: 'OPEN' | 'RELEASED'; createdByName: string | null; createdAt: string; closedAt: string | null; documentsInForce: number; documentCount: number; hiddenCount: number; documents: QuarantinedDocument[]; pendingRequestId: string | null; pendingRequestedByName: string | null; pendingExpiresAt: string | null; preparing: boolean; preparedCount: number; expectedCount: number | null; /** task 0052: documents is one page of at most this many */ listLimit: number; releasing: boolean; releasedCount: number; /** task 0052: where the next page starts; null on the last page */ next: string | null;
+  /** task 0071: every release of a single document, newest first (at most 200); only for who started the incident */ singleReleases: { releasedByName: string | null; releasedAt: string; primaryIdentifier: string | null }[] | null }
 /** The filter: received days (YYYY-MM-DD, whole UTC days, both needed), a sending system, field values (exact). */
 export type QuarantineFilter = { receivedFrom: string; receivedTo: string; sourceId?: string; fields?: Record<string, string> }
 /** Task 0051: no limit; the count alone. */

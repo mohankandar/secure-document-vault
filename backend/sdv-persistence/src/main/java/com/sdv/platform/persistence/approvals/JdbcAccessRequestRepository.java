@@ -42,13 +42,49 @@ public class JdbcAccessRequestRepository implements AccessRequestRepository {
 
     @Override
     public boolean insertPending(AccessRequest r) {
+        return insertPending(r, null);
+    }
+
+    @Override
+    public boolean insertHoldRelease(AccessRequest request, UUID holdId) {
+        return insertPending(request, holdId);
+    }
+
+    @Override
+    public Optional<UUID> holdOf(UUID tenantId, UUID requestId) {
+        return jdbc.query("select hold_id from access_requests where tenant_id=:tenantId and request_id=:id and hold_id is not null",
+                new MapSqlParameterSource().addValue("tenantId", tenantId).addValue("id", requestId),
+                (rs, row) -> rs.getObject("hold_id", UUID.class)).stream().findFirst();
+    }
+
+    @Override
+    public boolean holdReleaseWaiting(UUID tenantId, UUID holdId, Instant now) {
+        return Boolean.TRUE.equals(jdbc.queryForObject("""
+                select exists(select 1 from access_requests
+                               where tenant_id=:tenantId and hold_id=:holdId and status='PENDING' and expires_at>:now)
+                """, new MapSqlParameterSource().addValue("tenantId", tenantId).addValue("holdId", holdId)
+                .addValue("now", Timestamp.from(now)), Boolean.class));
+    }
+
+    @Override
+    public List<HoldReleaseWaiting> holdReleasesWaiting(UUID tenantId, Instant now) {
+        return jdbc.query("""
+                select hold_id, request_id, coalesce(requested_by_display_name, requested_by) as who, requested_at
+                  from access_requests
+                 where tenant_id=:tenantId and kind='RELEASE_HOLD' and status='PENDING' and expires_at>:now
+                """, new MapSqlParameterSource().addValue("tenantId", tenantId).addValue("now", Timestamp.from(now)),
+                (rs, row) -> new HoldReleaseWaiting(rs.getObject("hold_id", UUID.class), rs.getObject("request_id", UUID.class),
+                        rs.getString("who"), rs.getTimestamp("requested_at").toInstant()));
+    }
+
+    private boolean insertPending(AccessRequest r, UUID holdId) {
         // The partial unique indexes allow one pending request per person and target; a second one inserts nothing.
         int inserted = jdbc.update("""
                 insert into access_requests(request_id, tenant_id, kind, document_id, source_id, record_key,
                     record_key_sha256, requested_level, reason, requested_by, requested_by_display_name, requested_at,
-                    status, expires_at)
+                    status, expires_at, hold_id)
                 values (:id, :tenantId, :kind, :documentId, :sourceId, :recordKey, :sha, :requestedLevel, :reason,
-                    :requestedBy, :requestedByName, :requestedAt, 'PENDING', :expiresAt)
+                    :requestedBy, :requestedByName, :requestedAt, 'PENDING', :expiresAt, :holdId)
                 on conflict do nothing
                 """, new MapSqlParameterSource()
                 .addValue("id", r.requestId())
@@ -63,7 +99,8 @@ public class JdbcAccessRequestRepository implements AccessRequestRepository {
                 .addValue("requestedBy", r.requestedBy())
                 .addValue("requestedByName", r.requestedByName())
                 .addValue("requestedAt", Timestamp.from(r.requestedAt()))
-                .addValue("expiresAt", Timestamp.from(r.expiresAt())));
+                .addValue("expiresAt", Timestamp.from(r.expiresAt()))
+                .addValue("holdId", holdId));
         return inserted == 1;
     }
 

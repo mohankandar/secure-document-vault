@@ -82,6 +82,7 @@ public class AccessRequestService {
     /** What a Business Admin decides. */
     public enum Decision { APPROVE, DECLINE }
 
+    private final HoldReleases holdReleases;
     private final AccessRequestRepository requests;
     private final DocumentIntakeRepository documents;
     private final DocumentAccessGuard access;
@@ -100,16 +101,27 @@ public class AccessRequestService {
                                 DocumentAccessGuard access, RecordReferences recordReferences,
                                 BusinessRecordRepository records, RecordSensitivityRepository recordLevels,
                                 SensitiveAccessGrantStore grants, ApprovalSettings settings, AuditEventPort audit,
-                                PlatformTransactionManager transactionManager) {
+                                PlatformTransactionManager transactionManager, HoldReleases holdReleases) {
         this(requests, documents, access, recordReferences, records, recordLevels, grants, settings, audit,
-                transactionManager, Clock.systemUTC());
+                transactionManager, Clock.systemUTC(), holdReleases);
+    }
+
+    /** Without legal holds (tests of other kinds). */
+    public AccessRequestService(AccessRequestRepository requests, DocumentIntakeRepository documents,
+                                DocumentAccessGuard access, RecordReferences recordReferences,
+                                BusinessRecordRepository records, RecordSensitivityRepository recordLevels,
+                                SensitiveAccessGrantStore grants, ApprovalSettings settings, AuditEventPort audit,
+                                PlatformTransactionManager transactionManager, Clock clock) {
+        this(requests, documents, access, recordReferences, records, recordLevels, grants, settings, audit,
+                transactionManager, clock, HoldReleases.NONE);
     }
 
     public AccessRequestService(AccessRequestRepository requests, DocumentIntakeRepository documents,
                                 DocumentAccessGuard access, RecordReferences recordReferences,
                                 BusinessRecordRepository records, RecordSensitivityRepository recordLevels,
                                 SensitiveAccessGrantStore grants, ApprovalSettings settings, AuditEventPort audit,
-                                PlatformTransactionManager transactionManager, Clock clock) {
+                                PlatformTransactionManager transactionManager, Clock clock, HoldReleases holdReleases) {
+        this.holdReleases = Objects.requireNonNull(holdReleases, "holdReleases");
         this.requests = Objects.requireNonNull(requests, "requests");
         this.documents = Objects.requireNonNull(documents, "documents");
         this.access = Objects.requireNonNull(access, "access");
@@ -210,6 +222,45 @@ public class AccessRequestService {
         details.put("level", level.name());
         details.put("regionCount", regionCount);
         return create(request, details, () -> requests.insertHeldRedaction(request, regionsJson, document.contentSha256()), correlationId);
+    }
+
+    /**
+     * Task 0071: a Business Admin asks to release a legal hold (the web layer checks MANAGE_LEGAL_HOLD). One waiting
+     * request per hold. The reason stays in the request.
+     */
+    public RequestView requestHoldRelease(UUID tenantId, String actorId, String actorName, String holdReference, String reason,
+                                          String correlationId) {
+        requireTenant(tenantId);
+        requireActor(actorId);
+        String why = reasonOf(reason, SdvErrorCode.HLD_002);
+        grants.expireDue(tenantId, correlationId);
+        return transactions.execute(status -> {
+            Instant now = clock.instant();
+            HoldReleases.Held hold = holdReleases.requireInPlace(tenantId, holdReference);
+            if (requests.holdReleaseWaiting(tenantId, hold.holdId(), now)) {
+                throw new CodedRefusal.Conflict(SdvErrorCode.APR_004, "The release of this hold is already waiting for a decision.");
+            }
+            AccessRequest request = new AccessRequest(UUID.randomUUID(), tenantId, AccessRequestKind.RELEASE_HOLD, hold.documentId(),
+                    null, null, null, why, actorId, blankToNull(actorName), now, AccessRequestStatus.PENDING, null, null, null,
+                    now.plus(settings.pendingWindow(tenantId)), null);
+            if (!requests.insertHoldRelease(request, hold.holdId())) {
+                throw new CodedRefusal.Conflict(SdvErrorCode.APR_004, "You already have this request waiting.");
+            }
+            Map<String, Object> details = new LinkedHashMap<>();
+            details.put("accessRequestId", request.requestId().toString());
+            details.put("kind", request.kind().name());
+            details.put("holdId", hold.holdId().toString());
+            append(tenantId, "USER", actorId, actorName, CREATED_ACTION, targetType(request), targetId(request), now, correlationId,
+                    AuditOutcome.SUCCESS, details);
+            return RequestView.of(request);
+        });
+    }
+
+    /** Task 0071: the holds whose release waits for a decision. */
+    public List<AccessRequestRepository.HoldReleaseWaiting> holdReleasesWaiting(UUID tenantId, String correlationId) {
+        requireTenant(tenantId);
+        grants.expireDue(tenantId, correlationId);
+        return requests.holdReleasesWaiting(tenantId, clock.instant());
     }
 
     private RequestView create(AccessRequest request, Map<String, Object> extra, String correlationId) {
@@ -472,9 +523,26 @@ public class AccessRequestService {
                     throw new CodedRefusal.Conflict(SdvErrorCode.APR_009,
                             "A request for a whole record is decided on its own, not with others.");
                 }
+                if (bulk && r.kind() == AccessRequestKind.RELEASE_HOLD) {
+                    throw new CodedRefusal.Conflict(SdvErrorCode.APR_009,
+                            "The release of a legal hold is decided on its own, not with others.");
+                }
                 if (bulk && r.kind() == AccessRequestKind.REDACT_HELD) {
                     throw new CodedRefusal.Conflict(SdvErrorCode.APR_009,
                             "A redaction of a document on legal hold is decided on its own, not with others.");
+                }
+                HoldReleases.Held hold = null;
+                if (r.kind() == AccessRequestKind.RELEASE_HOLD) {
+                    // Task 0071: never approved by the one who placed it. Declining keeps the hold, so anyone else may, also
+                    // when the hold is gone meanwhile.
+                    UUID holdId = requests.holdOf(tenantId, requestId).orElseThrow(() -> new InternalCheckFailed("A hold release names no hold."));
+                    if (decision == Decision.APPROVE) {
+                        hold = holdReleases.requireInPlace(tenantId, holdId.toString());
+                        if (actorId.equals(hold.placedBy())) {
+                            throw new CodedRefusal.Forbidden(SdvErrorCode.HLD_012,
+                                    "You placed this hold, so another Business Admin decides its release.");
+                        }
+                    }
                 }
                 Map<String, Object> details = new LinkedHashMap<>();
                 details.put("accessRequestId", r.requestId().toString());
@@ -500,6 +568,12 @@ public class AccessRequestService {
                         stillWaiting(requests.decide(tenantId, requestId, AccessRequestStatus.APPROVED, actorId, blankToNull(actorName),
                                 now, r.expiresAt()));
                         details.put("requestedLevel", r.requestedLevel().name());
+                    }
+                    case RELEASE_HOLD -> {
+                        stillWaiting(requests.decide(tenantId, requestId, AccessRequestStatus.APPROVED, actorId, blankToNull(actorName),
+                                now, r.expiresAt()));
+                        details.put("holdId", hold.holdId().toString());
+                        holdReleases.releaseApproved(tenantId, hold.holdId(), requestId, r.requestedBy(), actorId, actorName, now, correlationId);
                     }
                     case REDACT_HELD -> {
                         // Task 0066: under the document's row lock; the background job applies it.
@@ -651,7 +725,7 @@ public class AccessRequestService {
             }
         }
         throw new CodedRefusal.BadRequest(SdvErrorCode.APR_012,
-                "The request kind must be one of PRINT, DOWNLOAD, LOWER_LEVEL, LOWER_RECORD_LEVEL, REDACT_HELD (exactly, in capitals).");
+                "The request kind must be one of PRINT, DOWNLOAD, LOWER_LEVEL, LOWER_RECORD_LEVEL, REDACT_HELD, RELEASE_HOLD (exactly, in capitals).");
     }
 
     private static Set<AccessRequestKind> kinds(String text) {

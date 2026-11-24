@@ -77,3 +77,25 @@ Merged, two conflicts resolved (CI, the schema check). Built: 43 + 69 + 2 + 4 + 
 `Test-SDV-CleanInstall.ps1` and `Test-SDV-SchemaUpgrade.ps1` PASS. The owner's schema step from this branch now applies
 identity V5, licensing V2 **and** changeset 043 (task 0066): check the branch out, `.\Build-SDV-All.ps1`, then
 `.\Update-SDV-Schema.ps1 update -Url jdbc:postgresql://localhost:5433/sdv -Username sdv`.
+
+## 2026-11-24: brought up to date again (task 0085, `release/vero-r7` at `bd5c9b0`)
+
+Merged (no rebase), three conflicts resolved keeping both sides: the schema check (0071's 044 check with this branch's platform
+versions), `SignInChainTest` (0065's refusal of an ID token's marks with this branch's person claims), `SETUP.md` (0065's
+row kept; the keys-file row stays gone). Nothing else changed by hand.
+
+| Command | Result |
+|---|---|
+| `.\Build-SDV-All.ps1` | BUILD SUCCESS: 43 + 72 + 2 + 4 + 659 + 10 = **790**, 0 failures, 26 skipped |
+| `npm test`, `npm run typecheck` | 77 passed; pass |
+| `.\Test-SDV-SchemaUpgrade.ps1 -From 043` (a database at 042, as `sdv` is) | PASS in 499 s; applies 043, 044 and the platform versions |
+| `.\Test-SDV-CleanInstall.ps1` | PASS in 90 s |
+
+The local schema step was not run and nothing was merged into `release/vero-r7` (task 0085). **The owner's step**, from this
+branch, now applies identity V5, licensing V2, 043 and 044 together:
+
+```
+git checkout chore/platform-core-0.7.0
+.\Build-SDV-All.ps1
+.\Update-SDV-Schema.ps1 update -Url jdbc:postgresql://localhost:5433/sdv -Username sdv
+```

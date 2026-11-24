@@ -167,7 +167,9 @@ from information_schema.tables where table_schema='public' and table_type='BASE 
     $null = Call 'POST' "/api/v1/admin/access-requests/$danielLower/approve" $priya
     $null = Call 'POST' "/api/v1/admin/access-requests/$danaLower/decline" $priya
     $incomeHold = Scalar "select hold_id from legal_holds where document_id='$income' and released_at is null;"
-    $null = Call 'POST' "/api/v1/admin/legal-holds/$incomeHold/release" $priya
+    # Task 0071: asked for by one Business Admin, approved by another.
+    $holdRelease = Call 'POST' "/api/v1/admin/legal-holds/$incomeHold/release" $priya @{ reason = 'Seed check' }
+    $null = Call 'POST' "/api/v1/admin/access-requests/$($holdRelease.requestId)/approve" (As 'local-business-admin-2' 'BUSINESS_ADMIN')
     $redactionId = Scalar "select source_id from ingestion_sources where tenant_id=$T and source_key='redaction-service';"
     $null = Call 'PUT' "/api/v1/admin/ingestion-sources/$redactionId/metadata-fields/lastName" $priya @{ displayLabel = 'Last Name'; fieldType = 'TEXT'; required = $false; businessIdentifier = $false; searchable = $true; normalization = 'TRIM'; searchMode = 'PREFIX'; validationRules = @{} }
     $roles = (Call 'GET' '/api/v1/admin/role-capabilities' $priya).roles

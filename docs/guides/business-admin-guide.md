@@ -69,6 +69,11 @@ Requests wait under **Approvals**, grouped by record, oldest first. Every Busine
 | Lower a whole record's level | Steward | Every document of the record, at once. Decided on its own |
 | Redact a document on legal hold | Whoever may redact it | Vero replaces what people see; the original is sealed (see Legal holds). Decided on its own |
 | Release a whole quarantine incident | Steward | Its documents are available again. Decided on its own |
+| Release a legal hold | Business Admin | The hold ends (see Legal holds). Decided on its own, by someone who neither asked nor placed the hold |
+
+**Printing Highly Confidential.** The printed pages carry the person's name and the time, lightly across the page; so do
+pages on screen when someone zooms in far. Vero can't stop a screenshot or a photo of the screen. Every opening, page and
+print is in the audit.
 
 Nobody decides their own request. A request nobody decides expires (7 days unless your installer changed it), and the
 requester is told. **Decided recently** lists the last 30 days.
@@ -77,7 +82,11 @@ requester is told. **Decided recently** lists the last 30 days.
 
 Under **Legal holds**, enter the record's identifier and write why. Vero says how many documents the record has and holds
 all of them; you don't see which. A held document is never deleted by the daily cleanup. People still open and use it as
-before. Holds are released one document at a time.
+before.
+
+**Releasing a hold takes two Business Admins.** **Request release** sends a request with your reason to Approvals; another
+Business Admin approves it, and never the one who placed the hold. Holds are released one document at a time. An entity
+needs at least two Business Admins for it.
 
 **Redacting a held document needs your approval.** The redacted version then becomes the one people see. The original is
 kept sealed: only a Restricted Steward can read it, it can't be printed or downloaded, and you never see it. When you
@@ -88,7 +97,8 @@ delete the document if its time is over.
 
 When documents may have been delivered wrongly or leaked, a Steward quarantines them: one document, or (a Restricted
 Steward) everything that matches a filter. Everyone else is told only "temporarily unavailable". Stewards review, correct
-and release; the exposure list says who opened, read, printed or downloaded before. You decide only the release of a whole
+and release; one person releases at most 25 documents of an incident one by one in a day, and who started the incident sees
+each of them. A Steward who can open none of an incident's documents doesn't see the incident. The exposure list says who opened, read, printed or downloaded before. You decide only the release of a whole
 incident, when a Steward asks for it, and see its name, counts, levels and dates, not the reason.
 
 ## Reports
@@ -124,6 +134,7 @@ The screen says what happened and ends with a code. The usual ones:
 | SDV-APR-008 | Already decided or expired: reload |
 | SDV-APR-011, SDV-APR-017 | It no longer applies because something changed: decline it |
 | SDV-HLD-005 | The document is on hold already |
+| SDV-HLD-012 | You placed this hold: another Business Admin approves its release |
 | SDV-HLD-008 | The hold was released already: reload |
 | SDV-AUT-010 | Choose an entity |
 | SDV-SYS-018 | Vero is busy: wait a few seconds and try again |

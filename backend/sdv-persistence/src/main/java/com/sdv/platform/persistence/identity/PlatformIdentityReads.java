@@ -20,12 +20,25 @@ import java.util.UUID;
 public class PlatformIdentityReads {
     private static final String CONNECTION = "from idn_login_connection c where c.status = 'ACTIVE' "
             + "and c.product_code = :product and c.provider_id = :provider and c.issuer_uri = :issuer "
-            + "and c.api_audience = :audience";
+            // Task 0065: an ID token would pass as an access token if the audience were the browser client.
+            + "and c.api_audience = :audience and c.browser_client_id is distinct from c.api_audience";
 
     private final NamedParameterJdbcTemplate jdbc;
 
     public PlatformIdentityReads(NamedParameterJdbcTemplate jdbc) {
         this.jdbc = jdbc;
+    }
+
+    /** Task 0065: what a browser needs to know of the login connection in use. No secret. */
+    public record BrowserConnection(String issuer, String browserClientId, String providerId) { }
+
+    public Optional<BrowserConnection> browserConnection(ConnectionKey key) {
+        if (blank(key)) return Optional.empty();
+        List<BrowserConnection> rows = jdbc.query("select distinct c.issuer_uri, c.browser_client_id, c.provider_id " + CONNECTION
+                        + " and c.provider_type = 'OIDC' and c.browser_client_id is not null and btrim(c.browser_client_id) <> ''", params(key),
+                (rs, i) -> new BrowserConnection(rs.getString(1), rs.getString(2), rs.getString(3)));
+        // Two customers with different browser clients on one installation: which one is meant can't be known here.
+        return rows.size() == 1 ? Optional.of(rows.getFirst()) : Optional.empty();
     }
 
     /** Whether a customer has an ACTIVE login connection for Vero with this provider, issuer and audience. */

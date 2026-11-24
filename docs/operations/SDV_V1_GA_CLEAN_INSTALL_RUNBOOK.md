@@ -297,6 +297,38 @@ themselves; nothing is lost.
 Vero sends no usage data anywhere. Liquibase's anonymous usage analytics are switched off in every mode (the
 running app, local mode and the schema step).
 
+### Sign-in in the browser, and serving the screens
+
+Vero's screens are the folder `dist` of the build. Your web server or proxy serves them, sends `/api/` to Vero, and does TLS.
+A person signs in at your login system (authorization code with PKCE); the browser then holds the tokens in memory only, so
+a reload or a new tab goes through the login system again, which usually asks nothing.
+
+**In the login system**, for the browser client named in the sign-in file (`browserClientId`):
+
+1. A **public** client: authorization code with PKCE (S256). No secret, no implicit flow.
+2. Redirect address and sign-out address `https://<vero>/`, exactly; web origin (CORS) `https://<vero>`.
+3. Access tokens for Vero's API audience, signed RS256, with the groups and name claims; life at most 2 hours, 15 to 60
+   minutes advised. The API audience must not be the client's own ID. No `nonce` in access tokens.
+4. Refresh tokens with rotation, if you want fewer trips through the login system.
+
+Okta: add a Trusted Origin with CORS, and use a custom authorization server. Entra ID: a single-page application redirect;
+set `SDV_AUTH_BROWSER_SCOPE` to your API's scope. Keycloak: Web origins, and an audience mapper. A login system at an
+internal address needs `SDV_OUTBOUND_ALLOW_INTERNAL_ADDRESSES=true`, because Vero reads its discovery document.
+
+**Headers the proxy sends** with the screens (put your login system's origin in):
+
+```
+Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' blob: data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self' https://<login system>; frame-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'
+Referrer-Policy: no-referrer
+X-Content-Type-Options: nosniff
+Permissions-Policy: camera=(), microphone=(), geolocation=()
+```
+
+The two font addresses may be left out: the screens then use fonts of the computer, and nothing is loaded from outside.
+
+**Check it:** Test sign-in (IT, Sign-in) checks what Vero can see. It can't see whether the browser may call the token address:
+sign in once; `SDV-AUT-015` after the login page means the web origin is missing there.
+
 ### All settings
 
 Checked against `application.yml` and the code on 2026-11-24 (task 0068). Sign-in settings are in `docs/install/SETUP.md`
@@ -312,10 +344,12 @@ section 5; those with a section of their own above are not repeated.
 | `SDV_VAULT_TOKEN_FILE` **or** `SDV_VAULT_TOKEN` | none | Exactly one; the file is recommended. A token for Vero's Transit paths only |
 | `SDV_VAULT_TRANSIT_MOUNT`, `SDV_VAULT_KEY_PREFIX` | `transit`, `sdv-tenant-` | Where the entities' keys are |
 | `SDV_AUTH_MODE` | `disabled` | `enterprise-jwt`. A packaged start refuses `disabled` (`SDV-SYS-006`) and the local profile (`SDV-SYS-005`) |
-| `SDV_AUTH_JWT_MAX_TOKEN_LIFETIME_SECONDS` | `0`: not checked | The longest life of a token Vero accepts |
+| `SDV_AUTH_JWT_MAX_TOKEN_LIFETIME_SECONDS` | `7200` | The longest life of a token Vero accepts, people's and sending systems', 1 to 86400. **Upgrade:** `0` (off) is refused since task 0065 |
+| `SDV_AUTH_BROWSER_SCOPE` | `openid profile email` | What the browser asks the login system for |
 | `SDV_AUTH_JWT_USERNAME_CLAIM`, `..._EMAIL_CLAIM`, `..._DISPLAY_NAME_CLAIM` | `preferred_username`, `email`, `name` | Display only |
 | `SDV_AUTH_JWT_ENTITY_CLAIM`, `..._SOURCE_ID_CLAIM`, `..._SOURCE_KEY_CLAIM` | `sdv_entity_id`, `sdv_source_id`, `sdv_source_key` | Optional claims of a sending system's token; when there, they must match its binding |
 | `SDV_TENANT_STATUS_CACHE_SECONDS` | `30` | How soon a suspended entity is refused, 0 to 60 |
+| `SDV_INTAKE_REQUESTS_PER_MINUTE` | `6000` | Intake requests a minute from one sending system, for each Vero process, 60 to 1,000,000. Above it: `SDV-SYS-018` with `Retry-After` |
 | `SDV_RETENTION_DAILY_AT` | `02:00` | The daily cleanup, HH:mm in the server's time zone |
 | `SDV_RETENTION_CRON` | empty | For check scripts only. Leave empty |
 | `SDV_DEFAULT_TIME_ZONE` | `UTC` | The zone an entity's days are counted in when it has none; an unknown name stops the start |

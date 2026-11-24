@@ -214,7 +214,7 @@ class DocumentLevelEnforcementTest {
         Object call(Function function) throws Exception {
             return switch (function) {
                 case OPEN -> viewer.metadata(DOC);
-                case PAGE_IMAGE -> viewer.page(DOC, 1, 1.0, VIEWING);
+                case PAGE_IMAGE -> viewer.page(DOC, 1, 1.0, VIEWING, null);
                 case THUMBNAILS -> viewer.previews(DOC, 1, 12, VIEWING);
                 case TEXT_SEARCH -> viewer.search(DOC, "loan", VIEWING);
                 case PRINT -> { actions.print(DOC); yield null; }

@@ -76,6 +76,12 @@ class DocumentViewerServicePageViewTest {
         }
 
         @Override
+        public boolean isApprovedPrint(UUID tenantId, String actorId, UUID documentId, UUID printId, Instant notBefore) {
+            assertEquals(NOW.minus(Duration.ofMinutes(15)), notBefore);
+            return documentId.equals(DOC) && approvedPrints.contains(actorId + printId);
+        }
+
+        @Override
         public boolean appendPreviewEventOnce(AuditEvent event, UUID viewingId, Instant notBefore) {
             boolean exists = events.stream().anyMatch(e -> e.action().equals("DOCUMENT_PREVIEWED")
                     && e.safeDetailsJson().contains("\"viewingId\":\"" + viewingId + "\""));
@@ -83,6 +89,9 @@ class DocumentViewerServicePageViewTest {
             return !exists;
         }
     };
+
+    /** Task 0071: person and print of the approved prints. */
+    private final java.util.Set<String> approvedPrints = new java.util.HashSet<>();
 
     private final DocumentIntakeRepository documents = mock(DocumentIntakeRepository.class);
     private final StorageVolumeRepository volumes = mock(StorageVolumeRepository.class);
@@ -149,6 +158,66 @@ class DocumentViewerServicePageViewTest {
             assertTrue(event.safeDetailsJson().contains("\"sensitivityLevel\":\"HIGHLY_CONFIDENTIAL\""),
                     event.action() + " " + event.safeDetailsJson());
         }
+    }
+
+    private void level(SensitivityLevel level) {
+        when(guard.requireOpenable(any(), any(), any(), any(), any())).thenReturn(level);
+    }
+
+    /** The page of an opening: width, and whether anything is drawn on the empty page. */
+    private record Drawn(int width, boolean marked) { }
+
+    private Drawn page(UUID viewing, double scale, UUID printId) throws Exception {
+        byte[] png = service.renderPage(TENANT, DOC, ALL, 1, scale, viewing, printId, "Stella Steward", "steward", "c").pngBytes();
+        java.awt.image.BufferedImage image = javax.imageio.ImageIO.read(new ByteArrayInputStream(png));
+        for (int x = 0; x < image.getWidth(); x++) for (int y = 0; y < image.getHeight(); y++) if ((image.getRGB(x, y) & 0xffffff) != 0xffffff) return new Drawn(image.getWidth(), true);
+        return new Drawn(image.getWidth(), false);
+    }
+
+    /** Task 0071: Highly Confidential: screen quality on screen (marked when more was asked), print quality only for an approved print. */
+    @Test
+    void highlyConfidentialPagesInPrintQualityNeedAnApprovedPrintAndCarryAMark() throws Exception {
+        level(SensitivityLevel.HIGHLY_CONFIDENTIAL);
+        UUID viewing = open(DOC, "steward");
+        Drawn screen = page(viewing, 1.5, null);
+        assertFalse(screen.marked());
+        assertEquals(new Drawn(screen.width(), true), page(viewing, 2.0, null), "no larger than on screen, and marked");
+        UUID print = UUID.randomUUID();
+        for (UUID none : new UUID[] {print, UUID.randomUUID()}) {
+            var ex = assertThrows(com.sdv.platform.domain.error.CodedRefusal.Conflict.class, () -> page(viewing, 2.0, none));
+            assertEquals("SDV-DOC-014", ex.errorCode().code());
+        }
+        approvedPrints.add("someone-else" + print);
+        assertThrows(com.sdv.platform.domain.error.CodedRefusal.Conflict.class, () -> page(viewing, 2.0, print));
+        approvedPrints.add("steward" + print);
+        Drawn printed = page(viewing, 2.0, print);
+        assertTrue(printed.width() > screen.width() && printed.marked());
+        assertTrue(page(viewing, 1.0, print).marked(), "every page of a print");
+    }
+
+    @Test
+    void otherLevelsAreDrawnAsAskedAndUnmarked() throws Exception {
+        for (SensitivityLevel l : List.of(SensitivityLevel.STANDARD, SensitivityLevel.CONFIDENTIAL)) {
+            level(l);
+            UUID viewing = open(DOC, "steward");
+            Drawn large = page(viewing, 2.0, null), small = page(viewing, 1.0, null);
+            assertEquals(2.0, large.width() / (double) small.width(), 0.01);
+            assertFalse(large.marked() || small.marked());
+        }
+    }
+
+    /** Letters are one em of 1000 and don't run into each other, whatever font stands in. */
+    @Test
+    void theMarksLettersAreReadable() throws Exception {
+        var box = PageWatermark.outline("HH").getBounds2D();
+        assertTrue(box.getHeight() > 600 && box.getHeight() < 850, box.toString());
+        assertTrue(box.getWidth() > 1150 && box.getWidth() < 1444, box.toString());
+    }
+
+    @Test
+    void theMarkNamesThePersonAndTheTime() {
+        assertEquals("Stella Steward  2026-11-18 12:00 UTC", PageWatermark.text("Stella Steward", "s1", NOW));
+        assertEquals("s1  2026-11-18 12:00 UTC", PageWatermark.text(" ", "s1", NOW));
     }
 
     @Test
