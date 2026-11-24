@@ -31,6 +31,7 @@ import org.springframework.web.context.request.ServletRequestAttributes;
 
 import java.net.URI;
 import java.util.EnumSet;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -59,6 +60,12 @@ import java.util.UUID;
  * principal is an {@link EntityChoicePrincipal}, which can only list entities or activate one (SDV-AUT-010 elsewhere).
  * A named entity that is not theirs, or not an entity ID, is refused with SDV-AUT-010. Roles that can never be held
  * together are withheld and reported ({@link RoleSeparationGuard}, task 0025), per entity.
+ *
+ * <p><b>Platform roles</b> (task 0057, LV-16 item 3). A platform role ({@code PLATFORM_OPERATIONS_ADMIN}) is never in an
+ * entity's grants; setup's platform-level grants ({@code idn_platform_grant}, the role mapping's {@code *} rows) give it
+ * for the whole customer. Through {@link PlatformGrants} the person holds it in every ACTIVE entity of the connection,
+ * beside the roles their entity grants give there. The separation rules then run on all of them together, so a platform
+ * role with Restricted Steward in an entity is withheld and reported like any other conflict.
  */
 public final class OidcJwtAuthenticationConverter implements Converter<Jwt, AbstractAuthenticationToken> {
     /** The entity a person's request works in (owner answer 5). */
@@ -124,6 +131,16 @@ public final class OidcJwtAuthenticationConverter implements Converter<Jwt, Abst
         List<String> activatableSlots(ConnectionKey key, Object groups);
     }
 
+    /**
+     * Task 0057: platform-level grants. For these groups under the connection: each ACTIVE entity with the platform roles
+     * (canonical names) the groups hold there through platform-wide grants; empty when they hold none. Throws
+     * platform-core's {@link IdentityAdmissionException} when a grant names a role that is not a platform role, and
+     * {@link IllegalStateException} when the grants or the entities cannot be read.
+     */
+    public interface PlatformGrants {
+        Map<EntityId, Set<String>> platformRoles(ConnectionKey key, Object groups);
+    }
+
     /** The request being signed in: the named entity and whether it is an intake address. */
     public interface RequestView {
         String requestedEntity();
@@ -165,6 +182,7 @@ public final class OidcJwtAuthenticationConverter implements Converter<Jwt, Abst
     private final Settings settings;
     private final OidcJwtIdentityNormalizer identityNormalizer;
     private final EntityMembershipResolver people;
+    private final PlatformGrants platformGrants;
     private final SignInLookups lookups;
     private final Senders senders;
     private final Sources sources;
@@ -174,11 +192,13 @@ public final class OidcJwtAuthenticationConverter implements Converter<Jwt, Abst
     private final MachineEntityAdmission machineAdmission = new MachineEntityAdmission();
 
     public OidcJwtAuthenticationConverter(Settings settings, OidcJwtIdentityNormalizer identityNormalizer,
-                                          EntityMembershipResolver people, SignInLookups lookups, Senders senders,
-                                          Sources sources, RequestView request, RoleConflictReporter conflictReporter) {
+                                          EntityMembershipResolver people, PlatformGrants platformGrants,
+                                          SignInLookups lookups, Senders senders, Sources sources, RequestView request,
+                                          RoleConflictReporter conflictReporter) {
         this.settings = Objects.requireNonNull(settings, "settings");
         this.identityNormalizer = Objects.requireNonNull(identityNormalizer, "identityNormalizer");
         this.people = Objects.requireNonNull(people, "people");
+        this.platformGrants = Objects.requireNonNull(platformGrants, "platformGrants");
         this.lookups = Objects.requireNonNull(lookups, "lookups");
         this.senders = Objects.requireNonNull(senders, "senders");
         this.sources = Objects.requireNonNull(sources, "sources");
@@ -272,6 +292,7 @@ public final class OidcJwtAuthenticationConverter implements Converter<Jwt, Abst
                         "the group grants refused this sign-in (" + refused.reason() + ")"), null, identity.subject());
             };
         }
+        memberships = withPlatformRoles(memberships, key, groups, identity);
         VerifiedSignIn details = new VerifiedSignIn(key, List.copyOf(IdentityClaims.values(groups)));
         if (memberships.isEmpty()) {
             if (!lookups.connectionActive(key)) {
@@ -321,6 +342,36 @@ public final class OidcJwtAuthenticationConverter implements Converter<Jwt, Abst
         UsernamePasswordAuthenticationToken token = new UsernamePasswordAuthenticationToken(principal, null, authorities);
         token.setDetails(details);
         return token;
+    }
+
+    /**
+     * Task 0057: the entity grants with the platform roles added in each ACTIVE entity. Platform roles never come from
+     * an entity grant (platform-core refuses that), so the two never overlap by accident; the separation rules run on
+     * the union afterwards.
+     */
+    private Map<EntityId, Set<String>> withPlatformRoles(Map<EntityId, Set<String>> memberships, ConnectionKey key,
+                                                         Object groups, AuthenticatedIdentity identity) {
+        // No groups claim: no grant of any kind applies (the entity grants above read it the same way). A claim that is
+        // there but not a list was already refused by the entity grants.
+        if (groups == null) return memberships;
+        Map<EntityId, Set<String>> platform;
+        try {
+            platform = platformGrants.platformRoles(key, groups);
+        } catch (IdentityAdmissionException refused) {
+            throw switch (refused.reason()) {
+                case GROUPS_NOT_A_COLLECTION -> claims("claim=" + settings.groupsClaim() + " is not a list");
+                case NO_ADMISSION_POLICY, CONTEXT_UNAVAILABLE, POLICY_UNAVAILABLE ->
+                        new IllegalStateException("The platform grants could not be read (" + refused.reason() + ").");
+                default -> withSubject(SignInAnswer.of(401, SdvErrorCode.AUT_007, SignInAnswer.NO_ROLE,
+                        "the platform grants refused this sign-in (" + refused.reason() + ")"), null, identity.subject());
+            };
+        }
+        if (platform == null) throw new IllegalStateException("The platform grants could not be read.");
+        if (platform.isEmpty()) return memberships;
+        Map<EntityId, Set<String>> all = new LinkedHashMap<>();
+        memberships.forEach((entity, roles) -> all.put(entity, new LinkedHashSet<>(roles)));
+        platform.forEach((entity, roles) -> all.computeIfAbsent(entity, e -> new LinkedHashSet<>()).addAll(roles));
+        return all;
     }
 
     private static AbstractAuthenticationToken choice(AuthenticatedIdentity identity, Set<UUID> entities,

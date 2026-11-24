@@ -20,7 +20,8 @@ import java.util.Set;
  * Java side of the same list, and a test keeps the two equal.
  * <p>
  * {@code PLATFORM_OPERATIONS_ADMIN} is a platform role: it can never come from an entity's group grant (platform-core
- * refuses such a grant). Until platform-core offers platform-level grants nobody holds it (owner answer 4b).
+ * refuses such a grant). Task 0057: setup's platform-level grants (the role mapping's * rows) give it for the whole
+ * customer; {@link PlatformLevelGrants} applies them at sign-in.
  */
 public final class SdvRoleCatalog implements EntityRoleCatalog {
     /** The classpath location of Vero's product-roles file. */

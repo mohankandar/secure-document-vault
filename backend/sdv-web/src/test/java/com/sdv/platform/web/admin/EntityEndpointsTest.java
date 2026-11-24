@@ -214,7 +214,8 @@ class EntityEndpointsTest {
                 URI.create("https://login.example.test/oauth2/default"), "vero-web", "api://vero", null,
                 IdentityConnectionStatus.ACTIVE, 3);
         when(store.active("TEN-ACME-0001", "SDV")).thenReturn(Optional.of(active));
-        var controller = new LoginConnectionAdminController(new SecurityContextFacade(), authorization, reads, store);
+        var controller = new LoginConnectionAdminController(new SecurityContextFacade(), authorization, reads, store,
+                mock(com.sdv.platform.web.security.ActiveConnectionCheck.class), "enterprise-jwt");
 
         signIn(new SdvPrincipal(A, "it", Set.of(SdvRole.IT_ADMIN)), true);
         var overview = controller.overview();
@@ -224,5 +225,51 @@ class EntityEndpointsTest {
 
         signIn(new SdvPrincipal(A, "pat", Set.of(SdvRole.BUSINESS_ADMIN)), true);
         assertThrows(AccessDeniedException.class, controller::overview);
+    }
+
+    /** Task 0057 (LV-16 item 2): "Test sign-in" checks the connection in use, with the IT Admin's own token; read only. */
+    @Test
+    void theItAdminTestsTheConnectionInUseWithTheirOwnTokenAndNothingChanges() {
+        RoleCapabilityPolicyPort overrides = mock(RoleCapabilityPolicyPort.class);
+        when(overrides.findOverrides(any(), anyString())).thenReturn(Map.of());
+        AuthorizationService authorization = new AuthorizationService(audit, new CapabilityPolicyService(overrides));
+        PlatformIdentityReads reads = mock(PlatformIdentityReads.class);
+        when(reads.slotOf(A)).thenReturn(Optional.of(new PlatformIdentityReads.EntitySlot("TEN-ACME-0001", SLOT_A, "ACTIVE", "Acme Mortgage")));
+        LoginConnectionStore store = mock(LoginConnectionStore.class);
+        LoginConnection active = new LoginConnection(UUID.randomUUID(), "TEN-ACME-0001", "SDV", "okta", IdentityProviderType.OIDC,
+                URI.create("https://login.example.test/oauth2/default"), "vero-web", "api://vero", null,
+                IdentityConnectionStatus.ACTIVE, 3);
+        when(store.active("TEN-ACME-0001", "SDV")).thenReturn(Optional.of(active));
+        var check = mock(com.sdv.platform.web.security.ActiveConnectionCheck.class);
+        when(check.test(active, "own-token")).thenReturn(new com.sdv.platform.web.security.ActiveConnectionCheck.Result(
+                false, "IDN_TEST_KEYS_MISSING", "No usable signing key.", null, false));
+        when(check.test(active, null)).thenReturn(new com.sdv.platform.web.security.ActiveConnectionCheck.Result(
+                true, null, "The login system answered as expected.", null, false));
+        var request = new org.springframework.mock.web.MockHttpServletRequest();
+        request.addHeader("Authorization", "Bearer own-token");
+
+        signIn(new SdvPrincipal(A, "it", Set.of(SdvRole.IT_ADMIN)), true);
+        var answer = new LoginConnectionAdminController(new SecurityContextFacade(), authorization, reads, store, check,
+                "enterprise-jwt").test(request);
+        assertEquals("FAILED", answer.outcome());
+        assertEquals("IDN_TEST_KEYS_MISSING", answer.code());
+        assertEquals(active.connectionId(), answer.connectionId());
+        assertEquals(3, answer.configurationVersion());
+        verify(check).test(active, "own-token");
+        verify(store, org.mockito.Mockito.never()).update(any(), org.mockito.ArgumentMatchers.anyLong(), any(), any());
+        verify(store, org.mockito.Mockito.never()).insert(any(), any(), any());
+
+        // The local test sign-in's headers are no login-system token: nothing is handed on.
+        new LoginConnectionAdminController(new SecurityContextFacade(), authorization, reads, store, check, "local-header").test(request);
+        verify(check).test(active, null);
+
+        when(store.active("TEN-ACME-0001", "SDV")).thenReturn(Optional.empty());
+        var none = new LoginConnectionAdminController(new SecurityContextFacade(), authorization, reads, store, check,
+                "enterprise-jwt").test(request);
+        assertEquals("NO_CONNECTION", none.outcome());
+
+        signIn(new SdvPrincipal(A, "pat", Set.of(SdvRole.BUSINESS_ADMIN)), true);
+        assertThrows(AccessDeniedException.class, () -> new LoginConnectionAdminController(new SecurityContextFacade(),
+                authorization, reads, store, check, "enterprise-jwt").test(request));
     }
 }

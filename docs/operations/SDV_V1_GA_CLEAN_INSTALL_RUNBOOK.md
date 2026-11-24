@@ -331,7 +331,13 @@ Exit codes: 0 done, 2 wrong use (nothing was tried), 3 the database is newer tha
 
 Running `status` or `update` again is safe: when nothing is left it says "Up to date".
 
-Then load sign-in, entities and sending systems with the setup command: `docs/install/SETUP.md`.
+Then load sign-in, entities and sending systems with the setup command: `docs/install/SETUP.md`. The role mapping
+file there also grants the Platform Operations Admin, once for the whole customer, on a row with `*` as its entity
+(platform-level grant, task 0057); the separation rules hold for it (never with Restricted Steward).
+
+Task 0057 (platform-core 0.6.1): this release's identity tables are at version 4 (`idn_platform_grant`). On a
+database whose identity tables are at version 3, `status` lists `identity V4 (platform-core)` and `update` applies it
+in the identity run; Vero refuses to start until then (`IDN_VERSION_OLDER`).
 
 ### Checking it on a test computer
 

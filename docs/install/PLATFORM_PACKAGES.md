@@ -58,4 +58,6 @@ secret.
 
 ## Which platform-core version
 
-`platform.core.version` in `backend/pom.xml`; only released versions (`platform-core-vX.Y.Z`), never snapshots.
+`platform.core.version` in `backend/pom.xml` (since task 0057: `0.6.1`); only released versions
+(`platform-core-vX.Y.Z`), never snapshots. Since 0.3.0 the identity modules also bring `platform-outbound` and
+`platform-outbound-spring` (the safe outbound rules the test sign-in uses).

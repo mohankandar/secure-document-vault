@@ -20,6 +20,16 @@ spring:
     # Task 0041: Flyway is on the classpath for the schema step's platform-core runs only; never at startup.
     enabled: false
 
+platform:
+  # Task 0057: platform-core's safe outbound rules (platform-outbound-spring). Only the IT Admin's read-only "Test
+  # sign-in" uses them: platform-core's identity module fetches the login system's discovery document and keys over
+  # them (https only, no redirects, no internal or cloud-metadata addresses unless allowed). A local login server on
+  # http (localhost) is reached only under a development-signed licence. A proxy and a private certificate authority
+  # are set with PLATFORM_OUTBOUND_PROXY_* and PLATFORM_OUTBOUND_PRIVATE_CA_FILE (docs/install/SETUP.md section 5).
+  outbound:
+    installation: ${SDV_OUTBOUND_INSTALLATION:on-premises}
+    allow-internal-addresses: ${SDV_OUTBOUND_ALLOW_INTERNAL_ADDRESSES:false}
+
 server:
   port: ${SDV_SERVER_PORT:8280}
   shutdown: graceful

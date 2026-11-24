@@ -122,7 +122,7 @@ $has032 = $newChangesets -contains '032-steward-notices'
 $has033 = $newChangesets -contains '033-unidentified-intake-attempts'
 $has034 = $newChangesets -contains '034-unidentified-intake-attempt-counts'
 # Task 0041: 035 drops the old identity tables (014-016) and two of 025's tables; the schema step then also runs
-# platform-core's identity (V1-V3) and licensing (V1) tables, which no earlier version had.
+# platform-core's identity (V1-V4 since task 0057) and licensing (V1) tables, which no earlier version had.
 $has035 = $newChangesets -contains '035-drop-old-identity'
 # Task 0048: 036 adds the three quarantine tables.
 $has036 = $newChangesets -contains '036-quarantine'
@@ -156,7 +156,7 @@ $activityTablesBefore = if ($has041) { '0' } else { '3' }
 $has042 = $newChangesets -contains '042-restrictions-indexes'
 $hasRestrictionIndexesSql = "select count(*) from pg_indexes where indexname in ('idx_record_levels_restricted', 'idx_level_changes_recent');"
 $restrictionIndexesBefore = if ($has042) { '0' } else { '2' }
-$platformRuns = @('identity V1 (platform-core)', 'identity V2 (platform-core)', 'identity V3 (platform-core)', 'licensing V1 (platform-core)')
+$platformRuns = @('identity V1 (platform-core)', 'identity V2 (platform-core)', 'identity V3 (platform-core)', 'identity V4 (platform-core)', 'licensing V1 (platform-core)')
 # Task 0033: an uncorrected copy received at the previous version, which 032 must turn into one stored notice.
 $oldCopyEvent = '50000000-0000-0000-0000-0000000000c1'
 $reportIndexes = @('idx_submissions_tenant_created', 'idx_documents_tenant_ingested', 'idx_audit_events_redaction_old_sha')
@@ -424,8 +424,8 @@ insert into unidentified_intake_attempts(attempt_id, tenant_id, occurred_at, cal
     $st = Invoke-SchemaStep @('status')
     Assert-That ($st.Code -eq 0) "status failed: $($st.Err.Trim())"
     $wouldRun = ([regex]::Match($st.Out, '(\d+) changesets would run')).Groups[1].Value
-    # Task 0041: the earlier version has no platform-core tables, so status also lists their four versions.
-    Assert-That ($wouldRun -eq [string]($newChangesets.Count + $platformRuns.Count)) "status should list $($newChangesets.Count) changesets ($($newChangesets -join ', ')) and the 4 platform versions, said: $($st.Out.Trim())"
+    # Task 0041: the earlier version has no platform-core tables, so status also lists their versions (task 0057: five, identity V4).
+    Assert-That ($wouldRun -eq [string]($newChangesets.Count + $platformRuns.Count)) "status should list $($newChangesets.Count) changesets ($($newChangesets -join ', ')) and the 197609$platformRuns.Count) platform versions, said: $($st.Out.Trim())"
     foreach ($c in $platformRuns) { Assert-That ($st.Out.Contains($c)) "status does not list $c" }
     foreach ($c in $newChangesets) { Assert-That ($st.Out.Contains($c)) "status does not list $c" }
     Write-Step '3a. Schema step status' $st.Seconds "$wouldRun would run: $($newChangesets -join ', ')"
@@ -982,13 +982,13 @@ rollback;
         # SDV_IT_JDBC_PASSWORD.
         $w = [System.Diagnostics.Stopwatch]::StartNew()
         $mvn = (Get-Command mvn.cmd -ErrorAction Stop).Source
-        $it = Invoke-Native -File $mvn -Arguments @('-o', '-f', (Join-Path $root 'backend\pom.xml'), '-pl', 'sdv-web', '-am', 'test',
-            '-Dtest=LegalHoldPostgresTest,AccessRequestPostgresTest,DuplicateIntakePostgresTest,IntakeReportPostgresTest,SensitivityReportPostgresTest,PlatformIdentityPostgresTest,SenderProfileServerContractTest,UnidentifiedIntakeAttemptPostgresTest,QuarantinePostgresTest,QuarantineFilterBlockingPostgresTest,QuarantineScalePostgresTest,StorageReportPostgresTest,ActivityReportPostgresTest,RestrictionsPostgresTest,PrimaryIdentifierPostgresTest,SealedAuditPostgresTest', '-Dsurefire.failIfNoSpecifiedTests=false') -Environment @{
+        $it = Invoke-Native -File $mvn -Arguments @('-o', '-f', (Join-Path $root 'backend\pom.xml'), '-pl', 'sdv-web,sdv-setup', '-am', 'test',
+            '-Dtest=LegalHoldPostgresTest,AccessRequestPostgresTest,DuplicateIntakePostgresTest,IntakeReportPostgresTest,SensitivityReportPostgresTest,PlatformIdentityPostgresTest,SenderProfileServerContractTest,UnidentifiedIntakeAttemptPostgresTest,QuarantinePostgresTest,QuarantineFilterBlockingPostgresTest,QuarantineScalePostgresTest,StorageReportPostgresTest,ActivityReportPostgresTest,RestrictionsPostgresTest,PrimaryIdentifierPostgresTest,SealedAuditPostgresTest,VeroSetupPlanPostgresTest', '-Dsurefire.failIfNoSpecifiedTests=false') -Environment @{
             SDV_IT_JDBC_URL = $hostUrl; SDV_IT_JDBC_USER = $owner; SDV_IT_JDBC_PASSWORD = $ownerPassword; SDV_IT_QUARANTINE_SCALE = "$QuarantineScale"; SDV_IT_REPORT_SCALE = "$ReportScale"; SDV_IT_ACTIVITY_PER_DAY = "$ActivityPerDay" }
-        foreach ($test in @('application.legalhold.LegalHoldPostgresTest', 'application.approvals.AccessRequestPostgresTest', 'application.document.DuplicateIntakePostgresTest', 'application.reports.IntakeReportPostgresTest', 'application.reports.SensitivityReportPostgresTest', 'application.identity.PlatformIdentityPostgresTest', 'web.SenderProfileServerContractTest', 'application.reports.UnidentifiedIntakeAttemptPostgresTest', 'application.quarantine.QuarantinePostgresTest', 'application.quarantine.QuarantineFilterBlockingPostgresTest', 'application.quarantine.QuarantineScalePostgresTest', 'application.reports.StorageReportPostgresTest', 'application.reports.ActivityReportPostgresTest', 'application.restrictions.RestrictionsPostgresTest', 'application.business.PrimaryIdentifierPostgresTest', 'application.audit.SealedAuditPostgresTest')) {
+        foreach ($test in @('application.legalhold.LegalHoldPostgresTest', 'application.approvals.AccessRequestPostgresTest', 'application.document.DuplicateIntakePostgresTest', 'application.reports.IntakeReportPostgresTest', 'application.reports.SensitivityReportPostgresTest', 'application.identity.PlatformIdentityPostgresTest', 'web.SenderProfileServerContractTest', 'application.reports.UnidentifiedIntakeAttemptPostgresTest', 'application.quarantine.QuarantinePostgresTest', 'application.quarantine.QuarantineFilterBlockingPostgresTest', 'application.quarantine.QuarantineScalePostgresTest', 'application.reports.StorageReportPostgresTest', 'application.reports.ActivityReportPostgresTest', 'application.restrictions.RestrictionsPostgresTest', 'application.business.PrimaryIdentifierPostgresTest', 'application.audit.SealedAuditPostgresTest', 'setup.VeroSetupPlanPostgresTest')) {
             $itLine = ($it.Out -split "`n" | Where-Object { $_ -match ('Tests run: .* in com\.sdv\.platform\.' + [regex]::Escape($test)) } | Select-Object -First 1)
             # Task 0039 part 2: UnidentifiedIntakeAttemptPostgresTest has two tests (the flood of 1,000 requests).
-            $wantRun = switch ($test) { 'application.reports.UnidentifiedIntakeAttemptPostgresTest' { 2 } 'application.identity.PlatformIdentityPostgresTest' { 5 } default { 1 } }
+            $wantRun = switch ($test) { 'application.reports.UnidentifiedIntakeAttemptPostgresTest' { 2 } 'application.identity.PlatformIdentityPostgresTest' { 6 } 'setup.VeroSetupPlanPostgresTest' { 3 } default { 1 } }
             if ($it.Code -ne 0 -or -not $itLine -or $itLine -notmatch "Tests run: $wantRun, Failures: 0, Errors: 0, Skipped: 0") {
                 $it.Out | Set-Content -Encoding utf8 (Join-Path $run 'postgres-tests.log')
                 throw "FAIL: $test did not pass (exit $($it.Code)): $(if ($itLine) { $itLine.Trim() } else { 'no result line' }). Log: $run\postgres-tests.log"
@@ -1012,11 +1012,11 @@ rollback;
         $gone = Get-Value "select count(*) from pg_tables where tablename in ('enterprise_identity_connections', 'enterprise_identity_connection_history', 'role_group_mappings_seen', 'role_mapping_notices');"
         Assert-That ($gone -eq '0') "035 should drop the old identity tables, $gone left"
         Assert-That ((Get-Value "select count(*) from pg_tables where tablename = 'role_conflict_problems';") -eq '1') 'role_conflict_problems must stay'
-        Assert-That ((Get-Value 'select max(version) from idn_schema_version;') -eq '3') 'identity tables should be at version 3'
+        Assert-That ((Get-Value 'select max(version) from idn_schema_version;') -eq '4') 'identity tables should be at version 4 (task 0057: platform-core 0.6.1)'
         Assert-That ((Get-Value 'select max(version) from lic_schema_version;') -eq '1') 'licensing tables should be at version 1'
-        Assert-That ([int](Get-Value 'select count(*) from idn_schema_history where success;') -ge 3) 'the identity run should record V1-V3 in idn_schema_history'
+        Assert-That ([int](Get-Value 'select count(*) from idn_schema_history where success;') -ge 4) 'the identity run should record V1-V4 in idn_schema_history'
         Assert-That ([int](Get-Value 'select count(*) from lic_schema_history where success;') -ge 1) 'the licensing run should record V1 in lic_schema_history'
-        Write-Step '4k. After 035 and the platform runs' 0 'old identity and watch tables dropped, role conflicts kept; identity V3 and licensing V1, own history tables'
+        Write-Step '4k. After 035 and the platform runs' 0 'old identity and watch tables dropped, role conflicts kept; identity V4 and licensing V1, own history tables'
     }
     Write-Step '4. After: nothing else changed' $w.Elapsed.TotalSeconds 'other document columns and every other table unchanged'
 

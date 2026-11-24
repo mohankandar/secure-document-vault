@@ -11,6 +11,25 @@ class SchemaVersionTest {
     private static final SchemaVersion.Shipped SHIPPED = SchemaVersion.shipped();
     private static final SchemaVersion.Key SEED = new SchemaVersion.Key("002-local-foundation-seed", "sdv");
 
+    /** Task 0057: platform-core 0.6.1's identity tables are version 4 (platform-level grants); licensing stays 1. */
+    @Test
+    void theIdentityRunIsAtVersionFourAndLicensingAtOne() {
+        assertEquals(4, SchemaVersion.IDENTITY.version());
+        assertEquals(1, SchemaVersion.LICENSING.version());
+        assertEquals("identity V4", SchemaVersion.IDENTITY.key(4).id());
+        assertTrue(com.documentplatform.identity.jdbc.IdentitySchema.scripts().contains("V4__platform_grants.sql"));
+    }
+
+    /** Task 0057: platform-core 0.6.0 starts its start-up messages with their code; Vero never writes it twice. */
+    @Test
+    void aPlatformCodeIsNamedOnceInTheStartupMessage() {
+        assertEquals("IDN_PRIVILEGES_MISSING: the app user lacks SELECT", DatabaseSchemaCheck.withCode("IDN_PRIVILEGES_MISSING",
+                "IDN_PRIVILEGES_MISSING: the app user lacks SELECT"));
+        assertEquals("IDN_PRIVILEGES_MISSING: the app user lacks SELECT", DatabaseSchemaCheck.withCode("IDN_PRIVILEGES_MISSING",
+                "the app user lacks SELECT"));
+        assertEquals("IDN_TABLES_MISSING: ", DatabaseSchemaCheck.withCode("IDN_TABLES_MISSING", null));
+    }
+
     @Test
     void theLocalSeedIsShippedButNotRequiredForAProductionInstall() {
         assertTrue(SHIPPED.all().contains(SEED));

@@ -959,13 +959,29 @@ async function aboutChecks(page: Page, testInfo: TestInfo, area: 'operations' | 
   await capture(page, testInfo, `about-${area}`)
 }
 
-/** Sign-in for IT: read-only, with who to contact to change it. */
+/**
+ * Sign-in for IT: read-only, with who to contact to change it. Task 0057: one button, "Test sign-in", which asks
+ * platform-core to check the connection in use and changes nothing; still no draft, activation or rollback.
+ */
 async function signInChecks(page: Page, testInfo: TestInfo) {
   await tenantTab(page, 'Sign-in').click()
   await expect(page.getByText('Sign-in is set during installation by your installer. To change it, contact your Vero support team.')).toBeVisible({ timeout: 15000 })
-  await expect(page.getByRole('button', { name: /Edit|draft|Test|Activate|Roll back|Save/i })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: /Edit|draft|Activate|Roll back|Save/i })).toHaveCount(0)
   await expect(page.getByRole('textbox')).toHaveCount(0)
   await capture(page, testInfo, 'sign-in-read-only')
+  const test = page.getByRole('button', { name: 'Test sign-in', exact: true })
+  await expect(test).toHaveCount(1)
+  const versionBefore = await page.getByLabel('Sign-in in use').first().innerText()
+  await test.click()
+  const result = page.getByRole('status', { name: 'Test sign-in result' })
+  // The local demo connection is the development login server on this machine, under the development-signed licence.
+  await expect(result).toContainText('Test sign-in passed.', { timeout: 20000 })
+  await expect(result).toContainText('Checked: the login system’s discovery document, its signing keys and issuer.')
+  await expectNoRawWords(page)
+  await capture(page, testInfo, 'sign-in-test-passed')
+  await page.reload()
+  await tenantTab(page, 'Sign-in').click()
+  await expect(page.getByLabel('Sign-in in use').first()).toHaveText(versionBefore, { timeout: 15000 })
 }
 
 /** A small CSV reader for the export check: quoted cells, doubled quotes, CRLF rows. */
