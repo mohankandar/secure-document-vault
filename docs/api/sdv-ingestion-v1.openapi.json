@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Vero (Secure Document Vault) Ingestion API",
-    "version": "1.3.0",
+    "version": "1.4.0",
     "description": "The contract for sending systems: create a submission, upload its PDFs, read their state. Sign-in is an OAuth2 client-credentials token from the customer's sign-in server; the entity and the sending system come from the verified token's client ID (its client binding, set up by the customer's IT with Vero's setup command), never from a request header. Every error has the same body (Error) with a stable code. Each answer below says whether to send the request again (x-sdv-retry). The versioning policy, the sender's guide and the changelog are in docs/api/README.md. The build checks this file against the running API (IngestionContractTest).",
     "contact": {"name": "Vero team"}
   },
@@ -81,7 +81,7 @@
             "headers": {"X-Correlation-Id": {"$ref": "#/components/headers/CorrelationId"}},
             "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}
           },
-          "503": {"$ref": "#/components/responses/Unavailable"}
+          "503": {"$ref": "#/components/responses/UnavailableIntake"}
         }
       },
       "get": {
@@ -178,8 +178,8 @@
           "429": {"$ref": "#/components/responses/TooManyRequestsFromGateway"},
           "500": {"$ref": "#/components/responses/ServerFailureWithAudit"},
           "503": {
-            "description": "Vero can't take the upload right now. Nothing was stored. SDV-SYS-018: Vero is busy; wait the seconds in the Retry-After header and send the same upload again. Every other code here means unavailable and has no Retry-After: SDV-SYS-001, SDV-SYS-002, SDV-SYS-014, SDV-AUT-004 and SDV-STO-001 (Vero's storage is full): wait with back-off (check readiness) and send the same upload again. SDV-STO-004: storage for this tenant isn't available; the installer must fix it; keep the document and send it again after the fix.",
-            "x-sdv-codes": ["SDV-SYS-001", "SDV-SYS-002", "SDV-SYS-014", "SDV-SYS-018", "SDV-AUT-004", "SDV-STO-001", "SDV-STO-004"], "x-error-codes": ["SDV-SYS-001", "SDV-SYS-002", "SDV-SYS-014", "SDV-SYS-018", "SDV-AUT-004", "SDV-STO-001", "SDV-STO-004"],
+            "description": "Vero can't take the upload right now. Nothing was stored. SDV-SYS-018: Vero is busy; wait the seconds in the Retry-After header and send the same upload again. Every other code here means unavailable and has no Retry-After: SDV-SYS-001, SDV-SYS-002, SDV-SYS-014, SDV-AUT-004 and SDV-STO-001 (Vero's storage is full): wait with back-off (check readiness) and send the same upload again. SDV-STO-004: storage for this tenant isn't available; the installer must fix it; keep the document and send it again after the fix. SDV-LIC-001, SDV-LIC-002 (no Retry-After, retry rule after-fix): the customer's licence stops new work; nothing was stored. Keep it and send it again when the customer says so.",
+            "x-sdv-codes": ["SDV-SYS-001", "SDV-SYS-002", "SDV-SYS-014", "SDV-SYS-018", "SDV-AUT-004", "SDV-STO-001", "SDV-STO-004", "SDV-LIC-001", "SDV-LIC-002"], "x-error-codes": ["SDV-SYS-001", "SDV-SYS-002", "SDV-SYS-014", "SDV-SYS-018", "SDV-AUT-004", "SDV-STO-001", "SDV-STO-004", "SDV-LIC-001", "SDV-LIC-002"],
             "headers": {"X-Correlation-Id": {"$ref": "#/components/headers/CorrelationId"}, "Retry-After": {"$ref": "#/components/headers/RetryAfter"}},
             "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}
           }
@@ -235,7 +235,7 @@
           },
           "429": {"$ref": "#/components/responses/TooManyRequestsFromGateway"},
           "500": {"$ref": "#/components/responses/ServerFailureWithAudit"},
-          "503": {"$ref": "#/components/responses/Unavailable"}
+          "503": {"$ref": "#/components/responses/UnavailableIntake"}
         }
       }
     }
@@ -460,6 +460,12 @@
         "headers": {"X-Correlation-Id": {"$ref": "#/components/headers/CorrelationId"}},
         "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}
       },
+      "UnavailableIntake": {
+        "description": "Vero can't take the request right now. Send the same request again. SDV-SYS-018: Vero is busy; wait the seconds in the Retry-After header first. Every other code here means unavailable and has no Retry-After; wait with back-off (check readiness): SDV-SYS-001, SDV-SYS-002: Vero's database is being upgraded. SDV-SYS-014: the database can't be reached. SDV-AUT-004: the sign-in server's keys can't be fetched. SDV-LIC-001, SDV-LIC-002 (no Retry-After, retry rule after-fix): the customer's licence stops new work; nothing was stored. Keep it and send it again when the customer says so.",
+        "x-sdv-codes": ["SDV-SYS-001", "SDV-SYS-002", "SDV-SYS-014", "SDV-SYS-018", "SDV-AUT-004", "SDV-LIC-001", "SDV-LIC-002"], "x-error-codes": ["SDV-SYS-001", "SDV-SYS-002", "SDV-SYS-014", "SDV-SYS-018", "SDV-AUT-004", "SDV-LIC-001", "SDV-LIC-002"],
+        "headers": {"X-Correlation-Id": {"$ref": "#/components/headers/CorrelationId"}, "Retry-After": {"$ref": "#/components/headers/RetryAfter"}},
+        "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}
+      },
       "Unavailable": {
         "description": "Vero can't take the request right now. Send the same request again. SDV-SYS-018: Vero is busy; wait the seconds in the Retry-After header first. Every other code here means unavailable and has no Retry-After; wait with back-off (check readiness): SDV-SYS-001, SDV-SYS-002: Vero's database is being upgraded. SDV-SYS-014: the database can't be reached. SDV-AUT-004: the sign-in server's keys can't be fetched.",
         "x-sdv-codes": ["SDV-SYS-001", "SDV-SYS-002", "SDV-SYS-014", "SDV-SYS-018", "SDV-AUT-004"], "x-error-codes": ["SDV-SYS-001", "SDV-SYS-002", "SDV-SYS-014", "SDV-SYS-018", "SDV-AUT-004"],
@@ -540,6 +546,8 @@
     "503 SDV-SYS-018": {"retry": "yes", "retryAfter": true, "summary": "Vero is busy: no database connection is free for the request. Wait the seconds in the Retry-After header and send the same request again."},
     "503 SDV-AUT-004": {"retry": "yes", "summary": "The sign-in server's keys can't be fetched."},
     "503 SDV-STO-001": {"retry": "yes", "summary": "No storage can take the document (storage full)."},
+    "503 SDV-LIC-001": {"retry": "after-fix", "summary": "The customer's licence doesn't allow new work now. Nothing was stored."},
+    "503 SDV-LIC-002": {"retry": "after-fix", "summary": "The customer's licence can't be checked. Nothing was stored."},
     "503 SDV-STO-004": {"retry": "after-fix", "summary": "Storage for this tenant isn't available: the storage volume Vero picked names a storage provider this install doesn't have. The installer must fix it."}
   },
   "x-sdv-compatibility": {

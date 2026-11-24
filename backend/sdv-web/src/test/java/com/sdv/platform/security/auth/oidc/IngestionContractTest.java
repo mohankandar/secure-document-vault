@@ -263,6 +263,8 @@ class IngestionContractTest {
         assertTrue(settings.contains("include: readinessState,databaseSchema,databaseConnection,signInKeys"), "readiness group");
     }
 
+    static final AtomicReference<java.util.function.BooleanSupplier> LICENCE = new AtomicReference<>(() -> true);
+
     /** What Spring's readiness endpoint answers in {@link #readinessWhenBusyIsTheBusyAnswerAndOtherwiseHasNoCode}. */
     static final AtomicReference<ResponseEntity<String>> READINESS_ANSWER = new AtomicReference<>();
 
@@ -468,8 +470,9 @@ class IngestionContractTest {
             Map.Entry<String, JsonNode> entry = it.next();
             if (entry.getValue().path("retryAfter").asBoolean(false)) withRetryAfter.add(entry.getKey());
             if (entry.getKey().startsWith("503 ")) {
-                // Owner answer 2 to report 0040: SDV-STO-004 is after-fix (the installer must fix it); the rest retry.
-                String rule = entry.getKey().equals("503 SDV-STO-004") ? "after-fix" : "yes";
+                // Owner answer 2 to report 0040: SDV-STO-004 is after-fix (the installer must fix it). Task 0075: so is the
+                // licence (the customer renews it). The rest retry.
+                String rule = Set.of("503 SDV-STO-004", "503 SDV-LIC-001", "503 SDV-LIC-002").contains(entry.getKey()) ? "after-fix" : "yes";
                 assertEquals(rule, entry.getValue().path("retry").asString(), entry.getKey());
             }
             assertFalse(entry.getKey().startsWith("429 "), "Vero never answers 429");
@@ -787,6 +790,13 @@ class IngestionContractTest {
                 NOTHING, 404, "SDV-INT-004"));
 
         // uploadDocument
+        // Task 0075: the licence stops new work, before anything of the request is read; status queries go on.
+        for (String op : AUDITED) {
+            all.add(refused(op, "the licence doesn't allow intake", () -> signed(base(op)), test -> LICENCE.set(() -> false), 503, "SDV-LIC-001"));
+            all.add(refused(op, "the licence can't be checked", () -> signed(base(op)), test -> LICENCE.set(() -> {
+                throw new com.documentplatform.licensing.LicenceException(com.documentplatform.licensing.LicenceRefusal.LICENCE_TAMPERED);
+            }), 503, "SDV-LIC-002"));
+        }
         String u = "uploadDocument";
         all.add(ok(u, "received", () -> signed(upload().header("X-SDV-Source-Document-Id", "doc-1")), NOTHING, 201));
         all.add(ok(u, "a retry of the same upload", () -> signed(upload().header("X-SDV-Source-Document-Id", "doc-1")),
@@ -931,6 +941,7 @@ class IngestionContractTest {
     // The stand-ins' defaults and changes
 
     private void defaults() throws Exception {
+        LICENCE.set(() -> true);
         reset(TENANTS, SOURCES, SUBMISSION_STORE, DOCUMENT_STORE, DEFINITIONS, RECORD_LEVELS, AUDIT, PLACEMENT, STORAGE,
                 CRYPTO, FINALIZATION, RECORDS, LEVELS, SCHEMA);
         DECODER.set(decoder(HUB.getAddress().getPort()));
@@ -1191,6 +1202,17 @@ class IngestionContractTest {
     @EnableWebSecurity
     @Import(SecurityConfiguration.class)
     static class ContractStack {
+        /** Task 0075: the licence's answer; intake is refused by it as in the running app. */
+        @org.springframework.context.annotation.Bean
+        org.springframework.web.servlet.config.annotation.WebMvcConfigurer licenceGate() {
+            return new org.springframework.web.servlet.config.annotation.WebMvcConfigurer() {
+                @Override
+                public void addInterceptors(org.springframework.web.servlet.config.annotation.InterceptorRegistry registry) {
+                    registry.addInterceptor(new com.sdv.platform.web.licensing.LicenceGate(() -> LICENCE.get().getAsBoolean()));
+                }
+            };
+        }
+
         @Bean JwtDecoder enterpriseJwtDecoder(@Value("${test.jwks}") String jwks) {
             return token -> DECODER.get().decode(token);
         }

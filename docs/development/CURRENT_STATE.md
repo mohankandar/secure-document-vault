@@ -42,8 +42,8 @@ the schema step (never at startup, the local profile included).
   account menu, every switch audited. Sending systems: entity and source from the client ID (`SDV-AUT-011`..`013`).
 - Entities are activated by a Business Admin (`POST /api/v1/admin/entities/{slot}/activate`) or, for the demo, by the
   demo step; demo entity UUIDs are derived from the demo slot IDs.
-- Licensing is not turned on: its tables and the stored licence exist, activation reads the licence, nothing checks the
-  allowance. `docs/verification` keeps the earlier identity checkpoints as history.
+- Licensing is on (task 0075): Vero starts only with a licence; intake stops after the grace time; usage is recorded, never
+  enforced. `docs/verification` keeps the earlier identity checkpoints as history.
 - **Task 0073 (2026-11-24): platform-core 1.0.0** (identity only; no module turned on yet).
 - **Task 0070 (2026-11-24): Spring Boot 4.2.0, platform-core 0.8.1, Jackson 3**, Liquibase pinned at 4.33.0. Stored JSON goes
   through `VeroJson` (unchanged bytes); no Jackson 2 in the code (a guard test).

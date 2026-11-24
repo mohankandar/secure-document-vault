@@ -12,4 +12,4 @@
 Every refusal on a screen ends with a code such as `SDV-APR-006`, and most errors with a reference. Give both to support.
 Neither says anything about a document.
 
-Checked against the code on 2026-11-24. Licensing is not live: nothing in these guides depends on it.
+Checked against the code on 2026-11-24. Licensing is on (task 0075).

@@ -1,3 +1,4 @@
+import type { LicenceView } from './licenceWords'
 import { ApiRequestError, roleApi, contentBinary, contentDownload, contentExport, type RegisteredExport, type SessionInfo, type SearchSchema, type SearchResponse, type BusinessRecord, type RecordSummary, type SearchSource, type SensitivityLevel } from '../api'
 import type { Field, Source, RecordItem, Doc } from './model'
 import type { SignInTestAnswer } from './signInTestWords'
@@ -196,6 +197,9 @@ export type OpsRetention={outcome:'SUCCESS'|'FAILED'|'NEVER_RUN'|string;startedA
 export type ServiceCheck={name:string;group:string;state:'WORKING'|'HAVING_PROBLEMS'|'DOWN';code:string;cause:string|null;fix:string|null;checkedAt:string}
 export const serviceChecks=(role:'platform'|'tenantIt')=>roleApi<{checks:ServiceCheck[]}>('/api/v1/operations/checks',role)
 export const diagnosticBundle=(role:'platform'|'tenantIt')=>contentBinary('/api/v1/operations/diagnostic-bundle',role)
+/** Task 0075: the licence and this entity's use of it. */
+export const licenceView=(role:'businessAdmin'|'tenantIt')=>roleApi<LicenceView>('/api/v1/admin/licence',role)
+export const usageExport=(startAgain:boolean)=>contentBinary('/api/v1/admin/licence/usage-export?startAgain='+startAgain,'tenantIt','POST')
 export const opsRetention=()=>roleApi<OpsRetention>('/api/v1/operations/retention-status','platform')
 
 /** Thresholds left out use the tenant's standard warning and stop levels. */

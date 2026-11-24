@@ -31,6 +31,7 @@ public class SubmissionController {
         this.submissions = submissions;
     }
 
+    @com.sdv.platform.web.licensing.LicensedIntake
     @PostMapping
     public ResponseEntity<SubmissionResponse> create(@RequestBody CreateSubmissionRequest request,
                                                      jakarta.servlet.http.HttpServletRequest http) {

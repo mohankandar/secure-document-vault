@@ -91,6 +91,11 @@
             <groupId>com.documentplatform.platform</groupId>
             <artifactId>platform-monitoring-spring</artifactId>
         </dependency>
+        <!-- Task 0075: the licence: its state, the intake rule and the usage ledger. -->
+        <dependency>
+            <groupId>com.documentplatform.platform</groupId>
+            <artifactId>platform-licensing-spring</artifactId>
+        </dependency>
         <!-- Task 0041: the schema step's two platform runs (identity, licensing), each with its own history table.
              Used by SchemaStep only, never at startup (spring.flyway.enabled=false). -->
         <dependency>

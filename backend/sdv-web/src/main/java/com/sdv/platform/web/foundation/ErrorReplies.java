@@ -126,6 +126,9 @@ public final class ErrorReplies {
             // Task 0039 (for example SDV-INT-010): Vero's own setup stops the request; the message is safe to send.
             return new Reply(HttpStatus.INTERNAL_SERVER_ERROR, setup.errorCode(), setup.getMessage());
         }
+        if (ex instanceof com.sdv.platform.web.licensing.IntakeStopped stopped) {
+            return new Reply(HttpStatus.SERVICE_UNAVAILABLE, stopped.errorCode(), stopped.getMessage());
+        }
         if (ex instanceof NoWritableStorageException storage) {
             return new Reply(HttpStatus.SERVICE_UNAVAILABLE, storage.errorCode(), STO_001_MESSAGE);
         }

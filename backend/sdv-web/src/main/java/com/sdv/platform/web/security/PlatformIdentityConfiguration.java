@@ -41,6 +41,7 @@ import com.sdv.platform.security.SdvRole;
 import com.sdv.platform.security.auth.oidc.OidcJwtAuthenticationConverter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -63,10 +64,8 @@ import java.util.function.Function;
  * Task 0041: Vero on platform-core identity. The idn_ tables are platform-core's (identity schema V1 to V5, made by
  * the schema step, filled by setup); these beans read them for Vero's product {@value VeroProduct#CODE}.
  * <p>
- * Licensing is not turned on (owner answer 15). Slot activation needs to know which slots the stored licence lists and
- * whether it is in force: that is read only ({@link #licensedSlots}), with the keys of Vero's own build
- * ({@link VeroLicenceBuild}). Nothing is counted, limited or enforced; the clock check stores nothing,
- * and no waiting licence is promoted from here.
+ * Task 0075: licensing is on. Slot activation asks platform-core's licence service which slots the licence lists
+ * ({@link #licensedSlots}); the licence is checked with the keys of Vero's own build ({@link VeroLicenceBuild}).
  */
 @Configuration
 public class PlatformIdentityConfiguration {
@@ -143,12 +142,12 @@ public class PlatformIdentityConfiguration {
      * so activation is refused (NO_LICENCE); Vero still starts.
      */
     @Bean
-    LicensedSlots licensedSlots(DataSource ds, @Value("${sdv.identity.trusted-keys-file:}") String removedSetting) {
+    LicensedSlots licensedSlots(LicenceService licence, @Value("${sdv.identity.trusted-keys-file:}") String removedSetting, ObjectProvider<LicenceBuild> own) {
         if (!removedSetting.isBlank()) {
             throw new StartupFailure(SdvErrorCode.SYS_005, "SDV_TRUSTED_KEYS_FILE is no longer used: Vero trusts only the licence keys "
                     + "of its own build. Remove the setting.");
         }
-        Optional<LicenceBuild> build = VeroLicenceBuild.load();
+        Optional<LicenceBuild> build = Optional.ofNullable(own.getIfAvailable()).or(VeroLicenceBuild::load);
         if (build.isEmpty()) {
             log.info("This build trusts no licence key: entity activation is refused.");
             return Optional::empty;
@@ -156,7 +155,7 @@ public class PlatformIdentityConfiguration {
         if (build.get().keys().keyIds().stream().anyMatch(build.get().keys()::isDevelopmentKey)) {
             log.warn("This is a DEVELOPMENT build of Vero: it trusts the demo licence. It must never be given to a customer.");
         }
-        return LicenceSlots.of(readOnlyLicence(ds, build.get()));
+        return LicenceSlots.of(licence);
     }
 
     /**
@@ -167,9 +166,9 @@ public class PlatformIdentityConfiguration {
      * never (http refused, {@code IDN_HTTP_ISSUER_NOT_ALLOWED}).
      */
     @Bean
-    DevelopmentLicence developmentLicence(DataSource ds) {
-        return VeroLicenceBuild.load()
-                .map(build -> LicenceSigningKey.of(readOnlyLicence(ds, build), build.keys()))
+    DevelopmentLicence developmentLicence(LicenceService licence, ObjectProvider<LicenceBuild> own) {
+        return Optional.ofNullable(own.getIfAvailable()).or(VeroLicenceBuild::load)
+                .map(build -> LicenceSigningKey.of(licence, build.keys()))
                 .orElse(DevelopmentLicence.NONE);
     }
 

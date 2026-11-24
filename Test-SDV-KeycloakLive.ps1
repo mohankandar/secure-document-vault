@@ -65,6 +65,10 @@ try {
     & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $root 'Update-SDV-Schema.ps1') update -Url "jdbc:postgresql://localhost:5433/$db" -Username sdv *> (Join-Path $run 'schema.log')
     $step = $LASTEXITCODE; $ErrorActionPreference = 'Stop'
     if ($step -ne 0) { throw "The schema step on the scratch database failed; see $run." }
+    $ErrorActionPreference = 'Continue'
+    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $root 'Seed-SDV-Canvas-Demo.ps1') -SetupOnly -Database $db *> (Join-Path $run 'setup.log')
+    $step = $LASTEXITCODE; $ErrorActionPreference = 'Stop'
+    if ($step -ne 0) { throw "Setup on the scratch database failed; see $run." }
     $env:SDV_KEY_PROVIDER = 'vault'; $env:SDV_VAULT_BASE_URL = 'http://127.0.0.1:8200'
     $env:SDV_VAULT_TOKEN_FILE = Join-Path (Split-Path -Parent $root) 'secrets\sdv-app.token'
     $env:SDV_LOCAL_DB_PASSWORD = $password

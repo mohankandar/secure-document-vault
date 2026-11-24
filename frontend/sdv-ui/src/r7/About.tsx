@@ -5,6 +5,7 @@ import { identityOverview, systemInfo, type IdentityOverview } from './liveApi'
 import { FailureNotice, loadFailed, type Failure } from './CardError'
 import { PRODUCT_NAME } from './brand'
 import { TechDetails, fmtDateTime } from './ui'
+import { Licence } from './Licence'
 import { fmtWhen } from './opsWords'
 
 // Task 0012 Part D (change 10): one page for the facts support asks for, replacing IT › Environment and
@@ -75,6 +76,7 @@ export function About({ role }: { role: 'platform' | 'tenantIt' }) {
       {copied === 'yes' && <span role="status" className="muted">Copied</span>}
       {copied === 'no' && <span role="alert">This browser didn’t allow copying. Select the text under Technical details instead.</span>}
     </div>
+    {role === 'tenantIt' && <Licence role="tenantIt" />}
     <TechDetails hint="active profiles, build, correlation ID">
       <dl className="v-kv">{technical.map(([k, v]) => <div key={k}><dt>{k}</dt><dd className="mono">{v}</dd></div>)}</dl>
       <pre className="pr-note" aria-label="Details for support">{text}</pre>

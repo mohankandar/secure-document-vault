@@ -70,6 +70,8 @@
 [CmdletBinding()]
 param(
     [string]$Base = 'http://127.0.0.1:8280',
+    # Task 0075: only the licence, customer and entities, before Vero's first start on a new database.
+    [switch]$SetupOnly,
     [ValidatePattern('^sdv(_[a-z0-9_]+)?$')][string]$Database = 'sdv',
     # Task 0039 part 2: empty means the default under the script's folder. Windows PowerShell 5.1 leaves $PSScriptRoot
     # empty in parameter defaults under powershell.exe -File, so the defaults are filled in below, not here.
@@ -186,12 +188,16 @@ function Deliver([string]$SourceId, [string]$SubKey, [hashtable]$Metadata, [stri
 }
 
 Write-Host "=== SDV DEMO DATA (local only, database $Database) ==="
+# Task 0075: Vero starts only with a licence, so on a new database setup runs before the first start: -SetupOnly, then start
+# Vero, then this script again without it.
+if (-not $SetupOnly) {
 try { $health = Invoke-RestMethod -Uri "$Base/actuator/health" -TimeoutSec 5 } catch { throw "SDV is not reachable at $Base. Start it with .\start-local.cmd (run .\Update-SDV-Schema.ps1 update first on a database older than this version)" }
 if ($health.status -ne 'UP') { throw "SDV is not UP at $Base. If the database is older than this version, run .\Update-SDV-Schema.ps1 update -Url jdbc:postgresql://localhost:5433/$Database -Username sdv, then restart." }
 # Task 0071: system information needs sign-in now; the sign-in settings are open and say whether this is local mode.
 $signIn = Invoke-RestMethod -Uri "$Base/api/v1/session/sign-in" -TimeoutSec 10
 if ($signIn.mode -ne 'local') { throw "The demo data is for a Vero in local mode; Vero at $Base signs people in with mode '$($signIn.mode)'." }
 
+}
 # ---- Task 0041: the demo entities come from platform-core setup and Vero's demo step, never from a changeset ----
 # Setup loads the demo licence (signed by the development key, which only a development build trusts: Build-SDV-All.ps1), the customer,
 # the two entity slots, the local login connection, the role grants and the client bindings. The demo step activates
@@ -227,6 +233,7 @@ try {
 $ErrorActionPreference = $stopOnStderr
 if ($demoExit -ne 0) { throw "The demo step failed (exit $demoExit):`n$($demoOut -join "`n")" }
 Ok 'Demo step: entities ENT-VERO-DEMO-0001 (Acme Lending) and ENT-VERO-DEMO-0002 activated'
+if ($SetupOnly) { Write-Host 'Setup done. Start Vero, then run this script again without -SetupOnly.'; return }
 
 $tenantRow = Db "select count(*) from tenants where tenant_id='$Tenant';"
 if ([int]$tenantRow -ne 1) { throw "The local demo entity is not in database $Database. Is the app at $Base started on it (local profile)?" }

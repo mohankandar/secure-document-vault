@@ -84,6 +84,11 @@ try {
     } finally { Remove-Item Env:SDV_SCHEMA_DB_PASSWORD -ErrorAction SilentlyContinue }
     $ErrorActionPreference = 'Stop'
     Assert-That ($schemaExit -eq 0) "Schema step on the scratch database (exit $schemaExit; log: $run\schema.log)"
+    # Task 0075: Vero starts only with a licence.
+    $ErrorActionPreference = 'Continue'
+    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $root 'Seed-SDV-Canvas-Demo.ps1') -SetupOnly -Database $db *> (Join-Path $run 'setup.log')
+    $setupExit = $LASTEXITCODE; $ErrorActionPreference = 'Stop'
+    Assert-That ($setupExit -eq 0) "Setup on the scratch database, before the first start (exit $setupExit; log: $run\setup.log)"
     $env:SDV_KEY_PROVIDER = 'vault'; $env:SDV_VAULT_BASE_URL = 'http://127.0.0.1:8200'; $env:SDV_VAULT_TOKEN_FILE = $tokenFile
     $env:SDV_LOCAL_DB_PASSWORD = $localPassword
     try {

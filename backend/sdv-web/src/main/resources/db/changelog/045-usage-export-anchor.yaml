@@ -1,0 +1,8 @@
+databaseChangeLog:
+  - changeSet:
+      id: 045-usage-export-anchor
+      author: sdv
+      changes:
+        - sqlFile:
+            path: db/changelog/045-usage-export-anchor.sql
+            relativeToChangelogFile: false

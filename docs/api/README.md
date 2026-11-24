@@ -144,6 +144,7 @@ The answers a sender can get:
 | 500 | `SDV-SYS-016`, `SDV-INT-010` | after-fix |
 | 503 | `SDV-SYS-018`: **busy**, with `Retry-After` (seconds) | yes, after the header's wait |
 | 503 | `SDV-SYS-001`, `SDV-SYS-002`, `SDV-SYS-014`, `SDV-AUT-004`, `SDV-STO-001`: **unavailable**, no `Retry-After` | yes, with back-off |
+| 503 | `SDV-LIC-001`, `SDV-LIC-002`: the customer's licence stops new work; nothing was stored. No `Retry-After` | after-fix |
 | 503 | `SDV-STO-004` (upload only): storage for this entity isn't available; the installer must fix it. No `Retry-After` | after-fix |
 
 **The busy rule.** Vero never sends 429. When it is too busy to take a request (today: no database connection is free for it), it answers `503 SDV-SYS-018` with a `Retry-After` header in seconds; wait that long and send the same request again. It sends `Retry-After` only with the busy code. Every other 503 means Vero is unavailable: back off and check readiness. Read the header rather than relying on its number (5 by default; the installer can set it from 1 to 300). The OpenAPI file says which operation gives which code.
@@ -202,6 +203,10 @@ The record is the same grouping as for record levels (above): the submissions of
 The sample under `samples/third-party-producer/` demonstrates the contract with raw HTTP calls only.
 
 ## Changelog
+
+### 1.4.0 (task 0075, 2026-11-24). Release tag: `sdv-ingestion-v1.4.0`
+
+- **New codes, 503, no `Retry-After`, retry rule `after-fix`:** `SDV-LIC-001` (the customer's licence doesn't allow new work now) and `SDV-LIC-002` (it can't be checked), on creating a submission, uploading a document and retrying a finalization. Nothing was stored; keep the delivery and send it again when the customer says so. Status queries go on.
 
 ### 1.3.0 (task 0063, 2026-11-24). Release tag: `sdv-ingestion-v1.3.0`
 
