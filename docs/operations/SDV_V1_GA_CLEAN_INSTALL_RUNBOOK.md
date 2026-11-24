@@ -219,8 +219,8 @@ step, setup (it stores the licence and writes `platform-tenant.properties`), the
 - **Clock reset:** when the server clock was once far in the future, licence dates stay there. Ask for a clock reset file and
   apply it with `apply-reset --file reset.json` and the **schema owner's** database user. It works once, for a few days.
 - **Usage** is counted, never a limit: storage (GB, daily), people at the same time (15 minutes, the day's highest), stewards and
-  administrators of the month. IT, About, **Export usage** saves the file for the account manager; no names, no prices. Each file
-  goes on from the last; a missing or replaced anchor (`SDV-LIC-003`, for example after a restore) is said, and only IT can then
+  administrators of the month. IT, About, **Export usage** saves the file for the account manager; no names, no prices. A file
+  covers the finished months since the last one, and goes on from it; a missing or replaced anchor (`SDV-LIC-003`, for example after a restore) is said, and only IT can then
   start a new series, which is in the audit.
 - **Local development:** a new database needs `.\Seed-SDV-Canvas-Demo.ps1 -SetupOnly` before Vero's first start.
 

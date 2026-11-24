@@ -35,9 +35,15 @@ public class UsageExports {
     private final LicenceService licence;
     private final JdbcTemplate db;
     private final AuditEventPort audit;
-    private final Clock clock = Clock.systemUTC();
+    private final Clock clock;
 
+    @org.springframework.beans.factory.annotation.Autowired
     public UsageExports(LicenceService licence, JdbcTemplate db, AuditEventPort audit) {
+        this(licence, db, audit, Clock.systemUTC());
+    }
+
+    UsageExports(LicenceService licence, JdbcTemplate db, AuditEventPort audit, Clock clock) {
+        this.clock = clock;
         this.licence = licence;
         this.db = db;
         this.audit = audit;
@@ -60,9 +66,11 @@ public class UsageExports {
         ExportAnchor after = matches && kept.isPresent() ? kept.get() : ExportAnchor.first();
         Instant now = clock.instant();
         Licence current = licence.status().licence();
-        YearMonth to = YearMonth.from(now.atZone(ZoneOffset.UTC));
-        YearMonth from = after.previousPeriodTo().orElseGet(() -> licence.ledger().records().stream().map(UsageRecord::period).min(YearMonth::compareTo).orElse(to));
-        if (from.isAfter(to)) throw new CodedRefusal.BadRequest(SdvErrorCode.LIC_004, "This server's date is before the last usage export's month. Correct the clock.");
+        // Finished months only, each month in one file: platform-core's check wants consecutive months.
+        YearMonth to = YearMonth.from(now.atZone(ZoneOffset.UTC)).minusMonths(1);
+        YearMonth from = after.previousPeriodTo().map(m -> m.plusMonths(1))
+                .orElseGet(() -> licence.ledger().records().stream().map(UsageRecord::period).min(YearMonth::compareTo).orElse(to.plusMonths(1)));
+        if (from.isAfter(to)) throw new CodedRefusal.BadRequest(SdvErrorCode.LIC_004, "There is no finished month to export yet. The next file is ready on 1 " + from.plusMonths(1).getMonth().getDisplayName(java.time.format.TextStyle.FULL, java.util.Locale.ENGLISH) + ".");
         UsageExport file = UsageExport.create(current, licence.ledger(), from, to, after, now);
         ExportAnchor next = file.nextAnchor();
         if (!matches) db.update("delete from usage_export_anchor");

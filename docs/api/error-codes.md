@@ -932,12 +932,12 @@ Task 0037: SYS-003 to SYS-012 are start-up codes. A start that stops prints one 
 - **What the user should do:** tell support first; then start a new series of files. That is in the audit.
 - **What support should tell the customer:** expect a file that doesn't continue from the last one, and why.
 
-### SDV-LIC-004: the usage export's months are not valid
+### SDV-LIC-004: no finished month to export
 
 - **HTTP status:** 400. `POST /api/v1/admin/licence/usage-export`. Nothing was exported.
-- **Meaning:** this server's date is before the month of the last usage export.
-- **What the user should do:** IT corrects the server's clock.
-- **What support should tell the customer:** the same.
+- **Meaning:** a usage file covers finished months, each month once. All finished months are exported, or the first month is still running.
+- **What the user should do:** export on or after the first of the next month.
+- **What support should tell the customer:** the same. If the server's clock is behind, IT corrects it.
 
 ### SDV-SYS-001: database older than this version
 

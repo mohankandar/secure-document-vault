@@ -372,7 +372,7 @@ public enum SdvErrorCode {
     LIC_002("SDV-LIC-002", true),
     /** Task 0075: the usage export's anchor is missing or is not the last export's (409). Never repaired by itself. */
     LIC_003("SDV-LIC-003", true),
-    /** Task 0075: the usage export's months are not valid (400). */
+    /** Task 0075: no finished month is left to export (400). */
     LIC_004("SDV-LIC-004", false, true),
     /** Task 0037: no key service is set up: WARN at a local start, and a packaged start refuses. */
     KEY_001("SDV-KEY-001", true);

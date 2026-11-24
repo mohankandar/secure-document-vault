@@ -119,7 +119,7 @@ class SenderProfileServerContractTest {
         java.security.KeyPair key = com.sdv.platform.application.identity.DevelopmentLicences.newKey();
         var build = com.documentplatform.licensing.LicenceBuild.of(com.documentplatform.licensing.TrustedKeys.of(Map.of("profile-check-1", key.getPublic())), false, java.time.Instant.parse("2026-01-01T00:00:00Z"));
         var licence = new com.documentplatform.licensing.Licence("LIC-PROFILE-CHECK-0001", 1, "Profile check customer", TENANT, java.util.List.of("SDV"),
-                java.util.List.of(new com.documentplatform.licensing.EntitySlot(SLOT, java.util.List.of())), com.documentplatform.licensing.LicenceType.PERPETUAL,
+                java.util.List.of(new com.documentplatform.licensing.EntitySlot(SLOT, java.util.List.of(new com.documentplatform.licensing.Allowance("SDV", com.documentplatform.licensing.AllowanceType.STORAGE, 1)))), com.documentplatform.licensing.LicenceType.PERPETUAL,
                 com.documentplatform.licensing.LicenceKind.NON_PRODUCTION, java.time.LocalDate.of(2026, 1, 1), null, java.time.LocalDate.of(2036, 12, 31),
                 com.documentplatform.licensing.Deployment.ON_PREM, "profile-check-1", java.time.Instant.parse("2026-01-01T00:00:00Z"));
         new com.documentplatform.licensing.jdbc.PostgresLicenceStore(db.getDataSource()).put(com.documentplatform.licensing.LicenceStore.Slot.CURRENT,

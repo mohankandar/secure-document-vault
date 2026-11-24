@@ -660,9 +660,9 @@ async function licenceChecks(page: Page, testInfo: TestInfo, area: 'Business adm
   await expect(use).toContainText(/ of 100 GB/)
   await expect(licence).not.toContainText(/price|€|USD|[$]/i)
   if (area === 'IT') {
-    const [file] = await Promise.all([page.waitForEvent('download'), licence.getByRole('button', { name: 'Export usage' }).click()])
-    expect(file.suggestedFilename()).toMatch(/^vero-usage-.+[.]json$/)
-    await expect(licence).toContainText('The export is recorded in the audit.')
+    // The demo data's first month is still running, so there is nothing to export yet (the file itself: UsageExportPostgresTest).
+    await licence.getByRole('button', { name: 'Export usage' }).click()
+    await expect(licence).toContainText('SDV-LIC-004')
   }
   await capture(page, testInfo, area === 'IT' ? 'it-licence' : 'licence')
 }

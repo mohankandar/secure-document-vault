@@ -141,7 +141,7 @@ export const CODE_WORDS: Record<string, string> = {
   'SDV-LIC-001': 'Vero takes no new documents: its licence doesn’t allow it now. Nothing was stored.',
   'SDV-LIC-002': 'Vero can’t check its licence, so it takes no new documents. Nothing was stored.',
   'SDV-LIC-003': 'The anchor kept for usage files isn’t the last export’s. Nothing was exported. Tell support first.',
-  'SDV-LIC-004': 'This server’s date is before the last usage export. IT corrects the clock.',
+  'SDV-LIC-004': 'There is no finished month to export yet. Try again on the first of the next month.',
   'SDV-STO-001': 'Vero has no storage space for new documents right now. Nothing was stored.',
   'SDV-STO-004': 'Storage for this organisation isn’t available, so nothing was stored.',
   'SDV-STO-005': 'A storage value is missing or out of range. Correct it and try again.',
