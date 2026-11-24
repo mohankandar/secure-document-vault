@@ -9,6 +9,7 @@ import java.io.IOException;
 import java.io.Writer;
 import java.sql.Connection;
 import java.sql.SQLException;
+import java.sql.Statement;
 import java.util.List;
 
 /**
@@ -61,6 +62,46 @@ final class PlatformSchemaRuns {
                 writer.write(script(run, name));
                 writer.write("\n");
             }
+        }
+        writer.write("\n-- The rights of other roles on two licensing tables (task 0073; safe to run again).\n");
+        writer.write(NARROW_GRANTS);
+    }
+
+    /**
+     * Task 0073: the runbook's default privileges give the app's user every right on new tables; platform-core allows less on
+     * two of the licensing tables (insert and update on the latest time seen, insert on applied clock resets). Every role
+     * but the owner loses the rest. The tables refuse these changes in any case; safe to run again.
+     */
+    static final String NARROW_GRANTS = """
+            do $$
+            declare
+                r record;
+            begin
+                for r in
+                    select distinct g.grantee, g.table_name, g.privilege_type
+                    from information_schema.role_table_grants g
+                    join pg_tables t on t.tablename = g.table_name and t.schemaname = g.table_schema
+                    where g.table_schema = current_schema()
+                      and ((g.table_name = 'lic_last_seen' and g.privilege_type in ('DELETE', 'TRUNCATE'))
+                        or (g.table_name = 'lic_clock_reset' and g.privilege_type in ('UPDATE', 'DELETE', 'TRUNCATE')))
+                      and g.grantee <> t.tableowner
+                loop
+                    if r.grantee = 'PUBLIC' then
+                        execute format('revoke %s on %I from public', r.privilege_type, r.table_name);
+                    else
+                        execute format('revoke %s on %I from %I', r.privilege_type, r.table_name, r.grantee);
+                    end if;
+                end loop;
+            end;
+            $$;
+            """;
+
+    /** Takes the rights back. In its own transaction, whatever the runs before left. */
+    static void narrowGrants(Connection connection) throws SQLException {
+        boolean auto = connection.getAutoCommit();
+        try (Statement s = connection.createStatement()) {
+            s.execute(NARROW_GRANTS);
+            if (!auto) connection.commit();
         }
     }
 

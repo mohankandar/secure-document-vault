@@ -175,9 +175,10 @@ the owner creates, platform-core's `idn_` and `lic_` tables included. platform-c
 `idn_grant_history` the table itself refuses changes). If the rights are short, Vero does not start and names the
 table (`IDN_PRIVILEGES_MISSING`).
 
-**Upgrading to platform-core 0.7.0 (task 0067).** After the schema step, take away rights the app's user no longer needs:
-`revoke delete on lic_last_seen from <app user>; revoke update, delete on lic_clock_reset from <app user>;` The tables
-refuse these changes in any case. Then check your groups: names count **exactly** as your login system sends them (no
+**Two tables have fewer rights.** The schema step itself takes back `DELETE` on `lic_last_seen` and `UPDATE`, `DELETE` on
+`lic_clock_reset` from every role but the owner (task 0073), also on a database that is up to date; nothing to do by hand.
+
+**Upgrading to platform-core 0.7.0 (task 0067).** Check your groups: names count **exactly** as your login system sends them (no
 trimming), and a groups claim that is one text is one group. The role mapping file must match character by character.
 
 ## 7. On a developer computer
