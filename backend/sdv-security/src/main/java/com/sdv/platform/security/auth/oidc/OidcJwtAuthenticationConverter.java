@@ -50,7 +50,8 @@ import java.util.UUID;
  * customer's login connection ACTIVE), else SDV-AUT-011; the source must be one of the entity's sending systems in
  * Vero, else SDV-AUT-013. The optional claims {@code sdv_entity_id}, {@code sdv_source_id} and {@code sdv_source_key}
  * must match the binding when present, else SDV-AUT-012. The old {@code sdv_tenant_id} claim is ignored (owner answer
- * 13). A bound client whose token also carries groups is refused (SDV-AUT-005), as before. A token with neither a
+ * 13). A bound client whose token also carries groups is refused (SDV-AUT-005), as before; task 0062: so is one that is
+ * not the client's own ({@link MachineTokens}). A token with neither a
  * binding nor groups on an intake address is an unknown sending system (SDV-AUT-011).
  *
  * <p><b>People.</b> Their entities and roles come from the group grants of the customer's ACTIVE login connection
@@ -82,8 +83,14 @@ public final class OidcJwtAuthenticationConverter implements Converter<Jwt, Abst
      * @param clientIdClaims the claims that may hold the client ID, first match wins; all present must agree
      */
     public record Settings(String providerId, String audience, String groupsClaim, List<String> clientIdClaims,
-                           String entityClaim, String sourceIdClaim, String sourceKeyClaim) {
+                           String entityClaim, String sourceIdClaim, String sourceKeyClaim, MachineTokens machineTokens) {
+        public Settings(String providerId, String audience, String groupsClaim, List<String> clientIdClaims,
+                        String entityClaim, String sourceIdClaim, String sourceKeyClaim) {
+            this(providerId, audience, groupsClaim, clientIdClaims, entityClaim, sourceIdClaim, sourceKeyClaim, MachineTokens.DEFAULT);
+        }
+
         public Settings {
+            Objects.requireNonNull(machineTokens, "machineTokens");
             providerId = name(providerId, "provider id");
             audience = name(audience, "audience");
             groupsClaim = name(groupsClaim, "groups claim");
@@ -105,6 +112,39 @@ public final class OidcJwtAuthenticationConverter implements Converter<Jwt, Abst
                 throw new StartupFailure(SdvErrorCode.SYS_005, "The OIDC " + label + " must be configured.");
             }
             return value.trim();
+        }
+    }
+
+    /**
+     * Task 0062: how a bound client's token is known to be the client's own (client credentials), not a person's who
+     * signed in through it. Always: no claim only a person's sign-in has ({@link #USER_ONLY}), and a token type mark
+     * ({@code idtyp}), when there is one, must say "app". And, when the installer names a claim (the login system's own mark), it
+     * must be there with exactly that value; {@code {client}} in the value stands for the client ID.
+     */
+    public record MachineTokens(String requiredClaim, String requiredValue) {
+        /** Claims of a person's sign-in session, or of a groups list the login system left out. */
+        static final List<String> USER_ONLY = List.of("sid", "auth_time", "nonce", "at_hash", "c_hash", "s_hash", "amr",
+                "_claim_names", "hasgroups");
+        public static final MachineTokens DEFAULT = new MachineTokens("", "");
+
+        public MachineTokens {
+            requiredClaim = requiredClaim == null ? "" : requiredClaim.trim();
+            requiredValue = requiredValue == null ? "" : requiredValue.trim();
+            if (requiredClaim.isEmpty() != requiredValue.isEmpty() || requiredClaim.length() > 100 || requiredValue.length() > 300) {
+                throw new StartupFailure(SdvErrorCode.SYS_005, "SDV_AUTH_JWT_MACHINE_CLAIM and SDV_AUTH_JWT_MACHINE_CLAIM_VALUE must be set together.");
+            }
+        }
+
+        /** Why this is not the client's own token, for the log (claim names only), or null when it is. */
+        String problem(Jwt jwt, String clientId) {
+            for (String claim : USER_ONLY) {
+                if (jwt.hasClaim(claim)) return "claim=" + claim + " belongs to a person's sign-in";
+            }
+            if (jwt.hasClaim("idtyp") && !"app".equals(jwt.getClaim("idtyp"))) return "claim=idtyp is not an application's";
+            if (!requiredClaim.isEmpty() && !requiredValue.replace("{client}", clientId).equals(jwt.getClaim(requiredClaim))) {
+                return "claim=" + requiredClaim + " doesn't mark it as a sending system's";
+            }
+            return null;
         }
     }
 
@@ -223,6 +263,10 @@ public final class OidcJwtAuthenticationConverter implements Converter<Jwt, Abst
                 if (hasGroups) {
                     throw claims("the client is bound as a sending system and claim=" + settings.groupsClaim()
                             + " is present; a token is a person or a sending system, not both");
+                }
+                String problem = settings.machineTokens().problem(jwt, clientId);
+                if (problem != null) {
+                    throw claims("the client is bound as a sending system, but the token isn't the client's own: " + problem);
                 }
                 return sendingSystem(jwt, subject, key, clientId, binding.get());
             }

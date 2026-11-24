@@ -126,6 +126,8 @@ export const CODE_WORDS: Record<string, string> = {
   'SDV-SYS-016': 'Something inside Vero didn’t add up, so nothing was changed.',
   'SDV-SYS-017': 'Vero couldn’t record this action, so it wasn’t done.',
   'SDV-SYS-018': 'Vero is too busy to take this request just now.',
+  'SDV-SYS-019': 'This request is larger than Vero takes. Send less at once.',
+  'SDV-STO-008': 'This folder can’t be used for documents. Choose another, or ask your installer which folders are allowed.',
   'SDV-STO-001': 'Vero has no storage space for new documents right now. Nothing was stored.',
   'SDV-STO-004': 'Storage for this organisation isn’t available, so nothing was stored.',
   'SDV-STO-005': 'A storage value is missing or out of range. Correct it and try again.',

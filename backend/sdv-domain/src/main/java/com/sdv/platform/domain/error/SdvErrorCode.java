@@ -313,6 +313,8 @@ public enum SdvErrorCode {
      * no connection left for Vero. 503 with a Retry-After header, the only answer that carries one.
      */
     SYS_018("SDV-SYS-018"),
+    /** Task 0062: the request body is larger than Vero takes (413). Not for uploads: a PDF over its limit is SDV-INT-014. */
+    SYS_019("SDV-SYS-019", false, true),
     /** Task 0036: no ACTIVE storage volume can take the document (503). */
     STO_001("SDV-STO-001", true),
     /**
@@ -322,6 +324,8 @@ public enum SdvErrorCode {
     STO_004("SDV-STO-004", true),
     /** Task 0037: the storage placement preview's size is negative (400). Other volume settings follow in their task. */
     STO_005("SDV-STO-005"),
+    /** Task 0062: the folder may not be used for documents (400), whatever the reason. */
+    STO_008("SDV-STO-008", false, true),
     /** Task 0037: no key service is set up: WARN at a local start, and a packaged start refuses. */
     KEY_001("SDV-KEY-001", true);
 

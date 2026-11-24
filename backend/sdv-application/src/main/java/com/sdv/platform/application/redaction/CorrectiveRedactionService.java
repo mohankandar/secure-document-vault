@@ -104,7 +104,7 @@ public class CorrectiveRedactionService {
                 return completeStaged(claimed, regions.size(), correlationId);
             } catch (RuntimeException ex) {
                 safeReleaseRecoveryClaim(claimed, claimToken);
-                safeFailureAudit(tenantId, documentId, actorId, normalizedReason, regions.size(), correlationId, ex);
+                safeFailureAudit(tenantId, documentId, actorId, pending.operationId(), regions.size(), correlationId, ex);
                 throw ex;
             }
         }
@@ -130,6 +130,7 @@ public class CorrectiveRedactionService {
         StorageVolume newVolume = null;
         StorageProvider newProvider = null;
         boolean staged = false;
+        UUID operationId = UUID.randomUUID();
 
         try {
             plaintext = verifiedPlaintext(current, oldStorage, oldCrypto, oldVolume, oldProvider);
@@ -151,7 +152,7 @@ public class CorrectiveRedactionService {
             }
 
             RedactionOperation operation = new RedactionOperation(
-                    UUID.randomUUID(), tenantId, documentId, current.sourceId(), current.submissionId(),
+                    operationId, tenantId, documentId, current.sourceId(), current.submissionId(),
                     actorId, requestSha, normalizedReason, regionsJson,
                     oldStorage.providerId(), oldStorage.storageVolumeId(), oldStorage.objectKey(),
                     oldStorage.encryptedSizeBytes(), oldStorage.integrityValue(),
@@ -178,13 +179,13 @@ public class CorrectiveRedactionService {
             if (!staged && newProvider != null && newVolume != null && newStored != null) {
                 safeDelete(newProvider, tenantId, newVolume, newStored.objectKey());
             }
-            safeFailureAudit(tenantId, documentId, actorId, normalizedReason, regions.size(), correlationId, ex);
+            safeFailureAudit(tenantId, documentId, actorId, operationId, regions.size(), correlationId, ex);
             throw ex;
         } catch (IOException ex) {
             if (!staged && newProvider != null && newVolume != null && newStored != null) {
                 safeDelete(newProvider, tenantId, newVolume, newStored.objectKey());
             }
-            safeFailureAudit(tenantId, documentId, actorId, normalizedReason, regions.size(), correlationId, ex);
+            safeFailureAudit(tenantId, documentId, actorId, operationId, regions.size(), correlationId, ex);
             throw new RedactionFailedException("Corrective redaction failed safely.", ex);
         } finally {
             if (plaintext != null) Arrays.fill(plaintext, (byte) 0);
@@ -208,7 +209,7 @@ public class CorrectiveRedactionService {
             } catch (RuntimeException ex) {
                 failed++;
                 safeFailureAudit(operation.tenantId(), operation.documentId(), operation.actorId(),
-                        operation.reason(), regionCount, recoveryCorrelationId, ex);
+                        operation.operationId(), regionCount, recoveryCorrelationId, ex);
                 // Keep the DB-time claim in place as a bounded retry backoff. A crashed or
                 // failed recovery becomes eligible again after the same 10-minute lease.
             }
@@ -415,11 +416,10 @@ public class CorrectiveRedactionService {
     }
 
     private String successAuditJson(RedactionOperation op, int regionCount) {
+        // Task 0062: the reason (free text) and the regions stay in document_redaction_operations; the event holds its ID.
         try {
             Map<String,Object> safe = new LinkedHashMap<>();
             safe.put("operationId", op.operationId().toString());
-            safe.put("reason", op.reason());
-            safe.put("regions", json.readTree(op.regionsJson()));
             safe.put("regionCount", regionCount);
             safe.put("oldContentSha256", op.oldContentSha256());
             safe.put("newContentSha256", op.newContentSha256());
@@ -432,11 +432,11 @@ public class CorrectiveRedactionService {
         }
     }
 
-    private void safeFailureAudit(UUID tenantId, UUID documentId, String actorId, String reason,
+    private void safeFailureAudit(UUID tenantId, UUID documentId, String actorId, UUID operationId,
                                   int regionCount, String correlationId, Exception failure) {
         try {
             Map<String,Object> safe = new LinkedHashMap<>();
-            safe.put("reason", reason);
+            if (operationId != null) safe.put("operationId", operationId.toString());
             safe.put("regionCount", regionCount);
             safe.put("errorCode", failure.getClass().getSimpleName());
             audit.append(new AuditEvent(UUID.randomUUID(), tenantId, "USER", actorId,

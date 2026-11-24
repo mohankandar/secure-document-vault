@@ -36,7 +36,12 @@ class RoleSeparationAtSignInTest {
 
     @Test
     void restrictedStewardAndAnAdminGrantGiveNeitherAndAreReported() {
-        for (String admin : List.of("vero-business-admins", "vero-it")) {
+        // Task 0062: an IT Admin with any document role gets neither, so with "vero-it" nothing is left.
+        var it = grantsLoadedBySetup();
+        assertEquals("SDV-ROL-004", assertThrows(SignInRefusedException.class, () -> it.converter().convert(
+                person(List.of("vero-restricted", "vero-it", "vero-users"), java.util.Map.of()))).answer().code().code());
+        assertEquals(1, it.conflicts.size());
+        for (String admin : List.of("vero-business-admins")) {
             var f = grantsLoadedBySetup();
             var auth = f.converter().convert(person(List.of("vero-restricted", admin, "vero-users"), java.util.Map.of("name", "Pat Lee")));
             assertEquals(Set.of(SdvRole.BUSINESS_USER), ((SdvPrincipal) auth.getPrincipal()).roles(), admin);

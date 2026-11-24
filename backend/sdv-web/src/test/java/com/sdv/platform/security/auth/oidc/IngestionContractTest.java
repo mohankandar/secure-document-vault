@@ -225,6 +225,7 @@ class IngestionContractTest {
         api = json.readTree(Files.readString(DOCS.resolve("sdv-ingestion-v1.openapi.json"), StandardCharsets.UTF_8));
         mvc = MockMvcBuilders.webAppContextSetup(context)
                 .addFilters(new CorrelationIdFilter(), new SchemaGateFilter(SCHEMA),
+                        new com.sdv.platform.web.foundation.RequestBodyLimitFilter(1_048_576, 8_388_608),
                         context.getBean("springSecurityFilterChain", Filter.class)).build();
         defaults();
     }
@@ -821,6 +822,9 @@ class IngestionContractTest {
         all.add(refused(u, "storage full", () -> signed(upload().header("X-SDV-Source-Document-Id", "doc-1")),
                 test -> when(PLACEMENT.select(eq(TENANT), anyLong())).thenThrow(new NoWritableStorageException("full")),
                 503, "SDV-STO-001"));
+
+        all.add(refused("createSubmission", "larger than Vero takes", () -> signed(post(SUBMISSIONS).contentType(MediaType.APPLICATION_JSON)
+                .content(" ".repeat(8_388_609))), NOTHING, 413, "SDV-SYS-019"));
 
         // listSubmissionDocuments
         all.add(ok("listSubmissionDocuments", "listed", () -> signed(get(DOCUMENTS)),

@@ -48,19 +48,77 @@ class StorageFolderCheckTest {
     private final TenantRepository tenants = mock(TenantRepository.class);
     private final StorageVolumeRepository volumes = mock(StorageVolumeRepository.class);
     private final RoleCapabilityPolicyPort overrides = mock(RoleCapabilityPolicyPort.class);
-    private final StorageVolumeProbe probe = spy(new LocalFilesystemVolumeProbe());
-    private final StorageVolumeAdminService service = new StorageVolumeAdminService(
-            tenants, volumes, probe, mock(StoragePlacementService.class), audit);
-    private final StorageAdminController controller = new StorageAdminController(
-            new SecurityContextFacade(), new AuthorizationService(audit, new CapabilityPolicyService(overrides)), service);
+    private StorageVolumeProbe probe;
+    private StorageAdminController controller;
 
     @BeforeEach
     void setUp() {
+        use(temp.toString());
         Tenant tenant = mock(Tenant.class);
         when(tenant.status()).thenReturn(TenantStatus.ACTIVE);
         when(tenants.findById(TENANT)).thenReturn(Optional.of(tenant));
         when(overrides.findOverrides(any(), anyString())).thenReturn(Map.of());
         when(volumes.findConfiguredRoots(anyString())).thenReturn(List.of());
+    }
+
+    /** Task 0062: the installer's allowed folders. */
+    private void use(String allowedRoots) {
+        probe = spy(new LocalFilesystemVolumeProbe(allowedRoots));
+        controller = new StorageAdminController(new SecurityContextFacade(), new AuthorizationService(audit, new CapabilityPolicyService(overrides)),
+                new StorageVolumeAdminService(tenants, volumes, probe, mock(StoragePlacementService.class), audit));
+    }
+
+    @Test
+    void aFolderOutsideTheAllowedOnesIsRefusedAndNothingIsTouched() throws IOException {
+        signIn(SdvRole.IT_ADMIN);
+        Path inside = Files.createDirectory(temp.resolve("inside"));
+        use(inside.toString());
+        for (String path : List.of(temp.resolve("other").toString(), inside + "/../other", temp.toString(), inside + "-more", "other",
+                "\\\\host\\share", "//host/share", "\\\\?\\C:\\x", "\\\\.\\C:", "")) {
+            var result = (StorageVolumeProbe.FolderCheck) controller.checkFolder(new StorageAdminController.FolderCheckRequest(path));
+            assertFalse(result.writable(), path);
+            assertEquals(StorageVolumeAdminService.FOLDER_NOT_ALLOWED, result.problem(), path);
+            assertEquals(path.trim(), result.normalizedRootPath(), "nothing about the server's paths");
+            assertNull(result.usableBytes(), path);
+            var refused = assertThrows(com.sdv.platform.domain.error.CodedRefusal.BadRequest.class, () -> controller.create(
+                    new StorageAdminController.CreateStorageVolumeRequest("v", path, com.sdv.platform.domain.storage.StorageVolumeState.ACTIVE, 1, 80, 95)), path);
+            assertEquals("SDV-STO-008", refused.errorCode().code());
+            assertEquals(StorageVolumeAdminService.FOLDER_NOT_ALLOWED, refused.getMessage());
+        }
+        assertEquals(1, entries(temp), "only the allowed folder");
+        assertTrue(check(inside.resolve("a").resolve("b")).writable());
+    }
+
+    @Test
+    void aLinkInsideAnAllowedFolderIsRefused() throws Exception {
+        signIn(SdvRole.IT_ADMIN);
+        Path inside = Files.createDirectory(temp.resolve("inside"));
+        Path elsewhere = Files.createDirectory(temp.resolve("elsewhere"));
+        use(inside.toString());
+        Path link = inside.resolve("link");
+        if (System.getProperty("os.name").startsWith("Windows")) {
+            // A junction needs no administrator.
+            assertEquals(0, new ProcessBuilder("cmd", "/c", "mklink", "/J", link.toString(), elsewhere.toString()).redirectErrorStream(true)
+                    .redirectOutput(ProcessBuilder.Redirect.DISCARD).start().waitFor());
+        } else {
+            Files.createSymbolicLink(link, elsewhere);
+        }
+        for (Path path : List.of(link, link.resolve("volume"))) {
+            assertEquals(StorageVolumeAdminService.FOLDER_NOT_ALLOWED, check(path).problem());
+        }
+        assertEquals(0, entries(elsewhere));
+        Files.delete(link);
+    }
+
+    @Test
+    void withoutASettingOnlyTheDataFolderIsAllowedAndABadSettingStopsTheStart() {
+        var none = new LocalFilesystemVolumeProbe("");
+        assertTrue(none.allowed("data/volume-a"));
+        assertFalse(none.allowed("other"));
+        assertFalse(none.allowed("data/../other"));
+        for (String bad : List.of(" ; ", "\\\\host\\share", "data;//host/share")) {
+            assertThrows(com.sdv.platform.domain.error.StartupFailure.class, () -> new LocalFilesystemVolumeProbe(bad), bad);
+        }
     }
 
     @AfterEach
@@ -134,7 +192,7 @@ class StorageFolderCheckTest {
                 new StorageVolumeRepository.ConfiguredRoot(UUID.randomUUID(), temp.toAbsolutePath().normalize().toString())));
         var result = check(temp.resolve("inside"));
         assertFalse(result.writable());
-        assertEquals("This folder is inside another volume's folder, or contains one.", result.problem());
+        assertEquals(StorageVolumeAdminService.FOLDER_NOT_ALLOWED, result.problem(), "the same answer as a folder that is not allowed");
         verify(probe, never()).check(anyString());
         assertFalse(Files.exists(temp.resolve("inside")));
     }

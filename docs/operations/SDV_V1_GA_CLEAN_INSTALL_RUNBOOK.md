@@ -235,6 +235,27 @@ Vero keeps the Problems list of unidentified intake attempts small, however many
 
 Each request's reference is in Vero's log, also when it is counted in a row with others.
 
+### Where documents may be kept: `SDV_STORAGE_ALLOWED_ROOTS`
+
+An IT Admin adds storage volumes only inside the folders named here (task 0062).
+
+| Setting | Default | Value |
+|---|---|---|
+| `SDV_STORAGE_ALLOWED_ROOTS` | empty: only `data` under Vero's working folder | Folders of this computer, separated by `;`. A network share or a device path stops the start with `SDV-SYS-005` |
+
+- Set it **before an upgrade** if new volumes will be outside the default. Volumes that exist stay usable.
+- Links inside an allowed folder are refused. Vero's service account needs rights only to these folders.
+
+### How large a request may be
+
+| Setting | Default | Value |
+|---|---|---|
+| `SDV_MAX_REQUEST_BODY_BYTES` | `1048576` (1 MB) | Any request except a submission and a document upload |
+| `SDV_MAX_SUBMISSION_BODY_BYTES` | `8388608` (8 MB) | A submission with its list of documents |
+
+Both from 1024 to 104857600; anything else stops the start with `SDV-SYS-005`. Over the limit: `413 SDV-SYS-019`. A
+document's own limit is set for each sending system.
+
 ### When Vero is busy: `SDV_BUSY_RETRY_AFTER_SECONDS`
 
 When no database connection is free for a request, Vero answers `503 SDV-SYS-018` ("busy") with a `Retry-After`

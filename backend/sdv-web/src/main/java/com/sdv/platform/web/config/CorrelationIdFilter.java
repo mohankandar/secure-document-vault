@@ -14,11 +14,19 @@ import java.io.IOException;
 import java.util.UUID;
 import java.util.regex.Pattern;
 
+/**
+ * Makes the reference of every request: on the log lines, the error body, the audit events and the
+ * {@code X-Correlation-Id} answer header. Task 0062: always Vero's own, so one request's lines can't carry another's
+ * reference. A caller's {@code X-Correlation-Id} is kept beside it ({@link #CALLER_MDC_KEY}), in the log lines and, as
+ * {@code callerReference}, in the audit events; a value that isn't plain is dropped.
+ */
 @Component
 @Order(Ordered.HIGHEST_PRECEDENCE)
 public final class CorrelationIdFilter extends OncePerRequestFilter {
     public static final String HEADER = "X-Correlation-Id";
     public static final String MDC_KEY = "correlationId";
+    /** Task 0062: the reference the caller sent, if any. Never used as Vero's own. */
+    public static final String CALLER_MDC_KEY = "callerReference";
     /** Task 0036: the same ID as a request attribute, so the /error dispatch (after the MDC is cleared) still has it. */
     public static final String REFERENCE_ATTRIBUTE = CorrelationIdFilter.class.getName() + ".reference";
 
@@ -30,8 +38,10 @@ public final class CorrelationIdFilter extends OncePerRequestFilter {
             HttpServletResponse response,
             FilterChain filterChain) throws ServletException, IOException {
 
-        String correlationId = resolveCorrelationId(request.getHeader(HEADER));
+        String correlationId = UUID.randomUUID().toString();
+        String caller = request.getHeader(HEADER);
         MDC.put(MDC_KEY, correlationId);
+        if (caller != null && SAFE.matcher(caller).matches()) MDC.put(CALLER_MDC_KEY, caller);
         request.setAttribute(REFERENCE_ATTRIBUTE, correlationId);
         response.setHeader(HEADER, correlationId);
 
@@ -39,13 +49,7 @@ public final class CorrelationIdFilter extends OncePerRequestFilter {
             filterChain.doFilter(request, response);
         } finally {
             MDC.remove(MDC_KEY);
+            MDC.remove(CALLER_MDC_KEY);
         }
-    }
-
-    private String resolveCorrelationId(String supplied) {
-        if (supplied != null && SAFE.matcher(supplied).matches()) {
-            return supplied;
-        }
-        return UUID.randomUUID().toString();
     }
 }

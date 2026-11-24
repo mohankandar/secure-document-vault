@@ -116,6 +116,33 @@ class SignInChainTest {
         return names;
     }
 
+    /** Task 0062: a bound client's token that isn't the client's own is refused; the client's own is accepted. */
+    @Test
+    void aPersonsTokenThroughABoundClientIsNotASendingSystem() throws Exception {
+        assertEquals(200, withToken("/api/v1/ingestion/submissions", true, sign(KEY, sendingSystem())).status());
+        assertEquals(200, withToken("/api/v1/ingestion/submissions", true, sign(KEY, sendingSystem().claim("acr", "1").claim("idtyp", "app"))).status());
+        for (String claim : List.of("sid", "auth_time", "nonce", "at_hash", "c_hash", "s_hash", "amr", "_claim_names", "hasgroups")) {
+            body(withToken("/api/v1/ingestion/submissions", true, sign(KEY, sendingSystem().claim(claim, "x"))), 401, "SDV-AUT-005",
+                    "Your sign-in is missing details Vero needs. Your IT team can fix this.");
+        }
+        body(withToken("/api/v1/ingestion/submissions", true, sign(KEY, sendingSystem().claim("idtyp", "user"))), 401, "SDV-AUT-005",
+                "Your sign-in is missing details Vero needs. Your IT team can fix this.");
+        for (ILoggingEvent e : lines(Level.WARN, "SDV-AUT-005")) assertTrue(e.getFormattedMessage().contains("isn't the client's own: claim="));
+    }
+
+    @Test
+    void theInstallersMarkOfASendingSystemMustMatchExactly() {
+        var keycloak = new OidcJwtAuthenticationConverter.MachineTokens("preferred_username", "service-account-{client}");
+        var jwt = org.springframework.security.oauth2.jwt.Jwt.withTokenValue("t").header("alg", "RS256").subject("s");
+        assertNull(keycloak.problem(jwt.claim("preferred_username", "service-account-c1").build(), "c1"));
+        assertNotNull(keycloak.problem(jwt.claim("preferred_username", "pat").build(), "c1"));
+        assertNotNull(keycloak.problem(jwt.claim("preferred_username", "service-account-c2").build(), "c1"));
+        assertNotNull(keycloak.problem(jwt.claims(c -> c.remove("preferred_username")).build(), "c1"));
+        for (String[] bad : new String[][] {{"x", ""}, {"", "x"}}) {
+            assertThrows(com.sdv.platform.domain.error.StartupFailure.class, () -> new OidcJwtAuthenticationConverter.MachineTokens(bad[0], bad[1]));
+        }
+    }
+
     @Test
     void aGoodPersonTokenSignsIn() throws Exception {
         Answer answer = withToken("/api/v1/session", false, sign(KEY, person(SUBJECT, List.of("vero-users"))));

@@ -4,9 +4,15 @@ import com.sdv.platform.application.port.StorageVolumeProbe;
 import com.sdv.platform.domain.storage.StorageCapacitySnapshot;
 import org.springframework.stereotype.Component;
 
+import com.sdv.platform.domain.error.SdvErrorCode;
+import com.sdv.platform.domain.error.StartupFailure;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+
 import java.io.IOException;
 import java.nio.file.FileStore;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -14,6 +20,60 @@ import java.util.List;
 
 @Component
 public class LocalFilesystemVolumeProbe implements StorageVolumeProbe {
+    /** Where documents may be kept when the installer names nothing: this folder under Vero's working folder. */
+    static final String DEFAULT_ROOT = "data";
+
+    private final List<Path> roots;
+
+    /** @param allowedRoots `sdv.storage.allowed-roots`: folders, separated by ';'. Empty: only {@value #DEFAULT_ROOT}. */
+    @Autowired
+    public LocalFilesystemVolumeProbe(@Value("${sdv.storage.allowed-roots:}") String allowedRoots) {
+        List<Path> parsed = new ArrayList<>();
+        for (String part : (allowedRoots == null || allowedRoots.isBlank() ? DEFAULT_ROOT : allowedRoots).split(";")) {
+            if (part.isBlank()) continue;
+            try {
+                if (shareOrDevice(part.trim())) throw new IllegalArgumentException("a network share or device path");
+                parsed.add(Path.of(part.trim()).toAbsolutePath().normalize());
+            } catch (RuntimeException ex) {
+                throw new StartupFailure(SdvErrorCode.SYS_005, "sdv.storage.allowed-roots (SDV_STORAGE_ALLOWED_ROOTS) must list folders of this "
+                        + "computer, separated by ';' (no network shares or device paths).");
+            }
+        }
+        if (parsed.isEmpty()) throw new StartupFailure(SdvErrorCode.SYS_005, "sdv.storage.allowed-roots (SDV_STORAGE_ALLOWED_ROOTS) lists no folder.");
+        this.roots = List.copyOf(parsed);
+    }
+
+    private static boolean shareOrDevice(String path) {
+        return path.startsWith("\\\\") || path.startsWith("//") || path.startsWith("\\/") || path.startsWith("/\\");
+    }
+
+    @Override
+    public boolean allowed(String rootPath) {
+        if (rootPath == null || rootPath.isBlank() || shareOrDevice(rootPath.trim())) return false;
+        Path path;
+        try {
+            path = normalizePath(rootPath);
+        } catch (IllegalArgumentException ex) {
+            return false;
+        }
+        for (Path root : roots) {
+            if (path.startsWith(root) && noLinkBetween(root, path)) return true;
+        }
+        return false;
+    }
+
+    /** Every folder from the allowed root down to the path that already exists is itself, not a link or junction elsewhere. */
+    private static boolean noLinkBetween(Path root, Path path) {
+        try {
+            if (!Files.exists(root)) return true;
+            Path existing = path;
+            while (!Files.exists(existing, LinkOption.NOFOLLOW_LINKS) && existing.startsWith(root)) existing = existing.getParent();
+            return existing.toRealPath().equals(root.toRealPath().resolve(root.relativize(existing)).normalize());
+        } catch (IOException | SecurityException ex) {
+            return false;
+        }
+    }
+
     @Override
     public String normalize(String rootPath) {
         return normalizePath(rootPath).toString();

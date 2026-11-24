@@ -197,6 +197,19 @@ class StoredJsonBaselineTest {
                 + "counts, null number -> " + outcome(storage, "read", kept.replace(":5", ":null")).replaceAll("read .*", "read") + "\n");
     }
 
+    /** Task 0062: a redaction's event names the operation; its reason (free text) and regions stay in the redaction tables. */
+    @Test
+    void aRedactionsAuditHoldsNoReasonAndNoRegions() throws Exception {
+        Constructor<?> k = Class.forName("com.sdv.platform.application.redaction.RedactionOperation").getDeclaredConstructors()[0];
+        k.setAccessible(true);
+        Object op = k.newInstance(Arrays.stream(k.getParameterTypes()).map(t -> t == String.class ? "SECRET-TEXT" : t == UUID.class ? (Object) ID
+                : t == long.class ? (Object) 5L : t == int.class ? (Object) 5 : t == Long.class ? (Object) 5L : t == Integer.class ? (Object) 5
+                : t == java.time.Instant.class ? (Object) java.time.Instant.EPOCH : null).toArray());
+        String json = (String) call("application.redaction.CorrectiveRedactionService", "successAuditJson", op, 2);
+        assertTrue(json.startsWith("{\"operationId\":\"" + ID + "\",\"regionCount\":2,\"oldContentSha256\":"), json);
+        assertFalse(json.contains("reason") || json.contains("\"regions\""), json);
+    }
+
     @Test
     void filtersRolesAndTheBusyBodyAreReadAsToday() throws Exception {
         StringBuilder text = new StringBuilder();

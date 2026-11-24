@@ -32,11 +32,13 @@ public class JdbcOperationalRepository implements AuditQueryPort, OperationalRep
     /** A UUID-shaped target, so the document join never casts other target IDs. */
     private static final String UUID_PATTERN = "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$";
 
+    /** Task 0062: events written before it hold a redaction's reason and regions; they never leave the table. */
     @Override
     public List<AuditQueryPort.Row> findRows(UUID tenantId, AuditQueryPort.Filter filter, int limitPlusOne) {
         StringBuilder sql = new StringBuilder("""
                 select audit_event_id, tenant_id, actor_type, actor_id, action, target_type, target_id,
-                       occurred_at, correlation_id, outcome, safe_details::text as safe_details_json, actor_display_name,
+                       occurred_at, correlation_id, outcome, case when action in ('DOCUMENT_PERMANENTLY_REDACTED','DOCUMENT_REDACTION_FAILED')
+                            then (safe_details - 'reason' - 'regions')::text else safe_details::text end as safe_details_json, actor_display_name,
                        case when target_type='BUSINESS_RECORD' then safe_details->>'submissionId' end as record_submission_id
                   from audit_events
                  where tenant_id=:tenantId

@@ -40,6 +40,7 @@ Since 1.1.0 a sending system needs a **standard client-credentials token and not
    | Grant | Client credentials only (no browser sign-in, no user accounts) |
    | Audience | The token's `aud` must contain Vero's audience (`SDV_AUTH_JWT_AUDIENCE`, for example `sdv-api`) |
    | Groups | None. A bound client whose token carries groups is refused (`SDV-AUT-005`) |
+   | Own token | The token must be the client's own (client credentials). One with claims of a person's sign-in (`sid`, `auth_time`, `nonce`, `at_hash`, `c_hash`, `s_hash`, `amr`, or a groups overage mark), or without the mark the installer asks for, is refused (`SDV-AUT-005`) |
    | Token lifetime | Short, for example 5 minutes. If Vero sets `SDV_AUTH_JWT_MAX_TOKEN_LIFETIME_SECONDS`, at most that |
 
 3. **With Vero's setup command**, IT binds the client to its entity and sending system: one line in the client-binding file (`client_id,entity_slot,source,description`, install guide "Setup"), then `setup apply`. The client ID is copied exactly as the sign-in server shows it; capitals matter. The file holds client IDs only, never a secret.
@@ -136,7 +137,7 @@ The answers a sender can get:
 | 404 | `SDV-INT-004`, `SDV-INT-018` | no |
 | 406 | `SDV-SYS-015`: the Accept header. Vero finds it only when it writes the answer, so the work may be done; send again with `Accept: application/json` | no |
 | 409 | `SDV-INT-011`, `-016`, `-017`, `-018`; `SDV-SEN-003`, `-004` | no |
-| 413 | `SDV-INT-014` | no |
+| 413 | `SDV-INT-014` (a PDF over its limit), `SDV-SYS-019` (a submission body over 8 MB) | no |
 | 415 | `SDV-SYS-015` | no |
 | 429 | Never from Vero; a gateway in front of it may send it | yes |
 | 500 | `SDV-SYS-013`, `SDV-SYS-017` | yes |
@@ -201,6 +202,13 @@ The record is the same grouping as for record levels (above): the submissions of
 The sample under `samples/third-party-producer/` demonstrates the contract with raw HTTP calls only.
 
 ## Changelog
+
+### 1.2.0 (task 0062, 2026-11-24). Release tag: `sdv-ingestion-v1.2.0`
+
+- **`X-Correlation-Id`:** the answer's reference is always one Vero makes; it was the value you sent, when there was one. Yours is kept beside it in Vero's log and audit trail. Read the reference from the answer.
+- **New answer:** `413 SDV-SYS-019` on a submission whose body is larger than Vero takes (8 MB unless the installer set it; far above a full list of documents). Retry rule `no`.
+- **`SDV-AUT-005`** also covers a bound client's token that is not the client's own (a person's sign-in through the same client). Client-credentials tokens are not affected.
+- Messages of answers without an SDV code no longer carry details; the code and status are unchanged.
 
 ### 1.1.0 (task 0041, 2026-11-22). Release tag: `sdv-ingestion-v1.1.0`
 

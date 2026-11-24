@@ -119,12 +119,42 @@ class ErrorPlumbingTest {
         return logs.list.stream().filter(e -> e.getLevel() == level && e.getFormattedMessage().contains("reference=" + reference)).toList();
     }
 
+    /** Task 0062: an uncoded exception's own text is in the log line only. */
+    @Test
+    void anUncodedExceptionKeepsItsStatusAndItsTextStaysInTheLog() throws Exception {
+        for (Object[] c : new Object[][] {{"/uncoded/argument", 400, "BAD_REQUEST"}, {"/uncoded/state", 409, "CONFLICT"}, {"/uncoded/element", 404, "NOT_FOUND"}}) {
+            JsonNode body = expect(uncoded.perform(get((String) c[0])).andReturn(), (int) c[1], (String) c[2]);
+            assertFalse(body.get("message").asText().contains("inner text"), body.toString());
+            List<ILoggingEvent> info = lines(Level.INFO, body.get("reference").asText());
+            assertEquals(1, info.size());
+            assertTrue(info.getFirst().getFormattedMessage().contains("reason=inner text of C:/vault  x"), info.getFirst().getFormattedMessage());
+        }
+        assertEquals("plain coded message", expect(uncoded.perform(get("/uncoded/coded")).andReturn(), 400, "SDV-SEN-002").get("message").asText());
+    }
+
+    private final MockMvc uncoded = MockMvcBuilders.standaloneSetup(new Uncoded()).setControllerAdvice(new FoundationExceptionHandler())
+            .addFilters(new CorrelationIdFilter()).build();
+
+    @RestController
+    static class Uncoded {
+        private static final String TEXT = "inner text of C:/vault\r\nx";
+        @GetMapping("/uncoded/argument") void argument() { throw new IllegalArgumentException(TEXT); }
+        @GetMapping("/uncoded/state") void state() { throw new IllegalStateException(TEXT); }
+        @GetMapping("/uncoded/element") void element() { throw new java.util.NoSuchElementException(TEXT); }
+        @GetMapping("/uncoded/coded") void coded() {
+            throw new com.sdv.platform.domain.error.CodedRefusal.BadRequest(com.sdv.platform.domain.error.SdvErrorCode.SEN_002, "plain coded message");
+        }
+    }
+
     @Test
     void anUnexpectedFailureIs500Sys013WithOneErrorLineWithTheSameReference() throws Exception {
         JsonNode body = expect(mvc.perform(get("/unexpected").header(CorrelationIdFilter.HEADER, "ref-unexpected-1")).andReturn(),
                 500, "SDV-SYS-013");
-        assertEquals("ref-unexpected-1", body.get("reference").asText(), "the reference is the request's correlation ID");
-        List<ILoggingEvent> errors = lines(Level.ERROR, "ref-unexpected-1");
+        // Task 0062: the reference is always Vero's own (it was the caller's X-Correlation-Id when one was sent).
+        String reference = body.get("reference").asText();
+        assertDoesNotThrow(() -> java.util.UUID.fromString(reference));
+        List<ILoggingEvent> errors = lines(Level.ERROR, reference);
+        assertEquals("ref-unexpected-1", errors.getFirst().getMDCPropertyMap().get(CorrelationIdFilter.CALLER_MDC_KEY), "the caller's is kept beside it");
         assertEquals(1, errors.size(), "one ERROR line for the 5xx");
         assertTrue(errors.getFirst().getFormattedMessage().contains("code=SDV-SYS-013"));
         assertNotNull(errors.getFirst().getThrowableProxy(), "the log line holds the exact cause for IT");

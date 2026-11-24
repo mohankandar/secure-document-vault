@@ -88,7 +88,8 @@ public class JdbcDocumentActionRepository implements DocumentTagRepository, Role
                                                   String action, String actorId, boolean includeViewEvents, int limit) {
         StringBuilder sql = new StringBuilder("""
                 select audit_event_id, tenant_id, actor_type, actor_id, action, target_type, target_id,
-                       occurred_at, correlation_id, outcome, safe_details::text as safe_details_json
+                       occurred_at, correlation_id, outcome, case when action in ('DOCUMENT_PERMANENTLY_REDACTED','DOCUMENT_REDACTION_FAILED')
+                            then (safe_details - 'reason' - 'regions')::text else safe_details::text end as safe_details_json
                   from audit_events
                  where tenant_id=:tenantId and target_type='DOCUMENT' and target_id=:documentId
                 """);

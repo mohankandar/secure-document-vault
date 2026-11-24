@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Vero (Secure Document Vault) Ingestion API",
-    "version": "1.1.0",
+    "version": "1.2.0",
     "description": "The contract for sending systems: create a submission, upload its PDFs, read their state. Sign-in is an OAuth2 client-credentials token from the customer's sign-in server; the entity and the sending system come from the verified token's client ID (its client binding, set up by the customer's IT with Vero's setup command), never from a request header. Every error has the same body (Error) with a stable code. Each answer below says whether to send the request again (x-sdv-retry). The versioning policy, the sender's guide and the changelog are in docs/api/README.md. The build checks this file against the running API (IngestionContractTest).",
     "contact": {"name": "Vero team"}
   },
@@ -64,6 +64,12 @@
           "409": {
             "description": "Refused: a submission with this sourceSubmissionId already exists with a different body. Nothing was changed. Don't send it again unchanged; repeat the first request exactly, or use a new sourceSubmissionId.",
             "x-sdv-codes": ["SDV-INT-011", "SDV-SEN-004"], "x-error-codes": ["SDV-INT-011", "SDV-SEN-004"],
+            "headers": {"X-Correlation-Id": {"$ref": "#/components/headers/CorrelationId"}},
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}
+          },
+          "413": {
+            "description": "Refused: the body is larger than Vero takes (8 MB unless the installer set it). Nothing was created. Don't send it again unchanged.",
+            "x-sdv-codes": ["SDV-SYS-019"], "x-error-codes": ["SDV-SYS-019"],
             "headers": {"X-Correlation-Id": {"$ref": "#/components/headers/CorrelationId"}},
             "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}
           },
@@ -271,12 +277,12 @@
       }
     },
     "parameters": {
-      "CorrelationId": {"name": "X-Correlation-Id", "in": "header", "required": false, "schema": {"type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z0-9._:-]+$"}, "description": "Your ID for this request, for tracing. Vero uses it as the answer's reference and returns it in the X-Correlation-Id answer header. A value that doesn't match the pattern is replaced by a new UUID (not refused)."},
+      "CorrelationId": {"name": "X-Correlation-Id", "in": "header", "required": false, "schema": {"type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z0-9._:-]+$"}, "description": "Your ID for this request, for tracing. Vero keeps it beside its own reference, in its log and audit trail. The answer's reference is always Vero's own. A value that doesn't match the pattern is dropped (not refused)."},
       "SubmissionId": {"name": "submissionId", "in": "path", "required": true, "schema": {"type": "string", "format": "uuid"}, "description": "The submissionId Vero returned when the submission was created. Not a UUID: 400 SDV-SYS-015."},
       "DocumentId": {"name": "documentId", "in": "path", "required": true, "schema": {"type": "string", "format": "uuid"}, "description": "The documentId Vero returned for the upload. Not a UUID: 400 SDV-SYS-015."}
     },
     "headers": {
-      "CorrelationId": {"description": "The request's reference: the X-Correlation-Id you sent, or one Vero made. The same value as reference in an error body.", "schema": {"type": "string"}},
+      "CorrelationId": {"description": "The request's reference, made by Vero for each request. The same value as reference in an error body.", "schema": {"type": "string"}},
       "RetryAfter": {"description": "Only on the busy answer (503 SDV-SYS-018, also from readiness): the seconds to wait before sending the same request (or asking readiness) again, a whole number from 1 to 300 (5 unless the installer set it). Read the header; don't rely on the number. No other answer from Vero carries it.", "schema": {"type": "integer", "minimum": 1, "maximum": 300}}
     },
     "schemas": {
@@ -517,6 +523,7 @@
     "409 SDV-INT-017": {"retry": "no", "summary": "A document with this identity is already stored with other content or file name."},
     "409 SDV-SEN-003": {"retry": "no", "summary": "A document with this identity is already stored with another level."},
     "409 SDV-INT-018": {"retry": "no", "summary": "The document can't be finished again in its state."},
+    "413 SDV-SYS-019": {"retry": "no", "summary": "The submission's body is larger than Vero takes."},
     "413 SDV-INT-014": {"retry": "no", "summary": "The PDF is over the size limit."},
     "415 SDV-SYS-015": {"retry": "no", "summary": "The body's Content-Type isn't the one this operation takes."},
     "500 SDV-SYS-013": {"retry": "yes", "summary": "Unexpected failure inside Vero."},
