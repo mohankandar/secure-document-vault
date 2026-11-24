@@ -911,6 +911,34 @@ Task 0037: SYS-003 to SYS-012 are start-up codes. A start that stops prints one 
 - **What the user should do:** open the Restrictions page again and go from its first page.
 - **What support should tell the customer:** the page position was changed or cut short; opening the page again fixes it.
 
+### SDV-LIC-001: the licence doesn't allow new work
+
+- **HTTP status:** 503, no `Retry-After`. Creating a submission, uploading a document, retrying a finalization. Nothing was stored.
+- **Meaning:** the licence ended more than 30 days ago, has not started, or doesn't name Vero. Everything else goes on.
+- **What the user should do:** a sending system keeps the delivery and sends it again when the customer says so. A person asks the Business Admin.
+- **What support should tell the customer:** Business administration, Licence says which. Store the renewed licence (runbook, "The licence"); no restart.
+
+### SDV-LIC-002: the licence can't be checked
+
+- **HTTP status:** 503, no `Retry-After`. As SDV-LIC-001.
+- **Meaning:** the stored licence was changed or removed while Vero runs. Nothing was stored.
+- **What the user should do:** as SDV-LIC-001; IT is told.
+- **What support should tell the customer:** store the licence file again (runbook). The log names platform-core's code.
+
+### SDV-LIC-003: the usage export's anchor is not the last one's
+
+- **HTTP status:** 409. `POST /api/v1/admin/licence/usage-export`. Nothing was exported.
+- **Meaning:** the anchor Vero keeps for usage files is missing or is not the one the audit has for the last export (for example after a restored backup).
+- **What the user should do:** tell support first; then start a new series of files. That is in the audit.
+- **What support should tell the customer:** expect a file that doesn't continue from the last one, and why.
+
+### SDV-LIC-004: the usage export's months are not valid
+
+- **HTTP status:** 400. `POST /api/v1/admin/licence/usage-export`. Nothing was exported.
+- **Meaning:** this server's date is before the month of the last usage export.
+- **What the user should do:** IT corrects the server's clock.
+- **What support should tell the customer:** the same.
+
 ### SDV-SYS-001: database older than this version
 
 - **HTTP status:** 503, on every request except health and system information (`/actuator/health…`, `/actuator/info`, `/api/v1/system/info`). Replaces `DATABASE_OLDER`.

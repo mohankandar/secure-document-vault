@@ -86,6 +86,8 @@ public final class AuditSentences {
             case "BUSINESS_RECORD_OPENED" -> w + " opened a record";
             case "BUSINESS_SEARCH" -> number(d, "resultCount") != null ? w + " searched records and found " + number(d, "resultCount") : w + " searched records";
             case "BUSINESS_RECENT_RECORDS_LISTED" -> w + " looked at Recently viewed";
+            // Task 0075.
+            case "USAGE_EXPORTED" -> w + " exported the usage file" + (d.path("startedAgain").asBoolean(false) ? " and started a new series" : "");
             // Task 0074.
             case "DIAGNOSTIC_BUNDLE_DOWNLOADED" -> w + " downloaded the diagnostic bundle for support";
             case "AUDIT_VIEWED" -> w + " looked at the audit";

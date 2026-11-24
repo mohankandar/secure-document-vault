@@ -1,6 +1,9 @@
 spring:
   application:
     name: secure-document-vault
+  config:
+    # Task 0075: setup writes the customer's ID here (platform.licensing.tenant-id).
+    import: "optional:file:${SDV_TENANT_FILE:./platform-tenant.properties}"
   jackson:
     # Task 0070: only what Vero names reads and writes JSON (Boot 4 would add every module it finds).
     find-and-add-modules: false
@@ -24,6 +27,10 @@ spring:
     enabled: false
 
 platform:
+  # Task 0075: the licence stored by setup or the licence command, checked with the keys of Vero's own build.
+  licensing:
+    product-code: SDV
+    tenant-id: ${SDV_CUSTOMER_ID:}
   # Task 0057: platform-core's safe outbound rules (platform-outbound-spring). Only the IT Admin's read-only "Test
   # sign-in" uses them: platform-core's identity module fetches the login system's discovery document and keys over
   # them (https only, no redirects, no internal or cloud-metadata addresses unless allowed). A local login server on

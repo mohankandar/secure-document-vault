@@ -78,7 +78,7 @@ class VeroSetupFilesTest {
     @Test
     void theDemoFilesPassEveryCheckUpToTheDatabase() {
         Run run = setup(demoPlan());
-        assertTrue(run.out().startsWith("Setup plan for product SDV, customer TEN-VERO-DEMO-0001, licence LIC-VERO-DEMO-0001 v1 (NON_PRODUCTION)"), run.out() + run.err());
+        assertTrue(run.out().startsWith("Setup plan for product SDV, customer TEN-VERO-DEMO-0001, licence LIC-VERO-DEMO-0001 v2 (NON_PRODUCTION)"), run.out() + run.err());
         assertEquals(2, run.exit(), run.err());
         assertTrue(run.err().startsWith("SETUP_DB_SETTINGS_MISSING") || run.err().contains("SETUP_DB_SETTINGS_MISSING"), run.err());
     }

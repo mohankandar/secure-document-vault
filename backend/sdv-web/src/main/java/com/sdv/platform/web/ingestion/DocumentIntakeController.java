@@ -26,6 +26,7 @@ public class DocumentIntakeController {
         this.intake = intake;
     }
 
+    @com.sdv.platform.web.licensing.LicensedIntake
     @PostMapping(consumes = "application/pdf")
     public ResponseEntity<DocumentReceiptResponse> upload(
             @PathVariable UUID submissionId,
@@ -66,6 +67,7 @@ public class DocumentIntakeController {
                 .toList();
     }
 
+    @com.sdv.platform.web.licensing.LicensedIntake
     @PostMapping("/{documentId}/retry-finalization")
     public DocumentSummaryResponse retryFinalization(
             @PathVariable UUID submissionId,

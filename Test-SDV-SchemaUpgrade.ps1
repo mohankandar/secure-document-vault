@@ -82,8 +82,8 @@
 param(
     [string]$Jar,
     # The first changeset the upgrade applies; the scratch database is built up to the one before it.
-    [ValidateSet('026', '027', '028', '029', '030', '031', '032', '033', '034', '035', '036', '037', '038', '039', '040', '041', '042', '043', '044')]
-    [string]$From = '044',
+    [ValidateSet('026', '027', '028', '029', '030', '031', '032', '033', '034', '035', '036', '037', '038', '039', '040', '041', '042', '043', '044', '045')]
+    [string]$From = '045',
     # Task 0052: documents in QuarantineScalePostgresTest's one incident (250,000 as in CI; 1,000,000 for the local run).
     [ValidateRange(1000, 5000000)]
     [int]$QuarantineScale = 250000,
@@ -108,7 +108,7 @@ $db = 'sdv_schema_test'
 $owner = 'sdv_schema_owner'
 $hostUrl = 'jdbc:postgresql://localhost:5433/' + $db
 # In order. The upgrade applies every changeset from -From on.
-$checked = @('022-retention-policy-creator-name', '023-document-sensitivity-level', '024-record-sensitivity-levels', '025-role-separation', '026-legal-holds', '027-access-requests', '028-sensitivity-level-changes', '029-document-duplicate-receipts', '030-tenant-time-zone', '031-intake-report-indexes', '032-steward-notices', '033-unidentified-intake-attempts', '034-unidentified-intake-attempt-counts', '035-drop-old-identity', '036-quarantine', '037-sealed-audit', '038-quarantine-filter-blocking', '039-quarantine-scale', '040-report-storage', '041-report-activity', '042-restrictions-indexes', '043-held-redaction', '044-hold-release')
+$checked = @('022-retention-policy-creator-name', '023-document-sensitivity-level', '024-record-sensitivity-levels', '025-role-separation', '026-legal-holds', '027-access-requests', '028-sensitivity-level-changes', '029-document-duplicate-receipts', '030-tenant-time-zone', '031-intake-report-indexes', '032-steward-notices', '033-unidentified-intake-attempts', '034-unidentified-intake-attempt-counts', '035-drop-old-identity', '036-quarantine', '037-sealed-audit', '038-quarantine-filter-blocking', '039-quarantine-scale', '040-report-storage', '041-report-activity', '042-restrictions-indexes', '043-held-redaction', '044-hold-release', '045-usage-export-anchor')
 $start = [array]::IndexOf(($checked | ForEach-Object { $_.Substring(0, 3) }), $From)
 $newChangesets = @($checked[$start..($checked.Count - 1)])
 $newChangeset = $newChangesets[0]
@@ -168,6 +168,10 @@ $heldTablesBefore = if ($has043) { '0' } else { '2' }
 $has044 = $newChangesets -contains '044-hold-release'
 $hasHoldColumnSql = "select count(*) from information_schema.columns where table_name='access_requests' and column_name='hold_id';"
 $holdColumnBefore = if ($has044) { '0' } else { '1' }
+# Task 0075: 045 adds the anchors of the usage exports.
+$has045 = $newChangesets -contains '045-usage-export-anchor'
+$hasAnchorTableSql = "select count(*) from information_schema.tables where table_name = 'usage_export_anchor';"
+$anchorTableBefore = if ($has045) { '0' } else { '1' }
 $platformRuns = @('identity V1 (platform-core)', 'identity V2 (platform-core)', 'identity V3 (platform-core)', 'identity V4 (platform-core)', 'identity V5 (platform-core)', 'licensing V1 (platform-core)', 'licensing V2 (platform-core)')
 # Task 0033: an uncorrected copy received at the previous version, which 032 must turn into one stored notice.
 $oldCopyEvent = '50000000-0000-0000-0000-0000000000c1'
@@ -345,6 +349,7 @@ revoke all on database $db from public;
     Assert-That ((Get-Value $hasFilterColumnsSql) -eq $filterColumnsBefore) "the quarantine filter columns should $(if ($has038) { 'not ' })exist at the previous version"
     Assert-That ((Get-Value $hasHeldTablesSql) -eq $heldTablesBefore) "the held-redaction tables should $(if ($has043) { 'not ' })exist at the previous version"
     Assert-That ((Get-Value $hasHoldColumnSql) -eq $holdColumnBefore) "access_requests.hold_id should $(if ($has044) { 'not ' })exist at the previous version"
+    Assert-That ((Get-Value $hasAnchorTableSql) -eq $anchorTableBefore) "usage_export_anchor should $(if ($has045) { 'not ' })exist at the previous version"
     Assert-That ((Get-Value $hasRestrictionIndexesSql) -eq $restrictionIndexesBefore) "the restrictions indexes should $(if ($has042) { 'not ' })exist at the previous version"
     Assert-That ((Get-Value $hasActivityTablesSql) -eq $activityTablesBefore) "the activity report tables should $(if ($has041) { 'not ' })exist at the previous version"
     Assert-That ((Get-Value $hasStorageTableSql) -eq $storageTableBefore) "report_storage_counts should $(if ($has040) { 'not ' })exist at the previous version"
@@ -546,6 +551,7 @@ insert into unidentified_intake_attempts(attempt_id, tenant_id, occurred_at, cal
             Assert-That ($upgradeText.Contains($c)) "the reviewable SQL lacks $c"
         }
     }
+    if ($has045) { Assert-That ($upgradeText.Contains('create table usage_export_anchor')) 'the reviewable SQL lacks create table usage_export_anchor' }
     if ($has044) {
         foreach ($c in @('add column hold_id', 'RELEASE_HOLD', 'ck_access_requests_hold')) {
             Assert-That ($upgradeText.Contains($c)) "the reviewable SQL lacks $c"
@@ -955,6 +961,11 @@ rollback;
         Write-Step '4q. After 039: quarantine counts on the incident' $w.Elapsed.TotalSeconds 'thirteen new columns, two triggers; rows at 038 get their received time and are counted; level filled, release and new row move the counts; checks refuse a bad level, counts that do not add up, no received time'
         $w = [System.Diagnostics.Stopwatch]::StartNew()
     }
+    if ($has045) {
+        Assert-That ((Get-Value $hasAnchorTableSql) -eq '1' -and (Get-Value 'select count(*) from usage_export_anchor;') -eq '0') 'usage_export_anchor should be there, empty'
+        Write-Step '4w. After 045: the usage export anchors' $w.Elapsed.TotalSeconds 'one table, empty'
+        $w = [System.Diagnostics.Stopwatch]::StartNew()
+    }
     if ($has044) {
         # Task 0071: the column and the checks (HeldRedactionPostgresTest does the rest).
         Assert-That ((Get-Value $hasHoldColumnSql) -eq '1') 'access_requests.hold_id was not created'
@@ -1015,7 +1026,7 @@ rollback;
         Write-Step '4r. After 040: Storage and retention report counts' $w.Elapsed.TotalSeconds 'table there and empty; checks refuse a negative time, counts not an object, an unknown entity'
         $w = [System.Diagnostics.Stopwatch]::StartNew()
     }
-    if ($has027 -or $has028 -or $has029 -or $has030 -or $has031 -or $has032 -or $has033 -or $has034 -or $has035 -or $has036 -or $has037 -or $has038 -or $has039 -or $has040 -or $has041 -or $has042 -or $has043 -or $has044) {
+    if ($has027 -or $has028 -or $has029 -or $has030 -or $has031 -or $has032 -or $has033 -or $has034 -or $has035 -or $has036 -or $has037 -or $has038 -or $has039 -or $has040 -or $has041 -or $has042 -or $has043 -or $has044 -or $has045) {
 
         # The application's own repositories and services against this database: holds and the retention cleanup
         # (LegalHoldPostgresTest), requests, grants, expiry and the table's checks (AccessRequestPostgresTest), exact

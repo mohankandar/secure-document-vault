@@ -4,8 +4,7 @@ Vero uses platform-core's identity tables (`idn_…`) for who may sign in, with 
 which systems may send documents. You fill them with **Vero's setup command**, from your licence and a few files you
 write. Vero never changes them at startup. This page is for the IT team that installs Vero.
 
-> **Until the app turns licensing on, the licensing tables and the stored licence exist, but nothing checks the
-> allowance. Licensing is not live.**
+> Licensing is on (task 0075): Vero starts only with your licence, so setup runs before its first start. Runbook, "The licence".
 
 ## 1. Before you start
 

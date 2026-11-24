@@ -650,6 +650,23 @@ async function checksChecks(page: Page, headers: Record<string, string>) {
   expect(await (await page.request.get(`${api}/actuator/health/readiness`)).text()).not.toContain('databaseSchema')
 }
 
+/** Task 0075: the licence: state, use against the allowance; IT saves the usage file. Never a price. */
+async function licenceChecks(page: Page, testInfo: TestInfo, area: 'Business administration' | 'IT') {
+  await page.getByRole('tablist', { name: area + ' sections' }).getByRole('tab', { name: area === 'IT' ? 'About' : 'Licence' }).click()
+  const licence = page.getByRole('region', { name: 'Licence' }).first()
+  await expect(licence).toContainText('The licence is valid', { timeout: 15000 })
+  const use = licence.getByRole('table', { name: 'Use this month' })
+  await expect(use.locator('tbody tr')).toHaveCount(3)
+  await expect(use).toContainText(/ of 100 GB/)
+  await expect(licence).not.toContainText(/price|€|USD|[$]/i)
+  if (area === 'IT') {
+    const [file] = await Promise.all([page.waitForEvent('download'), licence.getByRole('button', { name: 'Export usage' }).click()])
+    expect(file.suggestedFilename()).toMatch(/^vero-usage-.+[.]json$/)
+    await expect(licence).toContainText('The export is recorded in the audit.')
+  }
+  await capture(page, testInfo, area === 'IT' ? 'it-licence' : 'licence')
+}
+
 async function problemsChecks(page: Page, testInfo: TestInfo, area: 'Platform operations' | 'IT') {
   await page.getByRole('tablist', { name: `${area} sections` }).getByRole('tab', { name: /^Problems/ }).click()
   const list = page.getByRole('table', { name: 'Problems list' })
@@ -2702,6 +2719,7 @@ test.describe('SDV role-based screen capture', () => {
       'Approvals',
       'Reports',
     ])
+    await licenceChecks(page, testInfo, 'Business administration')
     await businessAdminChecks(page, testInfo)
     // Settings that change shared rules run once, on the desktop project; the tablet project only tours the screens.
     if (isDesktop(testInfo)) {
@@ -2934,6 +2952,7 @@ test.describe('SDV role-based screen capture', () => {
     await expect(page.getByRole('tablist', { name: 'IT sections' }).getByRole('tab', { name: 'Audit', exact: true })).toHaveCount(0)
     await expect(page.getByRole('tablist', { name: 'IT sections' }).getByRole('tab', { name: 'Audit report', exact: true })).toHaveCount(1)
     await problemsChecks(page, testInfo, 'IT')
+    await licenceChecks(page, testInfo, 'IT')
     await integrationsChecks(page, testInfo)
     await storageChecks(page, testInfo)
     await signInChecks(page, testInfo)

@@ -67,6 +67,11 @@ database's state there. Without sign-in, use readiness and the start-up log.
 
 Requests are limited in size (`413 SDV-SYS-019`); uploads have the sending system's own limit.
 
+## The licence
+
+**About** shows the licence, this entity's use this month and **Export usage**. New documents stop only 30 days after the licence
+ended (`SDV-LIC-001` to sending systems); nothing else stops. Renewal and clock reset: the runbook, "The licence".
+
 ## Checks and the diagnostic bundle
 
 **Problems** lists what Vero depends on: database, key service, login system and its keys, licence, storage, intake. A check
@@ -105,4 +110,4 @@ Before this version in particular:
 - Screenshots can't be stopped: printed Highly Confidential pages carry the person's name and the time.
 - The release jar has no local profile and refuses to start with one.
 
-Licensing is not live.
+Licensing is on: see "The licence".

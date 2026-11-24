@@ -146,6 +146,7 @@ $packagedSettings = [ordered]@{
     SDV_AUTH_JWT_JWK_SET_URI = "http://127.0.0.1:$KeysPort/certs"
     SDV_AUTH_JWT_AUDIENCE = 'vero-clean-install'
     SDV_KEY_PROVIDER = 'vault'
+    SDV_CUSTOMER_ID = 'TEN-VERO-DEMO-0001'
     SDV_VAULT_BASE_URL = 'http://127.0.0.1:8299'
     SDV_VAULT_TOKEN_FILE = $placeholderToken
 }
@@ -339,15 +340,9 @@ alter default privileges for role $owner in schema public grant select, insert, 
     Start-KeyServer
     Write-Step 'Start the stand-in sign-in key set (task 0038)' $w.Elapsed.TotalSeconds "http://127.0.0.1:$KeysPort/certs, test key for this run"
 
-    # ------------------------------------------------------------ 0. task 0037: packaged start, something switched off
-    $t = Assert-StartRefused 'start-0-sign-in-off' @{ SDV_AUTH_MODE = 'disabled' } 'SDV-SYS-006'
-    Write-Step '0a. Packaged start with sign-in switched off: refused' $t 'SDV-SYS-006, exit code not 0, port never answered, no stack trace'
-    $t = Assert-StartRefused 'start-0-key-service-off' @{ SDV_KEY_PROVIDER = 'disabled' } 'SDV-KEY-001'
-    Write-Step '0b. Packaged start with the key service switched off: refused' $t 'SDV-KEY-001, exit code not 0, port never answered, no stack trace'
-
     # ------------------------------------------------------------ 1. start against the empty database
     # Task 0074 (answer 8): platform-core's tables are missing, so the start stops and says what to do.
-    $t = Assert-StartRefused 'start-1-empty' @{} 'IDN_TABLES_MISSING' -Platform
+    $t = Assert-StartRefused 'start-1-empty' @{} 'LIC_TABLES_MISSING' -Platform
     $log = Get-Content -Raw (Join-Path $run 'start-1-empty.out.log')
     $older = 'The database is older than this Vero version. Ask your database team to run the schema step (install guide, "Update the database").'
     Assert-That ($log.Contains($older)) 'the startup log does not contain the "older" sentence'
@@ -355,7 +350,7 @@ alter default privileges for role $owner in schema public grant select, insert, 
     Assert-That (-not ($log -match 'RETENTION_SWEEP_FAILED')) 'the cleanup job ran against the empty database'
     $tables = (Invoke-Sql -Database $db -Sql "select count(*) from pg_tables where schemaname = 'public';").Out.Trim()
     Assert-That ($tables -eq '0') "the production start created $tables tables; it must change nothing"
-    Write-Step '1. Start on the empty database: refused' $t 'IDN_TABLES_MISSING and the "older" sentence in the log, exit code not 0, 0 tables created'
+    Write-Step '1. Start on the empty database: refused' $t 'LIC_TABLES_MISSING and the "older" sentence in the log, exit code not 0, 0 tables created'
 
     # ------------------------------------------------------------ 2. schema step
     $st = Invoke-SchemaStep @('status')
@@ -421,6 +416,20 @@ alter default privileges for role $owner in schema public grant select, insert, 
     }
     Write-Step '   Audit trail: append-only (app user: select and insert only; triggers refuse update and delete)' 0 'checked'
 
+    # Task 0075: no licence yet: the start stops; then the licence command stores one (as the app's user).
+    $t = Assert-StartRefused 'start-2-no-licence' @{} 'LICENCE_MISSING' -Platform
+    $env:PLATFORM_LICENSING_DB_PASSWORD = $appPassword
+    try { $stored = Invoke-Native -File 'java' -Arguments @('-cp', $jarPath, '-Dloader.main=com.documentplatform.licensing.command.LicenceCommand', 'org.springframework.boot.loader.launch.PropertiesLauncher', 'store', '--file', (Join-Path $root 'dev\setup\licence-vero-demo.json'), '--jdbc-url', $hostUrl, '--db-user', $app, '--tenant-id', 'TEN-VERO-DEMO-0001', '--product-code', 'SDV') }
+    finally { Remove-Item Env:PLATFORM_LICENSING_DB_PASSWORD -ErrorAction SilentlyContinue }
+    Assert-That ($stored.Code -eq 0) "the licence command should store the demo licence: $($stored.Out) $($stored.Err)"
+    Write-Step '2d. Start without a licence: refused; then the licence command' $t "LICENCE_MISSING; stored as the app's user"
+
+    # ------------------------------------------------------------ 2e, 2f. task 0037 (moved here by task 0075: without tables and licence the platform's own checks stop the start first): packaged start, something switched off
+    $t = Assert-StartRefused 'start-0-sign-in-off' @{ SDV_AUTH_MODE = 'disabled' } 'SDV-SYS-006'
+    Write-Step '2e. Packaged start with sign-in switched off: refused' $t 'SDV-SYS-006, exit code not 0, port never answered, no stack trace'
+    $t = Assert-StartRefused 'start-0-key-service-off' @{ SDV_KEY_PROVIDER = 'disabled' } 'SDV-KEY-001'
+    Write-Step '2f. Packaged start with the key service switched off: refused' $t 'SDV-KEY-001, exit code not 0, port never answered, no stack trace'
+
     # ------------------------------------------------------------ 3. start after the update
     # Table reads outside Liquibase's own tables, to show the background jobs really ran as the read/write user
     # (they log nothing when there is nothing to do).
@@ -459,11 +468,11 @@ alter default privileges for role $owner in schema public grant select, insert, 
     # ------------------------------------------------------------ 5. task 0037: the database away at start, then back
     $relayUrl = "jdbc:postgresql://127.0.0.1:$RelayPort/$db"
     # Task 0074 (answer 8): a start while the database can't be reached stops; the service manager starts Vero again.
-    $t = Assert-StartRefused 'start-4-database-away' @{ SDV_DB_URL = $relayUrl } 'MON_DB_UNREACHABLE' -Platform
+    $t = Assert-StartRefused 'start-4-database-away' @{ SDV_DB_URL = $relayUrl } 'LIC_CHECK_FAILED' -Platform
     $log = Get-Content -Raw (Join-Path $run 'start-4-database-away.out.log')
     Assert-That ($log -match "ERROR .* SDV-SYS-003 Vero couldn't reach its database at start\..*127\.0\.0\.1:$RelayPort") 'no SDV-SYS-003 ERROR line with the host and port'
     Assert-That (-not $log.Contains($appPassword)) 'the database password is in the log'
-    Write-Step '5a. Start with the database away: stops' $t 'MON_DB_UNREACHABLE and SYS-003 with host and port in the log, exit code not 0'
+    Write-Step '5a. Start with the database away: stops' $t 'LIC_CHECK_FAILED and SYS-003 with host and port in the log, exit code not 0'
 
     Start-Relay
     $w = [System.Diagnostics.Stopwatch]::StartNew()

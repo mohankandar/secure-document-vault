@@ -115,8 +115,8 @@ async function request<T>(path: string, persona: LocalPersona, init?: RequestIni
 
 export const roleApi = <T>(path: string, persona: LocalPersona, init?: RequestInit) => request<T>(path, persona, init)
 
-export async function contentBinary(path: string, persona: LocalPersona): Promise<Blob> {
-  const response = await binaryResponse(path, persona)
+export async function contentBinary(path: string, persona: LocalPersona, method: 'GET' | 'POST' = 'GET'): Promise<Blob> {
+  const response = await binaryResponse(path, persona, method)
   return response.blob()
 }
 
@@ -182,10 +182,10 @@ async function fileFingerprint(blob: Blob): Promise<string | null> {
   }
 }
 
-async function binaryResponse(path: string, persona: LocalPersona): Promise<Response> {
+async function binaryResponse(path: string, persona: LocalPersona, method: 'GET' | 'POST' = 'GET'): Promise<Response> {
   const enterpriseHeaders = await bearerHeaders()
   const response = await send(path, {
-    method: 'GET',
+    method,
     headers: { ...localHeaders(persona), ...entityHeaders(), ...enterpriseHeaders },
     cache: 'no-store',
     credentials: 'same-origin',

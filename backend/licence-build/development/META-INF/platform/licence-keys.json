@@ -6,6 +6,12 @@
       "development": true,
       "keyId": "vero-dev-demo-1",
       "publicKey": "MCowBQYDK2VwAyEAvg5g6iWSHLtMwMwHvxiMlpP2S6G/qSGegxIVKyIj7TQ="
+    },
+    {
+      "algorithm": "Ed25519",
+      "development": true,
+      "keyId": "vero-dev-demo-2",
+      "publicKey": "MCowBQYDK2VwAyEAs7JlquHY1+LKjqvjdGPjrm92Fy2GHvcg9GGu2dVx8KQ="
     }
   ]
 }

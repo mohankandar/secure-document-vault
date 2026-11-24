@@ -5,7 +5,6 @@ import com.documentplatform.identity.signin.IssuerFetch;
 import com.documentplatform.identity.store.LoginConnectionStore;
 import com.documentplatform.monitoring.DependencyCheck;
 import com.documentplatform.monitoring.Verdict;
-import com.documentplatform.monitoring.checks.LicenceCheck;
 import com.documentplatform.monitoring.checks.LoginSystemCheck;
 import com.documentplatform.monitoring.spring.AppVersions;
 import com.documentplatform.monitoring.spring.RequestReferenceFilter;
@@ -19,9 +18,7 @@ import com.sdv.platform.domain.storage.StorageVolumeState;
 import com.sdv.platform.persistence.identity.PlatformIdentityReads;
 import com.sdv.platform.web.schema.DatabaseSchemaCheck;
 import com.sdv.platform.web.schema.SchemaVersion;
-import com.sdv.platform.web.security.PlatformIdentityConfiguration;
 import com.sdv.platform.web.security.SignInKeysCheck;
-import com.sdv.platform.web.security.VeroLicenceBuild;
 import com.sdv.platform.domain.identity.VeroProduct;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
@@ -34,7 +31,6 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.Ordered;
 
-import javax.sql.DataSource;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -130,13 +126,6 @@ public class VeroMonitoringConfiguration {
         return new VeroCheck("login-system", "sign-in", EVERY, () -> new LoginSystemCheck(VeroProduct.CODE, () -> tenants.findActive().stream().findFirst()
                 .flatMap(t -> reads.slotOf(t.tenantId())).flatMap(slot -> connections.active(slot.tenantId(), VeroProduct.CODE)),
                 fetch, licence.signedByDevelopmentKey(), Clock.systemUTC()).check());
-    }
-
-    /** Read only, as before, and only in a build that trusts licence keys. Integration C (0075) hands it to the licensing module. */
-    @Bean
-    DependencyCheck veroLicenceCheck(DataSource ds) {
-        return VeroLicenceBuild.load().<DependencyCheck>map(build -> new LicenceCheck(PlatformIdentityConfiguration.readOnlyLicence(ds, build)))
-                .orElseGet(() -> new VeroCheck("licence", "licence", EVERY, Verdict::working));
     }
 
     /** Vero's readiness group has its own live checks: the module's readiness would keep up to a minute-old result in it. */

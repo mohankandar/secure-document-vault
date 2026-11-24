@@ -140,3 +140,9 @@ The screen says what happened and ends with a code. The usual ones:
 | SDV-SYS-018 | Vero is busy: wait a few seconds and try again |
 
 Anything else: give the code and the reference to support. All codes: [error-codes.md](../api/error-codes.md).
+
+## Licence
+
+**Business administration, Licence** shows what your licence allows until when, and how much of it this entity uses this month.
+Going over an allowance stops nothing. 30 days after the licence ended, Vero takes no new documents; viewing, printing, redaction,
+holds and reports go on. Ask your account manager for the renewal; IT stores it, without a restart.

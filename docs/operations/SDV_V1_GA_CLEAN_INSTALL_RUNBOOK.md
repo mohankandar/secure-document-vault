@@ -198,6 +198,32 @@ In that state Vero is up but **not ready**. Point load balancers and orchestrato
 Vero checks the database version when it starts. After the schema step, start Vero again. While the database can't be
 reached, requests get 503 `SDV-SYS-014`; Vero serves again as soon as it answers, without a restart.
 
+### The licence (task 0075)
+
+Vero starts only with a licence: yours, unchanged, signed with a key of this Vero build. Order on a new installation: schema
+step, setup (it stores the licence and writes `platform-tenant.properties`), then the first start.
+
+| Setting | |
+|---|---|
+| `SDV_CUSTOMER_ID` | your customer ID (`TEN-…`), or let Vero read setup's file: |
+| `SDV_TENANT_FILE` | default `./platform-tenant.properties` in Vero's working folder |
+
+- **A date never stops Vero.** 60 days before the end Vero says so; after the end there are 30 days of grace; then new documents
+  are refused (503 `SDV-LIC-001`), everything else goes on. A missing, changed or another customer's licence stops the start.
+- **Renewal:** store the new file as soon as you have it (it waits for its first day). No restart:
+  ```
+  set PLATFORM_LICENSING_DB_PASSWORD=<the app user's password>
+  java -cp sdv-web-<version>.jar -Dloader.main=com.documentplatform.licensing.command.LicenceCommand org.springframework.boot.loader.launch.PropertiesLauncher store --file licence.json --jdbc-url <url> --db-user <app user> --tenant-id <TEN-…> --product-code SDV
+  ```
+  `status` in place of `store --file …` shows it.
+- **Clock reset:** when the server clock was once far in the future, licence dates stay there. Ask for a clock reset file and
+  apply it with `apply-reset --file reset.json` and the **schema owner's** database user. It works once, for a few days.
+- **Usage** is counted, never a limit: storage (GB, daily), people at the same time (15 minutes, the day's highest), stewards and
+  administrators of the month. IT, About, **Export usage** saves the file for the account manager; no names, no prices. Each file
+  goes on from the last; a missing or replaced anchor (`SDV-LIC-003`, for example after a restore) is said, and only IT can then
+  start a new series, which is in the audit.
+- **Local development:** a new database needs `.\Seed-SDV-Canvas-Demo.ps1 -SetupOnly` before Vero's first start.
+
 ### The checks
 
 Platform operations, Health and IT, Problems list what Vero depends on: state, code, why, what to do. The same list is on
@@ -379,8 +405,8 @@ section 5; those with a section of their own above are not repeated.
 **Redaction on legal hold** (task 0066): approved redactions are applied, and sealed originals destroyed after the last
 hold, by a job that runs every 10 seconds. It needs no setting.
 
-**Licensing is not live.** The licence file names the entity slots and is read when one is activated. Nothing else checks
-it: no seats, no expiry.
+Licensing: "The licence" above.
+
 
 **The local development jar** (`sdv-web-<version>-local.jar`) is never installed for a customer.
 

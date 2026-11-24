@@ -94,6 +94,8 @@ The filename is retained for compatibility with the current development workflow
 
 With the local backend and Vault running, one command gives a fresh machine the demo data the screen tour (`npm run ui:capture`) and `npm run ui:compare` use:
 
+On a **new database** run `.Seed-SDV-Canvas-Demo.ps1 -SetupOnly` first, then start Vero: it starts only with a licence (task 0075).
+
 ```powershell
 .\Seed-SDV-Canvas-Demo.ps1
 ```

@@ -7,6 +7,11 @@ spring:
     # Task 0064: never in git. The start scripts fill it from .runtime (scripts/local/Get-SdvLocalDbPassword.ps1).
     password: ${SDV_LOCAL_DB_PASSWORD:}
 
+# Task 0075: the demo customer (dev/setup/licence-vero-demo.json).
+platform:
+  licensing:
+    tenant-id: TEN-VERO-DEMO-0001
+
 server:
   # Task 0064: this computer only; local sign-in has no password.
   address: 127.0.0.1

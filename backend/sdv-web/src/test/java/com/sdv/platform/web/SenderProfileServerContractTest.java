@@ -115,6 +115,16 @@ class SenderProfileServerContractTest {
                 + "values (?, ?, 'profile-check', 'Profile check sending system', 'ACTIVE', 'OAUTH2_CLIENT_CREDENTIALS')",
                 SOURCE, ENTITY);
 
+        // Task 0075: Vero starts only with a licence of its customer; signed with a key of this run.
+        java.security.KeyPair key = com.sdv.platform.application.identity.DevelopmentLicences.newKey();
+        var build = com.documentplatform.licensing.LicenceBuild.of(com.documentplatform.licensing.TrustedKeys.of(Map.of("profile-check-1", key.getPublic())), false, java.time.Instant.parse("2026-01-01T00:00:00Z"));
+        var licence = new com.documentplatform.licensing.Licence("LIC-PROFILE-CHECK-0001", 1, "Profile check customer", TENANT, java.util.List.of("SDV"),
+                java.util.List.of(new com.documentplatform.licensing.EntitySlot(SLOT, java.util.List.of())), com.documentplatform.licensing.LicenceType.PERPETUAL,
+                com.documentplatform.licensing.LicenceKind.NON_PRODUCTION, java.time.LocalDate.of(2026, 1, 1), null, java.time.LocalDate.of(2036, 12, 31),
+                com.documentplatform.licensing.Deployment.ON_PREM, "profile-check-1", java.time.Instant.parse("2026-01-01T00:00:00Z"));
+        new com.documentplatform.licensing.jdbc.PostgresLicenceStore(db.getDataSource()).put(com.documentplatform.licensing.LicenceStore.Slot.CURRENT,
+                com.documentplatform.licensing.LicenceStore.Stored.of(com.sdv.platform.application.identity.DevelopmentLicences.sign(licence, key.getPrivate()), licence, java.time.Instant.now()));
+
         Path vaultToken = Files.createTempFile("placeholder-vault-token", ".txt");
         Files.writeString(vaultToken, "placeholder-not-a-token");
         int closed;
@@ -123,6 +133,7 @@ class SenderProfileServerContractTest {
         }
         Map<String, Object> settings = new HashMap<>();
         settings.put("server.port", 0);
+        settings.put("platform.licensing.tenant-id", TENANT);
         settings.put("spring.datasource.url", System.getenv("SDV_IT_JDBC_URL"));
         settings.put("spring.datasource.username", System.getenv("SDV_IT_JDBC_USER"));
         settings.put("spring.datasource.password", System.getenv("SDV_IT_JDBC_PASSWORD") == null ? "" : System.getenv("SDV_IT_JDBC_PASSWORD"));
@@ -135,7 +146,8 @@ class SenderProfileServerContractTest {
         settings.put("sdv.crypto.vault.token-file", vaultToken.toString());
         // Command-line arguments, so they win over application.yml (builder properties are only defaults).
         // The real app, without the test classpath's own @Configuration classes (other tests' stacks).
-        vero = new SpringApplicationBuilder(SdvApplication.class).initializers(context -> context.getBeanFactory()
+        vero = new SpringApplicationBuilder(SdvApplication.class).initializers(context -> context.getBeanFactory().registerSingleton("profileCheckLicenceBuild", build),
+                context -> context.getBeanFactory()
                 .registerSingleton("withoutTestClasses", new org.springframework.boot.context.TypeExcludeFilter() {
                     @Override
                     public boolean match(org.springframework.core.type.classreading.MetadataReader reader,
@@ -169,6 +181,7 @@ class SenderProfileServerContractTest {
         db.update("delete from idn_login_connection where tenant_id = ?", TENANT);
         db.update("delete from idn_entity where tenant_id = ?", TENANT);
         db.update("delete from idn_customer where tenant_id = ?", TENANT);
+        db.update("delete from lic_licence where tenant_id = ?", TENANT);
     }
 
     @Test

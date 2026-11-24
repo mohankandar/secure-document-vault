@@ -42,3 +42,4 @@
 042-restrictions-indexes sdv 9:c75a5c469e8f7d63adb1afbba74325f8
 043-held-redaction sdv 9:c6ea0cd61c08ef04d64d2ce7e4a141f7
 044-hold-release sdv 9:991477d2d2e79ad19aa61f01ce5e0a5a
+045-usage-export-anchor sdv 9:f08dff623d9a3fb37f993d794a8ce06c
