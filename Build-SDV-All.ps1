@@ -48,6 +48,23 @@ function Get-QuickPlan {
             return $null
         }
     }
+    # Every module that uses a changed one. Not Maven's -amd: -am does not cover the modules -amd adds, so those would
+    # be tested against old jars or none.
+    $uses = @{}
+    foreach ($module in $known) {
+        [xml]$modulePom = Get-Content -LiteralPath (Join-Path $Backend "$modulepom.xml") -Raw
+        $uses[$module] = @($modulePom.SelectNodes("//*[local-name()='dependency']/*[local-name()='artifactId']") | ForEach-Object { $_.InnerText })
+    }
+    do {
+        $added = $false
+        foreach ($module in $known) {
+            if ($modules.ContainsKey($module)) { continue }
+            if (@($uses[$module] | Where-Object { $modules.ContainsKey($_) }).Count -gt 0) {
+                $modules[$module] = $true
+                $added = $true
+            }
+        }
+    } while ($added)
     return [pscustomobject]@{ Modules = @($modules.Keys | Sort-Object); Frontend = $frontendChanged }
 }
 
@@ -92,7 +109,7 @@ if ($null -eq $plan) {
     Push-Location $Backend
     try {
         $list = $plan.Modules -join ','
-        Invoke-Step "Backend tests: $list, what they need and what uses them" { & mvn -T 1C -pl $list -am -amd test }
+        Invoke-Step "Backend tests: $list and the modules they need" { & mvn -T 1C -pl $list -am test }
     } finally {
         Pop-Location
     }
