@@ -6,7 +6,7 @@ Every error from Vero comes back with one body: a short, stable `code`, a plain 
 {"code": "SDV-SEN-002", "message": "recordSensitivityLevel must be one of STANDARD, CONFIDENTIAL, HIGHLY_CONFIDENTIAL (exactly, in capitals); leave it out for no record level.", "reference": "6f1c0f0e-5b7a-4c1e-9f4e-2d8a7c3b1e90", "timestamp": "2026-11-20T10:00:00Z"}
 ```
 
-- **Reference:** the request's correlation ID, the same as the `X-Correlation-Id` response header. It is on Vero's log line for the error, and on the audit event when one was written. Give it to support.
+- **Reference:** made by Vero for each request (task 0062: never the caller's own), the same as the `X-Correlation-Id` response header. It is on Vero's log line for the error, and on the audit event when one was written. Give it to support.
 - **Format:** `SDV-<AREA>-<NNN>`. `SDV` is the product. `AREA` is three letters: `SEN` sensitivity, `ROL` roles, `AUT` sign-in, `IDP` sign-in connections, `HLD` legal hold, `APR` approvals, `INT` intake, `RPT` reports, `SYS` the server as a whole, `STO` storage, `KEY` the key service, `DOC` viewing, print and download, `SCH` search.
 - **Stable:** a code never changes meaning once it is released. A code that is no longer used stays listed and is marked retired. Its number is never reused.
 - **Messages** may be reworded. Programs should read the `code`, not the message.
@@ -227,7 +227,7 @@ Task 0038. A sign-in Vero refuses gets the one error body. The message is a fixe
 ### SDV-AUT-005: sign-in claims not usable
 
 - **HTTP status:** 401. It used to be 401 with Vero's English description.
-- **Meaning:** the token was checked, but a claim Vero needs is missing, isn't text or is too long (the subject, the groups list), the client-ID claims (`azp`, `client_id`, `cid`) name different clients, or a client set up as a sending system also sends groups (a token is a person or a sending system, not both). Task 0041: a sending system's entity and source come from its client binding, not from claims, so a missing tenant or source claim is no longer this code. Message: "Your sign-in is missing details Vero needs. Your IT team can fix this." One WARN line names the claim, never its value.
+- **Meaning:** the token was checked, but a claim Vero needs is missing, isn't text or is too long (the subject, the groups list), the client-ID claims (`azp`, `client_id`, `cid`) name different clients, or a client set up as a sending system also sends groups (a token is a person or a sending system, not both). Task 0062: or its token isn't the client's own (it has claims of a person's sign-in, or lacks the mark set in `SDV_AUTH_JWT_MACHINE_CLAIM`). Task 0041: a sending system's entity and source come from its client binding, not from claims, so a missing tenant or source claim is no longer this code. Message: "Your sign-in is missing details Vero needs. Your IT team can fix this." One WARN line names the claim, never its value.
 - **What the user should do:** tell your IT team.
 - **What support should tell the customer:** the sign-in hub isn't sending a detail Vero needs; the log names the claim. Their IT team adds or corrects the claim mapper in the sign-in hub.
 
@@ -932,6 +932,13 @@ Task 0037: SYS-003 to SYS-012 are start-up codes. A start that stops prints one 
 - **What the user should do:** wait the seconds in `Retry-After`, then send the same request again. A sending system does this without alerting; a retry of a create or an upload is never stored twice. A person tries again in a few seconds.
 - **What support should tell the customer:** Vero had more work at once than its database connections allow. If it happens often, raise `SDV_DB_POOL_MAX` (10 by default) within the database's own connection limit, or spread the senders' load. While the pool stays full for more than 2 s, readiness (`/actuator/health/readiness`) answers `503 {"status":"BUSY","code":"SDV-SYS-018",…}` with `Retry-After` too (only when busy is the one reason; every other readiness 503 has no code and no `Retry-After`). A readiness probe is not counted as a busy answer. Each such answer writes one WARN line (not ERROR: busy is expected under load) with the code, the reference, the exception classes and the SQL state (never the SQL). Problems shows how many busy answers Vero gave in the last hour and since it started.
 
+### SDV-SYS-019: the request is too large
+
+- **HTTP status:** 413. Task 0062: any request with a body over the limit (1 MB; 8 MB for a submission; settings `SDV_MAX_REQUEST_BODY_BYTES` and `SDV_MAX_SUBMISSION_BODY_BYTES`), by its `Content-Length` or while it is read. Not document uploads: a PDF over its limit is SDV-INT-014.
+- **Meaning:** Vero didn't read the request to its end; nothing was changed. Message: "This request is larger than Vero takes. Send less at once."
+- **What the user should do:** send less at once, for example fewer documents in one list.
+- **What support should tell the customer:** the request was over Vero's limit. If a real submission needs more, the installer raises the setting. One INFO line has the reference.
+
 ## Storage (STO)
 
 ### SDV-STO-001: no storage can take the document
@@ -954,6 +961,13 @@ Task 0037: SYS-003 to SYS-012 are start-up codes. A start that stops prints one 
 - **Meaning:** a value IT sent for storage is missing or out of range. Nothing was changed. Message: "requiredBytes must be 0 or more."
 - **What the user should do:** correct the value the message names and try again.
 - **What support should tell the customer:** a storage setting is out of range; the message says which.
+
+### SDV-STO-008: the folder can't be used for documents
+
+- **HTTP status:** 400. Task 0062: adding a storage volume. (Checking a folder gives the same sentence as the check's result.)
+- **Meaning:** the folder is outside the folders the installer allows (`SDV_STORAGE_ALLOWED_ROOTS`), is a network share or a link, or is used by another volume. The answer doesn't say which. Nothing was created. Message: "This folder can't be used for documents. Choose another, or ask your installer which folders are allowed."
+- **What the user should do:** choose another folder inside the allowed ones.
+- **What support should tell the customer:** the log's INFO line with the reference says which it was. The installer can allow more folders.
 
 ## Key service (KEY)
 

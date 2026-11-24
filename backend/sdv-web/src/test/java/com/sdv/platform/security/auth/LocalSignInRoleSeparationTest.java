@@ -42,7 +42,7 @@ class LocalSignInRoleSeparationTest {
     @Test
     void conflictingLocalRolesAreWithheldAndReported() throws Exception {
         var filter = new LocalHeaderAuthenticationFilter(reported::add);
-        Outcome outcome = signIn(filter, "RESTRICTED_STEWARD,IT_ADMIN,BUSINESS_USER");
+        Outcome outcome = signIn(filter, "RESTRICTED_STEWARD,BUSINESS_ADMIN,BUSINESS_USER");
         assertEquals(Set.of(SdvRole.BUSINESS_USER), outcome.principal().roles());
         assertEquals(1, reported.size());
         assertEquals(RoleConflictReporter.Source.LOCAL_SIGN_IN, reported.get(0).source());

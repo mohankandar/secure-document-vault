@@ -6,6 +6,8 @@ import com.sdv.platform.domain.audit.AuditEvent;
 import com.sdv.platform.persistence.foundation.JdbcFoundationRepository;
 import com.sdv.platform.security.auth.IngestionSourcePrincipal;
 import com.sdv.platform.security.auth.SdvPrincipal;
+import com.sdv.platform.web.config.CorrelationIdFilter;
+import org.slf4j.MDC;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Primary;
 import org.springframework.security.core.Authentication;
@@ -44,7 +46,24 @@ public class SessionNamedAuditEventPort implements AuditEventPort {
         store.appendAll(events.stream().map(this::named).toList());
     }
 
+    /** Task 0062: the reference the caller sent is kept in the details as {@code callerReference}, beside Vero's own. */
     public AuditEvent named(AuditEvent event) {
+        return withCallerReference(withName(event), MDC.get(CorrelationIdFilter.CALLER_MDC_KEY));
+    }
+
+    /** The filter lets only plain characters through, so the value needs no escaping. */
+    static AuditEvent withCallerReference(AuditEvent event, String caller) {
+        String details = event.safeDetailsJson();
+        if (caller == null || details == null || !details.startsWith("{") || !details.endsWith("}")
+                || details.contains("\"callerReference\"")) return event;
+        String inner = details.substring(1).stripLeading();
+        String field = "{\"callerReference\":\"" + caller + "\"";
+        return new AuditEvent(event.auditEventId(), event.tenantId(), event.actorType(), event.actorId(), event.action(),
+                event.targetType(), event.targetId(), event.occurredAt(), event.correlationId(), event.outcome(),
+                inner.equals("}") ? field + "}" : field + "," + inner, event.actorDisplayName());
+    }
+
+    private AuditEvent withName(AuditEvent event) {
         if (event.actorDisplayName() != null) return event;
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         Object principal = authentication == null ? null : authentication.getPrincipal();

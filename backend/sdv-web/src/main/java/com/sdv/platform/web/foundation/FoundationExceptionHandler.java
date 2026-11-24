@@ -83,7 +83,7 @@ public class FoundationExceptionHandler {
 
     @ExceptionHandler(IllegalArgumentException.class)
     void badRequest(IllegalArgumentException ex, HttpServletRequest rq, HttpServletResponse rs) throws IOException {
-        refuse(rq, rs, HttpStatus.BAD_REQUEST, code(ex, "BAD_REQUEST"), ex.getMessage(), detail(ex));
+        refusedOrGeneric(ex, rq, rs, HttpStatus.BAD_REQUEST, "BAD_REQUEST", BAD_REQUEST_MESSAGE);
     }
 
     /**
@@ -99,14 +99,28 @@ public class FoundationExceptionHandler {
         return null;
     }
 
-    /** A refusal with a stable SDV-AREA-NNN code (docs/api/error-codes.md) sends it; others keep the generic code. */
-    private static String code(RuntimeException ex, String generic) {
-        return ex instanceof CodedRefusal coded ? coded.errorCode().code() : generic;
+    static final String BAD_REQUEST_MESSAGE = "Vero couldn't use this request. Check what you entered and try again. If it keeps happening, give your IT team the reference.";
+    static final String NOT_FOUND_MESSAGE = "Vero couldn't find what this request asks for. Reload the page and try again.";
+    static final String CONFLICT_MESSAGE = "Vero can't do this now. Reload the page and try again. If it keeps happening, give your IT team the reference.";
+
+    /**
+     * A refusal with a stable SDV-AREA-NNN code (docs/api/error-codes.md) sends its code and message. Task 0062: any other
+     * exception keeps its status and generic code and sends a fixed sentence; its own text (a library's, perhaps with a
+     * path or a value) goes only to the log line, with the reference.
+     */
+    private void refusedOrGeneric(RuntimeException ex, HttpServletRequest rq, HttpServletResponse rs, HttpStatus status,
+                                  String generic, String message) throws IOException {
+        if (ex instanceof CodedRefusal coded) {
+            refuse(rq, rs, status, coded, ex.getMessage());
+            return;
+        }
+        ErrorReplies.logUncoded(rq, status, generic, ex);
+        refuse(rq, rs, status, generic, message, null);
     }
 
     @ExceptionHandler(NoSuchElementException.class)
     void notFound(NoSuchElementException ex, HttpServletRequest rq, HttpServletResponse rs) throws IOException {
-        refuse(rq, rs, HttpStatus.NOT_FOUND, code(ex, "NOT_FOUND"), ex.getMessage(), detail(ex));
+        refusedOrGeneric(ex, rq, rs, HttpStatus.NOT_FOUND, "NOT_FOUND", NOT_FOUND_MESSAGE);
     }
 
     /** Task 0026: a coded 403 (for example SDV-SEN-008, a restricted document). Its message names nothing else. */
@@ -144,7 +158,7 @@ public class FoundationExceptionHandler {
 
     @ExceptionHandler(IllegalStateException.class)
     void conflict(IllegalStateException ex, HttpServletRequest rq, HttpServletResponse rs) throws IOException {
-        refuse(rq, rs, HttpStatus.CONFLICT, code(ex, "CONFLICT"), ex.getMessage(), detail(ex));
+        refusedOrGeneric(ex, rq, rs, HttpStatus.CONFLICT, "CONFLICT", CONFLICT_MESSAGE);
     }
 
     /**
@@ -190,9 +204,5 @@ public class FoundationExceptionHandler {
                              String message, String detail) throws IOException {
         ErrorReplies.answerCoded(rq, rs, status, code, message, detail);
         intake.answered(rq, status, code);
-    }
-
-    private static String detail(RuntimeException ex) {
-        return ex instanceof CodedRefusal coded ? coded.logDetail() : null;
     }
 }

@@ -54,6 +54,24 @@ class SessionNamedAuditEventPortTest {
         return captor.getValue();
     }
 
+    /** Task 0062: the caller's own reference is a separate field; Vero's is never replaced. */
+    @Test
+    void theCallersReferenceIsKeptBesideVeros() {
+        org.slf4j.MDC.put(com.sdv.platform.web.config.CorrelationIdFilter.CALLER_MDC_KEY, "case-17");
+        try {
+            AuditEvent saved = stored(event(TENANT, "USER", "someone"));
+            assertEquals("{\"callerReference\":\"case-17\"}", saved.safeDetailsJson());
+            assertEquals("c", saved.correlationId());
+            AuditEvent e = event(TENANT, "USER", "x");
+            AuditEvent full = new AuditEvent(e.auditEventId(), e.tenantId(), "USER", "x", e.action(), "DOCUMENT", "t", e.occurredAt(), "c",
+                    AuditOutcome.SUCCESS, "{\"a\":1}");
+            assertEquals("{\"callerReference\":\"case-17\",\"a\":1}", SessionNamedAuditEventPort.withCallerReference(full, "case-17").safeDetailsJson());
+            assertSame(full, SessionNamedAuditEventPort.withCallerReference(full, null));
+        } finally {
+            org.slf4j.MDC.clear();
+        }
+    }
+
     @Test
     void aPersonsEventCarriesTheirNameFromTheSession() {
         signIn(new SdvPrincipal(TENANT, "okta|00u1", Set.of(SdvRole.BUSINESS_USER), "Maya Okafor", null));

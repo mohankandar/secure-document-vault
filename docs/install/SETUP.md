@@ -142,6 +142,7 @@ later release.
 | `SDV_AUTH_JWT_PROVIDER_ID` | The sign-in file's `providerId` (default `customer-oidc`) |
 | `SDV_AUTH_JWT_GROUPS_CLAIM` | The claim with the person's groups (default `groups`) |
 | `SDV_AUTH_JWT_CLIENT_ID_CLAIMS` | Where a sending system's client ID is (default `azp,client_id,cid`) |
+| `SDV_AUTH_JWT_MACHINE_CLAIM`, `SDV_AUTH_JWT_MACHINE_CLAIM_VALUE` | Task 0062, recommended: the mark your login system puts on a client's own (client-credentials) token, so that only those count as a sending system's. `{client}` in the value is the client ID. Keycloak: `preferred_username` and `service-account-{client}`. Entra ID: `idtyp` and `app`. Without it, Vero still refuses a bound client's token that has claims of a person's sign-in. Also: give a sending system's client no browser, device or password sign-in |
 | `SDV_TRUSTED_KEYS_FILE` | The release's `trusted-keys.json`, for activation (and, task 0057, to tell a development-signed licence, which alone allows a login server on this machine over `http`) |
 | `SDV_OUTBOUND_INSTALLATION` | Task 0057: `on-premises` (default) or `hosted`, for platform-core's outbound rules that the test sign-in uses |
 | `SDV_OUTBOUND_ALLOW_INTERNAL_ADDRESSES` | `true` only if your login system is at an internal address (default `false`: the test sign-in refuses internal and cloud-metadata addresses, `OUT_ADDRESS_BLOCKED`) |

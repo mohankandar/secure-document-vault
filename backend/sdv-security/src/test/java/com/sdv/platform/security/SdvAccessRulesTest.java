@@ -25,7 +25,9 @@ class SdvAccessRulesTest {
             assertTrue(resolution.conflicted(), admin.name());
             assertEquals(Set.of(), resolution.granted(), admin.name());
             assertEquals(EnumSet.of(SdvRole.RESTRICTED_STEWARD, admin), resolution.withheld(), admin.name());
-            assertEquals(List.of(SdvAccessRules.RESTRICTED_STEWARD_NOT_ADMIN), resolution.brokenRules());
+            // Task 0062: an IT Admin with any document role breaks that rule too.
+            assertEquals(admin == SdvRole.IT_ADMIN ? List.of(SdvAccessRules.RESTRICTED_STEWARD_NOT_ADMIN, SdvAccessRules.IT_ADMIN_NOT_DOCUMENT_ROLE)
+                    : List.of(SdvAccessRules.RESTRICTED_STEWARD_NOT_ADMIN), resolution.brokenRules());
         }
     }
 
@@ -38,10 +40,28 @@ class SdvAccessRulesTest {
             for (int i = 0; i < admins.size(); i++) if ((mask & (1 << i)) != 0) heldAdmins.add(admins.get(i));
             held.addAll(heldAdmins);
             var resolution = SdvAccessRules.SEPARATION.resolve(held);
-            assertEquals(EnumSet.of(SdvRole.BUSINESS_USER, SdvRole.DOCUMENT_STEWARD), resolution.granted(), held.toString());
+            // Task 0062: with a Business Admin the Document Steward goes too; with an IT Admin every document role does.
             EnumSet<SdvRole> withheld = EnumSet.copyOf(heldAdmins);
             withheld.add(SdvRole.RESTRICTED_STEWARD);
+            if (heldAdmins.contains(SdvRole.BUSINESS_ADMIN)) withheld.add(SdvRole.DOCUMENT_STEWARD);
+            if (heldAdmins.contains(SdvRole.IT_ADMIN)) withheld.addAll(EnumSet.of(SdvRole.DOCUMENT_STEWARD, SdvRole.BUSINESS_USER));
+            EnumSet<SdvRole> kept = EnumSet.copyOf(held);
+            kept.removeAll(withheld);
+            assertEquals(kept, resolution.granted(), held.toString());
             assertEquals(withheld, resolution.withheld(), held.toString());
+        }
+    }
+
+    /** Task 0062: admins never open documents, so these are never held together; the rest of the roles stay. */
+    @Test
+    void anAdminNeverHoldsARoleThatOpensDocuments() {
+        var steward = resolve(SdvRole.BUSINESS_ADMIN, SdvRole.DOCUMENT_STEWARD, SdvRole.BUSINESS_USER);
+        assertEquals(List.of(SdvAccessRules.BUSINESS_ADMIN_NOT_STEWARD), steward.brokenRules());
+        assertEquals(Set.of(SdvRole.BUSINESS_USER), steward.granted());
+        for (SdvRole document : List.of(SdvRole.BUSINESS_USER, SdvRole.DOCUMENT_STEWARD)) {
+            var it = resolve(SdvRole.IT_ADMIN, document, SdvRole.PLATFORM_OPERATIONS_ADMIN);
+            assertEquals(List.of(SdvAccessRules.IT_ADMIN_NOT_DOCUMENT_ROLE), it.brokenRules(), document.name());
+            assertEquals(Set.of(SdvRole.PLATFORM_OPERATIONS_ADMIN), it.granted(), document.name());
         }
     }
 
@@ -50,9 +70,10 @@ class SdvAccessRulesTest {
         for (Set<SdvRole> held : List.of(
                 EnumSet.of(SdvRole.RESTRICTED_STEWARD),
                 EnumSet.of(SdvRole.RESTRICTED_STEWARD, SdvRole.DOCUMENT_STEWARD, SdvRole.BUSINESS_USER),
-                EnumSet.of(SdvRole.DOCUMENT_STEWARD, SdvRole.BUSINESS_ADMIN),
+                EnumSet.of(SdvRole.BUSINESS_USER, SdvRole.BUSINESS_ADMIN),
+                EnumSet.of(SdvRole.DOCUMENT_STEWARD, SdvRole.PLATFORM_OPERATIONS_ADMIN),
                 EnumSet.of(SdvRole.BUSINESS_ADMIN, SdvRole.IT_ADMIN, SdvRole.PLATFORM_OPERATIONS_ADMIN),
-                EnumSet.of(SdvRole.BUSINESS_USER, SdvRole.IT_ADMIN))) {
+                EnumSet.of(SdvRole.BUSINESS_USER, SdvRole.DOCUMENT_STEWARD))) {
             var resolution = SdvAccessRules.SEPARATION.resolve(held);
             assertFalse(resolution.conflicted(), held.toString());
             assertEquals(held, resolution.granted(), held.toString());

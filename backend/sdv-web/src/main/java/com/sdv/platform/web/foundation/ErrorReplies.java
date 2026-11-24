@@ -71,6 +71,8 @@ public final class ErrorReplies {
             + "changed. Give your IT team the reference.";
     static final String SYS_017_MESSAGE =
             "Vero couldn't record this action, so it wasn't done. Try again in a few minutes.";
+    /** Task 0062: a body over the limit (not an upload). */
+    public static final String SYS_019_MESSAGE = "This request is larger than Vero takes. Send less at once.";
     static final String STO_001_MESSAGE =
             "Vero has no storage space for new documents right now. Nothing was stored; send it again later.";
     /** Task 0040 part 2 (owner answer 2): the upload's volume names a storage provider this install doesn't have. */
@@ -147,6 +149,12 @@ public final class ErrorReplies {
      * Null when {@code ex} is not one of Spring's request errors.
      */
     static Reply springRequestError(Throwable ex) {
+        // Task 0062: the body grew past its limit while it was read.
+        for (Throwable t = ex; t != null; t = t.getCause() == t ? null : t.getCause()) {
+            if (t instanceof RequestBodyLimitFilter.BodyTooLargeException) {
+                return new Reply(HttpStatus.PAYLOAD_TOO_LARGE, SdvErrorCode.SYS_019, SYS_019_MESSAGE);
+            }
+        }
         String what;
         HttpStatusCode status = HttpStatus.BAD_REQUEST;
         if (ex instanceof MethodArgumentTypeMismatchException mismatch) {
@@ -329,6 +337,17 @@ public final class ErrorReplies {
             // Task 0039: SDV-AUT-001 (no sign-in) would be one INFO line per such request.
             LOG.debug("code={} reference={} status={} route={} reason={}", code, reference, status.value(), route, reason);
         }
+    }
+
+    /**
+     * Task 0062: an uncoded exception answered with a generic sentence: one INFO line with the reference, the class and
+     * its text (control characters dropped, cut at 300), which the caller doesn't get. A database exception's text can
+     * hold the SQL and the values, so only its class is written.
+     */
+    static void logUncoded(HttpServletRequest request, HttpStatusCode status, String code, Throwable ex) {
+        String text = isDatabase(ex) || ex.getMessage() == null ? "-" : ex.getMessage().replaceAll("\\p{Cntrl}", " ");
+        LOG.info("code={} reference={} status={} route={} exception={} reason={}", code, reference(request), status.value(),
+                route(request), ex.getClass().getName(), text.length() > 300 ? text.substring(0, 300) : text);
     }
 
     /** Task 0038: logs and writes a coded answer whose exact cause is known (a refusal, or a sign-in answer). */

@@ -63,6 +63,21 @@ class SealedAuditPostgresTest {
                 + "values ('" + event + "', '" + TENANT + "', 'USER', 'local-business-user', 'BUSINESS_SEARCH', 'TENANT', '" + TENANT + "', "
                 + "timestamptz '2026-11-20 10:00:00+00', 'SUCCESS', '{\"resultCount\":3,\"reason\":\"Top secret reason\"}'::jsonb, 'Maya Okafor')");
 
+        // Task 0062: a redaction's reason and regions of an older event never leave the table, on either way out.
+        UUID document = UUID.randomUUID();
+        for (String action : java.util.List.of("DOCUMENT_PERMANENTLY_REDACTED", "DOCUMENT_REDACTION_FAILED")) {
+            sql("insert into audit_events(audit_event_id, tenant_id, actor_type, actor_id, action, target_type, target_id, occurred_at, outcome, safe_details) "
+                    + "values ('" + UUID.randomUUID() + "', '" + TENANT + "', 'USER', 'steward', '" + action + "', 'DOCUMENT', '" + document + "', "
+                    + "timestamptz '2026-11-19 10:00:00+00', 'SUCCESS', '{\"regionCount\":1,\"reason\":\"Top secret reason\",\"regions\":[{\"x\":0.1}]}'::jsonb)");
+        }
+        var out = new JdbcOperationalRepository(jdbc).find(TENANT, new com.sdv.platform.application.port.AuditQueryPort.Filter(
+                null, null, null, null, "DOCUMENT", document.toString(), null, null, null, null, null, null, null, null, null), 10);
+        var activity = new com.sdv.platform.persistence.business.JdbcDocumentActionRepository(jdbc).findDocumentActivity(TENANT, document, null, null, null, null, true, 10);
+        for (var events : java.util.List.of(out, activity)) {
+            assertEquals(2, events.size());
+            for (var e : events) assertEquals("{\"regionCount\": 1}", e.safeDetailsJson());
+        }
+
         // Append-only: nobody changes or removes an audit row, the owner included.
         refused(() -> sql("update audit_events set action = 'CHANGED' where audit_event_id = '" + event + "'"));
         refused(() -> sql("delete from audit_events where audit_event_id = '" + event + "'"));

@@ -5,6 +5,13 @@ import com.sdv.platform.domain.storage.StorageCapacitySnapshot;
 
 public interface StorageVolumeProbe {
     String normalize(String rootPath);
+
+    /**
+     * Task 0062: whether the installer allows this folder for documents. Looks at the path's text first; only a path
+     * inside an allowed folder is looked at on disk (for links). Nothing is created or written.
+     */
+    boolean allowed(String rootPath);
+
     PreparedRoot prepare(String rootPath);
     StorageCapacitySnapshot inspect(String normalizedRootPath);
     boolean overlaps(String normalizedRootPathA, String normalizedRootPathB);

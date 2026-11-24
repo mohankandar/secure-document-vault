@@ -23,6 +23,7 @@ class StoragePlacementServiceTest {
         StorageVolume healthy = volume(tenant, "healthy", StorageVolumeState.ACTIVE, 3, 90, 95);
         FakeRepository repo = new FakeRepository(List.of(readOnly, nearFull, healthy));
         StorageVolumeProbe probe = new StorageVolumeProbe() {
+             public boolean allowed(String rootPath) { return true; }
             @Override public String normalize(String rootPath) { return rootPath; }
             @Override public PreparedRoot prepare(String rootPath) { throw new UnsupportedOperationException(); }
             @Override public boolean overlaps(String a, String b) { return false; }
@@ -43,6 +44,7 @@ class StoragePlacementServiceTest {
         StorageVolume full = volume(tenant, "full", StorageVolumeState.ACTIVE, 1, 90, 95);
         FakeRepository repo = new FakeRepository(List.of(full));
         StorageVolumeProbe probe = new StorageVolumeProbe() {
+             public boolean allowed(String rootPath) { return true; }
             @Override public String normalize(String rootPath) { return rootPath; }
             @Override public PreparedRoot prepare(String rootPath) { throw new UnsupportedOperationException(); }
             @Override public boolean overlaps(String a, String b) { return false; }

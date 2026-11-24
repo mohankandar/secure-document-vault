@@ -87,12 +87,14 @@ public class StorageVolumeAdminService {
         validateThresholds(warning, stopWrite);
 
         volumes.lockConfiguration();
+        requireAllowed(command.rootPath());
         String normalizedCandidate = probe.normalize(command.rootPath());
         rejectOverlappingRoot(normalizedCandidate);
         StorageVolumeProbe.PreparedRoot prepared = probe.prepare(command.rootPath());
         // Recheck the canonical/real path after preparation so symlink/canonicalization changes cannot
         // bypass the pre-touch overlap boundary. Configuration writes remain serialized by the table lock.
         rejectOverlappingRoot(prepared.normalizedRootPath());
+        requireAllowed(prepared.normalizedRootPath());
 
         Instant now = clock.instant();
         StorageVolume volume = new StorageVolume(
@@ -135,11 +137,13 @@ public class StorageVolumeAdminService {
      */
     public StorageVolumeProbe.FolderCheck checkFolder(UUID tenantId, String rootPath, String actorId, String correlationId) {
         requireActiveTenant(tenantId);
-        String normalized = probe.normalize(rootPath);
+        boolean allowed = probe.allowed(rootPath);
+        // A folder that isn't allowed is answered as it was typed: nothing about the server's paths.
+        String normalized = allowed ? probe.normalize(rootPath) : rootPath == null ? "" : rootPath.trim();
         StorageVolumeProbe.FolderCheck result;
-        if (volumes.findConfiguredRoots(LOCAL_FILESYSTEM).stream().anyMatch(existing -> probe.overlaps(normalized, existing.rootPath()))) {
+        if (!allowed || volumes.findConfiguredRoots(LOCAL_FILESYSTEM).stream().anyMatch(existing -> probe.overlaps(normalized, existing.rootPath()))) {
             result = new StorageVolumeProbe.FolderCheck(normalized, false, null, null,
-                    "This folder is inside another volume's folder, or contains one.");
+                    FOLDER_NOT_ALLOWED);
         } else {
             result = probe.check(rootPath);
         }
@@ -170,7 +174,16 @@ public class StorageVolumeAdminService {
         boolean overlapsExistingRoot = volumes.findConfiguredRoots(LOCAL_FILESYSTEM).stream()
                 .anyMatch(existing -> probe.overlaps(candidateRoot, existing.rootPath()));
         if (overlapsExistingRoot) {
-            throw new IllegalArgumentException("The configured storage root overlaps another SDV volume root.");
+            throw new CodedRefusal.BadRequest(SdvErrorCode.STO_008, FOLDER_NOT_ALLOWED, "overlaps another volume's folder");
+        }
+    }
+
+    /** Task 0062: one answer for a folder outside the allowed ones and for one another volume uses (perhaps another entity's). */
+    public static final String FOLDER_NOT_ALLOWED = "This folder can't be used for documents. Choose another, or ask your installer which folders are allowed.";
+
+    private void requireAllowed(String rootPath) {
+        if (!probe.allowed(rootPath)) {
+            throw new CodedRefusal.BadRequest(SdvErrorCode.STO_008, FOLDER_NOT_ALLOWED, "outside sdv.storage.allowed-roots, or a link or share");
         }
     }
 
