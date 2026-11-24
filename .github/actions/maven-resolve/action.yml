@@ -1,5 +1,5 @@
 # Task 0064: everything Maven needs, fetched before any build or test runs. Only the second step has the package token,
-# and it runs the dependency plugin only: no compiling, no tests. Every later Maven command runs offline (-o).
+# and it compiles nothing and runs no tests. Every later Maven command runs offline (-o).
 name: Resolve Maven dependencies
 description: Fetches all dependencies and plugins, so builds and tests can run offline and without the package token.
 inputs:
@@ -23,7 +23,10 @@ runs:
       working-directory: backend
       env:
         GITHUB_PACKAGES_TOKEN: ${{ inputs.packages-token }}
-      run: mvn $MVN_CI_FLAGS org.apache.maven.plugins:maven-dependency-plugin:3.8.1:go-offline
+      run: |
+        # The plugins, then the dependencies as the modules together choose them (compiling nothing).
+        mvn $MVN_CI_FLAGS -q org.apache.maven.plugins:maven-dependency-plugin:3.8.1:go-offline
+        mvn $MVN_CI_FLAGS -q test-compile -Dmaven.main.skip=true -Dmaven.test.skip=true
     - name: The test runner (Surefire picks it while it runs, so the step above does not see it)
       shell: bash
       run: |
