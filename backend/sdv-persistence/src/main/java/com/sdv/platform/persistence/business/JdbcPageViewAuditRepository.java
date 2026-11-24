@@ -29,6 +29,19 @@ public class JdbcPageViewAuditRepository implements PageViewAuditPort {
         return sealedId != null && viewing(tenantId, actorId, documentId, sealedId, viewingId, notBefore);
     }
 
+    @Override
+    public boolean isApprovedPrint(UUID tenantId, String actorId, UUID documentId, UUID printId, Instant notBefore) {
+        return printId != null && Boolean.TRUE.equals(jdbc.queryForObject("""
+                select exists(
+                    select 1 from audit_events
+                     where audit_event_id=:printId and tenant_id=:tenantId and actor_type='USER' and actor_id=:actorId
+                       and action='DOCUMENT_PRINTED' and target_type='DOCUMENT' and target_id=:documentId
+                       and outcome='SUCCESS' and occurred_at>=:notBefore and safe_details->>'accessRequestId' is not null)
+                """, new MapSqlParameterSource().addValue("printId", printId).addValue("tenantId", tenantId)
+                .addValue("actorId", actorId).addValue("documentId", documentId.toString())
+                .addValue("notBefore", Timestamp.from(notBefore)), Boolean.class));
+    }
+
     private boolean viewing(UUID tenantId, String actorId, UUID documentId, UUID sealedId, UUID viewingId, Instant notBefore) {
         Boolean found = jdbc.queryForObject("""
                 select exists(

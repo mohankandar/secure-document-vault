@@ -103,6 +103,18 @@ class InMemoryQuarantineRepository implements QuarantineRepository {
                 r.releasedBy, r.releasedByName, r.releasedAt);
     }
 
+    @Override public long countSingleReleases(UUID tenantId, UUID incidentId, String by, Instant since) {
+        return singles(incidentId).filter(r -> by.equals(r.releasedBy) && r.releasedAt.isAfter(since)).count();
+    }
+
+    @Override public List<Quarantined> findSingleReleases(UUID tenantId, UUID incidentId, int limit) {
+        return singles(incidentId).sorted(java.util.Comparator.comparing((Row r) -> r.releasedAt).reversed()).limit(limit).map(this::view).toList();
+    }
+
+    private java.util.stream.Stream<Row> singles(UUID incidentId) {
+        return quarantines.values().stream().filter(r -> r.incidentId.equals(incidentId) && r.releasedAt != null && r.requestId == null);
+    }
+
     @Override public Optional<Quarantined> findActive(UUID tenantId, UUID documentId) {
         return quarantines.values().stream().filter(r -> r.tenantId.equals(tenantId) && r.documentId.equals(documentId) && r.releasedAt == null)
                 .findFirst().map(this::view);

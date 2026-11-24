@@ -58,7 +58,7 @@ export function Quarantine() {
               : <>
                 <section className="v-panel flush" aria-label="Open incidents">
                   <header className="hold-head"><h2>Open incidents · {incidents ? open.length : '…'}</h2><span className="faint" style={{ fontSize: 13 }}>{byFilter ? 'Start one with New incident, or from a document' : 'Start one from a document, in its record or the viewer'}</span></header>
-                  {incidents && open.length === 0 ? <p className="muted" style={{ padding: 16 }}>No document is quarantined.</p> : incidents && <IncidentTable rows={open} label="Open incidents" onOpen={setOpenId} />}
+                  {incidents && open.length === 0 ? <p className="muted" style={{ padding: 16 }}>No open incident you can review.</p> : incidents && <IncidentTable rows={open} label="Open incidents" onOpen={setOpenId} />}
                 </section>
                 {incidents && released.length > 0 && <section className="v-panel flush" aria-label="Released incidents">
                   <header className="hold-head">
@@ -222,6 +222,12 @@ function IncidentDetail({ incidentId, onBack }: { incidentId: string; onBack: ()
           </tr>)}</tbody></table>}
       {paging}
     </section>
+
+    {incident.singleReleases && incident.singleReleases.length > 0 && <section className="v-panel flush" aria-label="Released one by one">
+      <header className="hold-head"><h2>Released one by one · {incident.singleReleases.length}</h2><span className="faint" style={{ fontSize: 13 }}>Shown to you because you started this incident</span></header>
+      <table className="v-table" aria-label="Documents released one by one"><thead><tr><th>Number</th><th>Released by</th><th>When</th></tr></thead>
+        <tbody>{incident.singleReleases.map((s, i) => <tr key={i}><td className="lead mono" data-label="Number">{s.primaryIdentifier ?? 'Not shown'}</td><td data-label="Released by">{s.releasedByName?.trim() || 'A Steward'}</td><td data-label="When" className="faint">{whenWords(s.releasedAt)}</td></tr>)}</tbody></table>
+    </section>}
 
     {releasing && <Dialog title="Release this document?" onClose={() => { if (!busy) setReleasing(null) }} footer={<>
       <button type="button" className="v-btn" disabled={busy} onClick={() => setReleasing(null)}>Cancel</button>

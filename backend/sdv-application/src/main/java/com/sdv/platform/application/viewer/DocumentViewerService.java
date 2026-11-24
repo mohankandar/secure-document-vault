@@ -213,6 +213,36 @@ public class DocumentViewerService {
         return largest;
     }
 
+    /** Task 0071: Highly Confidential pages on screen are drawn at most this large (144 dots per inch). */
+    static final double SCREEN_SCALE = 1.5;
+    /** How long after an approved print its pages may be fetched in print quality. */
+    static final Duration PRINT_LIFETIME = Duration.ofMinutes(15);
+
+    /** Without a name and not for a print. */
+    public PageImage renderPage(UUID tenantId, UUID documentId, Clearance clearance, int pageNumber, double scale, UUID viewingId,
+                                String actorId, String correlationId) {
+        return renderPage(tenantId, documentId, clearance, pageNumber, scale, viewingId, null, null, actorId, correlationId);
+    }
+
+    /** How a page is drawn: the scale, and the mark on it (null: none). */
+    private record Drawing(double scale, String watermark) { }
+
+    /**
+     * Task 0071: a Highly Confidential page in print quality only for a print made with an approval (marked); on screen at
+     * screen quality, marked when more was asked for. Other pages as asked.
+     */
+    private Drawing drawing(Document document, SensitivityLevel level, double scale, UUID printId, String actorName, String actorId) {
+        if (level != SensitivityLevel.HIGHLY_CONFIDENTIAL) return new Drawing(scale, null);
+        Instant now = clock.instant();
+        if (printId != null) {
+            if (!pageViews.isApprovedPrint(document.tenantId(), actorId, document.documentId(), printId, now.minus(PRINT_LIFETIME))) {
+                throw new CodedRefusal.Conflict(SdvErrorCode.DOC_014, "Print the document again to get its pages.", "document=" + document.documentId() + " no approved print");
+            }
+            return new Drawing(scale, PageWatermark.text(actorName, actorId, now));
+        }
+        return scale > SCREEN_SCALE ? new Drawing(SCREEN_SCALE, PageWatermark.text(actorName, actorId, now)) : new Drawing(scale, null);
+    }
+
     /**
      * Renders one page of a viewing ({@link #requireViewing}). The page event is written the first time this page is sent
      * in that viewing, whatever the zoom.
@@ -224,6 +254,8 @@ public class DocumentViewerService {
             int pageNumber,
             double scale,
             UUID viewingId,
+            UUID printId,
+            String actorName,
             String actorId,
             String correlationId) {
         requirePageAndScale(pageNumber, scale);
@@ -231,7 +263,8 @@ public class DocumentViewerService {
         Viewable viewable = requireViewable(tenantId, documentId, clearance, DocumentAccessGuard.Attempt.PAGE, actorId, correlationId);
         Document document = viewable.document();
         Instant notBefore = requireViewing(tenantId, documentId, viewingId, actorId);
-        PageImage drawn = draw(document, null, actorId, pageNumber, scale);
+        Drawing as = drawing(document, viewable.level(), scale, printId, actorName, actorId);
+        PageImage drawn = draw(document, null, actorId, pageNumber, as);
         // Recorded before the page is handed out; a failure to record means no page.
         recordPage(viewable, null, pageNumber, scale, viewingId, notBefore, actorId, correlationId);
         return drawn;
@@ -252,14 +285,16 @@ public class DocumentViewerService {
 
     /** Task 0066: one page of a sealed original, of an opening of it ({@link #sealedMetadata}). */
     public PageImage sealedPage(HeldRedactionRepository.Sealed sealed, Clearance clearance, int pageNumber, double scale,
-                                UUID viewingId, String actorId, String correlationId) {
+                                UUID viewingId, String actorName, String actorId, String correlationId) {
         requirePageAndScale(pageNumber, scale);
         Viewable viewable = requireSealedViewable(sealed, clearance, DocumentAccessGuard.Attempt.PAGE, actorId, correlationId);
         Instant notBefore = clock.instant().minus(VIEWING_LIFETIME);
         if (viewingId == null || !pageViews.isSealedViewing(sealed.tenantId(), actorId, sealed.documentId(), sealed.sealedId(), viewingId, notBefore)) {
             throw new CodedRefusal.Conflict(SdvErrorCode.DOC_011, "Open the document again to go on reading it.", "document=" + sealed.documentId() + " no viewing");
         }
-        PageImage drawn = draw(viewable.document(), sealed, actorId, pageNumber, scale);
+        // Task 0071: a sealed original is drawn as Highly Confidential, whatever the document's level; never for a print.
+        Drawing as = drawing(viewable.document(), SensitivityLevel.HIGHLY_CONFIDENTIAL, scale, null, actorName, actorId);
+        PageImage drawn = draw(viewable.document(), sealed, actorId, pageNumber, as);
         recordPage(viewable, sealed, pageNumber, scale, viewingId, notBefore, actorId, correlationId);
         return drawn;
     }
@@ -294,7 +329,8 @@ public class DocumentViewerService {
                 viewingId, pageNumber, notBefore);
     }
 
-    private PageImage draw(Document document, HeldRedactionRepository.Sealed sealed, String actorId, int pageNumber, double scale) {
+    private PageImage draw(Document document, HeldRedactionRepository.Sealed sealed, String actorId, int pageNumber, Drawing as) {
+        double scale = as.scale();
         UUID documentId = document.documentId();
         return onPdf(document, sealed, actorId, "page " + pageNumber, pdf -> {
             if (pageNumber > pdf.getNumberOfPages()) {
@@ -318,6 +354,7 @@ public class DocumentViewerService {
             renderer.setSubsamplingAllowed(true);
             BufferedImage image = renderer.renderImageWithDPI(
                     pageNumber - 1, dpi, ImageType.RGB);
+            if (as.watermark() != null) PageWatermark.draw(image, as.watermark());
 
             ByteArrayOutputStream png = new ByteArrayOutputStream(256 * 1024);
             if (!ImageIO.write(image, "PNG", png)) {

@@ -53,7 +53,7 @@ public class SealedOriginalController {
                                        @RequestParam(required = false) String viewingId) {
         SdvPrincipal p = requireView();
         DocumentViewerService.PageImage page = sealed.page(p.tenantId(), documentId, sealedId, authorization.clearance(p), pageNumber,
-                scale, SecurePdfViewerController.parseViewingId(viewingId), p.subject(), MDC.get("correlationId"));
+                scale, SecurePdfViewerController.parseViewingId(viewingId), p.displayName(), p.subject(), MDC.get("correlationId"));
         HttpHeaders headers = SecurePdfViewerController.viewerHeaders();
         headers.setContentType(MediaType.IMAGE_PNG);
         headers.setContentLength(page.pngBytes().length);

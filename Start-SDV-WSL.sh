@@ -131,7 +131,7 @@ launch backend 8280 "$ROOT" "$BACKEND_LOG" java -jar "$JAR" --spring.profiles.ac
 backend_healthy=false
 for ((i=0;i<90;i++)); do
   if healthy http://127.0.0.1:8280/actuator/health | grep -q '"status":"UP"'; then
-    if healthy http://127.0.0.1:8280/api/v1/system/info | grep -q '"productCode":"SDV"'; then
+    if healthy http://127.0.0.1:8280/api/v1/session/sign-in | grep -q '"mode"'; then
       backend_healthy=true
       break
     fi

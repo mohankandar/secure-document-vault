@@ -138,6 +138,16 @@ public interface QuarantineRepository extends QuarantineLookup {
 
     boolean release(UUID tenantId, UUID quarantineId, String by, String byName, String reason, UUID requestId, Instant at);
 
+    /** Task 0071: how many of the incident's documents this person released one by one since then. */
+    default long countSingleReleases(UUID tenantId, UUID incidentId, String by, Instant since) {
+        return 0;
+    }
+
+    /** Task 0071: the documents released one by one, newest first. */
+    default List<Quarantined> findSingleReleases(UUID tenantId, UUID incidentId, int limit) {
+        return List.of();
+    }
+
     long countMatching(UUID tenantId, Filter filter);
 
     void insertRequest(ReleaseRequest request);

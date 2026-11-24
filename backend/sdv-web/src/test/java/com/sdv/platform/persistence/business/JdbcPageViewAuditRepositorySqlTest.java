@@ -44,6 +44,22 @@ class JdbcPageViewAuditRepositorySqlTest {
         assertEquals(DOC.toString(), params.getValue().getValue("documentId"));
     }
 
+    /** Task 0071. */
+    @Test
+    void anApprovedPrintIsThisPersonsOwnRecentPrintOfThisDocumentWithAUsedGrant() {
+        assertFalse(repository.isApprovedPrint(TENANT, "steward", DOC, null, NOT_BEFORE));
+        when(jdbc.queryForObject(anyString(), any(SqlParameterSource.class), eq(Boolean.class))).thenReturn(true);
+        assertTrue(repository.isApprovedPrint(TENANT, "steward", DOC, VIEWING, NOT_BEFORE));
+        ArgumentCaptor<String> sql = ArgumentCaptor.forClass(String.class);
+        verify(jdbc).queryForObject(sql.capture(), any(SqlParameterSource.class), eq(Boolean.class));
+        String s = flat(sql.getValue());
+        for (String part : List.of("audit_event_id=:printId", "tenant_id=:tenantId", "actor_type='USER'", "actor_id=:actorId",
+                "action='DOCUMENT_PRINTED'", "target_id=:documentId", "outcome='SUCCESS'", "occurred_at>=:notBefore",
+                "safe_details->>'accessRequestId' is not null")) {
+            assertTrue(s.contains(part), part + " missing in: " + s);
+        }
+    }
+
     @Test
     void thePageEventIsInsertedOnlyWhenThisViewingHasNoEventForThatPageUnderALock() {
         when(jdbc.update(anyString(), any(SqlParameterSource.class))).thenReturn(1);

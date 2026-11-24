@@ -106,14 +106,16 @@ public class DocumentActionService {
      * call, so the grant counts as used only once the print is recorded. If the print event can't be written, the
      * print doesn't go ahead and the grant is given back (audited), so it can still be used once.
      */
-    public void recordPrint(UUID tenantId, UUID documentId, Clearance clearance, String actorId, String correlationId) {
+    public UUID recordPrint(UUID tenantId, UUID documentId, Clearance clearance, String actorId, String correlationId) {
         Document document = requireAvailable(tenantId, documentId, clearance, DocumentAccessGuard.Attempt.PRINT,
                 actorId, correlationId);
         DocumentAccessGuard.PrintOrDownload allowed = access.requirePrintOrDownload(document, clearance,
                 DocumentAccessGuard.Attempt.PRINT, actorId, correlationId, SensitiveAccessGrants.Use.USE);
         SensitivityLevel level = allowed.level();
+        // Task 0071: the event is the print; its ID gets the pages of a Highly Confidential document in print quality.
+        UUID printId = UUID.randomUUID();
         try {
-            audit.append(new AuditEvent(UUID.randomUUID(), tenantId, "USER", actorId,
+            audit.append(new AuditEvent(printId, tenantId, "USER", actorId,
                     "DOCUMENT_PRINTED", "DOCUMENT", document.documentId().toString(), clock.instant(), correlationId,
                     AuditOutcome.SUCCESS, "{\"currentApproved\":true,\"sensitivityLevel\":\"" + level.name() + "\""
                             + (allowed.grantId() == null ? "" : ",\"accessRequestId\":\"" + allowed.grantId() + "\"")
@@ -125,6 +127,7 @@ public class DocumentActionService {
             }
             throw ex;
         }
+        return printId;
     }
 
     public List<ActivityEntry> activity(UUID tenantId, UUID documentId, Instant from, Instant to,

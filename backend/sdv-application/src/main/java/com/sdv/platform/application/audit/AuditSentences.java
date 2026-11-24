@@ -217,6 +217,7 @@ public final class AuditSentences {
             case "DOWNLOAD" -> "to download " + document;
             case "LOWER_LEVEL" -> "to lower " + document + (requestedLevel == null ? "" : " to " + levelWords(requestedLevel));
             case "REDACT_HELD" -> "to redact " + document + " on legal hold";
+            case "RELEASE_HOLD" -> "to release the legal hold on " + document;
             case "LOWER_RECORD_LEVEL" -> "to lower a record" + (requestedLevel == null ? "" : " to " + levelWords(requestedLevel));
             default -> "for approval";
         };

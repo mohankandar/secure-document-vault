@@ -121,6 +121,8 @@ sdv:
   limits:
     request-body-bytes: ${SDV_MAX_REQUEST_BODY_BYTES:1048576}
     submission-body-bytes: ${SDV_MAX_SUBMISSION_BODY_BYTES:8388608}
+    # Task 0071: intake requests of one sending system in a minute, in this process (60 to 1000000). Over it: 503 SDV-SYS-018.
+    intake-requests-per-minute: ${SDV_INTAKE_REQUESTS_PER_MINUTE:6000}
 
   # Task 0063: reading PDFs. At most max-concurrent at once (0: from memory and processors), max-per-person for one
   # person or sending system; the rest wait wait-seconds, then 503 SDV-SYS-018 (busy). A work longer than limit-seconds is

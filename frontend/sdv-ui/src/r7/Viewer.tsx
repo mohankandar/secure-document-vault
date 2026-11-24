@@ -180,6 +180,8 @@ export function Viewer({ record, results, docId, onClose, recordTitle, backLabel
 
   const [actionBusy,setActionBusy] = useState(false)
   const [redactionFailure,setRedactionFailure] = useState('')
+  // Task 0071: an approved print whose pages didn't all arrive: the next try uses it again instead of another approval.
+  const unfinishedPrint = useRef<{doc:string;id:string}|null>(null)
   const [renderRevision,setRenderRevision] = useState(0)
   const download = async () => {
     if(actionBusy)return
@@ -200,8 +202,14 @@ export function Viewer({ record, results, docId, onClose, recordTitle, backLabel
     try {
       // Print the authorized rendered pages, without requesting the raw PDF download.
       // Task 0063: two pages at a time, so printing a long document leaves room for others.
+      // Task 0071: a Highly Confidential print is recorded first (it uses the approval); its ID gets the pages in print quality.
+      let printId:string|undefined
+      if(highlyConfidential){
+        printId=unfinishedPrint.current?.doc===doc.id?unfinishedPrint.current.id:(await recordPrintEvent(doc.id)).printId
+        unfinishedPrint.current={doc:doc.id,id:printId}
+      }
       const images:Blob[]=[]
-      for(let first=1;first<=pageTotal;first+=2)images.push(...await Promise.all(Array.from({length:Math.min(2,pageTotal-first+1)},(_,i)=>viewerPage(doc.id,first+i,1,viewingId))))
+      for(let first=1;first<=pageTotal;first+=2)images.push(...await Promise.all(Array.from({length:Math.min(2,pageTotal-first+1)},(_,i)=>viewerPage(doc.id,first+i,printId?2:1,viewingId,printId))))
       const urls=images.map(b=>URL.createObjectURL(b))
       const frame=document.createElement('iframe')
       frame.setAttribute('title','Print document')
@@ -213,10 +221,11 @@ export function Viewer({ record, results, docId, onClose, recordTitle, backLabel
       win.document.write('<!doctype html><html><head><title>Print document</title><style>body{margin:0}img{display:block;width:100%;page-break-after:always;break-after:page}@page{margin:0}</style></head><body>'+urls.map(u=>'<img src="'+u+'"/>').join('')+'</body></html>')
       win.document.close()
       await Promise.all(Array.from(win.document.images).map(image=>image.decode()))
-      await recordPrintEvent(doc.id)
+      if(!printId)await recordPrintEvent(doc.id)
+      unfinishedPrint.current=null
       win.focus();win.print()
       window.setTimeout(()=>{frame.remove();urls.forEach(u=>URL.revokeObjectURL(u))},60000)
-    }catch(e){failed('Print failed',e)}
+    }catch(e){if(e instanceof ApiRequestError&&e.code==='SDV-DOC-014')unfinishedPrint.current=null;failed('Print failed',e)}
     finally{setActionBusy(false);if(highlyConfidential)refreshRequests()}
   }
   const startRedact = () => {

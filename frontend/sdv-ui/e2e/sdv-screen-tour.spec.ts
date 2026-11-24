@@ -1734,8 +1734,11 @@ test.describe('SDV role-based screen capture', () => {
     const held = page.getByRole('table', { name: 'Legal holds in place' })
     await expect(held.locator('tbody tr').first()).toBeVisible()
     expect(await held.innerText()).not.toMatch(/\.pdf/i)
-    await held.getByRole('button', { name: 'Release' }).first().click()
-    await page.getByRole('alertdialog', { name: 'Release this hold?' }).getByRole('button', { name: 'Cancel' }).click()
+    // Task 0071: a release is asked for with a reason; another Business admin decides it.
+    await held.getByRole('button', { name: 'Request release' }).first().click()
+    const askRelease = page.getByRole('alertdialog', { name: 'Ask to release this hold' })
+    await expect(askRelease.getByRole('button', { name: 'Send request' })).toBeDisabled()
+    await askRelease.getByRole('button', { name: 'Cancel' }).click()
     await capture(page, testInfo, 'legal-holds')
     await tabs.getByRole('tab', { name: 'Keeping documents' }).click()
     await expect(page.getByRole('button', { name: /^\d+ documents? on legal hold$/ })).toBeVisible({ timeout: 15000 })
@@ -1813,7 +1816,13 @@ test.describe('SDV role-based screen capture', () => {
     const sealed = async () => (await (await page.request.get(docPath + '/sealed-originals', { headers: dana })).json() as unknown[]).length
     const released = async () => {
       for (const h of await (await page.request.get('/api/v1/admin/legal-holds', { headers: priya })).json() as { holdId: string; documentId: string }[]) {
-        if (h.documentId === doc) expect((await page.request.post(`/api/v1/admin/legal-holds/${h.holdId}/release`, { headers: priya })).ok()).toBeTruthy()
+        if (h.documentId !== doc) continue
+        // Task 0071: a request that another Business admin approves.
+        const waiting = async () => (await (await page.request.get('/api/v1/admin/legal-holds/release-requests', { headers: priya })).json() as { holdId: string; requestId: string }[]).find((w) => w.holdId === h.holdId)
+        if (!await waiting()) expect((await page.request.post(`/api/v1/admin/legal-holds/${h.holdId}/release`, { headers: priya, data: { reason: 'Tour check (task 0071)' } })).status()).toBe(202)
+        const request = (await waiting())!.requestId
+        expect((await page.request.post(`/api/v1/admin/access-requests/${request}/approve`, { headers: priya })).status()).toBe(403)
+        expect((await page.request.post(`/api/v1/admin/access-requests/${request}/approve`, { headers: as('local-business-admin-2', 'BUSINESS_ADMIN') })).ok()).toBeTruthy()
       }
     }
     await released() // an earlier run that stopped
@@ -1862,6 +1871,30 @@ test.describe('SDV role-based screen capture', () => {
 
   // Task 0031 (section 0): "Decided recently" comes from the server (every Business admin's decisions, here one made
   // outside this browser), the expiry note shows the tenant's own window, and an opening records the document's level.
+  // Task 0071: a Highly Confidential page in print quality only for an approved print of one's own.
+  test('Print quality of Highly Confidential pages (task 0071)', async ({ page }, testInfo) => {
+    test.skip(!isDesktop(testInfo), 'Runs once per tour (desktop only).')
+    const as = (subject: string, roles: string) => ({ 'X-SDV-Tenant-Id': 'bd960ee9-9d54-5053-9958-92aaa54893a6', 'X-SDV-Subject': subject, 'X-SDV-Roles': roles, 'Content-Type': 'application/json' })
+    const dana = as('local-tour-print', 'RESTRICTED_STEWARD'), priya = as('local-business-admin', 'BUSINESS_ADMIN')
+    const docPath = `/api/v1/business/documents/${await tourCheckDocument(page)}`
+    const { viewingId } = await (await page.request.get(docPath + '/viewer', { headers: dana })).json() as { viewingId: string }
+    const at = async (scale: number, printId?: string) => await page.request.get(`${docPath}/viewer/pages/1?scale=${scale}&viewingId=${viewingId}${printId ? '&printId=' + printId : ''}`, { headers: dana })
+    const width = async (r: Awaited<ReturnType<typeof at>>) => { expect(r.status()).toBe(200); return (await r.body()).readUInt32BE(16) }
+    const screen = await width(await at(1.5))
+    expect(await width(await at(2))).toBe(screen)
+    expect((await at(2, crypto.randomUUID())).status()).toBe(409)
+    const asked = await page.request.post(docPath + '/access-requests', { headers: dana, data: { kind: 'PRINT', reason: 'Tour check (task 0071)' } })
+    expect(asked.ok()).toBeTruthy()
+    const request = (await asked.json() as { requestId: string }).requestId
+    expect((await page.request.post(`/api/v1/admin/access-requests/${request}/approve`, { headers: priya })).ok()).toBeTruthy()
+    const print = await page.request.post(docPath + '/print-event', { headers: dana })
+    expect(print.status()).toBe(200)
+    const printed = await at(2, (await print.json() as { printId: string }).printId)
+    expect(await width(printed)).toBeGreaterThan(screen)
+    await testInfo.attach('printed-page', { body: await printed.body(), contentType: 'image/png' })
+    await (await import('node:fs/promises')).writeFile(testInfo.outputPath('printed-page.png'), await printed.body())
+  })
+
   test('Decided recently, the expiry note and levels on openings (task 0031)', async ({ page }, testInfo) => {
     test.skip(!isDesktop(testInfo), 'Runs once per tour (desktop only).')
     test.setTimeout(120_000)
@@ -2293,12 +2326,11 @@ test.describe('SDV role-based screen capture', () => {
       expect(await panel.innerText()).not.toMatch(/Highly Confidential|quarantin|Tour check of the quarantine|comes back|reviewed/i)
       await capture(page, testInfo, 'quarantine-unavailable-business-user')
 
-      // 6. Daniel (Document steward): the incident, with the Highly Confidential document counted, not shown.
+      // 6. Daniel (Document steward): can open nothing in it, so the incident's name isn't shown to them (task 0071).
       await selectRole(page, 'Document Steward')
       await areaTab(page, 'Quarantine').click()
-      await page.getByRole('region', { name: 'Open incidents' }).getByRole('button', { name: `Open incident ${name}` }).click()
-      await expect(page.getByText(/1 document not shown:/)).toBeVisible({ timeout: 15000 })
-      await expect(page.getByRole('button', { name: 'Request release of whole incident' })).toHaveCount(0)
+      await expect(page.getByRole('region', { name: 'Open incidents' })).toContainText(/Open incidents · [0-9]/, { timeout: 15000 })
+      await expect(page.getByText(name)).toHaveCount(0)
       await capture(page, testInfo, 'quarantine-steward-hidden-level')
 
       // 7. Dana asks to release the whole incident; Priya (Business admin) decides it on its own under Approvals.

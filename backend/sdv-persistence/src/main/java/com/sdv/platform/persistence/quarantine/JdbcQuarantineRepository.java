@@ -201,6 +201,27 @@ public class JdbcQuarantineRepository implements QuarantineRepository {
         return updated == 1;
     }
 
+    @Override
+    public long countSingleReleases(UUID tenantId, UUID incidentId, String by, Instant since) {
+        Long n = jdbc.queryForObject("""
+                select count(*) from quarantined_documents
+                 where tenant_id=:tenantId and incident_id=:incidentId and released_by=:by and release_request_id is null
+                   and released_at>:since
+                """, new MapSqlParameterSource().addValue("tenantId", tenantId).addValue("incidentId", incidentId)
+                .addValue("by", by).addValue("since", Timestamp.from(since)), Long.class);
+        return n == null ? 0 : n;
+    }
+
+    @Override
+    public List<Quarantined> findSingleReleases(UUID tenantId, UUID incidentId, int limit) {
+        return jdbc.query(QUARANTINED + """
+                 where q.tenant_id=:tenantId and q.incident_id=:incidentId and q.released_at is not null and q.release_request_id is null
+                 order by q.released_at desc, q.quarantine_id
+                 limit :limit
+                """, new MapSqlParameterSource().addValue("tenantId", tenantId).addValue("incidentId", incidentId).addValue("limit", limit),
+                (rs, row) -> quarantined(rs));
+    }
+
     /** The filter's own conditions on {@code d}: received dates, sending system, field values (normalized, as search). */
     private static String matches(Filter f, MapSqlParameterSource p) {
         StringBuilder sql = new StringBuilder();

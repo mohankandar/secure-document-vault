@@ -55,11 +55,13 @@ public class DocumentActionController {
     }
 
     @PostMapping("/print-event")
-    @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void print(@PathVariable UUID documentId) {
+    public PrintRecorded print(@PathVariable UUID documentId) {
         SdvPrincipal principal = require(Capability.PRINT_DOCUMENT);
-        actions.recordPrint(principal.tenantId(), documentId, authorization.clearance(principal), principal.subject(), correlationId());
+        return new PrintRecorded(actions.recordPrint(principal.tenantId(), documentId, authorization.clearance(principal), principal.subject(), correlationId()));
     }
+
+    /** Task 0071: printId gets a Highly Confidential document's pages in print quality, for 15 minutes. */
+    public record PrintRecorded(UUID printId) { }
 
     @GetMapping("/activity")
     public List<DocumentActionService.ActivityEntry> activity(@PathVariable UUID documentId,

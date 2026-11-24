@@ -1,0 +1,8 @@
+databaseChangeLog:
+  - changeSet:
+      id: 044-hold-release
+      author: sdv
+      changes:
+        - sqlFile:
+            path: db/changelog/044-hold-release.sql
+            relativeToChangelogFile: false

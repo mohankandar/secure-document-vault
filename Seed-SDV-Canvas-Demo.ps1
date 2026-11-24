@@ -188,8 +188,9 @@ function Deliver([string]$SourceId, [string]$SubKey, [hashtable]$Metadata, [stri
 Write-Host "=== SDV DEMO DATA (local only, database $Database) ==="
 try { $health = Invoke-RestMethod -Uri "$Base/actuator/health" -TimeoutSec 5 } catch { throw "SDV is not reachable at $Base. Start it with .\start-local.cmd (run .\Update-SDV-Schema.ps1 update first on a database older than this version)" }
 if ($health.status -ne 'UP') { throw "SDV is not UP at $Base. If the database is older than this version, run .\Update-SDV-Schema.ps1 update -Url jdbc:postgresql://localhost:5433/$Database -Username sdv, then restart." }
-$info = Invoke-RestMethod -Uri "$Base/api/v1/system/info" -TimeoutSec 10
-if (@($info.activeProfiles) -notcontains 'local') { throw "The demo data is for a Vero in local mode; Vero at $Base runs with profiles $(@($info.activeProfiles) -join ', ')." }
+# Task 0071: system information needs sign-in now; the sign-in settings are open and say whether this is local mode.
+$signIn = Invoke-RestMethod -Uri "$Base/api/v1/session/sign-in" -TimeoutSec 10
+if ($signIn.mode -ne 'local') { throw "The demo data is for a Vero in local mode; Vero at $Base signs people in with mode '$($signIn.mode)'." }
 
 # ---- Task 0041: the demo entities come from platform-core setup and Vero's demo step, never from a changeset ----
 # Setup loads the demo licence (signed by the development key in dev\setup, which no release trusts), the customer,
@@ -273,8 +274,8 @@ if ($Reset -and $switchedOver -and [int](Db "select count(*) from submissions wh
     $Reset = $false
 }
 if ($Reset) {
-    $info = Invoke-RestMethod -Uri "$Base/api/v1/system/info" -TimeoutSec 10
-    if (@($info.activeProfiles) -notcontains 'local') { throw "Reset refused: Vero at $Base is not in local mode (profiles: $(@($info.activeProfiles) -join ', '))." }
+    $signIn = Invoke-RestMethod -Uri "$Base/api/v1/session/sign-in" -TimeoutSec 10
+    if ($signIn.mode -ne 'local') { throw "Reset refused: Vero at $Base is not in local mode (sign-in mode '$($signIn.mode)')." }
     $demoDeliveries = [int](Db "select count(*) from submissions where tenant_id='$Tenant' and source_submission_id like 'canvas-demo-%';")
     if ($demoDeliveries -eq 0) { throw "Reset refused: database $Database holds no delivery of this seed, so it is not a demo database. On a new demo database run .\Seed-SDV-Canvas-Demo.ps1 without -Reset." }
     # Vero at -Base must be using -Database: the loan system's ID in the database is the one the API lists.
@@ -531,7 +532,7 @@ $askers = @(
 # ---- Task 0035: reset of waiting requests, levels and legal holds (only with -Reset) ----
 if ($Reset) {
     $resetter = Headers 'local-demo-reset' 'RESTRICTED_STEWARD'
-    $resetAdmin = Headers 'local-demo-reset-admin' 'BUSINESS_ADMIN' # only for a request Priya made herself (nobody decides their own)
+    $resetAdmin = Headers 'local-demo-reset-admin' 'BUSINESS_ADMIN' # for a request Priya made herself (nobody decides their own) and holds she placed
     $resetWhy = 'Demo reset: back to the seed''s level'
 
     # 1. Waiting requests: the seed's are kept (one of each), every other one is declined.
@@ -594,12 +595,15 @@ if ($Reset) {
 
     # 3. Legal holds: the seed's three (placed again below if missing); any other hold is released.
     $holdDocs = @($approvalDocs[1], $approvalDocs[2], $income)
-    $holdRows = Db "select hold_id || '|' || document_id from legal_holds where tenant_id='$Tenant' and released_at is null order by placed_at, hold_id;"
+    $holdRows = Db "select hold_id || '|' || document_id || '|' || placed_by from legal_holds where tenant_id='$Tenant' and released_at is null order by placed_at, hold_id;"
     $released = 0
     foreach ($line in ($holdRows -split "`n" | Where-Object { $_.Trim() })) {
-        $holdId, $doc = $line.Trim().Split('|', 2)
+        $holdId, $doc, $placer = $line.Trim().Split('|', 3)
         if ($holdDocs -contains $doc) { continue }
-        try { $null = Api 'POST' "/api/v1/admin/legal-holds/$holdId/release" $approver; $released++ } catch { Skip "Could not release legal hold ${holdId}: $($_.Exception.Message)" }
+        # Task 0071: one Business Admin asks, another (not the one who placed the hold) approves.
+        $decider = if ($placer -eq 'local-business-admin') { $resetAdmin } else { $approver }
+        $asker = if ($placer -eq 'local-business-admin') { $approver } else { $resetAdmin }
+        try { $asked = Api 'POST' "/api/v1/admin/legal-holds/$holdId/release" $asker @{ reason = 'Demo reset: not a hold of the seed' }; Decide $asked.requestId 'approve' $decider; $released++ } catch { Skip "Could not release legal hold ${holdId}: $($_.Exception.Message)" }
     }
     if ($released) { Fixed "Released $released legal hold(s) the seed did not place" } else { Ok 'Legal holds: only the seed''s' }
 }
