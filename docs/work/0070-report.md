@@ -2,7 +2,7 @@
 
 Date: 2026-11-24
 Branch: `chore/spring-boot-4.2`, stacked on `chore/platform-core-0.7.0` (0067) with `release/vero-r7` merged in
-Outcome: DONE, **not merged**: waits for 0067 (queue). No schema change.
+Outcome: DONE. No schema change.
 
 ## What was done
 
@@ -87,7 +87,13 @@ One change with this report. Draft pull request with base `chore/platform-core-0
   (`SenderProfileServerContractTest`, in the schema check). Owner step, with 0067's: as in report 0041, point 7.
 - A worktree of the 3.5 build is left in the session's temporary folder.
 
+## After 0067 (PR #35, `ea3a720`)
+
+`release/vero-r7` merged in: no backend file changed against the checked commit. Built again: 791 tests, 0 failures. One build
+before it failed with missing classes: the editor's own Java build writes into `target` while Maven runs (seen three times
+today, each gone on a second run; not a code failure). CI doesn't run for a pull request with another base, so it was started by
+hand on the branch: green.
+
 ## Open points and questions for the design chat
 
 1. Are the five stricter answers fine, or should senders be told in the contract's notes?
-2. Merge order as in the queue: 0067, then this PR's base becomes `release/vero-r7`.
