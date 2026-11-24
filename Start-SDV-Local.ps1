@@ -1,16 +1,23 @@
 [CmdletBinding()]
 param(
-    [switch]$WithVault = $true
+    [switch]$WithVault = $true,
+    # Restricted application Vault token file. Defaults to SDV_VAULT_TOKEN_FILE,
+    # then to ..\secrets\sdv-app.token beside (never inside) the repository.
+    [string]$VaultTokenFile = ''
 )
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
 $Root = $PSScriptRoot
+$VaultUrl = 'http://127.0.0.1:8200'
+if (-not $VaultTokenFile) {
+    $VaultTokenFile = if ($env:SDV_VAULT_TOKEN_FILE) { $env:SDV_VAULT_TOKEN_FILE } else { Join-Path (Split-Path -Parent $Root) 'secrets\sdv-app.token' }
+}
 $Runtime = Join-Path $Root '.runtime'
 $BackendPid = Join-Path $Runtime 'backend.pid'
 $FrontendPid = Join-Path $Runtime 'frontend.pid'
-$Jar = Join-Path $Root 'backend\sdv-web\target\sdv-web-0.1.0-SNAPSHOT.jar'
+$Jar = Join-Path $Root 'backend\sdv-web\target\local\sdv-web-0.1.0-SNAPSHOT-local.jar'
 $Frontend = Join-Path $Root 'frontend\sdv-ui'
 
 function Get-SdvOwnedProcess {
@@ -90,9 +97,38 @@ if (-not (Test-Path (Join-Path $Frontend 'node_modules'))) { throw 'Frontend dep
 
 New-Item -ItemType Directory -Force -Path $Runtime | Out-Null
 
-Write-Host 'Starting isolated SDV PostgreSQL...'
-& docker compose -f (Join-Path $Root 'compose.local.yml') up -d sdv-postgres
-if ($LASTEXITCODE -ne 0) { throw 'Could not start sdv-postgres.' }
+if ($WithVault) {
+    if (-not (Test-Path -LiteralPath $VaultTokenFile -PathType Leaf) -or (Get-Item -LiteralPath $VaultTokenFile).Length -eq 0) {
+        throw "Application Vault token file is missing or empty: $VaultTokenFile"
+    }
+    $VaultTokenFile = (Resolve-Path -LiteralPath $VaultTokenFile).Path
+    $rootPrefix = $Root.TrimEnd('\', '/') + [IO.Path]::DirectorySeparatorChar
+    if ($VaultTokenFile.StartsWith($rootPrefix, [StringComparison]::OrdinalIgnoreCase)) {
+        throw 'The Vault token file must live outside the repository so it can never be committed.'
+    }
+}
+
+# Task 0064: the local database password comes from an untracked file, never from git. Compose and the backend window
+# get it through the environment only.
+$env:SDV_LOCAL_DB_PASSWORD = & (Join-Path $Root 'scripts\local\Get-SdvLocalDbPassword.ps1') -Root $Root
+
+# Reuse the existing persistent database container. Compose is used only when
+# no sdv-postgres container exists yet, so an existing one is never recreated.
+$existingPostgres = (& docker ps -a --filter 'name=^/sdv-postgres$' --format '{{.Names}}' | Out-String).Trim()
+if ($existingPostgres -eq 'sdv-postgres') {
+    $postgresRunning = (& docker inspect --format='{{.State.Running}}' sdv-postgres | Out-String).Trim()
+    if ($postgresRunning -ne 'true') {
+        Write-Host 'Starting existing sdv-postgres container...'
+        & docker start sdv-postgres | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw 'Could not start existing sdv-postgres container.' }
+    } else {
+        Write-Host 'Existing sdv-postgres container is already running.'
+    }
+} else {
+    Write-Host 'Starting isolated SDV PostgreSQL...'
+    & docker compose -f (Join-Path $Root 'compose.local.yml') up -d sdv-postgres
+    if ($LASTEXITCODE -ne 0) { throw 'Could not start sdv-postgres.' }
+}
 
 $healthy = $false
 for ($i = 0; $i -lt 40; $i++) {
@@ -136,19 +172,39 @@ if ($WithVault) {
     }
     Write-Host 'Vault health is UP.'
 
-    # Make local Vault startup idempotent. A reused dev container may already
-    # have Transit mounted; calling `vault secrets enable transit` again writes
-    # an expected error to stderr, which PowerShell can promote to a terminating
-    # NativeCommandError before LASTEXITCODE can be inspected.
-    $secrets = (& docker exec -e VAULT_ADDR=http://127.0.0.1:8200 -e VAULT_TOKEN=sdv-local-root sdv-vault vault secrets list -format=json 2>$null | Out-String)
-    if ($LASTEXITCODE -ne 0) {
-        throw 'Could not inspect Vault secret-engine mounts for local SDV runtime.'
+    # Non-mutating preflight with the restricted application token, matching
+    # scripts/sdv-vault-preflight.py: it checks seal state and that the token's
+    # policy reaches the SDV Transit paths. It creates no keys, performs no
+    # cryptographic operation and never prints the token.
+    $sealState = Invoke-RestMethod -Uri "$VaultUrl/v1/sys/seal-status" -TimeoutSec 5
+    if (-not $sealState.initialized -or $sealState.sealed) {
+        throw 'Vault is sealed or uninitialized. Unseal the existing persistent Vault, then retry. Do not reinitialize it.'
     }
-
-    if ($secrets -notmatch '"transit/"') {
-        throw 'Vault Transit is not enabled. Configure transit/ in the persistent Vault before starting SDV.'
+    $keyPrefix = if ($env:SDV_VAULT_KEY_PREFIX) { $env:SDV_VAULT_KEY_PREFIX } else { 'sdv-tenant-' }
+    $transitMount = if ($env:SDV_VAULT_TRANSIT_MOUNT) { $env:SDV_VAULT_TRANSIT_MOUNT.Trim('/') } else { 'transit' }
+    if (-not $transitMount -or -not $keyPrefix -or $keyPrefix.Contains('/')) {
+        throw 'Invalid SDV Transit mount or tenant-key prefix configuration.'
     }
-    Write-Host 'Vault Transit is ready.'
+    $appToken = (Get-Content -LiteralPath $VaultTokenFile -Raw -Encoding UTF8).Trim()
+    if (-not $appToken) { throw 'Application Vault token file is empty.' }
+    try {
+        foreach ($operation in @('keys', 'datakey/plaintext', 'decrypt')) {
+            $target = "$transitMount/$operation/${keyPrefix}preflight"
+            $mountType = $null
+            try {
+                $mount = Invoke-RestMethod -Uri "$VaultUrl/v1/sys/internal/ui/mounts/$target" -Headers @{ 'X-Vault-Token' = $appToken } -TimeoutSec 5
+                $mountType = $mount.data.type
+            } catch {
+                throw "Vault Transit ACL preflight denied or unavailable for '$operation'. Check the application token and its policy; do not change the Vault ACL to work around this."
+            }
+            if ($mountType -ne 'transit') {
+                throw "Vault Transit mount is missing or inaccessible for '$operation'."
+            }
+        }
+    } finally {
+        $appToken = $null
+    }
+    Write-Host 'Vault preflight PASS: unsealed, existing Transit mount and SDV policy paths accessible.'
 }
 
 Remove-StalePidFile -PidFile $BackendPid -Kind 'backend'
@@ -162,18 +218,23 @@ if ($backendListener) {
 $rootEscaped = $Root.Replace("'", "''")
 $jarEscaped = $Jar.Replace("'", "''")
 $keyProvider = if ($WithVault) { 'vault' } else { 'disabled' }
+# The backend reads the restricted token from the file itself. The token value
+# is never placed on a command line or in an environment variable.
+$tokenFileLine = if ($WithVault) { "`$env:SDV_VAULT_TOKEN_FILE = '" + $VaultTokenFile.Replace("'", "''") + "'" } else { '' }
 $backendCommand = @"
 `$Host.UI.RawUI.WindowTitle = 'SDV Backend - LOCAL'
 Set-Location -LiteralPath '$rootEscaped'
 `$env:SDV_KEY_PROVIDER = '$keyProvider'
-`$env:SDV_VAULT_BASE_URL = 'http://127.0.0.1:8200'
-`$env:SDV_VAULT_TOKEN = 'sdv-local-root'
+`$env:SDV_VAULT_BASE_URL = '$VaultUrl'
+Remove-Item Env:SDV_VAULT_TOKEN -ErrorAction SilentlyContinue
+$tokenFileLine
 Write-Host 'SDV backend LOCAL console. Close this window to stop the backend.' -ForegroundColor Cyan
 java -jar '$jarEscaped' --spring.profiles.active=local
 "@
 
 Write-Host 'Starting SDV backend in a separate PowerShell window...'
 $backendProcess = Start-Process -FilePath 'powershell.exe' -ArgumentList @('-NoProfile', '-NoExit', '-Command', $backendCommand) -PassThru
+Remove-Item Env:SDV_LOCAL_DB_PASSWORD -ErrorAction SilentlyContinue
 Set-Content -Path $BackendPid -Value $backendProcess.Id -Encoding ASCII
 
 Write-Host 'Waiting for SDV backend health...'

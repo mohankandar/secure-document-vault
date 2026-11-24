@@ -49,6 +49,14 @@
             <artifactId>sdv-audit</artifactId>
             <version>${project.version}</version>
         </dependency>
+        <!-- Task 0064: the local development start. Tests and the local jar only; the release jar excludes it (below),
+             and runtime scope keeps the app's own code from using it. -->
+        <dependency>
+            <groupId>com.sdv.platform</groupId>
+            <artifactId>sdv-local</artifactId>
+            <version>${project.version}</version>
+            <scope>runtime</scope>
+        </dependency>
 
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -121,10 +129,32 @@
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
                 <executions>
+                    <!-- Task 0064. First: target/local/sdv-web-<version>-local.jar, for the local start scripts only. -->
                     <execution>
+                        <id>local</id>
                         <goals>
                             <goal>repackage</goal>
                         </goals>
+                        <configuration>
+                            <classifier>local</classifier>
+                            <outputDirectory>${project.build.directory}/local</outputDirectory>
+                            <attach>false</attach>
+                        </configuration>
+                    </execution>
+                    <!-- The release jar: without the local profile and its sign-in. -->
+                    <execution>
+                        <id>release</id>
+                        <goals>
+                            <goal>repackage</goal>
+                        </goals>
+                        <configuration>
+                            <excludes>
+                                <exclude>
+                                    <groupId>com.sdv.platform</groupId>
+                                    <artifactId>sdv-local</artifactId>
+                                </exclude>
+                            </excludes>
+                        </configuration>
                     </execution>
                 </executions>
                 <configuration>

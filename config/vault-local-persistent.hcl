@@ -1,4 +1,4 @@
-# Development-only persistence. No TLS; bound to developer workstation by compose port.
+# Development-only persistence. No TLS; compose.local.yml publishes the port on 127.0.0.1 only.
 ui = false
 disable_mlock = true
 storage "raft" {

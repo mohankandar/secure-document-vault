@@ -1506,7 +1506,7 @@ Task 0034 went through the code flow by flow and listed every point where someth
 
 #### SDV-AUT-008 (released in task 0038): local test sign-in headers not valid
 - **Released:** now sent (task 0038); its section is above. The notes below are what task 0034 found, kept for the list of lines.
-- **Where:** `LocalHeaderAuthenticationFilter.java:86`, `:90`, `:110`, `:131-132`. Local profile only.
+- **Where:** `LocalHeaderAuthenticationFilter.java`. Local development only; task 0064: also a request from another computer, or under another Host than localhost or 127.0.0.1.
 - **Trigger:** a missing or malformed `X-SDV-*` header on a developer machine.
 - **Today:** 401 from `sendError` with Spring's generic body. Generic: yes.
 - **Kind:** reached but refused.

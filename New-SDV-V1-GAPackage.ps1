@@ -58,45 +58,11 @@ Require ($matches010 -eq 1) 'Migration 010 appears exactly once in the Liquibase
 $after010 = Get-ChildItem -LiteralPath (Join-Path $Root 'backend\sdv-web\src\main\resources\db\changelog') -File | Where-Object { $_.Name -match '^(?:011|01[2-9]|0[2-9][0-9]|[1-9][0-9]{2,})-' }
 Require (@($after010).Count -eq 0) 'No migration exists beyond frozen migration 010'
 
-$localFilter = Get-Content -LiteralPath (Join-Path $Root 'backend\sdv-security\src\main\java\com\sdv\platform\security\auth\LocalHeaderAuthenticationFilter.java') -Raw
+$localFilter = Get-Content -LiteralPath (Join-Path $Root 'backend\sdv-local\src\main\java\com\sdv\platform\security\auth\LocalHeaderAuthenticationFilter.java') -Raw
 Require ($localFilter -match '@ConditionalOnProperty') 'Frozen Unit 21 auth-mode isolation annotation is present'
 Require ($localFilter -match 'havingValue\s*=\s*"local-header"') 'Local-header filter remains conditional on local-header mode'
 
 New-Item -ItemType Directory -Force -Path $OutputDirectory | Out-Null
-
-function Get-RelativePath([string]$FullName) {
-    $relative = $FullName.Substring($Root.Length)
-    while ($relative.StartsWith('\') -or $relative.StartsWith('/')) { $relative = $relative.Substring(1) }
-    return $relative.Replace('\','/')
-}
-
-function Is-Excluded([string]$RelativePath) {
-    $normalized = $RelativePath.Replace('\','/')
-    $parts = $normalized.Split('/')
-    # demo-files: local demo PDFs for Seed-SDV-Canvas-Demo.ps1 only, never part of a package (task 0023).
-    $blockedDirectories = @('.git','.idea','.vscode','.runtime','target','node_modules','dist','release','demo-files')
-    foreach ($part in $parts) { if ($blockedDirectories -contains $part) { return $true } }
-    $name = [IO.Path]::GetFileName($normalized)
-    if ($name -match '^\.env($|\.)') { return $true }
-    if ($name -match '\.log$') { return $true }
-    if ($name -match '\.tsbuildinfo$') { return $true }
-    if ($name -match '\.class$') { return $true }
-    if ($name -match '\.zip$') { return $true }
-    return $false
-}
-
-$SensitiveExtensions = @('.pem','.key','.p12','.pfx','.jks','.keystore')
-$files = New-Object System.Collections.Generic.List[object]
-Get-ChildItem -LiteralPath $Root -Recurse -File -Force | ForEach-Object {
-    $relative = Get-RelativePath $_.FullName
-    if (-not (Is-Excluded $relative)) {
-        if ($SensitiveExtensions -contains $_.Extension.ToLowerInvariant()) {
-            throw "Potential secret/private-key material is present in GA release source: $relative"
-        }
-        $files.Add([PSCustomObject]@{ File=$_; Relative=$relative })
-    }
-}
-Require ($files.Count -ge 20) 'GA source enumeration is non-empty and plausible'
 
 $archiveName = "sdv-v1-$Version-source.zip"
 $archivePath = Join-Path $OutputDirectory $archiveName
@@ -106,19 +72,8 @@ foreach ($existing in @($archivePath,$checksumPath,$manifestPath)) {
     Remove-Item -LiteralPath $existing -Force -ErrorAction SilentlyContinue
 }
 
-Add-Type -AssemblyName System.IO.Compression
-Add-Type -AssemblyName System.IO.Compression.FileSystem
-$stream = [IO.File]::Open($archivePath,[IO.FileMode]::CreateNew,[IO.FileAccess]::ReadWrite,[IO.FileShare]::None)
-try {
-    $zip = New-Object -TypeName System.IO.Compression.ZipArchive -ArgumentList @($stream,[IO.Compression.ZipArchiveMode]::Create,$false)
-    try {
-        foreach ($item in ($files | Sort-Object Relative)) {
-            [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile(
-                $zip,$item.File.FullName,$item.Relative,[System.IO.Compression.CompressionLevel]::Optimal
-            ) | Out-Null
-        }
-    } finally { $zip.Dispose() }
-} finally { $stream.Dispose() }
+# Task 0064: the committed files only, never the folder.
+$archive = & (Join-Path $Root 'scripts/packaging/New-SdvSourceArchive.ps1') -Root $Root -ArchivePath $archivePath -Required $Required
 
 $sha = (Get-FileHash -Algorithm SHA256 -LiteralPath $archivePath).Hash.ToLowerInvariant()
 Set-Content -LiteralPath $checksumPath -Value "$sha  $archiveName" -Encoding ASCII
@@ -135,10 +90,11 @@ $manifest = [ordered]@{
     sourceArchive = $archiveName
     sha256 = $sha
     frontendPackageLockSha256 = $lockSha
-    fileCount = $files.Count
+    fileCount = $archive.FileCount
+    commit = $archive.Commit
     cleanInstallValidation = 'REQUIRED ON FRESH WINDOWS MACHINE/VM BEFORE PILOT DEPLOYMENT'
     cleanInstallScript = 'Test-SDV-V1-GA-CleanInstall.ps1'
-    exclusions = @('.git','.idea','.vscode','.runtime','target','node_modules','dist','release','.env*','*.log','*.class','*.tsbuildinfo','*.zip','private-key/certificate-keystore extensions')
+    contents = 'git archive of the commit: tracked files only, without demo files, .env files, logs and archives'
 }
 $manifest | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $manifestPath -Encoding UTF8
 

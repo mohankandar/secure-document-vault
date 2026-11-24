@@ -1,0 +1,39 @@
+# Task 0064: everything Maven needs, fetched before any build or test runs. Only the second step has the package token,
+# and it compiles nothing and runs no tests. Every later Maven command runs offline (-o).
+name: Resolve Maven dependencies
+description: Fetches all dependencies and plugins, so builds and tests can run offline and without the package token.
+inputs:
+  packages-token:
+    description: Read-only package token (read:packages).
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Check the packages token is set
+      shell: bash
+      env:
+        TOKEN_SET: ${{ inputs.packages-token != '' }}
+      run: |
+        if [ "$TOKEN_SET" != "true" ]; then
+          echo "::error::Repository secret PLATFORM_PACKAGES_TOKEN is not set (read:packages token for platform-core)."
+          exit 1
+        fi
+    - name: Dependencies and plugins (the only step with the package token)
+      shell: bash
+      working-directory: backend
+      env:
+        GITHUB_PACKAGES_TOKEN: ${{ inputs.packages-token }}
+      run: |
+        # The plugins, then the dependencies as the modules together choose them (compiling nothing).
+        mvn $MVN_CI_FLAGS -q org.apache.maven.plugins:maven-dependency-plugin:3.8.1:go-offline
+        mvn $MVN_CI_FLAGS -q test-compile -Dmaven.main.skip=true -Dmaven.test.skip=true
+    - name: The test runner (Surefire picks it while it runs, so the step above does not see it)
+      shell: bash
+      run: |
+        surefire=$(sed -n 's:.*<maven.surefire.version>\(.*\)</maven.surefire.version>.*:\1:p' backend/pom.xml)
+        platform=$(ls "$HOME/.m2/repository/org/junit/platform/junit-platform-engine" | sort -V | tail -1)
+        echo "Surefire $surefire, JUnit Platform $platform"
+        cd "$RUNNER_TEMP"
+        for a in "org.apache.maven.surefire:surefire-junit-platform:$surefire" "org.junit.platform:junit-platform-launcher:$platform"; do
+          mvn -B -ntp org.apache.maven.plugins:maven-dependency-plugin:3.8.1:get "-Dartifact=$a"
+        done

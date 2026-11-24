@@ -5,14 +5,13 @@ import react from '@vitejs/plugin-react'
 // against an app started on a scratch database, with SDV_UI_PORT and SDV_API_TARGET set.
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, '.', 'SDV_')
-  const api = env.SDV_API_TARGET || 'http://localhost:8280'
+  const api = env.SDV_API_TARGET || 'http://127.0.0.1:8280'
   return {
     plugins: [react()],
     server: {
       host: '127.0.0.1',
       port: Number(env.SDV_UI_PORT || 5183),
       strictPort: true,
-      allowedHosts: true,
       proxy: {
         '/api': api,
         '/actuator': api

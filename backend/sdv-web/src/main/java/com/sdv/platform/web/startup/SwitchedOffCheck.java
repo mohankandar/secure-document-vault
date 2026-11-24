@@ -8,6 +8,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.env.Environment;
 import org.springframework.core.env.Profiles;
 import org.springframework.stereotype.Component;
+import org.springframework.util.ClassUtils;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -33,9 +34,15 @@ public class SwitchedOffCheck {
     static final String KEY_OFF = "sdv.crypto.key-provider (SDV_KEY_PROVIDER) is \"disabled\": uploading, finishing, "
             + "viewing, printing, downloading and redacting documents will fail.";
 
+    static final String NO_LOCAL = "The local profile (SPRING_PROFILES_ACTIVE) is for development and is not part of this Vero.";
+
+    /** Task 0064: only the local development jar has the local sign-in (module sdv-local). */
+    static final String LOCAL_MODULE = "com.sdv.platform.security.auth.LocalHeaderAuthenticationFilter";
+
     @Autowired
     public SwitchedOffCheck(Environment environment) {
-        this(environment.acceptsProfiles(Profiles.of("local")),
+        this(local(environment.acceptsProfiles(Profiles.of("local")),
+                        ClassUtils.isPresent(LOCAL_MODULE, SwitchedOffCheck.class.getClassLoader())),
                 environment.getProperty("sdv.auth.mode", "disabled"),
                 environment.getProperty("sdv.crypto.key-provider", "disabled"));
     }
@@ -52,6 +59,12 @@ public class SwitchedOffCheck {
             }
         }
         if (!local && !off.isEmpty()) throw off.get(0);
+    }
+
+    /** The local profile, only where the local module is: a release refuses to start with it. */
+    static boolean local(boolean localProfile, boolean localModule) {
+        if (localProfile && !localModule) throw new StartupFailure(SdvErrorCode.SYS_005, NO_LOCAL);
+        return localProfile;
     }
 
     private static boolean disabled(String value) {

@@ -90,7 +90,7 @@ try {
     $health = Invoke-RestMethod -Uri "$Base/actuator/health" -TimeoutSec 5
     Require ($health.status -eq 'UP') 'Backend health is UP on port 8280'
     Require ((DbScalar "select count(*) from databasechangelog where id='005-secure-ingestion-checkpoint-b';") -eq '1') 'Checkpoint B migration applied once'
-    $vaultSecrets = (& docker exec -e VAULT_ADDR=http://127.0.0.1:8200 -e VAULT_TOKEN=sdv-local-root sdv-vault vault secrets list -format=json | Out-String)
+    $vaultSecrets = (& docker exec -e VAULT_ADDR=http://127.0.0.1:8200 -e VAULT_TOKEN sdv-vault vault secrets list -format=json | Out-String)
     Require ($vaultSecrets -match '"transit/"') 'Local acceptance runtime has Vault Transit enabled'
     Require ((DbScalar "select count(*) from databasechangelog where id='004-secure-ingestion-checkpoint-a';") -eq '1') 'Frozen Checkpoint A migration remains applied once'
 

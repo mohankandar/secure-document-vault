@@ -35,14 +35,13 @@ The default `compose.local.yml` runs Vault with `server -dev` (in-memory). Each 
 
    If `transit/` is already enabled, skip this command.
 
-7. For compatibility with the **local-only** `Start-SDV-Local.ps1 -WithVault` launcher, create its preconfigured development token once:
+7. Make the restricted application token (a policy for the SDV Transit paths only) and keep it in a file outside the
+   repository; the start scripts use that file (`SDV_VAULT_TOKEN_FILE`, default `..\secrets\sdv-app.token`). Never make a
+   token with a known ID or the root policy for Vero. Then forget the root token:
 
    ```powershell
-   docker exec -e VAULT_ADDR=http://127.0.0.1:8200 -e VAULT_TOKEN=$env:VAULT_TOKEN sdv-vault vault token create -id=sdv-local-root -policy=root -display-name=sdv-local-runtime
    Remove-Item Env:VAULT_TOKEN
    ```
-
-   This permissive token is for an isolated developer workstation only. Production must use a narrowly scoped identity/token policy, TLS, and stronger initialization/unseal custody.
 
 8. Start backend/frontend with your normal local procedure, **without recreating the Vault container**. `-WithVault` can check an already running, unsealed instance but will not unseal it for you.
 9. **Reingest disposable PDFs**; old Vault dev-mode ciphertext cannot be decrypted with new keys. Existing demo-seed scripts skip documents already marked AVAILABLE, so simply rerunning the seed may not replace the old ciphertext. Use a fresh unique demo submission or a separate disposable test database; do not overwrite historical document records or delete production data.

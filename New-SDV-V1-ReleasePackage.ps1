@@ -32,45 +32,6 @@ foreach ($relative in $Required) {
     }
 }
 
-function Get-RelativePath([string]$FullName) {
-    $relative = $FullName.Substring($Root.Length)
-    while ($relative.StartsWith('\') -or $relative.StartsWith('/')) {
-        $relative = $relative.Substring(1)
-    }
-    return $relative.Replace('\','/')
-}
-
-function Is-Excluded([string]$RelativePath) {
-    $normalized = $RelativePath.Replace('\','/')
-    $parts = $normalized.Split('/')
-    # demo-files: local demo PDFs for Seed-SDV-Canvas-Demo.ps1 only, never part of a package (task 0023).
-    $blockedDirectories = @('.git','.idea','.vscode','.runtime','target','node_modules','dist','release','demo-files')
-    foreach ($part in $parts) {
-        if ($blockedDirectories -contains $part) { return $true }
-    }
-    $name = [IO.Path]::GetFileName($normalized)
-    if ($name -match '^\.env($|\.)') { return $true }
-    if ($name -match '\.log$') { return $true }
-    if ($name -match '\.tsbuildinfo$') { return $true }
-    if ($name -match '\.class$') { return $true }
-    if ($name -match '\.zip$') { return $true }
-    return $false
-}
-
-$SensitiveExtensions = @('.pem','.key','.p12','.pfx','.jks','.keystore')
-$files = New-Object System.Collections.Generic.List[object]
-Get-ChildItem -LiteralPath $Root -Recurse -File -Force | ForEach-Object {
-    $relative = Get-RelativePath $_.FullName
-    if (-not (Is-Excluded $relative)) {
-        if ($SensitiveExtensions -contains $_.Extension.ToLowerInvariant()) {
-            throw "Potential secret/private-key material is present in release source: $relative"
-        }
-        $files.Add([PSCustomObject]@{ File=$_; Relative=$relative })
-    }
-}
-
-if ($files.Count -lt 20) { throw 'Release source enumeration is unexpectedly small.' }
-
 $archiveName = "sdv-v1-$Version-source.zip"
 $archivePath = Join-Path $OutputDirectory $archiveName
 $checksumPath = "$archivePath.sha256"
@@ -79,26 +40,8 @@ foreach ($existing in @($archivePath,$checksumPath,$manifestPath)) {
     Remove-Item -LiteralPath $existing -Force -ErrorAction SilentlyContinue
 }
 
-Add-Type -AssemblyName System.IO.Compression
-Add-Type -AssemblyName System.IO.Compression.FileSystem
-$stream = [IO.File]::Open($archivePath, [IO.FileMode]::CreateNew, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
-try {
-    $zip = New-Object -TypeName System.IO.Compression.ZipArchive -ArgumentList @($stream, [IO.Compression.ZipArchiveMode]::Create, $false)
-    try {
-        foreach ($item in ($files | Sort-Object Relative)) {
-            [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile(
-                $zip,
-                $item.File.FullName,
-                $item.Relative,
-                [System.IO.Compression.CompressionLevel]::Optimal
-            ) | Out-Null
-        }
-    } finally {
-        $zip.Dispose()
-    }
-} finally {
-    $stream.Dispose()
-}
+# Task 0064: the committed files only, never the folder.
+$archive = & (Join-Path $Root 'scripts/packaging/New-SdvSourceArchive.ps1') -Root $Root -ArchivePath $archivePath -Required $Required
 
 $sha = (Get-FileHash -Algorithm SHA256 -LiteralPath $archivePath).Hash.ToLowerInvariant()
 Set-Content -LiteralPath $checksumPath -Value "$sha  $archiveName" -Encoding ASCII
@@ -113,8 +56,9 @@ $manifest = [ordered]@{
     latestMigration = '010'
     sourceArchive = $archiveName
     sha256 = $sha
-    fileCount = $files.Count
-    exclusions = @('.git','.idea','.vscode','.runtime','target','node_modules','dist','release','.env*','*.log','*.class','*.tsbuildinfo','*.zip','private-key/certificate-keystore extensions')
+    fileCount = $archive.FileCount
+    commit = $archive.Commit
+    contents = 'git archive of the commit: tracked files only, without demo files, .env files, logs and archives'
 }
 $manifest | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $manifestPath -Encoding UTF8
 

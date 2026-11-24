@@ -115,7 +115,7 @@ try {
     # header filter must not exist as a bean in enterprise-jwt/disabled modes;
     # otherwise servlet auto-registration can inspect spoofed X-SDV-* headers
     # before bearer authentication. Guard the release source against regression.
-    $localAuthFilterText = Get-Content -LiteralPath (Join-Path $Root 'backend\sdv-security\src\main\java\com\sdv\platform\security\auth\LocalHeaderAuthenticationFilter.java') -Raw
+    $localAuthFilterText = Get-Content -LiteralPath (Join-Path $Root 'backend\sdv-local\src\main\java\com\sdv\platform\security\auth\LocalHeaderAuthenticationFilter.java') -Raw
     Require ($localAuthFilterText -match '@Profile\("local"\)') 'Frozen Unit 21 local-header adapter remains restricted to the local Spring profile'
     Require ($localAuthFilterText -match '@ConditionalOnProperty\(prefix\s*=\s*"sdv\.auth",\s*name\s*=\s*"mode",\s*havingValue\s*=\s*"local-header"\)') 'Frozen Unit 21 FIX1 keeps local-header filter bean absent from enterprise-jwt/disabled modes'
 

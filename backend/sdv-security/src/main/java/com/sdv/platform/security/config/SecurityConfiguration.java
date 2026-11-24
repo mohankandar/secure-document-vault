@@ -5,7 +5,7 @@ import com.sdv.platform.domain.error.StartupFailure;
 import com.sdv.platform.application.access.ActiveTenantCache;
 import com.sdv.platform.security.auth.ActiveTenantFilter;
 import com.sdv.platform.security.auth.EntityChoiceFilter;
-import com.sdv.platform.security.auth.LocalHeaderAuthenticationFilter;
+import com.sdv.platform.security.auth.LocalSignInFilter;
 import com.sdv.platform.security.auth.oidc.OidcJwtAuthenticationConverter;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
@@ -24,7 +24,7 @@ import org.springframework.security.web.authentication.AnonymousAuthenticationFi
 public class SecurityConfiguration {
     @Bean
     SecurityFilterChain sdvSecurityFilterChain(HttpSecurity http,
-                                               ObjectProvider<LocalHeaderAuthenticationFilter> localFilterProvider,
+                                               ObjectProvider<LocalSignInFilter> localFilterProvider,
                                                ObjectProvider<OidcJwtAuthenticationConverter> oidcJwtConverterProvider,
                                                ObjectProvider<ActiveTenantCache> tenantCheckProvider,
                                                @Value("${sdv.auth.mode:disabled}") String authMode) throws Exception {
@@ -56,7 +56,7 @@ public class SecurityConfiguration {
 
         switch (mode) {
             case "local-header" -> {
-                LocalHeaderAuthenticationFilter localFilter = localFilterProvider.getIfAvailable();
+                LocalSignInFilter localFilter = localFilterProvider.getIfAvailable();
                 if (localFilter == null) {
                     throw new StartupFailure(SdvErrorCode.SYS_005, "sdv.auth.mode=local-header is allowed only with the local Spring profile.");
                 }
