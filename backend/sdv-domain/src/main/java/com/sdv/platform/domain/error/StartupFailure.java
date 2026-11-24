@@ -56,7 +56,7 @@ public final class StartupFailure extends RuntimeException {
             case SYS_009 -> "The retention schedule setting is not valid.";
             case SYS_010 -> "The install's default time zone is not valid.";
             case SYS_012 -> "Start-up work that needs the database couldn't be done.";
-            case KEY_001 -> "Encryption is not set up (SDV_KEY_PROVIDER=disabled).";
+            case KEY_001 -> "Encryption is switched off (SDV_CRYPTO_ENABLED=false).";
             default -> "Vero can't start.";
         };
     }
@@ -72,7 +72,7 @@ public final class StartupFailure extends RuntimeException {
             case SYS_006 -> "Set SDV_AUTH_MODE=enterprise-jwt and the issuer settings (install guide, \"Sign-in\"), then start Vero again.";
             case SYS_010 -> "Set SDV_DEFAULT_TIME_ZONE to an IANA name such as America/New_York, then start Vero again.";
             case SYS_012 -> "Check that PostgreSQL is running and reachable, then start Vero again.";
-            case KEY_001 -> "Set SDV_KEY_PROVIDER=vault and the Vault settings (see the install guide), then start Vero again.";
+            case KEY_001 -> "Remove SDV_CRYPTO_ENABLED and set the key service (see the install guide), then start Vero again.";
             default -> "Give the log line to Vero support.";
         };
     }

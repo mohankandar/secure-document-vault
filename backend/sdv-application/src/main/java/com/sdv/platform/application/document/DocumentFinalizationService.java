@@ -141,7 +141,7 @@ public class DocumentFinalizationService {
                     storageRef.encryptedSizeBytes(),
                     storageRef.integrityValue());
 
-            crypto.decrypt(tenantId, envelope, encrypted, plaintext);
+            crypto.decrypt(StreamingCryptoPort.Binding.document(tenantId, documentId), envelope, encrypted, plaintext);
             plaintext.finish();
 
             if (encrypted.count() != storageRef.encryptedSizeBytes()) {

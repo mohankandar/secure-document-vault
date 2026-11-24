@@ -126,14 +126,14 @@ class HeldRedactionPostgresTest {
     };
     private final StreamingCryptoPort crypto = new StreamingCryptoPort() {
         @Override
-        public CryptoEnvelope encrypt(UUID tenantId, InputStream plaintext, OutputStream ciphertext) throws IOException {
+        public CryptoEnvelope encrypt(Binding binding, InputStream plaintext, OutputStream ciphertext) throws IOException {
             byte[] all = plaintext.readAllBytes();
             ciphertext.write(all);
             return new CryptoEnvelope("COPY", 1, "test", "key-" + UUID.randomUUID(), "1", all.length, sha(all));
         }
 
         @Override
-        public void decrypt(UUID tenantId, CryptoEnvelope envelope, InputStream ciphertext, OutputStream plaintext) throws IOException {
+        public void decrypt(Binding binding, CryptoEnvelope envelope, InputStream ciphertext, OutputStream plaintext) throws IOException {
             ciphertext.transferTo(plaintext);
         }
     };
@@ -223,8 +223,11 @@ class HeldRedactionPostgresTest {
         assertEquals("AVAILABLE", one("select status from documents where document_id='" + HELD + "'"));
         assertNotEquals("original-" + HELD, key(HELD));
         assertTrue(files.containsKey(key(HELD)));
-        assertTrue(files.containsKey("original-" + HELD), "the original is kept");
-        assertEquals("key-" + HELD, one("select protected_data_key_reference from sealed_originals where document_id='" + HELD + "'"));
+        // Task 0076: the original is kept as a copy of its own, bound to its sealed ID; the old object and its key are gone.
+        String sealedKey = one("select object_key from sealed_originals where document_id='" + HELD + "'");
+        assertTrue(files.containsKey(sealedKey), "the original is kept");
+        assertFalse(files.containsKey("original-" + HELD));
+        assertNotEquals("key-" + HELD, one("select protected_data_key_reference from sealed_originals where document_id='" + HELD + "'"));
         assertEquals("0", one("select count(*) from audit_events where tenant_id='" + T + "' and safe_details::text like '%4711%'"), "no reason in the audit");
         assertEquals("1", one("select count(*) from audit_events where tenant_id='" + T + "' and action='DOCUMENT_PERMANENTLY_REDACTED' and target_id='" + HELD + "' and actor_id='stan' and safe_details->>'sealedOriginalId' is not null"));
 
@@ -246,7 +249,7 @@ class HeldRedactionPostgresTest {
         assertEquals(0, sealed.destroyDue(10).destroyed());
         holds.release(T, "ba", "Bea Admin", hold.holdId().toString(), "c");
         assertEquals(new SealedOriginalService.DestroySweepResult(1, 0), sealed.destroyDue(10));
-        assertFalse(files.containsKey("original-" + HELD));
+        assertFalse(files.containsKey(sealedKey));
         assertTrue(files.containsKey(key(HELD)), "the redacted version stays");
         assertEquals("DESTROYED", one("select state from sealed_originals where sealed_id='" + sealedId + "' and protected_data_key_reference is null"));
         assertEquals("1", one("select count(*) from audit_events where tenant_id='" + T + "' and action='SEALED_ORIGINAL_DESTROYED' and target_id='" + HELD + "'"));

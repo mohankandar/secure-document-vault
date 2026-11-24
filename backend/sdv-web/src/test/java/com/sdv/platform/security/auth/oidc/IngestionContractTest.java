@@ -974,7 +974,7 @@ class IngestionContractTest {
             call.getArgument(2, StorageProvider.ContentWriter.class).write(out);
             return new StorageProvider.StoredObject("obj", out.size());
         });
-        when(CRYPTO.encrypt(eq(TENANT), any(), any())).thenAnswer(call -> {
+        when(CRYPTO.encrypt(org.mockito.ArgumentMatchers.argThat(b -> b != null && b.entityId().equals(TENANT)), any(), any())).thenAnswer(call -> {
             byte[] plain = call.getArgument(1, InputStream.class).readAllBytes();
             call.getArgument(2, OutputStream.class).write(plain);
             return new StreamingCryptoPort.CryptoEnvelope("p", 1, "k", "ref", "v1", plain.length, "c");

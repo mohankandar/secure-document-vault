@@ -3,7 +3,9 @@ spring:
     name: secure-document-vault
   config:
     # Task 0075: setup writes the customer's ID here (platform.licensing.tenant-id).
-    import: "optional:file:${SDV_TENANT_FILE:./platform-tenant.properties}"
+    import:
+      - "optional:file:${SDV_TENANT_FILE:./platform-tenant.properties}"
+      - "optional:file:${SDV_VAULT_LOGIN_FILE:./vero-vault-login.properties}"
   jackson:
     # Task 0070: only what Vero names reads and writes JSON (Boot 4 would add every module it finds).
     find-and-add-modules: false
@@ -28,6 +30,14 @@ spring:
 
 platform:
   # Task 0075: the licence stored by setup or the licence command, checked with the keys of Vero's own build.
+  # Task 0076: the key service (Vault Transit). Vero's login (an AppRole) can use keys, never make, change or delete them.
+  # Secrets come from a file or the environment: SDV_VAULT_LOGIN_FILE names a file with platform.crypto.vault.role-id and
+  # .secret-id (Setup-SDV-VaultTransit.ps1 writes it).
+  crypto:
+    enabled: ${SDV_CRYPTO_ENABLED:true}
+    vault:
+      address: ${SDV_KEY_SERVICE_ADDRESS:}
+      transit-mount: ${SDV_KEY_SERVICE_MOUNT:vero-transit}
   licensing:
     product-code: SDV
     tenant-id: ${SDV_CUSTOMER_ID:}
@@ -159,18 +169,6 @@ sdv:
   # folder. Volumes that exist already stay usable.
   storage:
     allowed-roots: ${SDV_STORAGE_ALLOWED_ROOTS:}
-
-  crypto:
-    # 'disabled' keeps Foundation/local admin runtime independent of a key service until document upload is enabled.
-    # Set SDV_KEY_PROVIDER=vault for Vault Transit-backed SDV-ENC-001 operations.
-    key-provider: ${SDV_KEY_PROVIDER:disabled}
-    vault:
-      base-url: ${SDV_VAULT_BASE_URL:}
-      # Supply exactly one: direct token (local/dev) or token-file (recommended for mounted secret injection).
-      token: ${SDV_VAULT_TOKEN:}
-      token-file: ${SDV_VAULT_TOKEN_FILE:}
-      mount: ${SDV_VAULT_TRANSIT_MOUNT:transit}
-      key-prefix: ${SDV_VAULT_KEY_PREFIX:sdv-tenant-}
 
   retention:
     # Automatic cleanup runs once a day at this time: HH:mm, 24-hour, in the server's time zone.

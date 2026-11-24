@@ -16,7 +16,6 @@
         <module>sdv-persistence</module>
         <module>sdv-security</module>
         <module>sdv-storage</module>
-        <module>sdv-crypto</module>
         <module>sdv-audit</module>
         <module>sdv-local</module>
         <module>sdv-web</module>

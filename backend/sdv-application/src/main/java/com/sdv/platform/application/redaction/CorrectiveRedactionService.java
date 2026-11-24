@@ -218,7 +218,7 @@ public class CorrectiveRedactionService {
             final StreamingCryptoPort.CryptoEnvelope[] holder = new StreamingCryptoPort.CryptoEnvelope[1];
             byte[] replacementBytes = sanitized;
             newStored = newProvider.store(tenantId, newVolume, output ->
-                    holder[0] = crypto.encrypt(tenantId, new ByteArrayInputStream(replacementBytes), output));
+                    holder[0] = crypto.encrypt(StreamingCryptoPort.Binding.document(tenantId, documentId), new ByteArrayInputStream(replacementBytes), output));
             StreamingCryptoPort.CryptoEnvelope envelope = Objects.requireNonNull(
                     holder[0], "Corrective-redaction encryption did not return envelope metadata.");
 
@@ -332,10 +332,72 @@ public class CorrectiveRedactionService {
         verifyReplacementObject(operation, newVolume, newProvider);
 
         Instant completedAt = clock.instant();
-        RedactionResult result = transactions.execute(status ->
-                finalizeTransaction(operation, regionCount, correlationId, completedAt));
-        if (result == null) throw new RedactionFailedException("Corrective redaction finalization returned no result.");
+        SealedCopy[] sealed = new SealedCopy[1];
+        RedactionResult result;
+        try {
+            result = transactions.execute(status -> finalizeTransaction(operation, regionCount, correlationId, completedAt, sealed));
+            if (result == null) throw new RedactionFailedException("Corrective redaction finalization returned no result.");
+        } catch (RuntimeException ex) {
+            // Not committed: the sealed copy belongs to nothing; the original is as it was and a later run seals it again.
+            if (sealed[0] != null) safeDelete(sealed[0].provider(), operation.tenantId(), sealed[0].volume(), sealed[0].stored().objectKey());
+            throw ex;
+        }
+        // Task 0076: committed, so the sealed copy is the original now. The old object's data key is gone from the database; what
+        // a failed delete leaves behind can't be read by anyone.
+        if (sealed[0] != null) safeDelete(sealed[0].provider(), operation.tenantId(), sealed[0].volume(), operation.oldObjectKey());
         return result;
+    }
+
+    private record SealedCopy(StorageProvider provider, StorageVolume volume, StorageProvider.StoredObject stored, StreamingCryptoPort.CryptoEnvelope envelope) { }
+
+    /**
+     * Task 0076: the original under its sealed ID: read and checked as the document's, written again bound to the sealed ID, read
+     * back and checked. Neither can then be put in the other's place.
+     */
+    private SealedCopy sealCopy(RedactionOperation op, DocumentCryptoMetadata oldCrypto, UUID sealedId) {
+        StorageVolume volume = volumes.findById(op.tenantId(), op.oldStorageVolumeId())
+                .orElseThrow(() -> new RedactionFailedException("Original storage volume is unavailable."));
+        StorageProvider provider = provider(op.oldProviderId());
+        StreamingCryptoPort.Binding asSealed = StreamingCryptoPort.Binding.sealed(op.tenantId(), op.documentId(), sealedId);
+        DocumentStorageRef old = new DocumentStorageRef(op.documentId(), op.tenantId(), op.oldProviderId(), op.oldStorageVolumeId(),
+                op.oldObjectKey(), op.oldEncryptedSizeBytes(), op.oldIntegrityValue());
+        byte[] original = null;
+        StorageProvider.StoredObject stored = null;
+        try {
+            original = verified(op.tenantId(), StreamingCryptoPort.Binding.document(op.tenantId(), op.documentId()), old, envelope(oldCrypto, old),
+                    op.oldContentSha256(), op.oldContentSizeBytes(), volume, provider);
+            byte[] bytes = original;
+            StreamingCryptoPort.CryptoEnvelope[] holder = new StreamingCryptoPort.CryptoEnvelope[1];
+            stored = provider.store(op.tenantId(), volume, output -> holder[0] = crypto.encrypt(asSealed, new ByteArrayInputStream(bytes), output));
+            StreamingCryptoPort.CryptoEnvelope envelope = Objects.requireNonNull(holder[0], "Sealing did not return envelope metadata.");
+            DocumentStorageRef copy = new DocumentStorageRef(op.documentId(), op.tenantId(), op.oldProviderId(), op.oldStorageVolumeId(),
+                    stored.objectKey(), envelope.encryptedSizeBytes(), envelope.ciphertextSha256());
+            Arrays.fill(verified(op.tenantId(), asSealed, copy, envelope, op.oldContentSha256(), op.oldContentSizeBytes(), volume, provider), (byte) 0);
+            return new SealedCopy(provider, volume, stored, envelope);
+        } catch (IOException | RuntimeException ex) {
+            if (stored != null) safeDelete(provider, op.tenantId(), volume, stored.objectKey());
+            throw new RedactionFailedException("The original could not be sealed; nothing was changed.", ex);
+        } finally {
+            if (original != null) Arrays.fill(original, (byte) 0);
+        }
+    }
+
+    private byte[] verified(UUID tenantId, StreamingCryptoPort.Binding binding, DocumentStorageRef ref, StreamingCryptoPort.CryptoEnvelope envelope,
+                            String contentSha256, long contentSize, StorageVolume volume, StorageProvider provider) throws IOException {
+        if (contentSize <= 0 || contentSize > Integer.MAX_VALUE - 8L) throw new IOException("Document size is outside the in-memory boundary.");
+        FixedPlaintextBuffer plaintext = new FixedPlaintextBuffer(Math.toIntExact(contentSize), contentSha256);
+        try (InputStream raw = provider.open(tenantId, volume, ref.objectKey());
+             DigestingCountingInputStream encrypted = new DigestingCountingInputStream(raw)) {
+            crypto.decrypt(binding, envelope, encrypted, plaintext);
+            plaintext.finish();
+            if (encrypted.count() != ref.encryptedSizeBytes() || !encrypted.sha256().equals(ref.integrityValue())) {
+                throw new IOException("Ciphertext no longer matches its metadata.");
+            }
+            return plaintext.take();
+        } catch (IOException | RuntimeException ex) {
+            plaintext.destroy();
+            throw ex;
+        }
     }
 
     private void deleteOriginal(RedactionOperation operation) {
@@ -355,7 +417,7 @@ public class CorrectiveRedactionService {
     }
 
     private RedactionResult finalizeTransaction(RedactionOperation expected, int regionCount,
-                                                String correlationId, Instant completedAt) {
+                                                String correlationId, Instant completedAt, SealedCopy[] sealed) {
         RedactionOperation pending = redactions.lockPending(expected.tenantId(), expected.documentId())
                 .orElseThrow(() -> new RedactionFailedException("Pending corrective-redaction state is unavailable."));
         if (!pending.operationId().equals(expected.operationId())
@@ -378,11 +440,13 @@ public class CorrectiveRedactionService {
             DocumentCryptoMetadata oldCrypto = documents.findCryptoMetadata(expected.tenantId(), expected.documentId())
                     .orElseThrow(() -> new RedactionFailedException("Document crypto metadata is unavailable."));
             sealedId = UUID.randomUUID();
+            sealed[0] = sealCopy(expected, oldCrypto, sealedId);
+            StreamingCryptoPort.CryptoEnvelope e = sealed[0].envelope();
             held.insertSealed(new HeldRedactionRepository.Sealed(sealedId, expected.accessRequestId(),
                     new DocumentStorageRef(expected.documentId(), expected.tenantId(), expected.oldProviderId(),
-                            expected.oldStorageVolumeId(), expected.oldObjectKey(), expected.oldEncryptedSizeBytes(),
-                            expected.oldIntegrityValue()),
-                    oldCrypto, expected.oldContentSha256(), expected.oldContentSizeBytes(), completedAt));
+                            expected.oldStorageVolumeId(), sealed[0].stored().objectKey(), e.encryptedSizeBytes(), e.ciphertextSha256()),
+                    new DocumentCryptoMetadata(expected.documentId(), expected.tenantId(), e.cryptoProfile(), e.cryptoVersion(), e.keyProviderId(),
+                            e.protectedDataKeyReference(), e.keyProviderVersion()), expected.oldContentSha256(), expected.oldContentSizeBytes(), completedAt));
             if (expected.accessRequestId() != null) held.markApplied(expected.tenantId(), expected.accessRequestId(), completedAt);
         }
 
@@ -420,7 +484,7 @@ public class CorrectiveRedactionService {
         FixedPlaintextBuffer plaintext = new FixedPlaintextBuffer(Math.toIntExact(expectedSize), document.contentSha256());
         try (InputStream raw = provider.open(document.tenantId(), volume, storageRef.objectKey());
              DigestingCountingInputStream encrypted = new DigestingCountingInputStream(raw)) {
-            crypto.decrypt(document.tenantId(), envelope(cryptoMetadata, storageRef), encrypted, plaintext);
+            crypto.decrypt(StreamingCryptoPort.Binding.document(document.tenantId(), document.documentId()), envelope(cryptoMetadata, storageRef), encrypted, plaintext);
             plaintext.finish();
             if (encrypted.count() != storageRef.encryptedSizeBytes()
                     || !encrypted.sha256().equals(storageRef.integrityValue())) {
@@ -444,7 +508,7 @@ public class CorrectiveRedactionService {
             plaintext = new FixedPlaintextBuffer(Math.toIntExact(op.newContentSizeBytes()), op.newContentSha256());
             try (InputStream raw = provider.open(op.tenantId(), volume, op.newObjectKey());
                  DigestingCountingInputStream encrypted = new DigestingCountingInputStream(raw)) {
-                crypto.decrypt(op.tenantId(),
+                crypto.decrypt(StreamingCryptoPort.Binding.document(op.tenantId(), op.documentId()),
                         new StreamingCryptoPort.CryptoEnvelope(
                                 op.newCryptoProfile(), op.newCryptoVersion(), op.newKeyProviderId(),
                                 op.newProtectedDataKeyReference(), op.newKeyProviderVersion(),

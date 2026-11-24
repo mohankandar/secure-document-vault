@@ -41,11 +41,6 @@
         </dependency>
         <dependency>
             <groupId>com.sdv.platform</groupId>
-            <artifactId>sdv-crypto</artifactId>
-            <version>${project.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>com.sdv.platform</groupId>
             <artifactId>sdv-audit</artifactId>
             <version>${project.version}</version>
         </dependency>
@@ -90,6 +85,16 @@
         <dependency>
             <groupId>com.documentplatform.platform</groupId>
             <artifactId>platform-monitoring-spring</artifactId>
+        </dependency>
+        <!-- Task 0076: documents encrypted with the customer's key. -->
+        <dependency>
+            <groupId>com.documentplatform.platform</groupId>
+            <artifactId>platform-crypto-spring</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.documentplatform.platform</groupId>
+            <artifactId>platform-crypto-testkit</artifactId>
+            <scope>test</scope>
         </dependency>
         <!-- Task 0075: the licence: its state, the intake rule and the usage ledger. -->
         <dependency>

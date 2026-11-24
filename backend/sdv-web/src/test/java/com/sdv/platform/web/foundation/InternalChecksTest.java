@@ -13,8 +13,6 @@ import com.sdv.platform.application.port.TenantRepository;
 import com.sdv.platform.application.redaction.PdfSanitizingRedactor;
 import com.sdv.platform.application.storage.StoragePlacementService;
 import com.sdv.platform.application.storage.StorageVolumeAdminService;
-import com.sdv.platform.crypto.enc.SdvEnc001StreamingCrypto;
-import com.sdv.platform.crypto.key.KeyProtectionProvider;
 import com.sdv.platform.domain.document.Document;
 import com.sdv.platform.domain.document.DocumentStatus;
 import com.sdv.platform.domain.document.SensitivityLevel;
@@ -85,7 +83,7 @@ class InternalChecksTest {
     void theDocumentAndCryptoInputChecksAreInternal() throws Exception {
         internal(() -> new PdfSanitizingRedactor().sanitize(null, List.of(), 10));
         internal(() -> new PdfSanitizingRedactor().sanitize(new byte[]{1}, List.of(), 10));
-        SdvEnc001StreamingCrypto crypto = new SdvEnc001StreamingCrypto(mock(KeyProtectionProvider.class));
+        var crypto = new com.sdv.platform.web.crypto.BoundStreamCrypto(null, null);
         internal(() -> crypto.encrypt(null, new ByteArrayInputStream(new byte[0]), new ByteArrayOutputStream()));
         internal(() -> crypto.decrypt(null, null, new ByteArrayInputStream(new byte[0]), new ByteArrayOutputStream()));
         internal(() -> new Document(UUID.randomUUID(), TENANT, UUID.randomUUID(), UUID.randomUUID(), "d", "k", "a.pdf",
