@@ -35,7 +35,7 @@ Outcome: DONE. Changeset 044. No new dependency. Codes `SDV-DOC-014`, `SDV-HLD-0
 | `.\Test-SDV-CleanInstall.ps1` | PASS in 89 s |
 | `npm run ui:capture` | **33 passed, 19 skipped**, with a new step. **On a scratch database** (see Decisions) |
 | Demo seed, then `-Reset` with one hold too many (scratch database) | pass; the hold was released by two admins |
-| `.\Test-SDV-DemoSeed.ps1` | **FAIL, not from this task**: it starts the release jar in local mode, which that jar refuses since task 0064. Its line for a hold release was adapted but has not run |
+| `.\Test-SDV-DemoSeed.ps1` | **FAIL, not from this task** (corrected by 0084: the cause given here, the release jar, was wrong; the script started Vero in the wrong folder and without the schema step). Its line for a hold release had not run then; it passes since 0084 |
 
 After the schema check and the full tour only the drawing of the mark changed (below); the build and the print step ran again after it.
 
