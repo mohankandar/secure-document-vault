@@ -2,12 +2,12 @@
 
 Date: 2026-11-24
 Branch: `chore/keycloak-live` (from `release/vero-r7`; the first branch, `chore/keycloak-check`, is merged)
-Outcome: **Part A DONE. Part B waits for the owner's step** (below).
+Outcome: **DONE, Part A and Part B.**
 
 The first try stopped because the session may not read the folder the `dev-automation` secret was in (PR #54). The task was
 rewritten; that client is not used.
 
-## The owner's step
+## The owner's step (done 2026-11-24)
 
 ```
 cd C:\dev\sdv\secure-document-vault
@@ -59,7 +59,16 @@ chooses one first, and a refused person does see the empty frame with the refusa
 
 ## Part B
 
-Open: `C:\dev\sdv\dev-test-users.properties` isn't there.
+Run on `release/vero-r7` at bc23b12 (0074 included), against `lexa-keycloak`, with the owner's test people:
+
+| Check | Result |
+|---|---|
+| `.\Build-SDV-All.ps1` | 811 tests, 0 failures, 26 skipped |
+| `.\Test-SDV-KeycloakLive.ps1` | **20 of 20 pass** (the same list as in Part A) |
+
+The task counts this as the live Keycloak check owed by 0065, 0067 and 0070. It covers people signing in. A sending system's
+delivery with a client-credentials token was not repeated: it needs a client in Keycloak, which only the owner can add; it was
+last proven live in 0058. Keycloak was not changed; no password or token was shown.
 
 ## No other product's name or behaviour in code: yes
 
