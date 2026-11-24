@@ -82,6 +82,15 @@
             <groupId>org.liquibase</groupId>
             <artifactId>liquibase-core</artifactId>
         </dependency>
+        <!-- Task 0074: the checks of what Vero depends on, request references and the diagnostic bundle. -->
+        <dependency>
+            <groupId>com.documentplatform.platform</groupId>
+            <artifactId>platform-errors</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.documentplatform.platform</groupId>
+            <artifactId>platform-monitoring-spring</artifactId>
+        </dependency>
         <!-- Task 0041: the schema step's two platform runs (identity, licensing), each with its own history table.
              Used by SchemaStep only, never at startup (spring.flyway.enabled=false). -->
         <dependency>

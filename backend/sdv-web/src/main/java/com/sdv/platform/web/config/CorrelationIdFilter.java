@@ -1,5 +1,6 @@
 package com.sdv.platform.web.config;
 
+import com.documentplatform.errors.ReferenceId;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -11,7 +12,6 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
-import java.util.UUID;
 import java.util.regex.Pattern;
 
 /**
@@ -21,7 +21,7 @@ import java.util.regex.Pattern;
  * {@code callerReference}, in the audit events; a value that isn't plain is dropped.
  */
 @Component
-@Order(Ordered.HIGHEST_PRECEDENCE)
+@Order(Ordered.HIGHEST_PRECEDENCE + 1)
 public final class CorrelationIdFilter extends OncePerRequestFilter {
     public static final String HEADER = "X-Correlation-Id";
     public static final String MDC_KEY = "correlationId";
@@ -38,7 +38,9 @@ public final class CorrelationIdFilter extends OncePerRequestFilter {
             HttpServletResponse response,
             FilterChain filterChain) throws ServletException, IOException {
 
-        String correlationId = UUID.randomUUID().toString();
+        // Task 0074: the reference platform-core made for this request (its filter runs just before this one).
+        String made = ReferenceId.current();
+        String correlationId = made == null ? ReferenceId.next() : made;
         String caller = request.getHeader(HEADER);
         MDC.put(MDC_KEY, correlationId);
         if (caller != null && SAFE.matcher(caller).matches()) MDC.put(CALLER_MDC_KEY, caller);

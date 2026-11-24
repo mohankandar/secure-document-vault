@@ -17,12 +17,12 @@ import java.util.Set;
 
 /**
  * While the database doesn't match this version, every request except health and system information gets
- * 503 with the plain sentence, before sign-in is even looked at. Runs right after the correlation-ID filter.
+ * 503 with the plain sentence, before sign-in is even looked at. Runs right after the reference filters.
  * Task 0036: the one error body, with SDV codes in place of DATABASE_OLDER, DATABASE_NEWER and DATABASE_UNREACHABLE
  * (SDV-SYS-001, -002, -003; owner answer 0034, item 3), and the request's reference.
  */
 @Component
-@Order(Ordered.HIGHEST_PRECEDENCE + 1)
+@Order(Ordered.HIGHEST_PRECEDENCE + 2)
 public final class SchemaGateFilter extends OncePerRequestFilter {
     static final Set<String> OPEN = Set.of("/actuator/health", "/actuator/health/liveness", "/actuator/health/readiness", "/actuator/info", "/api/v1/system/info", "/error");
 

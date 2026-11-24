@@ -232,7 +232,7 @@ public final class ErrorReplies {
         if (attribute instanceof String s && !s.isBlank()) return s;
         String mdc = MDC.get(CorrelationIdFilter.MDC_KEY);
         if (mdc != null && !mdc.isBlank()) return mdc;
-        return UUID.randomUUID().toString();
+        return com.documentplatform.errors.ReferenceId.next();
     }
 
     /** The one error body. */

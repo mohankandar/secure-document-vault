@@ -351,6 +351,8 @@ public enum SdvErrorCode {
     SYS_018("SDV-SYS-018"),
     /** Task 0062: the request body is larger than Vero takes (413). Not for uploads: a PDF over its limit is SDV-INT-014. */
     SYS_019("SDV-SYS-019", false, true),
+    /** Task 0074: many requests to the intake addresses could not be linked to a sending system (a check, never an answer). */
+    SYS_020("SDV-SYS-020", true),
     /** Task 0036: no ACTIVE storage volume can take the document (503). */
     STO_001("SDV-STO-001", true),
     /**
@@ -362,6 +364,8 @@ public enum SdvErrorCode {
     STO_005("SDV-STO-005"),
     /** Task 0062: the folder may not be used for documents (400), whatever the reason. */
     STO_008("SDV-STO-008", false, true),
+    /** Task 0074: a storage volume is nearly full, full or can't be used (a check, never an answer). */
+    STO_009("SDV-STO-009", true),
     /** Task 0037: no key service is set up: WARN at a local start, and a packaged start refuses. */
     KEY_001("SDV-KEY-001", true);
 

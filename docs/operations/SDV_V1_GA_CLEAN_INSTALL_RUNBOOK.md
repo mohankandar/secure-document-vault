@@ -177,7 +177,11 @@ database changes themselves with the **schema step**, using their own database o
 needs that password. Task 0041: local mode on a developer computer uses the schema step too (it no longer updates the
 database at start-up).
 
-When the database doesn't match the Vero version, Vero starts but serves only its health and system information.
+When the database can't be reached at the start, or the platform's tables in it (identity) are missing or of another
+version, Vero **stops** and its log says what is wrong and what to do (task 0074). Let the service manager start Vero
+again (`Restart=always`, or the Windows service's recovery settings). While Vero runs, a database that goes away never stops it.
+
+When only Vero's own tables don't match the Vero version, Vero starts but serves only its health and system information.
 The startup log and Platform operations › Health say one of:
 
 - "The database is older than this Vero version. Ask your database team to run the schema step (install guide, "Update the database")."
@@ -185,15 +189,30 @@ The startup log and Platform operations › Health say one of:
 
 In that state Vero is up but **not ready**. Point load balancers and orchestrators at these addresses (no sign-in needed):
 
-| Address | Database matches | Database doesn't match | Database can't be reached (at start or later) |
+| Address | Database matches | Database doesn't match | Database can't be reached (while Vero runs) |
 |---|---|---|---|
 | `/actuator/health/readiness` | 200 `UP` | 503 `OUT_OF_SERVICE`: send no traffic | 503 `NOT_READY`: send no traffic |
 | `/actuator/health/liveness` | 200 `UP` | 200 `UP`: don't restart it; it keeps showing why | 200 `UP`: don't restart it; it keeps trying |
 | `/actuator/health` | 200 `UP` | 503 `OUT_OF_SERVICE` | 200 `UP` |
 
-Vero checks the database version when it starts. After the schema step, start Vero again. If the database can't be
-reached, Vero keeps trying and serves as soon as it answers, without a restart; requests get 503 `SDV-SYS-014`
-meanwhile.
+Vero checks the database version when it starts. After the schema step, start Vero again. While the database can't be
+reached, requests get 503 `SDV-SYS-014`; Vero serves again as soon as it answers, without a restart.
+
+### The checks
+
+Platform operations, Health and IT, Problems list what Vero depends on: state, code, why, what to do. The same list is on
+`/actuator/health/dependencies` with the sign-in of an IT Admin or Platform operations; anybody else sees no details. Use
+only liveness and readiness for probes: the list is up to a minute old and never turns Vero away. Readiness' sign-in keys
+are checked every 10 seconds.
+
+| Setting | Default | |
+|---|---|---|
+| `platform.monitoring.every` | `60s` | how often a check runs |
+| `platform.monitoring.startup-checks` | `true` | stop at the start while the database can't be used |
+| `platform.monitoring.folders.<name>.path` | none | a folder to check too (an export or log folder) |
+
+The **diagnostic bundle** (Health, Problems) is a zip for support: versions, a list of allowed settings with every secret
+removed (never `sdv.*` or the environment), the checks, the last error codes, the table versions. Every download is in the audit.
 
 ### Behind a proxy or load balancer: `SDV_TRUSTED_PROXIES`
 
