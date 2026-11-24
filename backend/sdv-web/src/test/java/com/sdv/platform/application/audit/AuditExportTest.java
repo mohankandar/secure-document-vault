@@ -1,8 +1,8 @@
 package com.sdv.platform.application.audit;
 
 import com.sdv.platform.domain.error.InternalCheckFailed;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 import com.sdv.platform.application.port.AuditEventPort;
 import com.sdv.platform.application.port.AuditQueryPort;
 import com.sdv.platform.domain.audit.AuditEvent;
@@ -94,11 +94,11 @@ class AuditExportTest {
         assertEquals("corr-1", event.getValue().correlationId());
         JsonNode details = new ObjectMapper().readTree(event.getValue().safeDetailsJson());
         assertEquals(2, details.get("rowCount").asInt());
-        assertEquals("CSV", details.get("format").asText());
-        assertEquals("300000000076", details.at("/filters/recordNumber").asText());
-        assertEquals("2026-10-20T04:00:00Z", details.at("/filters/from").asText());
-        assertEquals("AUTHORIZATION_DENIED", details.at("/filters/actions/0").asText());
-        assertEquals("AUDIT_VIEWED", details.at("/filters/excludeActions/0").asText());
+        assertEquals("CSV", details.get("format").asString());
+        assertEquals("300000000076", details.at("/filters/recordNumber").asString());
+        assertEquals("2026-10-20T04:00:00Z", details.at("/filters/from").asString());
+        assertEquals("AUTHORIZATION_DENIED", details.at("/filters/actions/0").asString());
+        assertEquals("AUDIT_VIEWED", details.at("/filters/excludeActions/0").asString());
         assertFalse(details.get("filters").has("to"), "filters not used are left out");
         verify(audit, never()).append(argThat(e -> "AUDIT_VIEWED".equals(e.action())));
     }

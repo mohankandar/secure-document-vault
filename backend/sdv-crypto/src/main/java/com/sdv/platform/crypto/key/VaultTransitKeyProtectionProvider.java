@@ -1,10 +1,12 @@
 package com.sdv.platform.crypto.key;
 
+import com.sdv.platform.application.json.VeroJson;
 import com.sdv.platform.domain.error.InternalCheckFailed;
-import com.fasterxml.jackson.databind.JsonNode;
+import tools.jackson.databind.JsonNode;
 import com.sdv.platform.application.port.KeyServiceHealthProbe;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 
+import tools.jackson.core.JacksonException;
 import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -30,7 +32,7 @@ public class VaultTransitKeyProtectionProvider implements KeyProtectionProvider,
 
     public VaultTransitKeyProtectionProvider(URI baseUri, String token, String mount, String keyPrefix) {
         this(baseUri, token, mount, keyPrefix,
-                HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build(), new ObjectMapper());
+                HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build(), VeroJson.mapper());
     }
 
     VaultTransitKeyProtectionProvider(URI baseUri,
@@ -127,6 +129,9 @@ public class VaultTransitKeyProtectionProvider implements KeyProtectionProvider,
             }
             if (response.body() == null || response.body().isBlank()) return json.createObjectNode();
             return json.readTree(response.body());
+        } catch (JacksonException ex) {
+            // Task 0070: unchecked since Jackson 3; to the callers it stays a failed key service answer. Without the answer's text.
+            throw new IOException("Vault Transit answered with something that is not JSON.");
         } catch (InterruptedException ex) {
             Thread.currentThread().interrupt();
             throw new IOException("Vault Transit request was interrupted.", ex);
@@ -135,10 +140,10 @@ public class VaultTransitKeyProtectionProvider implements KeyProtectionProvider,
 
     private static String requiredText(JsonNode node, String field) throws IOException {
         JsonNode value = node.get(field);
-        if (value == null || !value.isTextual() || value.asText().isBlank()) {
+        if (value == null || !value.isString() || value.asString().isBlank()) {
             throw new IOException("Vault Transit response did not contain required field '" + field + "'.");
         }
-        return value.asText();
+        return value.asString();
     }
 
     private static String providerVersion(String ciphertext) {

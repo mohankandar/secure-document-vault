@@ -3,7 +3,7 @@ package com.sdv.platform.web;
 import com.documentplatform.integration.profile.ProfileValidator;
 import com.documentplatform.integration.testkit.ProfileContract;
 import com.documentplatform.integration.testkit.openapi.OpenApiSpec;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 
 import java.nio.charset.StandardCharsets;
@@ -47,13 +47,13 @@ class SenderProfileContractTest {
     @Test
     void theProfileIsForThisContractVersionAndItsReleaseTag() throws Exception {
         ObjectMapper json = new ObjectMapper();
-        String specVersion = json.readTree(SPEC.toFile()).path("info").path("version").asText();
+        String specVersion = json.readTree(SPEC.toFile()).path("info").path("version").asString();
         var profile = json.readTree(PROFILE.toFile());
-        assertEquals(specVersion, profile.path("api").path("version").asText());
-        assertEquals(json.readTree(SPEC.toFile()).path("info").path("title").asText(), profile.path("api").path("title").asText());
+        assertEquals(specVersion, profile.path("api").path("version").asString());
+        assertEquals(json.readTree(SPEC.toFile()).path("info").path("title").asString(), profile.path("api").path("title").asString());
         // Setup checks that the release tag named for a profile ends with its version: sdv-ingestion-v<version>.
-        assertEquals(specVersion, profile.path("version").asText());
-        assertTrue(("sdv-ingestion-v" + specVersion).endsWith(profile.path("version").asText()));
+        assertEquals(specVersion, profile.path("version").asString());
+        assertTrue(("sdv-ingestion-v" + specVersion).endsWith(profile.path("version").asString()));
     }
 
     @Test
@@ -61,7 +61,7 @@ class SenderProfileContractTest {
         var spec = new ObjectMapper().readTree(SPEC.toFile());
         List<String> mismatches = new java.util.ArrayList<>();
         spec.findParents("x-sdv-codes").forEach(n -> {
-            if (!n.path("x-sdv-codes").equals(n.path("x-error-codes"))) mismatches.add(n.path("description").asText());
+            if (!n.path("x-sdv-codes").equals(n.path("x-error-codes"))) mismatches.add(n.path("description").asString());
         });
         assertEquals(List.of(), mismatches, "x-error-codes must be the same list as x-sdv-codes");
     }

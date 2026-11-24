@@ -1,7 +1,7 @@
 package com.sdv.platform.web.security;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 import com.sdv.platform.application.port.TenantRepository;
 import com.sdv.platform.security.Capability;
 import com.sdv.platform.security.SdvRole;
@@ -52,8 +52,8 @@ class SessionCapabilitiesControllerTest {
         assertEquals(List.of("SEARCH_RECORDS"), response.capabilities());
 
         JsonNode json = new ObjectMapper().valueToTree(response);
-        assertEquals("Maya Okafor", json.get("displayName").asText());
-        assertEquals("maya.okafor@example.com", json.get("email").asText());
+        assertEquals("Maya Okafor", json.get("displayName").asString());
+        assertEquals("maya.okafor@example.com", json.get("email").asString());
     }
 
     @Test

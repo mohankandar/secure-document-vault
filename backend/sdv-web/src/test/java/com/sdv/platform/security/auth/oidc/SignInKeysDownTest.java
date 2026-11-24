@@ -3,8 +3,8 @@ package com.sdv.platform.security.auth.oidc;
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 import com.nimbusds.jose.jwk.RSAKey;
 import com.sdv.platform.web.foundation.ErrorReplies;
 import org.junit.jupiter.api.AfterEach;
@@ -89,14 +89,14 @@ class SignInKeysDownTest {
         Answer answer = answer(mvc, get("/api/v1/session").header("Authorization", "Bearer " + token));
         assertEquals(503, answer.status(), answer.body());
         JsonNode body = json.readTree(answer.body());
-        assertEquals("SDV-AUT-004", body.get("code").asText());
+        assertEquals("SDV-AUT-004", body.get("code").asString());
         assertEquals("Vero can't check sign-ins right now because the sign-in service isn't answering. Try again in a few "
-                + "minutes.", body.get("message").asText());
+                + "minutes.", body.get("message").asString());
         List<ILoggingEvent> error = logs.list.stream()
                 .filter(e -> e.getLevel() == Level.ERROR && e.getFormattedMessage().contains("code=SDV-AUT-004")).toList();
         assertEquals(1, error.size());
         String line = error.getFirst().getFormattedMessage();
-        assertTrue(line.contains("reference=" + body.get("reference").asText()));
+        assertTrue(line.contains("reference=" + body.get("reference").asString()));
         assertTrue(line.contains("127.0.0.1:" + DOWN), line);
         assertFalse(line.contains(token.substring(token.lastIndexOf('.') + 1)), "no token in the log");
     }
@@ -105,6 +105,6 @@ class SignInKeysDownTest {
     void aRequestWithoutATokenStillGets401Aut001() throws Exception {
         Answer answer = answer(mvc, get("/api/v1/session"));
         assertEquals(401, answer.status());
-        assertEquals("SDV-AUT-001", json.readTree(answer.body()).get("code").asText());
+        assertEquals("SDV-AUT-001", json.readTree(answer.body()).get("code").asString());
     }
 }

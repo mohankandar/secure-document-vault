@@ -1,8 +1,9 @@
 package com.sdv.platform.application.audit;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import com.sdv.platform.application.json.VeroJson;
+import tools.jackson.core.JacksonException;
+import tools.jackson.core.type.TypeReference;
+import tools.jackson.databind.ObjectMapper;
 import com.sdv.platform.application.port.AuditEventPort;
 import com.sdv.platform.application.port.AuditReportRepository;
 import com.sdv.platform.application.port.AuditReportRepository.StoredReport;
@@ -60,7 +61,7 @@ public class SealedAuditReportService {
     static final int LIST_LIMIT = 200;
     private static final Pattern FINGERPRINT = Pattern.compile("[0-9a-f]{64}");
     private static final Pattern DAY = Pattern.compile("\\d{4}-\\d{2}-\\d{2}");
-    private static final ObjectMapper JSON = new ObjectMapper();
+    private static final ObjectMapper JSON = VeroJson.mapper();
 
     private final AuditQueryService audits;
     private final AuditReportRepository register;
@@ -274,7 +275,7 @@ public class SealedAuditReportService {
     private static String json(Object value) {
         try {
             return JSON.writeValueAsString(value);
-        } catch (JsonProcessingException ex) {
+        } catch (JacksonException ex) {
             throw InternalCheckFailed.auditNotWritten("The report could not be recorded, so it was not handed out.", ex);
         }
     }
@@ -283,7 +284,7 @@ public class SealedAuditReportService {
         if (json == null || json.isBlank()) return Map.of();
         try {
             return JSON.readValue(json, new TypeReference<LinkedHashMap<String, String>>() { });
-        } catch (JsonProcessingException ex) {
+        } catch (JacksonException ex) {
             return Map.of();
         }
     }

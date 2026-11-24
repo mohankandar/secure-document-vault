@@ -1,6 +1,6 @@
 package com.sdv.platform.web.admin;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import com.sdv.platform.application.port.AuditEventPort;
 import com.sdv.platform.application.port.RoleCapabilityPolicyPort;
 import com.sdv.platform.application.restrictions.RestrictionsService;
@@ -15,7 +15,7 @@ import com.sdv.platform.web.foundation.FoundationExceptionHandler;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
-import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
+import org.springframework.http.converter.json.JacksonJsonHttpMessageConverter;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.test.web.servlet.MockMvc;
@@ -37,7 +37,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 /** Task 0055: only the Business Admin sees the Restrictions page; every other role is refused and audited. */
 class RestrictionsControllerTest {
     private static final UUID TENANT = UUID.fromString("11111111-1111-1111-1111-111111111111");
-    private static final ObjectMapper JSON = new ObjectMapper().findAndRegisterModules();
+    private static final ObjectMapper JSON = com.sdv.platform.application.json.VeroJson.mapper();
 
     private final AuditEventPort audit = mock(AuditEventPort.class);
     private final RestrictionsService service = mock(RestrictionsService.class);
@@ -45,7 +45,7 @@ class RestrictionsControllerTest {
             new AuthorizationService(audit, new CapabilityPolicyService(mock(RoleCapabilityPolicyPort.class)));
     private final MockMvc mvc = MockMvcBuilders.standaloneSetup(new RestrictionsController(new SecurityContextFacade(), authorization, service))
             .setControllerAdvice(new FoundationExceptionHandler())
-            .setMessageConverters(new MappingJackson2HttpMessageConverter(JSON))
+            .setMessageConverters(new JacksonJsonHttpMessageConverter((tools.jackson.databind.json.JsonMapper) JSON))
             .build();
 
     private static void signIn(SdvRole role) {

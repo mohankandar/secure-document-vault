@@ -1,10 +1,11 @@
 package com.sdv.platform.persistence.reports;
 
+import com.sdv.platform.application.json.VeroJson;
 import com.sdv.platform.persistence.business.PrimaryIdentifierSql;
 import com.sdv.platform.domain.error.InternalCheckFailed;
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 import com.sdv.platform.application.business.RecordKey;
 import com.sdv.platform.application.port.SensitivityReportRepository;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
@@ -37,7 +38,7 @@ import java.util.UUID;
  */
 @Repository
 public class JdbcSensitivityReportRepository implements SensitivityReportRepository {
-    private static final ObjectMapper JSON = new ObjectMapper();
+    private static final ObjectMapper JSON = VeroJson.mapper();
     /** Stored now: the content is kept (not failed, deleted, being deleted, or still arriving). */
     static final String STORED = "('RECEIVED', 'PROCESSING', 'AVAILABLE', 'REDACTION_PROCESSING')";
     private static final String RAISED = "('DOCUMENT_SENSITIVITY_RAISED', 'RECORD_SENSITIVITY_RAISED')";
@@ -207,9 +208,9 @@ public class JdbcSensitivityReportRepository implements SensitivityReportReposit
             JsonNode node = JSON.readTree(json);
             if (node == null || !node.isArray()) return List.of();
             List<String> out = new ArrayList<>();
-            for (JsonNode role : node) if (role.isTextual()) out.add(role.asText());
+            for (JsonNode role : node) if (role.isString()) out.add(role.asString());
             return out.stream().sorted().distinct().toList();
-        } catch (JsonProcessingException ex) {
+        } catch (JacksonException ex) {
             return List.of();
         }
     }
@@ -217,7 +218,7 @@ public class JdbcSensitivityReportRepository implements SensitivityReportReposit
     private static String json(Object value) {
         try {
             return JSON.writeValueAsString(value);
-        } catch (JsonProcessingException ex) {
+        } catch (JacksonException ex) {
             throw new InternalCheckFailed("The record levels could not be passed to the count.", ex);
         }
     }

@@ -4,8 +4,8 @@ import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 import com.sdv.platform.application.business.RecordRefusals;
 import com.sdv.platform.application.document.DocumentRefusals;
 import com.sdv.platform.application.download.DocumentDownloadUnavailableException;
@@ -100,8 +100,8 @@ class DocumentCodesAnswerTest {
         MvcResult result = mvc.perform(get(path)).andReturn();
         assertEquals(status, result.getResponse().getStatus(), result.getResponse().getContentAsString());
         JsonNode body = json.readTree(result.getResponse().getContentAsString());
-        assertEquals(code, body.get("code").asText());
-        assertEquals(result.getResponse().getHeader(CorrelationIdFilter.HEADER), body.get("reference").asText());
+        assertEquals(code, body.get("code").asString());
+        assertEquals(result.getResponse().getHeader(CorrelationIdFilter.HEADER), body.get("reference").asString());
         String text = result.getResponse().getContentAsString();
         for (String bad : List.of("Exception", "C:\\", "step=", "document=", "grant=", DOC.toString())) {
             assertFalse(text.contains(bad), "the body holds \"" + bad + "\": " + text);
@@ -124,19 +124,19 @@ class DocumentCodesAnswerTest {
     @Test
     void vero_sOwnFailuresAre503Or500WithAnErrorLineHoldingTheCause() throws Exception {
         JsonNode body = answer("/doc-003", 503, "SDV-DOC-003");
-        assertEquals("Vero couldn't read this document from storage. Try again later.", body.get("message").asText());
-        String line = oneLine("SDV-DOC-003", Level.ERROR, body.get("reference").asText()).getFormattedMessage();
+        assertEquals("Vero couldn't read this document from storage. Try again later.", body.get("message").asString());
+        String line = oneLine("SDV-DOC-003", Level.ERROR, body.get("reference").asString()).getFormattedMessage();
         assertTrue(line.contains("document=" + DOC), line);
         assertTrue(line.contains("step=storage read failed"), line);
         assertTrue(line.contains("exception=java.io.IOException"), line);
         assertFalse(line.contains("C:\\vault"), "never the exception's own text: " + line);
 
         body = answer("/doc-007", 503, "SDV-DOC-007");
-        line = oneLine("SDV-DOC-007", Level.ERROR, body.get("reference").asText()).getFormattedMessage();
+        line = oneLine("SDV-DOC-007", Level.ERROR, body.get("reference").asString()).getFormattedMessage();
         assertTrue(line.contains("grant=given back"), line);
 
         body = answer("/doc-004", 500, "SDV-DOC-004");
-        oneLine("SDV-DOC-004", Level.ERROR, body.get("reference").asText());
+        oneLine("SDV-DOC-004", Level.ERROR, body.get("reference").asString());
         answer("/doc-007-check", 500, "SDV-DOC-007");
         answer("/doc-004-large", 422, "SDV-DOC-004");
     }
@@ -154,21 +154,21 @@ class DocumentCodesAnswerTest {
     @Test
     void aPageThatCantBeDrawnAndAChangedDocumentAreWarnLines() throws Exception {
         JsonNode body = answer("/doc-005", 422, "SDV-DOC-005");
-        assertTrue(oneLine("SDV-DOC-005", Level.WARN, body.get("reference").asText()).getFormattedMessage().contains("page 3"));
+        assertTrue(oneLine("SDV-DOC-005", Level.WARN, body.get("reference").asString()).getFormattedMessage().contains("page 3"));
         body = answer("/doc-008", 409, "SDV-DOC-008");
-        oneLine("SDV-DOC-008", Level.WARN, body.get("reference").asText());
+        oneLine("SDV-DOC-008", Level.WARN, body.get("reference").asString());
     }
 
     @Test
     void notThereAndNotYetAreInfoLinesAndBadRequestsAreNotWarnOrError() throws Exception {
         JsonNode body = answer("/doc-001", 404, "SDV-DOC-001");
         assertEquals("This document isn't there any more, or the link is wrong. Open the record again from search.",
-                body.get("message").asText());
-        oneLine("SDV-DOC-001", Level.INFO, body.get("reference").asText());
+                body.get("message").asString());
+        oneLine("SDV-DOC-001", Level.INFO, body.get("reference").asString());
         body = answer("/doc-002", 409, "SDV-DOC-002");
         assertEquals("This document can't be opened yet: a permanent correction is being made to it.",
-                body.get("message").asText());
-        assertTrue(oneLine("SDV-DOC-002", Level.INFO, body.get("reference").asText()).getFormattedMessage()
+                body.get("message").asString());
+        assertTrue(oneLine("SDV-DOC-002", Level.INFO, body.get("reference").asString()).getFormattedMessage()
                 .contains("status=REDACTION_PROCESSING"));
 
         answer("/doc-006", 400, "SDV-DOC-006");
@@ -180,9 +180,9 @@ class DocumentCodesAnswerTest {
     void aRecordNotFoundAndABrokenLinkReadTheSame() throws Exception {
         JsonNode missing = answer("/sch-002", 404, "SDV-SCH-002");
         JsonNode broken = answer("/sch-002-bad", 400, "SDV-SCH-002");
-        assertEquals(missing.get("message").asText(), broken.get("message").asText());
+        assertEquals(missing.get("message").asString(), broken.get("message").asString());
         assertEquals("This record isn't there any more, or the link is wrong. Search for it again.",
-                missing.get("message").asText());
+                missing.get("message").asString());
         assertEquals(2, lines("SDV-SCH-002").stream().filter(e -> e.getLevel() == Level.INFO).count());
     }
 }

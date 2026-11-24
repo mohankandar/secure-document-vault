@@ -12,10 +12,10 @@ import com.sdv.platform.web.ingestion.SubmissionController.SubmissionProgressRes
 import com.sdv.platform.web.ingestion.SubmissionController.SubmissionResponse;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
-import org.springframework.boot.autoconfigure.http.HttpMessageConvertersAutoConfiguration;
-import org.springframework.boot.autoconfigure.jackson.JacksonAutoConfiguration;
-import org.springframework.boot.autoconfigure.web.servlet.DispatcherServletAutoConfiguration;
-import org.springframework.boot.autoconfigure.web.servlet.WebMvcAutoConfiguration;
+import org.springframework.boot.http.converter.autoconfigure.HttpMessageConvertersAutoConfiguration;
+import org.springframework.boot.jackson.autoconfigure.JacksonAutoConfiguration;
+import org.springframework.boot.webmvc.autoconfigure.DispatcherServletAutoConfiguration;
+import org.springframework.boot.webmvc.autoconfigure.WebMvcAutoConfiguration;
 import org.springframework.boot.test.context.runner.WebApplicationContextRunner;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.test.web.servlet.MockMvc;
@@ -39,7 +39,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 
 /**
  * Task 0060 (plan 0059, step 0): the JSON Vero answers and what it accepts, over the HTTP set-up that Spring Boot makes
- * for the running app (Vero changes nothing in it). The published ingestion answers are written exactly; requests with
+ * for the running app. The published ingestion answers are written exactly; requests with
  * null, text after the JSON, unknown or repeated fields, deep nesting and odd media types give today's outcome.
  */
 class HttpJsonBaselineTest {
@@ -55,6 +55,9 @@ class HttpJsonBaselineTest {
                 .withConfiguration(AutoConfigurations.of(JacksonAutoConfiguration.class, HttpMessageConvertersAutoConfiguration.class,
                         DispatcherServletAutoConfiguration.class, WebMvcAutoConfiguration.class))
                 .withBean(FoundationExceptionHandler.class, FoundationExceptionHandler::new)
+                // Task 0070: Vero's own JSON settings, and the settings file's, as in the running app.
+                .withUserConfiguration(com.sdv.platform.web.config.JsonLimitsConfiguration.class)
+                .withBean(com.sdv.platform.web.foundation.RequestBodyLimitFilter.class, () -> new com.sdv.platform.web.foundation.RequestBodyLimitFilter(1_048_576, 5_242_880))
                 .withBean(Probe.class, Probe::new)
                 .run(context -> use.with(MockMvcBuilders.webAppContextSetup(context).build()));
     }

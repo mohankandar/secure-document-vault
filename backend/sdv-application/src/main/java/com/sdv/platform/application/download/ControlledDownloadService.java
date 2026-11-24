@@ -1,12 +1,13 @@
 package com.sdv.platform.application.download;
 
+import com.sdv.platform.application.json.VeroJson;
 import com.sdv.platform.application.document.DocumentRefusals;
 import com.sdv.platform.domain.error.CodedFault;
 import com.sdv.platform.domain.error.CodedRefusal;
 import com.sdv.platform.domain.error.InternalCheckFailed;
 import com.sdv.platform.domain.error.SdvErrorCode;
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.ObjectMapper;
 import com.sdv.platform.application.access.Clearance;
 import com.sdv.platform.application.access.DocumentAccessGuard;
 import com.sdv.platform.application.access.SensitiveAccessGrants;
@@ -49,7 +50,7 @@ public class ControlledDownloadService {
     private final StreamingCryptoPort crypto;
     private final AuditEventPort audit;
     private final DocumentAccessGuard access;
-    private final ObjectMapper json = new ObjectMapper();
+    private final ObjectMapper json = VeroJson.mapper();
     private final Clock clock = Clock.systemUTC();
 
     public ControlledDownloadService(
@@ -281,7 +282,7 @@ public class ControlledDownloadService {
             List<String> roles = com.sdv.platform.application.access.AuditRoles.of(clearance);
             if (!roles.isEmpty()) safe.put("roles", roles);
             return json.writeValueAsString(safe);
-        } catch (JsonProcessingException ex) {
+        } catch (JacksonException ex) {
             throw InternalCheckFailed.auditNotWritten("Could not serialize download audit details.", ex);
         }
     }

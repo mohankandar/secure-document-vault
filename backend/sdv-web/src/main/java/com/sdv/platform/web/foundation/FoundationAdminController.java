@@ -1,6 +1,6 @@
 package com.sdv.platform.web.foundation;
 
-import com.fasterxml.jackson.databind.JsonNode;
+import tools.jackson.databind.JsonNode;
 import com.sdv.platform.application.metadata.BusinessMetadataBehaviorCommand;
 import com.sdv.platform.application.metadata.MetadataFieldAdminService;
 import com.sdv.platform.application.metadata.SourceFieldContractCommand;

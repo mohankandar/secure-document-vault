@@ -1,13 +1,14 @@
 package com.sdv.platform.application.document;
 
+import com.sdv.platform.application.json.VeroJson;
 import com.sdv.platform.application.access.ActiveTenant;
 
 import com.sdv.platform.domain.error.InternalCheckFailed;
 import com.sdv.platform.domain.error.CodedRefusal;
 import com.sdv.platform.domain.error.SdvErrorCode;
 import com.sdv.platform.application.source.ActiveSource;
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.ObjectMapper;
 import com.sdv.platform.application.business.RecordKey;
 import com.sdv.platform.application.business.RecordReferences;
 import com.sdv.platform.application.port.AccessRequestRepository;
@@ -75,7 +76,7 @@ public class DocumentIntakeService {
     /** The reason in the level-change history when a duplicate raises the document it duplicates. */
     static final String DUPLICATE_RAISE_REASON = "Sent again by the sending system with a higher level";
     private static final Set<DocumentStatus> GONE = EnumSet.of(DocumentStatus.EXPIRED_DELETED, DocumentStatus.RETENTION_DELETING);
-    private static final ObjectMapper JSON = new ObjectMapper();
+    private static final ObjectMapper JSON = VeroJson.mapper();
     private final TenantRepository tenants;
     private final IngestionSourceRepository sources;
     private final SubmissionRepository submissions;
@@ -513,7 +514,7 @@ public class DocumentIntakeService {
     private static String json(Map<String, Object> details) {
         try {
             return JSON.writeValueAsString(details);
-        } catch (JsonProcessingException ex) {
+        } catch (JacksonException ex) {
             throw InternalCheckFailed.auditNotWritten("The duplicate could not be audited, so nothing was recorded.", ex);
         }
     }

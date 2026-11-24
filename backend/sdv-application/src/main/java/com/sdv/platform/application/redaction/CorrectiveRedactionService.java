@@ -1,5 +1,6 @@
 package com.sdv.platform.application.redaction;
 
+import com.sdv.platform.application.json.VeroJson;
 import com.sdv.platform.domain.error.SdvErrorCode;
 import com.sdv.platform.domain.error.CodedRefusal;
 import com.sdv.platform.domain.document.SensitivityLevel;
@@ -10,8 +11,8 @@ import com.sdv.platform.application.access.ActiveTenant;
 import com.sdv.platform.domain.error.InternalCheckFailed;
 import com.sdv.platform.application.access.Clearance;
 import com.sdv.platform.application.access.DocumentAccessGuard;
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.ObjectMapper;
 import com.sdv.platform.application.pdf.PdfWork;
 import com.sdv.platform.application.port.*;
 import com.sdv.platform.application.storage.StoragePlacementService;
@@ -54,7 +55,7 @@ public class CorrectiveRedactionService {
     private final PdfWork work;
     private final HeldRedactionRepository held;
     private final AccessRequestService requests;
-    private final ObjectMapper json = new ObjectMapper();
+    private final ObjectMapper json = VeroJson.mapper();
     private final Clock clock = Clock.systemUTC();
 
     public CorrectiveRedactionService(
@@ -163,12 +164,12 @@ public class CorrectiveRedactionService {
                     throw new IllegalStateException("The document changed since the redaction was asked for.");
                 }
                 List<RedactionRegion> regions = normalizeRegions(json.readValue(a.regionsJson(),
-                        new com.fasterxml.jackson.core.type.TypeReference<List<RedactionRegion>>() { }));
+                        new tools.jackson.core.type.TypeReference<List<RedactionRegion>>() { }));
                 regionCount = regions.size();
                 replace(current, a.reason(), regions, toJson(regions), requestSha256(a.reason(), regions), a.requestedBy(),
                         correlationId, a.requestId());
                 applied++;
-            } catch (RuntimeException | JsonProcessingException ex) {
+            } catch (RuntimeException ex) {
                 failed++;
                 // replace() audits its own failures; these never reached it.
                 if (regionCount == 0) safeFailureAudit(a.tenantId(), a.documentId(), a.requestedBy(), null, 0, correlationId, ex);
@@ -296,7 +297,7 @@ public class CorrectiveRedactionService {
             var node = json.readTree(regionsJson);
             if (!node.isArray()) throw new InternalCheckFailed("Stored redaction regions are not an array.");
             return node.size();
-        } catch (JsonProcessingException ex) {
+        } catch (JacksonException ex) {
             throw new InternalCheckFailed("Stored redaction regions cannot be parsed for recovery.", ex);
         }
     }
@@ -510,7 +511,7 @@ public class CorrectiveRedactionService {
 
     private String toJson(List<RedactionRegion> regions) {
         try { return json.writeValueAsString(regions); }
-        catch (JsonProcessingException ex) { throw new InternalCheckFailed("Could not serialize redaction regions.", ex); }
+        catch (JacksonException ex) { throw new InternalCheckFailed("Could not serialize redaction regions.", ex); }
     }
 
     private String successAuditJson(RedactionOperation op, int regionCount, UUID sealedId) {
@@ -527,7 +528,7 @@ public class CorrectiveRedactionService {
             if (op.accessRequestId() != null) safe.put("accessRequestId", op.accessRequestId().toString());
             if (sealedId != null) safe.put("sealedOriginalId", sealedId.toString());
             return json.writeValueAsString(safe);
-        } catch (JsonProcessingException ex) {
+        } catch (JacksonException ex) {
             throw InternalCheckFailed.auditNotWritten("Could not serialize redaction audit details.", ex);
         }
     }

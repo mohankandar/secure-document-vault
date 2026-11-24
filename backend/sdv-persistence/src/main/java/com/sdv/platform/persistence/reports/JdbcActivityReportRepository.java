@@ -198,12 +198,12 @@ public class JdbcActivityReportRepository implements ActivityReportRepository {
         }
         try {
             return JSON.writeValueAsString(rows);
-        } catch (com.fasterxml.jackson.core.JsonProcessingException ex) {
+        } catch (tools.jackson.core.JacksonException ex) {
             throw new com.sdv.platform.domain.error.InternalCheckFailed("Today's people could not be passed to the busiest list.");
         }
     }
 
-    private static final com.fasterxml.jackson.databind.ObjectMapper JSON = new com.fasterxml.jackson.databind.ObjectMapper();
+    private static final tools.jackson.databind.ObjectMapper JSON = new tools.jackson.databind.ObjectMapper();
 
     @Override
     public List<UUID> findActiveTenants() {

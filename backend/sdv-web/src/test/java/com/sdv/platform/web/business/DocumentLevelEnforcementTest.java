@@ -1,7 +1,7 @@
 package com.sdv.platform.web.business;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 import com.sdv.platform.application.access.DocumentAccessGuard;
 import com.sdv.platform.application.business.BusinessExperienceService;
 import com.sdv.platform.application.document.DocumentActionService;
@@ -379,7 +379,7 @@ class DocumentLevelEnforcementTest {
 
     @Test
     void aLockedDocumentCarriesOnlyItsReferenceAndLevelInTheJson() throws Exception {
-        ObjectMapper json = new ObjectMapper().findAndRegisterModules();
+        ObjectMapper json = com.sdv.platform.application.json.VeroJson.mapper();
         for (SensitivityLevel level : List.of(SensitivityLevel.CONFIDENTIAL, SensitivityLevel.HIGHLY_CONFIDENTIAL)) {
             World world = new World(level, null);
             signIn(SdvRole.BUSINESS_USER);
@@ -389,21 +389,21 @@ class DocumentLevelEnforcementTest {
             JsonNode view = json.readTree(json.writeValueAsString(world.business.record(recordRef)));
 
             assertEquals(1, view.get("documents").size(), "only the Standard document is listed in full");
-            assertEquals("loan-agreement.pdf", view.get("documents").get(0).get("originalFilename").asText());
+            assertEquals("loan-agreement.pdf", view.get("documents").get(0).get("originalFilename").asString());
             JsonNode locked = view.get("lockedDocuments");
             assertEquals(1, locked.size());
             Set<String> keys = new HashSet<>();
-            locked.get(0).fieldNames().forEachRemaining(keys::add);
+            locked.get(0).propertyNames().iterator().forEachRemaining(keys::add);
             assertEquals(Set.of("documentId", "effectiveSensitivityLevel"), keys, "nothing but a reference and its level");
-            assertEquals(DOC.toString(), locked.get(0).get("documentId").asText());
-            assertEquals(level.name(), locked.get(0).get("effectiveSensitivityLevel").asText());
-            assertEquals(level.name(), view.get("restrictedLevel").asText());
+            assertEquals(DOC.toString(), locked.get(0).get("documentId").asString());
+            assertEquals(level.name(), locked.get(0).get("effectiveSensitivityLevel").asString());
+            assertEquals(level.name(), view.get("restrictedLevel").asString());
             String text = view.toString();
             for (String forbidden : List.of("medical-report.pdf", "\"d2\"", "\"pageCount\":7")) {
                 assertFalse(text.contains(forbidden), level + ": the record JSON contains " + forbidden);
             }
             // The record's own fields stay visible.
-            assertEquals("300000000076", view.get("identifiers").get(0).get("value").asText());
+            assertEquals("300000000076", view.get("identifiers").get(0).get("value").asString());
         }
     }
 

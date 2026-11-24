@@ -1,6 +1,6 @@
 package com.sdv.platform.web.ingestion;
 
-import com.fasterxml.jackson.databind.JsonNode;
+import tools.jackson.databind.JsonNode;
 import com.sdv.platform.application.document.DocumentIntakeService;
 import com.sdv.platform.application.submission.CreateSubmissionCommand;
 import com.sdv.platform.application.submission.SubmissionDetails;
@@ -83,7 +83,7 @@ public class SubmissionController {
             // Not a JSON string (a number, null, an object): passed on as written, so it is refused like any
             // unknown value. The service checks the value before anything is stored.
             String recordLevel = recordSensitivityLevel == null ? null
-                    : recordSensitivityLevel.isTextual() ? recordSensitivityLevel.textValue()
+                    : recordSensitivityLevel.isString() ? recordSensitivityLevel.stringValue()
                     : recordSensitivityLevel.toString();
             List<String> manifest = expectedDocuments == null ? List.of() : expectedDocuments.stream()
                     .map(ExpectedDocumentRequest::sourceDocumentId)
@@ -96,7 +96,7 @@ public class SubmissionController {
                                 com.sdv.platform.domain.error.SdvErrorCode.INT_008,
                                 "Metadata field '" + key + "' must be a scalar JSON value.", "field=" + key + " not a scalar");
                     }
-                    values.put(key, value.isTextual() ? value.textValue() : value.asText());
+                    values.put(key, com.sdv.platform.application.json.VeroJson.text(value));
                 });
             }
             return new CreateSubmissionCommand(sourceSubmissionId, expectedDocumentCount, manifest, values, recordLevel);

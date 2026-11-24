@@ -34,7 +34,7 @@ Vero is independent of other products: they may act only as external producers t
 ## Technology baseline
 
 - Java 21
-- Spring Boot 3.5.x
+- Spring Boot 4.2.x
 - Maven multi-module backend
 - PostgreSQL 16 + Liquibase
 - React + TypeScript + Vite 8 (tests: Vitest 5)

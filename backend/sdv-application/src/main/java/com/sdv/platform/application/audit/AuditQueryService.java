@@ -1,8 +1,9 @@
 package com.sdv.platform.application.audit;
 
+import com.sdv.platform.application.json.VeroJson;
 import com.sdv.platform.domain.error.InternalCheckFailed;
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.ObjectMapper;
 import com.sdv.platform.application.access.DocumentAccessGuard;
 import com.sdv.platform.application.port.AuditEventPort;
 import com.sdv.platform.application.port.AuditQueryPort;
@@ -42,7 +43,7 @@ public class AuditQueryService {
     private final AuditEventPort audit;
     private final DocumentAccessGuard access;
     private final Clock clock;
-    private final ObjectMapper json = new ObjectMapper();
+    private final ObjectMapper json = VeroJson.mapper();
 
     @Autowired
     public AuditQueryService(AuditQueryPort query, AuditEventPort audit, DocumentAccessGuard access) {
@@ -162,7 +163,7 @@ public class AuditQueryService {
     private String toJson(Object value) {
         try {
             return json.writeValueAsString(value);
-        } catch (JsonProcessingException ex) {
+        } catch (JacksonException ex) {
             throw InternalCheckFailed.auditNotWritten("The export could not be recorded, so nothing was exported.", ex);
         }
     }

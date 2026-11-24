@@ -1,7 +1,8 @@
 package com.sdv.platform.application.audit;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import com.sdv.platform.application.json.VeroJson;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 
 import java.util.Locale;
 import java.util.Map;
@@ -12,7 +13,7 @@ import java.util.Map;
  * exported sentences with the screen's). A code not listed here reads "who · Humanized code".
  */
 public final class AuditSentences {
-    private static final ObjectMapper JSON = new ObjectMapper();
+    private static final ObjectMapper JSON = VeroJson.mapper();
 
     /** What a refused permission would have allowed, in words. */
     private static final Map<String, String> CAPABILITY_WORDS = Map.ofEntries(
@@ -190,12 +191,12 @@ public final class AuditSentences {
 
     private static Long number(JsonNode d, String key) {
         JsonNode v = d.get(key);
-        return v != null && v.isNumber() ? v.asLong() : null;
+        return v != null && v.isNumber() ? Long.valueOf(v.numberValue().longValue()) : null;
     }
 
     private static String text(JsonNode d, String key) {
         JsonNode v = d.get(key);
-        return v == null || v.isNull() ? "null" : v.asText();
+        return v == null ? "null" : VeroJson.text(v);
     }
 
     /** Task 0028: a level in words, as the screens say it. */
