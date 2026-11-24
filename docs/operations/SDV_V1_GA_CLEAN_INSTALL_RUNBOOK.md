@@ -235,6 +235,23 @@ Vero keeps the Problems list of unidentified intake attempts small, however many
 
 Each request's reference is in Vero's log, also when it is counted in a row with others.
 
+### Reading PDFs: the `SDV_PDF_*` settings
+
+Opening, drawing, searching, redacting and checking PDFs is limited, so one file or one person can't take the server.
+
+| Setting | Default | Value |
+|---|---|---|
+| `SDV_PDF_MAX_CONCURRENT` | `0`: one for each 320 MB of memory, at most one per processor | At once in this process, 1 to 256 |
+| `SDV_PDF_MAX_PER_PERSON` | `3` | At once for one person or sending system, 1 to 64 |
+| `SDV_PDF_WAIT_SECONDS` | `8` | How long to wait for a place before `503 SDV-SYS-018`, 0 to 60 |
+| `SDV_PDF_LIMIT_SECONDS` | `30` | The longest one request may take, 5 to 600 (a redaction: 10 minutes) |
+| `SDV_PDF_SCRATCH_FOLDER` | the system's temporary folder | Working space; only ciphertext is written, with a key that is never stored |
+| `SDV_PDF_SCRATCH_MEMORY_BYTES`, `SDV_PDF_SCRATCH_TOTAL_BYTES` | 16 MB, 2 GB | Per request: kept in memory; at most in all |
+| `SDV_PDF_ACCEPT` | empty: refuse | What one sending system may send all the same: `source-key=encrypted,active-content,unreadable;other-key=...` |
+
+Give Vero enough memory for the pages people read at once (about 320 MB each), and the temporary folder enough room.
+`-XX:+ExitOnOutOfMemoryError` must **not** be set: a file that needs too much memory ends its own request only.
+
 ### Where documents may be kept: `SDV_STORAGE_ALLOWED_ROOTS`
 
 An IT Admin adds storage volumes only inside the folders named here (task 0062).

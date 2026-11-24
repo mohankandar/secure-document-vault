@@ -166,8 +166,18 @@ class QuarantinePostgresTest {
         assertTrue(sweep.heldSkipped() >= 2);
 
         // 6. Exposure from the audit, before the quarantine; never a file name.
+        // Task 0063: pages, previews and searches of someone who is not in the report by an opening count too, once per kind.
+        for (String action : List.of("DOCUMENT_PAGE_VIEWED", "DOCUMENT_PAGE_VIEWED", "DOCUMENT_PREVIEWED", "DOCUMENT_TEXT_SEARCHED")) {
+            jdbc.update("insert into audit_events(audit_event_id, tenant_id, actor_type, actor_id, action, target_type, target_id, occurred_at, outcome, safe_details) "
+                            + "select gen_random_uuid(), tenant_id, 'USER', 'reader-0063', :action, 'DOCUMENT', document_id::text, quarantined_at - interval '1 minute', 'SUCCESS', '{}'::jsonb "
+                            + "from quarantined_documents where incident_id=:id limit 1",
+                    new MapSqlParameterSource("id", single.incidentId()).addValue("action", action));
+        }
         QuarantineService.ExposureReport exposure = quarantine.exposure(as(T1, "stan", STEWARD), single.incidentId().toString());
-        assertEquals(List.of("Opened", "Printed"), exposure.documents().getFirst().exposure().stream()
+        assertEquals(List.of("Read pages (first time)", "Saw page previews (first time)", "Searched the text (first time)"),
+                exposure.documents().stream().flatMap(d -> d.exposure().stream()).filter(e -> "reader-0063".equals(e.person()))
+                        .map(QuarantineService.ExposureEntry::what).sorted().toList());
+        assertEquals(List.of("Opened", "Printed"), exposure.documents().getFirst().exposure().stream().filter(e -> !"reader-0063".equals(e.person()))
                 .map(QuarantineService.ExposureEntry::what).toList());
         assertEquals(CONTRACT, exposure.documents().getFirst().primaryIdentifier());
         QuarantineService.ExposureReport hidden = quarantine.exposure(as(T1, "stan", STEWARD), byFilter.incidentId().toString());

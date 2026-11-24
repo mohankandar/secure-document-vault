@@ -44,11 +44,21 @@ public class JdbcPageViewAuditRepository implements PageViewAuditPort {
 
     @Override
     @Transactional
+    public boolean appendPreviewEventOnce(AuditEvent event, UUID viewingId, Instant notBefore) {
+        return appendOnce(event, viewingId, null, notBefore);
+    }
+
+    @Override
+    @Transactional
     public boolean appendPageEventOnce(AuditEvent event, UUID viewingId, int pageNumber, Instant notBefore) {
+        return appendOnce(event, viewingId, Integer.toString(pageNumber), notBefore);
+    }
+
+    private boolean appendOnce(AuditEvent event, UUID viewingId, String page, Instant notBefore) {
         // Serialise concurrent requests for the same viewing and page (e.g. a page fetched ahead and then shown),
         // so the check and the insert cannot interleave. The lock ends with the transaction.
         jdbc.queryForObject("select pg_advisory_xact_lock(hashtextextended(:key, 0))",
-                new MapSqlParameterSource("key", "sdv-page-view:" + viewingId + ":" + pageNumber), Object.class);
+                new MapSqlParameterSource("key", "sdv-page-view:" + viewingId + ":" + (page == null ? "previews" : page)), Object.class);
         // Uses idx_audit_events_tenant_actor_action_time (tenant_id, actor_id, action, occurred_at) from migration 018.
         int written = jdbc.update("""
                 insert into audit_events(audit_event_id, tenant_id, actor_type, actor_id, action, target_type,
@@ -59,12 +69,12 @@ public class JdbcPageViewAuditRepository implements PageViewAuditPort {
                     select 1 from audit_events
                      where tenant_id=:tenantId
                        and actor_id=:actorId
-                       and action='DOCUMENT_PAGE_VIEWED'
+                       and action=:action
                        and occurred_at>=:notBefore
                        and target_type='DOCUMENT'
                        and target_id=:targetId
                        and safe_details->>'viewingId'=:viewingId
-                       and safe_details->>'page'=:page)
+                       and (cast(:page as text) is null or safe_details->>'page'=:page))
                 """, new MapSqlParameterSource()
                 .addValue("id", event.auditEventId())
                 .addValue("tenantId", event.tenantId())
@@ -80,7 +90,7 @@ public class JdbcPageViewAuditRepository implements PageViewAuditPort {
                 .addValue("actorDisplayName", event.actorDisplayName())
                 .addValue("notBefore", Timestamp.from(notBefore))
                 .addValue("viewingId", viewingId.toString())
-                .addValue("page", Integer.toString(pageNumber)));
+                .addValue("page", page));
         return written > 0;
     }
 }

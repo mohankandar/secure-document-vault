@@ -22,6 +22,9 @@ export const DOCUMENT_PROBLEM_WORDS: Record<string, { text: string; fault?: true
   'SDV-DOC-007': { text: 'Vero couldn’t verify this document, so it wasn’t downloaded.', fault: true },
   'SDV-DOC-008': { text: 'This document was just changed. Open it again and download the new version.' },
   'SDV-DOC-009': { text: 'The download didn’t finish.', fault: true },
+  'SDV-DOC-011': { text: 'Open the document again to go on reading it.' },
+  'SDV-DOC-012': { text: 'This document takes too long to show. Download it if your role allows, or tell your IT team.', fault: true },
+  'SDV-DOC-013': { text: 'This document is too large to view here.' },
   'SDV-DOC-010': { text: 'A tag can be up to 80 characters and a comment up to 2,000. Neither can be empty.' },
 }
 

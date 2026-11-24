@@ -70,6 +70,8 @@ public final class AuditSentences {
         return switch (e.action()) {
             case "DOCUMENT_VIEW_OPENED" -> w + " opened " + f;
             case "DOCUMENT_PAGE_VIEWED" -> number(d, "page") != null ? w + " loaded page " + number(d, "page") + " of " + f : w + " loaded a page of " + f;
+            case "DOCUMENT_PREVIEWED" -> w + " looked at the page previews of " + f;
+            case "DOCUMENT_TEXT_SEARCHED" -> w + " searched the text of " + f;
             case "DOCUMENT_DOWNLOADED" -> w + " downloaded " + f;
             case "DOCUMENT_DOWNLOAD_FAILED" -> w + " tried to download " + f + ", but it failed";
             case "DOCUMENT_PRINTED" -> w + " printed " + f;

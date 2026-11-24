@@ -94,11 +94,12 @@ export function Viewer({ record, results, docId, onClose, recordTitle, backLabel
     const term=query.trim()
     if(!term){setSearchResults(null);setSearchError('');return}
     if(term.length>100){setSearchError('Search is limited to 100 characters');return}
+    if(!viewingId)return
     let active=true
-    viewerSearch(doc.id,term).then(r=>{if(active){setSearchResults(r);setSearchError('')}})
+    viewerSearch(doc.id,term,viewingId).then(r=>{if(active){setSearchResults(r);setSearchError('')}})
       .catch(e=>{if(active){setSearchResults(null);setSearchError(docFailure('Viewer: find in document failed', e))}})
     return ()=>{active=false}
-  },[doc.id,query])
+  },[doc.id,query,viewingId])
 
   useEffect(() => {
     const el = canvasRef.current
@@ -193,11 +194,13 @@ export function Viewer({ record, results, docId, onClose, recordTitle, backLabel
     finally{setActionBusy(false);if(highlyConfidential)refreshRequests()}
   }
   const print = async () => {
-    if(actionBusy)return
+    if(actionBusy||!viewingId)return
     setActionBusy(true)
     try {
       // Print the authorized rendered pages, without requesting the raw PDF download.
-      const images=await Promise.all(Array.from({length:pageTotal},(_,i)=>viewerPage(doc.id,i+1,1,viewingId||undefined)))
+      // Task 0063: two pages at a time, so printing a long document leaves room for others.
+      const images:Blob[]=[]
+      for(let first=1;first<=pageTotal;first+=2)images.push(...await Promise.all(Array.from({length:Math.min(2,pageTotal-first+1)},(_,i)=>viewerPage(doc.id,first+i,1,viewingId))))
       const urls=images.map(b=>URL.createObjectURL(b))
       const frame=document.createElement('iframe')
       frame.setAttribute('title','Print document')
@@ -283,12 +286,12 @@ export function Viewer({ record, results, docId, onClose, recordTitle, backLabel
   const requestedChunks = useRef(new Set<number>())
   useEffect(() => { setPreviews({}); setPreviewsFailed(false); requestedChunks.current = new Set() }, [doc.id, renderRevision])
   const needPreview = (p: number) => {
-    if (previewsFailed || !pageTotal) return
+    if (previewsFailed || !pageTotal || !viewingId) return
     const first = Math.floor((p - 1) / PREVIEW_CHUNK) * PREVIEW_CHUNK + 1
     if (requestedChunks.current.has(first)) return
     requestedChunks.current.add(first)
     const forDoc = doc.id
-    viewerPreviews(forDoc, first, Math.min(PREVIEW_CHUNK, pageTotal - first + 1))
+    viewerPreviews(forDoc, first, Math.min(PREVIEW_CHUNK, pageTotal - first + 1), viewingId)
       .then((r) => { if (forDoc === doc.id) setPreviews((prev) => ({ ...prev, ...Object.fromEntries(r.previews.map((x) => [x.pageNumber, x.dataUrl])) })) })
       .catch(() => setPreviewsFailed(true))
   }
@@ -357,7 +360,7 @@ export function Viewer({ record, results, docId, onClose, recordTitle, backLabel
           <span className="eyebrow">Pages</span>
           <div className="vw-pages">
             {Array.from({ length: pageTotal }, (_, i) => (
-              <PageThumb key={doc.id + ':' + renderRevision + ':' + (i + 1)} page={i + 1} current={page === i + 1} src={previews[i + 1]} failed={previewsFailed}
+              <PageThumb key={doc.id + ':' + renderRevision + ':' + (i + 1)} page={i + 1} current={page === i + 1} src={previews[i + 1]} failed={previewsFailed} ready={!!viewingId}
                 onVisible={needPreview} onOpen={() => { goPage(i + 1); setDocsOpen(false) }} />
             ))}
           </div>
@@ -501,9 +504,9 @@ function SecurePage({documentId,viewingId,page,scale,scrollRoot,matches,highligh
     return ()=>obs.disconnect()
   },[scrollRoot,documentId,page])
   useEffect(()=>{
-    if(!visible)return
+    if(!visible||!viewingId)return
     let active=true
-    viewerPage(documentId,page,Number(scale.toFixed(2)),viewingId||undefined).then(blob=>{
+    viewerPage(documentId,page,Number(scale.toFixed(2)),viewingId).then(blob=>{
       const objectUrl=URL.createObjectURL(blob)
       if(active)setUrl(objectUrl)
       else URL.revokeObjectURL(objectUrl)
@@ -524,15 +527,15 @@ function SecurePage({documentId,viewingId,page,scale,scrollRoot,matches,highligh
   </div>
 }
 
-function PageThumb({ page, current, src, failed, onVisible, onOpen }: { page: number; current: boolean; src?: string; failed: boolean; onVisible: (p: number) => void; onOpen: () => void }) {
+function PageThumb({ page, current, src, failed, ready, onVisible, onOpen }: { page: number; current: boolean; src?: string; failed: boolean; ready: boolean; onVisible: (p: number) => void; onOpen: () => void }) {
   const ref = useRef<HTMLButtonElement>(null)
   useEffect(() => {
     const el = ref.current
-    if (!el || src || failed) return
+    if (!el || src || failed || !ready) return
     const obs = new IntersectionObserver((entries) => { if (entries.some((e) => e.isIntersecting)) onVisible(page) }, { rootMargin: '120px 0px' })
     obs.observe(el)
     return () => obs.disconnect()
-  }, [page, src, failed])
+  }, [page, src, failed, ready])
   return (
     <button ref={ref} type="button" className="vw-pagethumb" aria-current={current} aria-label={`Page ${page}`} onClick={onOpen}>
       {src ? <img src={src} alt="" /> : <span className="vw-pagebox" aria-hidden>{failed ? `Page ${page}` : ''}</span>}

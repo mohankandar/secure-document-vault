@@ -7,6 +7,7 @@ import com.sdv.platform.application.access.Clearance;
 import com.sdv.platform.application.access.DocumentAccessGuard;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.sdv.platform.application.pdf.PdfWork;
 import com.sdv.platform.application.port.*;
 import com.sdv.platform.application.storage.StoragePlacementService;
 import com.sdv.platform.domain.audit.AuditEvent;
@@ -45,6 +46,7 @@ public class CorrectiveRedactionService {
     private final AuditEventPort audit;
     private final DocumentAccessGuard access;
     private final TransactionTemplate transactions;
+    private final PdfWork work;
     private final ObjectMapper json = new ObjectMapper();
     private final Clock clock = Clock.systemUTC();
 
@@ -60,7 +62,9 @@ public class CorrectiveRedactionService {
             PdfSanitizingRedactor sanitizer,
             AuditEventPort audit,
             PlatformTransactionManager transactionManager,
-            DocumentAccessGuard access) {
+            DocumentAccessGuard access,
+            PdfWork work) {
+        this.work = Objects.requireNonNull(work, "work");
         this.tenants = tenants;
         this.sources = sources;
         this.documents = documents;
@@ -74,6 +78,8 @@ public class CorrectiveRedactionService {
         this.access = java.util.Objects.requireNonNull(access, "access");
         this.transactions = new TransactionTemplate(transactionManager);
     }
+
+    private static final java.time.Duration REDACTION_LIMIT = java.time.Duration.ofMinutes(10);
 
     public RedactionResult redact(UUID tenantId, UUID documentId, String reason, boolean confirmed,
                                   List<RedactionRegion> requestedRegions, Clearance clearance,
@@ -134,7 +140,10 @@ public class CorrectiveRedactionService {
 
         try {
             plaintext = verifiedPlaintext(current, oldStorage, oldCrypto, oldVolume, oldProvider);
-            sanitized = sanitizer.sanitize(plaintext, regions, effectiveMaxPdfBytes(tenant, source));
+            // Task 0063: every page is drawn again, so this has a place (and a longer limit) of its own.
+            byte[] original = plaintext;
+            sanitized = work.run(tenantId + ":" + actorId, REDACTION_LIMIT,
+                    () -> sanitizer.sanitize(original, regions, effectiveMaxPdfBytes(tenant, source)));
             String newContentSha = sha256(sanitized);
 
             newVolume = placement.select(tenantId, estimateEncryptedSize(sanitized.length)).volume();

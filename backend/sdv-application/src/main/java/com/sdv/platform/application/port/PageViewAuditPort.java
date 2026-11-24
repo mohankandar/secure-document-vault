@@ -21,4 +21,7 @@ public interface PageViewAuditPort {
      * (at or after {@code notBefore}). Atomic per viewing and page. Returns true when the event was written.
      */
     boolean appendPageEventOnce(AuditEvent pageEvent, UUID viewingId, int pageNumber, Instant notBefore);
+
+    /** Task 0063: appends {@code event} (DOCUMENT_PREVIEWED) unless this viewing already has one. Atomic per viewing. */
+    boolean appendPreviewEventOnce(AuditEvent event, UUID viewingId, Instant notBefore);
 }

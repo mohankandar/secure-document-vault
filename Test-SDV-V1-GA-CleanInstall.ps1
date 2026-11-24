@@ -247,7 +247,7 @@ try {
     $DocumentId = [string]$record.Body.documents[0].documentId
     $viewer = InvokeJson 'GET' "$Base/api/v1/business/documents/$DocumentId/viewer" $business $null
     Require ($viewer.StatusCode -eq 200) 'Secure viewer metadata is available before restart'
-    $page = Invoke-WebRequest -Uri "$Base/api/v1/business/documents/$DocumentId/viewer/pages/1?scale=1.0" -Headers $business -UseBasicParsing -TimeoutSec 30
+    $page = Invoke-WebRequest -Uri "$Base/api/v1/business/documents/$DocumentId/viewer/pages/1?scale=1.0&viewingId=$([string]$viewer.Body.viewingId)" -Headers $business -UseBasicParsing -TimeoutSec 30
     $PageBytesBefore = [int]$page.RawContentLength
     Require ($PageBytesBefore -gt 100) 'Secure viewer decrypts/renders page content before restart'
     $CiphertextShaBefore = DbScalar "select integrity_value from document_storage_refs where tenant_id='$Tenant' and document_id='$DocumentId';"
@@ -260,7 +260,7 @@ try {
     Require ((Invoke-RestMethod -Uri "$Base/actuator/health" -TimeoutSec 5).status -eq 'UP') 'Backend is healthy after application restart'
     $viewerAfter = InvokeJson 'GET' "$Base/api/v1/business/documents/$DocumentId/viewer" $business $null
     Require ($viewerAfter.StatusCode -eq 200) 'Same encrypted document is securely viewable after application restart'
-    $pageAfter = Invoke-WebRequest -Uri "$Base/api/v1/business/documents/$DocumentId/viewer/pages/1?scale=1.0" -Headers $business -UseBasicParsing -TimeoutSec 30
+    $pageAfter = Invoke-WebRequest -Uri "$Base/api/v1/business/documents/$DocumentId/viewer/pages/1?scale=1.0&viewingId=$([string]$viewerAfter.Body.viewingId)" -Headers $business -UseBasicParsing -TimeoutSec 30
     $PageBytesAfter = [int]$pageAfter.RawContentLength
     Require ($PageBytesAfter -gt 100) 'Same document decrypts/renders after application restart'
     $ciphertextShaAfter = DbScalar "select integrity_value from document_storage_refs where tenant_id='$Tenant' and document_id='$DocumentId';"

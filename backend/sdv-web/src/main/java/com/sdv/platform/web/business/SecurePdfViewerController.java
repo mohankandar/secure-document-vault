@@ -73,23 +73,25 @@ public class SecurePdfViewerController {
         return ResponseEntity.ok().headers(headers).body(page.pngBytes());
     }
 
-    /** Small page previews (JSON, a PNG data URL per page). No audit event per preview. */
+    /** Small page previews (JSON, a PNG data URL per page), of a viewing; audited once per viewing. */
     @GetMapping("/previews")
     public ResponseEntity<DocumentViewerService.PagePreviews> previews(
             @PathVariable UUID documentId,
             @RequestParam(defaultValue = "1") int first,
-            @RequestParam(defaultValue = "12") int count) {
+            @RequestParam(defaultValue = "12") int count,
+            @RequestParam(required = false) String viewingId) {
         SdvPrincipal principal = requireView();
         return ResponseEntity.ok()
                 .headers(viewerHeaders())
-                .body(viewer.previews(principal.tenantId(), documentId, first, count,
+                .body(viewer.previews(principal.tenantId(), documentId, first, count, parseViewingId(viewingId),
                         authorization.clearance(principal), principal.subject(), correlationId()));
     }
 
     @GetMapping("/search")
     public ResponseEntity<DocumentViewerService.SearchResults> search(
             @PathVariable UUID documentId,
-            @RequestParam("q") String query) {
+            @RequestParam("q") String query,
+            @RequestParam(required = false) String viewingId) {
         SdvPrincipal principal = requireView();
         return ResponseEntity.ok()
                 .headers(viewerHeaders())
@@ -97,12 +99,13 @@ public class SecurePdfViewerController {
                         principal.tenantId(),
                         documentId,
                         query,
+                        parseViewingId(viewingId),
                         authorization.clearance(principal),
                         principal.subject(),
                         correlationId()));
     }
 
-    /** A missing or malformed viewing ID is treated as none: the page is then recorded as before. */
+    /** A missing or malformed viewing ID is none: the request is refused (SDV-DOC-011). */
     private static UUID parseViewingId(String value) {
         if (value == null || value.isBlank()) return null;
         try {

@@ -100,7 +100,7 @@ public class JdbcDocumentActionRepository implements DocumentTagRepository, Role
         if (action != null) { sql.append(" and action=:action"); p.addValue("action", action); }
         if (actorId != null) { sql.append(" and actor_id=:actorId"); p.addValue("actorId", actorId); }
         if (!includeViewEvents) {
-            sql.append(" and action not in ('DOCUMENT_VIEW_OPENED','DOCUMENT_PAGE_VIEWED','DOCUMENT_TEXT_SEARCHED')");
+            sql.append(" and action not in ('DOCUMENT_VIEW_OPENED','DOCUMENT_PAGE_VIEWED','DOCUMENT_PREVIEWED','DOCUMENT_TEXT_SEARCHED')");
         }
         sql.append(" order by occurred_at desc, audit_event_id desc limit :limit");
         return jdbc.query(sql.toString(), p, (rs, row) -> new AuditEvent(

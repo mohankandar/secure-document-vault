@@ -1,5 +1,6 @@
 package com.sdv.platform.application.document;
 
+import com.sdv.platform.application.pdf.EncryptedScratch;
 import com.sdv.platform.application.port.AuditEventPort;
 import com.sdv.platform.application.port.DocumentIntakeRepository;
 import com.sdv.platform.application.port.StorageProvider;
@@ -94,7 +95,7 @@ public class DocumentFinalizationService {
                     UUID.randomUUID(), tenantId, "SOURCE", sourceSubject,
                     "DOCUMENT_AVAILABLE", "DOCUMENT", documentId.toString(), availableAt, correlationId,
                     AuditOutcome.SUCCESS, "{\"submissionId\":\"" + submissionId + "\"}"));
-        } catch (Exception ex) {
+        } catch (Exception | StackOverflowError | OutOfMemoryError ex) {
             String errorCode = classify(ex);
             transactions.executeWithoutResult(status ->
                     documents.markDocumentProcessingFailed(
@@ -126,8 +127,11 @@ public class DocumentFinalizationService {
         }
 
         try (InputStream raw = provider.open(tenantId, volume, storageRef.objectKey());
-             DigestingCountingInputStream encrypted = new DigestingCountingInputStream(raw)) {
-            PlaintextVerifier plaintext = new PlaintextVerifier(document.contentSizeBytes());
+             DigestingCountingInputStream encrypted = new DigestingCountingInputStream(raw);
+             // Task 0063: the decrypted copy for the page count is in encrypted working space, not in memory.
+             EncryptedScratch scratch = new EncryptedScratch(null, 16L * 1024 * 1024, 4L * 1024 * 1024 * 1024);
+             EncryptedScratch.Buffer copy = scratch.createBuffer()) {
+            PlaintextVerifier plaintext = new PlaintextVerifier(document.contentSizeBytes(), copy);
             StreamingCryptoPort.CryptoEnvelope envelope = new StreamingCryptoPort.CryptoEnvelope(
                     cryptoMetadata.cryptoProfile(),
                     cryptoMetadata.cryptoVersion(),
@@ -152,7 +156,8 @@ public class DocumentFinalizationService {
             if (!plaintext.sha256().equals(document.contentSha256())) {
                 throw new IOException("Decrypted document fingerprint does not match committed receipt metadata.");
             }
-            return PdfPageCount.of(plaintext.bytes());
+            copy.seek(0);
+            return PdfPageCount.of(copy, scratch);
         }
     }
 
@@ -168,7 +173,7 @@ public class DocumentFinalizationService {
                 .orElseThrow(() -> new IOException("Configured storage provider is unavailable: " + providerId));
     }
 
-    private static String classify(Exception ex) {
+    private static String classify(Throwable ex) {
         if (ex instanceof SecurityException) return "STORAGE_SECURITY_VALIDATION_FAILED";
         if (ex instanceof IOException) return "DURABLE_OBJECT_VALIDATION_FAILED";
         return "DOCUMENT_FINALIZATION_FAILED";
@@ -218,12 +223,12 @@ public class DocumentFinalizationService {
         private int prefixLength;
         private long count;
         /** The decrypted document, kept for the page count; bounded by its committed size (itself within the PDF limit). */
-        private final java.io.ByteArrayOutputStream kept;
+        private final EncryptedScratch.Buffer kept;
         private final long expectedSize;
 
-        PlaintextVerifier(Long expectedSize) throws IOException {
+        PlaintextVerifier(Long expectedSize, EncryptedScratch.Buffer kept) throws IOException {
             this.expectedSize = expectedSize == null ? 0 : expectedSize;
-            this.kept = new java.io.ByteArrayOutputStream((int) Math.min(Math.max(this.expectedSize, 0), Integer.MAX_VALUE - 8));
+            this.kept = kept;
             try {
                 digest = MessageDigest.getInstance("SHA-256");
             } catch (NoSuchAlgorithmException ex) {
@@ -232,7 +237,7 @@ public class DocumentFinalizationService {
         }
 
         @Override
-        public void write(int b) {
+        public void write(int b) throws IOException {
             byte value = (byte) b;
             if (prefixLength < prefix.length) prefix[prefixLength++] = value;
             digest.update(value);
@@ -241,7 +246,7 @@ public class DocumentFinalizationService {
         }
 
         @Override
-        public void write(byte[] b, int off, int len) {
+        public void write(byte[] b, int off, int len) throws IOException {
             int copy = Math.min(len, prefix.length - prefixLength);
             if (copy > 0) {
                 System.arraycopy(b, off, prefix, prefixLength, copy);
@@ -252,8 +257,6 @@ public class DocumentFinalizationService {
             if (room > 0) kept.write(b, off, (int) Math.min(len, room));
             count += len;
         }
-
-        byte[] bytes() { return kept.toByteArray(); }
 
         void finish() throws IOException {
             if (count == 0 || prefixLength != PDF_MAGIC.length) {

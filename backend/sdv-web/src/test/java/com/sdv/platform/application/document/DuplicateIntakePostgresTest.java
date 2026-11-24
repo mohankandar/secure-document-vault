@@ -87,7 +87,8 @@ class DuplicateIntakePostgresTest {
     private final StreamingCryptoPort crypto = mock(StreamingCryptoPort.class);
     private final DocumentIntakeService service = new DocumentIntakeService(foundation, foundation, intake, intake, placement,
             List.of(storage), crypto, mock(DocumentFinalizationService.class), foundation, new RecordReferences(records), levels,
-            new org.springframework.transaction.support.TransactionTemplate(tx), Clock.fixed(now, ZoneOffset.UTC));
+            new org.springframework.transaction.support.TransactionTemplate(tx), Clock.fixed(now, ZoneOffset.UTC),
+            com.sdv.platform.web.ingestion.TestPdfs.UNCHECKED);
 
     private static String sha(byte[] bytes) {
         try {
