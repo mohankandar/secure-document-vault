@@ -2,7 +2,7 @@
 
 Date: 2026-11-24
 Branch: `plan/remote-testers`
-Outcome: DONE (docs only). Not merged: see "Not done".
+Outcome: DONE (docs only). To be merged through PR #50 once `ci-passed` is green on the final commit: see "CI".
 
 ## What was done
 
@@ -23,6 +23,15 @@ Reading files and searching; web search and reading public provider pages. No bu
 
 ## Tests: none (docs only); CI runs on the pull request
 
+## CI: first run under the new workflow (task 0086)
+
+`release/vero-r7` (with PR #49, merge `091742c`) was merged into this branch as `714b58e`; CI run 45430896307:
+
+- Ran and passed: `changes`, `product-name-guard`, `ci-passed`.
+- Skipped, as `changes` said (only `docs/work/*.md` differs): `backend`, `backend-scale`, `frontend`, `sender-profile-contract`.
+
+So `ci-passed` is green with no build or tests on that run other than the product-name guard. The run before, on `8399855` under the old workflow, passed every job. This report change gets its own CI run before the merge.
+
 ## Files changed
 
 `docs/work/0087-task.md`, `0087-plan.md`, `0087-report.md`.
@@ -36,7 +45,6 @@ Reading files and searching; web search and reading public provider pages. No bu
 
 ## Not done, and why
 
-- **Merge:** the session's permission check refused merging a pull request (PR #49), so this one was not tried. The owner merges it when `ci-passed` is green.
 - Nothing was tried out. Some provider facts could not be confirmed on their own pages (plan section 8).
 
 ## Questions for the owner
