@@ -43,7 +43,7 @@ Set-StrictMode -Version Latest
 $root = $PSScriptRoot
 $container = 'sdv-postgres'
 $db = 'sdv_seed_test'
-$jarPath = Join-Path $root 'backend\sdv-web\target\sdv-web-0.1.0-SNAPSHOT.jar'
+$jarPath = Join-Path $root 'backend\sdv-web\target\local\sdv-web-0.1.0-SNAPSHOT-local.jar'
 $frontend = Join-Path $root 'frontend\sdv-ui'
 $run = Join-Path $root ('.runtime\seed-test\' + (Get-Date -Format 'yyyyMMdd-HHmmss'))
 New-Item -ItemType Directory -Force -Path $run | Out-Null
@@ -75,12 +75,13 @@ try {
     $null = Sql 'postgres' "create database $db owner sdv;"
     Pass "Created scratch database $db"
     $env:SDV_KEY_PROVIDER = 'vault'; $env:SDV_VAULT_BASE_URL = 'http://127.0.0.1:8200'; $env:SDV_VAULT_TOKEN_FILE = $tokenFile
+    $env:SDV_LOCAL_DB_PASSWORD = & (Join-Path $root 'scripts\local\Get-SdvLocalDbPassword.ps1') -Root $root
     try {
         $script:app = Start-Process -FilePath 'java' -PassThru -WindowStyle Hidden -WorkingDirectory $run `
             -ArgumentList @('-jar', "`"$jarPath`"", '--spring.profiles.active=local', "--server.port=$Port", "--spring.datasource.url=jdbc:postgresql://localhost:5433/$db") `
             -RedirectStandardOutput (Join-Path $run 'vero.out.log') -RedirectStandardError (Join-Path $run 'vero.err.log')
     } finally {
-        foreach ($k in 'SDV_KEY_PROVIDER', 'SDV_VAULT_BASE_URL', 'SDV_VAULT_TOKEN_FILE') { Remove-Item "Env:$k" -ErrorAction SilentlyContinue }
+        foreach ($k in 'SDV_KEY_PROVIDER', 'SDV_VAULT_BASE_URL', 'SDV_VAULT_TOKEN_FILE', 'SDV_LOCAL_DB_PASSWORD') { Remove-Item "Env:$k" -ErrorAction SilentlyContinue }
     }
     $watch = [Diagnostics.Stopwatch]::StartNew()
     while ($true) {

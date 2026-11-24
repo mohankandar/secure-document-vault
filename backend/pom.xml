@@ -18,6 +18,7 @@
         <module>sdv-storage</module>
         <module>sdv-crypto</module>
         <module>sdv-audit</module>
+        <module>sdv-local</module>
         <module>sdv-web</module>
         <module>sdv-setup</module>
     </modules>

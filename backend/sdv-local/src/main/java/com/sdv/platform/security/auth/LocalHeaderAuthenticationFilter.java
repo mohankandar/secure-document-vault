@@ -12,19 +12,22 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
-import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
+import java.net.InetAddress;
+import java.net.UnknownHostException;
 import java.util.Arrays;
 import java.util.EnumSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 @Component
 @Profile("local")
 @ConditionalOnProperty(prefix = "sdv.auth", name = "mode", havingValue = "local-header")
-public class LocalHeaderAuthenticationFilter extends OncePerRequestFilter {
+public class LocalHeaderAuthenticationFilter extends LocalSignInFilter {
     public static final String TENANT_HEADER = "X-SDV-Tenant-Id";
     public static final String SUBJECT_HEADER = "X-SDV-Subject";
     public static final String ROLES_HEADER = "X-SDV-Roles";
@@ -60,6 +63,9 @@ public class LocalHeaderAuthenticationFilter extends OncePerRequestFilter {
             "local-platform-operations", "aiko.tanaka@acmelending.com",
             "local-administrator", "ari.lindqvist@acmelending.com");
 
+    /** Task 0064: the names a local Vero is called by. Any other Host is not a request of this computer's own pages. */
+    private static final Set<String> LOCAL_HOSTS = Set.of("localhost", "127.0.0.1", "::1", "[::1]", "0:0:0:0:0:0:0:1", "[0:0:0:0:0:0:0:1]");
+
     private final RoleSeparationGuard separationGuard;
 
     /** Without a reporter, a local sign-in that names conflicting roles is refused (task 0025). */
@@ -82,6 +88,16 @@ public class LocalHeaderAuthenticationFilter extends OncePerRequestFilter {
 
         boolean anyLocalHeader = tenantText != null || subject != null || rolesText != null || sourceText != null;
         if (anyLocalHeader) {
+            // Task 0064: only from this computer, and only under its own names.
+            if (!loopback(request.getRemoteAddr())) {
+                refuse(request, response, "local sign-in is accepted from this computer only");
+                return;
+            }
+            String host = request.getServerName();
+            if (host == null || !LOCAL_HOSTS.contains(host.toLowerCase(Locale.ROOT))) {
+                refuse(request, response, "the Host must be localhost or 127.0.0.1");
+                return;
+            }
             if (tenantText == null || subject == null || subject.isBlank()) {
                 refuse(request, response, TENANT_HEADER + " and " + SUBJECT_HEADER + " are required");
                 return;
@@ -144,6 +160,16 @@ public class LocalHeaderAuthenticationFilter extends OncePerRequestFilter {
                 SignInAnswer.LOCAL_HEADERS_PREFIX + which + ".", which);
         answer.attachTo(request);
         response.sendError(answer.status(), answer.code().code());
+    }
+
+    /** An address, never a name: a name would be looked up. */
+    private static boolean loopback(String address) {
+        if (address == null || !address.matches("[0-9a-fA-F:.]+(%.*)?")) return false;
+        try {
+            return InetAddress.getByName(address).isLoopbackAddress();
+        } catch (UnknownHostException ex) {
+            return false;
+        }
     }
 
     private static UUID uuid(String value, String header) {

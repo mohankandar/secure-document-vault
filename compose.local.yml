@@ -5,9 +5,10 @@ services:
     environment:
       POSTGRES_DB: sdv
       POSTGRES_USER: sdv
-      POSTGRES_PASSWORD: sdv_local_only
+      # Task 0064: never in git; the local start scripts set it (scripts/local/Get-SdvLocalDbPassword.ps1).
+      POSTGRES_PASSWORD: ${SDV_LOCAL_DB_PASSWORD:?Start with Start-SDV-Local.ps1, which sets it}
     ports:
-      - "5433:5432"
+      - "127.0.0.1:5433:5432"
     volumes:
       - sdv-postgres-data:/var/lib/postgresql/data
     healthcheck:
@@ -23,11 +24,9 @@ services:
     container_name: sdv-vault
     cap_add:
       - IPC_LOCK
-    environment:
-      VAULT_DEV_ROOT_TOKEN_ID: sdv-local-root
-    command: ["server", "-dev", "-dev-root-token-id=sdv-local-root", "-dev-listen-address=0.0.0.0:8200"]
+    command: ["server", "-dev", "-dev-listen-address=0.0.0.0:8200"]
     ports:
-      - "8200:8200"
+      - "127.0.0.1:8200:8200"
 
 volumes:
   sdv-postgres-data:

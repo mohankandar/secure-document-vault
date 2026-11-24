@@ -74,6 +74,15 @@ class SwitchedOffCheckTest {
         assertTrue(logs.list.isEmpty());
     }
 
+    /** Task 0064. */
+    @Test
+    void aReleaseRefusesTheLocalProfile() {
+        StartupFailure f = assertThrows(StartupFailure.class, () -> SwitchedOffCheck.local(true, false));
+        assertEquals(SdvErrorCode.SYS_005, f.errorCode());
+        assertTrue(SwitchedOffCheck.local(true, true));
+        assertFalse(SwitchedOffCheck.local(false, false));
+    }
+
     @Test
     void theDefaultsAreDisabledAndOnlyTheLocalProfileIsLocal() {
         MockEnvironment packaged = new MockEnvironment();
