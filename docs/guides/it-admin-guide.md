@@ -16,7 +16,13 @@ also your own token. It changes nothing. A failure shows a code such as `IDN_TES
 
 - People's roles come from their groups. After a group change, a person keeps what their token says until it ends; a
   changed role mapping takes effect within about a minute.
-- The browser sign-in screen is a task of its own and not in this version.
+- **In the browser:** people go to your login system and come back. Vero keeps nothing of it in the browser's storage, so a
+  reload or a new tab passes through the login system again, usually without a question. How long people stay signed in is
+  your login system's setting (its session and token lifetimes); Vero accepts tokens of at most 2 hours.
+- Signing out ends Vero in all tabs and goes to the login system's sign-out, when it has one.
+- What to set up there, and the headers of the web server: the runbook, "Sign-in in the browser".
+- `SDV-AUT-014`: not set up. `SDV-AUT-015`: can't be reached (after the login page: the web origin is missing there).
+  `SDV-AUT-016`: the person waited too long or used Back; start again. `SDV-AUT-017`: the login system refused; look in its log.
 
 ## Sending systems (Integrations)
 
@@ -79,6 +85,8 @@ Before this version in particular:
 - `SDV_STORAGE_ALLOWED_ROOTS`, if new volumes will be outside `data`. Existing volumes stay usable.
 - `SDV_PDF_ACCEPT`, for systems that send protected PDFs or PDFs with active content.
 - People who hold Business Admin with Document Steward, or IT Admin with a document role: those roles are now withheld.
+- `SDV_AUTH_JWT_MAX_TOKEN_LIFETIME_SECONDS=0` is refused; tokens, also sending systems', live at most 2 hours by default and need
+  an issue time. Tokens with `nonce` or `at_hash` are refused.
 - The release jar has no local profile and refuses to start with one.
 
 Licensing is not live.

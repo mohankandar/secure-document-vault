@@ -255,7 +255,7 @@ final class SignInTestKit {
     @Import(SecurityConfiguration.class)
     static class JwtStack {
         @Bean JwtDecoder enterpriseJwtDecoder(@Value("${test.jwks}") String jwks) {
-            return new OidcJwtConfiguration().enterpriseJwtDecoder(ISSUER, jwks, AUDIENCE, 0);
+            return new OidcJwtConfiguration().enterpriseJwtDecoder(ISSUER, jwks, AUDIENCE, 7200);
         }
 
         @Bean OidcJwtAuthenticationConverter converter() {

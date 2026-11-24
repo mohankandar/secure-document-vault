@@ -121,7 +121,12 @@ class SignInChainTest {
     void aPersonsTokenThroughABoundClientIsNotASendingSystem() throws Exception {
         assertEquals(200, withToken("/api/v1/ingestion/submissions", true, sign(KEY, sendingSystem())).status());
         assertEquals(200, withToken("/api/v1/ingestion/submissions", true, sign(KEY, sendingSystem().claim("acr", "1").claim("idtyp", "app"))).status());
-        for (String claim : List.of("sid", "auth_time", "nonce", "at_hash", "c_hash", "s_hash", "amr", "_claim_names", "hasgroups")) {
+        // Task 0065 (VSEC-11): an ID token's marks are refused for everyone, before anything else is looked at.
+        for (String claim : List.of("nonce", "at_hash", "c_hash")) {
+            body(withToken("/api/v1/ingestion/submissions", true, sign(KEY, sendingSystem().claim(claim, "x"))), 401, "SDV-AUT-003",
+                    "Please sign in again.");
+        }
+        for (String claim : List.of("sid", "auth_time", "s_hash", "amr", "_claim_names", "hasgroups")) {
             body(withToken("/api/v1/ingestion/submissions", true, sign(KEY, sendingSystem().claim(claim, "x"))), 401, "SDV-AUT-005",
                     "Your sign-in is missing details Vero needs. Your IT team can fix this.");
         }

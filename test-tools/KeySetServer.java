@@ -77,7 +77,7 @@ public final class KeySetServer {
         long now = Instant.now().getEpochSecond();
         String header = "{\"alg\":\"RS256\",\"typ\":\"JWT\",\"kid\":\"" + KEY_ID + "\"}";
         String payload = "{\"iss\":\"" + issuer + "\",\"aud\":\"" + audience + "\",\"sub\":\"clean-install-person\",\"iat\":"
-                + (now - 5) + ",\"exp\":" + (now + 7200) + ",\"groups\":[\"vero-users\"]}";
+                + (now - 5) + ",\"exp\":" + (now + 3600) + ",\"groups\":[\"vero-users\"]}";
         String signingInput = URL.encodeToString(header.getBytes(StandardCharsets.UTF_8)) + "."
                 + URL.encodeToString(payload.getBytes(StandardCharsets.UTF_8));
         Signature rs256 = Signature.getInstance("SHA256withRSA");

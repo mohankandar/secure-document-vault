@@ -102,6 +102,10 @@ public final class SignInAnswers {
         }
         String text = all.toString().toLowerCase(Locale.ROOT);
         if (text.contains("lifetime")) return "lifetime longer than Vero allows";
+        // Task 0065 (AccessTokenShapeValidator).
+        if (text.contains("id token")) return "an ID token, not an access token";
+        if (text.contains("token type")) return "token type";
+        if (text.contains("no end time") || text.contains("no issue time") || text.contains("in the future")) return "token times";
         if (text.contains("audience")) return "audience";
         if (text.contains("expired")) return "expired";
         if (text.contains("used before")) return "not yet valid";

@@ -88,6 +88,16 @@ class SignInBaselineTest {
         return jwt.serialize();
     }
 
+    /** Task 0065 (VSEC-11), through the real decoder: Spring would make up a missing issue time. */
+    @Test
+    void aTokenNeedsBothItsTimesAndNoIdTokenMarks() throws Exception {
+        assertEquals("200", withToken(sign(KEY, person("subject", List.of("vero-users")))));
+        assertEquals("401 SDV-AUT-003", withToken(sign(KEY, person("subject", List.of("vero-users")).issueTime(null))));
+        assertEquals("401 SDV-AUT-003", withToken(sign(KEY, person("subject", List.of("vero-users")).expirationTime(null))));
+        assertEquals("401 SDV-AUT-003", withToken(sign(KEY, person("subject", List.of("vero-users")).claim("nonce", "x"))));
+        assertEquals("401 SDV-AUT-003", withToken(sign(KEY, person("subject", List.of("vero-users")).expirationTime(new java.util.Date(System.currentTimeMillis() + 3 * 3_600_000)))));
+    }
+
     @Test
     void theTokenTypesThatSignIn() throws Exception {
         Map<String, String> seen = new LinkedHashMap<>();
@@ -95,8 +105,9 @@ class SignInBaselineTest {
             seen.put(String.valueOf(typ), withToken(typed(typ)));
         }
         Map<String, String> expected = new LinkedHashMap<>();
-        for (String accepted : List.of("null", "JWT", "jwt")) expected.put(accepted, "200");
-        for (String refused : List.of("at+jwt", "application/at+jwt", "logout+jwt", "dpop+jwt", "nonsense")) {
+        // Task 0065 (VSEC-11): at+jwt is an access token's type (RFC 9068), accepted since.
+        for (String accepted : List.of("null", "JWT", "jwt", "at+jwt", "application/at+jwt")) expected.put(accepted, "200");
+        for (String refused : List.of("logout+jwt", "dpop+jwt", "nonsense")) {
             expected.put(refused, "401 SDV-AUT-003");
         }
         assertEquals(expected, seen);

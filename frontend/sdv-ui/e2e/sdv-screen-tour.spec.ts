@@ -2517,6 +2517,89 @@ test.describe('SDV role-based screen capture', () => {
     await expect(page.getByRole('navigation', { name: 'Record documents' })).toContainText('redacted', { timeout: 15000 })
   })
 
+  // Task 0065: the real sign-in flow of the browser, against a login system this test plays. Vero itself runs with the
+  // local test sign-in here, so each API request's bearer token is checked and replaced on its way.
+  test('Sign-in in the browser: first start, refused, entity switch, ended, signed out (task 0065)', async ({ page }, testInfo) => {
+    test.skip(!isDesktop(testInfo), 'Runs once per tour (desktop only).')
+    const LOGIN = 'https://login.vero.test'
+    let signIns = 0, refuse = false, apiEnded = false, outs = 0
+    const tokens = new Set<string>()
+    await page.addInitScript(() => { window.sessionStorage.setItem('sdv.dev.security-mode', 'OIDC') })
+    await page.route('**/api/v1/**', (route) => {
+      const headers = { ...route.request().headers() }
+      const bearer = (headers['authorization'] ?? '').replace('Bearer ', '')
+      if (apiEnded || !tokens.has(bearer)) return route.fulfill({ status: 401, json: { code: 'SDV-AUT-003', message: 'x', reference: 'tour-0065' } })
+      const entity = headers['x-sdv-entity-id'] ?? 'bd960ee9-9d54-5053-9958-92aaa54893a6'
+      delete headers['authorization']
+      return route.continue({ headers: { ...headers, 'x-sdv-tenant-id': entity, 'x-sdv-subject': 'local-business-user', 'x-sdv-roles': 'BUSINESS_USER' } })
+    })
+    await page.route('**/api/v1/session/sign-in', (route) => route.fulfill({ json: { mode: 'oidc', issuer: LOGIN, provider: 'tour', clientId: 'vero-web', scope: 'openid profile',
+      authorizationEndpoint: LOGIN + '/auth', tokenEndpoint: LOGIN + '/token', endSessionEndpoint: LOGIN + '/out', revocationEndpoint: null } }))
+    await page.route(LOGIN + '/**', async (route) => {
+      const url = new URL(route.request().url())
+      if (url.pathname === '/auth') {
+        expect(url.searchParams.get('code_challenge_method')).toBe('S256')
+        expect(url.searchParams.has('nonce')).toBe(false)
+        const back = new URL(url.searchParams.get('redirect_uri')!)
+        back.searchParams.set('state', url.searchParams.get('state')!)
+        if (refuse) back.searchParams.set('error', 'access_denied'); else back.searchParams.set('code', 'tour-code')
+        return route.fulfill({ status: 302, headers: { location: back.toString() } })
+      }
+      if (url.pathname === '/token') {
+        expect(new URLSearchParams(route.request().postData() ?? '').get('code_verifier')).toBeTruthy()
+        signIns += 1; tokens.add('tour-' + signIns)
+        return route.fulfill({ headers: { 'access-control-allow-origin': '*' }, json: { access_token: 'tour-' + signIns, token_type: 'Bearer', expires_in: 300, id_token: 'never-used' } })
+      }
+      outs += 1
+      expect(url.searchParams.has('id_token_hint')).toBe(false)
+      return route.fulfill({ status: 302, headers: { location: url.searchParams.get('post_logout_redirect_uri')! } })
+    })
+
+    // 1. Refused by the login system: one page, its own words, no loop.
+    refuse = true
+    await page.goto('about:blank') // a hash change alone would not load the page again
+    await page.goto('/#/workspace/search')
+    await expect(page.getByRole('heading', { name: 'Your company sign-in refused' })).toBeVisible({ timeout: 15000 })
+    await expect(page.getByRole('alert')).toContainText('SDV-AUT-017')
+    await capture(page, testInfo, 'sign-in-refused')
+    // 2. Signing in lands on the page the person was on; no token is stored and no code is in the address.
+    refuse = false
+    await page.getByRole('button', { name: /^Sign in to / }).click()
+    await expect(accountButton(page)).toHaveAttribute('aria-label', /Maya Okafor/, { timeout: 15000 })
+    expect(new URL(page.url()).search).toBe('')
+    expect(await page.evaluate(() => JSON.stringify([{ ...window.sessionStorage }, { ...window.localStorage }]))).not.toMatch(/tour-1|never-used|tour-code/)
+    expect(signIns).toBe(1)
+    // 3. Another entity without signing in again: the app starts again in it, and nothing of the first stays.
+    let menu = await openAccountMenu(page)
+    const other = menu.getByRole('radiogroup', { name: 'Entity' }).getByRole('radio', { checked: false }).first()
+    const name = (await other.innerText()).trim()
+    await other.click()
+    await expect(accountButton(page)).toContainText(name, { timeout: 15000 })
+    expect(signIns).toBe(1)
+    menu = await openAccountMenu(page)
+    await menu.getByRole('radiogroup', { name: 'Entity' }).getByRole('radio', { checked: false }).first().click()
+    await expect(accountButton(page)).not.toContainText(name, { timeout: 15000 })
+    // 4. The sign-in ends: the page stays under the notice; signing in again comes back.
+    apiEnded = true
+    await page.evaluate(() => { window.location.hash = '#/home/home' })
+    await page.getByRole('button', { name: 'Go to page or record' }).click().catch(() => undefined)
+    await page.evaluate(() => { window.location.hash = '#/workspace/search' })
+    const ended = page.getByRole('alertdialog', { name: 'Your sign-in has ended' })
+    await expect(ended).toBeVisible({ timeout: 15000 })
+    await capture(page, testInfo, 'sign-in-ended')
+    apiEnded = false
+    await ended.getByRole('button', { name: 'Sign in again' }).click()
+    await expect(accountButton(page)).toHaveAttribute('aria-label', /Maya Okafor/, { timeout: 15000 })
+    expect(signIns).toBe(2)
+    // 5. Sign out: to the login system without an ID token, and no sign-in by itself afterwards.
+    menu = await openAccountMenu(page)
+    await menu.getByRole('button', { name: 'Sign out' }).click()
+    await expect(page.getByRole('heading', { name: /^You are signed out of / })).toBeVisible({ timeout: 15000 })
+    expect(outs).toBe(1)
+    expect(signIns).toBe(2)
+    await capture(page, testInfo, 'signed-out')
+  })
+
   test('Home empty states', async ({ page }, testInfo) => {
     // Serve empty lists so the empty states can be seen whatever the local data holds.
     await page.route('**/api/v1/business/me/recent-records**', (route) => route.fulfill({ json: { records: [] } }))

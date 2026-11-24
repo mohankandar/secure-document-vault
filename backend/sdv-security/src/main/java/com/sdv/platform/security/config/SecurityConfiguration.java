@@ -48,7 +48,7 @@ public class SecurityConfiguration {
                         .authenticationEntryPoint(entryPoint)
                         .accessDeniedHandler(SignInAnswers.accessDeniedHandler()))
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/actuator/health", "/actuator/health/liveness", "/actuator/health/readiness", "/actuator/info", "/api/v1/system/info", "/error").permitAll()
+                        .requestMatchers("/actuator/health", "/actuator/health/liveness", "/actuator/health/readiness", "/actuator/info", "/api/v1/system/info", "/api/v1/session/sign-in", "/error").permitAll()
                         .anyRequest().authenticated())
                 .httpBasic(httpBasic -> httpBasic.disable())
                 .formLogin(form -> form.disable())

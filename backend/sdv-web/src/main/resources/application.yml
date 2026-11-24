@@ -83,12 +83,14 @@ sdv:
     # Production defaults fail closed. Local acceptance explicitly switches to local-header in application-local.yml.
     # Enterprise deployments set SDV_AUTH_MODE=enterprise-jwt and configure issuer/JWKS/audience below.
     mode: ${SDV_AUTH_MODE:disabled}
+    # Task 0065: what the browser asks the login system for.
+    browser-scope: ${SDV_AUTH_BROWSER_SCOPE:openid profile email}
     jwt:
       issuer: ${SDV_AUTH_JWT_ISSUER:}
       jwk-set-uri: ${SDV_AUTH_JWT_JWK_SET_URI:}
       audience: ${SDV_AUTH_JWT_AUDIENCE:}
-      # Optional defense-in-depth. 0 disables the maximum token-lifetime check.
-      max-token-lifetime-seconds: ${SDV_AUTH_JWT_MAX_TOKEN_LIFETIME_SECONDS:0}
+      # Task 0065: the longest life of a token Vero accepts, 1 to 86400 seconds.
+      max-token-lifetime-seconds: ${SDV_AUTH_JWT_MAX_TOKEN_LIFETIME_SECONDS:7200}
       # Task 0041: who may sign in, with which role in which entity, and which client may send for which entity and
       # source, come from platform-core's idn_ tables (loaded by the setup command). The provider ID is the sign-in
       # file's "providerId"; with the issuer and the audience it finds the customer's login connection.
