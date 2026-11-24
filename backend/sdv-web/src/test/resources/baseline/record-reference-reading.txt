@@ -1,0 +1,10 @@
+{"s":"ID","u":"ID"} -> read
+{"s":"ID","u":"ID"}  -> read
+{"s":"ID","u":"ID"} trailing -> read
+{"s":"ID","u":"ID"}{} -> read
+{"s":"ID","u":"ID","more":1} -> read
+{"s":"ID","u":"ID","u":"ID"} -> read
+[] -> refused BadRequest
+null -> refused BadRequest
+ -> refused BadRequest
+x -> refused BadRequest

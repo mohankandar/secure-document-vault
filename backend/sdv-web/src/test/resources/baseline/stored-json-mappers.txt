@@ -1,0 +1,1 @@
+{"zebra":"a/b \"quoted\" back\\slash <tag> & 'single'","alpha":"line\nfeed\ttab\u0001 ","names":"Zoë 日本 😀","int":42,"long":9000000000,"double":1.0,"small":1.0E-7,"big":1.0E10,"decimal":10.500,"flag":true,"none":null,"level":"HIGHLY_CONFIDENTIAL","id":"22222222-2222-4222-8222-222222222222","list":["b","a"],"inner":{"y":1,"x":2},"empty":{}}

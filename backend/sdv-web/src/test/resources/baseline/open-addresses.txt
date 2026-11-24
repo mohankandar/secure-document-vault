@@ -1,0 +1,40 @@
+/actuator/health -> open
+/actuator/health/liveness -> open
+/actuator/health/readiness -> open
+/actuator/info -> open
+/api/v1/system/info -> open
+/error -> open
+/ -> 401
+/actuator -> 401
+/actuator/ -> 401
+/actuator/env -> 401
+/actuator/health/ -> 401
+/actuator/health/readiness/ -> 401
+/actuator/health/other -> 401
+/actuator/health/readiness/databaseSchema -> 401
+/actuator/health.json -> 401
+/Actuator/health -> 401
+/actuator/HEALTH -> 401
+/actuator/%68ealth -> open
+/actuator/info/ -> 401
+/actuator/info/build -> 401
+/api/v1/system -> 401
+/api/v1/system/info/ -> 401
+/api/v1/system/info/x -> 401
+/api/v1/system/informal -> 401
+/error/ -> 401
+/errors -> 401
+/api/v1/session -> 401
+/api/v1/session/ -> 401
+//actuator/health -> 400
+/actuator/health;x=y -> 400
+/actuator/../api/v1/session -> 400
+/actuator/health/%2e%2e/env -> 400
+/actuator%2Fhealth -> 400
+/actuator/health%00 -> 400
+POST /actuator/health -> open
+POST /api/v1/session -> 401
+TRACE /actuator/health -> 400
+TRACE /api/v1/session -> 400
+OPTIONS /actuator/health -> open
+OPTIONS /api/v1/session -> 401
