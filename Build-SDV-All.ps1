@@ -1,5 +1,11 @@
 [CmdletBinding()]
-param()
+param(
+    # Task 0086: test only the backend modules this branch changes (against -Base), the modules they need and the
+    # modules that use them, and build the frontend only if it changed. Maven runs in parallel (-T 1C), tests only: no
+    # jar. Not a replacement for the full build; anything it can't place in a module runs the full build instead.
+    [switch]$Quick,
+    [string]$Base = 'origin/release/vero-r7'
+)
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
@@ -18,6 +24,31 @@ function Invoke-Step {
     if ($LASTEXITCODE -ne 0) {
         throw "$Name failed with exit code $LASTEXITCODE."
     }
+}
+
+# What -Quick covers, or $null when only the full build will do.
+function Get-QuickPlan {
+    $mergeBase = & git -C $Root merge-base $Base HEAD
+    if ($LASTEXITCODE -ne 0) { return $null }
+    $paths = @(& git -C $Root -c core.quotePath=false diff --no-renames --name-only $mergeBase)
+    if ($LASTEXITCODE -ne 0) { return $null }
+    $paths += @(& git -C $Root -c core.quotePath=false ls-files --others --exclude-standard)
+    if ($LASTEXITCODE -ne 0) { return $null }
+
+    [xml]$pom = Get-Content -LiteralPath (Join-Path $Backend 'pom.xml') -Raw
+    $known = @($pom.project.modules.module)
+    $modules = @{}
+    $frontendChanged = $false
+    foreach ($path in $paths) {
+        if ($path -match '^backend/([^/]+)/' -and $known -contains $Matches[1]) { $modules[$Matches[1]] = $true }
+        elseif ($path -like 'frontend/*') { $frontendChanged = $true }
+        elseif ($path -match '^docs/work/[^/]+\.md$') { }
+        else {
+            Write-Host "Not in one module: $path"
+            return $null
+        }
+    }
+    return [pscustomobject]@{ Modules = @($modules.Keys | Sort-Object); Frontend = $frontendChanged }
 }
 
 Write-Host "Vero build - identity on platform-core (task 0041) / migration 035"
@@ -44,11 +75,36 @@ if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
 Write-Host 'Identity: platform-core released modules com.documentplatform.platform:platform-identity-* (platform-bom, see backend/pom.xml)'
 Write-Host 'Maven reads them from GitHub Packages (server github-platform-core, token in GITHUB_PACKAGES_TOKEN; docs/install/PLATFORM_PACKAGES.md).'
 
-Push-Location $Backend
-try {
-    Invoke-Step 'Backend Maven reactor build' { & mvn clean verify }
-} finally {
-    Pop-Location
+$plan = $null
+if ($Quick) {
+    $plan = Get-QuickPlan
+    if ($null -eq $plan) { Write-Host 'Quick build: not possible for these changes, running the full build.' }
+}
+
+if ($null -eq $plan) {
+    Push-Location $Backend
+    try {
+        Invoke-Step 'Backend Maven reactor build' { & mvn clean verify }
+    } finally {
+        Pop-Location
+    }
+} elseif ($plan.Modules.Count -gt 0) {
+    Push-Location $Backend
+    try {
+        $list = $plan.Modules -join ','
+        Invoke-Step "Backend tests: $list, what they need and what uses them" { & mvn -T 1C -pl $list -am -amd test }
+    } finally {
+        Pop-Location
+    }
+} else {
+    Write-Host 'Quick build: no backend module changed.'
+}
+
+if ($null -ne $plan -and -not $plan.Frontend) {
+    Write-Host 'Quick build: the frontend did not change.'
+    Write-Host ""
+    Write-Host "QUICK BUILD SUCCESS (changed modules only, no jar; run the full build before a release)"
+    return
 }
 
 Push-Location $Frontend
@@ -68,6 +124,10 @@ try {
 }
 
 Write-Host ""
+if ($null -ne $plan) {
+    Write-Host "QUICK BUILD SUCCESS (changed modules only, no jar; run the full build before a release)"
+    return
+}
 Write-Host "BUILD SUCCESS"
 Write-Host "Backend jar: backend\sdv-web\target\sdv-web-0.1.0-SNAPSHOT.jar"
 Write-Host "Frontend dist: frontend\sdv-ui\dist"
