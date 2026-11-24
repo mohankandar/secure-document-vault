@@ -349,6 +349,7 @@ section 5; those with a section of their own above are not repeated.
 | `SDV_AUTH_JWT_USERNAME_CLAIM`, `..._EMAIL_CLAIM`, `..._DISPLAY_NAME_CLAIM` | `preferred_username`, `email`, `name` | Display only |
 | `SDV_AUTH_JWT_ENTITY_CLAIM`, `..._SOURCE_ID_CLAIM`, `..._SOURCE_KEY_CLAIM` | `sdv_entity_id`, `sdv_source_id`, `sdv_source_key` | Optional claims of a sending system's token; when there, they must match its binding |
 | `SDV_TENANT_STATUS_CACHE_SECONDS` | `30` | How soon a suspended entity is refused, 0 to 60 |
+| `SDV_INTAKE_REQUESTS_PER_MINUTE` | `6000` | Intake requests a minute from one sending system, for each Vero process, 60 to 1,000,000. Above it: `SDV-SYS-018` with `Retry-After` |
 | `SDV_RETENTION_DAILY_AT` | `02:00` | The daily cleanup, HH:mm in the server's time zone |
 | `SDV_RETENTION_CRON` | empty | For check scripts only. Leave empty |
 | `SDV_DEFAULT_TIME_ZONE` | `UTC` | The zone an entity's days are counted in when it has none; an unknown name stops the start |

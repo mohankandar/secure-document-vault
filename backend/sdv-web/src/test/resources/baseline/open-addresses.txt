@@ -2,7 +2,7 @@
 /actuator/health/liveness -> open
 /actuator/health/readiness -> open
 /actuator/info -> open
-/api/v1/system/info -> open
+/api/v1/system/info -> 401
 /error -> open
 / -> 401
 /actuator -> 401

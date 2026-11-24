@@ -69,7 +69,7 @@ guides; exceptions only in `backend/sdv-web/src/test/resources/product-name-guar
 Expected endpoints:
 
 - Backend health: `http://localhost:8280/actuator/health`
-- System info: `http://localhost:8280/api/v1/system/info`
+- System info (needs sign-in since task 0071): `http://localhost:8280/api/v1/system/info`
 - Frontend: `http://localhost:5183`
 
 Stop with:

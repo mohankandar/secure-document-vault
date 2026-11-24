@@ -25,6 +25,14 @@ public interface PageViewAuditPort {
     }
 
     /**
+     * Task 0071: true when {@code printId} is this person's DOCUMENT_PRINTED event for this document, made with an approval
+     * (it names its request), at or after {@code notBefore}.
+     */
+    default boolean isApprovedPrint(UUID tenantId, String actorId, UUID documentId, UUID printId, Instant notBefore) {
+        return false;
+    }
+
+    /**
      * Appends {@code pageEvent} unless a DOCUMENT_PAGE_VIEWED event for the same viewing and page already exists
      * (at or after {@code notBefore}). Atomic per viewing and page. Returns true when the event was written.
      */

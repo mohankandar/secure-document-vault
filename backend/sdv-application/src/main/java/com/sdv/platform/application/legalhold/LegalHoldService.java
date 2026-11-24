@@ -39,7 +39,7 @@ import java.util.UUID;
  * event. The hold's reason is not copied into the audit (it is free text, kept in legal_holds).
  */
 @Service
-public class LegalHoldService {
+public class LegalHoldService implements com.sdv.platform.application.approvals.HoldReleases {
     public static final String PLACED_ACTION = "LEGAL_HOLD_PLACED";
     public static final String RELEASED_ACTION = "LEGAL_HOLD_RELEASED";
     /** Task 0037: a release refused because the hold was already released (SDV-HLD-008). */
@@ -141,8 +141,34 @@ public class LegalHoldService {
         }
     }
 
+    // ---- Task 0071: a release is a request that another Business Admin decides (AccessRequestService) ----
+
+    @Override
+    public Held requireInPlace(UUID tenantId, String holdReference) {
+        UUID holdId = parse(holdReference, SdvErrorCode.HLD_007, NO_HOLD);
+        LegalHold hold = holds.lockHold(tenantId, holdId)
+                .orElseThrow(() -> new CodedRefusal.NotFound(SdvErrorCode.HLD_007, NO_HOLD));
+        if (!hold.active()) throw new CodedRefusal.Conflict(SdvErrorCode.HLD_008, "This legal hold was already released.");
+        return new Held(hold.holdId(), hold.documentId(), hold.placedBy());
+    }
+
+    @Override
+    public void releaseApproved(UUID tenantId, UUID holdId, UUID accessRequestId, String requestedBy, String actorId, String actorName,
+                                Instant at, String correlationId) {
+        Map<String, Object> extra = new LinkedHashMap<>();
+        extra.put("accessRequestId", accessRequestId.toString());
+        extra.put("requestedBy", requestedBy);
+        releaseLocked(tenantId, actorId, actorName, holdId, at, correlationId, new AtomicReference<>(), extra);
+    }
+
     private LegalHoldView releaseLocked(UUID tenantId, String actorId, String actorDisplayName, UUID holdId, Instant now,
                                         String correlationId, AtomicReference<UUID> heldDocument) {
+        return releaseLocked(tenantId, actorId, actorDisplayName, holdId, now, correlationId, heldDocument, Map.of());
+    }
+
+    private LegalHoldView releaseLocked(UUID tenantId, String actorId, String actorDisplayName, UUID holdId, Instant now,
+                                        String correlationId, AtomicReference<UUID> heldDocument,
+                                        Map<String, Object> extra) {
         LegalHold hold = holds.lockHold(tenantId, holdId)
                 .orElseThrow(() -> new CodedRefusal.NotFound(SdvErrorCode.HLD_007, NO_HOLD));
         heldDocument.set(hold.documentId());
@@ -157,6 +183,7 @@ public class LegalHoldService {
         Map<String, Object> details = new LinkedHashMap<>();
         details.put("holdId", holdId.toString());
         details.put("placedAt", hold.placedAt().toString());
+        details.putAll(extra);
         append(tenantId, actorId, actorDisplayName, RELEASED_ACTION, hold.documentId(), releasedAt, correlationId, details);
         LegalHold released = new LegalHold(hold.holdId(), hold.tenantId(), hold.documentId(), hold.reason(),
                 hold.placedBy(), hold.placedByName(), hold.placedAt(), actorId, name(actorDisplayName), releasedAt);

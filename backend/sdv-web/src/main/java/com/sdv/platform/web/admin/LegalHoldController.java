@@ -1,5 +1,6 @@
 package com.sdv.platform.web.admin;
 
+import com.sdv.platform.application.approvals.AccessRequestService;
 import com.sdv.platform.application.legalhold.LegalHoldService;
 import com.sdv.platform.domain.error.CodedRefusal;
 import com.sdv.platform.domain.error.SdvErrorCode;
@@ -29,7 +30,9 @@ import java.util.List;
  *   <li>{@code GET /documents?identifier=…}: the documents of the record with this primary identifier;</li>
  *   <li>{@code GET}: holds in place;</li>
  *   <li>{@code POST} with {@code documentId} and {@code reason}: place a hold (201);</li>
- *   <li>{@code POST /{holdId}/release}: release it (the hold stays as history).</li>
+ *   <li>{@code POST /{holdId}/release} with {@code reason}: ask for its release (202, task 0071); another Business Admin
+ *       decides it in Approvals; the hold stays as history;</li>
+ *   <li>{@code GET /release-requests}: releases that wait.</li>
  * </ul>
  * References are taken as text, so a malformed one gets its coded 404 like an unknown one.
  */
@@ -41,8 +44,11 @@ public class LegalHoldController {
     private final SecurityContextFacade security;
     private final AuthorizationService authorization;
     private final LegalHoldService holds;
+    private final AccessRequestService requests;
 
-    public LegalHoldController(SecurityContextFacade security, AuthorizationService authorization, LegalHoldService holds) {
+    public LegalHoldController(SecurityContextFacade security, AuthorizationService authorization, LegalHoldService holds,
+                               AccessRequestService requests) {
+        this.requests = requests;
         this.security = security;
         this.authorization = authorization;
         this.holds = holds;
@@ -69,10 +75,18 @@ public class LegalHoldController {
     }
 
     @PostMapping("/{holdId}/release")
-    public ResponseEntity<LegalHoldService.LegalHoldView> release(@PathVariable String holdId) {
+    public ResponseEntity<AccessRequestService.RequestView> release(@PathVariable String holdId,
+                                                                    @RequestBody(required = false) ReleaseRequest request) {
         SdvPrincipal principal = requireHoldManager();
-        return noStore(HttpStatus.OK, holds.release(principal.tenantId(), principal.subject(), principal.displayName(),
-                holdId, MDC.get("correlationId")));
+        return noStore(HttpStatus.ACCEPTED, requests.requestHoldRelease(principal.tenantId(), principal.subject(), principal.displayName(),
+                holdId, request == null ? null : request.reason(), MDC.get("correlationId")));
+    }
+
+    /** Task 0071: the holds whose release waits for another Business Admin. */
+    @GetMapping("/release-requests")
+    public ResponseEntity<List<com.sdv.platform.application.port.AccessRequestRepository.HoldReleaseWaiting>> releaseRequests() {
+        SdvPrincipal principal = requireHoldManager();
+        return noStore(HttpStatus.OK, requests.holdReleasesWaiting(principal.tenantId(), MDC.get("correlationId")));
     }
 
     private SdvPrincipal requireHoldManager() {
@@ -89,5 +103,6 @@ public class LegalHoldController {
         return ResponseEntity.status(status).cacheControl(CacheControl.noStore().cachePrivate().mustRevalidate()).body(body);
     }
 
+    public record ReleaseRequest(String reason) { }
     public record PlaceRequest(String documentId, String reason) { }
 }

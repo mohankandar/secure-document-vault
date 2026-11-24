@@ -27,6 +27,11 @@ public class SessionNamedPageViewAuditPort implements PageViewAuditPort {
     }
 
     @Override
+    public boolean isApprovedPrint(UUID tenantId, String actorId, UUID documentId, UUID printId, Instant notBefore) {
+        return store.isApprovedPrint(tenantId, actorId, documentId, printId, notBefore);
+    }
+
+    @Override
     public boolean isSealedViewing(UUID tenantId, String actorId, UUID documentId, UUID sealedId, UUID viewingId, Instant notBefore) {
         return store.isSealedViewing(tenantId, actorId, documentId, sealedId, viewingId, notBefore);
     }

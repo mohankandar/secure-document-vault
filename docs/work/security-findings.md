@@ -15,7 +15,7 @@ above one's level.
 | ID | In plain terms | Status |
 |---|---|---|
 | VSEC-1 | How a sending system's own token is told from a person's | Fixed, PR #34 |
-| VSEC-2 | Permanent redaction of a document on legal hold needs no second approval | **Open**: task 0066 |
+| VSEC-2 | Permanent redaction of a document on legal hold needs no second approval | Fixed, PR #39 |
 | VSEC-3 | Reading through the API and the exposure and activity reports | Fixed, PR #36 |
 | VSEC-4 | Limits on the work of showing and checking PDFs | Fixed, PR #36 (a load test is in report 0063; drawing in a separate process was not done) |
 | VSEC-5 | Size limit on request bodies | Fixed, PR #34 |
@@ -29,24 +29,25 @@ above one's level.
 
 | ID | Topic | Status |
 |---|---|---|
-| VSEC-11 | Token lifetime and type rules | Open |
+| VSEC-11 | Token lifetime and type rules | Fixed, PR #43 |
 | VSEC-12 | Connection to the key service | Open |
 | VSEC-13 | Binding of ciphertext | Open |
 | VSEC-14 | Strength of the sealed report and audit trail | Open |
-| VSEC-15 | Print approval | Open |
+| VSEC-15 | Print approval | Fixed, PR #44. Screenshots can't be stopped (guides) |
 | VSEC-16 | Role separation | Fixed, PR #34 |
-| VSEC-17 | Quarantine release approval | Open |
+| VSEC-17 | Quarantine release approval | Fixed, PR #44 |
 | VSEC-18 | Error texts | Fixed, PR #34 |
 | VSEC-19 | Request references | Fixed, PR #34 |
 | VSEC-20 | PDF checks at intake | Fixed, PR #36, without the malware-scan hook (it waits for platform-core) |
 | VSEC-21 | Data under a replaced version | Open |
-| VSEC-22 | Browser hardening | Open |
+| VSEC-22 | Browser hardening | Fixed, PR #43 |
 | VSEC-23 | Metadata value limits | Fixed, PR #36 |
 | VSEC-24 | CI package token | Fixed, PR #37 |
 | VSEC-25 | Release packages | Fixed, PR #37 |
-| VSEC-26 | How quickly a removed grant takes effect | Open |
+| VSEC-26 | How quickly a removed grant takes effect | Documented in the IT guide, PR #44 |
 | VSEC-27 | platform-core version | Open: task 0067 |
 
 ## Info
 
-VSEC-28 to VSEC-35 are notes on design and installation, without a fix planned here. VSEC-29 (browser sign-in) is task 0065.
+VSEC-28 to VSEC-35 are notes on design and installation. Fixed: VSEC-28 (system information), VSEC-32 (legal holds),
+VSEC-33 (incident names) and VSEC-35 (intake rate), PR #44; VSEC-29 (browser sign-in), PR #43. The others have no fix planned here.

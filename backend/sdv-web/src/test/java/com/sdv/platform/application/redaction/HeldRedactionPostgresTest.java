@@ -79,9 +79,9 @@ class HeldRedactionPostgresTest {
     private final JdbcHeldRedactionRepository held = new JdbcHeldRedactionRepository(jdbc);
     private final SensitiveAccessGrantStore grants = new SensitiveAccessGrantStore(requestStore, foundation, tx, Clock.systemUTC());
     private final DocumentAccessGuard guard = new DocumentAccessGuard(records, foundation, grants);
-    private final AccessRequestService approvals = new AccessRequestService(requestStore, ingestion, guard, new RecordReferences(records), records,
-            new JdbcRecordSensitivityRepository(jdbc), grants, ApprovalSettings.defaults(), foundation, tx);
     private final LegalHoldService holds = new LegalHoldService(new JdbcLegalHoldRepository(jdbc), guard, foundation, tx);
+    private final AccessRequestService approvals = new AccessRequestService(requestStore, ingestion, guard, new RecordReferences(records), records,
+            new JdbcRecordSensitivityRepository(jdbc), grants, ApprovalSettings.defaults(), foundation, tx, holds);
 
     private final Map<String, byte[]> files = new ConcurrentHashMap<>();
     private Runnable afterStore = () -> { };
@@ -236,10 +236,10 @@ class HeldRedactionPostgresTest {
         assertEquals("SDV-HLD-010", code(() -> sealed.open(UUID.randomUUID(), HELD, sealedId, Clearance.ALL, "rita", "c")));
         UUID ordinary = viewer.metadata(T, HELD, Clearance.ALL, "rita", "c").viewingId();
         UUID opened = sealed.open(T, HELD, sealedId, Clearance.ALL, "rita", "c").viewingId();
-        assertEquals("SDV-DOC-011", code(() -> sealed.page(T, HELD, sealedId, Clearance.ALL, 1, 1, ordinary, "rita", "c")));
-        assertEquals("SDV-DOC-011", code(() -> sealed.page(T, HELD, sealedId, Clearance.ALL, 1, 1, opened, "someone-else", "c")));
+        assertEquals("SDV-DOC-011", code(() -> sealed.page(T, HELD, sealedId, Clearance.ALL, 1, 1, ordinary, "Rita", "rita", "c")));
+        assertEquals("SDV-DOC-011", code(() -> sealed.page(T, HELD, sealedId, Clearance.ALL, 1, 1, opened, "Other", "someone-else", "c")));
         assertEquals("SDV-DOC-011", code(() -> viewer.renderPage(T, HELD, Clearance.ALL, 1, 1, opened, "rita", "c")), "nor the other way round");
-        assertTrue(sealed.page(T, HELD, sealedId, Clearance.ALL, 1, 1, opened, "rita", "c").pngBytes().length > 0);
+        assertTrue(sealed.page(T, HELD, sealedId, Clearance.ALL, 1, 1, opened, "Rita", "rita", "c").pngBytes().length > 0);
         assertEquals("1", one("select count(*) from audit_events where tenant_id='" + T + "' and action='DOCUMENT_PAGE_VIEWED' and safe_details->>'sealedOriginalId'='" + sealedId + "'"));
 
         // 4. While the hold is in place nothing is destroyed; once released it is, with its key, and audited.
@@ -253,6 +253,34 @@ class HeldRedactionPostgresTest {
         assertTrue(sealed.list(T, HELD, Clearance.ALL, "rita", "c").isEmpty());
         assertEquals("SDV-HLD-010", code(() -> sealed.open(T, HELD, sealedId, Clearance.ALL, "rita", "c")));
         assertEquals(0, sealed.destroyDue(10).destroyed());
+
+        // 4b. Task 0071: a hold is released by a request that another Business Admin decides, who didn't place it.
+        LegalHoldService.LegalHoldView second = holds.place(T, "ba", "Bea Admin", HELD.toString(), "Again", "c");
+        String holdId = second.holdId().toString();
+        assertEquals("SDV-HLD-002", code(() -> approvals.requestHoldRelease(T, "ba", "Bea", holdId, "x", "c")));
+        assertEquals("SDV-HLD-007", code(() -> approvals.requestHoldRelease(UUID.randomUUID(), "ba", "Bea", holdId, "Case closed", "c")));
+        UUID release = approvals.requestHoldRelease(T, "ba", "Bea Admin", holdId, "Case closed 4712", "c").requestId();
+        assertEquals("SDV-APR-004", code(() -> approvals.requestHoldRelease(T, "cy", "Cy Admin", holdId, "Case closed", "c")), "one at a time");
+        assertEquals(second.holdId(), approvals.holdReleasesWaiting(T, "c").getFirst().holdId());
+        assertEquals("SDV-APR-006", code(() -> decide(release, AccessRequestService.Decision.APPROVE)), "nobody their own");
+        assertEquals("SDV-APR-009", approvals.decideMany(T, "cy", "Cy", "APPROVE", List.of(release.toString()), "c").results().getFirst().code());
+        assertTrue(held.onHold(T, HELD));
+        approvals.decide(T, "cy", "Cy Admin", release.toString(), AccessRequestService.Decision.APPROVE, "c");
+        assertFalse(held.onHold(T, HELD));
+        assertTrue(approvals.holdReleasesWaiting(T, "c").isEmpty());
+        assertEquals("1", one("select count(*) from audit_events where tenant_id='" + T + "' and action='LEGAL_HOLD_RELEASED' and actor_id='cy' and safe_details->>'requestedBy'='ba'"));
+        assertEquals("0", one("select count(*) from audit_events where tenant_id='" + T + "' and safe_details::text like '%4712%'"));
+        // Asked by another admin: the one who placed it still doesn't approve it, but may decline.
+        String third = holds.place(T, "ba", "Bea Admin", HELD.toString(), "Third", "c").holdId().toString();
+        UUID byCy = approvals.requestHoldRelease(T, "cy", "Cy Admin", third, "Case closed", "c").requestId();
+        assertEquals("SDV-HLD-012", code(() -> decide(byCy, AccessRequestService.Decision.APPROVE)));
+        assertTrue(held.onHold(T, HELD));
+        decide(byCy, AccessRequestService.Decision.DECLINE);
+        // Released otherwise meanwhile: no longer approved.
+        UUID stale = approvals.requestHoldRelease(T, "ba", "Bea Admin", third, "Case closed", "c").requestId();
+        holds.release(T, "ba", "Bea Admin", third, "c");
+        assertEquals("SDV-HLD-008", code(() -> approvals.decide(T, "cy", "Cy", stale.toString(), AccessRequestService.Decision.APPROVE, "c")));
+        assertThrows(RuntimeException.class, () -> sql("update access_requests set hold_id=null where request_id='" + stale + "'"));
 
         // 5. A hold placed between the redaction's start and its staging: refused, the original is untouched.
         afterStore = () -> holds.place(T, "ba", "Bea Admin", RACE.toString(), "Just in time", "c");

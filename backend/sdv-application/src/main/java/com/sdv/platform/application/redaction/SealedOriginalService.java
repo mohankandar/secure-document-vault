@@ -83,9 +83,9 @@ public class SealedOriginalService {
     }
 
     public DocumentViewerService.PageImage page(UUID tenantId, UUID documentId, UUID sealedId, Clearance clearance, int page,
-                                                double scale, UUID viewingId, String actorId, String correlationId) {
+                                                double scale, UUID viewingId, String actorName, String actorId, String correlationId) {
         return viewer.sealedPage(require(tenantId, documentId, sealedId, clearance, actorId, correlationId), clearance, page,
-                scale, viewingId, actorId, correlationId);
+                scale, viewingId, actorName, actorId, correlationId);
     }
 
     /** The person is checked before the reference, so it tells nobody else whether there is one. */

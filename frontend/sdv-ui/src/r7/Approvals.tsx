@@ -18,8 +18,8 @@ import { levelsLine } from './quarantineWords'
  * A whole-record request is never ticked or sent in bulk: it is reviewed and decided on its own.
  */
 
-type Kind = 'all' | 'DOWNLOAD' | 'PRINT' | 'LOWER' | 'REDACT_HELD'
-const KIND_CHIPS: { id: Kind; label: string }[] = [{ id: 'all', label: 'All' }, { id: 'DOWNLOAD', label: 'Downloads' }, { id: 'PRINT', label: 'Prints' }, { id: 'LOWER', label: 'Lower level' }, { id: 'REDACT_HELD', label: 'Redact on hold' }]
+type Kind = 'all' | 'DOWNLOAD' | 'PRINT' | 'LOWER' | 'REDACT_HELD' | 'RELEASE_HOLD'
+const KIND_CHIPS: { id: Kind; label: string }[] = [{ id: 'all', label: 'All' }, { id: 'DOWNLOAD', label: 'Downloads' }, { id: 'PRINT', label: 'Prints' }, { id: 'LOWER', label: 'Lower level' }, { id: 'REDACT_HELD', label: 'Redact on hold' }, { id: 'RELEASE_HOLD', label: 'Release hold' }]
 const ofKind = (r: PendingRequest, k: Kind) => k === 'all' || (k === 'LOWER' ? r.kind === 'LOWER_LEVEL' || r.kind === 'LOWER_RECORD_LEVEL' : r.kind === k)
 /** More than this many waiting: the groups start collapsed. */
 const COLLAPSE_OVER = 10
@@ -28,9 +28,10 @@ const GROUPS_SHOWN = 20
 const SHORT: Record<SensitivityLevel, string> = { STANDARD: 'Standard', CONFIDENTIAL: 'Confidential', HIGHLY_CONFIDENTIAL: 'HC' }
 const LVL: Record<SensitivityLevel, string> = { STANDARD: 's', CONFIDENTIAL: 'c', HIGHLY_CONFIDENTIAL: 'hc' }
 const whole = (r: PendingRequest) => r.scope === 'RECORD'
-/** Decided one at a time, never ticked: a whole contract, and a redaction of a document on legal hold (task 0066). */
-const alone = (r: PendingRequest) => whole(r) || r.kind === 'REDACT_HELD'
+/** Decided one at a time, never ticked: a whole contract, a redaction of a document on legal hold (task 0066), the release of a hold (task 0071). */
+const alone = (r: PendingRequest) => whole(r) || r.kind === 'REDACT_HELD' || r.kind === 'RELEASE_HOLD'
 const REDACT_WORDS = 'Redact on legal hold'
+const RELEASE_WORDS = 'Release legal hold'
 const key = (g: { primaryIdentifier: string | null }) => g.primaryIdentifier ?? '—'
 
 /** "10 min", "2 h", "2 days": how long a request has waited. */
@@ -61,8 +62,8 @@ function Lvl({ level }: { level: SensitivityLevel }) {
 }
 
 /** "Download", "Lower to Standard": the request in words, without the level badge. */
-const kindWords = (r: PendingRequest) => r.kind === 'REDACT_HELD' ? REDACT_WORDS : r.kind === 'PRINT' ? 'Print' : r.kind === 'DOWNLOAD' ? 'Download' : `Lower to ${r.requestedLevel ? LEVEL_NAMES[r.requestedLevel] : 'a lower level'}`
-const kindCount = (n: number, r: PendingRequest) => r.kind === 'REDACT_HELD' ? `${n} redaction${n === 1 ? '' : 's'} on hold` : r.kind === 'PRINT' ? `${n} print${n === 1 ? '' : 's'}` : r.kind === 'DOWNLOAD' ? `${n} download${n === 1 ? '' : 's'}` : `${n} lower to ${r.requestedLevel ? LEVEL_NAMES[r.requestedLevel] : 'a lower level'}`
+const kindWords = (r: PendingRequest) => r.kind === 'REDACT_HELD' ? REDACT_WORDS : r.kind === 'RELEASE_HOLD' ? RELEASE_WORDS : r.kind === 'PRINT' ? 'Print' : r.kind === 'DOWNLOAD' ? 'Download' : `Lower to ${r.requestedLevel ? LEVEL_NAMES[r.requestedLevel] : 'a lower level'}`
+const kindCount = (n: number, r: PendingRequest) => r.kind === 'REDACT_HELD' ? `${n} redaction${n === 1 ? '' : 's'} on hold` : r.kind === 'RELEASE_HOLD' ? `${n} release${n === 1 ? '' : 's'} of holds` : r.kind === 'PRINT' ? `${n} print${n === 1 ? '' : 's'}` : r.kind === 'DOWNLOAD' ? `${n} download${n === 1 ? '' : 's'}` : `${n} lower to ${r.requestedLevel ? LEVEL_NAMES[r.requestedLevel] : 'a lower level'}`
 /** "2 downloads, 1 print": the kinds of these requests, most first. */
 export function kindsOf(requests: PendingRequest[]): string {
   const counts = new Map<string, { n: number; r: PendingRequest }>()
@@ -269,19 +270,19 @@ export function Approvals({ onWaiting }: { onWaiting: (w: WaitingSummary) => voi
       <button type="button" className="v-link" onClick={() => setRecentOpen(true)}>Decided recently ›</button>
     </div>
 
-    {review && <Dialog title={whole(review) ? 'Review a whole-contract request' : 'Review a redaction on legal hold'} onClose={() => { if (!busy) setReview(null) }} footer={<>
+    {review && <Dialog title={whole(review) ? 'Review a whole-contract request' : review.kind === 'RELEASE_HOLD' ? 'Review the release of a legal hold' : 'Review a redaction on legal hold'} onClose={() => { if (!busy) setReview(null) }} footer={<>
       <button type="button" className="v-btn" disabled={busy} onClick={() => setReview(null)}>Cancel</button>
       <button type="button" className="v-btn" disabled={busy} onClick={() => void decideOne(review, 'decline')}>Decline</button>
       <button type="button" className="v-btn primary" disabled={busy} onClick={() => void decideOne(review, 'approve')}>Approve</button>
     </>}>
       <dl className="v-kv">
         <div><dt>{review.primaryIdentifierLabel ?? 'Record'}</dt><dd className="mono">{review.primaryIdentifier ?? '—'}</dd></div>
-        <div><dt>Asks to</dt><dd>{whole(review) ? <>{kindWords(review)} for the whole contract{review.level ? `, from ${LEVEL_NAMES[review.level]}` : ''}</> : 'Permanently redact one document on legal hold'}</dd></div>
+        <div><dt>Asks to</dt><dd>{whole(review) ? <>{kindWords(review)} for the whole contract{review.level ? `, from ${LEVEL_NAMES[review.level]}` : ''}</> : review.kind === 'RELEASE_HOLD' ? 'Release the legal hold of one document' : 'Permanently redact one document on legal hold'}</dd></div>
         <div><dt>{whole(review) ? 'Documents' : 'Document'}</dt><dd>{whole(review) ? review.documentCount ?? '—' : `Received ${fmtDate(review.receivedAt)} · ${review.pageCount ?? '—'} pages${review.level ? ` · ${LEVEL_NAMES[review.level]}` : ''}`}</dd></div>
         <div><dt>Requested by</dt><dd>{review.requester}, {whenWords(review.requestedAt)}</dd></div>
         <div><dt>Reason</dt><dd>{review.reason}</dd></div>
       </dl>
-      <p className="muted">{whole(review) ? '' : 'Approving replaces what everyone sees. The original is kept sealed, for Restricted Stewards only, until no legal hold is in place any more, and is then destroyed. It is decided on its own.'}</p>
+      <p className="muted">{whole(review) ? '' : review.kind === 'RELEASE_HOLD' ? 'Approving releases the hold: the daily cleanup can delete the document when its keeping rule says so, and a sealed original is destroyed. Who asked or who placed the hold can’t approve it. It is decided on its own.' : 'Approving replaces what everyone sees. The original is kept sealed, for Restricted Stewards only, until no legal hold is in place any more, and is then destroyed. It is decided on its own.'}</p>
       <p className="muted" hidden={!whole(review)}>Approving changes the level of every document of this contract at once. It is decided on its own, never with other requests.</p>
     </Dialog>}
 
@@ -315,7 +316,7 @@ export function Approvals({ onWaiting }: { onWaiting: (w: WaitingSummary) => voi
 
 /** "Download", "Lower to Standard (whole contract)": a decided request in words. */
 function decidedWords(d: DecidedRequest): string {
-  const what = d.kind === 'REDACT_HELD' ? REDACT_WORDS : d.kind === 'PRINT' ? 'Print' : d.kind === 'DOWNLOAD' ? 'Download' : `Lower to ${d.requestedLevel ? LEVEL_NAMES[d.requestedLevel] : 'a lower level'}`
+  const what = d.kind === 'REDACT_HELD' ? REDACT_WORDS : d.kind === 'RELEASE_HOLD' ? RELEASE_WORDS : d.kind === 'PRINT' ? 'Print' : d.kind === 'DOWNLOAD' ? 'Download' : `Lower to ${d.requestedLevel ? LEVEL_NAMES[d.requestedLevel] : 'a lower level'}`
   return d.scope === 'RECORD' ? `${what} (whole contract)` : what
 }
 
@@ -328,7 +329,7 @@ function Row({ r, checked, busy, identifier, onTick, onDecide, onReview }: { r: 
   return (
     <div className={`apr-row${checked ? ' sel' : ''}`}>
       <input type="checkbox" checked={checked} disabled={alone(r)} onChange={(e) => onTick(e.target.checked)}
-        aria-label={isWhole ? 'Cannot be selected: whole contract' : alone(r) ? 'Cannot be selected: document on legal hold' : `Select ${kindWords(r)} on ${r.primaryIdentifier ?? 'a record'}, ${r.requester}`} />
+        aria-label={isWhole ? 'Cannot be selected: whole contract' : alone(r) ? `Cannot be selected: ${r.kind === 'RELEASE_HOLD' ? 'release of a legal hold' : 'document on legal hold'}` : `Select ${kindWords(r)} on ${r.primaryIdentifier ?? 'a record'}, ${r.requester}`} />
       <span className={`apr-sc${isWhole ? ' whole' : ''}`} title={isWhole ? 'Whole contract' : 'One document'} aria-label={isWhole ? 'Whole contract' : 'One document'} role="img">
         {isWhole ? <Files size={16} aria-hidden /> : <FileText size={16} aria-hidden />}</span>
       <span className="apr-kind" title={note ?? undefined}>

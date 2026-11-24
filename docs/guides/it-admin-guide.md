@@ -14,8 +14,11 @@ mapping and the sending systems' clients. **IT › Sign-in** shows it read only.
 **Test sign-in** checks that Vero reaches the login system and that its keys and issuer fit, and with a company sign-in
 also your own token. It changes nothing. A failure shows a code such as `IDN_TEST_ISSUER_UNREACHABLE`.
 
-- People's roles come from their groups. After a group change, a person keeps what their token says until it ends; a
-  changed role mapping takes effect within about a minute.
+- People's roles come from their groups. **How long a removed right keeps working:**
+  - removed from a group in the login system: until the person's token ends, at most 2 hours (the life your login system
+    gives it; 15 to 60 minutes advised). Ending the person's session there stops new tokens, not the one in use.
+  - a changed role mapping or grant in Vero: up to 30 seconds (Vero remembers grants that long).
+  - a person's own removed group therefore ends with their token; keep the token's life short if that matters to you.
 - **In the browser:** people go to your login system and come back. Vero keeps nothing of it in the browser's storage, so a
   reload or a new tab passes through the login system again, usually without a question. How long people stay signed in is
   your login system's setting (its session and token lifetimes); Vero accepts tokens of at most 2 hours.
@@ -56,8 +59,11 @@ Adding a volume: name and folder, Vero writes a test file there, then In use or 
 | `/actuator/health/readiness` | Send traffic only while 200. 503: database version, database, sign-in keys or no free connection |
 
 **Busy** is `503 SDV-SYS-018` with `Retry-After`: no database connection or no place for PDF work just now. Senders try
-again by themselves. If it lasts, see the runbook (`SDV_DB_POOL_MAX`, `SDV_PDF_*`). Under heavy PDF work a readiness answer
+again by themselves. A sending system that asks more often than `SDV_INTAKE_REQUESTS_PER_MINUTE` gets it too. If it lasts, see the runbook (`SDV_DB_POOL_MAX`, `SDV_PDF_*`). Under heavy PDF work a readiness answer
 can take a few seconds: give probes a time-out of 10 seconds or more.
+
+System information (`/api/v1/system/info`) needs sign-in; only IT Admin and Platform Operations see profiles and the
+database's state there. Without sign-in, use readiness and the start-up log.
 
 Requests are limited in size (`413 SDV-SYS-019`); uploads have the sending system's own limit.
 
@@ -87,6 +93,8 @@ Before this version in particular:
 - People who hold Business Admin with Document Steward, or IT Admin with a document role: those roles are now withheld.
 - `SDV_AUTH_JWT_MAX_TOKEN_LIFETIME_SECONDS=0` is refused; tokens, also sending systems', live at most 2 hours by default and need
   an issue time. Tokens with `nonce` or `at_hash` are refused.
+- Releasing a legal hold needs two Business Admins. Probes that read `/api/v1/system/info` must use readiness instead.
+- Screenshots can't be stopped: printed Highly Confidential pages carry the person's name and the time.
 - The release jar has no local profile and refuses to start with one.
 
 Licensing is not live.

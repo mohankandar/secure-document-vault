@@ -4,12 +4,13 @@ import { useStore } from './store'
 import { FailureNotice, loadFailed, type Failure } from './CardError'
 import { Callout, Dialog, fmtDate } from './ui'
 import { LevelBadge, refusalText } from './Sensitivity'
-import { activeHolds, holdDocuments, placeHold, releaseHold, type HoldDocument, type LegalHold } from './liveApi'
+import { activeHolds, holdDocuments, holdReleaseRequests, placeHold, requestHoldRelease, type HoldDocument, type HoldReleaseWaiting, type LegalHold } from './liveApi'
 
 /**
  * Task 0030 (S9a part 2), board Sens-LegalHold. A Business admin puts every document of a contract on hold by its
  * number, with a reason; the screen says how many documents that covers, never which ones (no title, file name or
  * content: the server sends none). Holds in place are listed with Release; released holds stay in the audit.
+ * Task 0071: a release is asked for with a reason and decided by another Business admin in Approvals.
  * The server holds one document at a time (task 0027), so a contract is held document by document; each refusal is
  * shown in the server's words with its code.
  */
@@ -29,10 +30,13 @@ export function LegalHolds() {
   const [busy, setBusy] = useState(false)
   const [problem, setProblem] = useState<string | null>(null)
   const [releasing, setReleasing] = useState<LegalHold | null>(null)
+  const [why, setWhy] = useState('')
+  const [waiting, setWaiting] = useState<HoldReleaseWaiting[]>([])
 
   useEffect(() => {
     let active = true
     activeHolds().then((h) => { if (active) { setHolds(h); setError(null) } }).catch((e) => { if (active) setError(loadFailed('Legal holds did not load', e)) })
+    holdReleaseRequests().then((w) => { if (active) setWaiting(w) }).catch(() => { if (active) setWaiting([]) })
     return () => { active = false }
   }, [reload])
 
@@ -53,6 +57,7 @@ export function LegalHolds() {
 
   if (!can('MANAGE_LEGAL_HOLD')) return <Callout tone="warn" title="Only a Business admin manages legal holds" />
 
+  const waitingFor = (h: LegalHold) => waiting.find((w) => w.holdId === h.holdId)
   const toHold = found?.documents.filter((d) => !d.onHold) ?? []
   const already = (found?.documents.length ?? 0) - toHold.length
   const ready = !!found && toHold.length > 0 && reason.trim().length >= 3 && !busy
@@ -74,8 +79,8 @@ export function LegalHolds() {
   const release = async (h: LegalHold) => {
     setBusy(true); setProblem(null)
     try {
-      await releaseHold(h.holdId)
-      toast({ tone: 'ok', title: 'Hold released', detail: `${h.primaryIdentifier ?? 'The document'}${pages(h.pageCount)}. The release is in the audit.` })
+      await requestHoldRelease(h.holdId, why.trim())
+      toast({ tone: 'ok', title: 'Release requested', detail: `${h.primaryIdentifier ?? 'The document'}${pages(h.pageCount)} stays on hold until another Business admin approves it in Approvals.` })
       setReleasing(null)
     } catch (e) { setProblem(refusalText(e)); setReleasing(null) }
     finally { setBusy(false); setReload((x) => x + 1) }
@@ -113,16 +118,19 @@ export function LegalHolds() {
               <td data-label="Reason">{h.reason}</td>
               <td data-label="Placed by">{h.placedByName?.trim() || 'A Business admin'}</td>
               <td data-label="Since" className="faint">{sameDay(h.placedAt) ? 'Today' : fmtDate(h.placedAt)}</td>
-              <td className="act"><button type="button" className="v-btn sm" disabled={busy} onClick={() => setReleasing(h)}>Release</button></td>
+              <td className="act">{waitingFor(h) ? <span className="faint" title={`Asked by ${waitingFor(h)!.requestedBy}`}>Release requested</span>
+                : <button type="button" className="v-btn sm" disabled={busy} onClick={() => { setWhy(''); setReleasing(h) }}>Request release</button>}</td>
             </tr>)}</tbody></table>}
       </section>}
 
-    {releasing && <Dialog title="Release this hold?" onClose={() => { if (!busy) setReleasing(null) }} footer={<>
+    {releasing && <Dialog title="Ask to release this hold" onClose={() => { if (!busy) setReleasing(null) }} footer={<>
       <button type="button" className="v-btn" disabled={busy} onClick={() => setReleasing(null)}>Cancel</button>
-      <button type="button" className="v-btn primary" disabled={busy} onClick={() => void release(releasing)}>{busy ? 'Releasing…' : 'Release hold'}</button>
+      <button type="button" className="v-btn primary" disabled={busy || why.trim().length < 3} onClick={() => void release(releasing)}>{busy ? 'Sending…' : 'Send request'}</button>
     </>}>
       <p><span className="mono">{releasing.primaryIdentifier ?? '—'}</span>{pages(releasing.pageCount)}, on hold since {fmtDate(releasing.placedAt)}: “{releasing.reason}”.</p>
-      <p className="muted">Once released, the daily cleanup can delete it when its keeping rule says so. The release is recorded in the audit.</p>
+      <label className="v-field"><span>Why it can be released</span>
+        <textarea className="v-input" rows={3} value={why} maxLength={500} onChange={(e) => setWhy(e.target.value)} placeholder="For example: Case closed" /></label>
+      <p className="muted">Another Business admin decides it in Approvals; not the one who placed the hold. Once released, the daily cleanup can delete the document when its keeping rule says so, and a sealed original is destroyed.</p>
     </Dialog>}
   </>
 }

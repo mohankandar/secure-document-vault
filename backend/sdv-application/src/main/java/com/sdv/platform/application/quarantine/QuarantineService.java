@@ -385,7 +385,7 @@ public class QuarantineService {
     public List<IncidentSummary> incidents(Actor actor) {
         List<Incident> incidents = quarantine.findIncidents(actor.tenantId(), LIST_LIMIT);
         Map<UUID, Counts> counts = quarantine.counts(actor.tenantId(), incidents.stream().map(Incident::incidentId).toList());
-        return incidents.stream().map(i -> {
+        return incidents.stream().filter(i -> mayKnow(actor, i, counts.getOrDefault(i.incidentId(), Counts.NONE))).map(i -> {
             Progress progress = progress(actor.tenantId(), i.incidentId());
             Counts c = counts.getOrDefault(i.incidentId(), Counts.NONE);
             return new IncidentSummary(i.incidentId(), i.name(), i.scope(), i.status(),
@@ -407,6 +407,34 @@ public class QuarantineService {
                 .orElse(Progress.NONE);
     }
 
+    /** Task 0071: an incident's name and reason only for who can open at least one of its documents, or made it. */
+    private static boolean mayKnow(Actor actor, Incident incident, Counts c) {
+        return reviewable(actor) == null || incident.createdBy().equals(actor.actorId()) || c.documents() - hidden(actor, c) > 0;
+    }
+
+    /** The incident, when the person may know of it; else as if there were none. */
+    private Incident requireKnown(Actor actor, UUID incidentId) {
+        return quarantine.findIncident(actor.tenantId(), incidentId)
+                .filter(i -> mayKnow(actor, i, counts(actor.tenantId(), incidentId)))
+                .orElseThrow(() -> new CodedRefusal.NotFound(SdvErrorCode.QUA_007, NO_INCIDENT));
+    }
+
+    /** Task 0071: one release of a single document; identifier is null when the reader can't open the document. */
+    public record SingleRelease(String releasedByName, Instant releasedAt, String primaryIdentifier) { }
+
+    /** For the incident's creator: every single release, newest first. Null for anyone else. */
+    private List<SingleRelease> singleReleases(Actor actor, Incident incident) {
+        if (!incident.createdBy().equals(actor.actorId())) return null;
+        List<Quarantined> rows = quarantine.findSingleReleases(actor.tenantId(), incident.incidentId(), SINGLE_RELEASES_SHOWN);
+        Map<UUID, SensitivityLevel> now = levels(actor.tenantId(), rows.stream().map(Quarantined::document).toList());
+        return rows.stream().map(q -> new SingleRelease(q.releasedByName(), q.releasedAt(),
+                actor.clearance().canReviewQuarantined(now.get(q.document().documentId())) ? q.document().primaryIdentifier() : null)).toList();
+    }
+
+    /** Task 0071: more than this many of one incident in a day goes through the whole-incident release. */
+    public static final int SINGLE_RELEASES_A_DAY = 25;
+    static final int SINGLE_RELEASES_SHOWN = 200;
+
     private Counts counts(UUID tenantId, UUID incidentId) {
         return quarantine.counts(tenantId, List.of(incidentId)).getOrDefault(incidentId, Counts.NONE);
     }
@@ -424,8 +452,7 @@ public class QuarantineService {
     public IncidentView incident(Actor actor, String incidentReference, String after) {
         UUID incidentId = parse(incidentReference, SdvErrorCode.QUA_007, NO_INCIDENT);
         PageKey from = pageKey(after);
-        Incident incident = quarantine.findIncident(actor.tenantId(), incidentId)
-                .orElseThrow(() -> new CodedRefusal.NotFound(SdvErrorCode.QUA_007, NO_INCIDENT));
+        Incident incident = requireKnown(actor, incidentId);
         Counts c = counts(actor.tenantId(), incidentId);
         Page page = page(actor, incidentId, from, PAGE);
         List<QuarantinedDocumentView> visible = new ArrayList<>();
@@ -438,7 +465,7 @@ public class QuarantineService {
                 pending == null ? null : pending.requestId(),
                 pending == null ? null : pending.requestedByName(), pending == null ? null : pending.expiresAt(),
                 progress.preparing(), progress.prepared(), progress.expected(), PAGE,
-                c.releasing() && incident.open(), c.released(), page.next());
+                c.releasing() && incident.open(), c.released(), page.next(), singleReleases(actor, incident));
     }
 
     /** Documents of levels the person can't open: counted from the incident, never listed. */
@@ -549,6 +576,11 @@ public class QuarantineService {
             Quarantined q = quarantine.findActive(actor.tenantId(), documentId)
                     .orElseThrow(() -> new CodedRefusal.Conflict(SdvErrorCode.QUA_011, NOT_QUARANTINED));
             if (byFilter.isEmpty()) quarantine.lockIncident(actor.tenantId(), q.incidentId());
+            // Task 0071: under the incident's lock, so two at once can't pass it together.
+            if (quarantine.countSingleReleases(actor.tenantId(), q.incidentId(), actor.actorId(), now.minus(java.time.Duration.ofDays(1))) >= SINGLE_RELEASES_A_DAY) {
+                throw new CodedRefusal.Conflict(SdvErrorCode.QUA_012, "You released " + SINGLE_RELEASES_A_DAY
+                        + " documents of this incident in the last day. Ask for the release of the whole incident.");
+            }
             Instant at = now.isBefore(q.quarantinedAt()) ? q.quarantinedAt() : now;
             if (!quarantine.release(actor.tenantId(), q.quarantineId(), actor.actorId(), displayName(actor), why, null, at)) {
                 throw new CodedRefusal.Conflict(SdvErrorCode.QUA_011, NOT_QUARANTINED);
@@ -691,8 +723,7 @@ public class QuarantineService {
     public ExposureReport exposure(Actor actor, String incidentReference, String after) {
         UUID incidentId = parse(incidentReference, SdvErrorCode.QUA_007, NO_INCIDENT);
         PageKey from = pageKey(after);
-        Incident incident = quarantine.findIncident(actor.tenantId(), incidentId)
-                .orElseThrow(() -> new CodedRefusal.NotFound(SdvErrorCode.QUA_007, NO_INCIDENT));
+        Incident incident = requireKnown(actor, incidentId);
         Counts c = counts(actor.tenantId(), incidentId);
         Page page = page(actor, incidentId, from, PAGE);
         List<ExposureDocument> documents = exposureDocuments(actor, incidentId, page.rows());
@@ -834,8 +865,7 @@ public class QuarantineService {
      */
     public ExposureExport openExposureExport(Actor actor, String incidentReference) {
         UUID incidentId = parse(incidentReference, SdvErrorCode.QUA_007, NO_INCIDENT);
-        Incident incident = quarantine.findIncident(actor.tenantId(), incidentId)
-                .orElseThrow(() -> new CodedRefusal.NotFound(SdvErrorCode.QUA_007, NO_INCIDENT));
+        Incident incident = requireKnown(actor, incidentId);
         UUID reference = UUID.randomUUID();
         Map<String, Object> details = new LinkedHashMap<>();
         details.put("reference", reference.toString());
@@ -864,7 +894,9 @@ public class QuarantineService {
                                int documentCount, int hiddenCount, List<QuarantinedDocumentView> documents,
                                UUID pendingRequestId, String pendingRequestedByName, Instant pendingExpiresAt,
                                boolean preparing, long preparedCount, Long expectedCount, int listLimit,
-                               boolean releasing, long releasedCount, String next) { }
+                               boolean releasing, long releasedCount, String next,
+                               /* Task 0071: for the incident's creator; null for anyone else. */
+                               List<SingleRelease> singleReleases) { }
 
     public record QuarantinedDocumentView(UUID quarantineId, UUID documentId, String primaryIdentifierLabel,
                                           String primaryIdentifier, SensitivityLevel level, Instant receivedAt,
