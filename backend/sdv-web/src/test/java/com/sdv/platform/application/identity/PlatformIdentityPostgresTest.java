@@ -13,12 +13,10 @@ import com.documentplatform.licensing.Allowance;
 import com.documentplatform.licensing.AllowanceType;
 import com.documentplatform.licensing.ClockGuard;
 import com.documentplatform.licensing.Deployment;
-import com.documentplatform.licensing.Ed25519;
 import com.documentplatform.licensing.EntitySlot;
 import com.documentplatform.licensing.Licence;
 import com.documentplatform.licensing.LicenceKind;
 import com.documentplatform.licensing.LicenceService;
-import com.documentplatform.licensing.LicenceSigner;
 import com.documentplatform.licensing.LicenceType;
 import com.documentplatform.licensing.LicenceVerifier;
 import com.documentplatform.licensing.TrustedKeys;
@@ -29,6 +27,7 @@ import com.sdv.platform.security.SdvRole;
 import com.sdv.platform.security.auth.RoleConflictReporter;
 import com.sdv.platform.security.auth.SdvPrincipal;
 import com.sdv.platform.security.auth.oidc.OidcJwtAuthenticationConverter;
+import com.sdv.platform.security.auth.oidc.PlatformLevelGrants;
 import com.sdv.platform.security.auth.oidc.SdvRoleCatalog;
 import com.sdv.platform.web.install.DemoStepAccess;
 import org.junit.jupiter.api.AfterAll;
@@ -103,6 +102,9 @@ class PlatformIdentityPostgresTest {
         grant(ACTIVE_SLOT, "pg-admins", "BUSINESS_ADMIN");
         grant(NEW_SLOT, "pg-admins", "BUSINESS_ADMIN");
         grant(NEW_SLOT, "pg-users", "BUSINESS_USER");
+        // Task 0057: a platform-level grant (setup's * row), for every entity of the customer.
+        db.update("insert into idn_platform_grant(tenant_id, product_code, issuer_uri, external_group, role) values (?, 'SDV', ?, 'pg-ops', 'PLATFORM_OPERATIONS_ADMIN')",
+                TENANT, ISSUER.toString());
         db.update("insert into idn_machine_binding(binding_id, tenant_id, product_code, client_id, slot_id, entity_uuid, "
                 + "source_key, status, version) values (?, ?, 'SDV', ?, ?, ?, 'pg-source', 'ACTIVE', 1)",
                 UUID.randomUUID(), TENANT, CLIENT, ACTIVE_SLOT, ACTIVE);
@@ -125,6 +127,7 @@ class PlatformIdentityPostgresTest {
         db.update("delete from ingestion_sources where tenant_id in (?, ?, ?)", ACTIVE, NEW, DEMO);
         db.update("delete from idn_machine_binding where tenant_id = ?", TENANT);
         db.update("delete from idn_group_grant where slot_id in (?, ?, ?)", ACTIVE_SLOT, NEW_SLOT, DEMO_SLOT);
+        db.update("delete from idn_platform_grant where tenant_id = ?", TENANT);
         db.update("delete from idn_login_connection where tenant_id = ?", TENANT);
         db.update("delete from idn_entity where tenant_id = ?", TENANT);
         db.update("delete from idn_customer where tenant_id = ?", TENANT);
@@ -133,9 +136,12 @@ class PlatformIdentityPostgresTest {
 
     @Test
     void theSchemaStepMadeTheIdentityAndLicensingTablesWithTheirOwnHistory() {
-        assertEquals(3, db.queryForObject("select max(version) from idn_schema_version", Integer.class));
+        // Task 0057: platform-core 0.6.1's identity schema is version 4 (idn_platform_grant); licensing stays at 1.
+        assertEquals(4, IdentitySchema.VERSION);
+        assertEquals(4, db.queryForObject("select max(version) from idn_schema_version", Integer.class));
         assertEquals(1, db.queryForObject("select max(version) from lic_schema_version", Integer.class));
-        assertTrue(db.queryForObject("select count(*) from idn_schema_history where success", Integer.class) >= 3);
+        assertTrue(db.queryForObject("select count(*) from idn_schema_history where success", Integer.class) >= 4);
+        assertEquals(1, db.queryForObject("select count(*) from pg_tables where tablename = 'idn_platform_grant'", Integer.class));
         assertTrue(db.queryForObject("select count(*) from lic_schema_history where success", Integer.class) >= 1);
         assertEquals(0, db.queryForObject("select count(*) from pg_tables where tablename in ('enterprise_identity_connections', "
                 + "'enterprise_identity_connection_history', 'role_group_mappings_seen', 'role_mapping_notices')", Integer.class));
@@ -166,6 +172,37 @@ class PlatformIdentityPostgresTest {
         assertEquals(ACTIVE, conflicts.get(0).tenantId());
     }
 
+    /** Task 0057 (LV-16 item 3): idn_platform_grant gives the Platform Operations Admin in every ACTIVE entity. */
+    @Test
+    void aPlatformLevelGrantGivesThePlatformRoleAndNeverWithRestrictedSteward() {
+        List<RoleConflictReporter.RoleConflict> conflicts = new ArrayList<>();
+        // Every ACTIVE entity of the customer, read from idn_entity: the demo-step test may have activated DEMO_SLOT.
+        Set<UUID> active = Set.copyOf(db.queryForList("select entity_uuid from idn_entity where tenant_id = ? and status = 'ACTIVE'",
+                UUID.class, TENANT));
+        assertTrue(active.contains(ACTIVE) && !active.contains(NEW), active.toString());
+        Object first = converter(conflicts, null).convert(person(List.of("pg-ops"))).getPrincipal();
+        if (active.size() == 1) {
+            assertEquals(ACTIVE, ((SdvPrincipal) first).tenantId(), "the only ACTIVE entity; slots not activated get nothing");
+        } else {
+            assertEquals(active, ((com.sdv.platform.security.auth.EntityChoicePrincipal) first).entities(),
+                    "the platform role applies in every ACTIVE entity, never in one not activated");
+        }
+
+        OidcJwtAuthenticationConverter converter = converter(conflicts, ACTIVE.toString());
+        SdvPrincipal ops = (SdvPrincipal) converter.convert(person(List.of("pg-ops"))).getPrincipal();
+        assertEquals(ACTIVE, ops.tenantId());
+        assertEquals(Set.of(SdvRole.PLATFORM_OPERATIONS_ADMIN), ops.roles());
+
+        SdvPrincipal both = (SdvPrincipal) converter.convert(person(List.of("pg-ops", "pg-users"))).getPrincipal();
+        assertEquals(Set.of(SdvRole.PLATFORM_OPERATIONS_ADMIN, SdvRole.BUSINESS_USER), both.roles());
+        assertTrue(conflicts.isEmpty());
+
+        SdvPrincipal conflicted = (SdvPrincipal) converter.convert(person(List.of("pg-ops", "pg-users", "pg-restricted"))).getPrincipal();
+        assertEquals(Set.of(SdvRole.BUSINESS_USER), conflicted.roles(), "Restricted Steward and the platform role are withheld");
+        assertEquals(1, conflicts.size());
+        assertEquals(Set.of(SdvRole.RESTRICTED_STEWARD, SdvRole.PLATFORM_OPERATIONS_ADMIN), conflicts.get(0).withheld());
+    }
+
     @Test
     void aClientBindingGivesTheSendingSystemsEntityAndSource() {
         var senders = new com.sdv.platform.web.security.PlatformIdentityConfigurationAccess().senders(ds);
@@ -179,7 +216,7 @@ class PlatformIdentityPostgresTest {
 
     @Test
     void theDemoStepActivatesUnderAStoredDevelopmentLicenceAndMakesVerosRow() throws Exception {
-        KeyPair key = Ed25519.generate();
+        KeyPair key = DevelopmentLicences.newKey();
         TrustedKeys keys = TrustedKeys.of(Map.of("pg-dev-1", key.getPublic()), Set.of("pg-dev-1"));
         List<Allowance> a = List.of(new Allowance("SDV", AllowanceType.PAGES_PER_MONTH, 10));
         Licence licence = new Licence("LIC-PG-IDENTITY-0001", 1, "PG identity customer", TENANT, List.of("SDV"),
@@ -189,7 +226,7 @@ class PlatformIdentityPostgresTest {
         db.update("delete from lic_licence");
         new LicenceService(new PostgresLicenceStore(ds), new LicenceVerifier(keys),
                 new ClockGuard(Clock.systemUTC(), new PostgresLastSeenStore(ds)), DemoStepAccess.noUsage(), "SDV", null)
-                .store(LicenceSigner.sign(licence, key.getPrivate()));
+                .store(DevelopmentLicences.sign(licence, key.getPrivate()));
 
         assertEquals(0, DemoStepAccess.apply(ds, keys, Map.of(DEMO_SLOT, "PG demo entity")));
         assertEquals("ACTIVE", db.queryForObject("select status from idn_entity where slot_id = ?", String.class, DEMO_SLOT));
@@ -204,6 +241,11 @@ class PlatformIdentityPostgresTest {
     }
 
     static OidcJwtAuthenticationConverter converter(List<RoleConflictReporter.RoleConflict> conflicts) {
+        return converter(conflicts, null);
+    }
+
+    /** {@code requested}: the entity the request names (X-SDV-Entity-Id), or null. */
+    static OidcJwtAuthenticationConverter converter(List<RoleConflictReporter.RoleConflict> conflicts, String requested) {
         PostgresIdentityLookup lookup = new PostgresIdentityLookup(ds, "SDV");
         PlatformIdentityReads reads = new PlatformIdentityReads(new NamedParameterJdbcTemplate(ds));
         var settings = new OidcJwtAuthenticationConverter.Settings("customer-oidc", "sdv-api", "groups",
@@ -219,11 +261,12 @@ class PlatformIdentityPostgresTest {
             @Override public Set<EntityId> admissible(ConnectionKey k, String c) { return Set.of(); }
         };
         var request = new OidcJwtAuthenticationConverter.RequestView() {
-            @Override public String requestedEntity() { return null; }
+            @Override public String requestedEntity() { return requested; }
             @Override public boolean intake() { return false; }
         };
         return new OidcJwtAuthenticationConverter(settings, new OidcJwtIdentityNormalizer("customer-oidc",
-                new IdentityClaimConfig("preferred_username", "email", "name", "groups")), people, lookups, none,
+                new IdentityClaimConfig("preferred_username", "email", "name", "groups")), people,
+                new PlatformLevelGrants(lookup, lookup, SdvRoleCatalog.shipped()), lookups, none,
                 (e, k) -> Optional.empty(), request, conflicts::add);
     }
 

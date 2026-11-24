@@ -1,6 +1,6 @@
 # SDV Current Development State
 
-Updated: 2026-11-22 (task 0041: identity on platform-core)
+Updated: 2026-11-23 (task 0057: identity on platform-core 0.6.1)
 
 ## Verified baseline
 
@@ -29,10 +29,10 @@ R3 candidate scope includes:
 
 ## Identity on platform-core (task 0041, 2026-11-22)
 
-Vero's identity runs on platform-core v0.2.0 (`platform-identity-*`), identity only. The earlier own login-connection
+Vero's identity runs on platform-core (v0.2.0 in task 0041, **v0.6.1** since task 0057; `platform-identity-*`), identity only. The earlier own login-connection
 store and its admin screens (Enterprise Identity R1, migrations 014-016) are gone; changeset **035** drops their tables
 and the Restricted Steward group-watch tables (025). The latest Liquibase changeset is **035**; platform-core's
-identity tables are at version 3 and its licensing tables at version 1, each with its own Flyway history table, made by
+identity tables are at version 4 (task 0057; 3 before) and its licensing tables at version 1, each with its own Flyway history table, made by
 the schema step (never at startup, the local profile included).
 
 - Login connection, entity slots, group grants and client bindings come from platform-core's setup command
@@ -44,6 +44,12 @@ the schema step (never at startup, the local profile included).
   demo step; demo entity UUIDs are derived from the demo slot IDs.
 - Licensing is not turned on: its tables and the stored licence exist, activation reads the licence, nothing checks the
   allowance. `docs/verification` keeps the earlier identity checkpoints as history.
+- **Task 0057 (2026-11-23): platform-core 0.6.1**, still identity only. Identity tables at version **4**
+  (`idn_platform_grant`). Platform-level grants (the role mapping's `*` rows) give `PLATFORM_OPERATIONS_ADMIN` in every
+  ACTIVE entity; the separation rules run on all roles together. The IT Admin's Sign-in tab has a read-only
+  **Test sign-in** (platform-core's `OidcTestSignIn` over `platform.outbound.*`). A development-signed licence
+  (`LicenceSigningKey`) alone allows a local `http` login server. Test licences are signed with the JDK
+  (platform-core's signer moved to `platform-licensing-issue`, which Vero does not take).
 
 ## Validation state
 

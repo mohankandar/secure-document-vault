@@ -117,7 +117,7 @@ final class SignInTestKit {
                 SdvRoleCatalog.shipped(), new com.documentplatform.identity.admission.AdmissionSettings(false, true, PROVIDER, AUDIENCE));
         return new OidcJwtAuthenticationConverter(settings,
                 new OidcJwtIdentityNormalizer(PROVIDER, new IdentityClaimConfig("preferred_username", "email", "name", "groups")),
-                people, lookups, senders,
+                people, new PlatformLevelGrants(key -> Map.of(), candidates, SdvRoleCatalog.shipped()), lookups, senders,
                 (entity, key) -> SOURCE_SET_UP.get() && TENANT.equals(entity) && SOURCE_KEY.equals(key) ? Optional.of(SOURCE) : Optional.empty(),
                 OidcJwtAuthenticationConverter.RequestView.CURRENT, conflict -> { });
     }

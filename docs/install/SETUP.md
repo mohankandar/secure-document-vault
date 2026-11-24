@@ -11,7 +11,9 @@ write. Vero never changes them at startup. This page is for the IT team that ins
 
 1. The schema step has run for this release (runbook "Update the database"). It creates Vero's tables and, in their
    own runs, platform-core's identity tables (history table `idn_schema_history`) and licensing tables
-   (`lic_schema_history`). Setup never creates tables.
+   (`lic_schema_history`). Setup never creates tables. Since task 0057 (platform-core 0.6.1) the identity tables are
+   at version 4 (platform-level grants, `idn_platform_grant`); on a database at version 3 the schema step adds
+   version 4, and Vero does not start until it has (`IDN_VERSION_OLDER`).
 2. You have these files:
 
 | File | From | Holds |
@@ -65,14 +67,22 @@ ENT-…,,Finance Readers,BUSINESS_USER
 ENT-…,,Records Stewards,DOCUMENT_STEWARD
 ENT-…,,Vero Admins,BUSINESS_ADMIN
 ENT-…,,Vero IT,IT_ADMIN
+*,,Vero Platform Operations,PLATFORM_OPERATIONS_ADMIN
 ```
 
-- Vero's roles: `BUSINESS_USER`, `DOCUMENT_STEWARD`, `RESTRICTED_STEWARD`, `BUSINESS_ADMIN`, `IT_ADMIN`.
-  `PLATFORM_OPERATIONS_ADMIN` is a platform role: no entity grant can give it, so nobody holds it until platform-core
-  offers platform-level grants.
-- **Separation rules hold whatever the file says.** A person whose groups give Restricted Steward together with
-  Business Admin or IT Admin in one entity gets neither (the other roles stay); the conflict is recorded for the IT
-  Admin and audited when it starts and when it ends. Keep such groups apart.
+- Vero's entity roles: `BUSINESS_USER`, `DOCUMENT_STEWARD`, `RESTRICTED_STEWARD`, `BUSINESS_ADMIN`, `IT_ADMIN`.
+- **Platform-level grants (task 0057).** `PLATFORM_OPERATIONS_ADMIN` is a platform role. It is granted once for the
+  whole customer and Vero, on a row with `*` as its `entity_id` (customer + product + group → role): the group's
+  members hold it in **every activated entity**, beside the roles their entity grants give there. Give it only to the
+  small group that runs Vero for the whole organisation. Setup refuses the whole file when a `*` row names an entity
+  role (`SETUP_ENTITY_ROLE_PLATFORM_WIDE`) or an entity row names the platform role (`SETUP_PLATFORM_ROLE_ON_ENTITY`).
+  The plan shows `platform grant SDV (every entity): group "…" -> PLATFORM_OPERATIONS_ADMIN`; a `*` row taken out of
+  the file is kept unless you run setup with `--remove-unlisted-grants`. Changes are in the grant history (scope
+  `PLATFORM`). Needs identity tables at version 4.
+- **Separation rules hold whatever the file says, platform-level grants included.** A person whose groups give
+  Restricted Steward together with Business Admin, IT Admin or the Platform Operations Admin (from an entity row or a
+  `*` row) in one entity gets neither (the other roles stay); the conflict is recorded for the IT Admin and audited
+  when it starts and when it ends. Keep such groups apart.
 - Leave `entity_name` empty: the Business Admin names each entity when activating it.
 
 **Client-binding file**, only if other systems send to Vero (first line exactly as shown):
@@ -132,12 +142,25 @@ later release.
 | `SDV_AUTH_JWT_PROVIDER_ID` | The sign-in file's `providerId` (default `customer-oidc`) |
 | `SDV_AUTH_JWT_GROUPS_CLAIM` | The claim with the person's groups (default `groups`) |
 | `SDV_AUTH_JWT_CLIENT_ID_CLAIMS` | Where a sending system's client ID is (default `azp,client_id,cid`) |
-| `SDV_TRUSTED_KEYS_FILE` | The release's `trusted-keys.json`, for activation |
+| `SDV_TRUSTED_KEYS_FILE` | The release's `trusted-keys.json`, for activation (and, task 0057, to tell a development-signed licence, which alone allows a login server on this machine over `http`) |
+| `SDV_OUTBOUND_INSTALLATION` | Task 0057: `on-premises` (default) or `hosted`, for platform-core's outbound rules that the test sign-in uses |
+| `SDV_OUTBOUND_ALLOW_INTERNAL_ADDRESSES` | `true` only if your login system is at an internal address (default `false`: the test sign-in refuses internal and cloud-metadata addresses, `OUT_ADDRESS_BLOCKED`) |
+| `PLATFORM_OUTBOUND_PROXY_*`, `PLATFORM_OUTBOUND_PRIVATE_CA_FILE` | Your proxy and private certificate authority, if Vero reaches the login system through them (platform-core's outbound settings) |
 
 Gone since this release, with nothing in their place: `SDV_AUTH_GROUP_*`, `SDV_AUTH_JWT_TENANT_ID`,
 `SDV_AUTH_JWT_TENANT_CLAIM`, `SDV_AUTH_JWT_BROWSER_CLIENT_ID`, `SDV_AUTH_JWT_PERSISTENT_CONNECTION_ENABLED`,
 `SDV_AUTH_LEGACY_DIRECT_ROLE_CLAIM_ENABLED`, `SDV_AUTH_JWT_ROLES_CLAIM`. The login connection, the grants and the client
 bindings come only from setup. The IT Admin's Sign-in tab shows the connection in use, read only.
+
+**Test sign-in (task 0057).** The Sign-in tab has one button, **Test sign-in**. It asks platform-core's identity
+module to check the connection in use: it fetches the login system's discovery document and signing keys over
+platform-core's outbound rules (https only, no redirects, your proxy and private CA if set) and checks that they name
+the same issuer; with a company sign-in it also checks the IT Admin's own sign-in token (signature, issuer, Vero's API
+audience, expiry, groups claim). The token is checked and forgotten. The test changes nothing: no draft, no
+activation, no rollback. A failure shows platform-core's code, for example `IDN_TEST_ISSUER_UNREACHABLE` (with the
+outbound reason such as `OUT_TLS_FAILED`), `IDN_TEST_DISCOVERY_MISMATCH`, `IDN_TEST_KEYS_MISSING`,
+`IDN_TEST_AUDIENCE`, or `HTTP_NOT_ALLOWED` for an `http` address that is not a login server on this machine under a
+development-signed licence. Vero writes one log line with the code, never the token.
 
 A person who may work in more than one entity chooses one after signing in and can switch in the account menu
 (audited); requests carry the choice in `X-SDV-Entity-Id`, which Vero checks against the person's grants.
@@ -154,4 +177,5 @@ table (`IDN_PRIVILEGES_MISSING`).
 `dev\setup\` holds demo files only (customer `TEN-VERO-DEMO-0001`, slots `ENT-VERO-DEMO-0001` and `-0002`), with a
 **development** signing key that no release trusts. `.\Seed-SDV-Canvas-Demo.ps1` runs setup with them
 (`.\setup.ps1 … -Development`) and then Vero's demo step, which activates both demo entities. The development key file
-is never part of a release.
+is never part of a release. The demo role mapping has one platform-level grant (task 0057):
+`*,,PlatformOperations,PLATFORM_OPERATIONS_ADMIN`, for the development login server's group `PlatformOperations`.

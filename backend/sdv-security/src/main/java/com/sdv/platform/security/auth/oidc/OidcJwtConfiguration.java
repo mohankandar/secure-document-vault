@@ -5,6 +5,7 @@ import com.documentplatform.identity.admission.ActiveEntityCandidates;
 import com.documentplatform.identity.admission.AdmissionSettings;
 import com.documentplatform.identity.admission.EntityGroupGrants;
 import com.documentplatform.identity.admission.EntityMembershipResolver;
+import com.documentplatform.identity.admission.PlatformGroupGrants;
 import com.documentplatform.identity.spring.OidcJwtIdentityNormalizer;
 import com.documentplatform.identity.spring.RequiredAudienceValidator;
 import com.sdv.platform.domain.error.SdvErrorCode;
@@ -72,6 +73,7 @@ public class OidcJwtConfiguration {
             @Value("${sdv.auth.jwt.display-name-claim:name}") String displayNameClaim,
             ObjectProvider<EntityGroupGrants> grants,
             ObjectProvider<ActiveEntityCandidates> candidates,
+            ObjectProvider<PlatformGroupGrants> platformGrants,
             ObjectProvider<OidcJwtAuthenticationConverter.SignInLookups> lookups,
             ObjectProvider<OidcJwtAuthenticationConverter.Senders> senders,
             ObjectProvider<OidcJwtAuthenticationConverter.Sources> sources,
@@ -81,9 +83,13 @@ public class OidcJwtConfiguration {
                 entityClaim, sourceIdClaim, sourceKeyClaim);
         var normalizer = new OidcJwtIdentityNormalizer(settings.providerId(),
                 new IdentityClaimConfig(usernameClaim, emailClaim, displayNameClaim, settings.groupsClaim()));
-        var people = new EntityMembershipResolver(require(grants, "group grants"), require(candidates, "entity lookup"),
-                SdvRoleCatalog.shipped(), new AdmissionSettings(false, true, settings.providerId(), settings.audience()));
-        return new OidcJwtAuthenticationConverter(settings, normalizer, people, require(lookups, "sign-in lookups"),
+        SdvRoleCatalog catalog = SdvRoleCatalog.shipped();
+        ActiveEntityCandidates entities = require(candidates, "entity lookup");
+        var people = new EntityMembershipResolver(require(grants, "group grants"), entities,
+                catalog, new AdmissionSettings(false, true, settings.providerId(), settings.audience()));
+        // Task 0057: platform-level grants (the role mapping's * rows) give platform roles in every ACTIVE entity.
+        var platform = new PlatformLevelGrants(require(platformGrants, "platform grants"), entities, catalog);
+        return new OidcJwtAuthenticationConverter(settings, normalizer, people, platform, require(lookups, "sign-in lookups"),
                 require(senders, "client bindings"), require(sources, "sending systems"),
                 OidcJwtAuthenticationConverter.RequestView.CURRENT, require(conflictReporter, "role-conflict reporter"));
     }

@@ -198,8 +198,17 @@ public class DatabaseSchemaCheck {
             if (e.problem() == com.documentplatform.identity.jdbc.IdentitySchemaException.Problem.IDN_CHECK_FAILED) {
                 throw new java.sql.SQLException("identity tables could not be checked", e);
             }
-            throw new StartupFailure(SdvErrorCode.SYS_005, e.problem() + ": " + e.getMessage(), e);
+            throw new StartupFailure(SdvErrorCode.SYS_005, withCode(e.problem().name(), e.getMessage()), e);
         }
+    }
+
+    /**
+     * Task 0057: since platform-core 0.6.0 the messages of its start-up refusals start with their code
+     * ({@code IDN_PRIVILEGES_MISSING: …}); the code is added only when the message doesn't already start with it.
+     */
+    static String withCode(String code, String message) {
+        String text = message == null ? "" : message;
+        return text.startsWith(code) ? text : code + ": " + text;
     }
 
     /** Hears every later change of state (after the database came back). Called on the retry thread. */

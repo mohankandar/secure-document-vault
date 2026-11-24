@@ -4,8 +4,11 @@ import com.documentplatform.identity.admission.ActiveEntityCandidates;
 import com.documentplatform.identity.admission.ConnectionKey;
 import com.documentplatform.identity.admission.EntityGroupGrants;
 import com.documentplatform.identity.admission.EntityId;
+import com.documentplatform.identity.admission.PlatformGroupGrants;
 import com.documentplatform.identity.IdentityClaims;
+import com.documentplatform.identity.jdbc.LicenceSigningKey;
 import com.documentplatform.identity.jdbc.LicenceSlots;
+import com.documentplatform.identity.signin.DevelopmentLicence;
 import com.documentplatform.identity.jdbc.PostgresEntityStore;
 import com.documentplatform.identity.jdbc.PostgresGrantHistory;
 import com.documentplatform.identity.jdbc.PostgresIdentityLookup;
@@ -57,7 +60,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
 
 /**
- * Task 0041: Vero on platform-core identity. The idn_ tables are platform-core's (identity schema V1 to V3, made by
+ * Task 0041: Vero on platform-core identity. The idn_ tables are platform-core's (identity schema V1 to V4, made by
  * the schema step, filled by setup); these beans read them for Vero's product {@value VeroProduct#CODE}.
  * <p>
  * Licensing is not turned on (owner answer 15). Slot activation needs to know which slots the stored licence lists and
@@ -71,11 +74,11 @@ public class PlatformIdentityConfiguration {
     /** As the old connection cache: a grant or connection change reaches sign-in within 30 seconds. */
     static final Duration CACHE = Duration.ofSeconds(30);
 
-    /** The only EntityGroupGrants and ActiveEntityCandidates bean: platform-core's lookup behind a 30 s cache. */
+    /** The only EntityGroupGrants, ActiveEntityCandidates and PlatformGroupGrants bean: platform-core's lookup behind a 30 s cache. */
     @Bean
     CachedIdentityLookup cachedIdentityLookup(DataSource ds) {
         PostgresIdentityLookup lookup = new PostgresIdentityLookup(ds, VeroProduct.CODE);
-        return new CachedIdentityLookup(lookup, lookup, CACHE, Clock.systemUTC());
+        return new CachedIdentityLookup(lookup, lookup, lookup, CACHE, Clock.systemUTC());
     }
 
     @Bean
@@ -141,18 +144,37 @@ public class PlatformIdentityConfiguration {
      */
     @Bean
     LicensedSlots licensedSlots(DataSource ds, @Value("${sdv.identity.trusted-keys-file:}") String keysFile) {
-        if (keysFile == null || keysFile.isBlank()) {
+        Optional<TrustedKeys> keys = trustedKeys(keysFile);
+        if (keys.isEmpty()) {
             log.info("sdv.identity.trusted-keys-file is not set: entity activation is refused until it is.");
             return Optional::empty;
         }
-        TrustedKeys keys;
+        return LicenceSlots.of(readOnlyLicence(ds, keys.get()));
+    }
+
+    /**
+     * Task 0057 (platform-core 0.5.1, fix 2): whether the stored licence in force is signed by a key the trusted-keys
+     * file marks {@code "development": true}. Only then may a login server on this machine use http (the local and
+     * demo setup); platform-core's test sign-in asks it. This is what identity gives Spring apps that do not run
+     * platform-licensing-spring ({@link LicenceSigningKey}), over the read-only licence above. Without the keys file:
+     * never (http refused, {@code IDN_HTTP_ISSUER_NOT_ALLOWED}).
+     */
+    @Bean
+    DevelopmentLicence developmentLicence(DataSource ds, @Value("${sdv.identity.trusted-keys-file:}") String keysFile) {
+        return trustedKeys(keysFile)
+                .map(keys -> LicenceSigningKey.of(readOnlyLicence(ds, keys), keys))
+                .orElse(DevelopmentLicence.NONE);
+    }
+
+    /** The release's trusted-keys file; empty when the setting is blank. A file that can't be read stops Vero. */
+    static Optional<TrustedKeys> trustedKeys(String keysFile) {
+        if (keysFile == null || keysFile.isBlank()) return Optional.empty();
         try {
-            keys = TrustedKeys.parse(Files.readString(Path.of(keysFile.trim()), StandardCharsets.UTF_8));
+            return Optional.of(TrustedKeys.parse(Files.readString(Path.of(keysFile.trim()), StandardCharsets.UTF_8)));
         } catch (Exception e) {
             throw new StartupFailure(SdvErrorCode.SYS_005, "sdv.identity.trusted-keys-file could not be read as a "
                     + "trusted-keys file (" + e.getClass().getSimpleName() + ").");
         }
-        return LicenceSlots.of(readOnlyLicence(ds, keys));
     }
 
     /** The stored licence, read only: verified with {@code keys}; nothing stored, counted or promoted. */
@@ -189,22 +211,26 @@ public class PlatformIdentityConfiguration {
     };
 
     /**
-     * The grants and ACTIVE entities of a connection, kept up to {@link #CACHE} per connection key. A failed read
+     * The grants, platform-level grants (task 0057) and ACTIVE entities of a connection, kept up to {@link #CACHE} per connection key. A failed read
      * (null) is never kept, so sign-in is refused only while the database is away.
      */
-    public static final class CachedIdentityLookup implements EntityGroupGrants, ActiveEntityCandidates {
+    public static final class CachedIdentityLookup implements EntityGroupGrants, ActiveEntityCandidates, PlatformGroupGrants {
         private record Entry<T>(T value, Instant until) { }
 
         private final EntityGroupGrants grants;
         private final ActiveEntityCandidates candidates;
+        private final PlatformGroupGrants platformGrants;
         private final Duration ttl;
         private final Clock clock;
         private final Map<ConnectionKey, Entry<Map<EntityId, Map<String, Set<String>>>>> grantCache = new ConcurrentHashMap<>();
         private final Map<ConnectionKey, Entry<Set<EntityId>>> candidateCache = new ConcurrentHashMap<>();
+        private final Map<ConnectionKey, Entry<Map<String, Set<String>>>> platformCache = new ConcurrentHashMap<>();
 
-        public CachedIdentityLookup(EntityGroupGrants grants, ActiveEntityCandidates candidates, Duration ttl, Clock clock) {
+        public CachedIdentityLookup(EntityGroupGrants grants, ActiveEntityCandidates candidates, PlatformGroupGrants platformGrants,
+                                    Duration ttl, Clock clock) {
             this.grants = grants;
             this.candidates = candidates;
+            this.platformGrants = platformGrants;
             this.ttl = ttl;
             this.clock = clock;
         }
@@ -217,6 +243,11 @@ public class PlatformIdentityConfiguration {
         @Override
         public Set<EntityId> find(ConnectionKey key) {
             return cached(candidateCache, key, candidates::find);
+        }
+
+        @Override
+        public Map<String, Set<String>> activePlatformGrants(ConnectionKey key) {
+            return cached(platformCache, key, platformGrants::activePlatformGrants);
         }
 
         private <T> T cached(Map<ConnectionKey, Entry<T>> cache, ConnectionKey key, Function<ConnectionKey, T> read) {

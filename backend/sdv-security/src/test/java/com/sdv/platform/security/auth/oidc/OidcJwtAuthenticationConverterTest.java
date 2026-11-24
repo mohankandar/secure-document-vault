@@ -58,8 +58,15 @@ class OidcJwtAuthenticationConverterTest {
     boolean intake;
     final List<RoleConflictReporter.RoleConflict> conflicts = new ArrayList<>();
     boolean failReports;
+    /** Task 0057: platform-level grants (group -> platform roles) and ACTIVE entities that have no entity grant for these groups. */
+    final Map<String, Set<String>> platformGrants = new LinkedHashMap<>();
+    final Set<EntityId> otherActive = new java.util.LinkedHashSet<>();
 
     OidcJwtAuthenticationConverter converter() {
+        return converterWith(new PlatformLevelGrants(key -> platformGrants, key -> active(), SdvRoleCatalog.shipped()));
+    }
+
+    OidcJwtAuthenticationConverter converterWith(OidcJwtAuthenticationConverter.PlatformGrants platform) {
         var settings = new OidcJwtAuthenticationConverter.Settings("customer-oidc", "sdv-api", "groups",
                 OidcJwtAuthenticationConverter.DEFAULT_CLIENT_ID_CLAIMS, "sdv_entity_id", "sdv_source_id", "sdv_source_key");
         var people = new EntityMembershipResolver(key -> grants, key -> grants.keySet(), SdvRoleCatalog.shipped(),
@@ -79,7 +86,7 @@ class OidcJwtAuthenticationConverterTest {
         };
         var normalizer = new OidcJwtIdentityNormalizer("customer-oidc",
                 new IdentityClaimConfig("preferred_username", "email", "name", "groups"));
-        return new OidcJwtAuthenticationConverter(settings, normalizer, people, lookups, senders, sourceLookup, request,
+        return new OidcJwtAuthenticationConverter(settings, normalizer, people, platform, lookups, senders, sourceLookup, request,
                 c -> { if (failReports) throw new IllegalStateException("db down"); conflicts.add(c); });
     }
 
@@ -190,6 +197,74 @@ class OidcJwtAuthenticationConverterTest {
         grant(ENTITY_A, "hc-reviewers", "RESTRICTED_STEWARD");
         grant(ENTITY_A, "it", "IT_ADMIN");
         assertCode(SdvErrorCode.ROL_004, 401, () -> converter().convert(person(List.of("hc-reviewers", "it"), Map.of())));
+    }
+
+    // ---------------------------------------------------------------- platform-level grants (task 0057)
+
+    Set<EntityId> active() {
+        Set<EntityId> all = new java.util.LinkedHashSet<>(grants.keySet());
+        all.addAll(otherActive);
+        return all;
+    }
+
+    @Test
+    void aPlatformLevelGrantGivesThePlatformRoleInEveryActiveEntity() {
+        platformGrants.put("PlatformOperations", Set.of("PLATFORM_OPERATIONS_ADMIN"));
+        otherActive.add(EntityId.of(ENTITY_A));
+        otherActive.add(EntityId.of(ENTITY_B));
+        EntityChoicePrincipal choice = assertInstanceOf(EntityChoicePrincipal.class,
+                converter().convert(person(List.of("PlatformOperations"), Map.of())).getPrincipal());
+        assertEquals(Set.of(ENTITY_A, ENTITY_B), choice.entities());
+
+        requestedEntity = ENTITY_B.toString();
+        SdvPrincipal p = assertInstanceOf(SdvPrincipal.class, converter().convert(person(List.of("PlatformOperations"), Map.of())).getPrincipal());
+        assertEquals(ENTITY_B, p.tenantId());
+        assertEquals(Set.of(SdvRole.PLATFORM_OPERATIONS_ADMIN), p.roles());
+        assertTrue(conflicts.isEmpty());
+    }
+
+    @Test
+    void aPlatformRoleIsAddedToTheEntityRolesOfTheSameSignIn() {
+        grant(ENTITY_A, "it", "IT_ADMIN");
+        platformGrants.put("PlatformOperations", Set.of("PLATFORM_OPERATIONS_ADMIN"));
+        SdvPrincipal p = assertInstanceOf(SdvPrincipal.class,
+                converter().convert(person(List.of("it", "PlatformOperations"), Map.of())).getPrincipal());
+        assertEquals(ENTITY_A, p.tenantId());
+        assertEquals(Set.of(SdvRole.IT_ADMIN, SdvRole.PLATFORM_OPERATIONS_ADMIN), p.roles());
+    }
+
+    @Test
+    void aPlatformLevelGrantNeverGoesWithRestrictedSteward() {
+        grant(ENTITY_A, "claims-users", "BUSINESS_USER");
+        grant(ENTITY_A, "hc-reviewers", "RESTRICTED_STEWARD");
+        platformGrants.put("PlatformOperations", Set.of("PLATFORM_OPERATIONS_ADMIN"));
+        SdvPrincipal p = assertInstanceOf(SdvPrincipal.class, converter().convert(
+                person(List.of("claims-users", "hc-reviewers", "PlatformOperations"), Map.of())).getPrincipal());
+        assertEquals(Set.of(SdvRole.BUSINESS_USER), p.roles(), "Restricted Steward and the platform role are both withheld");
+        assertEquals(1, conflicts.size());
+        assertEquals(ENTITY_A, conflicts.get(0).tenantId());
+        assertEquals(Set.of(SdvRole.RESTRICTED_STEWARD, SdvRole.PLATFORM_OPERATIONS_ADMIN), conflicts.get(0).withheld());
+
+        conflicts.clear();
+        assertCode(SdvErrorCode.ROL_004, 401, () -> converter().convert(person(List.of("hc-reviewers", "PlatformOperations"), Map.of())));
+        assertEquals(1, conflicts.size(), "the conflict is still recorded when no role is left");
+    }
+
+    @Test
+    void aPlatformLevelGrantOfAnEntityRoleIsRefused() {
+        otherActive.add(EntityId.of(ENTITY_A));
+        platformGrants.put("everyone", Set.of("BUSINESS_ADMIN"));
+        assertCode(SdvErrorCode.AUT_007, 401, () -> converter().convert(person(List.of("everyone"), Map.of())));
+    }
+
+    @Test
+    void platformGrantsThatCannotBeReadRefuseTheSignInAsTheDatabaseBeingAway() {
+        grant(ENTITY_A, "claims-users", "BUSINESS_USER");
+        assertThrows(IllegalStateException.class, () -> converterWith(new PlatformLevelGrants(key -> null, key -> active(),
+                SdvRoleCatalog.shipped())).convert(person(List.of("claims-users"), Map.of())));
+        platformGrants.put("PlatformOperations", Set.of("PLATFORM_OPERATIONS_ADMIN"));
+        assertThrows(IllegalStateException.class, () -> converterWith(new PlatformLevelGrants(key -> platformGrants, key -> null,
+                SdvRoleCatalog.shipped())).convert(person(List.of("PlatformOperations"), Map.of())));
     }
 
     // ---------------------------------------------------------------- sending systems

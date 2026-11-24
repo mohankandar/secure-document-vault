@@ -383,11 +383,11 @@ alter default privileges for role $owner in schema public grant select, insert, 
 
     $up = Invoke-SchemaStep @('update')
     Assert-That ($up.Code -eq 0) "update failed: $($up.Err.Trim()) $($up.Out.Trim())"
-    # Task 0041: "would run" counts Vero's changesets and platform-core's identity (V1-V3) and licensing (V1) versions.
+    # Task 0041: "would run" counts Vero's changesets and platform-core's identity (V1-V4, task 0057) and licensing (V1) versions.
     $liquibase = (Invoke-Sql -Database $db -Sql "select count(*) from databasechangelog;").Out.Trim()
     $platform = (Invoke-Sql -Database $db -Sql "select (select max(version) from idn_schema_version) || ' ' || (select max(version) from lic_schema_version) || ' ' || (select count(*) from idn_schema_history where success) || ' ' || (select count(*) from lic_schema_history where success);").Out.Trim().Split(' ')
-    Assert-That ($platform[0] -eq '3' -and $platform[1] -eq '1') "identity tables at version $($platform[0]) (3 expected), licensing at $($platform[1]) (1 expected)"
-    Assert-That ([int]$platform[2] -ge 3 -and [int]$platform[3] -ge 1) 'the identity and licensing runs must each record their versions in their own history table'
+    Assert-That ($platform[0] -eq '4' -and $platform[1] -eq '1') "identity tables at version $($platform[0]) (4 expected), licensing at $($platform[1]) (1 expected)"
+    Assert-That ([int]$platform[2] -ge 4 -and [int]$platform[3] -ge 1) 'the identity and licensing runs must each record their versions in their own history table'
     $applied = [int]$liquibase + [int]$platform[0] + [int]$platform[1]
     $seedRows = (Invoke-Sql -Database $db -Sql "select count(*) from databasechangelog where id = '002-local-foundation-seed';").Out.Trim()
     Assert-That ("$applied" -eq $wouldRun -and $seedRows -eq '0') "update applied $applied changesets and platform versions (expected $wouldRun), seed rows $seedRows"
@@ -395,7 +395,7 @@ alter default privileges for role $owner in schema public grant select, insert, 
     Assert-That ($oldIdentity -eq '0') "changeset 035 must drop the old identity tables, $oldIdentity left"
     $invalid = (Invoke-Sql -Database $db -Sql "select count(*) from pg_index where not indisvalid;").Out.Trim()
     Assert-That ($invalid -eq '0') "$invalid indexes are invalid after the concurrent index step"
-    Write-Step '2c. Schema step update' $up.Seconds "$liquibase changesets and identity V3, licensing V1 applied (own history tables), old identity tables dropped, 018 indexes valid"
+    Write-Step '2c. Schema step update' $up.Seconds "$liquibase changesets and identity V4, licensing V1 applied (own history tables), old identity tables dropped, 018 indexes valid"
     $up.Out | Set-Content -Encoding utf8 (Join-Path $run 'schema-update.out.txt')
 
     # The app user can read and write but not create or alter.

@@ -1,7 +1,6 @@
 package com.sdv.platform.setup;
 
 import com.documentplatform.identity.EntityUuid;
-import com.documentplatform.setup.ProductRoles;
 import com.documentplatform.setup.SetupCommand;
 import org.junit.jupiter.api.Test;
 
@@ -22,8 +21,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Task 0041: Vero's setup inputs, checked by platform-core's own setup command. Without database settings the command
- * reads and checks every input file first (licence signature, sign-in file, product roles, role mapping, client
- * bindings) and only then stops at the missing database settings, so reaching that refusal proves the files are valid.
+ * checks the licence signature, the sign-in file and the product roles, then stops at the missing database settings.
+ * Task 0057: with platform-core 0.6.1 the role mapping's rows (an unknown role, a platform role on an entity row) are
+ * checked only once the database is reached; {@link VeroSetupPlanPostgresTest} runs those checks on PostgreSQL.
  */
 class VeroSetupFilesTest {
     static final Path ROOT = Path.of("..", "..");
@@ -33,6 +33,11 @@ class VeroSetupFilesTest {
     record Run(int exit, String out, String err) { }
 
     static Run setup(String... args) {
+        return setup(Map.of(), args);
+    }
+
+    /** {@code env}: the setup command's environment (database settings), never the process's own. */
+    static Run setup(Map<String, String> env, String... args) {
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         ByteArrayOutputStream err = new ByteArrayOutputStream();
         Path log;
@@ -43,7 +48,7 @@ class VeroSetupFilesTest {
         }
         List<String> all = new java.util.ArrayList<>(List.of(args));
         all.addAll(List.of("--run-log", log.toString()));
-        int exit = new SetupCommand(Map.of(), Clock.systemUTC()).run(all,
+        int exit = new SetupCommand(env, Clock.systemUTC()).run(all,
                 new PrintStream(out, true, StandardCharsets.UTF_8), new PrintStream(err, true, StandardCharsets.UTF_8));
         return new Run(exit, out.toString(StandardCharsets.UTF_8), err.toString(StandardCharsets.UTF_8));
     }
@@ -73,10 +78,51 @@ class VeroSetupFilesTest {
 
     @Test
     void theShippedProductRolesFileIsVerosAndKeysAreOptional() throws Exception {
-        ProductRoles roles = ProductRoles.parse(Files.readString(PRODUCT_ROLES), "SDV");
-        assertEquals("SDV", roles.productCode());
-        assertFalse(roles.customerKeysRequired(), "customerKeys optional until Vero uses platform-crypto (owner answer 12)");
-        assertTrue(roles.isPlatformRole("PLATFORM_OPERATIONS_ADMIN"));
+        // Task 0057: platform-core 0.6.0 made its ProductRoles reader package-private. Setup itself reads the file
+        // (theDemoFilesPassEveryCheckUpToTheDatabase), so only Vero's own promises are checked here.
+        String roles = Files.readString(PRODUCT_ROLES).replaceAll("\\s+", "");
+        assertTrue(roles.contains("\"productCode\":\"SDV\""), roles);
+        assertTrue(roles.contains("\"customerKeys\":\"optional\""), "customerKeys optional until Vero uses platform-crypto (owner answer 12)");
+        assertTrue(roles.contains("\"platformRoles\":[\"PLATFORM_OPERATIONS_ADMIN\"]"), roles);
+    }
+
+    /** Task 0057 (LV-16 item 3): the demo role mapping grants the Platform Operations Admin platform-wide. */
+    @Test
+    void theDemoRoleMappingHasAPlatformLevelGrant() throws Exception {
+        List<String> rows = Files.readAllLines(DEV.resolve("role-mapping-SDV.csv"));
+        assertTrue(rows.contains("*,,PlatformOperations,PLATFORM_OPERATIONS_ADMIN"), String.join("\n", rows));
+        assertTrue(rows.stream().filter(r -> r.startsWith("ENT-")).noneMatch(r -> r.endsWith(",PLATFORM_OPERATIONS_ADMIN")),
+                "a platform role is never granted on an entity row");
+    }
+
+    /** The demo plan, but with a copy of the demo files whose role mapping has one more row (none: {@code null}). */
+    static String[] demoPlanWithMapping(String extraRow) throws Exception {
+        Path dir = Files.createTempDirectory("vero-setup-mapping");
+        Files.copy(DEV.resolve("signin-vero-demo.json"), dir.resolve("signin-vero-demo.json"));
+        Files.copy(DEV.resolve("client-bindings-SDV.csv"), dir.resolve("client-bindings-SDV.csv"));
+        Files.writeString(dir.resolve("role-mapping-SDV.csv"),
+                Files.readString(DEV.resolve("role-mapping-SDV.csv")) + (extraRow == null ? "" : extraRow + "\r\n"));
+        String[] plan = demoPlan(DEV.resolve("development-trusted-keys.json").toString());
+        plan[4] = dir.resolve("signin-vero-demo.json").toString();
+        return plan;
+    }
+
+    /** Task 0057: the test licences are signed with the JDK over the bytes platform-core's verifier checks. */
+    @Test
+    void aLicenceSignedForTheTestsPassesPlatformCoresVerifier() {
+        var key = DevelopmentLicences.newKey();
+        var allowance = List.of(new com.documentplatform.licensing.Allowance("SDV",
+                com.documentplatform.licensing.AllowanceType.PAGES_PER_MONTH, 10));
+        var licence = new com.documentplatform.licensing.Licence("LIC-SIGN-TEST-0001", 1, "Signing test", "TEN-SIGN-TEST-0001",
+                List.of("SDV"), List.of(new com.documentplatform.licensing.EntitySlot("ENT-SIGN-TEST-0001", allowance)),
+                com.documentplatform.licensing.LicenceType.PERPETUAL, com.documentplatform.licensing.LicenceKind.NON_PRODUCTION,
+                java.time.LocalDate.parse("2026-01-01"), null, java.time.LocalDate.parse("2036-12-31"),
+                com.documentplatform.licensing.Deployment.ON_PREM, "sign-test-1", java.time.Instant.parse("2026-11-23T00:00:00Z"));
+        var keys = com.documentplatform.licensing.TrustedKeys.of(Map.of("sign-test-1", key.getPublic()), java.util.Set.of("sign-test-1"));
+        var verified = new com.documentplatform.licensing.LicenceVerifier(keys)
+                .verify(DevelopmentLicences.sign(licence, key.getPrivate()), "TEN-SIGN-TEST-0001");
+        assertEquals(licence, verified);
+        assertTrue(keys.isDevelopmentKey("sign-test-1"));
     }
 
     @Test

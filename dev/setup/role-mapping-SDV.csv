@@ -8,3 +8,5 @@ ENT-VERO-DEMO-0001,,DocumentStewards,DOCUMENT_STEWARD
 ENT-VERO-DEMO-0001,,BusinessAdmins,BUSINESS_ADMIN
 ENT-VERO-DEMO-0001,,TenantITAdmins,IT_ADMIN
 ENT-VERO-DEMO-0002,,BusinessAdmins,BUSINESS_ADMIN
+# Task 0057: platform-level grant (entity_id *): the Platform Operations Admin in every entity of the customer.
+*,,PlatformOperations,PLATFORM_OPERATIONS_ADMIN

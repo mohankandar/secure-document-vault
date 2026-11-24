@@ -1,5 +1,6 @@
 import { roleApi, contentBinary, contentDownload, contentExport, type RegisteredExport, type SessionInfo, type SearchSchema, type SearchResponse, type BusinessRecord, type RecordSummary, type SearchSource, type SensitivityLevel } from '../api'
 import type { Field, Source, RecordItem, Doc } from './model'
+import type { SignInTestAnswer } from './signInTestWords'
 
 export const session = () => roleApi<SessionInfo>('/api/v1/session', 'business')
 export const schema = () => roleApi<SearchSchema>('/api/v1/business/search-schema', 'business')
@@ -139,6 +140,8 @@ export const liveStorage=()=>roleApi<LiveStorageVolume[]>('/api/v1/admin/storage
 export type IdentityConnection={connectionId:string;providerId:string;providerType:string;issuerUri:string;browserClientId:string|null;apiAudience:string;status:string;configurationVersion:number}
 export type IdentityOverview={active:IdentityConnection|null;changedBySetupOnly:boolean}
 export const identityOverview=()=>roleApi<IdentityOverview>('/api/v1/admin/login-connection','tenantIt')
+/** Task 0057: platform-core's read-only test sign-in of the connection in use. Changes nothing. */
+export const testSignIn=()=>roleApi<SignInTestAnswer>('/api/v1/admin/login-connection/test','tenantIt',{method:'POST'})
 /** Task 0041 (owner answer 5): the entities this sign-in may work in; current is null until one is chosen. */
 export type SessionEntities={current:string|null;entities:{entityId:string;name:string}[];activatableSlots:string[]}
 export const sessionEntities=()=>roleApi<SessionEntities>('/api/v1/session/entities','business')

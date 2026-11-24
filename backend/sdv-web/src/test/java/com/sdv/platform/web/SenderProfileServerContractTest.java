@@ -3,7 +3,7 @@ package com.sdv.platform.web;
 import com.documentplatform.identity.EntityUuid;
 import com.documentplatform.identity.testkit.MockIssuer;
 import com.documentplatform.integration.config.SignIn;
-import com.documentplatform.integration.safety.Installation;
+import com.documentplatform.outbound.Installation;
 import com.documentplatform.integration.testkit.ProfileContract;
 import com.documentplatform.notifications.secret.Secret;
 import com.documentplatform.notifications.secret.SecretRef;
