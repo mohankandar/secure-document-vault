@@ -14,7 +14,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * against the scratch database of the schema check (identity schema V5). Only {@code plan}: nothing is written.
  * PostgreSQL only, like the other {@code *PostgresTest}s (CI and step 4f of {@code Test-SDV-SchemaUpgrade.ps1}).
  */
-@EnabledIfEnvironmentVariable(named = "SDV_IT_JDBC_URL", matches = "jdbc:postgresql://localhost:5433/sdv_schema_test")
+@EnabledIfEnvironmentVariable(named = "SDV_IT_JDBC_URL", matches = "jdbc:postgresql://localhost:5433/sdv_schema_test(_[1-9])?")
 class VeroSetupPlanPostgresTest {
 
     /** The setup command's own database settings, from the test's scratch database settings. */

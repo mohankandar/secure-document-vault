@@ -37,7 +37,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * </ol>
  * Runs only when SDV_IT_JDBC_URL is set to the scratch database sdv_schema_test; never against the sdv database.
  */
-@EnabledIfEnvironmentVariable(named = "SDV_IT_JDBC_URL", matches = "jdbc:postgresql://localhost:5433/sdv_schema_test")
+@EnabledIfEnvironmentVariable(named = "SDV_IT_JDBC_URL", matches = "jdbc:postgresql://localhost:5433/sdv_schema_test(_[1-9])?")
 class ActivityReportPostgresTest {
     private static final UUID T = UUID.fromString("10000000-0000-0000-0000-000000005401");
     private static final UUID TX = UUID.fromString("10000000-0000-0000-0000-000000005402");

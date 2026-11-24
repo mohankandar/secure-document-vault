@@ -1,0 +1,68 @@
+{
+  "realm": "vero-testers",
+  "enabled": true,
+  "displayName": "Vero testers (demo data only)",
+  "sslRequired": "external",
+  "registrationAllowed": false,
+  "resetPasswordAllowed": false,
+  "rememberMe": false,
+  "editUsernameAllowed": false,
+  "bruteForceProtected": true,
+  "permanentLockout": false,
+  "failureFactor": 5,
+  "waitIncrementSeconds": 300,
+  "maxFailureWaitSeconds": 3600,
+  "passwordPolicy": "length(12) and notUsername and notEmail",
+  "defaultSignatureAlgorithm": "RS256",
+  "accessTokenLifespan": 900,
+  "ssoSessionIdleTimeout": 1800,
+  "ssoSessionMaxLifespan": 28800,
+  "revokeRefreshToken": true,
+  "refreshTokenMaxReuse": 0,
+  "groups": [
+    { "name": "BusinessUsers" },
+    { "name": "DocumentStewards" },
+    { "name": "RestrictedStewards" },
+    { "name": "BusinessAdmins" },
+    { "name": "TenantITAdmins" }
+  ],
+  "clients": [
+    {
+      "clientId": "vero-testers-web",
+      "name": "Vero",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "fullScopeAllowed": false,
+      "redirectUris": ["https://${VERO_TESTERS_HOST}/"],
+      "webOrigins": ["https://${VERO_TESTERS_HOST}"],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "https://${VERO_TESTERS_HOST}/",
+        "access.token.signed.response.alg": "RS256"
+      },
+      "protocolMappers": [
+        {
+          "name": "vero-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": { "included.custom.audience": "vero-testers-api", "access.token.claim": "true", "id.token.claim": "false" }
+        },
+        {
+          "name": "groups",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-group-membership-mapper",
+          "config": { "claim.name": "groups", "full.path": "false", "access.token.claim": "true", "id.token.claim": "false", "userinfo.token.claim": "false" }
+        }
+      ]
+    }
+  ],
+  "requiredActions": [
+    { "alias": "CONFIGURE_TOTP", "name": "Configure OTP", "providerId": "CONFIGURE_TOTP", "enabled": true, "defaultAction": true, "priority": 10 },
+    { "alias": "UPDATE_PASSWORD", "name": "Update Password", "providerId": "UPDATE_PASSWORD", "enabled": true, "defaultAction": false, "priority": 20 }
+  ]
+}

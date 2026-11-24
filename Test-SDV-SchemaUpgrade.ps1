@@ -102,6 +102,8 @@ $root = $PSScriptRoot
 $container = 'sdv-postgres'
 $db = 'sdv_schema_test'
 $owner = 'sdv_schema_owner'
+# Task 0086: step 4f runs the PostgreSQL tests in this many processes, each on its own copy of the checked scratch database.
+$forks = 4
 $hostUrl = 'jdbc:postgresql://localhost:5433/' + $db
 # In order. The upgrade applies every changeset from -From on.
 $checked = @('022-retention-policy-creator-name', '023-document-sensitivity-level', '024-record-sensitivity-levels', '025-role-separation', '026-legal-holds', '027-access-requests', '028-sensitivity-level-changes', '029-document-duplicate-receipts', '030-tenant-time-zone', '031-intake-report-indexes', '032-steward-notices', '033-unidentified-intake-attempts', '034-unidentified-intake-attempt-counts', '035-drop-old-identity', '036-quarantine', '037-sealed-audit', '038-quarantine-filter-blocking', '039-quarantine-scale', '040-report-storage', '041-report-activity', '042-restrictions-indexes', '043-held-redaction', '044-hold-release')
@@ -220,6 +222,7 @@ function Remove-Scratch {
     $null = Invoke-Sql -Database 'postgres' -Sql @"
 select pg_terminate_backend(pid) from pg_stat_activity where datname = '$db' and pid <> pg_backend_pid();
 drop database if exists $db;
+$((1..$forks | ForEach-Object { "drop database if exists ${db}_$_;" }) -join "`n")
 drop role if exists $owner;
 "@
 }
@@ -283,7 +286,7 @@ else {
 }
 $state = (Invoke-Native -File 'docker' -Arguments @('inspect', '-f', '{{.State.Running}}', $container)).Out.Trim()
 Assert-That ($state -eq 'true') "$container is not running"
-$leftover = (Invoke-Sql -Database 'postgres' -Sql "select count(*) from pg_database where datname = '$db'; select count(*) from pg_roles where rolname = '$owner';").Out -split "`n" | Where-Object { $_.Trim() } | ForEach-Object { [int]$_ }
+$leftover = (Invoke-Sql -Database 'postgres' -Sql "select count(*) from pg_database where datname = '$db' or datname ~ '^${db}_[0-9]+$'; select count(*) from pg_roles where rolname = '$owner';").Out -split "`n" | Where-Object { $_.Trim() } | ForEach-Object { [int]$_ }
 if (($leftover | Measure-Object -Sum).Sum -gt 0) {
     Assert-That $DropLeftover.IsPresent "$db or $owner exists from an earlier run; rerun with -DropLeftover to drop them"
     Remove-Scratch
@@ -1018,10 +1021,12 @@ rollback;
         # the Sensitivity report (SensitivityReportPostgresTest), platform-core identity and the demo step (PlatformIdentityPostgresTest) and the sender profile against a running Vero (SenderProfileServerContractTest, task 0041). The scratch owner's password goes to the child process only, as
         # SDV_IT_JDBC_PASSWORD.
         $w = [System.Diagnostics.Stopwatch]::StartNew()
+        $copies = Invoke-Sql -Database 'postgres' -Sql ((1..$forks | ForEach-Object { "create database ${db}_$_ template $db owner $owner; revoke all on database ${db}_$_ from public;" }) -join "`n")
+        Assert-That ($copies.Code -eq 0) "could not copy the scratch database: $($copies.Err.Trim())"
         $mvn = (Get-Command mvn.cmd -ErrorAction Stop).Source
         $it = Invoke-Native -File $mvn -Arguments @('-o', '-f', (Join-Path $root 'backend\pom.xml'), '-pl', 'sdv-web,sdv-setup', '-am', 'test',
-            '-Dtest=LegalHoldPostgresTest,AccessRequestPostgresTest,DuplicateIntakePostgresTest,IntakeReportPostgresTest,SensitivityReportPostgresTest,PlatformIdentityPostgresTest,SenderProfileServerContractTest,UnidentifiedIntakeAttemptPostgresTest,QuarantinePostgresTest,QuarantineFilterBlockingPostgresTest,QuarantineScalePostgresTest,StorageReportPostgresTest,ActivityReportPostgresTest,RestrictionsPostgresTest,PrimaryIdentifierPostgresTest,SealedAuditPostgresTest,HeldRedactionPostgresTest,VeroSetupPlanPostgresTest', '-Dsurefire.failIfNoSpecifiedTests=false') -Environment @{
-            SDV_IT_JDBC_URL = $hostUrl; SDV_IT_JDBC_USER = $owner; SDV_IT_JDBC_PASSWORD = $ownerPassword; SDV_IT_QUARANTINE_SCALE = "$QuarantineScale"; SDV_IT_REPORT_SCALE = "$ReportScale"; SDV_IT_ACTIVITY_PER_DAY = "$ActivityPerDay" }
+            '-Dtest=LegalHoldPostgresTest,AccessRequestPostgresTest,DuplicateIntakePostgresTest,IntakeReportPostgresTest,SensitivityReportPostgresTest,PlatformIdentityPostgresTest,SenderProfileServerContractTest,UnidentifiedIntakeAttemptPostgresTest,QuarantinePostgresTest,QuarantineFilterBlockingPostgresTest,QuarantineScalePostgresTest,StorageReportPostgresTest,ActivityReportPostgresTest,RestrictionsPostgresTest,PrimaryIdentifierPostgresTest,SealedAuditPostgresTest,HeldRedactionPostgresTest,VeroSetupPlanPostgresTest', '-Dsurefire.failIfNoSpecifiedTests=false', '-Ppostgres-copies', "-Dit.forks=$forks", "-Dit.url=$hostUrl") -Environment @{
+            SDV_IT_JDBC_USER = $owner; SDV_IT_JDBC_PASSWORD = $ownerPassword; SDV_IT_QUARANTINE_SCALE = "$QuarantineScale"; SDV_IT_REPORT_SCALE = "$ReportScale"; SDV_IT_ACTIVITY_PER_DAY = "$ActivityPerDay" }
         foreach ($test in @('application.legalhold.LegalHoldPostgresTest', 'application.approvals.AccessRequestPostgresTest', 'application.document.DuplicateIntakePostgresTest', 'application.reports.IntakeReportPostgresTest', 'application.reports.SensitivityReportPostgresTest', 'application.identity.PlatformIdentityPostgresTest', 'web.SenderProfileServerContractTest', 'application.reports.UnidentifiedIntakeAttemptPostgresTest', 'application.quarantine.QuarantinePostgresTest', 'application.quarantine.QuarantineFilterBlockingPostgresTest', 'application.quarantine.QuarantineScalePostgresTest', 'application.reports.StorageReportPostgresTest', 'application.reports.ActivityReportPostgresTest', 'application.restrictions.RestrictionsPostgresTest', 'application.business.PrimaryIdentifierPostgresTest', 'application.audit.SealedAuditPostgresTest', 'application.redaction.HeldRedactionPostgresTest', 'setup.VeroSetupPlanPostgresTest')) {
             $itLine = ($it.Out -split "`n" | Where-Object { $_ -match ('Tests run: .* in com\.sdv\.platform\.' + [regex]::Escape($test)) } | Select-Object -First 1)
             # Task 0039 part 2: UnidentifiedIntakeAttemptPostgresTest has two tests (the flood of 1,000 requests).

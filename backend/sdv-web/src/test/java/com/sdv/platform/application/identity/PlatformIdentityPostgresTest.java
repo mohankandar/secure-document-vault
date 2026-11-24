@@ -63,7 +63,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * <p>
  * Runs only when SDV_IT_JDBC_URL is set (CI, Test-SDV-SchemaUpgrade.ps1); never against the sdv database.
  */
-@EnabledIfEnvironmentVariable(named = "SDV_IT_JDBC_URL", matches = "jdbc:postgresql://localhost:5433/sdv_schema_test")
+@EnabledIfEnvironmentVariable(named = "SDV_IT_JDBC_URL", matches = "jdbc:postgresql://localhost:5433/sdv_schema_test(_[1-9])?")
 class PlatformIdentityPostgresTest {
     static final String TENANT = "TEN-PG-IDENTITY-0001";
     static final String ACTIVE_SLOT = "ENT-PG-IDENTITY-0001";

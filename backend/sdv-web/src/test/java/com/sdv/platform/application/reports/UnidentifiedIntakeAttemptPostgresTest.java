@@ -37,7 +37,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * Runs only when SDV_IT_JDBC_URL is set. Test-SDV-SchemaUpgrade.ps1 sets it to its scratch database (sdv_schema_test)
  * after the schema step; it never points at the sdv database. In the normal build this test is skipped.
  */
-@EnabledIfEnvironmentVariable(named = "SDV_IT_JDBC_URL", matches = "jdbc:postgresql://localhost:5433/sdv_schema_test")
+@EnabledIfEnvironmentVariable(named = "SDV_IT_JDBC_URL", matches = "jdbc:postgresql://localhost:5433/sdv_schema_test(_[1-9])?")
 class UnidentifiedIntakeAttemptPostgresTest {
     private static final UUID TA = UUID.fromString("10000000-0000-0000-0000-0000000039a1");
     private static final UUID TB = UUID.fromString("10000000-0000-0000-0000-0000000039b1");
