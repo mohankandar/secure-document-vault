@@ -192,7 +192,7 @@ $info = Invoke-RestMethod -Uri "$Base/api/v1/system/info" -TimeoutSec 10
 if (@($info.activeProfiles) -notcontains 'local') { throw "The demo data is for a Vero in local mode; Vero at $Base runs with profiles $(@($info.activeProfiles) -join ', ')." }
 
 # ---- Task 0041: the demo entities come from platform-core setup and Vero's demo step, never from a changeset ----
-# Setup loads the demo licence (signed by the development key in dev\setup, which no release trusts), the customer,
+# Setup loads the demo licence (signed by the development key, which only a development build trusts: Build-SDV-All.ps1), the customer,
 # the two entity slots, the local login connection, the role grants and the client bindings. The demo step activates
 # both slots and makes Vero's rows for them (entity UUIDs derived from the slot IDs). Both are safe to run again. The
 # database user and password are the local profile's (application-local.yml), set for these two runs only.
@@ -205,7 +205,7 @@ $env:PLATFORM_SETUP_DB_URL = $localUrl; $env:PLATFORM_SETUP_DB_USER = 'sdv'; $en
 try {
     $setupOut = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $ScriptFolder 'setup.ps1') apply `
         -Licence (Join-Path $ScriptFolder 'dev\setup\licence-vero-demo.json') -Signin (Join-Path $ScriptFolder 'dev\setup\signin-vero-demo.json') `
-        -Development --no-customer-keys --run-log (Join-Path $SetupRuntime 'platform-setup-runs.log') `
+        --no-customer-keys --run-log (Join-Path $SetupRuntime 'platform-setup-runs.log') `
         --config-out (Join-Path $SetupRuntime 'platform-tenant.properties') 2>&1
     $setupExit = $LASTEXITCODE
 } finally {
@@ -217,7 +217,7 @@ $webJar = @(Get-ChildItem -Path (Join-Path $ScriptFolder 'backend\sdv-web\target
 $env:SDV_DEMO_DB_URL = $localUrl; $env:SDV_DEMO_DB_USERNAME = 'sdv'; $env:SDV_DEMO_DB_PASSWORD = 'sdv_local_only'
 try {
     $demoOut = & java -cp $webJar '-Dloader.main=com.sdv.platform.web.install.DemoStep' org.springframework.boot.loader.launch.PropertiesLauncher `
-        apply --keys (Join-Path $ScriptFolder 'dev\setup\development-trusted-keys.json') 2>&1
+        apply 2>&1
     $demoExit = $LASTEXITCODE
 } finally {
     Remove-Item Env:SDV_DEMO_DB_URL, Env:SDV_DEMO_DB_USERNAME, Env:SDV_DEMO_DB_PASSWORD -ErrorAction SilentlyContinue

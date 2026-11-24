@@ -174,10 +174,12 @@ class SenderProfileServerContractTest {
     @Test
     void aRunningVeroAnswersAsTheProfileSays() throws Exception {
         var profile = SenderProfileContractTest.validated().profile();
+        // Task 0067 (platform-core 0.7.0): integration secrets are named under their entity.
+        String secretName = "int/" + ProfileContract.ENTITY + "/profile-check-secret";
         SignIn signIn = SignIn.OAuth2ClientCredentials.secret(URI.create("http://127.0.0.1:" + tokens.getAddress().getPort() + "/token"),
-                CLIENT, SecretRef.of("profile-check-secret"), null);
+                CLIENT, SecretRef.of(secretName), null);
         com.documentplatform.notifications.secret.SecretResolver secrets = ref ->
-                "profile-check-secret".equals(ref.value()) ? Optional.of(Secret.of(CLIENT_SECRET)) : Optional.empty();
+                secretName.equals(ref.value()) ? Optional.of(Secret.of(CLIENT_SECRET)) : Optional.empty();
         // On premises, with internal addresses allowed: Vero and the login server run on this computer.
         Installation here = new Installation(false, true, false, null, null);
         List<ProfileContract.Problem> problems = ProfileContract.checkAgainstServer(profile,

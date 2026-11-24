@@ -73,6 +73,7 @@ public class OidcJwtConfiguration {
             @Value("${sdv.auth.jwt.display-name-claim:name}") String displayNameClaim,
             @Value("${sdv.auth.jwt.machine-claim:}") String machineClaim,
             @Value("${sdv.auth.jwt.machine-claim-value:}") String machineClaimValue,
+            @Value("${sdv.auth.jwt.person-claims:email,upn,given_name,family_name,name,uid}") String personClaims,
             ObjectProvider<EntityGroupGrants> grants,
             ObjectProvider<ActiveEntityCandidates> candidates,
             ObjectProvider<PlatformGroupGrants> platformGrants,
@@ -83,7 +84,7 @@ public class OidcJwtConfiguration {
         var settings = new OidcJwtAuthenticationConverter.Settings(providerId, requireText(audience, "sdv.auth.jwt.audience"),
                 groupsClaim, Arrays.stream(clientIdClaims.split(",")).map(String::trim).filter(s -> !s.isEmpty()).toList(),
                 entityClaim, sourceIdClaim, sourceKeyClaim,
-                new OidcJwtAuthenticationConverter.MachineTokens(machineClaim, machineClaimValue));
+                new OidcJwtAuthenticationConverter.MachineTokens(machineClaim, machineClaimValue, Arrays.asList(personClaims.split(","))));
         var normalizer = new OidcJwtIdentityNormalizer(settings.providerId(),
                 new IdentityClaimConfig(usernameClaim, emailClaim, displayNameClaim, settings.groupsClaim()));
         SdvRoleCatalog catalog = SdvRoleCatalog.shipped();

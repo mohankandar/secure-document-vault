@@ -24,7 +24,10 @@
 
     <properties>
         <java.version>21</java.version>
-        <platform.core.version>0.6.1</platform.core.version>
+        <!-- Task 0067: which licence keys the build trusts; only a developer's build says development. -->
+        <licence.build>release</licence.build>
+        <maven.build.timestamp.format>yyyy-MM-dd'T'HH:mm:ss'Z'</maven.build.timestamp.format>
+        <platform.core.version>0.7.0</platform.core.version>
         <maven.compiler.release>21</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <spring-boot.version>3.5.16</spring-boot.version>

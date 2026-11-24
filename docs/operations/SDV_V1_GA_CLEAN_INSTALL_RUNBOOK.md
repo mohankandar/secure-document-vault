@@ -356,7 +356,8 @@ Then load sign-in, entities and sending systems with the setup command: `docs/in
 file there also grants the Platform Operations Admin, once for the whole customer, on a row with `*` as its entity
 (platform-level grant, task 0057); the separation rules hold for it (never with Restricted Steward).
 
-Task 0057 (platform-core 0.6.1): this release's identity tables are at version 4 (`idn_platform_grant`). On a
+Task 0067 (platform-core 0.7.0): this release's identity tables are at version 5 and licensing tables at version 2;
+`status` lists what is missing and `update` applies it. Before, task 0057 (platform-core 0.6.1): identity tables are at version 4 (`idn_platform_grant`). On a
 database whose identity tables are at version 3, `status` lists `identity V4 (platform-core)` and `update` applies it
 in the identity run; Vero refuses to start until then (`IDN_VERSION_OLDER`).
 

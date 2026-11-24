@@ -116,6 +116,14 @@
     </dependencies>
 
     <build>
+        <resources>
+            <resource><directory>src/main/resources</directory></resource>
+            <!-- Task 0067: the licence keys this build trusts (backend/licence-build/README.md). -->
+            <resource>
+                <directory>../licence-build/${licence.build}</directory>
+                <filtering>true</filtering>
+            </resource>
+        </resources>
         <plugins>
             <plugin>
                 <groupId>org.springframework.boot</groupId>

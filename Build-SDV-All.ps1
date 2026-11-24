@@ -1,5 +1,9 @@
 [CmdletBinding()]
-param()
+param(
+    # Task 0067: a release build trusts only the release licence keys. Without this it is a DEVELOPMENT build, which
+    # trusts the demo licence and must never be given to a customer.
+    [switch]$Release
+)
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
@@ -46,7 +50,7 @@ Write-Host 'Maven reads them from GitHub Packages (server github-platform-core, 
 
 Push-Location $Backend
 try {
-    Invoke-Step 'Backend Maven reactor build' { & mvn clean verify }
+    Invoke-Step 'Backend Maven reactor build' { & mvn clean verify "-Dlicence.build=$(if ($Release) { 'release' } else { 'development' })" }
 } finally {
     Pop-Location
 }
@@ -69,5 +73,6 @@ try {
 
 Write-Host ""
 Write-Host "BUILD SUCCESS"
+if (-not $Release) { Write-Host "DEVELOPMENT BUILD: it trusts the demo licence. Not for customers (use -Release)." }
 Write-Host "Backend jar: backend\sdv-web\target\sdv-web-0.1.0-SNAPSHOT.jar"
 Write-Host "Frontend dist: frontend\sdv-ui\dist"

@@ -108,9 +108,10 @@ sdv:
       # preferred_username = service-account-{client}, or idtyp = app.
       machine-claim: ${SDV_AUTH_JWT_MACHINE_CLAIM:}
       machine-claim-value: ${SDV_AUTH_JWT_MACHINE_CLAIM_VALUE:}
+      # Task 0067: claims that name a person; a sending system's token with one is refused.
+      person-claims: ${SDV_AUTH_JWT_PERSON_CLAIMS:email,upn,given_name,family_name,name,uid}
 
-  # Task 0041: the release's trusted-keys.json (the licence signing keys), read only, so a Business Admin can activate
-  # an entity slot the stored licence lists. Licensing itself is not turned on: nothing checks the allowance.
+  # Task 0067: removed. Licence keys come only from the build (backend/licence-build). Set, it stops the start.
   identity:
     trusted-keys-file: ${SDV_TRUSTED_KEYS_FILE:}
 

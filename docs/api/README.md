@@ -40,7 +40,7 @@ Since 1.1.0 a sending system needs a **standard client-credentials token and not
    | Grant | Client credentials only (no browser sign-in, no user accounts) |
    | Audience | The token's `aud` must contain Vero's audience (`SDV_AUTH_JWT_AUDIENCE`, for example `sdv-api`) |
    | Groups | None. A bound client whose token carries groups is refused (`SDV-AUT-005`) |
-   | Own token | The token must be the client's own (client credentials). One with claims of a person's sign-in (`sid`, `auth_time`, `nonce`, `at_hash`, `c_hash`, `s_hash`, `amr`, or a groups overage mark), or without the mark the installer asks for, is refused (`SDV-AUT-005`) |
+   | Own token | The token must be the client's own (client credentials). One with claims of a person's sign-in (`sid`, `auth_time`, `nonce`, `at_hash`, `c_hash`, `s_hash`, `amr`, or a groups overage mark) or that name a person (`email`, `upn`, `given_name`, `family_name`, `name`, `uid`), or without the mark the installer asks for, is refused (`SDV-AUT-005`) |
    | Token lifetime | Short, for example 5 minutes. If Vero sets `SDV_AUTH_JWT_MAX_TOKEN_LIFETIME_SECONDS`, at most that |
 
 3. **With Vero's setup command**, IT binds the client to its entity and sending system: one line in the client-binding file (`client_id,entity_slot,source,description`, install guide "Setup"), then `setup apply`. The client ID is copied exactly as the sign-in server shows it; capitals matter. The file holds client IDs only, never a secret.
