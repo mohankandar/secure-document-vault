@@ -36,7 +36,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * Runs only when SDV_IT_JDBC_URL is set (Test-SDV-SchemaUpgrade.ps1, scratch database sdv_schema_test); otherwise
  * skipped.
  */
-@EnabledIfEnvironmentVariable(named = "SDV_IT_JDBC_URL", matches = "jdbc:postgresql://localhost:5433/sdv_schema_test")
+@EnabledIfEnvironmentVariable(named = "SDV_IT_JDBC_URL", matches = "jdbc:postgresql://localhost:5433/sdv_schema_test(_[1-9])?")
 class SensitivityReportPostgresTest {
     private static final UUID T = UUID.fromString("10000000-0000-0000-0000-0000000005e1");
     private static final UUID TX = UUID.fromString("10000000-0000-0000-0000-0000000005e2");
