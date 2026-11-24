@@ -1,0 +1,45 @@
+# Task 0089: the testers' own login system. Its own containers and volume; the development ones are not touched.
+# The passwords are in an environment file outside the repository (runbook, "Remote testers").
+name: vero-testers
+services:
+  vero-testers-keycloak-db:
+    image: postgres:16.4-alpine
+    container_name: vero-testers-keycloak-db
+    environment:
+      POSTGRES_DB: keycloak
+      POSTGRES_USER: keycloak
+      POSTGRES_PASSWORD: ${VERO_TESTERS_KC_DB_PASSWORD:?set it in the environment file}
+    volumes:
+      - vero-testers-keycloak-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U keycloak -d keycloak"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  vero-testers-keycloak:
+    image: quay.io/keycloak/keycloak:26.8.2
+    container_name: vero-testers-keycloak
+    command: ["start", "--import-realm"]
+    depends_on:
+      vero-testers-keycloak-db:
+        condition: service_healthy
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://vero-testers-keycloak-db:5432/keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: ${VERO_TESTERS_KC_DB_PASSWORD:?set it in the environment file}
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${VERO_TESTERS_KC_ADMIN_PASSWORD:?set it in the environment file}
+      KC_HOSTNAME: https://${VERO_TESTERS_HOST:?set it in the environment file}
+      KC_PROXY_HEADERS: xforwarded
+      KC_HTTP_ENABLED: "true"
+      VERO_TESTERS_HOST: ${VERO_TESTERS_HOST:?set it in the environment file}
+    ports:
+      - "127.0.0.1:8291:8080"
+    volumes:
+      - ./realm-vero-testers.json:/opt/keycloak/data/import/realm-vero-testers.json:ro
+
+volumes:
+  vero-testers-keycloak-db:
+    name: vero-testers-keycloak-db

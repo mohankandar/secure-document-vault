@@ -1,0 +1,69 @@
+# Task 0089: the one way into the tester instance. The tunnel brings the web address here and nowhere else.
+# Only the listed paths are passed on; everything else is 404. No Keycloak admin, no health or metrics, no intake.
+{
+	admin off
+	auto_https off
+	persist_config off
+	servers {
+		protocols h1
+		trusted_proxies static 127.0.0.1/32
+		client_ip_headers Cf-Connecting-Ip
+	}
+}
+
+http://{$VERO_TESTERS_HOST}:8290 {
+	bind {$VERO_TESTERS_BIND:127.0.0.1}
+
+	header {
+		Strict-Transport-Security "max-age=86400"
+		-Server
+	}
+
+	# Documents are never delivered from outside.
+	@intake path /api/v1/ingestion /api/v1/ingestion/*
+	handle @intake {
+		respond 404
+	}
+
+	@api path /api/v1/*
+	handle @api {
+		reverse_proxy {$VERO_TESTERS_API:127.0.0.1:8292} {
+			header_up X-Forwarded-For {client_ip}
+			header_up X-Forwarded-Proto https
+		}
+	}
+
+	# Only what a sign-in needs, of the testers' realm only. No account pages, no client registration.
+	@login path_regexp ^/(realms/vero-testers/(protocol/openid-connect/|login-actions/|\.well-known/openid-configuration$)|resources/[A-Za-z0-9]+/(login|common)/)
+	handle @login {
+		reverse_proxy {$VERO_TESTERS_LOGIN:127.0.0.1:8291} {
+			header_up X-Forwarded-For {client_ip}
+			header_up X-Forwarded-Proto https
+			header_up X-Forwarded-Host {$VERO_TESTERS_HOST}
+			header_up X-Forwarded-Port 443
+		}
+	}
+
+	# The screens use #/ addresses, so no other path falls back to the start page.
+	@screens path / /index.html /assets/*
+	handle @screens {
+		header {
+			Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' blob: data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; frame-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
+			Referrer-Policy "no-referrer"
+			X-Content-Type-Options "nosniff"
+			Permissions-Policy "camera=(), microphone=(), geolocation=()"
+		}
+		root * {$VERO_TESTERS_DIST}
+		file_server
+	}
+
+	handle {
+		respond 404
+	}
+}
+
+# Any other name.
+http://:8290 {
+	bind {$VERO_TESTERS_BIND:127.0.0.1}
+	respond 404
+}

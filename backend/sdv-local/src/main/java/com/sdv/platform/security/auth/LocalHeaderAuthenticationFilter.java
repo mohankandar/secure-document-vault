@@ -66,6 +66,10 @@ public class LocalHeaderAuthenticationFilter extends LocalSignInFilter {
     /** Task 0064: the names a local Vero is called by. Any other Host is not a request of this computer's own pages. */
     private static final Set<String> LOCAL_HOSTS = Set.of("localhost", "127.0.0.1", "::1", "[::1]", "0:0:0:0:0:0:0:1", "[0:0:0:0:0:0:0:1]");
 
+    /** Task 0089: a proxy or tunnel adds these; this computer's own pages never do. */
+    private static final List<String> FORWARDED_HEADERS = List.of("Forwarded", "X-Forwarded-For", "X-Forwarded-Host",
+            "X-Forwarded-Proto", "X-Real-IP", "CF-Connecting-IP", "CF-Ray", "Cdn-Loop");
+
     private final RoleSeparationGuard separationGuard;
 
     /** Without a reporter, a local sign-in that names conflicting roles is refused (task 0025). */
@@ -96,6 +100,10 @@ public class LocalHeaderAuthenticationFilter extends LocalSignInFilter {
             String host = request.getServerName();
             if (host == null || !LOCAL_HOSTS.contains(host.toLowerCase(Locale.ROOT))) {
                 refuse(request, response, "the Host must be localhost or 127.0.0.1");
+                return;
+            }
+            if (FORWARDED_HEADERS.stream().anyMatch(name -> request.getHeader(name) != null)) {
+                refuse(request, response, "local sign-in is never accepted through a proxy or tunnel");
                 return;
             }
             if (tenantText == null || subject == null || subject.isBlank()) {

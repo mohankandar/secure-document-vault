@@ -1,0 +1,9 @@
+# Task 0089. Start-SDV-Testers.ps1 fills in the three __NAMES__ and runs the tunnel with the result, never another file.
+tunnel: __TUNNEL_ID__
+credentials-file: '__CREDENTIALS_FILE__'
+no-autoupdate: true
+metrics: 127.0.0.1:8293
+ingress:
+  - hostname: __HOST__
+    service: http://127.0.0.1:8290
+  - service: http_status:404
