@@ -1,7 +1,12 @@
 # Vero CI (task 0042). Runs on every push and pull request to release/vero-r7 and main.
 #
 # Branch protection requires one check: "ci-passed". It fails unless every job below succeeded, so a job that
-# fails, is cancelled or is skipped never lets a pull request through.
+# fails or is cancelled never lets a pull request through. Task 0086: a job may be skipped only when the "changes" job
+# said this pull request doesn't need it (.github/ci/changed-areas.sh); any other skip fails the check. Pushes and
+# manual runs always run everything.
+#
+# Task 0086: the long PostgreSQL scale tests (.github/ci/scale-tests.txt) run on their own runners, next to "backend",
+# which leaves out exactly those. Not Maven -T: sdv-setup and sdv-web tests would share one database at the same time.
 #
 # platform-core comes from GitHub Packages with the repository secret PLATFORM_PACKAGES_TOKEN (the owner's read-only
 # token, read:packages only). It reaches Maven as GITHUB_PACKAGES_TOKEN, the same variable as on the laptop, through
@@ -27,8 +32,40 @@ env:
   MVN_CI_FLAGS: -B -ntp -s ${{ github.workspace }}/.github/maven-settings.xml
 
 jobs:
+  changes:
+    name: changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      backend: ${{ steps.areas.outputs.backend }}
+      frontend: ${{ steps.areas.outputs.frontend }}
+      scale_tests: ${{ steps.areas.outputs.scale_tests }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # A pull request is checked out as its merge with the target; the first parent is the target branch.
+          fetch-depth: 2
+      - name: Which jobs this run needs
+        id: areas
+        env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          paths=""
+          if [ "$EVENT" = "pull_request" ]; then paths=$(git diff --no-renames --name-only HEAD^1 HEAD); fi
+          printf '%s\n' "$paths" | bash .github/ci/changed-areas.sh | tee -a "$GITHUB_OUTPUT"
+          tests=$(sed -n 's:^\*\*/\([A-Za-z0-9]*\)\.java$:"\1":p' .github/ci/scale-tests.txt | paste -sd, -)
+          [ -n "$tests" ] || { echo "::error::.github/ci/scale-tests.txt lists no tests"; exit 1; }
+          if [ "$(grep -c . .github/ci/scale-tests.txt)" != "$(tr ',' '\n' <<<"$tests" | wc -l)" ]; then
+            echo "::error::A line of .github/ci/scale-tests.txt is not **/Name.java"; exit 1
+          fi
+          echo "scale_tests=[$tests]" | tee -a "$GITHUB_OUTPUT"
+
   backend:
     name: backend
+    needs: changes
+    if: needs.changes.outputs.backend != 'false'
     runs-on: ubuntu-latest
     timeout-minutes: 40
     services:
@@ -68,13 +105,13 @@ jobs:
         run: |
           bash ./update-sdv-schema.sh update \
             --url jdbc:postgresql://localhost:5433/sdv_schema_test --username sdv_schema_owner
-      - name: Full build and all tests, PostgreSQL-only tests included
+      - name: Full build and all tests, PostgreSQL-only tests included (the scale tests run in their own jobs)
         working-directory: backend
         env:
           SDV_IT_JDBC_URL: jdbc:postgresql://localhost:5433/sdv_schema_test
           SDV_IT_JDBC_USER: sdv_schema_owner
           SDV_IT_JDBC_PASSWORD: not-checked-trust-authentication
-        run: mvn $MVN_CI_FLAGS -o clean verify
+        run: mvn $MVN_CI_FLAGS -o clean verify "-Dsurefire.excludesFile=$GITHUB_WORKSPACE/.github/ci/scale-tests.txt"
       - name: The release build holds no development licence key
         working-directory: backend
         run: |
@@ -94,7 +131,7 @@ jobs:
           missing=0
           for t in LegalHoldPostgresTest AccessRequestPostgresTest DuplicateIntakePostgresTest IntakeReportPostgresTest \
                    SensitivityReportPostgresTest PlatformIdentityPostgresTest SenderProfileServerContractTest \
-                   UnidentifiedIntakeAttemptPostgresTest QuarantinePostgresTest QuarantineFilterBlockingPostgresTest QuarantineScalePostgresTest StorageReportPostgresTest ActivityReportPostgresTest RestrictionsPostgresTest PrimaryIdentifierPostgresTest \
+                   UnidentifiedIntakeAttemptPostgresTest QuarantinePostgresTest QuarantineFilterBlockingPostgresTest StorageReportPostgresTest RestrictionsPostgresTest PrimaryIdentifierPostgresTest \
                    SealedAuditPostgresTest HeldRedactionPostgresTest VeroSetupPlanPostgresTest; do
             report=$(find . -path '*/surefire-reports/TEST-*'"$t"'.xml' | head -1)
             if [ -z "$report" ] || grep -q 'skipped="[1-9]' "$report" || grep -q 'tests="0"' "$report"; then
@@ -103,6 +140,22 @@ jobs:
               grep -o 'tests="[0-9]*"[^>]*skipped="[0-9]*"' "$report" | head -1 | sed "s/^/$t: /"
             fi
           done
+          exit $missing
+      - name: Check every other test class ran
+        working-directory: backend
+        run: |
+          missing=0; count=0
+          while IFS= read -r src; do
+            t=$(basename "$src" .java)
+            if grep -qxF "**/$t.java" ../.github/ci/scale-tests.txt; then continue; fi
+            count=$((count + 1))
+            report=$(find . -path "*/surefire-reports/TEST-*.$t.xml" | head -1)
+            if [ -z "$report" ] || grep -q '<testsuite [^>]*tests="0"' "$report"; then
+              echo "::error::$t did not run"; missing=1
+            fi
+          done < <(find . -path '*/src/test/java/*' -name '*Test.java')
+          echo "$count test classes checked"
+          [ "$count" -gt 0 ] || { echo "::error::No test classes found"; exit 1; }
           exit $missing
       - name: Keep the test reports
         if: always()
@@ -113,8 +166,85 @@ jobs:
           retention-days: 14
           if-no-files-found: ignore
 
+  backend-scale:
+    # One scale test per runner, each with its own throwaway PostgreSQL.
+    name: backend-scale (${{ matrix.test }})
+    needs: changes
+    if: needs.changes.outputs.backend != 'false'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        test: ${{ fromJSON(needs.changes.outputs.scale_tests) }}
+    services:
+      # Throwaway PostgreSQL 16 for the PostgreSQL-only tests (skipped locally). The tests accept only this URL:
+      # jdbc:postgresql://localhost:5433/sdv_schema_test. Trust authentication: the container lives for this job
+      # only and is reachable only from the runner, so no password exists at all.
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: sdv_schema_test
+          POSTGRES_USER: sdv_schema_owner
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U sdv_schema_owner -d sdv_schema_test"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - uses: ./.github/actions/maven-resolve
+        with:
+          packages-token: ${{ secrets.PLATFORM_PACKAGES_TOKEN }}
+      - name: Build the application jar (tests run in the full build below)
+        working-directory: backend
+        run: mvn $MVN_CI_FLAGS -o package -DskipTests
+      - name: Schema step on the scratch database
+        env:
+          # Trust authentication ignores the password; the schema step only needs one to be set.
+          SDV_SCHEMA_DB_PASSWORD: not-checked-trust-authentication
+        run: |
+          bash ./update-sdv-schema.sh update \
+            --url jdbc:postgresql://localhost:5433/sdv_schema_test --username sdv_schema_owner
+      - name: The scale test
+        working-directory: backend
+        env:
+          SDV_IT_JDBC_URL: jdbc:postgresql://localhost:5433/sdv_schema_test
+          SDV_IT_JDBC_USER: sdv_schema_owner
+          SDV_IT_JDBC_PASSWORD: not-checked-trust-authentication
+          TEST_CLASS: ${{ matrix.test }}
+        run: mvn $MVN_CI_FLAGS -o -pl sdv-web -am test "-Dtest=$TEST_CLASS" -Dsurefire.failIfNoSpecifiedTests=false
+      - name: Check the scale test ran
+        working-directory: backend
+        env:
+          TEST_CLASS: ${{ matrix.test }}
+        run: |
+          report=$(find . -path "*/surefire-reports/TEST-*.$TEST_CLASS.xml" | head -1)
+          if [ -z "$report" ] || grep -q 'skipped="[1-9]' "$report" || grep -q 'tests="0"' "$report"; then
+            echo "::error::$TEST_CLASS did not run"; exit 1
+          fi
+          grep -o 'tests="[0-9]*"[^>]*skipped="[0-9]*"' "$report" | head -1
+      - name: Keep the test reports
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: backend-test-reports-${{ matrix.test }}
+          path: backend/**/target/surefire-reports/
+          retention-days: 14
+          if-no-files-found: ignore
+
   frontend:
     name: frontend
+    needs: changes
+    if: needs.changes.outputs.frontend != 'false'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     defaults:
@@ -161,6 +291,8 @@ jobs:
     # The same kit runs the profile against a running Vero in the backend job (SenderProfileServerContractTest, which
     # needs its PostgreSQL service).
     name: sender-profile-contract
+    needs: changes
+    if: needs.changes.outputs.backend != 'false'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -190,15 +322,32 @@ jobs:
   ci-passed:
     name: ci-passed
     if: always()
-    needs: [backend, frontend, product-name-guard, sender-profile-contract]
+    needs: [changes, backend, backend-scale, frontend, product-name-guard, sender-profile-contract]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Every job succeeded
+      - name: Every job succeeded, or the changes job said this pull request doesn't need it
         env:
-          RESULTS: ${{ join(needs.*.result, ' ') }}
+          CHANGES: ${{ needs.changes.result }}
+          NEEDS_BACKEND: ${{ needs.changes.outputs.backend }}
+          NEEDS_FRONTEND: ${{ needs.changes.outputs.frontend }}
+          BACKEND: ${{ needs.backend.result }}
+          BACKEND_SCALE: ${{ needs.backend-scale.result }}
+          FRONTEND: ${{ needs.frontend.result }}
+          NAME_GUARD: ${{ needs.product-name-guard.result }}
+          SENDER_PROFILE: ${{ needs.sender-profile-contract.result }}
         run: |
-          echo "Job results: $RESULTS"
-          for r in $RESULTS; do
-            if [ "$r" != "success" ]; then echo "::error::A required job did not succeed ($r)"; exit 1; fi
-          done
+          failed=0
+          check() { # job, result, whether this run needs it
+            echo "$1: $2 (needed: $3)"
+            if [ "$2" = "success" ]; then return; fi
+            if [ "$2" = "skipped" ] && [ "$3" = "false" ] && [ "$CHANGES" = "success" ]; then return; fi
+            echo "::error::$1 did not succeed ($2)"; failed=1
+          }
+          check changes "$CHANGES" true
+          check backend "$BACKEND" "$NEEDS_BACKEND"
+          check backend-scale "$BACKEND_SCALE" "$NEEDS_BACKEND"
+          check frontend "$FRONTEND" "$NEEDS_FRONTEND"
+          check product-name-guard "$NAME_GUARD" true
+          check sender-profile-contract "$SENDER_PROFILE" "$NEEDS_BACKEND"
+          exit $failed
