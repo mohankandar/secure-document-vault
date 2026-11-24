@@ -27,6 +27,16 @@ public class SessionNamedPageViewAuditPort implements PageViewAuditPort {
     }
 
     @Override
+    public boolean isSealedViewing(UUID tenantId, String actorId, UUID documentId, UUID sealedId, UUID viewingId, Instant notBefore) {
+        return store.isSealedViewing(tenantId, actorId, documentId, sealedId, viewingId, notBefore);
+    }
+
+    @Override
+    public boolean appendPreviewEventOnce(AuditEvent event, UUID viewingId, Instant notBefore) {
+        return store.appendPreviewEventOnce(names.named(event), viewingId, notBefore);
+    }
+
+    @Override
     public boolean appendPageEventOnce(AuditEvent pageEvent, UUID viewingId, int pageNumber, Instant notBefore) {
         return store.appendPageEventOnce(names.named(pageEvent), viewingId, pageNumber, notBefore);
     }

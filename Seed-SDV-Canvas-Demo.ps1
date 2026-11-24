@@ -69,7 +69,7 @@
 #>
 [CmdletBinding()]
 param(
-    [string]$Base = 'http://localhost:8280',
+    [string]$Base = 'http://127.0.0.1:8280',
     [ValidatePattern('^sdv(_[a-z0-9_]+)?$')][string]$Database = 'sdv',
     # Task 0039 part 2: empty means the default under the script's folder. Windows PowerShell 5.1 leaves $PSScriptRoot
     # empty in parameter defaults under powershell.exe -File, so the defaults are filled in below, not here.
@@ -195,13 +195,14 @@ if (@($info.activeProfiles) -notcontains 'local') { throw "The demo data is for 
 # Setup loads the demo licence (signed by the development key, which only a development build trusts: Build-SDV-All.ps1), the customer,
 # the two entity slots, the local login connection, the role grants and the client bindings. The demo step activates
 # both slots and makes Vero's rows for them (entity UUIDs derived from the slot IDs). Both are safe to run again. The
-# database user and password are the local profile's (application-local.yml), set for these two runs only.
+# database user and password are the local profile's (task 0064: the password from the untracked file), set for these
+# two runs only.
 $SetupRuntime = Join-Path $ScriptFolder '.runtime\setup'
 New-Item -ItemType Directory -Force -Path $SetupRuntime | Out-Null
 $localUrl = "jdbc:postgresql://localhost:5433/$Database"
 # Their log lines go to stderr; Windows PowerShell would stop on them, so only the exit codes decide here.
 $stopOnStderr = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
-$env:PLATFORM_SETUP_DB_URL = $localUrl; $env:PLATFORM_SETUP_DB_USER = 'sdv'; $env:PLATFORM_SETUP_DB_PASSWORD = 'sdv_local_only'
+$env:PLATFORM_SETUP_DB_URL = $localUrl; $env:PLATFORM_SETUP_DB_USER = 'sdv'; $env:PLATFORM_SETUP_DB_PASSWORD = & (Join-Path $ScriptFolder 'scripts\local\Get-SdvLocalDbPassword.ps1') -Root $ScriptFolder
 try {
     $setupOut = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $ScriptFolder 'setup.ps1') apply `
         -Licence (Join-Path $ScriptFolder 'dev\setup\licence-vero-demo.json') -Signin (Join-Path $ScriptFolder 'dev\setup\signin-vero-demo.json') `
@@ -214,7 +215,7 @@ try {
 if ($setupExit -ne 0 -and $setupExit -ne 3) { throw "Setup failed (exit $setupExit):`n$($setupOut -join "`n")" }
 Ok "Setup applied: demo licence, customer, entity slots, login connection, grants, client bindings$(if ($setupExit -eq 3) { ' (some items need a flag; see the plan)' })"
 $webJar = @(Get-ChildItem -Path (Join-Path $ScriptFolder 'backend\sdv-web\target') -Filter 'sdv-web-*.jar' -File | Where-Object { $_.Name -notlike '*.original' })[0].FullName
-$env:SDV_DEMO_DB_URL = $localUrl; $env:SDV_DEMO_DB_USERNAME = 'sdv'; $env:SDV_DEMO_DB_PASSWORD = 'sdv_local_only'
+$env:SDV_DEMO_DB_URL = $localUrl; $env:SDV_DEMO_DB_USERNAME = 'sdv'; $env:SDV_DEMO_DB_PASSWORD = & (Join-Path $ScriptFolder 'scripts\local\Get-SdvLocalDbPassword.ps1') -Root $ScriptFolder
 try {
     $demoOut = & java -cp $webJar '-Dloader.main=com.sdv.platform.web.install.DemoStep' org.springframework.boot.loader.launch.PropertiesLauncher `
         apply 2>&1

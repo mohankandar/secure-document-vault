@@ -132,6 +132,20 @@ public class DocumentAccessGuard {
         return level;
     }
 
+    /**
+     * Task 0066: the sealed original of a held document: the document must be openable, and the person a Restricted
+     * Steward (the Highly Confidential clearance), whatever the document's level. Refused (403, SDV-HLD-011) and audited.
+     */
+    public SensitivityLevel requireSealedOpenable(Document document, Clearance clearance, Attempt attempt,
+                                                  String actorId, String correlationId) {
+        SensitivityLevel level = requireOpenable(document, clearance, attempt, actorId, correlationId);
+        if (!clearance.canOpen(SensitivityLevel.HIGHLY_CONFIDENTIAL)) {
+            refuse(document, level, attempt, SdvErrorCode.HLD_011, clearance, actorId, correlationId);
+            throw new CodedRefusal.Forbidden(SdvErrorCode.HLD_011, RESTRICTED_MESSAGE);
+        }
+        return level;
+    }
+
     /** What a print or download may go ahead with: the effective level, and the grant used (Highly Confidential only). */
     public record PrintOrDownload(SensitivityLevel level, UUID grantId) { }
 

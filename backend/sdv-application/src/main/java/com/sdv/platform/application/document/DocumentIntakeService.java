@@ -11,6 +11,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sdv.platform.application.business.RecordKey;
 import com.sdv.platform.application.business.RecordReferences;
 import com.sdv.platform.application.port.AccessRequestRepository;
+import com.sdv.platform.application.pdf.EncryptedScratch;
+import com.sdv.platform.application.pdf.PdfIntakeChecks;
 import com.sdv.platform.application.port.AuditEventPort;
 import com.sdv.platform.application.port.DocumentIntakeRepository;
 import com.sdv.platform.application.port.DocumentIntakeRepository.DuplicateReceipt;
@@ -85,6 +87,7 @@ public class DocumentIntakeService {
     private final AuditEventPort audit;
     private final RecordReferences records;
     private final AccessRequestRepository levels;
+    private final PdfIntakeChecks pdfChecks;
     private final TransactionTemplate transactions;
     private final Clock clock;
 
@@ -100,9 +103,10 @@ public class DocumentIntakeService {
                                  AuditEventPort audit,
                                  RecordReferences records,
                                  AccessRequestRepository levels,
-                                 PlatformTransactionManager transactionManager) {
+                                 PlatformTransactionManager transactionManager,
+                                 PdfIntakeChecks pdfChecks) {
         this(tenants, sources, submissions, documents, placement, storageProviders, crypto,
-                finalization, audit, records, levels, new TransactionTemplate(transactionManager), Clock.systemUTC());
+                finalization, audit, records, levels, new TransactionTemplate(transactionManager), Clock.systemUTC(), pdfChecks);
     }
 
     DocumentIntakeService(TenantRepository tenants,
@@ -117,7 +121,9 @@ public class DocumentIntakeService {
                           RecordReferences records,
                           AccessRequestRepository levels,
                           TransactionTemplate transactions,
-                          Clock clock) {
+                          Clock clock,
+                          PdfIntakeChecks pdfChecks) {
+        this.pdfChecks = Objects.requireNonNull(pdfChecks, "pdfChecks");
         this.tenants = tenants;
         this.sources = sources;
         this.submissions = submissions;
@@ -199,11 +205,23 @@ public class DocumentIntakeService {
 
         ValidatedPdfInputStream validated = new ValidatedPdfInputStream(input, maxPdfBytes);
         final StreamingCryptoPort.CryptoEnvelope[] envelopeHolder = new StreamingCryptoPort.CryptoEnvelope[1];
-        StorageProvider.StoredObject stored = provider.store(tenantId, volume, output -> {
-            StreamingCryptoPort.CryptoEnvelope envelope = crypto.encrypt(tenantId, validated, output);
-            validated.finish();
-            envelopeHolder[0] = envelope;
-        });
+        StorageProvider.StoredObject stored;
+        // Task 0063: while the upload is encrypted into storage, the same bytes go to encrypted working space, and the
+        // PDF is checked there before anything is committed. A refused one leaves nothing behind.
+        try (EncryptedScratch scratch = pdfChecks.scratch(); EncryptedScratch.Buffer copy = scratch.createBuffer()) {
+            stored = provider.store(tenantId, volume, output -> {
+                StreamingCryptoPort.CryptoEnvelope envelope = crypto.encrypt(tenantId, new CopyingInputStream(validated, copy), output);
+                validated.finish();
+                envelopeHolder[0] = envelope;
+            });
+            try {
+                copy.seek(0);
+                pdfChecks.check(tenantId, source, effectiveMaxPages(tenant, source), copy, scratch);
+            } catch (IOException | RuntimeException | Error ex) {
+                safeDelete(provider, tenantId, volume, stored.objectKey());
+                throw ex;
+            }
+        }
         StreamingCryptoPort.CryptoEnvelope envelope = Objects.requireNonNull(
                 envelopeHolder[0], "Crypto operation did not produce an envelope.");
 
@@ -587,6 +605,47 @@ public class DocumentIntakeService {
         long tenantMax = tenant.guardrails().maxPdfBytes();
         Long sourceMax = source.limits() == null ? null : source.limits().maxPdfBytes();
         return sourceMax == null ? tenantMax : Math.min(tenantMax, sourceMax);
+    }
+
+    /** Task 0063: the most pages a PDF of this sending system may have. */
+    static int effectiveMaxPages(Tenant tenant, IngestionSource source) {
+        int tenantMax = tenant.guardrails().maxPagesPerPdf();
+        Integer sourceMax = source.limits() == null ? null : source.limits().maxPagesPerPdf();
+        return sourceMax == null ? tenantMax : Math.min(tenantMax, sourceMax);
+    }
+
+    /** Hands on what it reads, and keeps a copy in the working space. */
+    private static final class CopyingInputStream extends java.io.FilterInputStream {
+        private final EncryptedScratch.Buffer copy;
+
+        CopyingInputStream(InputStream in, EncryptedScratch.Buffer copy) {
+            super(in);
+            this.copy = copy;
+        }
+
+        @Override
+        public int read() throws IOException {
+            int b = in.read();
+            if (b >= 0) copy.write(b);
+            return b;
+        }
+
+        @Override
+        public int read(byte[] b, int off, int len) throws IOException {
+            int n = in.read(b, off, len);
+            if (n > 0) copy.write(b, off, n);
+            return n;
+        }
+
+        @Override
+        public long skip(long n) {
+            return 0;
+        }
+
+        @Override
+        public boolean markSupported() {
+            return false;
+        }
     }
 
     private static long effectiveMaxAggregateBytes(Tenant tenant, IngestionSource source) {

@@ -68,6 +68,29 @@ public class JdbcAccessRequestRepository implements AccessRequestRepository {
     }
 
     @Override
+    public void insertHeldRedaction(AccessRequest r, String regionsJson, String contentSha256) {
+        jdbc.update("""
+                insert into held_redactions(request_id, tenant_id, document_id, regions_json, content_sha256, state)
+                values (:id, :tenantId, :documentId, cast(:regions as jsonb), :sha, 'WAITING')
+                """, new MapSqlParameterSource()
+                .addValue("id", r.requestId()).addValue("tenantId", r.tenantId()).addValue("documentId", r.documentId())
+                .addValue("regions", regionsJson).addValue("sha", contentSha256));
+    }
+
+    @Override
+    public boolean approveHeldRedaction(UUID tenantId, UUID requestId, UUID documentId) {
+        return jdbc.update("""
+                update held_redactions h
+                   set state='APPROVED'
+                 where h.tenant_id=:tenantId and h.request_id=:id and h.document_id=:documentId and h.state='WAITING'
+                   and exists (select 1 from documents d
+                                where d.tenant_id=h.tenant_id and d.document_id=h.document_id
+                                  and d.status='AVAILABLE' and d.content_sha256=h.content_sha256)
+                """, new MapSqlParameterSource().addValue("tenantId", tenantId).addValue("id", requestId)
+                .addValue("documentId", documentId)) == 1;
+    }
+
+    @Override
     public Optional<AccessRequest> lock(UUID tenantId, UUID requestId) {
         return jdbc.query("select " + COLUMNS + " from access_requests where tenant_id=:tenantId and request_id=:id for update",
                 new MapSqlParameterSource().addValue("tenantId", tenantId).addValue("id", requestId),

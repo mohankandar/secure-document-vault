@@ -5,6 +5,7 @@ import { BUSINESS_LIMITS, type Doc, type RecordItem, type Redaction } from './mo
 import { ApiRequestError } from '../api'
 import { failureText } from './CardError'
 import { Badge, Callout, Dialog, Drawer, Tabs, TechDetails, actorWords, auditEventLabel, fmtDate, fmtDateTime, fmtRel, fmtShortDate } from './ui'
+import { SealedOriginalBar } from './SealedOriginal'
 import { viewerMetadata, viewerPage, viewerSearch, record as fetchRecord, toRecord, documentActivity, type LiveDocumentActivity, type ViewerSearch, documentTags, documentComments, createDocumentTag, createDocumentComment, type LiveTag, type LiveComment, secureDownload, recordPrintEvent, permanentRedaction, viewerPreviews, myRequests, documentLevelHistory, LEVEL_NAMES, type MyRequest, type LevelHistoryEntry } from './liveApi'
 import { LOCKED_MESSAGE, LevelBadge, LevelDialog, RequestItem, RequestPopover, pendingOf, recordWord, validGrant, whenWords } from './Sensitivity'
 import { markViewed, unseenDecisions, useSeenRevision } from './Notices'
@@ -94,11 +95,12 @@ export function Viewer({ record, results, docId, onClose, recordTitle, backLabel
     const term=query.trim()
     if(!term){setSearchResults(null);setSearchError('');return}
     if(term.length>100){setSearchError('Search is limited to 100 characters');return}
+    if(!viewingId)return
     let active=true
-    viewerSearch(doc.id,term).then(r=>{if(active){setSearchResults(r);setSearchError('')}})
+    viewerSearch(doc.id,term,viewingId).then(r=>{if(active){setSearchResults(r);setSearchError('')}})
       .catch(e=>{if(active){setSearchResults(null);setSearchError(docFailure('Viewer: find in document failed', e))}})
     return ()=>{active=false}
-  },[doc.id,query])
+  },[doc.id,query,viewingId])
 
   useEffect(() => {
     const el = canvasRef.current
@@ -193,11 +195,13 @@ export function Viewer({ record, results, docId, onClose, recordTitle, backLabel
     finally{setActionBusy(false);if(highlyConfidential)refreshRequests()}
   }
   const print = async () => {
-    if(actionBusy)return
+    if(actionBusy||!viewingId)return
     setActionBusy(true)
     try {
       // Print the authorized rendered pages, without requesting the raw PDF download.
-      const images=await Promise.all(Array.from({length:pageTotal},(_,i)=>viewerPage(doc.id,i+1,1,viewingId||undefined)))
+      // Task 0063: two pages at a time, so printing a long document leaves room for others.
+      const images:Blob[]=[]
+      for(let first=1;first<=pageTotal;first+=2)images.push(...await Promise.all(Array.from({length:Math.min(2,pageTotal-first+1)},(_,i)=>viewerPage(doc.id,first+i,1,viewingId))))
       const urls=images.map(b=>URL.createObjectURL(b))
       const frame=document.createElement('iframe')
       frame.setAttribute('title','Print document')
@@ -247,8 +251,9 @@ export function Viewer({ record, results, docId, onClose, recordTitle, backLabel
     if(actionBusy || !can('PERMANENT_REDACTION'))return
     setActionBusy(true);setRedactionFailure('')
     try {
-      await permanentRedaction(doc.id,reason,marks.map(m=>({pageNumber:m.page,x:m.x/100,y:m.y/100,width:m.w/100,height:m.h/100})))
+      const done = await permanentRedaction(doc.id,reason,marks.map(m=>({pageNumber:m.page,x:m.x/100,y:m.y/100,width:m.w/100,height:m.h/100})))
       setMarks([]);setRedacting(false);setReview(false);setQuery('');setSearchResults(null)
+      if (done.status === 'APPROVAL_REQUESTED') { refreshRequests(); toast({ title: 'Sent for approval', detail: 'This document is on legal hold. A Business admin approves the redaction first; nothing was changed yet.' }); return }
       setRenderRevision(n=>n+1)
       setPageCount(0)
       viewerMetadata(doc.id).then(m=>{setViewingId(m.viewingId ?? '');setPageCount(m.pageCount)}).catch(e=>setViewerFailure(docFailure('Viewer: document did not reopen', e)))
@@ -283,12 +288,12 @@ export function Viewer({ record, results, docId, onClose, recordTitle, backLabel
   const requestedChunks = useRef(new Set<number>())
   useEffect(() => { setPreviews({}); setPreviewsFailed(false); requestedChunks.current = new Set() }, [doc.id, renderRevision])
   const needPreview = (p: number) => {
-    if (previewsFailed || !pageTotal) return
+    if (previewsFailed || !pageTotal || !viewingId) return
     const first = Math.floor((p - 1) / PREVIEW_CHUNK) * PREVIEW_CHUNK + 1
     if (requestedChunks.current.has(first)) return
     requestedChunks.current.add(first)
     const forDoc = doc.id
-    viewerPreviews(forDoc, first, Math.min(PREVIEW_CHUNK, pageTotal - first + 1))
+    viewerPreviews(forDoc, first, Math.min(PREVIEW_CHUNK, pageTotal - first + 1), viewingId)
       .then((r) => { if (forDoc === doc.id) setPreviews((prev) => ({ ...prev, ...Object.fromEntries(r.previews.map((x) => [x.pageNumber, x.dataUrl])) })) })
       .catch(() => setPreviewsFailed(true))
   }
@@ -357,7 +362,7 @@ export function Viewer({ record, results, docId, onClose, recordTitle, backLabel
           <span className="eyebrow">Pages</span>
           <div className="vw-pages">
             {Array.from({ length: pageTotal }, (_, i) => (
-              <PageThumb key={doc.id + ':' + renderRevision + ':' + (i + 1)} page={i + 1} current={page === i + 1} src={previews[i + 1]} failed={previewsFailed}
+              <PageThumb key={doc.id + ':' + renderRevision + ':' + (i + 1)} page={i + 1} current={page === i + 1} src={previews[i + 1]} failed={previewsFailed} ready={!!viewingId}
                 onVisible={needPreview} onOpen={() => { goPage(i + 1); setDocsOpen(false) }} />
             ))}
           </div>
@@ -404,6 +409,7 @@ export function Viewer({ record, results, docId, onClose, recordTitle, backLabel
           <span className="grow" style={{ fontSize: 13 }}><strong>Quarantined.</strong> Everyone else sees it as temporarily unavailable. You can read and correct it; print, download, tags, comments and level changes wait until it is released.</span>
         </div>
       )}
+      {!redacting && can('REQUEST_SENSITIVE_ACCESS') && <SealedOriginalBar documentId={doc.id} revision={renderRevision} />}
       {redacting && (
         <div className="vw-bar" style={{ minHeight: 48, background: 'var(--danger-soft)', borderColor: 'color-mix(in oklab, var(--danger) 30%, transparent)' }}>
           <ShieldAlert size={18} aria-hidden style={{ color: 'var(--danger)', marginLeft: 8, flex: 'none' }} />
@@ -501,9 +507,9 @@ function SecurePage({documentId,viewingId,page,scale,scrollRoot,matches,highligh
     return ()=>obs.disconnect()
   },[scrollRoot,documentId,page])
   useEffect(()=>{
-    if(!visible)return
+    if(!visible||!viewingId)return
     let active=true
-    viewerPage(documentId,page,Number(scale.toFixed(2)),viewingId||undefined).then(blob=>{
+    viewerPage(documentId,page,Number(scale.toFixed(2)),viewingId).then(blob=>{
       const objectUrl=URL.createObjectURL(blob)
       if(active)setUrl(objectUrl)
       else URL.revokeObjectURL(objectUrl)
@@ -524,15 +530,15 @@ function SecurePage({documentId,viewingId,page,scale,scrollRoot,matches,highligh
   </div>
 }
 
-function PageThumb({ page, current, src, failed, onVisible, onOpen }: { page: number; current: boolean; src?: string; failed: boolean; onVisible: (p: number) => void; onOpen: () => void }) {
+function PageThumb({ page, current, src, failed, ready, onVisible, onOpen }: { page: number; current: boolean; src?: string; failed: boolean; ready: boolean; onVisible: (p: number) => void; onOpen: () => void }) {
   const ref = useRef<HTMLButtonElement>(null)
   useEffect(() => {
     const el = ref.current
-    if (!el || src || failed) return
+    if (!el || src || failed || !ready) return
     const obs = new IntersectionObserver((entries) => { if (entries.some((e) => e.isIntersecting)) onVisible(page) }, { rootMargin: '120px 0px' })
     obs.observe(el)
     return () => obs.disconnect()
-  }, [page, src, failed])
+  }, [page, src, failed, ready])
   return (
     <button ref={ref} type="button" className="vw-pagethumb" aria-current={current} aria-label={`Page ${page}`} onClick={onOpen}>
       {src ? <img src={src} alt="" /> : <span className="vw-pagebox" aria-hidden>{failed ? `Page ${page}` : ''}</span>}
@@ -550,7 +556,7 @@ function RedactionReview({ doc, marks, onCancel, onApply, busy, failure }: { doc
     <Dialog title="Apply permanent redaction" onClose={onCancel}
       footer={<><button type="button" className="v-btn" onClick={onCancel}>Back to marking</button><button type="button" className="v-btn danger" disabled={!ready || busy} onClick={() => onApply(reason.trim())}>{busy?'Applying…':'Apply permanent redaction'}</button></>}>
       <Callout tone="bad" title="This permanently replaces the current PDF">
-        Marked areas are removed for every user and the original is not kept. Use this only to remove content that should never have been stored.
+        Marked areas are removed for every user and the original is not kept. Use this only to remove content that should never have been stored. If the document is on legal hold, a Business admin must approve first, and the original stays sealed until the hold is released.
       </Callout>
       <dl className="v-kv">
         <div><dt>Document</dt><dd>{doc.kind} · <span className="mono">{doc.id}</span></dd></div>
@@ -559,7 +565,7 @@ function RedactionReview({ doc, marks, onCancel, onApply, busy, failure }: { doc
       <label className="v-field">
         <span>Corrective reason<span className="v-hint">Required</span></span>
         <textarea className="v-textarea" value={reason} maxLength={500} onChange={(e) => setReason(e.target.value)} placeholder="e.g. Member SSN captured in error on page 1, section 4." />
-        <small>{reason.trim().length < 10 ? 'At least 10 characters. Stored with the audit event.' : `${reason.trim().length}/500`}</small>
+        <small>{reason.trim().length < 10 ? 'At least 10 characters. Kept with the redaction, not in the audit.' : `${reason.trim().length}/500`}</small>
       </label>
       <label className="v-check">
         <input type="checkbox" checked={confirmed} onChange={(e) => setConfirmed(e.target.checked)} />

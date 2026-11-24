@@ -205,8 +205,9 @@ class StoredJsonBaselineTest {
         Object op = k.newInstance(Arrays.stream(k.getParameterTypes()).map(t -> t == String.class ? "SECRET-TEXT" : t == UUID.class ? (Object) ID
                 : t == long.class ? (Object) 5L : t == int.class ? (Object) 5 : t == Long.class ? (Object) 5L : t == Integer.class ? (Object) 5
                 : t == java.time.Instant.class ? (Object) java.time.Instant.EPOCH : null).toArray());
-        String json = (String) call("application.redaction.CorrectiveRedactionService", "successAuditJson", op, 2);
+        String json = (String) call("application.redaction.CorrectiveRedactionService", "successAuditJson", op, 2, ID);
         assertTrue(json.startsWith("{\"operationId\":\"" + ID + "\",\"regionCount\":2,\"oldContentSha256\":"), json);
+        assertTrue(json.contains("\"accessRequestId\":\"" + ID + "\",\"sealedOriginalId\":\"" + ID + "\""), json);
         assertFalse(json.contains("reason") || json.contains("\"regions\""), json);
     }
 

@@ -207,7 +207,7 @@ public final class ErrorReplies {
 
     /**
      * Task 0040 part 2: Vero is busy, not unavailable: the database is there, but no connection is free for this
-     * request. Two causes, anywhere in the chain:
+     * request, or (task 0063) no place for its PDF work. Causes, anywhere in the chain:
      * <ul>
      *   <li>the connection pool timed out waiting for a free connection while no new connection had failed: HikariCP's
      *       {@link SQLTransientConnectionException} with no cause (when the database can't be reached, Hikari puts the
@@ -218,6 +218,7 @@ public final class ErrorReplies {
      */
     public static boolean isBusy(Throwable ex) {
         for (Throwable t = ex; t != null; t = t.getCause() == t ? null : t.getCause()) {
+            if (t instanceof com.sdv.platform.domain.error.BusyFailure) return true;
             if (t instanceof SQLTransientConnectionException && t.getCause() == null) return true;
             if (t instanceof SQLException sql && TOO_MANY_CONNECTIONS.equals(sql.getSQLState())) return true;
         }

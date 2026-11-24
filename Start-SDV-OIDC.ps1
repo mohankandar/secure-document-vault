@@ -30,7 +30,7 @@ if (-not $VaultTokenFile) {
 $Runtime = Join-Path $Root '.runtime'
 $BackendPid = Join-Path $Runtime 'backend.pid'
 $FrontendPid = Join-Path $Runtime 'frontend.pid'
-$Jar = Join-Path $Root 'backend\sdv-web\target\sdv-web-0.1.0-SNAPSHOT.jar'
+$Jar = Join-Path $Root 'backend\sdv-web\target\local\sdv-web-0.1.0-SNAPSHOT-local.jar'
 $Frontend = Join-Path $Root 'frontend\sdv-ui'
 
 if ([string]::IsNullOrWhiteSpace($IssuerUri)) { throw 'OIDC issuer URI is required.' }
@@ -121,6 +121,9 @@ $rootPrefix = $Root.TrimEnd('\', '/') + [IO.Path]::DirectorySeparatorChar
 if ($VaultTokenFile.StartsWith($rootPrefix, [StringComparison]::OrdinalIgnoreCase)) {
     throw 'The Vault token file must live outside the repository so it can never be committed.'
 }
+
+# Task 0064: the local database password, as Start-SDV-Local.ps1.
+$env:SDV_LOCAL_DB_PASSWORD = & (Join-Path $Root 'scripts\local\Get-SdvLocalDbPassword.ps1') -Root $Root
 
 # Reuse the existing persistent database container. Compose is used only when no sdv-postgres container exists yet,
 # so an existing one is never recreated.
@@ -213,6 +216,7 @@ java -jar '$jarEscaped' --spring.profiles.active=local
 
 Write-Host 'Starting SDV backend in a separate PowerShell window...'
 $backendProcess = Start-Process -FilePath 'powershell.exe' -ArgumentList @('-NoProfile', '-NoExit', '-Command', $backendCommand) -PassThru
+Remove-Item Env:SDV_LOCAL_DB_PASSWORD -ErrorAction SilentlyContinue
 Set-Content -Path $BackendPid -Value $backendProcess.Id -Encoding ASCII
 
 Write-Host 'Waiting for SDV backend health...'

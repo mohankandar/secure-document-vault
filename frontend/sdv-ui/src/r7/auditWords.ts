@@ -49,10 +49,13 @@ export const AUDIT_SENTENCES: Record<string, Sentence> = {
   // Task 0028 / 0043: a Highly Confidential approval used, or given back because nothing left Vero.
   SENSITIVE_ACCESS_GRANT_USED: (w, f, d) => `${w} used an approval to ${d.kind === 'PRINT' ? 'print' : 'download'} ${f}`,
   SENSITIVE_ACCESS_GRANT_RETURNED: (w, f, d) => `${w}’s approval to ${d.kind === 'PRINT' ? 'print' : 'download'} ${f} was given back, because nothing left Vero`,
+  DOCUMENT_PREVIEWED: (w, f) => `${w} looked at the page previews of ${f}`,
+  DOCUMENT_TEXT_SEARCHED: (w, f) => `${w} searched the text of ${f}`,
   DOCUMENT_PRINTED: (w, f) => `${w} printed ${f}`,
   DOCUMENT_TAG_ADDED: (w, f) => `${w} tagged ${f}`,
   DOCUMENT_COMMENT_ADDED: (w, f) => `${w} commented on ${f}`,
   DOCUMENT_PERMANENTLY_REDACTED: (w, f) => `${w} permanently redacted part of ${f}`,
+  SEALED_ORIGINAL_DESTROYED: (_w, f) => `The sealed original of ${f} was destroyed, because no legal hold keeps it any more`,
   DOCUMENT_REDACTION_FAILED: (w, f) => `${w} tried to redact part of ${f}, but it failed`,
   DOCUMENT_RETENTION_DELETED: (_w, f) => `Vero deleted ${f} for good, as the keeping rule says`,
   DOCUMENT_RETENTION_DELETE_FAILED: (_w, f) => `Vero couldn't delete ${f} when its time was up`,
@@ -126,9 +129,9 @@ export const RESULT_WORDS: Record<string, string> = { SUCCESS: 'Done', DENIED: '
 
 /** Everyday activity groups. Refused is every event the server refused, whatever its action. */
 export const ACTIVITY_GROUPS: { id: string; label: string; actions?: string[]; outcome?: string }[] = [
-  { id: 'reading', label: 'Opening and reading', actions: ['DOCUMENT_VIEW_OPENED', 'DOCUMENT_PAGE_VIEWED', 'BUSINESS_RECORD_OPENED', 'BUSINESS_SEARCH', 'BUSINESS_RECENT_RECORDS_LISTED', 'AUDIT_VIEWED'] },
+  { id: 'reading', label: 'Opening and reading', actions: ['DOCUMENT_VIEW_OPENED', 'DOCUMENT_PAGE_VIEWED', 'DOCUMENT_PREVIEWED', 'DOCUMENT_TEXT_SEARCHED', 'BUSINESS_RECORD_OPENED', 'BUSINESS_SEARCH', 'BUSINESS_RECENT_RECORDS_LISTED', 'AUDIT_VIEWED'] },
   { id: 'downloads', label: 'Downloads, prints and exports', actions: ['DOCUMENT_DOWNLOADED', 'DOCUMENT_DOWNLOAD_FAILED', 'DOCUMENT_PRINTED', 'SENSITIVE_ACCESS_GRANT_USED', 'SENSITIVE_ACCESS_GRANT_RETURNED','AUDIT_EXPORTED', 'INTAKE_REPORT_EXPORTED', 'SENSITIVITY_REPORT_EXPORTED', 'STORAGE_REPORT_EXPORTED', 'ACTIVITY_REPORT_EXPORTED'] },
-  { id: 'changes', label: 'Changes to documents', actions: ['DOCUMENT_TAG_ADDED', 'DOCUMENT_COMMENT_ADDED', 'DOCUMENT_PERMANENTLY_REDACTED', 'DOCUMENT_REDACTION_FAILED', 'DOCUMENT_RETENTION_DELETED', 'DOCUMENT_RETENTION_DELETE_FAILED', 'LEGAL_HOLD_PLACED', 'LEGAL_HOLD_RELEASED', 'DOCUMENT_QUARANTINED', 'DOCUMENT_QUARANTINE_RELEASED'] },
+  { id: 'changes', label: 'Changes to documents', actions: ['DOCUMENT_TAG_ADDED', 'DOCUMENT_COMMENT_ADDED', 'DOCUMENT_PERMANENTLY_REDACTED', 'SEALED_ORIGINAL_DESTROYED', 'DOCUMENT_REDACTION_FAILED', 'DOCUMENT_RETENTION_DELETED', 'DOCUMENT_RETENTION_DELETE_FAILED', 'LEGAL_HOLD_PLACED', 'LEGAL_HOLD_RELEASED', 'DOCUMENT_QUARANTINED', 'DOCUMENT_QUARANTINE_RELEASED'] },
   { id: 'settings', label: 'Settings changes', actions: ['ROLE_CAPABILITIES_UPDATED', 'RETENTION_POLICY_UPDATED', 'METADATA_BEHAVIOR_REVISED', 'METADATA_DISPLAY_ORDER_UPDATED', 'RECORD_TITLE_FIELDS_UPDATED', 'METADATA_FIELD_CREATED', 'METADATA_FIELD_REVISED', 'SOURCE_FIELD_DEFINED', 'SOURCE_FIELD_REVISED', 'INGESTION_SOURCE_CREATED', 'INGESTION_SOURCE_UPDATED', 'STORAGE_VOLUME_CREATED', 'STORAGE_VOLUME_UPDATED', 'STORAGE_FOLDER_CHECKED', 'ENTITY_ACTIVATED'] },
   { id: 'deliveries', label: 'Deliveries', actions: ['SUBMISSION_CREATED', 'DOCUMENT_RECEIVED', 'DOCUMENT_DUPLICATE_RECEIVED', 'DOCUMENT_UNCORRECTED_COPY_RECEIVED', 'INTAKE_REFUSED', 'STEWARD_NOTICE_READ', 'DOCUMENT_AVAILABLE', 'DOCUMENT_PROCESSING_FAILED'] },
   { id: 'refused', label: 'Refused', outcome: 'DENIED' },

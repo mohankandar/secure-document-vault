@@ -1,4 +1,4 @@
-import { roleApi, contentBinary, contentDownload, contentExport, type RegisteredExport, type SessionInfo, type SearchSchema, type SearchResponse, type BusinessRecord, type RecordSummary, type SearchSource, type SensitivityLevel } from '../api'
+import { ApiRequestError, roleApi, contentBinary, contentDownload, contentExport, type RegisteredExport, type SessionInfo, type SearchSchema, type SearchResponse, type BusinessRecord, type RecordSummary, type SearchSource, type SensitivityLevel } from '../api'
 import type { Field, Source, RecordItem, Doc } from './model'
 import type { SignInTestAnswer } from './signInTestWords'
 
@@ -68,14 +68,23 @@ export function toRecord(r: BusinessRecord):RecordItem {
 export type ViewerMetadata = { documentId: string; originalFilename: string; pageCount: number; viewingId?: string }
 export type ViewerSearch = { pageCount: number; totalMatches: number; pages: {pageNumber:number; matchCount:number}[]; highlights?: {pageNumber:number;x:number;y:number;width:number;height:number}[] }
 const viewerPath = (id: string) => '/api/v1/business/documents/' + encodeURIComponent(id) + '/viewer'
-/** Small page previews (PNG data URLs), at most 24 pages per request. The server writes no audit event for them. */
+/** Small page previews (PNG data URLs), at most 24 pages per request. They belong to a viewing (task 0063). */
 export type ViewerPreviews = { documentId: string; pageCount: number; first: number; previews: { pageNumber: number; width: number; height: number; dataUrl: string }[] }
-export const viewerPreviews = (id: string, first: number, count: number) => roleApi<ViewerPreviews>(viewerPath(id) + '/previews?first=' + first + '&count=' + count, 'business')
+/** Task 0063: no room for it just now (busy): wait as the server says and ask again, a few times. */
+async function againWhenBusy<T>(ask: () => Promise<T>): Promise<T> {
+  for (let n = 0; ; n++) {
+    try { return await ask() } catch (e) {
+      if (n >= 4 || !(e instanceof ApiRequestError) || e.code !== 'SDV-SYS-018') throw e
+      await new Promise((r) => window.setTimeout(r, Math.min(10, e.retryAfterSeconds ?? 5) * 1000))
+    }
+  }
+}
+export const viewerPreviews = (id: string, first: number, count: number, viewingId: string) => againWhenBusy(() => roleApi<ViewerPreviews>(viewerPath(id) + '/previews?first=' + first + '&count=' + count + '&viewingId=' + encodeURIComponent(viewingId), 'business'))
 export const viewerMetadata = (id:string) => roleApi<ViewerMetadata>(viewerPath(id), 'business')
-export const viewerPage = (id:string, page:number, scale=1, viewingId?:string) =>
-  contentBinary(viewerPath(id) + '/pages/' + page + '?scale=' + scale + (viewingId ? '&viewingId=' + encodeURIComponent(viewingId) : ''), 'business')
-export const viewerSearch = (id:string, q:string) =>
-  roleApi<ViewerSearch>(viewerPath(id) + '/search?q=' + encodeURIComponent(q), 'business')
+export const viewerPage = (id:string, page:number, scale:number, viewingId:string) =>
+  againWhenBusy(() => contentBinary(viewerPath(id) + '/pages/' + page + '?scale=' + scale + '&viewingId=' + encodeURIComponent(viewingId), 'business'))
+export const viewerSearch = (id:string, q:string, viewingId:string) =>
+  againWhenBusy(() => roleApi<ViewerSearch>(viewerPath(id) + '/search?q=' + encodeURIComponent(q) + '&viewingId=' + encodeURIComponent(viewingId), 'business'))
 
 export type LiveDocumentActivity = { auditEventId:string; actorType:string; actorId:string; action:string; occurredAt:string; outcome:'SUCCESS'|'DENIED'|'FAILURE'; safeDetailsJson:string }
 export const documentActivity = (id:string,includeViewEvents=false,limit=100) =>
@@ -93,8 +102,16 @@ export const createDocumentComment = (id:string,comment:string) => roleApi<LiveC
 export const secureDownload = (id:string) => contentDownload('/api/v1/business/documents/'+encodeURIComponent(id)+'/download','business')
 export const recordPrintEvent = (id:string) => roleApi<void>('/api/v1/business/documents/'+encodeURIComponent(id)+'/print-event','business',{method:'POST'})
 export type CorrectionRegion = {pageNumber:number;x:number;y:number;width:number;height:number}
+/** Task 0066: the sealed originals of a document redacted on legal hold (Restricted Stewards; reading only). */
+export type SealedOriginal = { sealedId: string; sealedAt: string }
+const sealedPath = (id: string) => '/api/v1/business/documents/' + encodeURIComponent(id) + '/sealed-originals'
+export const sealedOriginals = (id: string) => roleApi<SealedOriginal[]>(sealedPath(id), 'business')
+export const openSealedOriginal = (id: string, sealedId: string) => roleApi<ViewerMetadata>(sealedPath(id) + '/' + encodeURIComponent(sealedId) + '/viewer', 'business')
+export const sealedOriginalPage = (id: string, sealedId: string, page: number, viewingId: string) =>
+  againWhenBusy(() => contentBinary(sealedPath(id) + '/' + encodeURIComponent(sealedId) + '/viewer/pages/' + page + '?scale=1.25&viewingId=' + encodeURIComponent(viewingId), 'business'))
+/** status APPROVAL_REQUESTED: the document is on legal hold; a Business admin approves first (task 0066). */
 export const permanentRedaction = (id:string,reason:string,regions:CorrectionRegion[]) =>
-  roleApi<unknown>('/api/v1/business/documents/'+encodeURIComponent(id)+'/redactions','steward',{method:'POST',body:JSON.stringify({reason,confirmed:true,regions})})
+  roleApi<{status:string}>('/api/v1/business/documents/'+encodeURIComponent(id)+'/redactions','steward',{method:'POST',body:JSON.stringify({reason,confirmed:true,regions})})
 
 export type RolePolicy = {roles:Record<string,Record<string,boolean>>;configurableCapabilities:string[]}
 export const getRolePolicy = () => roleApi<RolePolicy>('/api/v1/admin/role-capabilities','businessAdmin')
@@ -194,7 +211,8 @@ export const raiseLevel = (scope: LevelScope, id: string, level: SensitivityLeve
 export const askToLowerLevel = (scope: LevelScope, id: string, level: SensitivityLevel, reason: string) =>
   roleApi<LevelChangeResult>(levelPath(scope, id) + '/lower-request', 'business', { method: 'POST', body: JSON.stringify({ level, reason }) })
 
-export type AccessRequestKind = 'PRINT' | 'DOWNLOAD' | 'LOWER_LEVEL' | 'LOWER_RECORD_LEVEL'
+/** REDACT_HELD (task 0066): permanently redact a document on legal hold. */
+export type AccessRequestKind = 'PRINT' | 'DOWNLOAD' | 'LOWER_LEVEL' | 'LOWER_RECORD_LEVEL' | 'REDACT_HELD'
 export type AccessRequestStatus = 'PENDING' | 'APPROVED' | 'DECLINED' | 'USED' | 'EXPIRED'
 /**
  * One of the signed-in Steward's own requests. expiresAt: while PENDING, when it expires undecided; once a print or

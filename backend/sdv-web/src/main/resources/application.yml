@@ -121,6 +121,20 @@ sdv:
     request-body-bytes: ${SDV_MAX_REQUEST_BODY_BYTES:1048576}
     submission-body-bytes: ${SDV_MAX_SUBMISSION_BODY_BYTES:8388608}
 
+  # Task 0063: reading PDFs. At most max-concurrent at once (0: from memory and processors), max-per-person for one
+  # person or sending system; the rest wait wait-seconds, then 503 SDV-SYS-018 (busy). A work longer than limit-seconds is
+  # given up. The working space beyond scratch-memory-bytes is an encrypted temporary file (scratch-folder; empty: the
+  # system's). accept: what a sending system may send all the same, "source-key=encrypted,active-content,unreadable;...".
+  pdf:
+    max-concurrent: ${SDV_PDF_MAX_CONCURRENT:0}
+    max-per-person: ${SDV_PDF_MAX_PER_PERSON:3}
+    wait-seconds: ${SDV_PDF_WAIT_SECONDS:8}
+    limit-seconds: ${SDV_PDF_LIMIT_SECONDS:30}
+    scratch-folder: ${SDV_PDF_SCRATCH_FOLDER:}
+    scratch-memory-bytes: ${SDV_PDF_SCRATCH_MEMORY_BYTES:16777216}
+    scratch-total-bytes: ${SDV_PDF_SCRATCH_TOTAL_BYTES:2147483648}
+    accept: ${SDV_PDF_ACCEPT:}
+
   # Task 0062: the folders an IT Admin may keep documents in, separated by ';'. Empty: only "data" under Vero's working
   # folder. Volumes that exist already stay usable.
   storage:

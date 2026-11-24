@@ -22,7 +22,52 @@ import java.util.regex.PatternSyntaxException;
 final class MetadataValueValidator {
     private static final ObjectMapper JSON = new ObjectMapper();
 
+    /** Task 0063: no metadata value is longer, whatever its field's rules say. */
+    static final int MAX_VALUE_LENGTH = 4_000;
+    /** Task 0063: the longest one pattern check may take. */
+    static final long PATTERN_NANOS = java.time.Duration.ofMillis(250).toNanos();
+
     private MetadataValueValidator() { }
+
+    /** A pattern that takes too long is the field's setup, not the sender's request (SDV-INT-010). */
+    private static boolean matches(String pattern, String value, String fieldKey) {
+        long until = System.nanoTime() + PATTERN_NANOS;
+        try {
+            return Pattern.compile(pattern).matcher(new Timed(value, 0, value.length(), until)).matches();
+        } catch (TookTooLong | StackOverflowError ex) {
+            throw new IllegalStateException("Metadata field '" + fieldKey + "' has a configured pattern that takes too long.");
+        }
+    }
+
+    private static final class TookTooLong extends RuntimeException {
+        TookTooLong() {
+            super(null, null, false, false);
+        }
+    }
+
+    /** A text that stops the matcher when its time is over: the matcher reads every character through it. */
+    private record Timed(String text, int from, int to, long until) implements CharSequence {
+        @Override
+        public char charAt(int index) {
+            if (System.nanoTime() > until) throw new TookTooLong();
+            return text.charAt(from + index);
+        }
+
+        @Override
+        public int length() {
+            return to - from;
+        }
+
+        @Override
+        public CharSequence subSequence(int start, int end) {
+            return new Timed(text, from + start, from + end, until);
+        }
+
+        @Override
+        public String toString() {
+            return text.substring(from, to);
+        }
+    }
 
     /**
      * Task 0039: a value that breaks its field's rules is SDV-INT-009 (400; the message names the field and the rule,
@@ -34,6 +79,10 @@ final class MetadataValueValidator {
         if (rawValue == null) {
             throw new CodedRefusal.BadRequest(SdvErrorCode.INT_008, "Metadata field '" + key + "' cannot be null.",
                     "field=" + key + " null");
+        }
+        if (rawValue.length() > MAX_VALUE_LENGTH) {
+            throw new CodedRefusal.BadRequest(SdvErrorCode.INT_009, "Metadata field '" + key + "' is longer than " + MAX_VALUE_LENGTH + " characters.",
+                    "field=" + key + " longer than " + MAX_VALUE_LENGTH);
         }
         try {
             validateType(definition.fieldType(), rawValue, key);
@@ -114,7 +163,7 @@ final class MetadataValueValidator {
             JsonNode pattern = rules.get("pattern");
             if (pattern != null && pattern.isTextual()) {
                 try {
-                    if (!Pattern.compile(pattern.asText()).matcher(value).matches()) {
+                    if (!matches(pattern.asText(), value, definition.fieldKey())) {
                         throw new IllegalArgumentException("Metadata field '" + definition.fieldKey() + "' does not match its configured pattern.");
                     }
                 } catch (PatternSyntaxException ex) {

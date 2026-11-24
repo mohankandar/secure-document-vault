@@ -158,6 +158,12 @@ public enum SdvErrorCode {
     HLD_007("SDV-HLD-007"),
     /** Task 0027: the legal hold was already released (409). */
     HLD_008("SDV-HLD-008"),
+    /** Task 0066: the document was put on legal hold while it was being redacted; send the redaction again to ask for approval (409). */
+    HLD_009("SDV-HLD-009"),
+    /** Task 0066: no sealed original of this document has this reference, or it was destroyed (404). */
+    HLD_010("SDV-HLD-010"),
+    /** Task 0066: the sealed original of a held document is for Restricted Stewards only (403). */
+    HLD_011("SDV-HLD-011"),
     /** Task 0028: asking to print or download a Highly Confidential document needs REQUEST_SENSITIVE_ACCESS (403). */
     APR_001("SDV-APR-001"),
     /** Task 0028: a request's reason is missing, shorter than 3 or longer than 500 characters (400). */
@@ -188,6 +194,8 @@ public enum SdvErrorCode {
     APR_014("SDV-APR-014"),
     /** Task 0028: a person's own requests are listed for Stewards only (CHANGE_SENSITIVITY_LEVEL) (403). */
     APR_015("SDV-APR-015"),
+    /** Task 0066: the redaction no longer applies: the document changed since it was asked for, or is gone (409). */
+    APR_017("SDV-APR-017"),
     /** Task 0032: intake notices (an uncorrected copy sent again) are for Document stewards (403). */
     INT_001("SDV-INT-001"),
     /** Task 0033: no notice of this tenant has this reference (404). */
@@ -224,6 +232,14 @@ public enum SdvErrorCode {
     INT_017("SDV-INT-017", false, true),
     /** Task 0039: retry-finalization of an unknown document (404), or of one in a state it can't be (409). INFO. */
     INT_018("SDV-INT-018", false, true),
+    /** Task 0063: an uploaded PDF that can't be read (400). */
+    INT_019("SDV-INT-019", false, true),
+    /** Task 0063: an uploaded PDF that is encrypted (400). */
+    INT_020("SDV-INT-020", false, true),
+    /** Task 0063: an uploaded PDF with active content (400). */
+    INT_021("SDV-INT-021", false, true),
+    /** Task 0063: an uploaded PDF with more pages than allowed (400). */
+    INT_022("SDV-INT-022", false, true),
     /** Task 0043: no document of this tenant has this ID (404). INFO line. */
     DOC_001("SDV-DOC-001", false, Log.INFO),
     /** Task 0043: the document isn't available: still being stored, failed, being corrected or deleted (409). INFO. */
@@ -247,6 +263,12 @@ public enum SdvErrorCode {
     DOC_009("SDV-DOC-009", false, Log.ERROR),
     /** Task 0043: a tag or comment is empty or too long (400). DEBUG line. */
     DOC_010("SDV-DOC-010", false, Log.DEBUG),
+    /** Task 0063: pages, previews and search belong to an opening of the document by this person (409). */
+    DOC_011("SDV-DOC-011", false, true),
+    /** Task 0063: drawing or searching the document took too long (422). */
+    DOC_012("SDV-DOC-012", false, Log.WARN),
+    /** Task 0063: the document has more pages, or a larger picture, than Vero shows (422). */
+    DOC_013("SDV-DOC-013", false, Log.WARN),
     /** Task 0043: the search criteria aren't valid (400). DEBUG line; messages name a field's key, never a value. */
     SCH_001("SDV-SCH-001", false, Log.DEBUG),
     /** Task 0043: the record reference is malformed or names no record of this tenant (400 or 404). INFO line. */

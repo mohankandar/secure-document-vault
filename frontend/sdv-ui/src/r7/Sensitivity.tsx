@@ -48,7 +48,7 @@ export function whenWords(iso: string, withTime = true, now: Date = new Date()):
 }
 
 const KIND_WORDS = (r: MyRequest, word: string) =>
-  r.kind === 'PRINT' ? 'Print' : r.kind === 'DOWNLOAD' ? 'Download'
+  r.kind === 'REDACT_HELD' ? 'Redact on legal hold' : r.kind === 'PRINT' ? 'Print' : r.kind === 'DOWNLOAD' ? 'Download'
     : r.kind === 'LOWER_LEVEL' ? `Lower to ${r.requestedLevel ? LEVEL_NAMES[r.requestedLevel] : 'a lower level'}`
       : `Lower ${word} to ${r.requestedLevel ? LEVEL_NAMES[r.requestedLevel] : 'a lower level'}`
 
@@ -56,7 +56,7 @@ const KIND_WORDS = (r: MyRequest, word: string) =>
 export function requestState(r: MyRequest): { text: string; tone: 'ok' | 'wait' | 'off' } {
   const grant = r.kind === 'PRINT' || r.kind === 'DOWNLOAD'
   if (r.status === 'PENDING') return { text: 'Waiting for approval', tone: 'wait' }
-  if (r.status === 'APPROVED') return grant ? { text: `Approved · use by ${whenWords(r.expiresAt)}`, tone: 'ok' } : { text: 'Approved · changed', tone: 'ok' }
+  if (r.status === 'APPROVED') return grant ? { text: `Approved · use by ${whenWords(r.expiresAt)}`, tone: 'ok' } : { text: r.kind === 'REDACT_HELD' ? 'Approved' : 'Approved · changed', tone: 'ok' }
   if (r.status === 'USED') return { text: `Used ${r.usedAt ? whenWords(r.usedAt) : ''}`.trim(), tone: 'off' }
   if (r.status === 'DECLINED') return { text: 'Declined', tone: 'off' }
   return { text: 'Expired', tone: 'off' }

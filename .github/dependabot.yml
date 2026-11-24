@@ -3,12 +3,18 @@
 # Every Dependabot pull request goes through CI like any other pull request and needs a green "ci-passed".
 # Nothing merges by itself: there is no auto-merge workflow, and the owner merges each pull request by hand.
 #
-# At most 5 open Dependabot pull requests in total: 2 for GitHub Actions plus 3 for npm.
+# At most 8 open Dependabot pull requests in total: 2 for GitHub Actions, 3 for npm and 3 for Maven.
 #
-# Maven is not listed yet. platform-core comes from GitHub Packages, so Dependabot would need the read:packages
-# token as a Dependabot secret and a maven-repository registry entry here. platform-core versions are bumped by
-# hand per release. See docs/work/0047-report.md for how to add it later.
+# Maven (task 0064): platform-core comes from GitHub Packages, so Dependabot reads it with the Dependabot secret
+# PLATFORM_PACKAGES_TOKEN (read:packages). platform-core itself and the Spring Boot line are moved by hand.
 version: 2
+
+registries:
+  platform-core:
+    type: maven-repository
+    url: https://maven.pkg.github.com/mohankandar/platform-core
+    username: mohankandar
+    password: ${{ secrets.PLATFORM_PACKAGES_TOKEN }}
 
 updates:
   # Workflow actions are pinned to full commit SHAs with a "# vX.Y.Z" comment. Dependabot keeps the pin and
@@ -36,6 +42,32 @@ updates:
       # All minor and patch updates in one pull request. Major updates are not in any group, so each one gets
       # a pull request of its own.
       npm-minor-and-patch:
+        applies-to: version-updates
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
+
+  - package-ecosystem: maven
+    directory: /backend
+    target-branch: release/vero-r7
+    registries:
+      - platform-core
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: build
+    ignore:
+      # Moved by hand, in a task of its own.
+      - dependency-name: "com.documentplatform.platform:*"
+      - dependency-name: "org.springframework.boot:*"
+        update-types:
+          - version-update:semver-major
+    groups:
+      maven-minor-and-patch:
         applies-to: version-updates
         patterns:
           - "*"

@@ -22,7 +22,9 @@ import java.util.UUID;
  * Each audit event counts as one kind:
  * <ul>
  *   <li>OPENED, PRINTED, DOWNLOADED: DOCUMENT_VIEW_OPENED, DOCUMENT_PRINTED, DOCUMENT_DOWNLOADED that succeeded, with
- *       their level and roles (roles recorded since task 0054);</li>
+ *       their level and roles (roles recorded since task 0054). Task 0063: a page or a text search that names no
+ *       opening (it could be had without one before) counts as an opening of its own; the others belong to one that is
+ *       counted;</li>
  *   <li>REFUSED_LEVEL, REFUSED_QUARANTINE: DOCUMENT_ACCESS_REFUSED when opening, with SDV-SEN-008 or SDV-QUA-001;</li>
  *   <li>REQUESTED, APPROVED, DECLINED, EXPIRED: the access requests that a Highly Confidential print or download needs
  *       (kind DOWNLOAD or PRINT); GRANT_USED, GRANT_RETURNED: their one-time grants.</li>
@@ -32,7 +34,7 @@ import java.util.UUID;
  */
 @Repository
 public class JdbcActivityReportRepository implements ActivityReportRepository {
-    static final String ACTIONS = "('DOCUMENT_VIEW_OPENED', 'DOCUMENT_PRINTED', 'DOCUMENT_DOWNLOADED', 'DOCUMENT_ACCESS_REFUSED', "
+    static final String ACTIONS = "('DOCUMENT_VIEW_OPENED', 'DOCUMENT_PAGE_VIEWED', 'DOCUMENT_TEXT_SEARCHED', 'DOCUMENT_PRINTED', 'DOCUMENT_DOWNLOADED', 'DOCUMENT_ACCESS_REFUSED', "
             + "'ACCESS_REQUEST_CREATED', 'ACCESS_REQUEST_APPROVED', 'ACCESS_REQUEST_DECLINED', 'ACCESS_REQUEST_EXPIRED', "
             + "'SENSITIVE_ACCESS_GRANT_USED', 'SENSITIVE_ACCESS_GRANT_RETURNED')";
     private static final String LEVELS = "('STANDARD', 'CONFIDENTIAL', 'HIGHLY_CONFIDENTIAL')";
@@ -55,6 +57,8 @@ public class JdbcActivityReportRepository implements ActivityReportRepository {
               from audit_events a
              cross join lateral (select case
                     when a.outcome = 'SUCCESS' and a.action = 'DOCUMENT_VIEW_OPENED' then 'OPENED'
+                    when a.outcome = 'SUCCESS' and a.action in ('DOCUMENT_PAGE_VIEWED', 'DOCUMENT_TEXT_SEARCHED')
+                         and not jsonb_exists(a.safe_details, 'viewingId') then 'OPENED'
                     when a.outcome = 'SUCCESS' and a.action = 'DOCUMENT_PRINTED' then 'PRINTED'
                     when a.outcome = 'SUCCESS' and a.action = 'DOCUMENT_DOWNLOADED' then 'DOWNLOADED'
                     when a.action = 'DOCUMENT_ACCESS_REFUSED' and a.safe_details->>'attempt' = 'OPEN'

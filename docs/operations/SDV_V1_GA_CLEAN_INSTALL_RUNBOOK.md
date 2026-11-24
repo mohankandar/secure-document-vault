@@ -1,5 +1,9 @@
 # SDV V1.0.0 GA Clean-Install Runbook
 
+> **Task 0068, 2026-11-24: which part is current.** The sections up to "After clean-install PASS" describe the frozen V1.0.0
+> archive (migration 010) and are kept as its record; its package and acceptance scripts do not run on this version. For an
+> install or upgrade today, use "Update the database" and everything after it, with `docs/install/SETUP.md`.
+
 ## Purpose
 
 This runbook validates that the exact frozen SDV V1.0.0 source distribution can be installed from scratch on a fresh Windows machine or VM.
@@ -235,6 +239,23 @@ Vero keeps the Problems list of unidentified intake attempts small, however many
 
 Each request's reference is in Vero's log, also when it is counted in a row with others.
 
+### Reading PDFs: the `SDV_PDF_*` settings
+
+Opening, drawing, searching, redacting and checking PDFs is limited, so one file or one person can't take the server.
+
+| Setting | Default | Value |
+|---|---|---|
+| `SDV_PDF_MAX_CONCURRENT` | `0`: one for each 320 MB of memory, at most one per processor | At once in this process, 1 to 256 |
+| `SDV_PDF_MAX_PER_PERSON` | `3` | At once for one person or sending system, 1 to 64 |
+| `SDV_PDF_WAIT_SECONDS` | `8` | How long to wait for a place before `503 SDV-SYS-018`, 0 to 60 |
+| `SDV_PDF_LIMIT_SECONDS` | `30` | The longest one request may take, 5 to 600 (a redaction: 10 minutes) |
+| `SDV_PDF_SCRATCH_FOLDER` | the system's temporary folder | Working space; only ciphertext is written, with a key that is never stored |
+| `SDV_PDF_SCRATCH_MEMORY_BYTES`, `SDV_PDF_SCRATCH_TOTAL_BYTES` | 16 MB, 2 GB | Per request: kept in memory; at most in all |
+| `SDV_PDF_ACCEPT` | empty: refuse | What one sending system may send all the same: `source-key=encrypted,active-content,unreadable;other-key=...` |
+
+Give Vero enough memory for the pages people read at once (about 320 MB each), and the temporary folder enough room.
+`-XX:+ExitOnOutOfMemoryError` must **not** be set: a file that needs too much memory ends its own request only.
+
 ### Where documents may be kept: `SDV_STORAGE_ALLOWED_ROOTS`
 
 An IT Admin adds storage volumes only inside the folders named here (task 0062).
@@ -275,6 +296,40 @@ themselves; nothing is lost.
 
 Vero sends no usage data anywhere. Liquibase's anonymous usage analytics are switched off in every mode (the
 running app, local mode and the schema step).
+
+### All settings
+
+Checked against `application.yml` and the code on 2026-11-24 (task 0068). Sign-in settings are in `docs/install/SETUP.md`
+section 5; those with a section of their own above are not repeated.
+
+| Setting | Default | What |
+|---|---|---|
+| `SDV_SERVER_PORT` | `8280` | Vero's port. Keep it private: the proxy does TLS |
+| `SDV_DB_URL`, `SDV_DB_USERNAME`, `SDV_DB_PASSWORD` | none | The app user's connection (below) |
+| `SDV_DB_POOL_MAX`, `SDV_DB_POOL_MIN` | `10`, `1` | Database connections of one Vero |
+| `SDV_KEY_PROVIDER` | `disabled` | `vault`. A packaged start refuses `disabled` (`SDV-KEY-001`) |
+| `SDV_VAULT_BASE_URL` | none | The key service's address, https outside a test computer |
+| `SDV_VAULT_TOKEN_FILE` **or** `SDV_VAULT_TOKEN` | none | Exactly one; the file is recommended. A token for Vero's Transit paths only |
+| `SDV_VAULT_TRANSIT_MOUNT`, `SDV_VAULT_KEY_PREFIX` | `transit`, `sdv-tenant-` | Where the entities' keys are |
+| `SDV_AUTH_MODE` | `disabled` | `enterprise-jwt`. A packaged start refuses `disabled` (`SDV-SYS-006`) and the local profile (`SDV-SYS-005`) |
+| `SDV_AUTH_JWT_MAX_TOKEN_LIFETIME_SECONDS` | `0`: not checked | The longest life of a token Vero accepts |
+| `SDV_AUTH_JWT_USERNAME_CLAIM`, `..._EMAIL_CLAIM`, `..._DISPLAY_NAME_CLAIM` | `preferred_username`, `email`, `name` | Display only |
+| `SDV_AUTH_JWT_ENTITY_CLAIM`, `..._SOURCE_ID_CLAIM`, `..._SOURCE_KEY_CLAIM` | `sdv_entity_id`, `sdv_source_id`, `sdv_source_key` | Optional claims of a sending system's token; when there, they must match its binding |
+| `SDV_TENANT_STATUS_CACHE_SECONDS` | `30` | How soon a suspended entity is refused, 0 to 60 |
+| `SDV_RETENTION_DAILY_AT` | `02:00` | The daily cleanup, HH:mm in the server's time zone |
+| `SDV_RETENTION_CRON` | empty | For check scripts only. Leave empty |
+| `SDV_DEFAULT_TIME_ZONE` | `UTC` | The zone an entity's days are counted in when it has none; an unknown name stops the start |
+| `SDV_APPROVALS_GRANT_HOURS` | `24` | How long an approved print or download may be used, 1 to 168 |
+| `SDV_APPROVALS_PENDING_DAYS` | `7` | How long a request may wait, 1 to 90 |
+| `SDV_APPROVALS_TENANT_GRANT_HOURS`, `SDV_APPROVALS_TENANT_PENDING_DAYS` | empty | The same for one entity: `entity-id=number,...` |
+
+**Redaction on legal hold** (task 0066): approved redactions are applied, and sealed originals destroyed after the last
+hold, by a job that runs every 10 seconds. It needs no setting.
+
+**Licensing is not live.** The licence file names the entity slots and is read when one is activated. Nothing else checks
+it: no seats, no expiry.
+
+**The local development jar** (`sdv-web-<version>-local.jar`) is never installed for a customer.
 
 ### Two database users
 

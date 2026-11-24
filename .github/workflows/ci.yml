@@ -5,7 +5,8 @@
 #
 # platform-core comes from GitHub Packages with the repository secret PLATFORM_PACKAGES_TOKEN (the owner's read-only
 # token, read:packages only). It reaches Maven as GITHUB_PACKAGES_TOKEN, the same variable as on the laptop, through
-# .github/maven-settings.xml. No token is written in any file.
+# .github/maven-settings.xml. No token is written in any file. Task 0064: only the dependency-resolve step of
+# .github/actions/maven-resolve has it; builds and tests run offline, and the checkout keeps no Git token.
 name: CI
 
 on:
@@ -45,24 +46,21 @@ jobs:
         options: >-
           --health-cmd "pg_isready -U sdv_schema_owner -d sdv_schema_test"
           --health-interval 5s --health-timeout 5s --health-retries 20
-    env:
-      GITHUB_PACKAGES_TOKEN: ${{ secrets.PLATFORM_PACKAGES_TOKEN }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
         with:
           distribution: temurin
           java-version: '21'
           cache: maven
-      - name: Check the packages token is set
-        run: |
-          if [ -z "$GITHUB_PACKAGES_TOKEN" ]; then
-            echo "::error::Repository secret PLATFORM_PACKAGES_TOKEN is not set (read:packages token for platform-core)."
-            exit 1
-          fi
+      - uses: ./.github/actions/maven-resolve
+        with:
+          packages-token: ${{ secrets.PLATFORM_PACKAGES_TOKEN }}
       - name: Build the application jar (tests run in the full build below)
         working-directory: backend
-        run: mvn $MVN_CI_FLAGS package -DskipTests
+        run: mvn $MVN_CI_FLAGS -o package -DskipTests
       - name: Schema step on the scratch database
         env:
           # Trust authentication ignores the password; the schema step only needs one to be set.
@@ -76,7 +74,7 @@ jobs:
           SDV_IT_JDBC_URL: jdbc:postgresql://localhost:5433/sdv_schema_test
           SDV_IT_JDBC_USER: sdv_schema_owner
           SDV_IT_JDBC_PASSWORD: not-checked-trust-authentication
-        run: mvn $MVN_CI_FLAGS clean verify
+        run: mvn $MVN_CI_FLAGS -o clean verify
       - name: The release build holds no development licence key
         working-directory: backend
         run: |
@@ -97,7 +95,7 @@ jobs:
           for t in LegalHoldPostgresTest AccessRequestPostgresTest DuplicateIntakePostgresTest IntakeReportPostgresTest \
                    SensitivityReportPostgresTest PlatformIdentityPostgresTest SenderProfileServerContractTest \
                    UnidentifiedIntakeAttemptPostgresTest QuarantinePostgresTest QuarantineFilterBlockingPostgresTest QuarantineScalePostgresTest StorageReportPostgresTest ActivityReportPostgresTest RestrictionsPostgresTest PrimaryIdentifierPostgresTest \
-                   SealedAuditPostgresTest VeroSetupPlanPostgresTest; do
+                   SealedAuditPostgresTest HeldRedactionPostgresTest VeroSetupPlanPostgresTest; do
             report=$(find . -path '*/surefire-reports/TEST-*'"$t"'.xml' | head -1)
             if [ -z "$report" ] || grep -q 'skipped="[1-9]' "$report" || grep -q 'tests="0"' "$report"; then
               echo "::error::$t did not run"; missing=1
@@ -124,6 +122,8 @@ jobs:
         working-directory: frontend/sdv-ui
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '22'
@@ -138,19 +138,22 @@ jobs:
     name: product-name-guard
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    env:
-      GITHUB_PACKAGES_TOKEN: ${{ secrets.PLATFORM_PACKAGES_TOKEN }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
         with:
           distribution: temurin
           java-version: '21'
           cache: maven
+      - uses: ./.github/actions/maven-resolve
+        with:
+          packages-token: ${{ secrets.PLATFORM_PACKAGES_TOKEN }}
       - name: No other product's name in code, SQL, JSON, YAML, scripts or install guides
         working-directory: backend
         run: >-
-          mvn $MVN_CI_FLAGS -pl sdv-web -am test -Dtest=ProductNameGuardTest -Dsurefire.failIfNoSpecifiedTests=false
+          mvn $MVN_CI_FLAGS -o -pl sdv-web -am test -Dtest=ProductNameGuardTest -Dsurefire.failIfNoSpecifiedTests=false
 
   sender-profile-contract:
     # Task 0041: Vero's sender profile (docs/api/sdv-ingestion-v1.profile.json, platform-integration-profile/1) passes
@@ -160,19 +163,22 @@ jobs:
     name: sender-profile-contract
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    env:
-      GITHUB_PACKAGES_TOKEN: ${{ secrets.PLATFORM_PACKAGES_TOKEN }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
         with:
           distribution: temurin
           java-version: '21'
           cache: maven
+      - uses: ./.github/actions/maven-resolve
+        with:
+          packages-token: ${{ secrets.PLATFORM_PACKAGES_TOKEN }}
       - name: The sender profile against the format and the published contract
         working-directory: backend
         run: >-
-          mvn $MVN_CI_FLAGS -pl sdv-web -am test -Dtest=SenderProfileContractTest -Dsurefire.failIfNoSpecifiedTests=false
+          mvn $MVN_CI_FLAGS -o -pl sdv-web -am test -Dtest=SenderProfileContractTest -Dsurefire.failIfNoSpecifiedTests=false
       - name: Check the profile tests ran
         working-directory: backend
         run: |

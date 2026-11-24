@@ -70,12 +70,15 @@ public final class AuditSentences {
         return switch (e.action()) {
             case "DOCUMENT_VIEW_OPENED" -> w + " opened " + f;
             case "DOCUMENT_PAGE_VIEWED" -> number(d, "page") != null ? w + " loaded page " + number(d, "page") + " of " + f : w + " loaded a page of " + f;
+            case "DOCUMENT_PREVIEWED" -> w + " looked at the page previews of " + f;
+            case "DOCUMENT_TEXT_SEARCHED" -> w + " searched the text of " + f;
             case "DOCUMENT_DOWNLOADED" -> w + " downloaded " + f;
             case "DOCUMENT_DOWNLOAD_FAILED" -> w + " tried to download " + f + ", but it failed";
             case "DOCUMENT_PRINTED" -> w + " printed " + f;
             case "DOCUMENT_TAG_ADDED" -> w + " tagged " + f;
             case "DOCUMENT_COMMENT_ADDED" -> w + " commented on " + f;
             case "DOCUMENT_PERMANENTLY_REDACTED" -> w + " permanently redacted part of " + f;
+            case "SEALED_ORIGINAL_DESTROYED" -> "The sealed original of " + f + " was destroyed, because no legal hold keeps it any more";
             case "DOCUMENT_REDACTION_FAILED" -> w + " tried to redact part of " + f + ", but it failed";
             case "DOCUMENT_RETENTION_DELETED" -> "Vero deleted " + f + " for good, as the keeping rule says";
             case "DOCUMENT_RETENTION_DELETE_FAILED" -> "Vero couldn't delete " + f + " when its time was up";
@@ -213,6 +216,7 @@ public final class AuditSentences {
             case "PRINT" -> "to print " + document;
             case "DOWNLOAD" -> "to download " + document;
             case "LOWER_LEVEL" -> "to lower " + document + (requestedLevel == null ? "" : " to " + levelWords(requestedLevel));
+            case "REDACT_HELD" -> "to redact " + document + " on legal hold";
             case "LOWER_RECORD_LEVEL" -> "to lower a record" + (requestedLevel == null ? "" : " to " + levelWords(requestedLevel));
             default -> "for approval";
         };

@@ -55,7 +55,7 @@ case "$RUNTIME_DIR/" in "$ROOT/"*) echo "Runtime files must be OUTSIDE source re
 RUN="$RUNTIME_DIR/run"
 BACKEND_LOG="$LOG_DIR/backend/backend.log"
 FRONTEND_LOG="$LOG_DIR/frontend/frontend.log"
-JAR="$ROOT/backend/sdv-web/target/sdv-web-0.1.0-SNAPSHOT.jar"
+JAR="$ROOT/backend/sdv-web/target/local/sdv-web-0.1.0-SNAPSHOT-local.jar"
 FRONTEND="$ROOT/frontend/sdv-ui"
 
 fail() { echo "[SDV DEV] ERROR: $*" >&2; exit 1; }
@@ -117,6 +117,16 @@ export SDV_KEY_PROVIDER=vault
 export SDV_VAULT_BASE_URL="$VAULT_URL"
 export SDV_VAULT_TOKEN_FILE="$TOKEN_FILE"
 unset SDV_VAULT_TOKEN || true
+# Task 0064: the local database password is never in git: the variable, the untracked file, or the container's own setting.
+if [[ -z "${SDV_LOCAL_DB_PASSWORD:-}" ]]; then
+  if [[ -s "$ROOT/.runtime/local-db-password.txt" ]]; then
+    SDV_LOCAL_DB_PASSWORD="$(tr -d '\r\n' < "$ROOT/.runtime/local-db-password.txt")"
+  else
+    SDV_LOCAL_DB_PASSWORD="$(docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$DB_CONTAINER" | sed -n 's/^POSTGRES_PASSWORD=//p')"
+  fi
+fi
+[[ -n "$SDV_LOCAL_DB_PASSWORD" ]] || fail "Local database password unknown. Set SDV_LOCAL_DB_PASSWORD."
+export SDV_LOCAL_DB_PASSWORD
 launch backend 8280 "$ROOT" "$BACKEND_LOG" java -jar "$JAR" --spring.profiles.active=local
 backend_healthy=false
 for ((i=0;i<90;i++)); do

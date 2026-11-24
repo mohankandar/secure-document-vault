@@ -1,0 +1,8 @@
+databaseChangeLog:
+  - changeSet:
+      id: 043-held-redaction
+      author: sdv
+      changes:
+        - sqlFile:
+            path: db/changelog/043-held-redaction.sql
+            relativeToChangelogFile: false

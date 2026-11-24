@@ -130,7 +130,7 @@ The answers a sender can get:
 |---|---|---|
 | 201 | Created (submission) or received (document) | done |
 | 200 | Already received (a retry: `idempotentReplay: true`), or `DUPLICATE_ALREADY_STORED` (the same file for the same record: `duplicate: true`) | done; don't send again |
-| 400 | `SDV-INT-006`, `-007`, `-008`, `-009`, `-012`, `-013`, `-015`, `-016`; `SDV-SEN-001`, `-002`, `-005`, `-006`; `SDV-SYS-015` | no |
+| 400 | `SDV-INT-006`, `-007`, `-008`, `-009`, `-012`, `-013`, `-015`, `-016`, `-019` to `-022`; `SDV-SEN-001`, `-002`, `-005`, `-006`; `SDV-SYS-015` | no |
 | 401 | `SDV-AUT-001`, `SDV-AUT-003` | new-token |
 | 401 | `SDV-AUT-005`, `SDV-AUT-006`, `SDV-AUT-007`, `SDV-SYS-006` | after-fix |
 | 403 | `SDV-AUT-002`, `SDV-AUT-009`, `SDV-INT-005` | after-fix |
@@ -202,6 +202,12 @@ The record is the same grouping as for record levels (above): the submissions of
 The sample under `samples/third-party-producer/` demonstrates the contract with raw HTTP calls only.
 
 ## Changelog
+
+### 1.3.0 (task 0063, 2026-11-24). Release tag: `sdv-ingestion-v1.3.0`
+
+- **The PDF itself is checked before it is stored.** New refusals of an upload (400, retry rule `no`, nothing stored): `SDV-INT-019` (can't be read), `SDV-INT-020` (encrypted), `SDV-INT-021` (active content: scripts, actions, attached files), `SDV-INT-022` (more pages than allowed). Before, such files were stored. This is a security exception to "`/v1` refuses nothing it accepted"; the customer's installer can allow the first three for one sending system (`SDV_PDF_ACCEPT`).
+- **Busy** (`503 SDV-SYS-018`) can also mean that Vero has no room to read another PDF just now. Retry rule unchanged.
+- A metadata value is at most 4,000 characters (`SDV-INT-009`).
 
 ### 1.2.0 (task 0062, 2026-11-24). Release tag: `sdv-ingestion-v1.2.0`
 

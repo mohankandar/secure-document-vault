@@ -12,5 +12,7 @@ public record RedactionOperation(
         long newEncryptedSizeBytes, String newIntegrityValue,
         String newCryptoProfile, int newCryptoVersion, String newKeyProviderId,
         String newProtectedDataKeyReference, String newKeyProviderVersion,
-        String newContentSha256, long newContentSizeBytes, Instant createdAt) {
+        String newContentSha256, long newContentSizeBytes, Instant createdAt,
+        /* Task 0066: the approved request of a held document; its original is sealed, not deleted. Null otherwise. */
+        UUID accessRequestId) {
 }

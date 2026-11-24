@@ -185,7 +185,7 @@ class DocumentLevelEnforcementTest {
 
             viewer = new SecurePdfViewerController(security, authorization, new DocumentViewerService(documents,
                     mock(StorageVolumeRepository.class), List.of(), mock(StreamingCryptoPort.class), audit,
-                    mock(PageViewAuditPort.class), guard));
+                    viewings(), guard, com.sdv.platform.application.pdf.PdfWork.defaults(), (t, s) -> 2000));
             download = new ControlledDownloadController(security, authorization, new ControlledDownloadService(documents,
                     mock(StorageVolumeRepository.class), List.of(), mock(StreamingCryptoPort.class), audit, guard));
             actions = new DocumentActionController(security, authorization, new DocumentActionService(documents, tags,
@@ -196,17 +196,27 @@ class DocumentLevelEnforcementTest {
                     mock(TenantRepository.class), sources, documents, mock(DocumentRedactionRepository.class),
                     mock(StorageVolumeRepository.class), mock(StoragePlacementService.class), List.of(),
                     mock(StreamingCryptoPort.class), mock(PdfSanitizingRedactor.class), audit,
-                    mock(PlatformTransactionManager.class), guard));
+                    mock(PlatformTransactionManager.class), guard, com.sdv.platform.application.pdf.PdfWork.defaults(),
+                    mock(com.sdv.platform.application.port.HeldRedactionRepository.class), mock(com.sdv.platform.application.approvals.AccessRequestService.class)));
             business = new BusinessExperienceController(security, authorization, new BusinessExperienceService(
                     tenants, sources, definitions, records, audit));
+        }
+
+        /** Task 0063: the document was opened; what is tested here is the level. */
+        private static final String VIEWING = UUID.randomUUID().toString();
+
+        private static PageViewAuditPort viewings() {
+            PageViewAuditPort port = mock(PageViewAuditPort.class);
+            when(port.isViewing(any(), any(), any(), any(), any())).thenReturn(true);
+            return port;
         }
 
         Object call(Function function) throws Exception {
             return switch (function) {
                 case OPEN -> viewer.metadata(DOC);
-                case PAGE_IMAGE -> viewer.page(DOC, 1, 1.0, null);
-                case THUMBNAILS -> viewer.previews(DOC, 1, 12);
-                case TEXT_SEARCH -> viewer.search(DOC, "loan");
+                case PAGE_IMAGE -> viewer.page(DOC, 1, 1.0, VIEWING);
+                case THUMBNAILS -> viewer.previews(DOC, 1, 12, VIEWING);
+                case TEXT_SEARCH -> viewer.search(DOC, "loan", VIEWING);
                 case PRINT -> { actions.print(DOC); yield null; }
                 case DOWNLOAD -> download.download(DOC);
                 case REDACT -> redaction.redact(DOC, new CorrectiveRedactionController.RedactionRequest("Wrong account number",

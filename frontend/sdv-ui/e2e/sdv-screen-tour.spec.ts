@@ -1800,6 +1800,66 @@ test.describe('SDV role-based screen capture', () => {
     await capture(page, testInfo, 'audit-highly-confidential')
   })
 
+  // Task 0066: redacting a held document asks a Business admin; the original is sealed until the hold is released. It
+  // uses the tour's own document.
+  test('Redaction on legal hold: approval, sealed original and its end (task 0066)', async ({ page }, testInfo) => {
+    test.skip(!isDesktop(testInfo), 'Runs once per tour (desktop only).')
+    test.setTimeout(180_000)
+    const as = (subject: string, roles: string) => ({ 'X-SDV-Tenant-Id': 'bd960ee9-9d54-5053-9958-92aaa54893a6', 'X-SDV-Subject': subject, 'X-SDV-Roles': roles, 'Content-Type': 'application/json' })
+    const dana = as('local-restricted-steward', 'RESTRICTED_STEWARD'), priya = as('local-business-admin', 'BUSINESS_ADMIN')
+    await selectRole(page, 'Restricted Steward')
+    const doc = await tourCheckDocument(page)
+    const docPath = `/api/v1/business/documents/${doc}`
+    const sealed = async () => (await (await page.request.get(docPath + '/sealed-originals', { headers: dana })).json() as unknown[]).length
+    const released = async () => {
+      for (const h of await (await page.request.get('/api/v1/admin/legal-holds', { headers: priya })).json() as { holdId: string; documentId: string }[]) {
+        if (h.documentId === doc) expect((await page.request.post(`/api/v1/admin/legal-holds/${h.holdId}/release`, { headers: priya })).ok()).toBeTruthy()
+      }
+    }
+    await released() // an earlier run that stopped
+    await expect.poll(sealed, { timeout: 60000 }).toBe(0)
+    expect((await page.request.post('/api/v1/admin/legal-holds', { headers: priya, data: { documentId: doc, reason: 'Tour check (task 0066)' } })).ok()).toBeTruthy()
+    const asked = await page.request.post(docPath + '/redactions', { headers: dana, data: { reason: 'Tour check (task 0066)', confirmed: true, regions: [{ pageNumber: 1, x: 0.8, y: 0.9, width: 0.05, height: 0.02 }] } })
+    expect([202, 409]).toContain(asked.status()) // 409: one is waiting from an earlier run
+    expect(await sealed()).toBe(0)
+
+    await selectRole(page, 'Business Administrator')
+    await page.evaluate(() => { window.location.hash = '#/governance/approvals' })
+    await page.getByRole('toolbar', { name: 'Approvals filters' }).getByRole('button', { name: /^Redact on hold [1-9]/ }).click({ timeout: 15000 })
+    const list = page.getByRole('region', { name: 'Waiting requests' })
+    const expand = list.getByRole('button', { name: /^Expand / })
+    if (await expand.count()) await expand.first().click()
+    await expect(list.getByRole('checkbox', { name: 'Cannot be selected: document on legal hold' }).first()).toBeDisabled()
+    await list.getByRole('button', { name: 'Review' }).first().click()
+    const review = page.getByRole('alertdialog', { name: 'Review a redaction on legal hold' })
+    await expect(review).toContainText('The original is kept sealed')
+    await capture(page, testInfo, 'approvals-redact-on-hold')
+    await review.getByRole('button', { name: 'Approve', exact: true }).click()
+    await expect(review).toHaveCount(0)
+    await expect.poll(sealed, { timeout: 60000 }).toBe(1)
+    expect((await page.request.get(docPath + '/sealed-originals', { headers: as('local-document-steward', 'DOCUMENT_STEWARD') })).status()).toBe(403)
+
+    await selectRole(page, 'Restricted Steward')
+    await areaTab(page, 'Records').click()
+    await waitForBusinessSearchReady(page)
+    const los = (await searchSources(page)).find((s) => s.displayName === 'Loan Origination System')!
+    await page.evaluate(([key, id]) => window.localStorage.setItem(key, id), [LAST_SOURCE_KEY, los.sourceId])
+    await reloadApp(page)
+    await areaTab(page, 'Records').click()
+    await waitForBusinessSearchReady(page)
+    await searchFor(page, TOUR_RECORD)
+    await resultRows(page).filter({ hasText: TOUR_RECORD }).first().click()
+    await page.getByRole('complementary', { name: 'Record inspector' }).getByRole('button', { name: /Open documents/ }).click()
+    await page.getByRole('navigation', { name: 'Record documents' }).getByRole('button', { name: /Tour check/ }).click()
+    await page.getByRole('button', { name: 'Open sealed original' }).click({ timeout: 15000 })
+    await expect(page.getByRole('img', { name: 'Sealed original page 1' })).toBeVisible({ timeout: 20000 })
+    await capture(page, testInfo, 'sealed-original')
+    await page.getByRole('alertdialog', { name: 'Sealed original' }).getByRole('button', { name: 'Close', exact: true }).last().click()
+
+    await released()
+    await expect.poll(sealed, { timeout: 60000 }).toBe(0)
+  })
+
   // Task 0031 (section 0): "Decided recently" comes from the server (every Business admin's decisions, here one made
   // outside this browser), the expiry note shows the tenant's own window, and an opening records the document's level.
   test('Decided recently, the expiry note and levels on openings (task 0031)', async ({ page }, testInfo) => {
