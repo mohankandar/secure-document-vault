@@ -58,6 +58,14 @@ See the pull request.
 
 Task file; the change with this report. Merged through a PR on green `ci-passed`.
 
+## Merged early, by mistake
+
+PR #44 was merged (`9f8671b`) **before** `ci-passed` was green: the session sent the merge together with the listing of the
+checks and didn't read it first, and GitHub doesn't block such a merge on this branch. CI finished green afterwards on the
+PR's head (`e451010`) and on the merge commit. Since then the session merges with a script that refuses unless `ci-passed`
+is a success on the exact head. Suggestion for the owner: a branch rule on `release/vero-r7` that requires `ci-passed`
+(GitHub: Settings, Rules). The first push of the branch also held `0072-task.md`, taken out again by the next commit.
+
 ## Decisions taken
 
 - A release needs an approver who neither asked nor placed the hold. The placer may ask, and may decline. With two
