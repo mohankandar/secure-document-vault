@@ -93,6 +93,10 @@ param(
     # Task 0054: opens per agent a day in ActivityReportPostgresTest's busy month (10,000 agents, 30 days; 5 as in CI).
     [ValidateRange(1, 100)]
     [int]$ActivityPerDay = 5,
+    # Task 0086: the processes of step 4f, each on its own copy of the checked scratch database. Task 0073: 1 runs the tests one
+    # after the other, so that the time limits measure the screens and not the other tests on a busy computer.
+    [ValidateRange(1, 8)]
+    [int]$Forks = 4,
     # Drop a scratch database and role left by an earlier run of this script that could not clean up.
     [switch]$DropLeftover
 )
@@ -102,8 +106,6 @@ $root = $PSScriptRoot
 $container = 'sdv-postgres'
 $db = 'sdv_schema_test'
 $owner = 'sdv_schema_owner'
-# Task 0086: step 4f runs the PostgreSQL tests in this many processes, each on its own copy of the checked scratch database.
-$forks = 4
 $hostUrl = 'jdbc:postgresql://localhost:5433/' + $db
 # In order. The upgrade applies every changeset from -From on.
 $checked = @('022-retention-policy-creator-name', '023-document-sensitivity-level', '024-record-sensitivity-levels', '025-role-separation', '026-legal-holds', '027-access-requests', '028-sensitivity-level-changes', '029-document-duplicate-receipts', '030-tenant-time-zone', '031-intake-report-indexes', '032-steward-notices', '033-unidentified-intake-attempts', '034-unidentified-intake-attempt-counts', '035-drop-old-identity', '036-quarantine', '037-sealed-audit', '038-quarantine-filter-blocking', '039-quarantine-scale', '040-report-storage', '041-report-activity', '042-restrictions-indexes', '043-held-redaction', '044-hold-release')

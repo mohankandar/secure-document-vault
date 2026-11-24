@@ -154,6 +154,8 @@ public final class SchemaStep {
 
     private static int update(Connection connection, SchemaVersion.Status before) throws Exception {
         if (before.current()) {
+            // Task 0073: also on a database that is at this version already.
+            PlatformSchemaRuns.narrowGrants(connection);
             System.out.println("Up to date: " + before.applied() + " changesets applied, none to run.");
             return 0;
         }
@@ -161,6 +163,7 @@ public final class SchemaStep {
         liquibase(connection).update(new Contexts(SchemaVersion.PRODUCTION_CONTEXT), new LabelExpression());
         // Task 0041: then platform-core's own runs, each with its own history table (identity, licensing tables).
         PlatformSchemaRuns.migrate(connection);
+        PlatformSchemaRuns.narrowGrants(connection);
         SchemaVersion.Status after = SchemaVersion.check(connection);
         if (!after.current()) {
             System.err.println("After the update the database still doesn't match: " + after.message());
