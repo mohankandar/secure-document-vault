@@ -41,7 +41,7 @@ foreach ($existing in @($archivePath,$checksumPath,$manifestPath)) {
 }
 
 # Task 0064: the committed files only, never the folder.
-$archive = & (Join-Path $Root 'scripts\release\New-SdvSourceArchive.ps1') -Root $Root -ArchivePath $archivePath -Required $Required
+$archive = & (Join-Path $Root 'scripts/packaging/New-SdvSourceArchive.ps1') -Root $Root -ArchivePath $archivePath -Required $Required
 
 $sha = (Get-FileHash -Algorithm SHA256 -LiteralPath $archivePath).Hash.ToLowerInvariant()
 Set-Content -LiteralPath $checksumPath -Value "$sha  $archiveName" -Encoding ASCII
