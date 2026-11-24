@@ -97,6 +97,14 @@ public enum SdvErrorCode {
     AUT_012("SDV-AUT-012", true),
     /** Task 0041: the client binding names a source key the entity has no sending system for in Vero (401). WARN. */
     AUT_013("SDV-AUT-013", true),
+    /** Task 0065: browser sign-in is not set up, or no login connection is in use (503). WARN line. */
+    AUT_014("SDV-AUT-014", false, Log.WARN),
+    /** Task 0065: the login system's addresses can't be read (503), or the browser can't reach it. WARN line. */
+    AUT_015("SDV-AUT-015", false, Log.WARN),
+    /** Task 0065: the login system's answer doesn't belong to this browser's sign-in (screen only). */
+    AUT_016("SDV-AUT-016"),
+    /** Task 0065: the login system refused the sign-in (screen only). */
+    AUT_017("SDV-AUT-017"),
     /**
      * Task 0041: the entity slot can't be activated (not in the licence, no licence in force, already activated, name
      * not usable or taken); the answer names the reason (409). INFO line.

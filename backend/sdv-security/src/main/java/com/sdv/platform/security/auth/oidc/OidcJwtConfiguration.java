@@ -35,26 +35,38 @@ import java.util.Arrays;
 @Configuration
 @ConditionalOnProperty(prefix = "sdv.auth", name = "mode", havingValue = "enterprise-jwt")
 public class OidcJwtConfiguration {
+    /** One day: longer is no access token's life. */
+    static final long MAX_LIFETIME_SECONDS = 86_400;
 
     @Bean
     JwtDecoder enterpriseJwtDecoder(
             @Value("${sdv.auth.jwt.issuer:}") String issuer,
             @Value("${sdv.auth.jwt.jwk-set-uri:}") String jwkSetUri,
             @Value("${sdv.auth.jwt.audience:}") String audience,
-            @Value("${sdv.auth.jwt.max-token-lifetime-seconds:0}") long maxTokenLifetimeSeconds) {
+            @Value("${sdv.auth.jwt.max-token-lifetime-seconds:7200}") long maxTokenLifetimeSeconds) {
         String normalizedIssuer = requireSecureUri(issuer, "sdv.auth.jwt.issuer");
         String normalizedJwkSetUri = requireSecureUri(jwkSetUri, "sdv.auth.jwt.jwk-set-uri");
         String normalizedAudience = requireText(audience, "sdv.auth.jwt.audience");
 
-        NimbusJwtDecoder decoder = NimbusJwtDecoder.withJwkSetUri(normalizedJwkSetUri).build();
+        NimbusJwtDecoder decoder = NimbusJwtDecoder.withJwkSetUri(normalizedJwkSetUri)
+                // Task 0065: the type is checked below, so that at+jwt is accepted too.
+                .validateType(false).build();
+        // Spring makes up a missing issue time (a second before the end); then it could not be required below.
+        var claims = org.springframework.security.oauth2.jwt.MappedJwtClaimSetConverter.withDefaults(java.util.Map.of());
+        decoder.setClaimSetConverter(given -> {
+            java.util.Map<String, Object> converted = new java.util.HashMap<>(claims.convert(given));
+            if (!given.containsKey("iat")) converted.remove("iat");
+            return converted;
+        });
         OAuth2TokenValidator<Jwt> issuerAndTime = JwtValidators.createDefaultWithIssuer(normalizedIssuer);
         OAuth2TokenValidator<Jwt> audienceValidator = new RequiredAudienceValidator(normalizedAudience);
-        if (maxTokenLifetimeSeconds > 0) {
-            OAuth2TokenValidator<Jwt> lifetimeValidator = new MaximumTokenLifetimeValidator(Duration.ofSeconds(maxTokenLifetimeSeconds));
-            decoder.setJwtValidator(new DelegatingOAuth2TokenValidator<>(issuerAndTime, audienceValidator, lifetimeValidator));
-        } else {
-            decoder.setJwtValidator(new DelegatingOAuth2TokenValidator<>(issuerAndTime, audienceValidator));
+        // Task 0065: always a longest lifetime (0 and less stop the start), and an access token's shape.
+        if (maxTokenLifetimeSeconds <= 0 || maxTokenLifetimeSeconds > MAX_LIFETIME_SECONDS) {
+            throw new StartupFailure(SdvErrorCode.SYS_005, "sdv.auth.jwt.max-token-lifetime-seconds (SDV_AUTH_JWT_MAX_TOKEN_LIFETIME_SECONDS) must be from 1 to " + MAX_LIFETIME_SECONDS + ".");
         }
+        decoder.setJwtValidator(new DelegatingOAuth2TokenValidator<>(issuerAndTime, audienceValidator,
+                new AccessTokenShapeValidator(java.time.Clock.systemUTC()),
+                new MaximumTokenLifetimeValidator(Duration.ofSeconds(maxTokenLifetimeSeconds))));
         // Task 0038: "the sign-in hub's keys can't be fetched" is told apart from a wrong token (SDV-AUT-004).
         return new SignInKeysAwareJwtDecoder(decoder, normalizedJwkSetUri);
     }

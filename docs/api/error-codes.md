@@ -287,6 +287,34 @@ Task 0038. A sign-in Vero refuses gets the one error body. The message is a fixe
 - **What the user should do:** tell your IT team.
 - **What support should tell the customer:** the IT Admin adds the sending system with that key in Integrations, or the binding file is corrected.
 
+### SDV-AUT-014: browser sign-in is not set up
+
+- **HTTP status:** 503. Task 0065: `GET /api/v1/session/sign-in`.
+- **Meaning:** sign-in is switched off, or no active login connection with a browser client fits Vero's settings (provider, issuer, audience). Also when the API audience is the browser client's own ID, or two customers' connections differ. WARN line.
+- **What the user should do:** tell the IT team.
+- **What support should tell the customer:** check `SDV_AUTH_MODE`, the `SDV_AUTH_JWT_*` settings and the sign-in file (`browserClientId`), and run setup again. The log says which.
+
+### SDV-AUT-015: the login system can't be reached
+
+- **HTTP status:** 503 from `GET /api/v1/session/sign-in`; on the screen also when the browser can't reach the login system's token address. Task 0065.
+- **Meaning:** Vero couldn't read the login system's discovery document, or the browser got no answer (network, or the login system doesn't allow Vero's web origin).
+- **What the user should do:** try again later.
+- **What support should tell the customer:** use Test sign-in. If that passes, the login system must allow Vero's address as a web origin (CORS) for the browser client. An internal login system needs `SDV_OUTBOUND_ALLOW_INTERNAL_ADDRESSES=true`.
+
+### SDV-AUT-016: the sign-in answer doesn't belong to this browser
+
+- **HTTP status:** screen only. Task 0065.
+- **Meaning:** the answer's state is missing, used, older than 10 minutes or another browser's, or it comes from another issuer. Nothing was sent to the login system.
+- **What the user should do:** start again.
+- **What support should tell the customer:** usual after waiting long on the login page, the Back button, or a bookmark of it.
+
+### SDV-AUT-017: the login system refused the sign-in
+
+- **HTTP status:** screen only. Task 0065.
+- **Meaning:** the login system answered with an error, or didn't accept the code. Its own text is not shown.
+- **What the user should do:** start again; if it stays, tell the IT team.
+- **What support should tell the customer:** look in the login system's own log: the person may not be assigned to the client, or the client is not a public one with PKCE and the right redirect address.
+
 ## Entities (ENT)
 
 Sent by the Business Admin's activation address, `POST /api/v1/admin/entities/{slotId}/activate` (task 0041). The setup command loads the licence's entity slots as not activated; the Business Admin activates and names each.

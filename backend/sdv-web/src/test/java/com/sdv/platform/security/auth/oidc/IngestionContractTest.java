@@ -976,7 +976,7 @@ class IngestionContractTest {
     }
 
     private static JwtDecoder decoder(int port) {
-        return new OidcJwtConfiguration().enterpriseJwtDecoder(ISSUER, jwks(port), AUDIENCE, 0);
+        return new OidcJwtConfiguration().enterpriseJwtDecoder(ISSUER, jwks(port), AUDIENCE, 7200);
     }
 
     private static void schema(SchemaVersion.State state) {

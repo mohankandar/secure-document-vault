@@ -78,8 +78,9 @@ const retryAfterOf = (value: string | null) => (value && /^\d{1,4}$/.test(value.
 
 /** Task 0044: the error for an answer that isn't OK. The body's message is not kept. */
 async function failureOf(response: Response): Promise<ApiRequestError> {
-  if (response.status === 401 && isOidcSecurityMode()) expireOidcSession()
   const body = await response.json().catch(() => null) as { code?: unknown; reference?: unknown } | null
+  // Task 0065: only "not signed in" ends the sign-in here. Other refusals (no role, no entity …) keep it and show their code.
+  if (response.status === 401 && isOidcSecurityMode() && (codeOf(body) ?? 'SDV-AUT-003').match(/^SDV-AUT-00[13]$/)) expireOidcSession()
   return new ApiRequestError(`HTTP ${response.status}`, response.status,
     referenceOf(response.headers.get('X-Correlation-Id')) ?? referenceOf(body?.reference), codeOf(body), retryAfterOf(response.headers.get('Retry-After')))
 }
