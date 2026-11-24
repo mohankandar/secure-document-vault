@@ -1,7 +1,8 @@
 package com.sdv.platform.application.redaction;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import com.sdv.platform.application.json.VeroJson;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.ObjectMapper;
 import com.sdv.platform.application.access.Clearance;
 import com.sdv.platform.application.access.DocumentAccessGuard;
 import com.sdv.platform.application.port.AuditEventPort;
@@ -51,7 +52,7 @@ public class SealedOriginalService {
     private final AuditEventPort audit;
     private final TransactionTemplate transactions;
     private final Clock clock = Clock.systemUTC();
-    private final ObjectMapper json = new ObjectMapper();
+    private final ObjectMapper json = VeroJson.mapper();
 
     public SealedOriginalService(HeldRedactionRepository held, DocumentIntakeRepository documents,
                                  DocumentRedactionRepository redactions, StorageVolumeRepository volumes,
@@ -141,7 +142,7 @@ public class SealedOriginalService {
                 audit.append(new AuditEvent(UUID.randomUUID(), tenantId, "SYSTEM", "sdv-legal-hold", DESTROYED_ACTION, "DOCUMENT",
                         sealed.documentId().toString(), now, "sealed-original-" + sealed.sealedId(), AuditOutcome.SUCCESS,
                         json.writeValueAsString(details)));
-            } catch (JsonProcessingException ex) {
+            } catch (JacksonException ex) {
                 throw InternalCheckFailed.auditNotWritten("The destruction could not be audited.", ex);
             }
             return true;

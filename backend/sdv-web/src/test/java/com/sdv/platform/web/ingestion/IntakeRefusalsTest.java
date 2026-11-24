@@ -120,7 +120,7 @@ class IntakeRefusalsTest {
                         .contentType("application/pdf").content("%PDF".getBytes(StandardCharsets.US_ASCII))
                         .header("X-SDV-Filename", "a.pdf"))
                 .andExpect(status().isBadRequest()).andReturn().getResponse().getContentAsString();
-        String reference = new com.fasterxml.jackson.databind.ObjectMapper().readTree(body).get("reference").asText();
+        String reference = new tools.jackson.databind.ObjectMapper().readTree(body).get("reference").asString();
         assertFalse(reference.isBlank());
         assertEquals(reference, recorded().correlationId());
     }

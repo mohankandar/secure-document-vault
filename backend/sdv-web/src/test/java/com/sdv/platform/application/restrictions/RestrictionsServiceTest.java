@@ -1,6 +1,6 @@
 package com.sdv.platform.application.restrictions;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import com.sdv.platform.application.business.RecordKey;
 import com.sdv.platform.application.port.RestrictionsRepository;
 import com.sdv.platform.application.port.RestrictionsRepository.Holds;
@@ -117,7 +117,7 @@ class RestrictionsServiceTest {
 
     @Test
     void nothingRestrictedLeaks() throws Exception {
-        String json = new ObjectMapper().findAndRegisterModules().writeValueAsString(service.overview(T));
+        String json = com.sdv.platform.application.json.VeroJson.mapper().writeValueAsString(service.overview(T));
         for (String never : List.of(SUB.toString(), DOC_SUB.toString(), "C77", "documentId", "reason", "title", "filename", ".pdf")) {
             assertFalse(json.contains(never), never);
         }

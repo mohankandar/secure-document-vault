@@ -1,12 +1,10 @@
 package com.sdv.platform.web.foundation;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sdv.platform.domain.error.StartupFailure;
 import com.sdv.platform.web.config.CorrelationIdFilter;
 import com.sdv.platform.web.config.JsonLimitsConfiguration;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
-import org.springframework.http.converter.json.Jackson2ObjectMapperBuilder;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
@@ -84,19 +82,18 @@ class RequestBodyLimitTest {
 
     @Test
     void theJsonReaderHasTheSameLimitAndABadSettingStopsTheStart() {
-        var builder = new Jackson2ObjectMapperBuilder();
+        var builder = tools.jackson.core.json.JsonFactory.builder();
         new JsonLimits().customize(builder);
-        ObjectMapper mapper = builder.build();
-        assertEquals(5_000, mapper.getFactory().streamReadConstraints().getMaxDocumentLength());
+        assertEquals(5_000, builder.build().streamReadConstraints().getMaxDocumentLength());
         assertThrows(StartupFailure.class, () -> new RequestBodyLimitFilter(0, 5_000));
         assertThrows(StartupFailure.class, () -> new RequestBodyLimitFilter(2_000, 1L << 40));
     }
 
     private static final class JsonLimits {
-        void customize(Jackson2ObjectMapperBuilder builder) {
+        void customize(tools.jackson.core.json.JsonFactoryBuilder builder) {
             new org.springframework.boot.test.context.runner.ApplicationContextRunner().withBean(RequestBodyLimitFilter.class, () -> FILTER)
                     .withUserConfiguration(JsonLimitsConfiguration.class).run(c -> c.getBean(
-                            org.springframework.boot.autoconfigure.jackson.Jackson2ObjectMapperBuilderCustomizer.class).customize(builder));
+                            org.springframework.boot.jackson.autoconfigure.JsonFactoryBuilderCustomizer.class).customize(builder));
         }
     }
 }

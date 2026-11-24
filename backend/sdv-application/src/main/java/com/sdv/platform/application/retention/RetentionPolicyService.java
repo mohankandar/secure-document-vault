@@ -1,10 +1,11 @@
 package com.sdv.platform.application.retention;
 
+import com.sdv.platform.application.json.VeroJson;
 import com.sdv.platform.application.access.ActiveTenant;
 
 import com.sdv.platform.domain.error.InternalCheckFailed;
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.ObjectMapper;
 import com.sdv.platform.application.port.AuditEventPort;
 import com.sdv.platform.application.port.RetentionRepository;
 import com.sdv.platform.application.port.TenantRepository;
@@ -28,7 +29,7 @@ public class RetentionPolicyService {
     private final RetentionRepository retention;
     private final AuditEventPort audit;
     private final TransactionTemplate transactions;
-    private final ObjectMapper json = new ObjectMapper();
+    private final ObjectMapper json = VeroJson.mapper();
     private final Clock clock = Clock.systemUTC();
 
     public RetentionPolicyService(
@@ -125,7 +126,7 @@ public class RetentionPolicyService {
             safe.put("policyName", policyName);
             safe.put("policyVersion", version);
             return json.writeValueAsString(safe);
-        } catch (JsonProcessingException ex) {
+        } catch (JacksonException ex) {
             throw InternalCheckFailed.auditNotWritten("Could not serialize retention-policy audit details.", ex);
         }
     }

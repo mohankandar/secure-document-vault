@@ -1,7 +1,8 @@
 package com.sdv.platform.application.quarantine;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import com.sdv.platform.application.json.VeroJson;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.ObjectMapper;
 import com.sdv.platform.application.access.Clearance;
 import com.sdv.platform.application.access.DocumentAccessGuard;
 import com.sdv.platform.application.approvals.ApprovalSettings;
@@ -120,7 +121,7 @@ public class QuarantineService {
     static final String CSV_HEADER = "Incident,Document ID,Identifier,Identifier value,Level,Received (UTC),Pages,"
             + "What happened before the quarantine,Person,When (UTC)";
     private static final Set<String> NOT_QUARANTINABLE = Set.of("EXPIRED_DELETED", "RETENTION_DELETING");
-    private static final ObjectMapper JSON = new ObjectMapper();
+    private static final ObjectMapper JSON = VeroJson.mapper();
 
     private final QuarantineRepository quarantine;
     private final DocumentAccessGuard access;
@@ -1079,7 +1080,7 @@ public class QuarantineService {
     private static String json(Map<String, Object> details) {
         try {
             return JSON.writeValueAsString(details);
-        } catch (JsonProcessingException ex) {
+        } catch (JacksonException ex) {
             throw InternalCheckFailed.auditNotWritten("The quarantine change could not be audited, so nothing was changed.", ex);
         }
     }

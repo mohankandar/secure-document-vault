@@ -13,7 +13,7 @@ import com.documentplatform.identity.signin.IssuerFetch;
 import com.documentplatform.identity.store.LoginConnection;
 import com.documentplatform.identity.store.LoginConnectionStore;
 import com.documentplatform.identity.testkit.MockIssuer;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import com.sdv.platform.application.port.AuditEventPort;
 import com.sdv.platform.application.port.RoleCapabilityPolicyPort;
 import com.sdv.platform.persistence.identity.PlatformIdentityReads;
@@ -123,7 +123,7 @@ class TestSignInTokenNotKeptTest {
         request.addHeader("Authorization", "Bearer " + token);
         signInAsItAdmin();
         var answer = controller().test(request);
-        return new ObjectMapper().findAndRegisterModules().writeValueAsString(answer);
+        return com.sdv.platform.application.json.VeroJson.mapper().writeValueAsString(answer);
     }
 
     /** Everything written while the test ran: each log line (message, arguments, error) and each audit call. */

@@ -1,7 +1,7 @@
 package com.sdv.platform.application.roles;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 import com.sdv.platform.application.port.AuditEventPort;
 import com.sdv.platform.application.port.RoleGovernancePort;
 import com.sdv.platform.domain.audit.AuditEvent;
@@ -57,7 +57,7 @@ class RoleGovernanceServicesTest {
         assertEquals("person-1", event.actorId());
         assertEquals("Pat Lee", event.actorDisplayName());
         JsonNode details = JSON.readTree(event.safeDetailsJson());
-        assertEquals("LOGIN_GROUPS", details.get("resolvedFrom").asText());
+        assertEquals("LOGIN_GROUPS", details.get("resolvedFrom").asString());
         assertEquals("[\"BUSINESS_ADMIN\",\"RESTRICTED_STEWARD\"]", details.get("withheldRoles").toString());
         assertEquals("[\"RESTRICTED_STEWARD_NOT_ADMIN\"]", details.get("rules").toString());
     }
@@ -87,9 +87,9 @@ class RoleGovernanceServicesTest {
         assertEquals("Pat Lee", ended.actorDisplayName());
         assertEquals(NOW, ended.occurredAt());
         JsonNode details = JSON.readTree(ended.safeDetailsJson());
-        assertEquals("LOGIN_GROUPS", details.get("resolvedFrom").asText());
+        assertEquals("LOGIN_GROUPS", details.get("resolvedFrom").asString());
         assertEquals("[\"BUSINESS_ADMIN\",\"RESTRICTED_STEWARD\"]", details.get("withheldRoles").toString());
-        assertEquals(NOW.minusSeconds(3600).toString(), details.get("firstSeenAt").asText());
+        assertEquals(NOW.minusSeconds(3600).toString(), details.get("firstSeenAt").asString());
         assertEquals(3, details.get("occurrences").asInt());
     }
 

@@ -1,7 +1,8 @@
 package com.sdv.platform.application.reports;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import com.sdv.platform.application.json.VeroJson;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.ObjectMapper;
 import com.sdv.platform.application.audit.AuditCsv;
 import com.sdv.platform.application.port.ActivityReportRepository;
 import com.sdv.platform.application.port.ActivityReportRepository.Count;
@@ -71,7 +72,7 @@ public class ActivityReportService {
     static final String CSV_HEADER = "Section,Line,Level,Measure,Count,From,To,Time zone";
     static final List<String> ACCESS = List.of("OPENED", "PRINTED", "DOWNLOADED");
     static final List<String> LEVELS = List.of("STANDARD", "CONFIDENTIAL", "HIGHLY_CONFIDENTIAL");
-    private static final ObjectMapper JSON = new ObjectMapper();
+    private static final ObjectMapper JSON = VeroJson.mapper();
 
     private final ActivityReportRepository activity;
     private final IntakeReportRepository tenants;
@@ -361,7 +362,7 @@ public class ActivityReportService {
     private static String json(Map<String, Object> details) {
         try {
             return JSON.writeValueAsString(details);
-        } catch (JsonProcessingException ex) {
+        } catch (JacksonException ex) {
             throw InternalCheckFailed.auditNotWritten("The export could not be audited, so it was not made.", ex);
         }
     }

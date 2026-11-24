@@ -1,6 +1,9 @@
 spring:
   application:
     name: secure-document-vault
+  jackson:
+    # Task 0070: only what Vero names reads and writes JSON (Boot 4 would add every module it finds).
+    find-and-add-modules: false
   datasource:
     url: ${SDV_DB_URL:}
     username: ${SDV_DB_USERNAME:}
@@ -35,6 +38,10 @@ server:
   shutdown: graceful
 
 management:
+  info:
+    # Task 0070: /actuator/info is open; the process part (working directory) stays off.
+    process:
+      enabled: false
   endpoints:
     web:
       exposure:

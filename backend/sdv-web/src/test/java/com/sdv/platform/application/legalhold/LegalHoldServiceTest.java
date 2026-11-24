@@ -1,7 +1,7 @@
 package com.sdv.platform.application.legalhold;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 import com.sdv.platform.application.access.DocumentAccessGuard;
 import com.sdv.platform.application.port.AuditEventPort;
 import com.sdv.platform.application.port.BusinessRecordRepository;
@@ -87,7 +87,7 @@ class LegalHoldServiceTest {
         assertEquals(AuditOutcome.SUCCESS, event.getValue().outcome());
         assertEquals("corr-1", event.getValue().correlationId());
         JsonNode details = new ObjectMapper().readTree(event.getValue().safeDetailsJson());
-        assertEquals(hold.getValue().holdId().toString(), details.get("holdId").asText());
+        assertEquals(hold.getValue().holdId().toString(), details.get("holdId").asString());
         assertFalse(event.getValue().safeDetailsJson().contains("Ellis"), "the free-text reason is not copied into the audit");
 
         verify(tx).commit(txStatus);
@@ -227,7 +227,7 @@ class LegalHoldServiceTest {
         assertEquals(1, found.size());
         assertTrue(found.getFirst().onHold());
         assertEquals(SensitivityLevel.CONFIDENTIAL, found.getFirst().sensitivityLevel());
-        String json = new ObjectMapper().findAndRegisterModules().writeValueAsString(found);
+        String json = com.sdv.platform.application.json.VeroJson.mapper().writeValueAsString(found);
         assertFalse(json.contains("status"), "the document's state is for the server's checks only");
         assertFalse(json.contains("submissionId") || json.contains("sourceId"), json);
     }

@@ -1,8 +1,9 @@
 package com.sdv.platform.application.business;
 
+import com.sdv.platform.application.json.VeroJson;
 import com.sdv.platform.domain.error.InternalCheckFailed;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -12,7 +13,7 @@ import java.util.List;
 import java.util.UUID;
 
 final class BusinessRecordRefCodec {
-    private static final ObjectMapper JSON = new ObjectMapper();
+    private static final ObjectMapper JSON = VeroJson.mapper();
     private static final int MAX_TOKEN_LENGTH = 8192;
     private static final int MAX_IDENTIFIER_COUNT = 20;
 
@@ -66,7 +67,7 @@ final class BusinessRecordRefCodec {
             }
 
             if (fallback != null && !fallback.isNull()) {
-                return new RecordIdentity(sourceId, List.of(), UUID.fromString(fallback.asText()));
+                return new RecordIdentity(sourceId, List.of(), UUID.fromString(VeroJson.text(fallback)));
             }
 
             if (!identifiers.isArray() || identifiers.size() == 0 || identifiers.size() > MAX_IDENTIFIER_COUNT) {
@@ -93,10 +94,10 @@ final class BusinessRecordRefCodec {
 
     private static String requiredText(JsonNode node, String field) {
         JsonNode value = node.get(field);
-        if (value == null || !value.isTextual() || value.asText().isBlank()) {
+        if (value == null || !value.isString() || value.asString().isBlank()) {
             throw new IllegalArgumentException("Business-record reference is missing '" + field + "'.");
         }
-        return value.asText();
+        return value.asString();
     }
 
     record RecordIdentity(

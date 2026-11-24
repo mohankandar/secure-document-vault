@@ -4,8 +4,8 @@ import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 import com.sdv.platform.application.access.ActiveTenant;
 import com.sdv.platform.application.port.TenantRepository;
 import com.sdv.platform.domain.error.SdvErrorCode;
@@ -94,10 +94,10 @@ class SignInCodesTest {
         assertEquals(401, response.getStatus());
         assertNull(response.getHeader("WWW-Authenticate"), "no bearer header: no sign-in is offered");
         JsonNode body = errorPage(request, response);
-        assertEquals("SDV-SYS-006", body.get("code").asText());
+        assertEquals("SDV-SYS-006", body.get("code").asString());
         assertEquals("Sign-in is switched off for Vero, so nobody can sign in yet. Your IT team has been told.",
-                body.get("message").asText());
-        assertEquals("ref-off", body.get("reference").asText());
+                body.get("message").asString());
+        assertEquals("ref-off", body.get("reference").asString());
         assertEquals(1, lines(Level.WARN, SdvErrorCode.SYS_006).size(), "it needs a person: WARN");
     }
 
@@ -118,8 +118,8 @@ class SignInCodesTest {
             filter.doFilter(request, response, new MockFilterChain());
             assertEquals(401, response.getStatus());
             JsonNode body = errorPage(request, response);
-            assertEquals("SDV-AUT-008", body.get("code").asText());
-            assertEquals("Local sign-in headers are not valid: " + c[3] + ".", body.get("message").asText());
+            assertEquals("SDV-AUT-008", body.get("code").asString());
+            assertEquals("Local sign-in headers are not valid: " + c[3] + ".", body.get("message").asString());
             assertFalse(body.toString().contains("secret"), "the value sent is not repeated: " + body);
         }
         assertEquals(3, lines(Level.INFO, SdvErrorCode.AUT_008).size());
@@ -135,9 +135,9 @@ class SignInCodesTest {
         MockHttpServletResponse response = new MockHttpServletResponse();
         new LocalHeaderAuthenticationFilter(conflict -> { }).doFilter(request, response, new MockFilterChain());
         JsonNode body = errorPage(request, response);
-        assertEquals("SDV-ROL-004", body.get("code").asText());
+        assertEquals("SDV-ROL-004", body.get("code").asString());
         assertEquals("The roles from this sign-in can never be held together, so none of them were given. Ask your IT "
-                + "team to correct your sign-in groups.", body.get("message").asText());
+                + "team to correct your sign-in groups.", body.get("message").asString());
     }
 
     @Test
@@ -147,8 +147,8 @@ class SignInCodesTest {
         SignInAnswers.accessDeniedHandler().handle(request, response, new AccessDeniedException("Access is denied"));
         JsonNode body = errorPage(request, response);
         assertEquals(403, response.getStatus());
-        assertEquals("SDV-ROL-006", body.get("code").asText());
-        assertEquals("Your role doesn't include this action. Ask someone who has it.", body.get("message").asText());
+        assertEquals("SDV-ROL-006", body.get("code").asString());
+        assertEquals("Your role doesn't include this action. Ask someone who has it.", body.get("message").asString());
     }
 
     @RestController
@@ -179,14 +179,14 @@ class SignInCodesTest {
         var result = mvc.perform(get("/hold")).andReturn();
         assertEquals(403, result.getResponse().getStatus());
         JsonNode body = json.readTree(result.getResponse().getContentAsString());
-        assertEquals("SDV-ROL-006", body.get("code").asText());
-        assertEquals("Your role doesn't include managing legal holds. Ask someone who has it.", body.get("message").asText());
+        assertEquals("SDV-ROL-006", body.get("code").asString());
+        assertEquals("Your role doesn't include managing legal holds. Ask someone who has it.", body.get("message").asString());
         List<ILoggingEvent> info = lines(Level.INFO, SdvErrorCode.ROL_006);
         assertEquals(1, info.size());
         assertTrue(info.getFirst().getFormattedMessage().endsWith("reason=capability=MANAGE_LEGAL_HOLD"));
 
         JsonNode plain = json.readTree(mvc.perform(get("/plain-denied")).andReturn().getResponse().getContentAsString());
-        assertEquals("SDV-ROL-006", plain.get("code").asText(), "an uncoded refusal gets the code too (was FORBIDDEN)");
+        assertEquals("SDV-ROL-006", plain.get("code").asString(), "an uncoded refusal gets the code too (was FORBIDDEN)");
         assertFalse(plain.toString().contains("internal capability name"));
     }
 
@@ -204,8 +204,8 @@ class SignInCodesTest {
         var result = mvc().perform(get("/session")).andReturn();
         assertEquals(401, result.getResponse().getStatus());
         JsonNode body = json.readTree(result.getResponse().getContentAsString());
-        assertEquals("SDV-AUT-001", body.get("code").asText(), "was UNAUTHORIZED");
-        assertEquals("Please sign in again.", body.get("message").asText());
+        assertEquals("SDV-AUT-001", body.get("code").asString(), "was UNAUTHORIZED");
+        assertEquals("Please sign in again.", body.get("message").asString());
     }
 
     @Test
@@ -217,7 +217,7 @@ class SignInCodesTest {
             assertEquals(403, response.getStatus());
             JsonNode body = json.readTree(response.getContentAsString());
             assertEquals(List.of("code", "message", "reference", "timestamp"), names(body));
-            bodies.add(Map.of("code", body.get("code").asText(), "message", body.get("message").asText()));
+            bodies.add(Map.of("code", body.get("code").asString(), "message", body.get("message").asString()));
             assertFalse(response.getContentAsString().contains(tenant.toString()), "the body doesn't name the tenant");
         }
         assertEquals(bodies.get(0), bodies.get(1), "identical apart from the reference and the time");
@@ -233,7 +233,7 @@ class SignInCodesTest {
 
     private static List<String> names(JsonNode body) {
         List<String> names = new ArrayList<>();
-        body.fieldNames().forEachRemaining(names::add);
+        body.propertyNames().iterator().forEachRemaining(names::add);
         return names;
     }
 }

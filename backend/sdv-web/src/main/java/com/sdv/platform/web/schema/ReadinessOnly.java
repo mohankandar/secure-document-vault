@@ -1,6 +1,6 @@
 package com.sdv.platform.web.schema;
 
-import org.springframework.boot.actuate.health.Status;
+import org.springframework.boot.health.contributor.Status;
 
 /**
  * Task 0039 (owner answer to report 0038, 4): the status of a check that belongs to readiness only, the database ping

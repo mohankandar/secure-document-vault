@@ -1,8 +1,9 @@
 package com.sdv.platform.application.legalhold;
 
+import com.sdv.platform.application.json.VeroJson;
 import com.sdv.platform.domain.error.InternalCheckFailed;
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.ObjectMapper;
 import com.sdv.platform.application.access.DocumentAccessGuard;
 import com.sdv.platform.application.port.AuditEventPort;
 import com.sdv.platform.application.port.LegalHoldRepository;
@@ -57,7 +58,7 @@ public class LegalHoldService implements com.sdv.platform.application.approvals.
     private final AuditEventPort audit;
     private final TransactionTemplate transactions;
     private final Clock clock;
-    private final ObjectMapper json = new ObjectMapper();
+    private final ObjectMapper json = VeroJson.mapper();
 
     @Autowired
     public LegalHoldService(LegalHoldRepository holds, DocumentAccessGuard access, AuditEventPort audit,
@@ -208,7 +209,7 @@ public class LegalHoldService implements com.sdv.platform.application.approvals.
             audit.append(new AuditEvent(UUID.randomUUID(), tenantId, "USER", actorId, RELEASE_REFUSED_ACTION,
                     documentId == null ? "LEGAL_HOLD" : "DOCUMENT", documentId == null ? holdId.toString() : documentId.toString(),
                     clock.instant(), correlationId, AuditOutcome.DENIED, safe, actorDisplayName));
-        } catch (RuntimeException | JsonProcessingException ignored) {
+        } catch (RuntimeException ignored) {
             // The refusal stands even when the audit store is unavailable.
         }
     }
@@ -228,7 +229,7 @@ public class LegalHoldService implements com.sdv.platform.application.approvals.
         String safe;
         try {
             safe = json.writeValueAsString(details);
-        } catch (JsonProcessingException ex) {
+        } catch (JacksonException ex) {
             throw InternalCheckFailed.auditNotWritten("The legal hold could not be audited, so nothing was changed.", ex);
         }
         audit.append(new AuditEvent(UUID.randomUUID(), tenantId, "USER", actorId, action, "DOCUMENT",

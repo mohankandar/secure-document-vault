@@ -1,6 +1,6 @@
 package com.sdv.platform.web.admin;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import com.sdv.platform.application.approvals.AccessRequestService;
 import com.sdv.platform.application.approvals.AccessRequestStatus;
 import com.sdv.platform.application.port.AuditEventPort;
@@ -22,7 +22,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.http.MediaType;
-import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
+import org.springframework.http.converter.json.JacksonJsonHttpMessageConverter;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.test.web.servlet.MockMvc;
@@ -52,7 +52,7 @@ class ApprovalsControllerTest {
     private static final UUID TENANT = UUID.fromString("11111111-1111-1111-1111-111111111111");
     private static final UUID DOCUMENT = UUID.fromString("40000000-0000-0000-0000-000000000001");
     private static final UUID REQUEST = UUID.fromString("60000000-0000-0000-0000-000000000001");
-    private static final ObjectMapper JSON = new ObjectMapper().findAndRegisterModules();
+    private static final ObjectMapper JSON = com.sdv.platform.application.json.VeroJson.mapper();
 
     private final AuditEventPort audit = mock(AuditEventPort.class);
     private final AccessRequestService requests = mock(AccessRequestService.class);
@@ -64,7 +64,7 @@ class ApprovalsControllerTest {
                     new AccessRequestController(new SecurityContextFacade(), authorization, requests),
                     new SensitivityLevelController(new SecurityContextFacade(), authorization, levels))
             .setControllerAdvice(new FoundationExceptionHandler())
-            .setMessageConverters(new MappingJackson2HttpMessageConverter(JSON))
+            .setMessageConverters(new JacksonJsonHttpMessageConverter((tools.jackson.databind.json.JsonMapper) JSON))
             .build();
 
     private static void signIn(SdvRole role) {

@@ -1,16 +1,16 @@
 package com.sdv.platform.web.schema;
 
 import org.junit.jupiter.api.Test;
-import org.springframework.boot.actuate.autoconfigure.availability.AvailabilityHealthContributorAutoConfiguration;
-import org.springframework.boot.actuate.autoconfigure.availability.AvailabilityProbesAutoConfiguration;
+import org.springframework.boot.health.autoconfigure.application.AvailabilityHealthContributorAutoConfiguration;
+import org.springframework.boot.health.autoconfigure.actuate.endpoint.AvailabilityProbesAutoConfiguration;
 import org.springframework.boot.actuate.autoconfigure.endpoint.EndpointAutoConfiguration;
-import org.springframework.boot.actuate.autoconfigure.health.HealthContributorAutoConfiguration;
-import org.springframework.boot.actuate.autoconfigure.health.HealthEndpointAutoConfiguration;
-import org.springframework.boot.actuate.health.Health;
-import org.springframework.boot.actuate.health.HealthEndpoint;
-import org.springframework.boot.actuate.health.HealthEndpointGroups;
-import org.springframework.boot.actuate.health.HealthIndicator;
-import org.springframework.boot.actuate.health.Status;
+import org.springframework.boot.health.autoconfigure.contributor.HealthContributorAutoConfiguration;
+import org.springframework.boot.health.autoconfigure.actuate.endpoint.HealthEndpointAutoConfiguration;
+import org.springframework.boot.health.contributor.Health;
+import org.springframework.boot.health.actuate.endpoint.HealthEndpoint;
+import org.springframework.boot.health.actuate.endpoint.HealthEndpointGroups;
+import org.springframework.boot.health.contributor.HealthIndicator;
+import org.springframework.boot.health.contributor.Status;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.autoconfigure.availability.ApplicationAvailabilityAutoConfiguration;
 import org.springframework.boot.env.YamlPropertySourceLoader;
@@ -51,6 +51,7 @@ class HealthGroupsTest {
         return new ApplicationContextRunner()
                 .withConfiguration(AutoConfigurations.of(ApplicationAvailabilityAutoConfiguration.class,
                         EndpointAutoConfiguration.class, HealthContributorAutoConfiguration.class,
+                        org.springframework.boot.health.autoconfigure.registry.HealthContributorRegistryAutoConfiguration.class,
                         HealthEndpointAutoConfiguration.class, AvailabilityHealthContributorAutoConfiguration.class,
                         AvailabilityProbesAutoConfiguration.class))
                 .withPropertyValues(veroHealthSettings())
