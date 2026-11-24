@@ -105,7 +105,7 @@ class IntakeCodesTest {
         when(security.requireIngestionSourcePrincipal()).thenReturn(new IngestionSourcePrincipal(TENANT, SOURCE, "producer"));
         DocumentIntakeService intake = new DocumentIntakeService(tenants, sources, submissions, documents, placement,
                 List.of(storage), crypto, mock(DocumentFinalizationService.class), mock(AuditEventPort.class), records,
-                mock(AccessRequestRepository.class), mock(PlatformTransactionManager.class));
+                mock(AccessRequestRepository.class), mock(PlatformTransactionManager.class), TestPdfs.UNCHECKED);
         SubmissionService submissionService = new SubmissionService(tenants, sources, definitions, submissions, documents,
                 mock(RecordSensitivityRepository.class), mock(AuditEventPort.class));
         mvc = MockMvcBuilders.standaloneSetup(new DocumentIntakeController(security, intake),

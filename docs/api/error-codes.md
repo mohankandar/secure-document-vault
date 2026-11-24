@@ -754,6 +754,34 @@ INT-004 to INT-018 are sent by the sending systems' addresses (`/api/v1/ingestio
 - **What the user should do:** none; check the document's state first (`GET …/documents`).
 - **What support should tell the customer:** the document is already being handled, or was deleted.
 
+### SDV-INT-019: the PDF can't be read
+
+- **HTTP status:** 400. Task 0063: an upload. Nothing is stored.
+- **Meaning:** the file starts like a PDF, but Vero can't read it (broken, no pages, or reading it takes too long). Message: "This PDF can't be read, so it was not stored."
+- **What the user should do:** a sending system makes the PDF again and sends it.
+- **What support should tell the customer:** the file is damaged. If such files must be kept all the same, the installer can allow it for that sending system (`SDV_PDF_ACCEPT`, `unreadable`); they can't be viewed. One INFO line says what was wrong.
+
+### SDV-INT-020: the PDF is encrypted
+
+- **HTTP status:** 400. Task 0063: an upload. Nothing is stored.
+- **Meaning:** the PDF is encrypted or has a password, also one that opens without it. Message: "This PDF is encrypted or protected with a password, so it was not stored. Send it without protection."
+- **What the user should do:** send it without protection.
+- **What support should tell the customer:** the sending system must not protect the file; Vero encrypts what it stores. The installer can allow it for one sending system (`encrypted`).
+
+### SDV-INT-021: the PDF carries active content
+
+- **HTTP status:** 400. Task 0063: an upload. Nothing is stored.
+- **Meaning:** somewhere in the file is a script, an action that starts something, an attached file, an XFA form or media. Message: "This PDF carries active content (scripts, actions or attached files), so it was not stored. Send it without."
+- **What the user should do:** send the PDF without it (for example printed to PDF).
+- **What support should tell the customer:** the INFO line says which kind. The installer can allow it for one sending system (`active-content`).
+
+### SDV-INT-022: the PDF has too many pages
+
+- **HTTP status:** 400. Task 0063: an upload. Nothing is stored. The limit (Integrations, "Most pages in one PDF") was kept but not applied before.
+- **Meaning:** more pages than the sending system's limit, or the entity's. The message names the limit.
+- **What the user should do:** split the document.
+- **What support should tell the customer:** IT can raise the limit in Integrations.
+
 ## Reports (RPT)
 
 Sent by the Business Admin's reports: the Daily intake report (task 0032, `GET /api/v1/admin/reports/intake`) and its CSV (`GET /api/v1/admin/reports/intake/export`), and the Sensitivity report (task 0033, `GET /api/v1/admin/reports/sensitivity`) and its CSV (`GET /api/v1/admin/reports/sensitivity/export`). All take `from` and `to` (days, `YYYY-MM-DD`, in the tenant's time zone; both left out means today for Daily intake and this month so far for Sensitivity) and `sourceId` (left out or empty means every sending system).
@@ -928,7 +956,7 @@ Task 0037: SYS-003 to SYS-012 are start-up codes. A start that stops prints one 
 ### SDV-SYS-018: too busy to take the request
 
 - **HTTP status:** 503, with a `Retry-After` header in seconds (the setting `SDV_BUSY_RETRY_AFTER_SECONDS`, 1 to 300, default 5; another value stops the start with SDV-SYS-005). Task 0040 part 2: any request. It is the only answer from Vero that carries `Retry-After`, and Vero never answers 429. Before, these requests got 503 SDV-SYS-014, which said the database couldn't be reached.
-- **Meaning:** Vero is too busy to take the request: the database is there, but no connection was free for this request. Vero tells the two apart from the cause. Busy is: the connection pool waited its full time (HikariCP's `connectionTimeout`, 30 s by default) and no new connection had failed; or PostgreSQL refused a new connection because it has none left (SQL state 53300, too_many_connections). When connections to the database fail, it is SDV-SYS-014 as before. Message: "Vero is too busy to take this request just now. Try again in a few seconds."
+- **Meaning:** Vero is too busy to take the request: the database is there, but no connection was free for this request. Task 0063: also when no place is free for reading a PDF (`SDV_PDF_*` settings). Vero tells the two apart from the cause. Busy is: the connection pool waited its full time (HikariCP's `connectionTimeout`, 30 s by default) and no new connection had failed; or PostgreSQL refused a new connection because it has none left (SQL state 53300, too_many_connections). When connections to the database fail, it is SDV-SYS-014 as before. Message: "Vero is too busy to take this request just now. Try again in a few seconds."
 - **What the user should do:** wait the seconds in `Retry-After`, then send the same request again. A sending system does this without alerting; a retry of a create or an upload is never stored twice. A person tries again in a few seconds.
 - **What support should tell the customer:** Vero had more work at once than its database connections allow. If it happens often, raise `SDV_DB_POOL_MAX` (10 by default) within the database's own connection limit, or spread the senders' load. While the pool stays full for more than 2 s, readiness (`/actuator/health/readiness`) answers `503 {"status":"BUSY","code":"SDV-SYS-018",…}` with `Retry-After` too (only when busy is the one reason; every other readiness 503 has no code and no `Retry-After`). A readiness probe is not counted as a busy answer. Each such answer writes one WARN line (not ERROR: busy is expected under load) with the code, the reference, the exception classes and the SQL state (never the SQL). Problems shows how many busy answers Vero gave in the last hour and since it started.
 
@@ -1055,6 +1083,27 @@ Every one writes one log line with the reference and the exact cause: ERROR for 
 - **Meaning:** the tag or comment is empty, or longer than its limit (80 characters for a tag, 2,000 for a comment). The message says which. DEBUG line.
 - **What the user should do:** shorten the text, or write something.
 - **What support should tell the customer:** the text was empty or too long.
+
+### SDV-DOC-011: open the document first
+
+- **HTTP status:** 409. Task 0063: pages, previews and text search.
+- **Meaning:** the request names no opening of this document by this person from the last 8 hours. Message: "Open the document again to go on reading it."
+- **What the user should do:** open the document again.
+- **What support should tell the customer:** the document was open for a long time; open it again.
+
+### SDV-DOC-012: the document takes too long to show
+
+- **HTTP status:** 422. Task 0063. WARN line.
+- **Meaning:** drawing a page or searching took longer than the limit (`SDV_PDF_LIMIT_SECONDS`, 30). Message: "This document takes too long to show. Download it if your role allows, or tell your IT team."
+- **What the user should do:** download it, or tell the IT team.
+- **What support should tell the customer:** the file is very complex. The limit can be raised.
+
+### SDV-DOC-013: the document is too large to show
+
+- **HTTP status:** 422. Task 0063. WARN line.
+- **Meaning:** more pages than the limit of its sending system, or a picture larger than Vero draws (60 million pixels). Message: "This document is too large to view here."
+- **What the user should do:** download it if the role allows.
+- **What support should tell the customer:** the log says which limit. IT can raise the page limit in Integrations.
 
 ## Search (SCH)
 

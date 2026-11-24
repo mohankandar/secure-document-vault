@@ -3,6 +3,9 @@ package com.sdv.platform.application.viewer;
 import com.sdv.platform.application.access.Clearance;
 import com.sdv.platform.application.access.DocumentAccessGuard;
 import com.sdv.platform.application.document.DocumentRefusals;
+import com.sdv.platform.application.pdf.EncryptedScratch;
+import com.sdv.platform.application.pdf.PdfInspector;
+import com.sdv.platform.application.pdf.PdfWork;
 import com.sdv.platform.application.port.AuditEventPort;
 import com.sdv.platform.application.port.PageViewAuditPort;
 import com.sdv.platform.application.port.DocumentIntakeRepository;
@@ -44,7 +47,6 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Base64;
 import java.util.HexFormat;
 import java.util.List;
@@ -69,7 +71,14 @@ public class DocumentViewerService {
     private final AuditEventPort audit;
     private final PageViewAuditPort pageViews;
     private final DocumentAccessGuard access;
+    private final PdfWork work;
+    private final PageLimit pageLimit;
     private final Clock clock;
+
+    /** Task 0063: the most pages Vero shows of a sending system's document. */
+    public interface PageLimit {
+        int maxPages(UUID tenantId, UUID sourceId);
+    }
 
     /** A viewing (one DOCUMENT_VIEW_OPENED) groups page events for this long. */
     static final Duration VIEWING_LIFETIME = Duration.ofHours(8);
@@ -82,8 +91,10 @@ public class DocumentViewerService {
             StreamingCryptoPort crypto,
             AuditEventPort audit,
             PageViewAuditPort pageViews,
-            DocumentAccessGuard access) {
-        this(documents, volumes, storageProviders, crypto, audit, pageViews, access, Clock.systemUTC());
+            DocumentAccessGuard access,
+            PdfWork work,
+            PageLimit pageLimit) {
+        this(documents, volumes, storageProviders, crypto, audit, pageViews, access, work, pageLimit, Clock.systemUTC());
     }
 
     DocumentViewerService(
@@ -94,6 +105,8 @@ public class DocumentViewerService {
             AuditEventPort audit,
             PageViewAuditPort pageViews,
             DocumentAccessGuard access,
+            PdfWork work,
+            PageLimit pageLimit,
             Clock clock) {
         this.documents = documents;
         this.volumes = volumes;
@@ -102,6 +115,8 @@ public class DocumentViewerService {
         this.audit = audit;
         this.pageViews = pageViews;
         this.access = java.util.Objects.requireNonNull(access, "access");
+        this.work = java.util.Objects.requireNonNull(work, "work");
+        this.pageLimit = java.util.Objects.requireNonNull(pageLimit, "pageLimit");
         this.clock = clock;
     }
 
@@ -114,9 +129,7 @@ public class DocumentViewerService {
         Viewable viewable = requireViewable(tenantId, documentId, clearance,
                 DocumentAccessGuard.Attempt.OPEN, actorId, correlationId);
         Document document = viewable.document();
-        byte[] plaintext = verifiedPlaintext(document);
-        try (PDDocument pdf = load(plaintext)) {
-            int pageCount = pdf.getNumberOfPages();
+        int pageCount = onPdf(document, actorId, "open", PDDocument::getNumberOfPages);
             // The open event's ID is the viewing ID: page requests send it back so each page is recorded once.
             UUID viewingId = appendAudit(
                     tenantId,
@@ -127,29 +140,76 @@ public class DocumentViewerService {
                     // Task 0031 (0.1): the effective level at the time of viewing, for the audit's level filter.
                     "{\"pageCount\":" + pageCount + levelDetail(viewable) + com.sdv.platform.application.access.AuditRoles.field(clearance) + "}");
             return new ViewerMetadata(document.documentId(), document.originalFilename(), pageCount, viewingId);
+    }
+
+    /** Task 0063: what is done with an open PDF, in a place of its own ({@link PdfWork}). */
+    private interface OnPdf<T> {
+        T on(PDDocument pdf) throws IOException;
+    }
+
+    private <T> T onPdf(Document document, String actorId, String where, OnPdf<T> use) {
+        UUID documentId = document.documentId();
+        try {
+            return work.run(document.tenantId() + ":" + actorId, () -> {
+                try (EncryptedScratch scratch = work.scratch();
+                     EncryptedScratch.Buffer plaintext = verifiedPlaintext(document, scratch);
+                     PDDocument pdf = load(plaintext, scratch)) {
+                    int most = pageLimit.maxPages(document.tenantId(), document.sourceId());
+                    if (pdf.getNumberOfPages() > most) {
+                        throw new DocumentViewerUnavailableException(SdvErrorCode.DOC_013, CodedFault.UNPROCESSABLE, TOO_LARGE_MESSAGE,
+                                "document=" + documentId + " pages=" + pdf.getNumberOfPages() + " most=" + most, null);
+                    }
+                    return use.on(pdf);
+                }
+            });
+        } catch (PdfWork.TookTooLong ex) {
+            throw new DocumentViewerUnavailableException(SdvErrorCode.DOC_012, CodedFault.UNPROCESSABLE, TOOK_TOO_LONG_MESSAGE,
+                    "document=" + documentId + " at=" + where, null);
         } catch (IOException ex) {
-            throw cantDraw(documentId, "open", ex);
-        } finally {
-            Arrays.fill(plaintext, (byte) 0);
+            throw cantDraw(documentId, where, ex);
         }
     }
 
-    public PageImage renderPage(
-            UUID tenantId,
-            UUID documentId,
-            Clearance clearance,
-            int pageNumber,
-            double scale,
-            String actorId,
-            String correlationId) {
-        return renderPage(tenantId, documentId, clearance, pageNumber, scale, null, actorId, correlationId);
+    /**
+     * Task 0063: pages, previews and text search belong to an opening: this person's own DOCUMENT_VIEW_OPENED for this
+     * document, not older than {@link #VIEWING_LIFETIME}. Without one, SDV-DOC-011.
+     */
+    private Instant requireViewing(UUID tenantId, UUID documentId, UUID viewingId, String actorId) {
+        Instant notBefore = clock.instant().minus(VIEWING_LIFETIME);
+        if (viewingId == null || !pageViews.isViewing(tenantId, actorId, documentId, viewingId, notBefore)) {
+            throw new CodedRefusal.Conflict(SdvErrorCode.DOC_011, "Open the document again to go on reading it.", "document=" + documentId + " no viewing");
+        }
+        return notBefore;
+    }
+
+    /** Task 0063: no picture on the page is larger (decoded) than Vero draws. */
+    private static void requireDrawable(UUID documentId, PDPage page) throws IOException {
+        long largest = largestImage(page.getResources(), new java.util.HashSet<>(), 0);
+        if (largest > PdfInspector.MAX_IMAGE_PIXELS) {
+            throw new DocumentViewerUnavailableException(SdvErrorCode.DOC_013, CodedFault.UNPROCESSABLE, TOO_LARGE_MESSAGE,
+                    "document=" + documentId + " picture pixels=" + largest, null);
+        }
+    }
+
+    private static long largestImage(org.apache.pdfbox.pdmodel.PDResources resources, java.util.Set<org.apache.pdfbox.cos.COSBase> seen, int depth) throws IOException {
+        if (resources == null || depth > 20 || !seen.add(resources.getCOSObject())) return 0;
+        long largest = 0;
+        if (resources.getCOSObject().getDictionaryObject(org.apache.pdfbox.cos.COSName.XOBJECT) instanceof org.apache.pdfbox.cos.COSDictionary xobjects) {
+            for (org.apache.pdfbox.cos.COSName name : xobjects.keySet()) {
+                if (!(xobjects.getDictionaryObject(name) instanceof org.apache.pdfbox.cos.COSStream stream)) continue;
+                if (org.apache.pdfbox.cos.COSName.IMAGE.equals(stream.getCOSName(org.apache.pdfbox.cos.COSName.SUBTYPE))) {
+                    largest = Math.max(largest, (long) stream.getInt(org.apache.pdfbox.cos.COSName.WIDTH, 0) * stream.getInt(org.apache.pdfbox.cos.COSName.HEIGHT, 0));
+                } else if (stream.getDictionaryObject(org.apache.pdfbox.cos.COSName.RESOURCES) instanceof org.apache.pdfbox.cos.COSDictionary inner) {
+                    largest = Math.max(largest, largestImage(new org.apache.pdfbox.pdmodel.PDResources(inner), seen, depth + 1));
+                }
+            }
+        }
+        return largest;
     }
 
     /**
-     * Renders one page. With a {@code viewingId} that the server accepts (this person's own DOCUMENT_VIEW_OPENED for
-     * this document and tenant, less than {@link #VIEWING_LIFETIME} old) the page event is written only the first
-     * time this page is sent in that viewing, whatever the zoom. Without one, or with one it does not accept, the
-     * page is recorded as before: leaving the ID out can never avoid the record.
+     * Renders one page of a viewing ({@link #requireViewing}). The page event is written the first time this page is sent
+     * in that viewing, whatever the zoom.
      */
     public PageImage renderPage(
             UUID tenantId,
@@ -168,8 +228,8 @@ public class DocumentViewerService {
 
         Viewable viewable = requireViewable(tenantId, documentId, clearance, DocumentAccessGuard.Attempt.PAGE, actorId, correlationId);
         Document document = viewable.document();
-        byte[] plaintext = verifiedPlaintext(document);
-        try (PDDocument pdf = load(plaintext)) {
+        Instant notBefore = requireViewing(tenantId, documentId, viewingId, actorId);
+        PageImage drawn = onPdf(document, actorId, "page " + pageNumber, pdf -> {
             if (pageNumber > pdf.getNumberOfPages()) {
                 throw invalid(
                         "page exceeds the document page count of " + pdf.getNumberOfPages() + ".");
@@ -185,6 +245,7 @@ public class DocumentViewerService {
                 throw invalid(
                         "Requested viewer zoom exceeds the safe rendering dimensions for this page.");
             }
+            requireDrawable(documentId, page);
 
             PDFRenderer renderer = new PDFRenderer(pdf);
             renderer.setSubsamplingAllowed(true);
@@ -196,54 +257,39 @@ public class DocumentViewerService {
                 throw new IOException("PNG renderer is unavailable.");
             }
 
-            String scaleText = String.format(Locale.ROOT, "%.2f", scale);
-            Instant now = clock.instant();
-            Instant notBefore = now.minus(VIEWING_LIFETIME);
-            if (viewingId != null && pageViews.isViewing(tenantId, actorId, documentId, viewingId, notBefore)) {
-                pageViews.appendPageEventOnce(new AuditEvent(
-                        UUID.randomUUID(), tenantId, "USER", actorId, "DOCUMENT_PAGE_VIEWED", "DOCUMENT",
-                        documentId.toString(), now, correlationId, AuditOutcome.SUCCESS,
-                        "{\"page\":" + pageNumber + ",\"scale\":" + scaleText + ",\"viewingId\":\"" + viewingId + "\"" + levelDetail(viewable) + "}"),
-                        viewingId, pageNumber, notBefore);
-            } else {
-                appendAudit(
-                        tenantId,
-                        actorId,
-                        "DOCUMENT_PAGE_VIEWED",
-                        documentId,
-                        correlationId,
-                        "{\"page\":" + pageNumber + ",\"scale\":" + scaleText + levelDetail(viewable) + "}");
-            }
-
             return new PageImage(
                     png.toByteArray(),
                     image.getWidth(),
                     image.getHeight(),
                     pageNumber,
                     pdf.getNumberOfPages());
-        } catch (IOException ex) {
-            throw cantDraw(documentId, "page " + pageNumber, ex);
-        } finally {
-            Arrays.fill(plaintext, (byte) 0);
-        }
+        });
+        // Recorded before the page is handed out; a failure to record means no page.
+        pageViews.appendPageEventOnce(new AuditEvent(
+                UUID.randomUUID(), tenantId, "USER", actorId, "DOCUMENT_PAGE_VIEWED", "DOCUMENT",
+                documentId.toString(), clock.instant(), correlationId, AuditOutcome.SUCCESS,
+                "{\"page\":" + pageNumber + ",\"scale\":" + String.format(Locale.ROOT, "%.2f", scale) + ",\"viewingId\":\"" + viewingId + "\"" + levelDetail(viewable) + "}"),
+                viewingId, pageNumber, notBefore);
+        return drawn;
     }
 
     /**
      * Small page previews for the viewer's page list: pages {@code first} to {@code first + count - 1} (clipped to the
      * page count), each about {@link #PREVIEW_WIDTH_PX} px wide. Same checks as the viewer (AVAILABLE document in the
-     * caller's tenant, verified plaintext of the current PDF, so redactions show), the document is decrypted once per
-     * request, and no audit event is written: previews belong to the DOCUMENT_VIEW_OPENED already recorded.
+     * caller's tenant, verified plaintext of the current PDF, so redactions show) and the document is decrypted once per
+     * request. Task 0063: they belong to a viewing, and are audited once per viewing (DOCUMENT_PREVIEWED).
      */
-    public PagePreviews previews(UUID tenantId, UUID documentId, int first, int count,
+    public PagePreviews previews(UUID tenantId, UUID documentId, int first, int count, UUID viewingId,
                                  Clearance clearance, String actorId, String correlationId) {
         if (first < 1) throw invalid("first must be at least 1.");
         if (count < 1 || count > MAX_PREVIEW_COUNT) {
             throw invalid("count must be between 1 and " + MAX_PREVIEW_COUNT + ".");
         }
 
-        Document document = requireAvailableDocument(tenantId, documentId, clearance, DocumentAccessGuard.Attempt.PREVIEWS, actorId, correlationId);
-        byte[] plaintext = verifiedPlaintext(document);
-        try (PDDocument pdf = load(plaintext)) {
+        Viewable viewable = requireViewable(tenantId, documentId, clearance, DocumentAccessGuard.Attempt.PREVIEWS, actorId, correlationId);
+        Document document = viewable.document();
+        Instant notBefore = requireViewing(tenantId, documentId, viewingId, actorId);
+        PagePreviews drawn = onPdf(document, actorId, "previews from page " + first, pdf -> {
             int pageCount = pdf.getNumberOfPages();
             if (first > pageCount) {
                 throw invalid("first exceeds the document page count of " + pageCount + ".");
@@ -262,6 +308,7 @@ public class DocumentViewerService {
                 if (widthPoints <= 0 || heightPoints <= 0) {
                     throw new IOException("Page " + pageNumber + " has no printable area.");
                 }
+                requireDrawable(documentId, page);
                 // Fixed width; very tall pages are capped in height instead.
                 float dpi = (float) Math.min(
                         PREVIEW_WIDTH_PX * 72.0d / widthPoints,
@@ -275,17 +322,19 @@ public class DocumentViewerService {
                         "data:image/png;base64," + base64.encodeToString(png.toByteArray())));
             }
             return new PagePreviews(document.documentId(), pageCount, first, previews);
-        } catch (IOException ex) {
-            throw cantDraw(documentId, "previews from page " + first, ex);
-        } finally {
-            Arrays.fill(plaintext, (byte) 0);
-        }
+        });
+        pageViews.appendPreviewEventOnce(new AuditEvent(
+                UUID.randomUUID(), tenantId, "USER", actorId, "DOCUMENT_PREVIEWED", "DOCUMENT",
+                documentId.toString(), clock.instant(), correlationId, AuditOutcome.SUCCESS,
+                "{\"viewingId\":\"" + viewingId + "\"" + levelDetail(viewable) + "}"), viewingId, notBefore);
+        return drawn;
     }
 
     public SearchResults search(
             UUID tenantId,
             UUID documentId,
             String query,
+            UUID viewingId,
             Clearance clearance,
             String actorId,
             String correlationId) {
@@ -299,8 +348,8 @@ public class DocumentViewerService {
         }
 
         Document document = requireAvailableDocument(tenantId, documentId, clearance, DocumentAccessGuard.Attempt.TEXT_SEARCH, actorId, correlationId);
-        byte[] plaintext = verifiedPlaintext(document);
-        try (PDDocument pdf = load(plaintext)) {
+        requireViewing(tenantId, documentId, viewingId, actorId);
+        SearchResults results = onPdf(document, actorId, "text search", pdf -> {
             String needle = normalizedQuery.toLowerCase(Locale.ROOT);
             PDFTextStripper stripper = new PDFTextStripper();
             stripper.setSortByPosition(true);
@@ -368,24 +417,20 @@ public class DocumentViewerService {
                 }
             }
 
-            appendAudit(
-                    tenantId,
-                    actorId,
-                    "DOCUMENT_TEXT_SEARCHED",
-                    documentId,
-                    correlationId,
-                    "{\"matchingPages\":" + matches.size() + ",\"matchCount\":" + totalMatches + "}");
-
             return new SearchResults(
                     pdf.getNumberOfPages(),
                     totalMatches,
                     matches,
                     highlights);
-        } catch (IOException ex) {
-            throw cantDraw(documentId, "text search", ex);
-        } finally {
-            Arrays.fill(plaintext, (byte) 0);
-        }
+        });
+        appendAudit(
+                tenantId,
+                actorId,
+                "DOCUMENT_TEXT_SEARCHED",
+                documentId,
+                correlationId,
+                "{\"matchingPages\":" + results.pages().size() + ",\"matchCount\":" + results.totalMatches() + ",\"viewingId\":\"" + viewingId + "\"}");
+        return results;
     }
 
     /**
@@ -393,7 +438,7 @@ public class DocumentViewerService {
      * storage provider, reading storage or the key service is SDV-DOC-003; a size or fingerprint that no longer
      * matches, a decryption check, or a document too big for the in-memory viewer is SDV-DOC-004.
      */
-    private byte[] verifiedPlaintext(Document document) {
+    private EncryptedScratch.Buffer verifiedPlaintext(Document document, EncryptedScratch scratch) {
         UUID documentId = document.documentId();
         DocumentStorageRef storageRef = documents.findStorageRef(document.tenantId(), documentId)
                 .orElseThrow(() -> unreadable(documentId, "storage metadata missing", null));
@@ -417,8 +462,8 @@ public class DocumentViewerService {
         FixedPlaintextBuffer plaintext;
         try {
             plaintext = new FixedPlaintextBuffer(
-                    Math.toIntExact(expectedSize),
-                    document.contentSha256());
+                    expectedSize,
+                    document.contentSha256(), scratch.createBuffer());
 
             InputStream opened;
             try {
@@ -501,9 +546,9 @@ public class DocumentViewerService {
                 .orElseThrow(() -> unreadable(documentId, "storage provider not installed", null));
     }
 
-    private static PDDocument load(byte[] plaintext) throws IOException {
+    private static PDDocument load(EncryptedScratch.Buffer plaintext, EncryptedScratch scratch) throws IOException {
         try {
-            return Loader.loadPDF(plaintext);
+            return Loader.loadPDF(plaintext, PdfInspector.over(scratch));
         } catch (IOException | RuntimeException ex) {
             throw new IOException("The decrypted document is not renderable as a PDF.", ex);
         }
@@ -549,6 +594,7 @@ public class DocumentViewerService {
     static final String CHECK_FAILED_MESSAGE =
             "This document's stored copy didn't pass Vero's check, so it isn't shown.";
     static final String TOO_LARGE_MESSAGE = "This document is too large to view here.";
+    static final String TOOK_TOO_LONG_MESSAGE = "This document takes too long to show. Download it if your role allows, or tell your IT team.";
     static final String CANT_DRAW_MESSAGE =
             "Vero can't draw this page. Download it if your role allows, or tell your IT team.";
 
@@ -658,14 +704,16 @@ public class DocumentViewerService {
     private static final class FixedPlaintextBuffer extends OutputStream {
         private static final byte[] PDF_MAGIC = new byte[]{'%', 'P', 'D', 'F', '-'};
 
-        private final byte[] data;
+        private final EncryptedScratch.Buffer data;
+        private final long expectedBytes;
+        private final byte[] head = new byte[PDF_MAGIC.length];
         private final String expectedSha256;
         private final MessageDigest digest;
-        private int position;
-        private boolean taken;
+        private long position;
 
-        FixedPlaintextBuffer(int expectedBytes, String expectedSha256) throws IOException {
-            this.data = new byte[expectedBytes];
+        FixedPlaintextBuffer(long expectedBytes, String expectedSha256, EncryptedScratch.Buffer data) throws IOException {
+            this.data = data;
+            this.expectedBytes = expectedBytes;
             this.expectedSha256 = expectedSha256;
             try {
                 this.digest = MessageDigest.getInstance("SHA-256");
@@ -676,32 +724,29 @@ public class DocumentViewerService {
 
         @Override
         public void write(int b) throws IOException {
-            if (position >= data.length) {
-                throw new CheckFailed("decrypted size larger than stored");
-            }
-            data[position++] = (byte) b;
-            digest.update((byte) b);
+            write(new byte[] {(byte) b}, 0, 1);
         }
 
         @Override
         public void write(byte[] b, int off, int len) throws IOException {
-            if (len < 0 || position > data.length - len) {
+            if (len < 0 || position > expectedBytes - len) {
                 throw new CheckFailed("decrypted size larger than stored");
             }
-            System.arraycopy(b, off, data, position, len);
+            for (int i = 0; i < len && position + i < head.length; i++) head[(int) position + i] = b[off + i];
+            data.write(b, off, len);
             digest.update(b, off, len);
             position += len;
         }
 
         void finish() throws IOException {
-            if (position != data.length) {
+            if (position != expectedBytes) {
                 throw new CheckFailed("decrypted size does not match");
             }
-            if (data.length < PDF_MAGIC.length) {
+            if (expectedBytes < PDF_MAGIC.length) {
                 throw new CheckFailed("decrypted content is not a complete PDF");
             }
             for (int i = 0; i < PDF_MAGIC.length; i++) {
-                if (data[i] != PDF_MAGIC[i]) {
+                if (head[i] != PDF_MAGIC[i]) {
                     throw new CheckFailed("decrypted content has no PDF header");
                 }
             }
@@ -711,13 +756,13 @@ public class DocumentViewerService {
             }
         }
 
-        byte[] take() {
-            taken = true;
+        EncryptedScratch.Buffer take() throws IOException {
+            data.seek(0);
             return data;
         }
 
         void destroy() {
-            if (!taken) Arrays.fill(data, (byte) 0);
+            data.close();
         }
     }
 

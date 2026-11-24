@@ -1,4 +1,4 @@
-import { roleApi, contentBinary, contentDownload, contentExport, type RegisteredExport, type SessionInfo, type SearchSchema, type SearchResponse, type BusinessRecord, type RecordSummary, type SearchSource, type SensitivityLevel } from '../api'
+import { ApiRequestError, roleApi, contentBinary, contentDownload, contentExport, type RegisteredExport, type SessionInfo, type SearchSchema, type SearchResponse, type BusinessRecord, type RecordSummary, type SearchSource, type SensitivityLevel } from '../api'
 import type { Field, Source, RecordItem, Doc } from './model'
 import type { SignInTestAnswer } from './signInTestWords'
 
@@ -68,14 +68,23 @@ export function toRecord(r: BusinessRecord):RecordItem {
 export type ViewerMetadata = { documentId: string; originalFilename: string; pageCount: number; viewingId?: string }
 export type ViewerSearch = { pageCount: number; totalMatches: number; pages: {pageNumber:number; matchCount:number}[]; highlights?: {pageNumber:number;x:number;y:number;width:number;height:number}[] }
 const viewerPath = (id: string) => '/api/v1/business/documents/' + encodeURIComponent(id) + '/viewer'
-/** Small page previews (PNG data URLs), at most 24 pages per request. The server writes no audit event for them. */
+/** Small page previews (PNG data URLs), at most 24 pages per request. They belong to a viewing (task 0063). */
 export type ViewerPreviews = { documentId: string; pageCount: number; first: number; previews: { pageNumber: number; width: number; height: number; dataUrl: string }[] }
-export const viewerPreviews = (id: string, first: number, count: number) => roleApi<ViewerPreviews>(viewerPath(id) + '/previews?first=' + first + '&count=' + count, 'business')
+/** Task 0063: no room for it just now (busy): wait as the server says and ask again, a few times. */
+async function againWhenBusy<T>(ask: () => Promise<T>): Promise<T> {
+  for (let n = 0; ; n++) {
+    try { return await ask() } catch (e) {
+      if (n >= 4 || !(e instanceof ApiRequestError) || e.code !== 'SDV-SYS-018') throw e
+      await new Promise((r) => window.setTimeout(r, Math.min(10, e.retryAfterSeconds ?? 5) * 1000))
+    }
+  }
+}
+export const viewerPreviews = (id: string, first: number, count: number, viewingId: string) => againWhenBusy(() => roleApi<ViewerPreviews>(viewerPath(id) + '/previews?first=' + first + '&count=' + count + '&viewingId=' + encodeURIComponent(viewingId), 'business'))
 export const viewerMetadata = (id:string) => roleApi<ViewerMetadata>(viewerPath(id), 'business')
-export const viewerPage = (id:string, page:number, scale=1, viewingId?:string) =>
-  contentBinary(viewerPath(id) + '/pages/' + page + '?scale=' + scale + (viewingId ? '&viewingId=' + encodeURIComponent(viewingId) : ''), 'business')
-export const viewerSearch = (id:string, q:string) =>
-  roleApi<ViewerSearch>(viewerPath(id) + '/search?q=' + encodeURIComponent(q), 'business')
+export const viewerPage = (id:string, page:number, scale:number, viewingId:string) =>
+  againWhenBusy(() => contentBinary(viewerPath(id) + '/pages/' + page + '?scale=' + scale + '&viewingId=' + encodeURIComponent(viewingId), 'business'))
+export const viewerSearch = (id:string, q:string, viewingId:string) =>
+  againWhenBusy(() => roleApi<ViewerSearch>(viewerPath(id) + '/search?q=' + encodeURIComponent(q) + '&viewingId=' + encodeURIComponent(viewingId), 'business'))
 
 export type LiveDocumentActivity = { auditEventId:string; actorType:string; actorId:string; action:string; occurredAt:string; outcome:'SUCCESS'|'DENIED'|'FAILURE'; safeDetailsJson:string }
 export const documentActivity = (id:string,includeViewEvents=false,limit=100) =>

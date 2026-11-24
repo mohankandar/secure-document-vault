@@ -474,12 +474,21 @@ public class JdbcQuarantineRepository implements QuarantineRepository {
         return jdbc.query("""
                 with q as (select document_id, min(quarantined_at) as quarantined_at from quarantined_documents
                             where tenant_id=:tenantId and incident_id=:id and document_id in (:ids) group by document_id)
-                select a.target_id, a.actor_id, a.actor_display_name, a.action, a.occurred_at
+                select a.target_id, a.actor_id, a.actor_display_name, a.action, a.occurred_at, a.audit_event_id
                   from q join audit_events a on a.tenant_id=:tenantId and a.target_type='DOCUMENT'
                        and a.target_id=q.document_id::text
                  where a.action in ('DOCUMENT_VIEW_OPENED', 'DOCUMENT_PRINTED', 'DOCUMENT_DOWNLOADED')
                    and a.outcome='SUCCESS' and a.occurred_at < q.quarantined_at
-                 order by a.target_id, a.occurred_at, a.audit_event_id
+                union all
+                -- Task 0063: reading pages, looking at previews and searching the text are exposure too: once per person,
+                -- document and kind, at the first time.
+                select a.target_id, a.actor_id, max(a.actor_display_name), a.action, min(a.occurred_at), min(a.audit_event_id::text)::uuid
+                  from q join audit_events a on a.tenant_id=:tenantId and a.target_type='DOCUMENT'
+                       and a.target_id=q.document_id::text
+                 where a.action in ('DOCUMENT_PAGE_VIEWED', 'DOCUMENT_PREVIEWED', 'DOCUMENT_TEXT_SEARCHED')
+                   and a.outcome='SUCCESS' and a.occurred_at < q.quarantined_at
+                 group by a.target_id, a.actor_id, a.action
+                 order by 1, 5, 6
                 """, incident(tenantId, incidentId).addValue("ids", List.copyOf(documentIds)),
                 (rs, row) -> new Exposure(UUID.fromString(rs.getString(1)), rs.getString(2), rs.getString(3),
                         rs.getString(4), rs.getTimestamp(5).toInstant()));

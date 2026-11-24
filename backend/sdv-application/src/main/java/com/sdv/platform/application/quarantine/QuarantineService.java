@@ -1065,6 +1065,9 @@ public class QuarantineService {
             case "DOCUMENT_VIEW_OPENED" -> "Opened";
             case "DOCUMENT_PRINTED" -> "Printed";
             case "DOCUMENT_DOWNLOADED" -> "Downloaded";
+            case "DOCUMENT_PAGE_VIEWED" -> "Read pages (first time)";
+            case "DOCUMENT_PREVIEWED" -> "Saw page previews (first time)";
+            case "DOCUMENT_TEXT_SEARCHED" -> "Searched the text (first time)";
             default -> action;
         };
     }

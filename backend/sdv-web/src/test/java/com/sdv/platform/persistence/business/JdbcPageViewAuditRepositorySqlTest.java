@@ -63,11 +63,12 @@ class JdbcPageViewAuditRepositorySqlTest {
         verify(jdbc).update(sql.capture(), params.capture());
         String s = flat(sql.getValue());
         assertTrue(s.contains("insert into audit_events"), s);
-        for (String part : List.of("where not exists", "tenant_id=:tenantId", "actor_id=:actorId", "action='DOCUMENT_PAGE_VIEWED'",
+        for (String part : List.of("where not exists", "tenant_id=:tenantId", "actor_id=:actorId", "action=:action",
                 "occurred_at>=:notBefore", "target_id=:targetId", "safe_details->>'viewingId'=:viewingId", "safe_details->>'page'=:page")) {
             assertTrue(s.contains(part), part + " missing in: " + s);
         }
         assertEquals("3", params.getValue().getValue("page"));
+        assertEquals("DOCUMENT_PAGE_VIEWED", params.getValue().getValue("action"), "the same action is looked for as is written");
         assertEquals(VIEWING.toString(), params.getValue().getValue("viewingId"));
     }
 

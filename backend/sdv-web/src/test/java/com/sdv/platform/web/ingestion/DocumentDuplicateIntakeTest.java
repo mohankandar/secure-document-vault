@@ -116,7 +116,7 @@ class DocumentDuplicateIntakeTest {
         SecurityContextFacade security = mock(SecurityContextFacade.class);
         when(security.requireIngestionSourcePrincipal()).thenReturn(new IngestionSourcePrincipal(TENANT, SOURCE, "producer"));
         DocumentIntakeService intake = new DocumentIntakeService(tenants, sources, submissions, documents, placement,
-                List.of(storage), crypto, finalization, audit, records, levels, mock(PlatformTransactionManager.class));
+                List.of(storage), crypto, finalization, audit, records, levels, mock(PlatformTransactionManager.class), TestPdfs.UNCHECKED);
         mvc = MockMvcBuilders.standaloneSetup(new DocumentIntakeController(security, intake))
                 .setControllerAdvice(new FoundationExceptionHandler())
                 .build();

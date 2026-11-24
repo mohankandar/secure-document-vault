@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Vero (Secure Document Vault) Ingestion API",
-    "version": "1.2.0",
+    "version": "1.3.0",
     "description": "The contract for sending systems: create a submission, upload its PDFs, read their state. Sign-in is an OAuth2 client-credentials token from the customer's sign-in server; the entity and the sending system come from the verified token's client ID (its client binding, set up by the customer's IT with Vero's setup command), never from a request header. Every error has the same body (Error) with a stable code. Each answer below says whether to send the request again (x-sdv-retry). The versioning policy, the sender's guide and the changelog are in docs/api/README.md. The build checks this file against the running API (IngestionContractTest).",
     "contact": {"name": "Vero team"}
   },
@@ -153,8 +153,8 @@
           "201": {"description": "Received: stored durably. receiptAcknowledgement RECEIVED.", "headers": {"X-Correlation-Id": {"$ref": "#/components/headers/CorrelationId"}}, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/DocumentReceipt"}}}},
           "200": {"description": "Nothing new stored, and that is success; don't send it again. Either already received (a retry of the same upload: receiptAcknowledgement RECEIVED, idempotentReplay true) or DUPLICATE_ALREADY_STORED (the same file, same SHA-256, from this sending system for the same record in a new delivery: duplicate true, documentId is the document Vero already has).", "headers": {"X-Correlation-Id": {"$ref": "#/components/headers/CorrelationId"}}, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/DocumentReceipt"}}}},
           "400": {
-            "description": "Refused: the upload is not valid. Nothing was stored. Don't send it again unchanged; correct what the message names. SDV-INT-016 here: the document would take the submission over its total size limit; send it on a new submission.",
-            "x-sdv-codes": ["SDV-SEN-001", "SDV-SEN-005", "SDV-INT-012", "SDV-INT-013", "SDV-INT-015", "SDV-INT-016", "SDV-SYS-015"], "x-error-codes": ["SDV-SEN-001", "SDV-SEN-005", "SDV-INT-012", "SDV-INT-013", "SDV-INT-015", "SDV-INT-016", "SDV-SYS-015"],
+            "description": "Refused: the upload is not valid. Nothing was stored. Don't send it again unchanged; correct what the message names. SDV-INT-016 here: the document would take the submission over its total size limit; send it on a new submission. SDV-INT-019, -020, -021, -022: the PDF can't be read, is encrypted, carries active content, or has too many pages.",
+            "x-sdv-codes": ["SDV-SEN-001", "SDV-SEN-005", "SDV-INT-012", "SDV-INT-013", "SDV-INT-015", "SDV-INT-016", "SDV-INT-019", "SDV-INT-020", "SDV-INT-021", "SDV-INT-022", "SDV-SYS-015"], "x-error-codes": ["SDV-SEN-001", "SDV-SEN-005", "SDV-INT-012", "SDV-INT-013", "SDV-INT-015", "SDV-INT-016", "SDV-INT-019", "SDV-INT-020", "SDV-INT-021", "SDV-INT-022", "SDV-SYS-015"],
             "headers": {"X-Correlation-Id": {"$ref": "#/components/headers/CorrelationId"}},
             "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}, "example": {"code": "SDV-SEN-001", "message": "X-SDV-Sensitivity-Level must be one of STANDARD, CONFIDENTIAL, HIGHLY_CONFIDENTIAL (exactly, in capitals); leave it out for STANDARD.", "reference": "6f1c0f0e-5b7a-4c1e-9f4e-2d8a7c3b1e90", "timestamp": "2026-11-20T10:00:00Z"}}}
           },
@@ -514,6 +514,10 @@
     "400 SDV-INT-013": {"retry": "no", "summary": "An upload header isn't valid: file name blank, too long or a path; an ID longer than 200."},
     "400 SDV-INT-015": {"retry": "no", "summary": "The body is empty, cut short, or not a PDF."},
     "400 SDV-INT-016": {"retry": "no", "summary": "The document would take the submission over its total size limit. Send it on a new submission."},
+    "400 SDV-INT-019": {"retry": "no", "summary": "The PDF can't be read."},
+    "400 SDV-INT-020": {"retry": "no", "summary": "The PDF is encrypted or protected with a password."},
+    "400 SDV-INT-021": {"retry": "no", "summary": "The PDF carries active content: scripts, actions or attached files."},
+    "400 SDV-INT-022": {"retry": "no", "summary": "The PDF has more pages than Vero takes from this sending system."},
     "404 SDV-INT-004": {"retry": "no", "summary": "No submission of this sending system has this ID."},
     "404 SDV-INT-018": {"retry": "no", "summary": "No document of this submission has this ID."},
     "406 SDV-SYS-015": {"retry": "no", "summary": "The Accept header asks for a format Vero can't answer in. The work may already be done; send again with Accept application/json."},

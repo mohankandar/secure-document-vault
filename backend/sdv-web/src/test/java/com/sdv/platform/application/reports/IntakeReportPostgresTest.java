@@ -86,7 +86,7 @@ class IntakeReportPostgresTest {
     private final DocumentIntakeService service = new DocumentIntakeService(foundation, foundation, intake, intake, placement,
             List.of(storage), crypto, mock(DocumentFinalizationService.class), foundation,
             new RecordReferences(new JdbcBusinessRecordRepository(jdbc)), new JdbcAccessRequestRepository(jdbc),
-            new DataSourceTransactionManager(dataSource));
+            new DataSourceTransactionManager(dataSource), com.sdv.platform.web.ingestion.TestPdfs.UNCHECKED);
 
     private static String sha(byte[] bytes) {
         try {

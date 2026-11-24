@@ -46,19 +46,19 @@ class SecurePdfViewerControllerPreviewsTest {
     @Test
     void aRoleWithoutViewPdfIsRefusedBeforeAnythingIsDecrypted() {
         signIn(false);
-        assertThrows(AccessDeniedException.class, () -> controller.previews(DOC, 1, 12));
+        assertThrows(AccessDeniedException.class, () -> controller.previews(DOC, 1, 12, null));
         verifyNoInteractions(viewer);
     }
 
     @Test
     void previewsUseTheViewersNoStoreHeaders() {
         signIn(true);
-        when(viewer.previews(TENANT, DOC, 1, 12, com.sdv.platform.application.access.Clearance.STANDARD_ONLY, "someone", null)).thenReturn(new DocumentViewerService.PagePreviews(DOC, 1, 1, List.of()));
-        var response = controller.previews(DOC, 1, 12);
+        when(viewer.previews(TENANT, DOC, 1, 12, null, com.sdv.platform.application.access.Clearance.STANDARD_ONLY, "someone", null)).thenReturn(new DocumentViewerService.PagePreviews(DOC, 1, 1, List.of()));
+        var response = controller.previews(DOC, 1, 12, null);
         assertEquals(200, response.getStatusCode().value());
         assertTrue(response.getHeaders().getCacheControl().contains("no-store"));
         assertEquals("nosniff", response.getHeaders().getFirst("X-Content-Type-Options"));
-        verify(viewer).previews(eq(TENANT), eq(DOC), eq(1), eq(12),
+        verify(viewer).previews(eq(TENANT), eq(DOC), eq(1), eq(12), any(),
                 eq(com.sdv.platform.application.access.Clearance.STANDARD_ONLY), eq("someone"), isNull());
     }
 }

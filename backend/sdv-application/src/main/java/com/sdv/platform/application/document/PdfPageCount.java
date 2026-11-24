@@ -16,7 +16,17 @@ public final class PdfPageCount {
         try (PDDocument document = Loader.loadPDF(pdf)) {
             int pages = document.getNumberOfPages();
             return pages > 0 ? pages : null;
-        } catch (Exception e) {
+        } catch (Exception | StackOverflowError | OutOfMemoryError e) {
+            return null;
+        }
+    }
+
+    /** Task 0063: over working space, so a large file isn't held in memory. */
+    public static Integer of(org.apache.pdfbox.io.RandomAccessRead pdf, com.sdv.platform.application.pdf.EncryptedScratch scratch) {
+        try (PDDocument document = Loader.loadPDF(pdf, com.sdv.platform.application.pdf.PdfInspector.over(scratch))) {
+            int pages = document.getNumberOfPages();
+            return pages > 0 ? pages : null;
+        } catch (Exception | StackOverflowError | OutOfMemoryError e) {
             return null;
         }
     }

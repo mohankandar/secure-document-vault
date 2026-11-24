@@ -48,6 +48,7 @@ import com.sdv.platform.security.auth.SecurityContextFacade;
 import com.sdv.platform.security.config.SecurityConfiguration;
 import com.sdv.platform.security.config.SignInAnswers;
 import com.sdv.platform.web.config.CorrelationIdFilter;
+import com.sdv.platform.web.ingestion.TestPdfs;
 import com.sdv.platform.web.foundation.FoundationExceptionHandler;
 import com.sdv.platform.web.foundation.SdvErrorController;
 import com.sdv.platform.web.ingestion.DocumentIntakeController;
@@ -170,7 +171,8 @@ class IngestionContractTest {
     private static final UUID DOCUMENT = UUID.fromString("44444444-4444-4444-4444-444444444444");
     private static final UUID ORIGINAL = UUID.fromString("55555555-5555-5555-5555-555555555555");
     private static final Instant NOW = Instant.parse("2026-11-22T10:00:00Z");
-    private static final byte[] PDF = "%PDF-1.7\nhello\n%%EOF".getBytes(StandardCharsets.US_ASCII);
+    private static final byte[] PDF = TestPdfs.pdf(1, pdf -> { });
+    static final com.sdv.platform.application.pdf.PdfIntakeChecks CHECKS = TestPdfs.real();
     private static final String SHA = sha(PDF);
     private static final String SUBMISSIONS = INGESTION + "/submissions";
     private static final String ONE = SUBMISSIONS + "/" + SUBMISSION;
@@ -656,6 +658,8 @@ class IngestionContractTest {
         return post(DOCUMENTS).contentType("application/pdf").content(PDF).header("X-SDV-Filename", "a.pdf");
     }
 
+    private static MockHttpServletRequestBuilder upload(byte[] pdf) { return post(DOCUMENTS).contentType("application/pdf").content(pdf).header("X-SDV-Filename", "a.pdf"); }
+
     private static MockHttpServletRequestBuilder create(String body) {
         return post(SUBMISSIONS).contentType(MediaType.APPLICATION_JSON).content(body);
     }
@@ -825,6 +829,18 @@ class IngestionContractTest {
 
         all.add(refused("createSubmission", "larger than Vero takes", () -> signed(post(SUBMISSIONS).contentType(MediaType.APPLICATION_JSON)
                 .content(" ".repeat(8_388_609))), NOTHING, 413, "SDV-SYS-019"));
+
+        // Task 0063: the checks of the PDF itself.
+        all.add(refused(u, "not readable", () -> signed(upload("%PDF-1.7\nnot really\n%%EOF".getBytes(StandardCharsets.US_ASCII))
+                .header("X-SDV-Source-Document-Id", "doc-1")), NOTHING, 400, "SDV-INT-019"));
+        all.add(refused(u, "encrypted", () -> signed(upload(TestPdfs.pdf(1, pdf -> pdf.protect(
+                new org.apache.pdfbox.pdmodel.encryption.StandardProtectionPolicy("owner", "open", new org.apache.pdfbox.pdmodel.encryption.AccessPermission()))))
+                .header("X-SDV-Source-Document-Id", "doc-1")), NOTHING, 400, "SDV-INT-020"));
+        all.add(refused(u, "active content", () -> signed(upload(TestPdfs.pdf(1, pdf -> pdf.getDocumentCatalog().setOpenAction(
+                new org.apache.pdfbox.pdmodel.interactive.action.PDActionJavaScript("app.alert(1)"))))
+                .header("X-SDV-Source-Document-Id", "doc-1")), NOTHING, 400, "SDV-INT-021"));
+        all.add(refused(u, "too many pages", () -> signed(upload(TestPdfs.pdf(2, pdf -> { })).header("X-SDV-Source-Document-Id", "doc-1")),
+                test -> tenant(new TenantGuardrails(1_000_000, 1, 100, 1_000_000, 24, 90, 95, null)), 400, "SDV-INT-022"));
 
         // listSubmissionDocuments
         all.add(ok("listSubmissionDocuments", "listed", () -> signed(get(DOCUMENTS)),
@@ -1201,7 +1217,7 @@ class IngestionContractTest {
         @Bean DocumentIntakeController documentIntakeController() {
             return new DocumentIntakeController(new SecurityContextFacade(), new DocumentIntakeService(TENANTS, SOURCES,
                     SUBMISSION_STORE, DOCUMENT_STORE, PLACEMENT, List.of(STORAGE), CRYPTO, FINALIZATION, AUDIT, RECORDS,
-                    LEVELS, mock(PlatformTransactionManager.class)));
+                    LEVELS, mock(PlatformTransactionManager.class), CHECKS));
         }
     }
 }

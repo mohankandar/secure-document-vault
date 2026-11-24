@@ -61,13 +61,18 @@ class DocumentViewerCodesTest {
     private final StreamingCryptoPort crypto = mock(StreamingCryptoPort.class);
     private final DocumentAccessGuard guard = mock(DocumentAccessGuard.class);
     private final PageViewAuditPort pageViews = mock(PageViewAuditPort.class);
+    private static final UUID VIEWING = UUID.randomUUID();
+    private int mostPages = 2000;
+    private final com.sdv.platform.application.pdf.PdfWork work = new com.sdv.platform.application.pdf.PdfWork(1, 1,
+            java.time.Duration.ofMillis(300), java.time.Duration.ofSeconds(20), null, 1 << 20, 1L << 30);
     private final DocumentViewerService viewer = new DocumentViewerService(documents, volumes, List.of(provider), crypto,
-            e -> { }, pageViews, guard, Clock.fixed(NOW, ZoneOffset.UTC));
+            e -> { }, pageViews, guard, work, (t, s) -> mostPages, Clock.fixed(NOW, ZoneOffset.UTC));
     private byte[] plaintext;
 
     @BeforeEach
     void setUp() throws Exception {
         when(guard.requireOpenable(any(), any(), any(), any(), any())).thenReturn(SensitivityLevel.STANDARD);
+        when(pageViews.isViewing(any(), any(), any(), eq(VIEWING), any())).thenReturn(true);
         try (PDDocument pdf = new PDDocument(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
             pdf.addPage(new PDPage(PDRectangle.LETTER));
             pdf.save(out);
@@ -173,17 +178,77 @@ class DocumentViewerCodesTest {
         DocumentViewerUnavailableException drawn = fault("SDV-DOC-005", 422, this::open);
         assertTrue(drawn.logDetail().contains("at=open"), drawn.logDetail());
         assertEquals("SDV-DOC-005", fault("SDV-DOC-005", 422,
-                () -> viewer.renderPage(TENANT, DOC, Clearance.ALL, 1, 1.0, "s", "c")).errorCode().code());
+                () -> viewer.renderPage(TENANT, DOC, Clearance.ALL, 1, 1.0, VIEWING, "s", "c")).errorCode().code());
+    }
+
+    /** Task 0063. */
+    @Test
+    void morePagesOrALargerPictureThanVeroShowsIsDoc013() throws Exception {
+        mostPages = 0;
+        fault("SDV-DOC-013", 422, this::open);
+        mostPages = 2000;
+        try (PDDocument pdf = new PDDocument(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
+            PDPage page = new PDPage(PDRectangle.LETTER);
+            var image = new org.apache.pdfbox.cos.COSStream();
+            image.setItem(org.apache.pdfbox.cos.COSName.SUBTYPE, org.apache.pdfbox.cos.COSName.IMAGE);
+            image.setInt(org.apache.pdfbox.cos.COSName.WIDTH, 30_000);
+            image.setInt(org.apache.pdfbox.cos.COSName.HEIGHT, 30_000);
+            var inner = new org.apache.pdfbox.cos.COSDictionary();
+            inner.setItem("Big", image);
+            var resources = new org.apache.pdfbox.cos.COSDictionary();
+            resources.setItem(org.apache.pdfbox.cos.COSName.XOBJECT, inner);
+            var form = new org.apache.pdfbox.cos.COSStream();
+            form.setItem(org.apache.pdfbox.cos.COSName.SUBTYPE, org.apache.pdfbox.cos.COSName.FORM);
+            form.setItem(org.apache.pdfbox.cos.COSName.RESOURCES, resources);
+            var outer = new org.apache.pdfbox.cos.COSDictionary();
+            outer.setItem("Form", form);
+            var pageResources = new org.apache.pdfbox.cos.COSDictionary();
+            pageResources.setItem(org.apache.pdfbox.cos.COSName.XOBJECT, outer);
+            page.setResources(new org.apache.pdfbox.pdmodel.PDResources(pageResources));
+            pdf.addPage(page);
+            pdf.save(out);
+            plaintext = out.toByteArray();
+        }
+        document(sha(plaintext), plaintext.length, DocumentStatus.AVAILABLE);
+        decryptsTo(plaintext);
+        open();
+        fault("SDV-DOC-013", 422, () -> viewer.renderPage(TENANT, DOC, Clearance.ALL, 1, 1.0, VIEWING, "s", "c"));
+        fault("SDV-DOC-013", 422, () -> viewer.previews(TENANT, DOC, 1, 1, VIEWING, Clearance.ALL, "s", "c"));
+    }
+
+    /** Task 0063: no place free is the busy answer, and nothing is recorded as read. */
+    @Test
+    void whenEveryPlaceIsTakenItIsBusy() throws Exception {
+        var started = new java.util.concurrent.CountDownLatch(1);
+        var release = new java.util.concurrent.CountDownLatch(1);
+        Thread other = new Thread(() -> {
+            try {
+                work.run("another", () -> {
+                    started.countDown();
+                    release.await();
+                    return 1;
+                });
+            } catch (IOException ignored) { }
+        });
+        other.start();
+        started.await();
+        var busy = org.junit.jupiter.api.Assertions.assertThrows(com.sdv.platform.domain.error.BusyFailure.class,
+                () -> viewer.renderPage(TENANT, DOC, Clearance.ALL, 1, 1.0, VIEWING, "s", "c"));
+        assertTrue(com.sdv.platform.web.foundation.ErrorReplies.isBusy(busy));
+        org.mockito.Mockito.verify(pageViews, org.mockito.Mockito.never()).appendPageEventOnce(any(), any(), org.mockito.ArgumentMatchers.anyInt(), any());
+        release.countDown();
+        other.join();
+        viewer.renderPage(TENANT, DOC, Clearance.ALL, 1, 1.0, VIEWING, "s", "c");
     }
 
     @Test
     void aRequestThatIsntValidIsDoc006() {
-        assertEquals("SDV-DOC-006", refusal(() -> viewer.renderPage(TENANT, DOC, Clearance.ALL, 0, 1.0, "s", "c")));
-        assertEquals("SDV-DOC-006", refusal(() -> viewer.renderPage(TENANT, DOC, Clearance.ALL, 1, 9.0, "s", "c")));
-        assertEquals("SDV-DOC-006", refusal(() -> viewer.renderPage(TENANT, DOC, Clearance.ALL, 2, 1.0, "s", "c")),
+        assertEquals("SDV-DOC-006", refusal(() -> viewer.renderPage(TENANT, DOC, Clearance.ALL, 0, 1.0, VIEWING, "s", "c")));
+        assertEquals("SDV-DOC-006", refusal(() -> viewer.renderPage(TENANT, DOC, Clearance.ALL, 1, 9.0, VIEWING, "s", "c")));
+        assertEquals("SDV-DOC-006", refusal(() -> viewer.renderPage(TENANT, DOC, Clearance.ALL, 2, 1.0, VIEWING, "s", "c")),
                 "past the last page");
-        assertEquals("SDV-DOC-006", refusal(() -> viewer.previews(TENANT, DOC, 1, 0, Clearance.ALL, "s", "c")));
-        assertEquals("SDV-DOC-006", refusal(() -> viewer.search(TENANT, DOC, " ", Clearance.ALL, "s", "c")));
+        assertEquals("SDV-DOC-006", refusal(() -> viewer.previews(TENANT, DOC, 1, 0, VIEWING, Clearance.ALL, "s", "c")));
+        assertEquals("SDV-DOC-006", refusal(() -> viewer.search(TENANT, DOC, " ", VIEWING, Clearance.ALL, "s", "c")));
     }
 
     @Test

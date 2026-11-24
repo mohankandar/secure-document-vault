@@ -1,11 +1,11 @@
 {
   "format": "platform-integration-profile/1",
   "name": "sdv-ingestion-v1",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "description": "Vero's ingestion API, v1 (sdv-ingestion-v1.openapi.json): create a submission, then upload each PDF to it. Sign-in is a standard OAuth 2.0 client-credentials token; Vero finds the entity and the sending system from the client ID.",
   "api": {
     "title": "Vero (Secure Document Vault) Ingestion API",
-    "version": "1.2.0"
+    "version": "1.3.0"
   },
   "direction": "OUTBOUND",
   "kind": "API_PUSH",

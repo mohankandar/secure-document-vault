@@ -74,6 +74,14 @@ class DocumentViewerServicePageViewTest {
             if (!exists) events.add(pageEvent);
             return !exists;
         }
+
+        @Override
+        public boolean appendPreviewEventOnce(AuditEvent event, UUID viewingId, Instant notBefore) {
+            boolean exists = events.stream().anyMatch(e -> e.action().equals("DOCUMENT_PREVIEWED")
+                    && e.safeDetailsJson().contains("\"viewingId\":\"" + viewingId + "\""));
+            if (!exists) events.add(event);
+            return !exists;
+        }
     };
 
     private final DocumentIntakeRepository documents = mock(DocumentIntakeRepository.class);
@@ -83,7 +91,7 @@ class DocumentViewerServicePageViewTest {
     private final com.sdv.platform.application.access.DocumentAccessGuard guard =
             mock(com.sdv.platform.application.access.DocumentAccessGuard.class);
     private final DocumentViewerService service = new DocumentViewerService(
-            documents, volumes, List.of(provider), crypto, audit, pageViews, guard, Clock.fixed(NOW, ZoneOffset.UTC));
+            documents, volumes, List.of(provider), crypto, audit, pageViews, guard, com.sdv.platform.application.pdf.PdfWork.defaults(), (t, s) -> 2000, Clock.fixed(NOW, ZoneOffset.UTC));
 
     @BeforeEach
     void setUp() throws Exception {
@@ -135,7 +143,7 @@ class DocumentViewerServicePageViewTest {
                 .thenReturn(com.sdv.platform.domain.document.SensitivityLevel.HIGHLY_CONFIDENTIAL);
         UUID viewing = open(DOC, "steward");
         service.renderPage(TENANT, DOC, ALL, 1, 1.0, viewing, "steward", "c");
-        service.renderPage(TENANT, DOC, ALL, 2, 1.0, null, "steward", "c");
+        service.renderPage(TENANT, DOC, ALL, 2, 1.0, viewing, "steward", "c");
         assertEquals(3, events.size());
         for (var event : events) {
             assertTrue(event.safeDetailsJson().contains("\"sensitivityLevel\":\"HIGHLY_CONFIDENTIAL\""),
@@ -171,39 +179,39 @@ class DocumentViewerServicePageViewTest {
         assertEquals(2, pageEvents());
     }
 
+    private void refused(Runnable read) {
+        var ex = org.junit.jupiter.api.Assertions.assertThrows(com.sdv.platform.domain.error.CodedRefusal.Conflict.class, read::run);
+        assertEquals("SDV-DOC-011", ex.errorCode().code());
+        assertEquals(0, pageEvents(), "no page was handed out");
+    }
+
+    /** Task 0063: pages, previews and search need an opening of this document by this person (before, a page without one was recorded normally). */
     @Test
-    void anotherPersonsViewingIdIsRecordedNormally() {
+    void withoutAnOpeningOfTheirOwnNothingIsRead() {
         UUID someoneElses = open(DOC, "someone-else");
-        service.renderPage(TENANT, DOC, ALL, 1, 1.0, someoneElses, "steward", "c");
-        service.renderPage(TENANT, DOC, ALL, 1, 1.0, someoneElses, "steward", "c");
-        assertEquals(2, pageEvents(), "a viewing that is not this person's never suppresses a record");
-        assertFalse(events.getLast().safeDetailsJson().contains("viewingId"));
-    }
-
-    @Test
-    void anotherDocumentsViewingIdIsRecordedNormally() {
-        UUID otherDocViewing = open(OTHER_DOC, "steward");
-        service.renderPage(TENANT, DOC, ALL, 1, 1.0, otherDocViewing, "steward", "c");
-        service.renderPage(TENANT, DOC, ALL, 1, 1.0, otherDocViewing, "steward", "c");
-        assertEquals(2, pageEvents());
-    }
-
-    @Test
-    void noViewingIdIsRecordedNormally() {
-        open(DOC, "steward");
-        service.renderPage(TENANT, DOC, ALL, 1, 1.0, null, "steward", "c");
-        service.renderPage(TENANT, DOC, ALL, 1, 1.0, null, "steward", "c");
-        assertEquals(2, pageEvents());
-    }
-
-    @Test
-    void aViewingOlderThanEightHoursIsRecordedNormally() {
+        UUID otherDocument = open(OTHER_DOC, "steward");
         UUID old = UUID.randomUUID();
         events.add(new AuditEvent(old, TENANT, "USER", "steward", "DOCUMENT_VIEW_OPENED", "DOCUMENT", DOC.toString(),
                 NOW.minus(Duration.ofHours(8)).minusSeconds(1), "c", com.sdv.platform.domain.audit.AuditOutcome.SUCCESS, "{}"));
-        service.renderPage(TENANT, DOC, ALL, 1, 1.0, old, "steward", "c");
-        service.renderPage(TENANT, DOC, ALL, 1, 1.0, old, "steward", "c");
-        assertEquals(2, pageEvents());
+        for (UUID viewing : new UUID[] {null, UUID.randomUUID(), someoneElses, otherDocument, old}) {
+            refused(() -> service.renderPage(TENANT, DOC, ALL, 1, 1.0, viewing, "steward", "c"));
+            refused(() -> service.previews(TENANT, DOC, 1, 1, viewing, ALL, "steward", "c"));
+            refused(() -> service.search(TENANT, DOC, "x", viewing, ALL, "steward", "c"));
+        }
         assertEquals(Duration.ofHours(8), DocumentViewerService.VIEWING_LIFETIME);
+    }
+
+    @Test
+    void previewsAreRecordedOncePerViewingAndASearchNamesItsViewing() {
+        UUID viewing = open(DOC, "steward");
+        service.previews(TENANT, DOC, 1, 2, viewing, ALL, "steward", "c");
+        service.previews(TENANT, DOC, 2, 2, viewing, ALL, "steward", "c");
+        assertEquals(1, events.stream().filter(e -> e.action().equals("DOCUMENT_PREVIEWED")).count());
+        service.search(TENANT, DOC, "x", viewing, ALL, "steward", "c");
+        assertEquals("DOCUMENT_TEXT_SEARCHED", events.getLast().action());
+        assertTrue(events.getLast().safeDetailsJson().contains("\"viewingId\":\"" + viewing + "\""));
+        UUID again = open(DOC, "steward");
+        service.previews(TENANT, DOC, 1, 2, again, ALL, "steward", "c");
+        assertEquals(2, events.stream().filter(e -> e.action().equals("DOCUMENT_PREVIEWED")).count());
     }
 }
