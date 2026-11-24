@@ -8,9 +8,9 @@
   when a step fails.
 
   Steps:
-    1. Create sdv_seed_test (empty) and start Vero on it, in local mode, on port 8291 (the usual app on 8280 keeps
-       running). Vault is used as Start-SDV-Local.ps1 uses it: Vero reads the application token file itself; this
-       script only passes its path and never opens it.
+    1. Create sdv_seed_test (empty), run the schema step on it (task 0084: Vero never makes its tables) and start Vero
+       on it, in local mode (the local build, as start-local does), on port 8291 (the usual app on 8280 keeps running).
+       Vault is used as Start-SDV-Local.ps1 uses it: Vero reads the application token file itself; this script only passes its path and never opens it.
     2. Run .\Seed-SDV-Canvas-Demo.ps1 against it and check what it made.
     3. Run it again and check that nothing changed (every table, row by row; the audit too).
     4. Task 0035, the data moves on: what a person did by hand on 2026-11-21 is repeated through the API (Daniel's
@@ -74,10 +74,21 @@ try {
     # ---- 1. Empty database, Vero on it ----
     $null = Sql 'postgres' "create database $db owner sdv;"
     Pass "Created scratch database $db"
-    $env:SDV_KEY_PROVIDER = 'vault'; $env:SDV_VAULT_BASE_URL = 'http://127.0.0.1:8200'; $env:SDV_VAULT_TOKEN_FILE = $tokenFile
-    $env:SDV_LOCAL_DB_PASSWORD = & (Join-Path $root 'scripts\local\Get-SdvLocalDbPassword.ps1') -Root $root
+    $localPassword = & (Join-Path $root 'scripts\local\Get-SdvLocalDbPassword.ps1') -Root $root
+    # Windows PowerShell stops on a native program's stderr lines; the exit code decides here.
+    $ErrorActionPreference = 'Continue'
+    $env:SDV_SCHEMA_DB_PASSWORD = $localPassword
     try {
-        $script:app = Start-Process -FilePath 'java' -PassThru -WindowStyle Hidden -WorkingDirectory $run `
+        & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $root 'Update-SDV-Schema.ps1') update -Url "jdbc:postgresql://localhost:5433/$db" -Username sdv *> (Join-Path $run 'schema.log')
+        $schemaExit = $LASTEXITCODE
+    } finally { Remove-Item Env:SDV_SCHEMA_DB_PASSWORD -ErrorAction SilentlyContinue }
+    $ErrorActionPreference = 'Stop'
+    Assert-That ($schemaExit -eq 0) "Schema step on the scratch database (exit $schemaExit; log: $run\schema.log)"
+    $env:SDV_KEY_PROVIDER = 'vault'; $env:SDV_VAULT_BASE_URL = 'http://127.0.0.1:8200'; $env:SDV_VAULT_TOKEN_FILE = $tokenFile
+    $env:SDV_LOCAL_DB_PASSWORD = $localPassword
+    try {
+        # Task 0084: from the repository root, as start-local does: the local profile's file paths are relative to it.
+        $script:app = Start-Process -FilePath 'java' -PassThru -WindowStyle Hidden -WorkingDirectory $root `
             -ArgumentList @('-jar', "`"$jarPath`"", '--spring.profiles.active=local', "--server.port=$Port", "--spring.datasource.url=jdbc:postgresql://localhost:5433/$db") `
             -RedirectStandardOutput (Join-Path $run 'vero.out.log') -RedirectStandardError (Join-Path $run 'vero.err.log')
     } finally {
@@ -86,7 +97,7 @@ try {
     $watch = [Diagnostics.Stopwatch]::StartNew()
     while ($true) {
         if ($script:app.HasExited) { throw "FAIL: Vero exited during start. See $run\vero.out.log" }
-        try { if ((Invoke-RestMethod -Uri "http://localhost:$Port/actuator/health" -TimeoutSec 3).status -eq 'UP') { break } } catch { }
+        try { if ((Invoke-RestMethod -Uri "http://127.0.0.1:$Port/actuator/health" -TimeoutSec 3).status -eq 'UP') { break } } catch { }
         if ($watch.Elapsed.TotalSeconds -gt $StartTimeoutSeconds) { throw "FAIL: Vero did not start within $StartTimeoutSeconds s" }
         Start-Sleep -Milliseconds 500
     }
@@ -94,7 +105,7 @@ try {
     Assert-That ([int](Scalar 'select count(*) from ingestion_sources;') -eq 0) 'The empty database has no sending system before the seed'
 
     $seed = Join-Path $root 'Seed-SDV-Canvas-Demo.ps1'
-    $seedArgs = @{ Base = "http://localhost:$Port"; Database = $db; StorageFolder = (Join-Path $run 'storage-a'); StandbyStorageFolder = (Join-Path $run 'storage-b') }
+    $seedArgs = @{ Base = "http://127.0.0.1:$Port"; Database = $db; StorageFolder = (Join-Path $run 'storage-a'); StandbyStorageFolder = (Join-Path $run 'storage-b') }
 
     # Task 0035: the reset refuses a database the seed has not filled.
     $refused = $null
@@ -132,9 +143,11 @@ try {
     Assert-That ((Scalar "select display_name from tenants where tenant_id=$T;") -eq 'Acme Lending') 'Organization: Acme Lending'
 
     # ---- 3. Second run changes nothing ----
+    # Task 0084: without lic_last_seen: the licence clock's latest time seen, which every setup run moves forward by design.
     $snapshotSql = @'
 select string_agg(format('select %L || ''='' || count(*) || '':'' || coalesce(md5(string_agg(t::text, ''|'' order by t::text)), ''-'') from %I t', table_name, table_name), ' union all ' order by table_name)
-from information_schema.tables where table_schema='public' and table_type='BASE TABLE' and table_name not like 'databasechangelog%';
+from information_schema.tables where table_schema='public' and table_type='BASE TABLE' and table_name not like 'databasechangelog%'
+  and table_name <> 'lic_last_seen';
 '@
     $query = Scalar $snapshotSql
     $before = (Scalar ($query + ';')) -split "`n" | ForEach-Object { $_.Trim() } | Sort-Object
@@ -151,7 +164,7 @@ from information_schema.tables where table_schema='public' and table_type='BASE 
     }
 
     # ---- 4. Task 0035: the data moves on, as it did by hand on 2026-11-21 ----
-    $base = "http://localhost:$Port"
+    $base = "http://127.0.0.1:$Port"
     function As([string]$Subject, [string]$Roles) { @{ 'X-SDV-Tenant-Id' = 'bd960ee9-9d54-5053-9958-92aaa54893a6'; 'X-SDV-Subject' = $Subject; 'X-SDV-Roles' = $Roles } }
     function Call([string]$Method, [string]$Path, [hashtable]$H, [object]$Body = $null) {
         $p = @{ Uri = "$base$Path"; Method = $Method; Headers = $H; UseBasicParsing = $true; TimeoutSec = 30 }
@@ -216,7 +229,7 @@ from information_schema.tables where table_schema='public' and table_type='BASE 
     # ---- 6. Tour and compare against it ----
     if ($WithTour) {
         if (Get-NetTCPConnection -LocalPort $UiPort -State Listen -ErrorAction SilentlyContinue) { throw "Port $UiPort is in use." }
-        $env:SDV_UI_PORT = "$UiPort"; $env:SDV_API_TARGET = "http://localhost:$Port"
+        $env:SDV_UI_PORT = "$UiPort"; $env:SDV_API_TARGET = "http://127.0.0.1:$Port"
         try {
             $script:vite = Start-Process -FilePath 'cmd.exe' -ArgumentList @('/c', 'npm', 'run', 'dev') -WorkingDirectory $frontend -PassThru -WindowStyle Hidden `
                 -RedirectStandardOutput (Join-Path $run 'vite.out.log') -RedirectStandardError (Join-Path $run 'vite.err.log')
