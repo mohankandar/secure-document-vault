@@ -69,7 +69,7 @@
 #>
 [CmdletBinding()]
 param(
-    [string]$Base = 'http://localhost:8280',
+    [string]$Base = 'http://127.0.0.1:8280',
     [ValidatePattern('^sdv(_[a-z0-9_]+)?$')][string]$Database = 'sdv',
     # Task 0039 part 2: empty means the default under the script's folder. Windows PowerShell 5.1 leaves $PSScriptRoot
     # empty in parameter defaults under powershell.exe -File, so the defaults are filled in below, not here.

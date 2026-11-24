@@ -21,6 +21,15 @@ public class JdbcPageViewAuditRepository implements PageViewAuditPort {
 
     @Override
     public boolean isViewing(UUID tenantId, String actorId, UUID documentId, UUID viewingId, Instant notBefore) {
+        return viewing(tenantId, actorId, documentId, null, viewingId, notBefore);
+    }
+
+    @Override
+    public boolean isSealedViewing(UUID tenantId, String actorId, UUID documentId, UUID sealedId, UUID viewingId, Instant notBefore) {
+        return sealedId != null && viewing(tenantId, actorId, documentId, sealedId, viewingId, notBefore);
+    }
+
+    private boolean viewing(UUID tenantId, String actorId, UUID documentId, UUID sealedId, UUID viewingId, Instant notBefore) {
         Boolean found = jdbc.queryForObject("""
                 select exists(
                     select 1 from audit_events
@@ -32,9 +41,11 @@ public class JdbcPageViewAuditRepository implements PageViewAuditPort {
                        and target_type='DOCUMENT'
                        and target_id=:documentId
                        and outcome='SUCCESS'
+                       and safe_details->>'sealedOriginalId' is not distinct from cast(:sealedId as text)
                        and occurred_at>=:notBefore)
                 """, new MapSqlParameterSource()
                 .addValue("viewingId", viewingId)
+                .addValue("sealedId", sealedId == null ? null : sealedId.toString())
                 .addValue("tenantId", tenantId)
                 .addValue("actorId", actorId)
                 .addValue("documentId", documentId.toString())

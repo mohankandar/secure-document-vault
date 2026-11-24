@@ -7,6 +7,7 @@ import com.sdv.platform.application.pdf.EncryptedScratch;
 import com.sdv.platform.application.pdf.PdfInspector;
 import com.sdv.platform.application.pdf.PdfWork;
 import com.sdv.platform.application.port.AuditEventPort;
+import com.sdv.platform.application.port.HeldRedactionRepository;
 import com.sdv.platform.application.port.PageViewAuditPort;
 import com.sdv.platform.application.port.DocumentIntakeRepository;
 import com.sdv.platform.application.port.StorageProvider;
@@ -148,11 +149,16 @@ public class DocumentViewerService {
     }
 
     private <T> T onPdf(Document document, String actorId, String where, OnPdf<T> use) {
+        return onPdf(document, null, actorId, where, use);
+    }
+
+    /** sealed: the sealed original to read instead of the document's own copy (task 0066); null otherwise. */
+    private <T> T onPdf(Document document, HeldRedactionRepository.Sealed sealed, String actorId, String where, OnPdf<T> use) {
         UUID documentId = document.documentId();
         try {
             return work.run(document.tenantId() + ":" + actorId, () -> {
                 try (EncryptedScratch scratch = work.scratch();
-                     EncryptedScratch.Buffer plaintext = verifiedPlaintext(document, scratch);
+                     EncryptedScratch.Buffer plaintext = verifiedPlaintext(document, sealed, scratch);
                      PDDocument pdf = load(plaintext, scratch)) {
                     int most = pageLimit.maxPages(document.tenantId(), document.sourceId());
                     if (pdf.getNumberOfPages() > most) {
@@ -220,16 +226,77 @@ public class DocumentViewerService {
             UUID viewingId,
             String actorId,
             String correlationId) {
+        requirePageAndScale(pageNumber, scale);
+
+        Viewable viewable = requireViewable(tenantId, documentId, clearance, DocumentAccessGuard.Attempt.PAGE, actorId, correlationId);
+        Document document = viewable.document();
+        Instant notBefore = requireViewing(tenantId, documentId, viewingId, actorId);
+        PageImage drawn = draw(document, null, actorId, pageNumber, scale);
+        // Recorded before the page is handed out; a failure to record means no page.
+        recordPage(viewable, null, pageNumber, scale, viewingId, notBefore, actorId, correlationId);
+        return drawn;
+    }
+
+    /**
+     * Task 0066: opens a sealed original. The caller ({@code SealedOriginalService}) has found it; the checks and the
+     * audit are here: Restricted Stewards only, an opening of its own.
+     */
+    public ViewerMetadata sealedMetadata(HeldRedactionRepository.Sealed sealed, Clearance clearance, String actorId, String correlationId) {
+        Viewable viewable = requireSealedViewable(sealed, clearance, DocumentAccessGuard.Attempt.OPEN, actorId, correlationId);
+        int pageCount = onPdf(viewable.document(), sealed, actorId, "open sealed original", PDDocument::getNumberOfPages);
+        UUID viewingId = appendAudit(sealed.tenantId(), actorId, "DOCUMENT_VIEW_OPENED", sealed.documentId(), correlationId,
+                "{\"pageCount\":" + pageCount + sealedDetail(sealed) + levelDetail(viewable)
+                        + com.sdv.platform.application.access.AuditRoles.field(clearance) + "}");
+        return new ViewerMetadata(sealed.documentId(), viewable.document().originalFilename(), pageCount, viewingId);
+    }
+
+    /** Task 0066: one page of a sealed original, of an opening of it ({@link #sealedMetadata}). */
+    public PageImage sealedPage(HeldRedactionRepository.Sealed sealed, Clearance clearance, int pageNumber, double scale,
+                                UUID viewingId, String actorId, String correlationId) {
+        requirePageAndScale(pageNumber, scale);
+        Viewable viewable = requireSealedViewable(sealed, clearance, DocumentAccessGuard.Attempt.PAGE, actorId, correlationId);
+        Instant notBefore = clock.instant().minus(VIEWING_LIFETIME);
+        if (viewingId == null || !pageViews.isSealedViewing(sealed.tenantId(), actorId, sealed.documentId(), sealed.sealedId(), viewingId, notBefore)) {
+            throw new CodedRefusal.Conflict(SdvErrorCode.DOC_011, "Open the document again to go on reading it.", "document=" + sealed.documentId() + " no viewing");
+        }
+        PageImage drawn = draw(viewable.document(), sealed, actorId, pageNumber, scale);
+        recordPage(viewable, sealed, pageNumber, scale, viewingId, notBefore, actorId, correlationId);
+        return drawn;
+    }
+
+    private Viewable requireSealedViewable(HeldRedactionRepository.Sealed sealed, Clearance clearance,
+                                           DocumentAccessGuard.Attempt attempt, String actorId, String correlationId) {
+        Document document = documents.findDocumentByIdForTenant(sealed.tenantId(), sealed.documentId())
+                .orElseThrow(() -> DocumentRefusals.notFound(sealed.documentId()));
+        SensitivityLevel level = access.requireSealedOpenable(document, clearance, attempt, actorId, correlationId);
+        return new Viewable(document, level);
+    }
+
+    private static String sealedDetail(HeldRedactionRepository.Sealed sealed) {
+        return sealed == null ? "" : ",\"sealedOriginalId\":\"" + sealed.sealedId() + "\"";
+    }
+
+    private static void requirePageAndScale(int pageNumber, double scale) {
         if (pageNumber < 1) throw invalid("page must be at least 1.");
         if (!Double.isFinite(scale) || scale < MIN_SCALE || scale > MAX_SCALE) {
             throw invalid(
                     "scale must be between " + MIN_SCALE + " and " + MAX_SCALE + ".");
         }
+    }
 
-        Viewable viewable = requireViewable(tenantId, documentId, clearance, DocumentAccessGuard.Attempt.PAGE, actorId, correlationId);
+    private void recordPage(Viewable viewable, HeldRedactionRepository.Sealed sealed, int pageNumber, double scale, UUID viewingId,
+                            Instant notBefore, String actorId, String correlationId) {
         Document document = viewable.document();
-        Instant notBefore = requireViewing(tenantId, documentId, viewingId, actorId);
-        PageImage drawn = onPdf(document, actorId, "page " + pageNumber, pdf -> {
+        pageViews.appendPageEventOnce(new AuditEvent(
+                UUID.randomUUID(), document.tenantId(), "USER", actorId, "DOCUMENT_PAGE_VIEWED", "DOCUMENT",
+                document.documentId().toString(), clock.instant(), correlationId, AuditOutcome.SUCCESS,
+                "{\"page\":" + pageNumber + ",\"scale\":" + String.format(Locale.ROOT, "%.2f", scale) + ",\"viewingId\":\"" + viewingId + "\"" + sealedDetail(sealed) + levelDetail(viewable) + "}"),
+                viewingId, pageNumber, notBefore);
+    }
+
+    private PageImage draw(Document document, HeldRedactionRepository.Sealed sealed, String actorId, int pageNumber, double scale) {
+        UUID documentId = document.documentId();
+        return onPdf(document, sealed, actorId, "page " + pageNumber, pdf -> {
             if (pageNumber > pdf.getNumberOfPages()) {
                 throw invalid(
                         "page exceeds the document page count of " + pdf.getNumberOfPages() + ".");
@@ -264,13 +331,6 @@ public class DocumentViewerService {
                     pageNumber,
                     pdf.getNumberOfPages());
         });
-        // Recorded before the page is handed out; a failure to record means no page.
-        pageViews.appendPageEventOnce(new AuditEvent(
-                UUID.randomUUID(), tenantId, "USER", actorId, "DOCUMENT_PAGE_VIEWED", "DOCUMENT",
-                documentId.toString(), clock.instant(), correlationId, AuditOutcome.SUCCESS,
-                "{\"page\":" + pageNumber + ",\"scale\":" + String.format(Locale.ROOT, "%.2f", scale) + ",\"viewingId\":\"" + viewingId + "\"" + levelDetail(viewable) + "}"),
-                viewingId, pageNumber, notBefore);
-        return drawn;
     }
 
     /**
@@ -438,17 +498,17 @@ public class DocumentViewerService {
      * storage provider, reading storage or the key service is SDV-DOC-003; a size or fingerprint that no longer
      * matches, a decryption check, or a document too big for the in-memory viewer is SDV-DOC-004.
      */
-    private EncryptedScratch.Buffer verifiedPlaintext(Document document, EncryptedScratch scratch) {
+    private EncryptedScratch.Buffer verifiedPlaintext(Document document, HeldRedactionRepository.Sealed sealed, EncryptedScratch scratch) {
         UUID documentId = document.documentId();
-        DocumentStorageRef storageRef = documents.findStorageRef(document.tenantId(), documentId)
+        DocumentStorageRef storageRef = sealed != null ? sealed.storage() : documents.findStorageRef(document.tenantId(), documentId)
                 .orElseThrow(() -> unreadable(documentId, "storage metadata missing", null));
-        DocumentCryptoMetadata cryptoMetadata = documents.findCryptoMetadata(document.tenantId(), documentId)
+        DocumentCryptoMetadata cryptoMetadata = sealed != null ? sealed.crypto() : documents.findCryptoMetadata(document.tenantId(), documentId)
                 .orElseThrow(() -> unreadable(documentId, "crypto metadata missing", null));
         StorageVolume volume = volumes.findById(document.tenantId(), storageRef.storageVolumeId())
                 .orElseThrow(() -> unreadable(documentId, "storage volume missing", null));
         StorageProvider provider = provider(documentId, storageRef.providerId());
 
-        Long expectedSize = document.contentSizeBytes();
+        Long expectedSize = sealed != null ? Long.valueOf(sealed.contentSizeBytes()) : document.contentSizeBytes();
         if (expectedSize == null || expectedSize <= 0) {
             throw unreadable(documentId, "size metadata missing", null);
         }
@@ -463,7 +523,7 @@ public class DocumentViewerService {
         try {
             plaintext = new FixedPlaintextBuffer(
                     expectedSize,
-                    document.contentSha256(), scratch.createBuffer());
+                    sealed != null ? sealed.contentSha256() : document.contentSha256(), scratch.createBuffer());
 
             InputStream opened;
             try {

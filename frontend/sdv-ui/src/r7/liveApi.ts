@@ -102,8 +102,16 @@ export const createDocumentComment = (id:string,comment:string) => roleApi<LiveC
 export const secureDownload = (id:string) => contentDownload('/api/v1/business/documents/'+encodeURIComponent(id)+'/download','business')
 export const recordPrintEvent = (id:string) => roleApi<void>('/api/v1/business/documents/'+encodeURIComponent(id)+'/print-event','business',{method:'POST'})
 export type CorrectionRegion = {pageNumber:number;x:number;y:number;width:number;height:number}
+/** Task 0066: the sealed originals of a document redacted on legal hold (Restricted Stewards; reading only). */
+export type SealedOriginal = { sealedId: string; sealedAt: string }
+const sealedPath = (id: string) => '/api/v1/business/documents/' + encodeURIComponent(id) + '/sealed-originals'
+export const sealedOriginals = (id: string) => roleApi<SealedOriginal[]>(sealedPath(id), 'business')
+export const openSealedOriginal = (id: string, sealedId: string) => roleApi<ViewerMetadata>(sealedPath(id) + '/' + encodeURIComponent(sealedId) + '/viewer', 'business')
+export const sealedOriginalPage = (id: string, sealedId: string, page: number, viewingId: string) =>
+  againWhenBusy(() => contentBinary(sealedPath(id) + '/' + encodeURIComponent(sealedId) + '/viewer/pages/' + page + '?scale=1.25&viewingId=' + encodeURIComponent(viewingId), 'business'))
+/** status APPROVAL_REQUESTED: the document is on legal hold; a Business admin approves first (task 0066). */
 export const permanentRedaction = (id:string,reason:string,regions:CorrectionRegion[]) =>
-  roleApi<unknown>('/api/v1/business/documents/'+encodeURIComponent(id)+'/redactions','steward',{method:'POST',body:JSON.stringify({reason,confirmed:true,regions})})
+  roleApi<{status:string}>('/api/v1/business/documents/'+encodeURIComponent(id)+'/redactions','steward',{method:'POST',body:JSON.stringify({reason,confirmed:true,regions})})
 
 export type RolePolicy = {roles:Record<string,Record<string,boolean>>;configurableCapabilities:string[]}
 export const getRolePolicy = () => roleApi<RolePolicy>('/api/v1/admin/role-capabilities','businessAdmin')
@@ -203,7 +211,8 @@ export const raiseLevel = (scope: LevelScope, id: string, level: SensitivityLeve
 export const askToLowerLevel = (scope: LevelScope, id: string, level: SensitivityLevel, reason: string) =>
   roleApi<LevelChangeResult>(levelPath(scope, id) + '/lower-request', 'business', { method: 'POST', body: JSON.stringify({ level, reason }) })
 
-export type AccessRequestKind = 'PRINT' | 'DOWNLOAD' | 'LOWER_LEVEL' | 'LOWER_RECORD_LEVEL'
+/** REDACT_HELD (task 0066): permanently redact a document on legal hold. */
+export type AccessRequestKind = 'PRINT' | 'DOWNLOAD' | 'LOWER_LEVEL' | 'LOWER_RECORD_LEVEL' | 'REDACT_HELD'
 export type AccessRequestStatus = 'PENDING' | 'APPROVED' | 'DECLINED' | 'USED' | 'EXPIRED'
 /**
  * One of the signed-in Steward's own requests. expiresAt: while PENDING, when it expires undecided; once a print or

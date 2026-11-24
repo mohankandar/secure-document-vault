@@ -106,7 +106,7 @@ public class SecurePdfViewerController {
     }
 
     /** A missing or malformed viewing ID is none: the request is refused (SDV-DOC-011). */
-    private static UUID parseViewingId(String value) {
+    static UUID parseViewingId(String value) {
         if (value == null || value.isBlank()) return null;
         try {
             return UUID.fromString(value.trim());
@@ -121,7 +121,7 @@ public class SecurePdfViewerController {
         return principal;
     }
 
-    private static HttpHeaders viewerHeaders() {
+    static HttpHeaders viewerHeaders() {
         HttpHeaders headers = new HttpHeaders();
         headers.setCacheControl(CacheControl.noStore().cachePrivate().mustRevalidate());
         headers.setPragma("no-cache");

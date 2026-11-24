@@ -268,6 +268,21 @@ final class ApprovalsFixture {
      * their own request (the table's check).
      */
     static final class MemoryAccessRequests implements AccessRequestRepository {
+        /** Task 0066: what REDACT_HELD requests ask for, and those approved. */
+        final Map<UUID, String> heldRegions = new HashMap<>();
+        final java.util.Set<UUID> heldApproved = new java.util.HashSet<>();
+        boolean heldStillApplies = true;
+
+        @Override
+        public void insertHeldRedaction(AccessRequest request, String regionsJson, String contentSha256) {
+            heldRegions.put(request.requestId(), regionsJson);
+        }
+
+        @Override
+        public boolean approveHeldRedaction(UUID tenantId, UUID requestId, UUID documentId) {
+            return heldStillApplies && heldRegions.containsKey(requestId) && heldApproved.add(requestId);
+        }
+
         final Map<UUID, AccessRequest> rows = new LinkedHashMap<>();
         private final ApprovalsFixture world;
 

@@ -82,7 +82,7 @@ jobs:
           for t in LegalHoldPostgresTest AccessRequestPostgresTest DuplicateIntakePostgresTest IntakeReportPostgresTest \
                    SensitivityReportPostgresTest PlatformIdentityPostgresTest SenderProfileServerContractTest \
                    UnidentifiedIntakeAttemptPostgresTest QuarantinePostgresTest QuarantineFilterBlockingPostgresTest QuarantineScalePostgresTest StorageReportPostgresTest ActivityReportPostgresTest RestrictionsPostgresTest PrimaryIdentifierPostgresTest \
-                   SealedAuditPostgresTest VeroSetupPlanPostgresTest; do
+                   SealedAuditPostgresTest HeldRedactionPostgresTest VeroSetupPlanPostgresTest; do
             report=$(find . -path '*/surefire-reports/TEST-*'"$t"'.xml' | head -1)
             if [ -z "$report" ] || grep -q 'skipped="[1-9]' "$report" || grep -q 'tests="0"' "$report"; then
               echo "::error::$t did not run"; missing=1
