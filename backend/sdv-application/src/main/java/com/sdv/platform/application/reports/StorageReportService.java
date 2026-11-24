@@ -1,8 +1,9 @@
 package com.sdv.platform.application.reports;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.DeserializationFeature;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import com.sdv.platform.application.json.VeroJson;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.DeserializationFeature;
+import tools.jackson.databind.json.JsonMapper;
 import com.sdv.platform.application.audit.AuditCsv;
 import com.sdv.platform.application.port.AuditEventPort;
 import com.sdv.platform.application.port.IntakeReportRepository;
@@ -63,7 +64,7 @@ public class StorageReportService {
     public static final String EXPORT_ACTION = "STORAGE_REPORT_EXPORTED";
     public static final int MONTHS = 12;
     static final String CSV_HEADER = "Section,Line,Level,Measure,Count,Counted at (UTC),Time zone";
-    private static final ObjectMapper JSON = new ObjectMapper().configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+    private static final JsonMapper JSON = ((JsonMapper) VeroJson.mapper()).rebuild().disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES).build();
 
     private final StorageReportRepository storage;
     private final IntakeReportRepository tenants;
@@ -291,7 +292,7 @@ public class StorageReportService {
     private static String write(Counts counts) {
         try {
             return JSON.writeValueAsString(counts);
-        } catch (JsonProcessingException ex) {
+        } catch (JacksonException ex) {
             throw new InternalCheckFailed("The storage counts could not be written.");
         }
     }
@@ -299,7 +300,7 @@ public class StorageReportService {
     private static Counts read(String json) {
         try {
             return JSON.readValue(json, Counts.class);
-        } catch (JsonProcessingException ex) {
+        } catch (JacksonException ex) {
             throw new InternalCheckFailed("The storage counts kept could not be read.");
         }
     }
@@ -307,7 +308,7 @@ public class StorageReportService {
     private static String json(Map<String, Object> details) {
         try {
             return JSON.writeValueAsString(details);
-        } catch (JsonProcessingException ex) {
+        } catch (JacksonException ex) {
             throw InternalCheckFailed.auditNotWritten("The export could not be audited, so it was not made.", ex);
         }
     }

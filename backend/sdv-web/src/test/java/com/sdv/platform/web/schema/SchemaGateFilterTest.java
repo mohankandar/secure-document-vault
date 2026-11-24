@@ -23,11 +23,11 @@ class SchemaGateFilterTest {
         MockHttpServletResponse response = call(SchemaVersion.State.OLDER, "/api/v1/business/search");
         assertEquals(503, response.getStatus());
         // Task 0036: SDV-SYS-001 in place of DATABASE_OLDER, with the reference (the correlation ID) and the time.
-        com.fasterxml.jackson.databind.JsonNode body = new com.fasterxml.jackson.databind.ObjectMapper().readTree(response.getContentAsString());
-        assertEquals("SDV-SYS-001", body.get("code").asText());
-        assertEquals(SchemaVersion.OLDER_MESSAGE, body.get("message").asText());
-        assertFalse(body.get("reference").asText().isBlank());
-        assertEquals(body.get("reference").asText(), response.getHeader("X-Correlation-Id"));
+        tools.jackson.databind.JsonNode body = new tools.jackson.databind.ObjectMapper().readTree(response.getContentAsString());
+        assertEquals("SDV-SYS-001", body.get("code").asString());
+        assertEquals(SchemaVersion.OLDER_MESSAGE, body.get("message").asString());
+        assertFalse(body.get("reference").asString().isBlank());
+        assertEquals(body.get("reference").asString(), response.getHeader("X-Correlation-Id"));
         assertTrue(body.has("timestamp"));
         assertEquals(4, body.size());
     }
@@ -48,10 +48,10 @@ class SchemaGateFilterTest {
     void anUnreachableDatabaseAtStartIsSys014WhileVeroKeepsTrying() throws Exception {
         MockHttpServletResponse response = call(SchemaVersion.State.UNREACHABLE, "/api/v1/operations/summary");
         assertEquals(503, response.getStatus());
-        com.fasterxml.jackson.databind.JsonNode body = new com.fasterxml.jackson.databind.ObjectMapper().readTree(response.getContentAsString());
-        assertEquals("SDV-SYS-014", body.get("code").asText());
-        assertEquals("Vero can't reach its database just now. Try again in a few minutes.", body.get("message").asText());
-        assertEquals(body.get("reference").asText(), response.getHeader("X-Correlation-Id"));
+        tools.jackson.databind.JsonNode body = new tools.jackson.databind.ObjectMapper().readTree(response.getContentAsString());
+        assertEquals("SDV-SYS-014", body.get("code").asString());
+        assertEquals("Vero can't reach its database just now. Try again in a few minutes.", body.get("message").asString());
+        assertEquals(body.get("reference").asString(), response.getHeader("X-Correlation-Id"));
         assertEquals(4, body.size());
     }
 

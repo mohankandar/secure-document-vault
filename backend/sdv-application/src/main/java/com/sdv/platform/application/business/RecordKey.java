@@ -1,8 +1,9 @@
 package com.sdv.platform.application.business;
 
+import com.sdv.platform.application.json.VeroJson;
 import com.sdv.platform.domain.error.InternalCheckFailed;
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.ObjectMapper;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -22,7 +23,7 @@ import java.util.UUID;
  * own: {@code submission:<submission id>}. The sending system is not in the key; it is its own column.
  */
 public final class RecordKey {
-    private static final ObjectMapper JSON = new ObjectMapper();
+    private static final ObjectMapper JSON = VeroJson.mapper();
     private static final String IDENTIFIERS = "identifiers:";
     private static final String SUBMISSION = "submission:";
 
@@ -48,7 +49,7 @@ public final class RecordKey {
                 .toList();
         try {
             return IDENTIFIERS + JSON.writeValueAsString(sorted);
-        } catch (JsonProcessingException ex) {
+        } catch (JacksonException ex) {
             throw new InternalCheckFailed("Could not write the record key.", ex);
         }
     }
@@ -97,18 +98,18 @@ public final class RecordKey {
         }
         if (!recordKey.startsWith(IDENTIFIERS)) throw new IllegalArgumentException("Unknown record key.");
         try {
-            com.fasterxml.jackson.databind.JsonNode array = JSON.readTree(recordKey.substring(IDENTIFIERS.length()));
+            tools.jackson.databind.JsonNode array = JSON.readTree(recordKey.substring(IDENTIFIERS.length()));
             if (array == null || !array.isArray() || array.isEmpty()) throw new IllegalArgumentException("Unknown record key.");
             List<Part> parts = new java.util.ArrayList<>();
-            for (com.fasterxml.jackson.databind.JsonNode pair : array) {
-                if (!pair.isArray() || pair.size() != 2 || !pair.get(0).isTextual() || !pair.get(1).isTextual()) {
+            for (tools.jackson.databind.JsonNode pair : array) {
+                if (!pair.isArray() || pair.size() != 2 || !pair.get(0).isString() || !pair.get(1).isString()) {
                     throw new IllegalArgumentException("Unknown record key.");
                 }
-                parts.add(new Part(pair.get(0).asText(), pair.get(1).asText()));
+                parts.add(new Part(pair.get(0).asString(), pair.get(1).asString()));
             }
             if (!ofIdentifiers(parts).equals(recordKey)) throw new IllegalArgumentException("Unknown record key.");
             return new Parsed(List.copyOf(parts), null);
-        } catch (JsonProcessingException ex) {
+        } catch (JacksonException ex) {
             throw new IllegalArgumentException("Unknown record key.", ex);
         }
     }

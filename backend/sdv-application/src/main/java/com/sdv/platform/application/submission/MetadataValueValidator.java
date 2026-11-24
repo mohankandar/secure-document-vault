@@ -1,7 +1,8 @@
 package com.sdv.platform.application.submission;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import com.sdv.platform.application.json.VeroJson;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 import com.sdv.platform.domain.error.CodedRefusal;
 import com.sdv.platform.domain.error.SdvErrorCode;
 import com.sdv.platform.domain.error.SetupProblem;
@@ -20,7 +21,7 @@ import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
 
 final class MetadataValueValidator {
-    private static final ObjectMapper JSON = new ObjectMapper();
+    private static final ObjectMapper JSON = VeroJson.mapper();
 
     /** Task 0063: no metadata value is longer, whatever its field's rules say. */
     static final int MAX_VALUE_LENGTH = 4_000;
@@ -161,9 +162,9 @@ final class MetadataValueValidator {
             checkMaxLength(rules, value, definition.fieldKey());
 
             JsonNode pattern = rules.get("pattern");
-            if (pattern != null && pattern.isTextual()) {
+            if (pattern != null && pattern.isString()) {
                 try {
-                    if (!matches(pattern.asText(), value, definition.fieldKey())) {
+                    if (!matches(pattern.asString(), value, definition.fieldKey())) {
                         throw new IllegalArgumentException("Metadata field '" + definition.fieldKey() + "' does not match its configured pattern.");
                     }
                 } catch (PatternSyntaxException ex) {
@@ -191,8 +192,8 @@ final class MetadataValueValidator {
 
     private static void checkLength(JsonNode rules, String ruleName, String value, String fieldKey, boolean exact) {
         JsonNode node = rules.get(ruleName);
-        if (node == null || !node.canConvertToInt()) return;
-        int limit = node.asInt();
+        if (node == null || !node.isNumber() || !node.canConvertToInt()) return;
+        int limit = node.numberValue().intValue();
         if (limit < 0) throw new IllegalStateException("Metadata field '" + fieldKey + "' has an invalid " + ruleName + " rule.");
         if (exact && value.length() != limit) {
             throw new IllegalArgumentException("Metadata field '" + fieldKey + "' must contain exactly " + limit + " characters after normalization.");
@@ -204,8 +205,8 @@ final class MetadataValueValidator {
 
     private static void checkMaxLength(JsonNode rules, String value, String fieldKey) {
         JsonNode node = rules.get("maxLength");
-        if (node == null || !node.canConvertToInt()) return;
-        int limit = node.asInt();
+        if (node == null || !node.isNumber() || !node.canConvertToInt()) return;
+        int limit = node.numberValue().intValue();
         if (limit < 0) throw new IllegalStateException("Metadata field '" + fieldKey + "' has an invalid maxLength rule.");
         if (value.length() > limit) {
             throw new IllegalArgumentException("Metadata field '" + fieldKey + "' exceeds its configured maximum length.");

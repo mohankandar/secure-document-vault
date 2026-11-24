@@ -1,10 +1,11 @@
 package com.sdv.platform.application.reports;
 
+import com.sdv.platform.application.json.VeroJson;
 import com.sdv.platform.domain.error.SdvErrorCode;
 import com.sdv.platform.domain.error.StartupFailure;
 import com.sdv.platform.domain.error.InternalCheckFailed;
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.ObjectMapper;
 import com.sdv.platform.application.audit.AuditCsv;
 import com.sdv.platform.application.port.AuditEventPort;
 import com.sdv.platform.application.port.IntakeReportRepository;
@@ -80,7 +81,7 @@ public class IntakeReportService {
     public static final String EXPORT_ACTION = "INTAKE_REPORT_EXPORTED";
     public static final String NOTICE_MESSAGE = "An uncorrected copy of a corrected document was sent again; nothing was stored";
     static final String CSV_HEADER_START = "SHA-256 checksum,Request ID,Sending system,Primary identifier,Pages,";
-    private static final ObjectMapper JSON = new ObjectMapper();
+    private static final ObjectMapper JSON = VeroJson.mapper();
     private static final DateTimeFormatter LOCAL = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm");
 
     private final IntakeReportRepository reports;
@@ -372,7 +373,7 @@ public class IntakeReportService {
     private static String json(Map<String, Object> details) {
         try {
             return JSON.writeValueAsString(details);
-        } catch (JsonProcessingException ex) {
+        } catch (JacksonException ex) {
             throw InternalCheckFailed.auditNotWritten("The export could not be audited, so it was not made.", ex);
         }
     }

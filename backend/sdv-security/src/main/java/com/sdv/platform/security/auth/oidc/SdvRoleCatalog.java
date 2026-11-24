@@ -1,8 +1,9 @@
 package com.sdv.platform.security.auth.oidc;
 
+import com.sdv.platform.application.json.VeroJson;
 import com.documentplatform.identity.admission.EntityRoleCatalog;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 import com.sdv.platform.security.SdvRole;
 
 import java.io.IOException;
@@ -41,17 +42,19 @@ public final class SdvRoleCatalog implements EntityRoleCatalog {
     public static SdvRoleCatalog shipped() {
         try (InputStream in = SdvRoleCatalog.class.getClassLoader().getResourceAsStream(RESOURCE)) {
             if (in == null) throw new IllegalStateException("The product-roles file " + RESOURCE + " is missing from the package.");
-            return parse(new ObjectMapper().readTree(in));
+            return parse(VeroJson.mapper().readTree(in));
         } catch (IOException e) {
             throw new UncheckedIOException("The product-roles file " + RESOURCE + " could not be read.", e);
+        } catch (tools.jackson.core.JacksonException e) {
+            throw new IllegalStateException("The product-roles file " + RESOURCE + " could not be read.", e);
         }
     }
 
     static SdvRoleCatalog parse(JsonNode file) {
-        if (!"platform-product-roles/1".equals(file.path("format").asText())) {
+        if (!"platform-product-roles/1".equals(file.path("format").asString(""))) {
             throw new IllegalStateException("The product-roles file is not platform-product-roles/1.");
         }
-        if (!PRODUCT_CODE.equals(file.path("productCode").asText())) {
+        if (!PRODUCT_CODE.equals(file.path("productCode").asString(""))) {
             throw new IllegalStateException("The product-roles file is not for product " + PRODUCT_CODE + ".");
         }
         return new SdvRoleCatalog(names(file.path("roles")), names(file.path("platformRoles")));
@@ -59,7 +62,7 @@ public final class SdvRoleCatalog implements EntityRoleCatalog {
 
     private static Set<String> names(JsonNode list) {
         Set<String> out = new LinkedHashSet<>();
-        for (JsonNode n : list) out.add(n.asText());
+        for (JsonNode n : list) out.add(VeroJson.text(n));
         return out;
     }
 

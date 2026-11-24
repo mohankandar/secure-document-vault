@@ -2,8 +2,8 @@ package com.sdv.platform.security.auth.oidc;
 
 import com.documentplatform.identity.IdentityClaimConfig;
 import com.documentplatform.identity.spring.OidcJwtIdentityNormalizer;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 import com.nimbusds.jose.jwk.RSAKey;
 import com.nimbusds.jwt.JWTClaimsSet;
 import com.sdv.platform.application.access.ActiveTenantCache;
@@ -284,7 +284,7 @@ class IngestionContractTest {
         JsonNode notReady = api.path("paths").path(READINESS).path("get").path("responses").path("503");
         assertEquals(Set.of("SDV-SYS-018"), texts(notReady.path("x-sdv-codes")), "readiness 503 can be busy");
         assertTrue(notReady.path("headers").has("Retry-After"), "readiness 503 declares Retry-After");
-        assertEquals("yes", notReady.path("x-sdv-retry").asText());
+        assertEquals("yes", notReady.path("x-sdv-retry").asString());
         JsonNode body = api.path("components").path("schemas").path("Readiness").path("properties");
         assertTrue(body.has("code") && body.has("message"), "the Readiness body has the busy code and message");
         assertTrue(texts(body.path("status").path("examples")).contains("BUSY"));
@@ -310,9 +310,9 @@ class IngestionContractTest {
                 assertNotNull(retryAfter, label);
                 assertTrue(retryAfter.matches("[1-9][0-9]*"), label + ": whole seconds above 0, got " + retryAfter);
                 JsonNode answer = json.readTree(result.getResponse().getContentAsString());
-                assertEquals("BUSY", answer.path("status").asText(), label);
-                assertEquals(c.code(), answer.path("code").asText(), label);
-                assertFalse(answer.path("message").asText().isBlank(), label);
+                assertEquals("BUSY", answer.path("status").asString(), label);
+                assertEquals(c.code(), answer.path("code").asString(), label);
+                assertFalse(answer.path("message").asString().isBlank(), label);
             } else {
                 assertNull(retryAfter, label + ": no Retry-After");
                 assertEquals(c.spring(), result.getResponse().getContentAsString(), label + ": Spring's answer, unchanged");
@@ -334,8 +334,8 @@ class IngestionContractTest {
             boolean correlation = false;
             for (JsonNode p : op.node().path("parameters")) {
                 JsonNode param = resolve(p);
-                String in = param.path("in").asText();
-                String name = param.path("name").asText();
+                String in = param.path("in").asString();
+                String name = param.path("name").asString();
                 if (in.equals("header") && name.equals(CorrelationIdFilter.HEADER)) {
                     correlation = true;
                     assertFalse(param.path("required").asBoolean(), "X-Correlation-Id is optional");
@@ -391,12 +391,12 @@ class IngestionContractTest {
         for (Operation op : operations()) {
             if (!op.path().startsWith(INGESTION)) continue;
             Class<?> returned = handlers.get(op.method() + " " + op.path()).answerType();
-            for (Iterator<Map.Entry<String, JsonNode>> it = op.node().path("responses").fields(); it.hasNext(); ) {
+            for (Iterator<Map.Entry<String, JsonNode>> it = op.node().path("responses").properties().iterator(); it.hasNext(); ) {
                 Map.Entry<String, JsonNode> response = it.next();
                 if (!response.getKey().startsWith("2")) continue;
                 JsonNode schema = resolve(response.getValue()).path("content").path("application/json").path("schema");
-                if (schema.path("type").asText().equals("array")) schema = schema.path("items");
-                String name = schema.path("$ref").asText().replace("#/components/schemas/", "");
+                if (schema.path("type").asString().equals("array")) schema = schema.path("items");
+                String name = schema.path("$ref").asString().replace("#/components/schemas/", "");
                 Pair expected = pairs.stream().filter(p -> p.type().equals(returned)).findFirst().orElseThrow();
                 assertEquals(expected.schema(), name, op.id() + " " + response.getKey() + " answers with " + returned.getSimpleName());
             }
@@ -424,7 +424,7 @@ class IngestionContractTest {
         assertEquals(Set.of("yes", "new-token", "no", "after-fix"), retryRules);
         Set<String> used = new TreeSet<>();
         for (Operation op : operations()) {
-            for (Iterator<Map.Entry<String, JsonNode>> it = op.node().path("responses").fields(); it.hasNext(); ) {
+            for (Iterator<Map.Entry<String, JsonNode>> it = op.node().path("responses").properties().iterator(); it.hasNext(); ) {
                 Map.Entry<String, JsonNode> entry = it.next();
                 JsonNode response = resolve(entry.getValue());
                 String status = entry.getKey();
@@ -432,20 +432,20 @@ class IngestionContractTest {
                     assertFalse(response.has("x-sdv-codes"), op.id() + " " + status);
                     continue;
                 }
-                if ("gateway".equals(response.path("x-sdv-sent-by").asText())) {
+                if ("gateway".equals(response.path("x-sdv-sent-by").asString())) {
                     assertEquals("429", status, "only 429 is a gateway's");
                     continue;
                 }
                 if (op.path().equals(READINESS)) continue;
                 assertTrue(response.path("x-sdv-codes").size() > 0, op.id() + " " + status + " lists its codes");
                 assertEquals("#/components/schemas/Error",
-                        response.path("content").path("application/json").path("schema").path("$ref").asText(),
+                        response.path("content").path("application/json").path("schema").path("$ref").asString(),
                         op.id() + " " + status + " has the error body");
                 for (String code : texts(response.path("x-sdv-codes"))) {
                     String key = status + " " + code;
                     used.add(key);
                     assertTrue(answers.has(key), "x-sdv-answers has " + key);
-                    assertTrue(retryRules.contains(answers.path(key).path("retry").asText()), key + " has a retry rule");
+                    assertTrue(retryRules.contains(answers.path(key).path("retry").asString()), key + " has a retry rule");
                     // Task 0040 part 2 (owner answer 2): no generic code is left; every code is a product code.
                     assertTrue(productCodes.contains(code), code + " is a product code");
                     assertTrue(catalog.contains("### " + code + ":"), code + " is in error-codes.md");
@@ -464,13 +464,13 @@ class IngestionContractTest {
     void theBusyAnswerIsTheOnlyOneWithRetryAfterAndEvery503IsRetry() {
         JsonNode answers = api.path("x-sdv-answers");
         Set<String> withRetryAfter = new TreeSet<>();
-        for (Iterator<Map.Entry<String, JsonNode>> it = answers.fields(); it.hasNext(); ) {
+        for (Iterator<Map.Entry<String, JsonNode>> it = answers.properties().iterator(); it.hasNext(); ) {
             Map.Entry<String, JsonNode> entry = it.next();
             if (entry.getValue().path("retryAfter").asBoolean(false)) withRetryAfter.add(entry.getKey());
             if (entry.getKey().startsWith("503 ")) {
                 // Owner answer 2 to report 0040: SDV-STO-004 is after-fix (the installer must fix it); the rest retry.
                 String rule = entry.getKey().equals("503 SDV-STO-004") ? "after-fix" : "yes";
-                assertEquals(rule, entry.getValue().path("retry").asText(), entry.getKey());
+                assertEquals(rule, entry.getValue().path("retry").asString(), entry.getKey());
             }
             assertFalse(entry.getKey().startsWith("429 "), "Vero never answers 429");
         }
@@ -484,15 +484,15 @@ class IngestionContractTest {
             busy++;
         }
         assertEquals(OPERATIONS.size(), busy);
-        assertTrue(api.path("x-sdv-retry").path("yes").asText().contains("Retry-After"),
+        assertTrue(api.path("x-sdv-retry").path("yes").asString().contains("Retry-After"),
                 "the retry rule says to wait the header's seconds when it is there");
     }
 
     @Test
     void theVersionIsSemanticAndIsTheNewestChangelogEntry() throws Exception {
-        String version = api.path("info").path("version").asText();
+        String version = api.path("info").path("version").asString();
         assertTrue(version.matches("\\d+\\.\\d+\\.\\d+"), "semantic version: " + version);
-        assertEquals("3.1.0", api.path("openapi").asText());
+        assertEquals("3.1.0", api.path("openapi").asString());
         String readme = Files.readString(DOCS.resolve("README.md"), StandardCharsets.UTF_8);
         int changelog = readme.indexOf("\n## Changelog");
         assertTrue(changelog >= 0, "README has a Changelog section");
@@ -500,7 +500,7 @@ class IngestionContractTest {
         assertTrue(first.find(), "the changelog has an entry");
         assertEquals(version, first.group(1), "info.version is the newest changelog entry");
         assertTrue(readme.contains("sdv-ingestion-v" + version), "the entry names its release tag");
-        assertTrue(api.path("paths").fieldNames().hasNext());
+        assertTrue(api.path("paths").propertyNames().iterator().hasNext());
         for (Operation op : operations()) {
             if (op.path().startsWith(INGESTION)) assertTrue(op.path().startsWith("/api/v1/"), "the path version is v1");
         }
@@ -514,10 +514,10 @@ class IngestionContractTest {
         Set<String> documented = new TreeSet<>();
         for (Operation op : operations()) {
             if (!op.path().startsWith(INGESTION)) continue;
-            for (Iterator<Map.Entry<String, JsonNode>> it = op.node().path("responses").fields(); it.hasNext(); ) {
+            for (Iterator<Map.Entry<String, JsonNode>> it = op.node().path("responses").properties().iterator(); it.hasNext(); ) {
                 Map.Entry<String, JsonNode> entry = it.next();
                 JsonNode response = resolve(entry.getValue());
-                if ("gateway".equals(response.path("x-sdv-sent-by").asText())) continue;
+                if ("gateway".equals(response.path("x-sdv-sent-by").asString())) continue;
                 if (entry.getKey().startsWith("2")) documented.add(op.id() + " " + entry.getKey());
                 else for (String code : texts(response.path("x-sdv-codes"))) documented.add(op.id() + " " + entry.getKey() + " " + code);
             }
@@ -576,7 +576,7 @@ class IngestionContractTest {
         if (answer.status() >= 400) {
             if (!names(body).equals(new TreeSet<>(List.of("code", "message", "reference", "timestamp")))) {
                 failures.add(label + ": error body fields " + names(body));
-            } else if (answer.correlation() != null && !answer.correlation().equals(body.path("reference").asText())) {
+            } else if (answer.correlation() != null && !answer.correlation().equals(body.path("reference").asString())) {
                 failures.add(label + ": reference " + body.path("reference") + " is not the X-Correlation-Id " + answer.correlation());
             }
             return;
@@ -594,12 +594,12 @@ class IngestionContractTest {
         schema = resolve(schema);
         if (schema.has("allOf")) schema = resolve(schema.path("allOf").get(0));
         if (value.isNull()) {
-            if (!texts(schema.path("type")).contains("null") && !schema.path("type").asText().equals("null")) {
+            if (!texts(schema.path("type")).contains("null") && !schema.path("type").asString().equals("null")) {
                 problems.add(where + " is null, which the file doesn't allow");
             }
             return;
         }
-        if (schema.has("enum") && !texts(schema.path("enum")).contains(value.asText())) {
+        if (schema.has("enum") && !texts(schema.path("enum")).contains(value.asString())) {
             problems.add(where + " = " + value + " is not in the file's enum");
         }
         if (value.isArray()) {
@@ -608,7 +608,7 @@ class IngestionContractTest {
             if (!names(value).equals(names(schema.path("properties")))) {
                 problems.add(where + " fields " + names(value) + " are not the file's " + names(schema.path("properties")));
             }
-            for (Iterator<Map.Entry<String, JsonNode>> it = value.fields(); it.hasNext(); ) {
+            for (Iterator<Map.Entry<String, JsonNode>> it = value.properties().iterator(); it.hasNext(); ) {
                 Map.Entry<String, JsonNode> field = it.next();
                 JsonNode property = schema.path("properties").path(field.getKey());
                 if (!property.isMissingNode()) conforms(field.getValue(), property, where + "." + field.getKey(), problems);
@@ -911,7 +911,7 @@ class IngestionContractTest {
 
     private Answer answer(int status, String body, String correlation, String retryAfter) throws Exception {
         String code = null;
-        if (status >= 400 && body != null && !body.isBlank()) code = json.readTree(body).path("code").asText(null);
+        if (status >= 400 && body != null && !body.isBlank()) code = json.readTree(body).path("code").asString(null);
         return new Answer(status, code, body, correlation, retryAfter);
     }
 
@@ -1077,11 +1077,11 @@ class IngestionContractTest {
 
     private List<Operation> operations() {
         List<Operation> out = new ArrayList<>();
-        for (Iterator<Map.Entry<String, JsonNode>> paths = api.path("paths").fields(); paths.hasNext(); ) {
+        for (Iterator<Map.Entry<String, JsonNode>> paths = api.path("paths").properties().iterator(); paths.hasNext(); ) {
             Map.Entry<String, JsonNode> path = paths.next();
-            for (Iterator<Map.Entry<String, JsonNode>> ops = path.getValue().fields(); ops.hasNext(); ) {
+            for (Iterator<Map.Entry<String, JsonNode>> ops = path.getValue().properties().iterator(); ops.hasNext(); ) {
                 Map.Entry<String, JsonNode> op = ops.next();
-                out.add(new Operation(op.getValue().path("operationId").asText(), op.getKey().toUpperCase(Locale.ROOT),
+                out.add(new Operation(op.getValue().path("operationId").asString(), op.getKey().toUpperCase(Locale.ROOT),
                         path.getKey(), op.getValue()));
             }
         }
@@ -1090,7 +1090,7 @@ class IngestionContractTest {
 
     private JsonNode resolve(JsonNode node) {
         while (node != null && node.has("$ref")) {
-            String ref = node.path("$ref").asText();
+            String ref = node.path("$ref").asString();
             assertTrue(ref.startsWith("#/"), "local reference: " + ref);
             JsonNode target = api;
             for (String part : ref.substring(2).split("/")) target = target.path(part);
@@ -1165,14 +1165,14 @@ class IngestionContractTest {
 
     private static Set<String> names(JsonNode object) {
         Set<String> out = new TreeSet<>();
-        object.fieldNames().forEachRemaining(out::add);
+        object.propertyNames().iterator().forEachRemaining(out::add);
         return out;
     }
 
     private static Set<String> texts(JsonNode array) {
         Set<String> out = new TreeSet<>();
-        if (array.isArray()) for (JsonNode item : array) out.add(item.asText());
-        else if (array.isTextual()) out.add(array.asText());
+        if (array.isArray()) for (JsonNode item : array) out.add(item.asString());
+        else if (array.isString()) out.add(array.asString());
         return out;
     }
 

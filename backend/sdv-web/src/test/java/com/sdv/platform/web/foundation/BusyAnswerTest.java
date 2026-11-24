@@ -4,8 +4,8 @@ import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 import com.sdv.platform.application.operations.BusyAnswers;
 import com.sdv.platform.application.storage.NoWritableStorageException;
 import com.sdv.platform.application.storage.StorageProviderMissingException;
@@ -83,7 +83,7 @@ class BusyAnswerTest {
     private JsonNode expect(MvcResult result, int status, String code) throws Exception {
         assertEquals(status, result.getResponse().getStatus(), result.getResponse().getContentAsString());
         JsonNode body = json.readTree(result.getResponse().getContentAsString());
-        assertEquals(code, body.get("code").asText());
+        assertEquals(code, body.get("code").asString());
         assertEquals(4, body.size(), "the one error body");
         return body;
     }
@@ -156,8 +156,8 @@ class BusyAnswerTest {
             MvcResult result = answer(failure);
             JsonNode body = expect(result, 503, "SDV-SYS-018");
             assertEquals("5", result.getResponse().getHeader("Retry-After"), "Retry-After in seconds");
-            assertEquals(ErrorReplies.SYS_018_MESSAGE, body.get("message").asText());
-            assertFalse(body.get("message").asText().contains("busy-test"), "no pool details in the body");
+            assertEquals(ErrorReplies.SYS_018_MESSAGE, body.get("message").asString());
+            assertFalse(body.get("message").asString().contains("busy-test"), "no pool details in the body");
             // Owner answer 4 to report 0040 part 2: busy is WARN, not ERROR (expected under load, not a fault).
             assertTrue(logs.list.stream().noneMatch(e -> e.getLevel() == Level.ERROR), "no ERROR line for busy");
             List<ILoggingEvent> warnings = logs.list.stream().filter(e -> e.getLevel() == Level.WARN).toList();
@@ -222,7 +222,7 @@ class BusyAnswerTest {
             MvcResult result = answer(c.failure());
             JsonNode body = expect(result, 503, c.code());
             assertNull(result.getResponse().getHeader("Retry-After"), c.code() + " has no Retry-After");
-            assertNotEquals("SDV-SYS-018", body.get("code").asText());
+            assertNotEquals("SDV-SYS-018", body.get("code").asString());
         }
     }
 
@@ -230,7 +230,7 @@ class BusyAnswerTest {
     void storageProviderMissingIs503Sto004WithAPlainMessageAndTheProviderOnlyInTheLog() throws Exception {
         MvcResult result = answer(new StorageProviderMissingException("Configured storage provider is unavailable: S3_SOMEWHERE"));
         JsonNode body = expect(result, 503, "SDV-STO-004");
-        assertEquals(ErrorReplies.STO_004_MESSAGE, body.get("message").asText());
+        assertEquals(ErrorReplies.STO_004_MESSAGE, body.get("message").asString());
         assertFalse(result.getResponse().getContentAsString().contains("S3_SOMEWHERE"), "the provider is for the log");
         assertNull(FoundationExceptionHandler.refusalCode(new StorageProviderMissingException("x")), "a failure, not a refusal");
         List<ILoggingEvent> errors = logs.list.stream().filter(e -> e.getLevel() == Level.ERROR).toList();
@@ -250,7 +250,7 @@ class BusyAnswerTest {
         MockHttpServletResponse response = new MockHttpServletResponse();
         controller.error(request, response);
         assertEquals(503, response.getStatus());
-        assertEquals("SDV-SYS-018", json.readTree(response.getContentAsString()).get("code").asText());
+        assertEquals("SDV-SYS-018", json.readTree(response.getContentAsString()).get("code").asString());
         assertEquals("5", response.getHeader("Retry-After"));
     }
 

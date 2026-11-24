@@ -34,7 +34,7 @@ create {"metadata":{"b":1,"a":"x","n":null,"d":1.50,"big":12345678901234567890,"
 create {"sensitivityLevel":null,"recordSensitivityLevel":null} -> 200 text/plain;charset=UTF-8 CreateSubmissionRequest[sourceSubmissionId=null, expectedDocumentCount=0, expectedDocuments=null, metadata=null, sensitivityLevel=null, recordSensitivityLevel=null]
 create {"recordSensitivityLevel":7} -> 200 text/plain;charset=UTF-8 CreateSubmissionRequest[sourceSubmissionId=null, expectedDocumentCount=0, expectedDocuments=null, metadata=null, sensitivityLevel=null, recordSensitivityLevel=7]
 create, nested 400 -> 200
-create, nested 900 -> 200
+create, nested 900 -> 400
 create, nested 1100 -> 400
 field {"fieldType":"DATE"} -> 200 text/plain;charset=UTF-8 MetadataFieldRequest[displayLabel=null, fieldType=DATE, required=false, businessIdentifier=false, searchable=false, normalization=null, searchMode=null, validationRules=null]
 field {"fieldType":"date"} -> 400 application/json;charset=UTF-8 {"code":"SDV-SYS-015","message":"Vero couldn't read this request: the request body could not be read.","reference":"...","timestamp":"..."}

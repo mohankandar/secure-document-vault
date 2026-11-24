@@ -1,6 +1,7 @@
 package com.sdv.platform.web.foundation;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import com.sdv.platform.application.json.VeroJson;
+import tools.jackson.databind.ObjectMapper;
 import com.sdv.platform.application.operations.BusyAnswers;
 import com.sdv.platform.application.storage.NoWritableStorageException;
 import com.sdv.platform.application.storage.StorageProviderMissingException;
@@ -61,7 +62,7 @@ import java.util.stream.Collectors;
  */
 public final class ErrorReplies {
     static final Logger LOG = LoggerFactory.getLogger(ErrorReplies.class);
-    private static final ObjectMapper JSON = new ObjectMapper();
+    private static final ObjectMapper JSON = VeroJson.mapper();
 
     static final String SYS_013_MESSAGE =
             "Vero couldn't finish this just now. Try again. If it keeps happening, give your IT team the reference.";

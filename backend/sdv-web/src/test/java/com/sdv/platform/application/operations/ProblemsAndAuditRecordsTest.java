@@ -127,12 +127,12 @@ class ProblemsAndAuditRecordsTest {
                 mock(KeyServiceHealthProbe.class), tenants, resolver, guard());
 
         var summary = service.summary(TENANT);
-        com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper().findAndRegisterModules();
+        tools.jackson.databind.ObjectMapper mapper = com.sdv.platform.application.json.VeroJson.mapper();
         String json = mapper.writeValueAsString(summary);
-        com.fasterxml.jackson.databind.JsonNode record = mapper.readTree(json).at("/problemRecords/" + SUB_KNOWN);
+        tools.jackson.databind.JsonNode record = mapper.readTree(json).at("/problemRecords/" + SUB_KNOWN);
         assertEquals(java.util.Set.of("recordNumber", "recordNumberLabel", "sourceName"),
-                new java.util.TreeSet<>(iterable(record.fieldNames())), "exactly these fields");
-        assertEquals("20000000090", record.get("recordNumber").asText());
+                new java.util.TreeSet<>(iterable(record.propertyNames().iterator())), "exactly these fields");
+        assertEquals("20000000090", record.get("recordNumber").asString());
         assertFalse(json.toLowerCase().contains("title"), json);
         assertFalse(json.contains("Mia"), json);
         assertFalse(json.contains("Patel"), json);
@@ -195,8 +195,8 @@ class ProblemsAndAuditRecordsTest {
         assertEquals(2, summary.busyAnswers().sinceStart());
         assertEquals(7, summary.busyAnswers().retryAfterSeconds());
         assertNotNull(summary.busyAnswers().lastAt());
-        var json = new com.fasterxml.jackson.databind.ObjectMapper().findAndRegisterModules()
-                .readTree(new com.fasterxml.jackson.databind.ObjectMapper().findAndRegisterModules().writeValueAsString(summary));
+        var json = com.sdv.platform.application.json.VeroJson.mapper()
+                .readTree(com.sdv.platform.application.json.VeroJson.mapper().writeValueAsString(summary));
         assertEquals(2, json.at("/busyAnswers/lastHour").asLong());
         assertEquals(2, json.at("/busyAnswers/sinceStart").asLong());
 

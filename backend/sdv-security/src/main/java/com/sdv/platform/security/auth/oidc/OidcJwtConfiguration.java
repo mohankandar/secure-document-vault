@@ -20,6 +20,8 @@ import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator;
 import org.springframework.security.oauth2.core.OAuth2TokenValidator;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
+import org.springframework.security.oauth2.jwt.JwtIssuerValidator;
+import org.springframework.security.oauth2.jwt.JwtTypeValidator;
 import org.springframework.security.oauth2.jwt.JwtValidators;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 
@@ -58,7 +60,10 @@ public class OidcJwtConfiguration {
             if (!given.containsKey("iat")) converted.remove("iat");
             return converted;
         });
-        OAuth2TokenValidator<Jwt> issuerAndTime = JwtValidators.createDefaultWithIssuer(normalizedIssuer);
+        // Task 0070: Spring Security 7 checks the type among its defaults and knows only JWT; the types are named, as before.
+        JwtTypeValidator types = new JwtTypeValidator("JWT", "at+jwt", "application/at+jwt");
+        types.setAllowEmpty(true);
+        OAuth2TokenValidator<Jwt> issuerAndTime = JwtValidators.createDefaultWithValidators(new JwtIssuerValidator(normalizedIssuer), types);
         OAuth2TokenValidator<Jwt> audienceValidator = new RequiredAudienceValidator(normalizedAudience);
         // Task 0065: always a longest lifetime (0 and less stop the start), and an access token's shape.
         if (maxTokenLifetimeSeconds <= 0 || maxTokenLifetimeSeconds > MAX_LIFETIME_SECONDS) {

@@ -1,6 +1,6 @@
 package com.sdv.platform.application.restrictions;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import com.sdv.platform.application.reports.StorageReportService;
 import com.sdv.platform.persistence.foundation.JdbcFoundationRepository;
 import com.sdv.platform.persistence.reports.JdbcIntakeReportRepository;
@@ -128,7 +128,7 @@ class RestrictionsPostgresTest {
         assertEquals("Contract number", o.records().items().getFirst().identifierLabel());
         assertTrue(o.records().items().getFirst().identifier().startsWith("5500"));
         assertTrue(o.changes().items().stream().anyMatch(c -> c.scope().equals("DOCUMENT") && c.identifier().startsWith("5500")));
-        String json = new ObjectMapper().findAndRegisterModules().writeValueAsString(o);
+        String json = com.sdv.platform.application.json.VeroJson.mapper().writeValueAsString(o);
         for (String never : List.of("Secret reason", "secret-", ".pdf", "documentId", "5501-doc")) assertFalse(json.contains(never), never);
         // Pages: every restricted record once, 50 at a time; a deep page of changes.
         List<String> seen = new ArrayList<>();

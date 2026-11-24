@@ -4,8 +4,8 @@ import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 import com.sdv.platform.application.storage.NoWritableStorageException;
 import com.sdv.platform.domain.error.InternalCheckFailed;
 import com.sdv.platform.web.config.CorrelationIdFilter;
@@ -99,11 +99,11 @@ class ErrorPlumbingTest {
         assertEquals(status, result.getResponse().getStatus(), result.getResponse().getContentAsString());
         JsonNode body = body(result);
         assertEquals(List.of("code", "message", "reference", "timestamp"), iterable(body));
-        assertEquals(code, body.get("code").asText());
-        assertFalse(body.get("message").asText().isBlank());
-        assertEquals(result.getResponse().getHeader(CorrelationIdFilter.HEADER), body.get("reference").asText());
-        assertFalse(body.get("reference").asText().isBlank());
-        assertDoesNotThrow(() -> java.time.Instant.parse(body.get("timestamp").asText()));
+        assertEquals(code, body.get("code").asString());
+        assertFalse(body.get("message").asString().isBlank());
+        assertEquals(result.getResponse().getHeader(CorrelationIdFilter.HEADER), body.get("reference").asString());
+        assertFalse(body.get("reference").asString().isBlank());
+        assertDoesNotThrow(() -> java.time.Instant.parse(body.get("timestamp").asString()));
         String text = result.getResponse().getContentAsString();
         for (String bad : FORBIDDEN) assertFalse(text.contains(bad), "the body holds \"" + bad + "\": " + text);
         return body;
@@ -111,7 +111,7 @@ class ErrorPlumbingTest {
 
     private static List<String> iterable(JsonNode body) {
         List<String> names = new java.util.ArrayList<>();
-        body.fieldNames().forEachRemaining(names::add);
+        body.propertyNames().iterator().forEachRemaining(names::add);
         return names;
     }
 
@@ -124,12 +124,12 @@ class ErrorPlumbingTest {
     void anUncodedExceptionKeepsItsStatusAndItsTextStaysInTheLog() throws Exception {
         for (Object[] c : new Object[][] {{"/uncoded/argument", 400, "BAD_REQUEST"}, {"/uncoded/state", 409, "CONFLICT"}, {"/uncoded/element", 404, "NOT_FOUND"}}) {
             JsonNode body = expect(uncoded.perform(get((String) c[0])).andReturn(), (int) c[1], (String) c[2]);
-            assertFalse(body.get("message").asText().contains("inner text"), body.toString());
-            List<ILoggingEvent> info = lines(Level.INFO, body.get("reference").asText());
+            assertFalse(body.get("message").asString().contains("inner text"), body.toString());
+            List<ILoggingEvent> info = lines(Level.INFO, body.get("reference").asString());
             assertEquals(1, info.size());
             assertTrue(info.getFirst().getFormattedMessage().contains("reason=inner text of C:/vault  x"), info.getFirst().getFormattedMessage());
         }
-        assertEquals("plain coded message", expect(uncoded.perform(get("/uncoded/coded")).andReturn(), 400, "SDV-SEN-002").get("message").asText());
+        assertEquals("plain coded message", expect(uncoded.perform(get("/uncoded/coded")).andReturn(), 400, "SDV-SEN-002").get("message").asString());
     }
 
     private final MockMvc uncoded = MockMvcBuilders.standaloneSetup(new Uncoded()).setControllerAdvice(new FoundationExceptionHandler())
@@ -151,7 +151,7 @@ class ErrorPlumbingTest {
         JsonNode body = expect(mvc.perform(get("/unexpected").header(CorrelationIdFilter.HEADER, "ref-unexpected-1")).andReturn(),
                 500, "SDV-SYS-013");
         // Task 0062: the reference is always Vero's own (it was the caller's X-Correlation-Id when one was sent).
-        String reference = body.get("reference").asText();
+        String reference = body.get("reference").asString();
         assertDoesNotThrow(() -> java.util.UUID.fromString(reference));
         List<ILoggingEvent> errors = lines(Level.ERROR, reference);
         assertEquals("ref-unexpected-1", errors.getFirst().getMDCPropertyMap().get(CorrelationIdFilter.CALLER_MDC_KEY), "the caller's is kept beside it");
@@ -163,7 +163,7 @@ class ErrorPlumbingTest {
     @Test
     void aDatabaseFailureIs503Sys014AndTheLogHoldsNoSql() throws Exception {
         JsonNode body = expect(mvc.perform(get("/database")).andReturn(), 503, "SDV-SYS-014");
-        List<ILoggingEvent> errors = lines(Level.ERROR, body.get("reference").asText());
+        List<ILoggingEvent> errors = lines(Level.ERROR, body.get("reference").asString());
         assertEquals(1, errors.size());
         String line = errors.getFirst().getFormattedMessage();
         assertTrue(line.contains("sqlState=42P01"), line);
@@ -178,20 +178,20 @@ class ErrorPlumbingTest {
     @Test
     void springsOwnRefusalsAreSys015WithWhatWasWrongAndNoValue() throws Exception {
         JsonNode badId = expect(mvc.perform(get("/doc/not-a-uuid")).andReturn(), 400, "SDV-SYS-015");
-        assertEquals("Vero couldn't read this request: the documentId is not valid.", badId.get("message").asText());
+        assertEquals("Vero couldn't read this request: the documentId is not valid.", badId.get("message").asString());
         assertFalse(badId.toString().contains("not-a-uuid"), "the value sent is not echoed");
-        assertEquals(1, lines(Level.INFO, badId.get("reference").asText()).size(), "an INFO line for IT");
+        assertEquals(1, lines(Level.INFO, badId.get("reference").asString()).size(), "an INFO line for IT");
 
         JsonNode header = expect(mvc.perform(get("/header")).andReturn(), 400, "SDV-SYS-015");
-        assertEquals("Vero couldn't read this request: the X-SDV-Filename header is missing.", header.get("message").asText());
+        assertEquals("Vero couldn't read this request: the X-SDV-Filename header is missing.", header.get("message").asString());
 
         JsonNode badJson = expect(mvc.perform(post("/json").contentType(MediaType.APPLICATION_JSON).content("{not json")).andReturn(),
                 400, "SDV-SYS-015");
-        assertEquals("Vero couldn't read this request: the request body could not be read.", badJson.get("message").asText());
+        assertEquals("Vero couldn't read this request: the request body could not be read.", badJson.get("message").asString());
 
         // Kept at Spring's own status (not in the approved status changes; question in report 0036).
         JsonNode media = expect(mvc.perform(post("/pdf").contentType(MediaType.TEXT_PLAIN).content("x")).andReturn(), 415, "SDV-SYS-015");
-        assertEquals("Vero couldn't read this request: this address accepts only application/pdf.", media.get("message").asText());
+        assertEquals("Vero couldn't read this request: this address accepts only application/pdf.", media.get("message").asString());
         MvcResult method = mvc.perform(post("/header")).andReturn();
         expect(method, 405, "SDV-SYS-015");
         assertEquals("GET", method.getResponse().getHeader("Allow"));
@@ -201,7 +201,7 @@ class ErrorPlumbingTest {
     @Test
     void anInternalCheckIs500Sys016NotA409AndItsSentenceGoesOnlyToTheLog() throws Exception {
         JsonNode body = expect(mvc.perform(get("/check")).andReturn(), 500, "SDV-SYS-016");
-        List<ILoggingEvent> errors = lines(Level.ERROR, body.get("reference").asText());
+        List<ILoggingEvent> errors = lines(Level.ERROR, body.get("reference").asString());
         assertEquals(1, errors.size());
         assertTrue(errors.getFirst().getThrowableProxy().getMessage().contains("affected 2 rows"), "the check's sentence is for IT");
         assertNull(FoundationExceptionHandler.refusalCode(new InternalCheckFailed("x")), "not counted as an intake refusal");
@@ -210,15 +210,15 @@ class ErrorPlumbingTest {
     @Test
     void anAuditThatCantBeWrittenIs500Sys017() throws Exception {
         JsonNode body = expect(mvc.perform(get("/audit")).andReturn(), 500, "SDV-SYS-017");
-        assertEquals(ErrorReplies.SYS_017_MESSAGE, body.get("message").asText());
-        assertEquals(1, lines(Level.ERROR, body.get("reference").asText()).size());
+        assertEquals(ErrorReplies.SYS_017_MESSAGE, body.get("message").asString());
+        assertEquals(1, lines(Level.ERROR, body.get("reference").asString()).size());
     }
 
     @Test
     void noStorageSpaceIs503Sto001NotA409() throws Exception {
         JsonNode body = expect(mvc.perform(get("/storage")).andReturn(), 503, "SDV-STO-001");
-        assertEquals(ErrorReplies.STO_001_MESSAGE, body.get("message").asText());
-        assertEquals(1, lines(Level.ERROR, body.get("reference").asText()).size(), "a 5xx is ERROR even though it needs a person");
+        assertEquals(ErrorReplies.STO_001_MESSAGE, body.get("message").asString());
+        assertEquals(1, lines(Level.ERROR, body.get("reference").asString()).size(), "a 5xx is ERROR even though it needs a person");
         assertNull(FoundationExceptionHandler.refusalCode(new NoWritableStorageException("x")), "not counted as a refusal");
     }
 
@@ -245,8 +245,8 @@ class ErrorPlumbingTest {
             assertEquals(status, response.getStatus());
             JsonNode body = json.readTree(response.getContentAsString());
             // Task 0038: a bare 401 is SDV-AUT-001 and a bare 403 SDV-ROL-006 (were UNAUTHORIZED and FORBIDDEN).
-            assertEquals(status == 401 ? "SDV-AUT-001" : "SDV-ROL-006", body.get("code").asText());
-            assertEquals("ref-" + status, body.get("reference").asText());
+            assertEquals(status == 401 ? "SDV-AUT-001" : "SDV-ROL-006", body.get("code").asString());
+            assertEquals("ref-" + status, body.get("reference").asString());
             assertEquals(4, body.size());
         }
 
@@ -258,7 +258,7 @@ class ErrorPlumbingTest {
         MockHttpServletResponse response = new MockHttpServletResponse();
         controller.error(request, response);
         assertEquals(503, response.getStatus());
-        assertEquals("SDV-SYS-014", json.readTree(response.getContentAsString()).get("code").asText());
+        assertEquals("SDV-SYS-014", json.readTree(response.getContentAsString()).get("code").asString());
         assertEquals(1, lines(Level.ERROR, "ref-filter-db").size());
     }
 

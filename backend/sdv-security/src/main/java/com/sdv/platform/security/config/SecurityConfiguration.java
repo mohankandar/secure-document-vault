@@ -11,13 +11,15 @@ import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.security.config.Customizer;
 import org.springframework.security.config.ObjectPostProcessor;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.oauth2.server.resource.web.authentication.BearerTokenAuthenticationFilter;
 import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.header.writers.StaticHeadersWriter;
+import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.CorsUtils;
 import org.springframework.security.web.authentication.AnonymousAuthenticationFilter;
 
 @Configuration
@@ -42,7 +44,11 @@ public class SecurityConfiguration {
         AuthenticationEntryPoint entryPoint = SignInAnswers.entryPoint(mode);
         http
                 .csrf(csrf -> csrf.disable())
-                .cors(Customizer.withDefaults())
+                // Task 0070: no other origin is ever allowed: a preflight is refused (an empty configuration allows nothing),
+                // any other request is answered without a permission. Spring Framework 7 no longer does either by itself.
+                .cors(cors -> cors.configurationSource(request -> CorsUtils.isPreFlightRequest(request) ? new CorsConfiguration() : null))
+                .headers(headers -> headers.addHeaderWriter(new StaticHeadersWriter("Vary", "Origin", "Access-Control-Request-Method",
+                        "Access-Control-Request-Headers")))
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .exceptionHandling(exceptions -> exceptions
                         .authenticationEntryPoint(entryPoint)

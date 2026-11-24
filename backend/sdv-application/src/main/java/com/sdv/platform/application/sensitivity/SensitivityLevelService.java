@@ -1,8 +1,9 @@
 package com.sdv.platform.application.sensitivity;
 
+import com.sdv.platform.application.json.VeroJson;
 import com.sdv.platform.domain.error.InternalCheckFailed;
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.ObjectMapper;
 import com.sdv.platform.application.access.Clearance;
 import com.sdv.platform.application.access.DocumentAccessGuard;
 import com.sdv.platform.application.approvals.AccessRequestService;
@@ -70,7 +71,7 @@ public class SensitivityLevelService {
     private final AuditEventPort audit;
     private final TransactionTemplate transactions;
     private final Clock clock;
-    private final ObjectMapper json = new ObjectMapper();
+    private final ObjectMapper json = VeroJson.mapper();
 
     @Autowired
     public SensitivityLevelService(DocumentIntakeRepository documents, AccessRequestRepository documentLevels,
@@ -333,7 +334,7 @@ public class SensitivityLevelService {
         String safe;
         try {
             safe = json.writeValueAsString(details);
-        } catch (JsonProcessingException ex) {
+        } catch (JacksonException ex) {
             throw InternalCheckFailed.auditNotWritten("The level change could not be audited, so nothing was changed.", ex);
         }
         audit.append(new AuditEvent(UUID.randomUUID(), tenantId, "USER", actorId, action, targetType, targetId, at,

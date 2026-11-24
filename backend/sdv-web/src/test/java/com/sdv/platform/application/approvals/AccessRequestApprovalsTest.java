@@ -1,7 +1,7 @@
 package com.sdv.platform.application.approvals;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 import com.sdv.platform.application.access.DocumentAccessGuard;
 import com.sdv.platform.application.access.SensitiveAccessGrants;
 import com.sdv.platform.application.approvals.AccessRequestService.Decision;
@@ -31,7 +31,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * requests expiring after 7 days. Through the real services, guard, grant store and print path.
  */
 class AccessRequestApprovalsTest {
-    private static final ObjectMapper JSON = new ObjectMapper().findAndRegisterModules();
+    private static final ObjectMapper JSON = com.sdv.platform.application.json.VeroJson.mapper();
     private final ApprovalsFixture w = new ApprovalsFixture();
 
     private static String code(Executable call) {
@@ -270,7 +270,7 @@ class AccessRequestApprovalsTest {
 
     private static Set<String> keys(JsonNode node) {
         Set<String> keys = new TreeSet<>();
-        for (Iterator<String> it = node.fieldNames(); it.hasNext(); ) keys.add(it.next());
+        for (Iterator<String> it = node.propertyNames().iterator(); it.hasNext(); ) keys.add(it.next());
         return keys;
     }
 

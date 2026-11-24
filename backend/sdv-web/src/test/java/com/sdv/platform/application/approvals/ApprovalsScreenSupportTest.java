@@ -1,7 +1,7 @@
 package com.sdv.platform.application.approvals;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 import com.sdv.platform.application.approvals.AccessRequestService.Decision;
 import com.sdv.platform.domain.audit.AuditEvent;
 import com.sdv.platform.domain.document.SensitivityLevel;
@@ -25,7 +25,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * own list names the record of each request, a whole-record request included.
  */
 class ApprovalsScreenSupportTest {
-    private static final ObjectMapper JSON = new ObjectMapper().findAndRegisterModules();
+    private static final ObjectMapper JSON = com.sdv.platform.application.json.VeroJson.mapper();
     private final ApprovalsFixture w = new ApprovalsFixture();
 
     private UUID ask(String actor, UUID document, String kind) {
@@ -105,7 +105,7 @@ class ApprovalsScreenSupportTest {
 
         JsonNode row = JSON.readTree(JSON.writeValueAsString(mine)).get(0);
         Set<String> keys = new TreeSet<>();
-        for (Iterator<String> it = row.fieldNames(); it.hasNext(); ) keys.add(it.next());
+        for (Iterator<String> it = row.propertyNames().iterator(); it.hasNext(); ) keys.add(it.next());
         assertEquals(new TreeSet<>(List.of("requestId", "kind", "scope", "status", "documentId", "requestedLevel", "reason",
                 "requestedAt", "decidedAt", "expiresAt", "usedAt", "sourceId", "primaryIdentifier", "primaryIdentifierLabel")),
                 keys, "exactly these fields: no title, file name or content");
@@ -160,7 +160,7 @@ class ApprovalsScreenSupportTest {
 
         JsonNode row = JSON.readTree(JSON.writeValueAsString(decided)).get(0);
         Set<String> keys = new TreeSet<>();
-        for (Iterator<String> it = row.fieldNames(); it.hasNext(); ) keys.add(it.next());
+        for (Iterator<String> it = row.propertyNames().iterator(); it.hasNext(); ) keys.add(it.next());
         assertEquals(new TreeSet<>(List.of("requestId", "kind", "scope", "requestedLevel", "primaryIdentifier",
                 "primaryIdentifierLabel", "decision", "decidedBy", "decidedAt")), keys, "no reason, requester or file name");
         String json = JSON.writeValueAsString(decided);

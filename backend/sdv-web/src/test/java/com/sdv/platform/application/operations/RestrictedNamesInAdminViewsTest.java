@@ -1,7 +1,7 @@
 package com.sdv.platform.application.operations;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 import com.sdv.platform.application.access.DocumentAccessGuard;
 import com.sdv.platform.application.audit.AuditQueryService;
 import com.sdv.platform.application.port.AuditEventPort;
@@ -54,7 +54,7 @@ class RestrictedNamesInAdminViewsTest {
     private static final UUID RAISED = UUID.fromString("dddddddd-0000-0000-0000-000000000003");
     private static final UUID NO_LEVEL = UUID.fromString("dddddddd-0000-0000-0000-000000000004");
     private static final Instant RECEIVED = Instant.parse("2026-11-14T09:30:00Z");
-    private static final ObjectMapper JSON = new ObjectMapper().findAndRegisterModules();
+    private static final ObjectMapper JSON = com.sdv.platform.application.json.VeroJson.mapper();
 
     private final BusinessRecordRepository records = mock(BusinessRecordRepository.class);
     private final DocumentAccessGuard guard = new DocumentAccessGuard(records, mock(AuditEventPort.class));
@@ -91,17 +91,17 @@ class RestrictedNamesInAdminViewsTest {
 
     private static Set<String> keys(JsonNode node) {
         Set<String> keys = new TreeSet<>();
-        for (Iterator<String> it = node.fieldNames(); it.hasNext(); ) keys.add(it.next());
+        for (Iterator<String> it = node.propertyNames().iterator(); it.hasNext(); ) keys.add(it.next());
         return keys;
     }
 
     /** No field with "file" in its name anywhere in the JSON (filename, originalFilename, fileName ...). */
     private static void assertNoFileField(JsonNode node, String where) {
         if (node.isObject()) {
-            node.fieldNames().forEachRemaining(name -> assertFalse(name.toLowerCase().contains("file"), where + " has " + name));
-            node.elements().forEachRemaining(child -> assertNoFileField(child, where));
+            node.propertyNames().iterator().forEachRemaining(name -> assertFalse(name.toLowerCase().contains("file"), where + " has " + name));
+            node.values().forEach(child -> assertNoFileField(child, where));
         } else if (node.isArray()) {
-            node.elements().forEachRemaining(child -> assertNoFileField(child, where));
+            node.values().forEach(child -> assertNoFileField(child, where));
         }
     }
 

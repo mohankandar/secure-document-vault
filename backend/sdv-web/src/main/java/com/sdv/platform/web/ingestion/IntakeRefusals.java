@@ -1,6 +1,7 @@
 package com.sdv.platform.web.ingestion;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import com.sdv.platform.application.json.VeroJson;
+import tools.jackson.databind.ObjectMapper;
 import com.sdv.platform.application.port.AuditEventPort;
 import com.sdv.platform.application.port.IngestionSourceRepository;
 import com.sdv.platform.application.port.UnidentifiedIntakeAttemptRepository;
@@ -61,7 +62,7 @@ public class IntakeRefusals {
     /** Records nothing (for tests that build the controllers or the error handler by hand). */
     public static final IntakeRefusals NONE = new IntakeRefusals(null, null, null, Clock.systemUTC());
     static final Logger LOG = LoggerFactory.getLogger(IntakeRefusals.class);
-    private static final ObjectMapper JSON = new ObjectMapper();
+    private static final ObjectMapper JSON = VeroJson.mapper();
     private static final int MAX_ID = 200;
     /** Task 0039 part 2: the words of Vero's intake addresses; any other part of an address is blanked to {id}. */
     private static final java.util.Set<String> ADDRESS_WORDS = java.util.Set.of("submissions", "documents", "retry-finalization");

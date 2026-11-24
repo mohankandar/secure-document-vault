@@ -1,8 +1,9 @@
 package com.sdv.platform.application.reports;
 
+import com.sdv.platform.application.json.VeroJson;
 import com.sdv.platform.domain.error.InternalCheckFailed;
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.ObjectMapper;
 import com.sdv.platform.application.port.AuditEventPort;
 import com.sdv.platform.application.port.StewardNoticeRepository;
 import com.sdv.platform.domain.audit.AuditEvent;
@@ -38,7 +39,7 @@ public class StewardNoticeService {
     static final int LIMIT = 50;
     /** Notices marked read in one call. */
     public static final int MARK_MAX = 100;
-    private static final ObjectMapper JSON = new ObjectMapper();
+    private static final ObjectMapper JSON = VeroJson.mapper();
 
     private final StewardNoticeRepository notices;
     private final AuditEventPort audit;
@@ -102,7 +103,7 @@ public class StewardNoticeService {
     private static String json(Map<String, Object> details) {
         try {
             return JSON.writeValueAsString(details);
-        } catch (JsonProcessingException ex) {
+        } catch (JacksonException ex) {
             throw InternalCheckFailed.auditNotWritten("Marking the notice read could not be audited, so it was not marked.", ex);
         }
     }

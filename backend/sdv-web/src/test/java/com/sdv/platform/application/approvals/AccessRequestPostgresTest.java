@@ -276,7 +276,7 @@ class AccessRequestPostgresTest {
         assertEquals("Contract number", first.primaryIdentifierLabel());
         assertEquals(9, first.pageCount());
         assertEquals(new AccessRequestService.Position(1, 3), first.position());
-        String json = new com.fasterxml.jackson.databind.ObjectMapper().findAndRegisterModules().writeValueAsString(list);
+        String json = com.sdv.platform.application.json.VeroJson.mapper().writeValueAsString(list);
         assertFalse(json.contains("secret-name"), json);
         assertFalse(json.contains("Patel"), json);
         assertEquals(1, approvals.pending(T1, "DOWNLOAD", null, "c").requestCount());

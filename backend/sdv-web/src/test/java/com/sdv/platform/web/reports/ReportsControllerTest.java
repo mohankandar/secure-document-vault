@@ -1,6 +1,6 @@
 package com.sdv.platform.web.reports;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import com.sdv.platform.application.port.AuditEventPort;
 import com.sdv.platform.application.port.RoleCapabilityPolicyPort;
 import com.sdv.platform.application.port.SensitivityReportRepository;
@@ -23,7 +23,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.http.converter.ByteArrayHttpMessageConverter;
-import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
+import org.springframework.http.converter.json.JacksonJsonHttpMessageConverter;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.test.web.servlet.MockMvc;
@@ -54,7 +54,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  */
 class ReportsControllerTest {
     private static final UUID TENANT = UUID.fromString("11111111-1111-1111-1111-111111111111");
-    private static final ObjectMapper JSON = new ObjectMapper().findAndRegisterModules();
+    private static final ObjectMapper JSON = com.sdv.platform.application.json.VeroJson.mapper();
     private static final byte[] CSV = "﻿SHA-256 checksum\r\n".getBytes(StandardCharsets.UTF_8);
 
     private final AuditEventPort audit = mock(AuditEventPort.class);
@@ -69,7 +69,7 @@ class ReportsControllerTest {
                     new ReportsController(new SecurityContextFacade(), authorization, reports, sensitivity, storage, activity),
                     new IntakeNoticeController(new SecurityContextFacade(), authorization, notices))
             .setControllerAdvice(new FoundationExceptionHandler())
-            .setMessageConverters(new ByteArrayHttpMessageConverter(), new MappingJackson2HttpMessageConverter(JSON))
+            .setMessageConverters(new ByteArrayHttpMessageConverter(), new JacksonJsonHttpMessageConverter((tools.jackson.databind.json.JsonMapper) JSON))
             .build();
 
     private static void signIn(SdvRole role) {

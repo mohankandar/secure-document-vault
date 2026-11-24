@@ -3,8 +3,8 @@ package com.sdv.platform.security.auth.oidc;
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 import com.nimbusds.jose.jwk.RSAKey;
 import com.sdv.platform.web.foundation.ErrorReplies;
 import com.sun.net.httpserver.HttpServer;
@@ -101,8 +101,8 @@ class SignInChainTest {
         assertEquals(status, answer.status(), answer.body());
         JsonNode body = json.readTree(answer.body());
         assertEquals(List.of("code", "message", "reference", "timestamp"), names(body));
-        assertEquals(code, body.get("code").asText());
-        assertEquals(message, body.get("message").asText());
+        assertEquals(code, body.get("code").asString());
+        assertEquals(message, body.get("message").asString());
         return body;
     }
 
@@ -112,7 +112,7 @@ class SignInChainTest {
 
     private static List<String> names(JsonNode body) {
         List<String> names = new ArrayList<>();
-        body.fieldNames().forEachRemaining(names::add);
+        body.propertyNames().iterator().forEachRemaining(names::add);
         return names;
     }
 
@@ -190,7 +190,7 @@ class SignInChainTest {
             assertEquals(List.of(), lines(Level.INFO, "SDV-AUT-001"));
             List<ILoggingEvent> debug = lines(Level.DEBUG, "SDV-AUT-001");
             assertEquals(1, debug.size());
-            assertTrue(debug.getFirst().getFormattedMessage().contains("reference=" + body.get("reference").asText()));
+            assertTrue(debug.getFirst().getFormattedMessage().contains("reference=" + body.get("reference").asString()));
         } finally {
             errors.setLevel(before);
         }

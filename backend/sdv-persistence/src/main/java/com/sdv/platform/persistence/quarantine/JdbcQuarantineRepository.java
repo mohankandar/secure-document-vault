@@ -1,9 +1,10 @@
 package com.sdv.platform.persistence.quarantine;
 
+import com.sdv.platform.application.json.VeroJson;
 import com.sdv.platform.persistence.business.PrimaryIdentifierSql;
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.core.JacksonException;
+import tools.jackson.core.type.TypeReference;
+import tools.jackson.databind.ObjectMapper;
 import com.sdv.platform.application.port.QuarantineRepository;
 import com.sdv.platform.domain.document.SensitivityLevel;
 import com.sdv.platform.domain.error.InternalCheckFailed;
@@ -45,7 +46,7 @@ public class JdbcQuarantineRepository implements QuarantineRepository {
     static final String IN_FORCE = """
             exists (select 1 from quarantined_documents q
                      where q.tenant_id=d.tenant_id and q.document_id=d.document_id and q.released_at is null)""";
-    private static final ObjectMapper JSON = new ObjectMapper();
+    private static final ObjectMapper JSON = VeroJson.mapper();
 
     /**
      * Task 0051: the document (a row of {@code documents} named {@code d}) is quarantined by an open filter incident:
@@ -632,7 +633,7 @@ public class JdbcQuarantineRepository implements QuarantineRepository {
     private static String json(Map<String, String> fields) {
         try {
             return JSON.writeValueAsString(fields == null ? Map.of() : fields);
-        } catch (JsonProcessingException ex) {
+        } catch (JacksonException ex) {
             throw new InternalCheckFailed("The filter of a quarantine incident could not be written.");
         }
     }
@@ -658,7 +659,7 @@ public class JdbcQuarantineRepository implements QuarantineRepository {
         Map<String, String> fields;
         try {
             fields = JSON.readValue(rs.getString("fields"), new TypeReference<LinkedHashMap<String, String>>() { });
-        } catch (JsonProcessingException ex) {
+        } catch (JacksonException ex) {
             throw new InternalCheckFailed("The filter of a quarantine incident could not be read.");
         }
         Filter filter = new Filter(instant(rs, "filter_received_from"), instant(rs, "filter_received_to"),

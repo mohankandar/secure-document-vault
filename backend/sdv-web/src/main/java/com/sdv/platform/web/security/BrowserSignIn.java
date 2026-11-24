@@ -1,10 +1,11 @@
 package com.sdv.platform.web.security;
 
+import com.sdv.platform.application.json.VeroJson;
 import com.documentplatform.identity.signin.DevelopmentLicence;
 import com.documentplatform.identity.signin.IssuerFetch;
 import com.documentplatform.identity.signin.LocalTestIssuers;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 import com.sdv.platform.persistence.identity.PlatformIdentityReads.BrowserConnection;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -41,7 +42,7 @@ public class BrowserSignIn {
     private final IssuerFetch fetch;
     private final DevelopmentLicence developmentLicence;
     private final Clock clock;
-    private final ObjectMapper json = new ObjectMapper();
+    private final ObjectMapper json = VeroJson.mapper();
     private final Map<String, Kept> kept = new HashMap<>();
     private final Map<String, Instant> failed = new HashMap<>();
 
@@ -85,15 +86,15 @@ public class BrowserSignIn {
         IssuerFetch.Response answer = fetch.get(URI.create(issuer.replaceAll("/+$", "") + "/.well-known/openid-configuration"), MAX_BYTES, localHttp);
         if (answer.status() != 200) throw new IOException("discovery answered " + answer.status());
         JsonNode document = json.readTree(answer.body());
-        if (!issuer.equals(document.path("issuer").asText(null))) throw new IOException("discovery names another issuer");
+        if (!issuer.equals(document.path("issuer").asString(null))) throw new IOException("discovery names another issuer");
         JsonNode methods = document.path("code_challenge_methods_supported");
-        if (methods.isArray() && methods.valueStream().noneMatch(m -> "S256".equals(m.asText()))) throw new IOException("discovery lists no PKCE S256");
+        if (methods.isArray() && methods.valueStream().noneMatch(m -> "S256".equals(m.asString(null)))) throw new IOException("discovery lists no PKCE S256");
         return new Endpoints(address(document, "authorization_endpoint", true, localHttp), address(document, "token_endpoint", true, localHttp),
                 address(document, "end_session_endpoint", false, localHttp), address(document, "revocation_endpoint", false, localHttp));
     }
 
     private static String address(JsonNode document, String name, boolean required, boolean localHttp) throws IOException {
-        String text = document.path(name).asText(null);
+        String text = document.path(name).asString(null);
         if (text == null || text.isBlank()) {
             if (required) throw new IOException("discovery has no " + name);
             return null;

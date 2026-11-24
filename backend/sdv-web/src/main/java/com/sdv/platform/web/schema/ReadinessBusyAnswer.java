@@ -1,7 +1,8 @@
 package com.sdv.platform.web.schema;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import com.sdv.platform.application.json.VeroJson;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 import com.sdv.platform.domain.error.SdvErrorCode;
 import com.sdv.platform.web.foundation.ErrorReplies;
 import jakarta.servlet.FilterChain;
@@ -34,7 +35,7 @@ import java.util.Map;
 @Order(Ordered.HIGHEST_PRECEDENCE + 2)
 public final class ReadinessBusyAnswer extends OncePerRequestFilter {
     static final String READINESS = "/actuator/health/readiness";
-    private static final ObjectMapper JSON = new ObjectMapper();
+    private static final ObjectMapper JSON = VeroJson.mapper();
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
@@ -65,8 +66,8 @@ public final class ReadinessBusyAnswer extends OncePerRequestFilter {
         if (body == null || body.length == 0) return false;
         try {
             JsonNode status = JSON.readTree(body).path("status");
-            return ReadinessOnly.BUSY.getCode().equals(status.asText(null));
-        } catch (IOException ex) {
+            return ReadinessOnly.BUSY.getCode().equals(status.asString(null));
+        } catch (tools.jackson.core.JacksonException ex) {
             return false;
         }
     }

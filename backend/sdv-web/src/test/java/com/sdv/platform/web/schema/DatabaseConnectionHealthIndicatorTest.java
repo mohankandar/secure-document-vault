@@ -3,7 +3,7 @@ package com.sdv.platform.web.schema;
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
 import org.junit.jupiter.api.Test;
-import org.springframework.boot.actuate.health.Status;
+import org.springframework.boot.health.contributor.Status;
 
 import javax.sql.DataSource;
 import java.lang.reflect.Proxy;

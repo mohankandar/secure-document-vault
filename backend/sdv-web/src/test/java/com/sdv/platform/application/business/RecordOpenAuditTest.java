@@ -1,8 +1,8 @@
 package com.sdv.platform.application.business;
 
 import com.sdv.platform.domain.document.SensitivityLevel;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 import com.sdv.platform.application.port.AuditEventPort;
 import com.sdv.platform.application.port.AuditQueryPort;
 import com.sdv.platform.application.port.BusinessRecordRepository;
@@ -93,8 +93,8 @@ class RecordOpenAuditTest {
         assertFalse(opened.targetId().contains(NUMBER));
 
         JsonNode details = new ObjectMapper().readTree(opened.safeDetailsJson());
-        assertEquals(SUB.toString(), details.get("submissionId").asText());
-        assertEquals(SOURCE.toString(), details.get("sourceId").asText());
+        assertEquals(SUB.toString(), details.get("submissionId").asString());
+        assertEquals(SOURCE.toString(), details.get("sourceId").asString());
         assertEquals(1, details.get("submissionCount").asInt());
         assertFalse(opened.safeDetailsJson().contains(NUMBER), "no record number in the safe details");
         assertFalse(opened.safeDetailsJson().contains("Patel"), "no readable value in the safe details");
