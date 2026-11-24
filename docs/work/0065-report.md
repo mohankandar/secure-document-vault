@@ -2,8 +2,8 @@
 
 Date: 2026-11-24
 Part A: plan, merged as PR #40. Part B: branch `feature/browser-sign-in` (from `release/vero-r7` at `2f0c94a`).
-Outcome: **built and checked; stopped: owner** for the live check with the local Keycloak (below). Not merged. No schema
-change, no new dependency.
+Outcome: DONE, merged on the design chat's decision of 2026-11-24 (queue). **The live check with the local Keycloak was not
+made**; it is an owner step (below), and any fault it finds becomes a fix task. No schema change, no new dependency.
 
 ## What was done (Part B)
 
@@ -25,7 +25,7 @@ be looked at or added, and no person could be made for the check. Nothing in Key
    `http://localhost:5183` (with `/` for the redirect), standard flow on, client authentication off, PKCE S256.
 2. Build the branch, schema step on `sdv`, `.\Start-SDV-OIDC.ps1`, open `http://localhost:5183`, sign in as a person of
    the realm with a mapped group: land on an entity, open a document, sign out.
-3. Say so, or allow the session to do it; then the pull request can be merged.
+3. Report any fault; it becomes a fix task.
 
 ## Live check without Keycloak (scratch database, a small login system made for it, the built screens with the runbook's headers)
 
@@ -66,7 +66,8 @@ changed: the decoder's lifetime argument in two test kits (0 is refused now).
 
 ## Decisions taken
 
-- **Not merged:** the task asks for the Keycloak check.
+- **Merged without the Keycloak check** the task asks for: the design chat decided that the check against the made-up login
+  system is enough to merge.
 - The audience check is made when the connection is read, not at start: Vero starts while the database is away.
 - Sending systems' tokens are checked the same way. A client with tokens over 2 hours, or without `iat`, is refused after an
   upgrade: an upgrade note in the IT guide and runbook, not a new contract version (the contract names no lifetime).
@@ -86,4 +87,4 @@ changed: the decoder's lifetime argument in two test kits (0 is refused now).
 
 ## Suggested next step
 
-The owner step; then merge.
+The owner step; 0071.
