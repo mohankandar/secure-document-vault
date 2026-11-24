@@ -47,7 +47,7 @@ import static org.mockito.Mockito.mock;
  * Runs only when SDV_IT_JDBC_URL is set. Test-SDV-SchemaUpgrade.ps1 sets it to its scratch database (sdv_schema_test)
  * after the schema step; it never points at the sdv database. In the normal build this test is skipped.
  */
-@EnabledIfEnvironmentVariable(named = "SDV_IT_JDBC_URL", matches = "jdbc:postgresql://localhost:5433/sdv_schema_test")
+@EnabledIfEnvironmentVariable(named = "SDV_IT_JDBC_URL", matches = "jdbc:postgresql://localhost:5433/sdv_schema_test(_[1-9])?")
 class AccessRequestPostgresTest {
     private static final UUID T1 = UUID.fromString("10000000-0000-0000-0000-0000000000d1");
     private static final UUID T2 = UUID.fromString("10000000-0000-0000-0000-0000000000d2");

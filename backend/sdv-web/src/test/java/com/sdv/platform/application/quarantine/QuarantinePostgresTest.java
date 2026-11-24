@@ -34,7 +34,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * Runs only when SDV_IT_JDBC_URL is set (Test-SDV-SchemaUpgrade.ps1 and the CI backend job set it to the scratch
  * database sdv_schema_test); never against the sdv database. In the normal build it is skipped.
  */
-@EnabledIfEnvironmentVariable(named = "SDV_IT_JDBC_URL", matches = "jdbc:postgresql://localhost:5433/sdv_schema_test")
+@EnabledIfEnvironmentVariable(named = "SDV_IT_JDBC_URL", matches = "jdbc:postgresql://localhost:5433/sdv_schema_test(_[1-9])?")
 class QuarantinePostgresTest {
     private static final UUID T1 = UUID.fromString("10000000-0000-0000-0000-000000004801");
     private static final UUID T2 = UUID.fromString("10000000-0000-0000-0000-000000004802");

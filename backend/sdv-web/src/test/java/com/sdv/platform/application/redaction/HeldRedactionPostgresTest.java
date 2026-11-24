@@ -55,7 +55,7 @@ import static org.mockito.Mockito.when;
  * Task 0066 against a real PostgreSQL database: the request, the approval, the sealed original, who opens it, and its
  * destruction after the hold. Files are kept in memory and "encrypted" by copying. Runs as LegalHoldPostgresTest does.
  */
-@EnabledIfEnvironmentVariable(named = "SDV_IT_JDBC_URL", matches = "jdbc:postgresql://localhost:5433/sdv_schema_test")
+@EnabledIfEnvironmentVariable(named = "SDV_IT_JDBC_URL", matches = "jdbc:postgresql://localhost:5433/sdv_schema_test(_[1-9])?")
 class HeldRedactionPostgresTest {
     private static final UUID T = UUID.fromString("10000000-0000-0000-0000-0000000000f6");
     private static final UUID S = UUID.fromString("20000000-0000-0000-0000-0000000000f6");

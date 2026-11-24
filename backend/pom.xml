@@ -75,6 +75,31 @@
         </dependencies>
     </dependencyManagement>
 
+    <profiles>
+        <!-- Task 0086: Test-SDV-SchemaUpgrade.ps1 runs the PostgreSQL-only tests in several processes, each on its own copy
+             of the checked scratch database (it.url_1, it.url_2, ...). -->
+        <profile>
+            <id>postgres-copies</id>
+            <build>
+                <pluginManagement>
+                    <plugins>
+                        <plugin>
+                            <groupId>org.apache.maven.plugins</groupId>
+                            <artifactId>maven-surefire-plugin</artifactId>
+                            <configuration>
+                                <forkCount>${it.forks}</forkCount>
+                                <reuseForks>true</reuseForks>
+                                <environmentVariables>
+                                    <SDV_IT_JDBC_URL>${it.url}_${surefire.forkNumber}</SDV_IT_JDBC_URL>
+                                </environmentVariables>
+                            </configuration>
+                        </plugin>
+                    </plugins>
+                </pluginManagement>
+            </build>
+        </profile>
+    </profiles>
+
     <build>
         <pluginManagement>
             <plugins>

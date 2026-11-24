@@ -39,7 +39,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * after the schema step, with the scratch owner's random password in SDV_IT_JDBC_PASSWORD; it never points at the sdv
  * database. In the normal build this test is skipped.
  */
-@EnabledIfEnvironmentVariable(named = "SDV_IT_JDBC_URL", matches = "jdbc:postgresql://localhost:5433/sdv_schema_test")
+@EnabledIfEnvironmentVariable(named = "SDV_IT_JDBC_URL", matches = "jdbc:postgresql://localhost:5433/sdv_schema_test(_[1-9])?")
 class LegalHoldPostgresTest {
     private static final UUID T1 = UUID.fromString("10000000-0000-0000-0000-0000000000c1");
     private static final UUID T2 = UUID.fromString("10000000-0000-0000-0000-0000000000c2");

@@ -47,7 +47,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
  * Runs only when SDV_IT_JDBC_URL is set (CI's PostgreSQL job, or Test-SDV-SchemaUpgrade.ps1's scratch database after
  * the schema step); never against the sdv database.
  */
-@EnabledIfEnvironmentVariable(named = "SDV_IT_JDBC_URL", matches = "jdbc:postgresql://localhost:5433/sdv_schema_test")
+@EnabledIfEnvironmentVariable(named = "SDV_IT_JDBC_URL", matches = "jdbc:postgresql://localhost:5433/sdv_schema_test(_[1-9])?")
 class SenderProfileServerContractTest {
     static final String TENANT = "TEN-PROFILE-CHECK-0001";
     static final String SLOT = "ENT-PROFILE-CHECK-0001";
