@@ -397,6 +397,14 @@ alter default privileges for role $owner in schema public grant select, insert, 
     Write-Step '2c. Schema step update' $up.Seconds "$liquibase changesets and identity V5, licensing V2 applied (own history tables), old identity tables dropped, 018 indexes valid"
     $up.Out | Set-Content -Encoding utf8 (Join-Path $run 'schema-update.out.txt')
 
+    # Task 0073: the app user's rights on two licensing tables are narrower than the default ones; the rest are there.
+    $narrow = (Invoke-Sql -Database $db -Sql "select string_agg(t || ':' || p || '=' || has_table_privilege('$app', t, p), ' ' order by t, p) from unnest(array['lic_last_seen','lic_clock_reset']) t, unnest(array['SELECT','INSERT','UPDATE','DELETE']) p;").Out.Trim()
+    Assert-That ($narrow -eq 'lic_clock_reset:DELETE=false lic_clock_reset:INSERT=true lic_clock_reset:SELECT=true lic_clock_reset:UPDATE=false lic_last_seen:DELETE=false lic_last_seen:INSERT=true lic_last_seen:SELECT=true lic_last_seen:UPDATE=true') "rights on the licensing tables: $narrow"
+    $refusedDelete = Invoke-Sql -Database $db -User $app -Environment @{ PGPASSWORD = $appPassword } -Sql 'delete from lic_clock_reset where false;' -AllowFailure
+    Assert-That ($refusedDelete.Code -ne 0 -and $refusedDelete.Err -match 'permission denied') "the app user may delete clock resets: $($refusedDelete.Err.Trim())"
+    $again = Invoke-SchemaStep @('update')
+    Assert-That ($again.Code -eq 0 -and $again.Out -match 'Up to date') "a second update should say up to date: $($again.Out.Trim()) $($again.Err.Trim())"
+
     # The app user can read and write but not create or alter.
     $create = Invoke-Sql -Database $db -User $app -Environment @{ PGPASSWORD = $appPassword } -Sql 'create table vero_should_not_exist (i int);' -AllowFailure
     Assert-That ($create.Code -ne 0 -and $create.Err -match 'permission denied') 'the app user must not be able to create tables'
