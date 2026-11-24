@@ -47,6 +47,26 @@
 
     <dependencyManagement>
         <dependencies>
+            <!-- Task 0058: security override. Spring Boot 3.5.16 pins httpclient5 5.5.2 and httpcore5 5.3.6, which have
+                 CVE-2026-64607, CVE-2026-54399 and CVE-2026-54428. platform-core 0.6.1 is built on httpclient5 5.6.5
+                 and httpcore5 5.4.4 and its release notes ask apps to override. Spring Boot is imported as a BOM, so
+                 its version properties can't be set here; these entries win over the imported BOMs instead.
+                 Remove the override once Spring Boot's own versions are newer than these. -->
+            <dependency>
+                <groupId>org.apache.httpcomponents.client5</groupId>
+                <artifactId>httpclient5</artifactId>
+                <version>5.6.5</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.httpcomponents.core5</groupId>
+                <artifactId>httpcore5</artifactId>
+                <version>5.4.4</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.httpcomponents.core5</groupId>
+                <artifactId>httpcore5-h2</artifactId>
+                <version>5.4.4</version>
+            </dependency>
             <dependency>
                 <groupId>com.documentplatform.platform</groupId>
                 <artifactId>platform-bom</artifactId>

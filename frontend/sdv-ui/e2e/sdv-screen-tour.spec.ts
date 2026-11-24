@@ -971,7 +971,9 @@ async function signInChecks(page: Page, testInfo: TestInfo) {
   await capture(page, testInfo, 'sign-in-read-only')
   const test = page.getByRole('button', { name: 'Test sign-in', exact: true })
   await expect(test).toHaveCount(1)
-  const versionBefore = await page.getByLabel('Sign-in in use').first().innerText()
+  // textContent, not innerText: toHaveText compares the text without CSS (no upper-case labels, no line breaks).
+  const versionBefore = (await page.getByLabel('Sign-in in use').first().textContent()) ?? ''
+  expect(versionBefore).toContain('Version')
   await test.click()
   const result = page.getByRole('status', { name: 'Test sign-in result' })
   // The local demo connection is the development login server on this machine, under the development-signed licence.
