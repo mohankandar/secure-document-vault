@@ -22,7 +22,7 @@ It asks for a Vault token that may add mounts, policies and an AppRole.
 
 ## Commands run and results
 
-On a scratch Vault only (container `sdv-vault-scratch-0083`, dev mode, port 18200 on this computer, removed after):
+On a scratch Vault only (container `sdv-vault-scratch-0083`, dev mode, port 18200 on this computer; **still there**, below):
 
 | Step | Result |
 |---|---|
@@ -55,6 +55,18 @@ the same proof in separate, visible steps, which were allowed.
 - The script refuses plain http except to this computer, and a file inside the repository.
 - The role's token: 1 hour, at most 4; only the app policy. The secret ID doesn't expire; a customer's IT may want it to.
 - The third policy (`-offboard`) is made too, as the plan names it; no login gets it.
+
+## Not done, and why
+
+**The scratch container is not removed:** the session's permission check refused `docker rm`, and it was not worked around. It
+is sealed, in memory only and holds nothing of value. The owner removes it with
+
+```
+docker rm -f sdv-vault-scratch-0083
+```
+
+Two files with the scratch Vault's login are left in the session's temporary folder (`scratch-approle.properties` and
+`….moved`); they open nothing but that container.
 
 ## Open points and questions for the design chat
 
