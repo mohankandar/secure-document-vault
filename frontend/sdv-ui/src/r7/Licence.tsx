@@ -63,7 +63,7 @@ function UsageFile() {
     } finally { setBusy(false) }
   }
   return <Panel title="Usage file" actions={<button type="button" className="v-btn sm" disabled={busy} onClick={() => void save(false)}>{busy ? 'Saving…' : 'Export usage'}</button>}>
-    <p className="muted">Numbers per entity and month for your account manager: no names, no documents, no prices. Each file goes on from the last one.</p>
+    <p className="muted">Numbers per entity and month for your account manager: no names and no documents. Each file goes on from the last one.</p>
     {note && <Callout tone={note.ok ? 'ok' : 'bad'} title={note.ok ? 'Saved' : 'Not saved'}>{note.text}</Callout>}
     {askAgain && <p><button type="button" className="v-btn sm" disabled={busy} onClick={() => void save(true)}>I told support: start a new series</button></p>}
   </Panel>
