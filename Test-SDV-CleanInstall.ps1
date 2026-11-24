@@ -13,15 +13,16 @@
   Steps:
     0. Task 0037: a packaged start (no local profile) with sign-in or the key service switched off refuses to start,
        with SDV-SYS-006 or SDV-KEY-001 and no stack trace, and never opens its port.
-    1. Start Vero (no local profile, production context) against the empty database: it refuses with the "older" message.
+    1. Start Vero (no local profile, production context) against the empty database: the start stops (task 0074: platform-core's tables are
+       missing) with the "older" message in the log.
        Task 0041: the schema step also runs platform-core's identity and licensing tables (their own Flyway runs).
     2. Schema step: status, sql (to a file, changes nothing), update.
     3. Start again: it serves, as the read/write user, and the tenants table is empty (no seed data).
     4. Start again: nothing new is applied, and the start is quick.
-    5. Task 0037: start with the database unreachable, then bring it up: Vero serves without a restart. Then take it
-       away and bring it back again: readiness turns not ready and ready again. "The database" is a local TCP relay
-       (test-tools\TcpRelay.java) in front of sdv-postgres; the container itself is never stopped. Task 0039 part 2:
-       at start without the database, as later, only readiness is 503; liveness and the overall health are 200. With
+    5. Task 0074: a start with the database unreachable stops; started again with it up, Vero serves. Task 0037: take it
+       away and bring it back: readiness turns not ready and ready again. "The database" is a local TCP relay
+       (test-tools\TcpRelay.java) in front of sdv-postgres; the container itself is never stopped. Only
+       readiness is 503 then; liveness and the overall health are 200. With
        SDV_TRUSTED_PROXIES not set, X-Forwarded-For is ignored.
     6. Task 0038: start with the sign-in hub's keys away: readiness 503, a signed-in request 503 SDV-AUT-004. Then
        bring the keys back: ready again without a restart, and the same request gets 401 SDV-AUT-006 (no sign-in
@@ -170,7 +171,8 @@ function Start-VeroProcess([string]$name, [hashtable]$Override = @{}, [string]$D
 
 # Task 0037: a start that must refuse. It has to exit with an error, print the code in the failure report, never show a
 # stack trace and never answer on its port.
-function Assert-StartRefused([string]$name, [hashtable]$Override, [string]$Code) {
+# -Platform: the report is platform-core's own (its code and what to do), not Vero's.
+function Assert-StartRefused([string]$name, [hashtable]$Override, [string]$Code, [switch]$Platform) {
     $watch = [System.Diagnostics.Stopwatch]::StartNew()
     $out = Start-VeroProcess $name $Override
     $answered = $false
@@ -185,8 +187,12 @@ function Assert-StartRefused([string]$name, [hashtable]$Override, [string]$Code)
     Assert-That ($exitCode -ne 0) "Vero exited with 0 although $Code should refuse the start ($name)"
     Assert-That (-not $answered) "Vero answered on port $Port before refusing ($name)"
     $log = Get-Content -Raw $out
-    Assert-That ($log.Contains('APPLICATION FAILED TO START') -and $log -match "Description:\s+$Code ") "the failure report doesn't start with $Code ($name). See $out"
-    Assert-That ($log -match "ERROR .* $Code ") "no ERROR line with $Code ($name)"
+    if ($Platform) {
+        Assert-That ($log.Contains('APPLICATION FAILED TO START') -and $log.Contains($Code)) "the failure report doesn't name $Code ($name). See $out"
+    } else {
+        Assert-That ($log.Contains('APPLICATION FAILED TO START') -and $log -match "Description:\s+$Code ") "the failure report doesn't start with $Code ($name). See $out"
+        Assert-That ($log -match "ERROR .* $Code ") "no ERROR line with $Code ($name)"
+    }
     Assert-That (-not ($log -match '(?m)^\s+at [a-z]+\.')) "the refused start printed a stack trace ($name)"
     $watch.Elapsed.TotalSeconds
 }
@@ -340,28 +346,16 @@ alter default privileges for role $owner in schema public grant select, insert, 
     Write-Step '0b. Packaged start with the key service switched off: refused' $t 'SDV-KEY-001, exit code not 0, port never answered, no stack trace'
 
     # ------------------------------------------------------------ 1. start against the empty database
-    $s = Start-Vero 'start-1-empty'
-    Assert-That ($s.Health.Status -eq 503) "health should be 503 DOWN on an empty database, was $($s.Health.Status)"
-    # Task 0071: system information needs sign-in; the sentence is in the refusals and the log (below).
-    Assert-That ((Get-Http '/api/v1/system/info').Status -eq 401) 'system info without sign-in should get 401'
+    # Task 0074 (answer 8): platform-core's tables are missing, so the start stops and says what to do.
+    $t = Assert-StartRefused 'start-1-empty' @{} 'IDN_TABLES_MISSING' -Platform
+    $log = Get-Content -Raw (Join-Path $run 'start-1-empty.out.log')
     $older = 'The database is older than this Vero version. Ask your database team to run the schema step (install guide, "Update the database").'
-    $gated = Get-Http '/api/v1/operations/summary'
-    Assert-That ($gated.Status -eq 503 -and $gated.Body -like '*SDV-SYS-001*') "a protected request should get 503 SDV-SYS-001 (was DATABASE_OLDER before task 0036), got $($gated.Status)"
-    Wait-Watching 3   # let the background jobs' 1 s initial delay pass: they must stay off
-    # Up but not ready: health and readiness OUT_OF_SERVICE (503), liveness UP (200).
-    $health = Get-Http '/actuator/health'; $ready = Get-Http '/actuator/health/readiness'; $live = Get-Http '/actuator/health/liveness'
-    Assert-That ($health.Status -eq 503 -and $health.Body -like '*OUT_OF_SERVICE*') "health should be 503 OUT_OF_SERVICE, was $($health.Status) $($health.Body)"
-    Assert-That ($ready.Status -eq 503 -and $ready.Body -like '*OUT_OF_SERVICE*') "readiness should be 503 OUT_OF_SERVICE, was $($ready.Status) $($ready.Body)"
-    Assert-That ($live.Status -eq 200 -and $live.Body -like '*UP*') "liveness should be 200 UP, was $($live.Status) $($live.Body)"
-    $log = Get-Content -Raw $s.Log
     Assert-That ($log.Contains($older)) 'the startup log does not contain the "older" sentence'
     Assert-That (-not ($log -match 'liquibase\.(changelog|lockservice)')) 'Liquibase ran during a production start'
     Assert-That (-not ($log -match 'RETENTION_SWEEP_FAILED')) 'the cleanup job ran against the empty database'
-    Assert-That (-not ($log -match 'Application run failed|CannotCreateTransactionException')) 'the start-up work stopped the start'
     $tables = (Invoke-Sql -Database $db -Sql "select count(*) from pg_tables where schemaname = 'public';").Out.Trim()
     Assert-That ($tables -eq '0') "the production start created $tables tables; it must change nothing"
-    Stop-Vero
-    Write-Step '1. Start on the empty database: refuses with "older"' $s.Seconds 'not ready (health and readiness 503 OUT_OF_SERVICE, liveness UP), API 503, 0 tables created'
+    Write-Step '1. Start on the empty database: refused' $t 'IDN_TABLES_MISSING and the "older" sentence in the log, exit code not 0, 0 tables created'
 
     # ------------------------------------------------------------ 2. schema step
     $st = Invoke-SchemaStep @('status')
@@ -464,38 +458,29 @@ alter default privileges for role $owner in schema public grant select, insert, 
 
     # ------------------------------------------------------------ 5. task 0037: the database away at start, then back
     $relayUrl = "jdbc:postgresql://127.0.0.1:$RelayPort/$db"
-    $s = Start-Vero 'start-4-database-away' $relayUrl
-    $veroId = $script:appProcess.Id
-    $ready = Get-Http '/actuator/health/readiness'; $live = Get-Http '/actuator/health/liveness'
-    # Task 0039 part 2 (owner answer 4): the same rule at start as later: only readiness is 503 (not ready).
-    $overall = Get-Http '/actuator/health'
-    Assert-That ($ready.Status -eq 503 -and $ready.Body -like '*NOT_READY*') "readiness should be 503 NOT_READY while the database is away, was $($ready.Status) $($ready.Body)"
-    Assert-That ($s.Health.Status -eq 200 -and $overall.Status -eq 200) "the overall health should be 200 while the database is away at start, was $($s.Health.Status) and $($overall.Status) $($overall.Body)"
-    Assert-That ($live.Status -eq 200) "liveness should stay 200 while the database is away, was $($live.Status)"
-    $gated = Get-Http '/api/v1/operations/summary'
-    $gatedBody = $gated.Body | ConvertFrom-Json
-    Assert-That ($gated.Status -eq 503 -and $gatedBody.code -eq 'SDV-SYS-014' -and $gatedBody.reference) "a request should get 503 SDV-SYS-014 with a reference while the database is away, got $($gated.Status) $($gated.Body)"
-    Assert-That ((Get-Http '/api/v1/system/info').Status -eq 401) 'system info without sign-in should get 401'
-    $log = Get-Content -Raw $s.Log
+    # Task 0074 (answer 8): a start while the database can't be reached stops; the service manager starts Vero again.
+    $t = Assert-StartRefused 'start-4-database-away' @{ SDV_DB_URL = $relayUrl } 'MON_DB_UNREACHABLE' -Platform
+    $log = Get-Content -Raw (Join-Path $run 'start-4-database-away.out.log')
     Assert-That ($log -match "ERROR .* SDV-SYS-003 Vero couldn't reach its database at start\..*127\.0\.0\.1:$RelayPort") 'no SDV-SYS-003 ERROR line with the host and port'
     Assert-That (-not $log.Contains($appPassword)) 'the database password is in the log'
-    Write-Step '5a. Start with the database away: up, not ready, 503 SDV-SYS-014' $s.Seconds 'readiness 503 NOT_READY, liveness and overall health 200, SYS-003 logged with host and port, start-up work waits'
+    Write-Step '5a. Start with the database away: stops' $t 'MON_DB_UNREACHABLE and SYS-003 with host and port in the log, exit code not 0'
 
-    $w = [System.Diagnostics.Stopwatch]::StartNew()
     Start-Relay
-    Assert-That (Wait-Readiness 200 120) "Vero did not become ready within 120 s of the database coming back. See $($s.Log)"
-    Assert-That (-not $script:appProcess.HasExited -and $script:appProcess.Id -eq $veroId) 'Vero was restarted'
+    $w = [System.Diagnostics.Stopwatch]::StartNew()
+    $s = Start-Vero 'start-4-database-back' $relayUrl
+    $veroId = $script:appProcess.Id
+    Assert-That (Wait-Readiness 200 120) "Vero did not become ready with the database back. See $($s.Log)"
     $protected = Get-Http '/api/v1/operations/summary'
     Assert-That ($protected.Status -eq 401) "with the database back a request without sign-in should get 401, got $($protected.Status)"
-    $log = Get-Content -Raw $s.Log
-    Assert-That ($log -match 'can be reached again after \d+ tries') 'the log does not say the database is back'
+    $dependencies = Get-Http '/actuator/health/dependencies'
+    Assert-That ($dependencies.Status -eq 401) "the check list without sign-in should get 401, got $($dependencies.Status)"
     # Task 0039 part 2 (owner answer 3): SDV_TRUSTED_PROXIES is not set, so X-Forwarded-For is ignored.
     $direct = Get-Http '/api/v1/ingestion/submissions' @{ 'X-Forwarded-For' = '198.51.100.8' }
     $directBody = $direct.Body | ConvertFrom-Json
     Assert-That ($direct.Status -eq 401 -and $directBody.code -eq 'SDV-AUT-001') "an intake request without sign-in should get 401 SDV-AUT-001, got $($direct.Status) $($direct.Body)"
     $directFrom = (Invoke-Sql -Database $db -Sql "select coalesce(string_agg(caller_address, ','), '-') from unidentified_intake_attempts where reference = '$($directBody.reference)';").Out.Trim()
     Assert-That ($directFrom -in @('127.0.0.1', '0:0:0:0:0:0:0:1')) "without trusted proxies the caller address should be this computer's, was: $directFrom"
-    Write-Step '5b. Database up: Vero serves without a restart' $w.Elapsed.TotalSeconds "readiness 200, the same process, API 401 (gate open); X-Forwarded-For ignored (recorded $directFrom)"
+    Write-Step '5b. Started again with the database up: serves' $w.Elapsed.TotalSeconds "readiness 200, API 401; X-Forwarded-For ignored (recorded $directFrom)"
 
     $w = [System.Diagnostics.Stopwatch]::StartNew()
     Stop-Relay

@@ -5,6 +5,7 @@ import { AreaFrame } from './Governance'
 import { FailureNotice, loadFailed, type Failure } from './CardError'
 import { schemaWords } from './problemWords'
 import { Problems } from './Problems'
+import { Checks } from './Checks'
 import { AuditLog, AuditWords } from './AuditLog'
 import { isMeaningfulActivity } from './auditWords'
 import { About } from './About'
@@ -221,6 +222,7 @@ function Health() {
                 {st === 'notConfigured' && <div className="faint">{serviceSentence(k, data[k]?.status)}</div>}</td></tr>) })}</tbody></table>
       </section>
     </>}
+    {!schemaOff && <Checks role="platform" at={checkedAt} />}
     {!schemaOff && <section className={`v-panel ov-cleanup ${sweep.tone}`} aria-label="Automatic cleanup"><div className="v-panel-body">
       <h2 className="v-sec">Automatic cleanup</h2>
       {cleanupError ? <p>Vero couldn’t say how automatic cleanup is doing. Check now again.</p> : <>

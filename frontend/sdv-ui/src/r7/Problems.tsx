@@ -3,6 +3,7 @@ import { ChevronRight } from 'lucide-react'
 import { FailureNotice, loadFailed, type Failure } from './CardError'
 import { Badge, Callout, Drawer, TechDetails, fmtDateTime, fmtRel, levelWords } from './ui'
 import { opsDetail, type OpsDetail, type UnidentifiedIntakeAttempt } from './liveApi'
+import { Checks } from './Checks'
 import { problemNote, problemSentences, type ProblemFacts, type ProblemKind } from './problemWords'
 
 // Task 0011 Part A: one read-only list of problems for Platform operations and IT. Nothing can be fixed here:
@@ -113,6 +114,8 @@ export function Problems({ role }: { role: 'platform' | 'tenantIt' }) {
             <td className="act faint"><ChevronRight size={16} aria-hidden /></td>
           </tr>) })}</tbody></table>}
     </section>
+
+    {role === 'tenantIt' && <Checks role="tenantIt" at={String(reload)} />}
 
     {data && <UnidentifiedAttempts count={data.unidentifiedIntakeAttemptCount ?? 0} attempts={data.unidentifiedIntakeAttempts ?? []} />}
 

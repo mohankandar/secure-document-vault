@@ -152,7 +152,7 @@ class ErrorPlumbingTest {
                 500, "SDV-SYS-013");
         // Task 0062: the reference is always Vero's own (it was the caller's X-Correlation-Id when one was sent).
         String reference = body.get("reference").asString();
-        assertDoesNotThrow(() -> java.util.UUID.fromString(reference));
+        assertTrue(com.documentplatform.errors.ReferenceId.isReference(reference), reference);
         List<ILoggingEvent> errors = lines(Level.ERROR, reference);
         assertEquals("ref-unexpected-1", errors.getFirst().getMDCPropertyMap().get(CorrelationIdFilter.CALLER_MDC_KEY), "the caller's is kept beside it");
         assertEquals(1, errors.size(), "one ERROR line for the 5xx");

@@ -928,9 +928,9 @@ Task 0037: SYS-003 to SYS-012 are start-up codes. A start that stops prints one 
 ### SDV-SYS-003: database unreachable at start
 
 - **HTTP status:** none since task 0037; it is the start-up log line. While the database can't be reached, requests get 503 **SDV-SYS-014** (task 0036 sent this code with 503, and Vero refused until it was restarted).
-- **Meaning:** when Vero started it couldn't reach the database to check its version. Vero keeps running and keeps trying: after 2 s, then twice as long each time, at most once a minute. As soon as the database answers, the version check runs and Vero serves (or refuses with SYS-001 or SYS-002), without a restart. Readiness (`/actuator/health/readiness`) is 503 until then; liveness stays UP. Task 0039 part 2: the same rule as when the database goes away later: the schema check reports `NOT_READY` (readiness only), so the overall `/actuator/health` stays 200 too (it was 503 `OUT_OF_SERVICE`). A database that answers and doesn't match (SYS-001, SYS-002) is still `OUT_OF_SERVICE` in readiness and the overall health.
+- **Meaning:** when Vero started it couldn't reach the database to check its version. Vero logs this and stops (task 0074), so the service manager starts it again. A database that goes away later doesn't stop Vero. (Before: Vero kept running and kept trying: after 2 s, then twice as long each time, at most once a minute. As soon as the database answers, the version check runs and Vero serves (or refuses with SYS-001 or SYS-002), without a restart.) Readiness (`/actuator/health/readiness`) is 503 until then; liveness stays UP. Task 0039 part 2: the same rule as when the database goes away later: the schema check reports `NOT_READY` (readiness only), so the overall `/actuator/health` stays 200 too (it was 503 `OUT_OF_SERVICE`). A database that answers and doesn't match (SYS-001, SYS-002) is still `OUT_OF_SERVICE` in readiness and the overall health.
 - **What the user should do:** try again in a few minutes. If it keeps happening, tell the IT team.
-- **What support should tell the customer:** Vero started while its database was unavailable. Check that PostgreSQL is running and reachable; no restart is needed. The log has one ERROR line `SDV-SYS-003 …` with the database host and port and the SQL state, a WARN line per further try, and an INFO line when the database can be reached again.
+- **What support should tell the customer:** Vero started while its database was unavailable. Check that PostgreSQL is running and reachable; no restart is needed while Vero runs. Task 0074: a start while the database can't be reached stops again (exit code not 0); the service manager starts Vero again. The log has one ERROR line `SDV-SYS-003 …` with the database host and port and the SQL state, a WARN line per further try, and an INFO line when the database can be reached again.
 
 ### SDV-SYS-004: bundled changelog unreadable
 
@@ -1038,6 +1038,13 @@ Task 0037: SYS-003 to SYS-012 are start-up codes. A start that stops prints one 
 - **What the user should do:** send less at once, for example fewer documents in one list.
 - **What support should tell the customer:** the request was over Vero's limit. If a real submission needs more, the installer raises the setting. One INFO line has the reference.
 
+### SDV-SYS-020: many intake requests without a sending system
+
+- **HTTP status:** none. Task 0074: a check on Platform operations, Health and IT, Problems; never an answer.
+- **Meaning:** in the last hour, 10 or more requests to the intake addresses could not be linked to a sending system. Nothing was received.
+- **What the user should do:** IT looks at Problems, Unidentified intake attempts.
+- **What support should tell the customer:** a sending system's sign-in is set up wrong, or somebody else calls the intake addresses. The list has the callers' addresses and codes.
+
 ## Storage (STO)
 
 ### SDV-STO-001: no storage can take the document
@@ -1060,6 +1067,13 @@ Task 0037: SYS-003 to SYS-012 are start-up codes. A start that stops prints one 
 - **Meaning:** a value IT sent for storage is missing or out of range. Nothing was changed. Message: "requiredBytes must be 0 or more."
 - **What the user should do:** correct the value the message names and try again.
 - **What support should tell the customer:** a storage setting is out of range; the message says which.
+
+### SDV-STO-009: a storage volume needs attention
+
+- **HTTP status:** none. Task 0074: a check on Platform operations, Health and IT, Problems; never an answer.
+- **Meaning:** one or more active volumes are nearly full, at their stop level, or can't be used. Counts only, for all of Vero; not working when no active volume can take documents.
+- **What the user should do:** IT opens Storage.
+- **What support should tell the customer:** IT frees space, adds a volume or makes the folder reachable again.
 
 ### SDV-STO-008: the folder can't be used for documents
 

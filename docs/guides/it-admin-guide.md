@@ -67,10 +67,18 @@ database's state there. Without sign-in, use readiness and the start-up log.
 
 Requests are limited in size (`413 SDV-SYS-019`); uploads have the sending system's own limit.
 
+## Checks and the diagnostic bundle
+
+**Problems** lists what Vero depends on: database, key service, login system and its keys, licence, storage, intake. A check
+that isn't working says why and what to do, with a code. **Download diagnostic bundle** saves a zip for support; it holds no
+document, name, value or secret, and the download is in the audit.
+
+A start while the database can't be reached stops again and the log says why; set the service to restart by itself.
+
 ## Problems
 
 Documents that could not be stored, deliveries still missing documents, and requests to the intake addresses Vero couldn't
-link to a sending system (last 7 days). Each has a reference: the same one is in Vero's log. References are always Vero's
+link to a sending system (last 7 days). Each has a reference: the same one is in Vero's log. References (`R-` and 12 characters) are always Vero's
 own; a caller's `X-Correlation-Id` is logged beside it.
 
 The **Audit report** tab makes a sealed copy of the audit, as for the Business Admin.

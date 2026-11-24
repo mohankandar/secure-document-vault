@@ -192,6 +192,10 @@ export const opsAuditExport=(filters:Record<string,string|undefined>,actions?:st
 /** The last automatic cleanup run since the server started (kept in memory; the server reports no schedule). */
 /** nextRunAt (task 0023): when the next cleanup run is due, from the scheduler's own setting; null when the server can't say. */
 export type OpsRetention={outcome:'SUCCESS'|'FAILED'|'NEVER_RUN'|string;startedAt:string|null;completedAt:string|null;candidates:number;deleted:number;failed:number;/** Task 0027: due documents the run kept because they are on legal hold. */ heldSkipped?:number;reasonCode:string|null;nextRunAt?:string|null}
+/** Task 0074: what Vero depends on. cause and fix are null while a check is working. */
+export type ServiceCheck={name:string;group:string;state:'WORKING'|'HAVING_PROBLEMS'|'DOWN';code:string;cause:string|null;fix:string|null;checkedAt:string}
+export const serviceChecks=(role:'platform'|'tenantIt')=>roleApi<{checks:ServiceCheck[]}>('/api/v1/operations/checks',role)
+export const diagnosticBundle=(role:'platform'|'tenantIt')=>contentBinary('/api/v1/operations/diagnostic-bundle',role)
 export const opsRetention=()=>roleApi<OpsRetention>('/api/v1/operations/retention-status','platform')
 
 /** Thresholds left out use the tenant's standard warning and stop levels. */

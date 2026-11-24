@@ -1,5 +1,11 @@
 package com.sdv.platform.web.security;
 
+import com.documentplatform.monitoring.CheckResult;
+import com.documentplatform.monitoring.CheckRunner;
+import com.documentplatform.monitoring.CheckState;
+import com.sdv.platform.web.schema.ReadinessOnly;
+import java.time.Instant;
+import java.util.List;
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
@@ -35,7 +41,7 @@ class SignInKeysHealthIndicatorTest {
     void setUp() throws Exception {
         logs = new ListAppender<>();
         logs.start();
-        ((Logger) LoggerFactory.getLogger(SignInKeysHealthIndicator.class)).addAppender(logs);
+        ((Logger) LoggerFactory.getLogger(SignInKeysCheck.class)).addAppender(logs);
         byte[] keys = new JWKSet(new RSAKeyGenerator(2048).keyID("k1").generate().toPublicJWK()).toString()
                 .getBytes(StandardCharsets.UTF_8);
         hub = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
@@ -58,32 +64,38 @@ class SignInKeysHealthIndicatorTest {
     @AfterEach
     void tearDown() {
         hub.stop(0);
-        ((Logger) LoggerFactory.getLogger(SignInKeysHealthIndicator.class)).detachAppender(logs);
+        ((Logger) LoggerFactory.getLogger(SignInKeysCheck.class)).detachAppender(logs);
     }
 
     private String url(String path) {
         return "http://127.0.0.1:" + hub.getAddress().getPort() + path;
     }
 
-    private static SignInKeysHealthIndicator jwt(String jwks) {
-        return new SignInKeysHealthIndicator("enterprise-jwt", jwks);
+    private static SignInKeysCheck jwt(String jwks) {
+        return new SignInKeysCheck("enterprise-jwt", jwks);
+    }
+
+    /** Readiness after one run of the check, as the list runs it. */
+    private static Health ready(SignInKeysCheck check) throws Exception {
+        CheckResult result = CheckResult.of(check, check.check(), Instant.now(), Duration.ZERO);
+        return new SignInKeysHealthIndicator(check.used(), () -> List.of(result)).health();
     }
 
     @Test
-    void upWhileTheKeysCanBeFetchedDownWhileTheyCantAndUpAgain() {
-        SignInKeysHealthIndicator indicator = jwt(url("/certs"));
-        assertEquals(Status.UP, indicator.health().getStatus());
+    void upWhileTheKeysCanBeFetchedDownWhileTheyCantAndUpAgain() throws Exception {
+        SignInKeysCheck check = jwt(url("/certs"));
+        assertEquals(Status.UP, ready(check).getStatus());
 
         answer.set(503);
-        Health down = indicator.health();
-        assertEquals(com.sdv.platform.web.schema.ReadinessOnly.NOT_READY, down.getStatus());
+        Health down = ready(check);
+        assertEquals(ReadinessOnly.NOT_READY, down.getStatus());
         assertEquals("SDV-AUT-004", down.getDetails().get("code"));
-        assertEquals("127.0.0.1:" + hub.getAddress().getPort(), down.getDetails().get("host"));
-        assertEquals("HTTP 503", down.getDetails().get("reason"));
-        assertEquals(com.sdv.platform.web.schema.ReadinessOnly.NOT_READY, indicator.health().getStatus());
+        String reason = (String) down.getDetails().get("reason");
+        assertTrue(reason.contains("127.0.0.1:" + hub.getAddress().getPort()) && reason.contains("HTTP 503"), reason);
+        assertEquals(ReadinessOnly.NOT_READY, ready(check).getStatus());
 
         answer.set(200);
-        assertEquals(Status.UP, indicator.health().getStatus());
+        assertEquals(Status.UP, ready(check).getStatus());
         assertEquals(1, logs.list.stream().filter(e -> e.getLevel() == Level.WARN).count(), "one WARN for the outage");
         assertTrue(logs.list.stream().filter(e -> e.getLevel() == Level.WARN).findFirst().orElseThrow()
                 .getFormattedMessage().startsWith("code=SDV-AUT-004 "));
@@ -96,38 +108,38 @@ class SignInKeysHealthIndicatorTest {
         try (ServerSocket socket = new ServerSocket(0, 1, java.net.InetAddress.getLoopbackAddress())) {
             closed = socket.getLocalPort();
         }
-        Health unreachable = jwt("http://127.0.0.1:" + closed + "/certs").health();
-        assertEquals(com.sdv.platform.web.schema.ReadinessOnly.NOT_READY, unreachable.getStatus());
-        assertEquals("ConnectException", unreachable.getDetails().get("reason"));
-        assertEquals("the answer is not a key set", jwt(url("/not-keys")).health().getDetails().get("reason"));
-        assertEquals("no key set address is set", jwt("").health().getDetails().get("reason"));
+        Health unreachable = ready(jwt("http://127.0.0.1:" + closed + "/certs"));
+        assertEquals(ReadinessOnly.NOT_READY, unreachable.getStatus());
+        assertTrue(unreachable.getDetails().get("reason").toString().contains("ConnectException"));
+        assertEquals("the answer is not a key set", jwt(url("/not-keys")).check().details().get("reason"));
+        assertEquals("no key set address is set", jwt("").check().details().get("reason"));
     }
 
+    /** Task 0074: the list's runner stops a check that hangs; readiness reads the last result and never waits. */
     @Test
-    void aHubThatDoesNotAnswerIsDownWithinTheWait() {
-        SignInKeysHealthIndicator slow = new SignInKeysHealthIndicator(true, "https://idp.example.test/certs", () -> {
-            Thread.sleep(5_000);
+    void aHubThatDoesNotAnswerIsDownAndNotCheckedYetIsNotReady() throws Exception {
+        SignInKeysCheck slow = new SignInKeysCheck(true, "https://idp.example.test/certs", () -> {
+            Thread.sleep(60_000);
             return null;
-        }, Duration.ofMillis(200));
-        long started = System.nanoTime();
-        Health health = slow.health();
-        assertTrue(Duration.ofNanos(System.nanoTime() - started).toMillis() < 2_000, "the probe isn't held up");
-        assertEquals(com.sdv.platform.web.schema.ReadinessOnly.NOT_READY, health.getStatus());
-        assertEquals("no answer within 200 ms", health.getDetails().get("reason"));
-        slow.stop();
+        });
+        try (CheckRunner runner = new CheckRunner()) {
+            CheckResult result = runner.run(slow);
+            assertEquals(CheckState.DOWN, result.state());
+            assertEquals(ReadinessOnly.NOT_READY, new SignInKeysHealthIndicator(true, () -> List.of(result)).health().getStatus());
+        }
+        assertEquals(ReadinessOnly.NOT_READY, new SignInKeysHealthIndicator(true, List::of).health().getStatus());
     }
 
     @Test
-    void withoutEnterpriseJwtNoKeysAreUsedAndItIsUp() {
+    void withoutEnterpriseJwtNoKeysAreUsedAndItIsUp() throws Exception {
         for (String mode : new String[]{"local-header", "disabled"}) {
-            Health health = new SignInKeysHealthIndicator(mode, "").health();
-            assertEquals(Status.UP, health.getStatus(), mode);
+            assertEquals(Status.UP, ready(new SignInKeysCheck(mode, "")).getStatus(), mode);
         }
     }
 
     @Test
     void theHostIsShownWithoutThePath() {
-        assertEquals("idp.example.test", SignInKeysHealthIndicator.host("https://idp.example.test/realms/x/protocol/openid-connect/certs?k=1"));
-        assertEquals("(not set)", SignInKeysHealthIndicator.host(""));
+        assertEquals("idp.example.test", SignInKeysCheck.host("https://idp.example.test/realms/x/protocol/openid-connect/certs?k=1"));
+        assertEquals("(not set)", SignInKeysCheck.host(""));
     }
 }

@@ -31,7 +31,7 @@ import java.util.regex.Pattern;
  * its list of documents is long for a large delivery.
  */
 @Component
-@Order(Ordered.HIGHEST_PRECEDENCE + 3)
+@Order(Ordered.HIGHEST_PRECEDENCE + 4)
 public final class RequestBodyLimitFilter extends OncePerRequestFilter {
     public static final String SUBMISSIONS = "/api/v1/ingestion/submissions";
     private static final Pattern UPLOAD = Pattern.compile(SUBMISSIONS + "/[^/]+/documents");

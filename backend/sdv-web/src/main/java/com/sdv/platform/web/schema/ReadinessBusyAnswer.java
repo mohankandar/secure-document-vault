@@ -32,7 +32,7 @@ import java.util.Map;
  * Retry-After. A probe is not a refused request, so it isn't counted as a busy answer in Problems.
  */
 @Component
-@Order(Ordered.HIGHEST_PRECEDENCE + 2)
+@Order(Ordered.HIGHEST_PRECEDENCE + 3)
 public final class ReadinessBusyAnswer extends OncePerRequestFilter {
     static final String READINESS = "/actuator/health/readiness";
     private static final ObjectMapper JSON = VeroJson.mapper();
