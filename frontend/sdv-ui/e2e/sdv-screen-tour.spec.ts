@@ -623,6 +623,33 @@ const problemDemo = { store: '300000000094', stuck: '300000000095', missing: '30
 const OPS_HEADERS = { 'X-SDV-Tenant-Id': 'bd960ee9-9d54-5053-9958-92aaa54893a6', 'X-SDV-Subject': 'local-platform-operations', 'X-SDV-Roles': 'PLATFORM_OPERATIONS_ADMIN' }
 
 /** Problems: each filter, a detail with its three blocks and the note to copy; read-only for both roles. */
+/**
+ * Task 0074: the list of checks and the diagnostic bundle (a zip, recorded in the audit); nobody else gets them, and the
+ * health address shows the list only to IT Admin and Platform operations.
+ */
+async function checksChecks(page: Page, headers: Record<string, string>) {
+  const list = page.getByRole('region', { name: 'Checks' })
+  const table = list.getByRole('table', { name: 'Checks list' })
+  await expect(table.locator('tbody tr').filter({ hasText: 'Database version' })).toContainText('Working', { timeout: 15000 })
+  await expect(table.locator('tbody tr').filter({ hasText: /^Storage/ })).toHaveCount(1)
+  await expect(list).not.toContainText(/Bearer|eyJ|password/i)
+  const [file] = await Promise.all([page.waitForEvent('download'), list.getByRole('button', { name: 'Download diagnostic bundle' }).click()])
+  expect(file.suggestedFilename()).toMatch(/^vero-diagnostics-\d{4}-\d{2}-\d{2}\.zip$/)
+  await expect(list).toContainText('The download is recorded in the audit.')
+  const events = await (await page.request.get('/api/v1/operations/audit-events?limit=5&action=DIAGNOSTIC_BUNDLE_DOWNLOADED', { headers: OPS_HEADERS })).json() as { events: unknown[] }
+  expect(events.events.length).toBeGreaterThan(0)
+  const business = { ...headers, 'X-SDV-Subject': 'local-business-user', 'X-SDV-Roles': 'BUSINESS_USER' }
+  expect((await page.request.get('/api/v1/operations/checks', { headers: business })).status()).toBe(403)
+  expect((await page.request.get('/api/v1/operations/diagnostic-bundle', { headers: business })).status()).toBe(403)
+  const api = process.env.SDV_API_TARGET ?? 'http://127.0.0.1:8280'
+  const mine = await (await page.request.get(`${api}/actuator/health/dependencies`, { headers })).json() as { details?: Record<string, unknown> }
+  expect(Object.keys(mine.details ?? {})).toContain('vero-schema')
+  const theirs = await page.request.get(`${api}/actuator/health/dependencies`, { headers: business })
+  expect(await theirs.text()).not.toContain('vero-schema')
+  expect((await page.request.get(`${api}/actuator/health/dependencies`)).status()).toBe(401)
+  expect(await (await page.request.get(`${api}/actuator/health/readiness`)).text()).not.toContain('databaseSchema')
+}
+
 async function problemsChecks(page: Page, testInfo: TestInfo, area: 'Platform operations' | 'IT') {
   await page.getByRole('tablist', { name: `${area} sections` }).getByRole('tab', { name: /^Problems/ }).click()
   const list = page.getByRole('table', { name: 'Problems list' })
@@ -632,6 +659,7 @@ async function problemsChecks(page: Page, testInfo: TestInfo, area: 'Platform op
   const attempts = page.getByRole('region', { name: 'Unidentified intake attempts' })
   await expect(attempts.getByRole('heading', { name: /^Unidentified intake attempts · \d+$/ })).toBeVisible()
   await expect(attempts).not.toContainText(/Bearer|eyJ/)
+  if (area === 'IT') await checksChecks(page, IT_HEADERS)
   // Task 0039 part 2: one line per caller address, address and code per minute, with how many times.
   const attemptsList = attempts.getByRole('table', { name: 'Unidentified intake attempts list' })
   if (await attemptsList.count() > 0) await expect(attemptsList.locator('thead th', { hasText: /^Times$/ })).toBeVisible()
@@ -867,6 +895,7 @@ async function healthChecks(page: Page, testInfo: TestInfo) {
   for (const [name, does] of [['Vero', 'The application itself'], ['Database', 'Keeps records, settings and the audit'], ['Key service', 'Locks and unlocks stored documents (Vault)']]) {
     await expect(services.locator('tbody tr').filter({ hasText: name }).first()).toContainText(does)
   }
+  await checksChecks(page, OPS_HEADERS)
   const cleanup = page.getByRole('region', { name: 'Automatic cleanup' })
   await expect(cleanup).toContainText(/Last ran (today|yesterday|on .+) at \d{2}:\d{2}|hasn’t run since Vero last started/)
   await expectNoRawWords(page)
