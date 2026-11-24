@@ -1,0 +1,16 @@
+filters {"zeta":"1","alpha":"2","n":3,"none":null} -> read {zeta=1, alpha=2, n=3, none=null}
+filters {"zeta":"1","alpha":"2","n":3,"none":null} x -> read {zeta=1, alpha=2, n=3, none=null}
+filters [ -> read {}
+filters  -> read {}
+filters {"a":{}} -> read {}
+roles ["B","A",1] -> read [A, B]
+roles { -> read []
+roles ["A"] x -> read [A]
+busy {"status":"BUSY"} -> read true
+busy {"status":"UP"} -> read false
+busy {"status":1} -> read false
+busy {"status":null} -> read false
+busy {} -> read false
+busy [] -> read false
+busy x -> read false
+busy {"status":"BUSY"} x -> read true

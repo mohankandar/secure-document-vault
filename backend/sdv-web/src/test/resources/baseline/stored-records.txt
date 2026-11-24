@@ -1,0 +1,5 @@
+[{"pageNumber":2,"x":1.0E-4,"y":0.25,"width":0.1,"height":0.5}]
+{"countedAt":"t","timeZone":"t","firstMonth":"t","stored":[],"received":[],"due":[],"heldBack":null}
+regions, text after -> read 1
+counts, text after -> read
+counts, null number -> read

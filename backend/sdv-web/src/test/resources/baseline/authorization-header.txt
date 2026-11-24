@@ -1,0 +1,11 @@
+[Bearer T] -> 200
+[bearer T] -> 200
+[BEARER T] -> 200
+[Bearer  T] -> 401 SDV-AUT-003 Bearer error="invalid_token", error_description="SDV-AUT-003"
+[Bearer T ] -> 401 SDV-AUT-003 Bearer error="invalid_token", error_description="SDV-AUT-003"
+[Bearer] -> 401 SDV-AUT-003 Bearer error="invalid_token", error_description="SDV-AUT-003"
+[Bearer ] -> 401 SDV-AUT-003 Bearer error="invalid_token", error_description="SDV-AUT-003"
+[Basic T] -> 401 SDV-AUT-001 Bearer
+[T] -> 401 SDV-AUT-001 Bearer
+[Bearer T,T] -> 401 SDV-AUT-003 Bearer error="invalid_token", error_description="SDV-AUT-003"
+in the address -> 401 SDV-AUT-001 Bearer
