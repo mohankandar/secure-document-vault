@@ -99,3 +99,22 @@ git checkout chore/platform-core-0.7.0
 .\Build-SDV-All.ps1
 .\Update-SDV-Schema.ps1 update -Url jdbc:postgresql://localhost:5433/sdv -Username sdv
 ```
+
+## 2026-11-24: finished on a scratch database (queue row 5b)
+
+The design chat dropped the wait for the owner's schema step. `release/vero-r7` merged in (`106e617`), built (790 tests, 0
+failures, 26 skipped). On a **scratch database** at this branch's versions (identity V5, licensing V2, 043, 044):
+
+| Check | Result |
+|---|---|
+| Demo seed | pass |
+| Sign-in in the browser against a made-up login system | pass: signed in, refreshed, signed out; wrong tokens refused |
+| `npm run ui:capture`, full (10 min) | **33 passed, 19 skipped** |
+| Both schema checks | passed in task 0085; nothing they cover changed since |
+
+**Not done:** the live Keycloak delivery. It needs the administration of `lexa-keycloak`, which the session's permission check
+refused; not worked around. Owner step (report 0041, point 7). `SenderProfileServerContractTest` delivers against the real
+application on PostgreSQL instead.
+
+**The local `sdv` database stays at changeset 042** until the owner's step above. A Vero from `release/vero-r7` after this merge
+refuses to serve on it until then.
