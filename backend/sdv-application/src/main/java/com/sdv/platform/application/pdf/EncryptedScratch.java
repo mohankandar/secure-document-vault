@@ -69,6 +69,13 @@ public final class EncryptedScratch implements RandomAccessStreamCache {
         return file;
     }
 
+    /** What the file holds (tests), read through the open handle: on Linux the file has no name once it is open. */
+    byte[] fileBytes() throws IOException {
+        ByteBuffer all = ByteBuffer.allocate(Math.toIntExact(channel.size()));
+        while (all.hasRemaining() && channel.read(all, all.position()) >= 0) { }
+        return all.array();
+    }
+
     @Override
     public void close() throws IOException {
         if (closed) return;

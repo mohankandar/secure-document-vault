@@ -55,6 +55,8 @@ Failures seen on the way:
 - **Schema check, `SenderProfileServerContractTest`:** `health: OUTAGE INT_OUTAGE`. The log shows one fetch of the test
   sign-in keys had no answer within 2 s; the next call was healthy. Nothing was changed for it and the rerun passed, so
   the cause is **not proven**; a busy computer is the likely one.
+- **CI, first run, `PdfWorkTest` (2 errors, `NoSuchFile`):** the tests read the working file by its name, which Linux removes
+  as soon as it is open. The product only uses the open handle. The tests now read through it; no assertion changed.
 - **Tour, Business User and Document Steward screens:** page previews never appeared. A real fault of this change: the
   thumbnails could ask before the opening was answered, and did not ask again. Fixed in `Viewer.tsx`.
 

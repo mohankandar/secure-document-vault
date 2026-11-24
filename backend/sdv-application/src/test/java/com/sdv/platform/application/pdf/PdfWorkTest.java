@@ -131,7 +131,7 @@ class PdfWorkTest {
             assertArrayEquals(data, back);
             assertTrue(scratch.slotsUsed() > 10, "most of it is in the file");
             file = scratch.file();
-            String onDisk = new String(Files.readAllBytes(file), StandardCharsets.ISO_8859_1);
+            String onDisk = new String(scratch.fileBytes(), StandardCharsets.ISO_8859_1);
             assertTrue(onDisk.length() > 100_000);
             assertFalse(onDisk.contains("SECRET"), "only ciphertext");
             // Random reads and writes agree with a plain array.
@@ -166,12 +166,12 @@ class PdfWorkTest {
             EncryptedScratch.Buffer a = scratch.createBuffer();
             a.write(new byte[EncryptedScratch.PAGE]);
             a.write(new byte[EncryptedScratch.PAGE]); // puts the first page in the file
-            byte[] first = Arrays.copyOf(Files.readAllBytes(scratch.file()), EncryptedScratch.PAGE);
+            byte[] first = Arrays.copyOf(scratch.fileBytes(), EncryptedScratch.PAGE);
             a.seek(0);
             a.write(0);
             a.seek(EncryptedScratch.PAGE);
             a.read(); // puts the same content of the first page there again
-            byte[] again = Arrays.copyOf(Files.readAllBytes(scratch.file()), EncryptedScratch.PAGE);
+            byte[] again = Arrays.copyOf(scratch.fileBytes(), EncryptedScratch.PAGE);
             assertFalse(Arrays.equals(first, again), "the same content, another key stream");
         }
     }
