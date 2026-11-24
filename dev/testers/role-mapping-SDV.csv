@@ -1,0 +1,10 @@
+# Format: platform-role-mapping/1
+# Product: SDV
+# Task 0089: the groups of the testers' realm (vero-testers). No Platform Operations Admin for testers.
+entity_id,entity_name,group,role
+ENT-VERO-TESTERS-0001,,BusinessUsers,BUSINESS_USER
+ENT-VERO-TESTERS-0001,,DocumentStewards,DOCUMENT_STEWARD
+ENT-VERO-TESTERS-0001,,RestrictedStewards,RESTRICTED_STEWARD
+ENT-VERO-TESTERS-0001,,BusinessAdmins,BUSINESS_ADMIN
+ENT-VERO-TESTERS-0001,,TenantITAdmins,IT_ADMIN
+ENT-VERO-TESTERS-0002,,BusinessAdmins,BUSINESS_ADMIN

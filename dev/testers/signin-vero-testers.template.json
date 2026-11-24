@@ -1,0 +1,24 @@
+{
+  "format": "platform-signin/1",
+  "tenantId": "TEN-VERO-TESTERS-0001",
+  "mode": "direct",
+  "loginSystem": {
+    "type": "OIDC",
+    "issuer": "https://__HOST__/realms/vero-testers",
+    "providerId": "vero-testers"
+  },
+  "products": {
+    "SDV": {
+      "browserClientId": "vero-testers-web",
+      "apiAudience": "vero-testers-api",
+      "roleMappingFile": "role-mapping-SDV.csv",
+      "clientBindingsFile": "client-bindings-SDV.csv",
+      "sources": [
+        {"key": "redaction-service", "name": "Redaction Service"},
+        {"key": "loan-origination", "name": "Loan Origination System"},
+        {"key": "title-records", "name": "Title Records"}
+      ]
+    }
+  },
+  "timeZone": "America/New_York"
+}
