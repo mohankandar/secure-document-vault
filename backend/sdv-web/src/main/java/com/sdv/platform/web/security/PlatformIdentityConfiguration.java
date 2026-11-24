@@ -25,7 +25,7 @@ import com.documentplatform.licensing.LastSeenStore;
 import com.documentplatform.licensing.LicenceService;
 import com.documentplatform.licensing.LicenceStore;
 import com.documentplatform.licensing.LicenceVerifier;
-import com.documentplatform.licensing.TrustedKeys;
+import com.documentplatform.licensing.LicenceBuild;
 import com.documentplatform.licensing.jdbc.PostgresLastSeenStore;
 import com.documentplatform.licensing.jdbc.PostgresLicenceStore;
 import com.documentplatform.licensing.usage.ChainHead;
@@ -60,12 +60,12 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
 
 /**
- * Task 0041: Vero on platform-core identity. The idn_ tables are platform-core's (identity schema V1 to V4, made by
+ * Task 0041: Vero on platform-core identity. The idn_ tables are platform-core's (identity schema V1 to V5, made by
  * the schema step, filled by setup); these beans read them for Vero's product {@value VeroProduct#CODE}.
  * <p>
  * Licensing is not turned on (owner answer 15). Slot activation needs to know which slots the stored licence lists and
- * whether it is in force: that is read only ({@link #licensedSlots}), with the release's trusted keys
- * ({@code sdv.identity.trusted-keys-file}). Nothing is counted, limited or enforced; the clock check stores nothing,
+ * whether it is in force: that is read only ({@link #licensedSlots}), with the keys of Vero's own build
+ * ({@link VeroLicenceBuild}). Nothing is counted, limited or enforced; the clock check stores nothing,
  * and no waiting licence is promoted from here.
  */
 @Configuration
@@ -139,48 +139,45 @@ public class PlatformIdentityConfiguration {
     }
 
     /**
-     * The stored licence's slots, read only. Without {@code sdv.identity.trusted-keys-file} no licence can be checked,
+     * The stored licence's slots, read only. When the build trusts no licence key no licence can be checked,
      * so activation is refused (NO_LICENCE); Vero still starts.
      */
     @Bean
-    LicensedSlots licensedSlots(DataSource ds, @Value("${sdv.identity.trusted-keys-file:}") String keysFile) {
-        Optional<TrustedKeys> keys = trustedKeys(keysFile);
-        if (keys.isEmpty()) {
-            log.info("sdv.identity.trusted-keys-file is not set: entity activation is refused until it is.");
+    LicensedSlots licensedSlots(DataSource ds, @Value("${sdv.identity.trusted-keys-file:}") String removedSetting) {
+        if (!removedSetting.isBlank()) {
+            throw new StartupFailure(SdvErrorCode.SYS_005, "SDV_TRUSTED_KEYS_FILE is no longer used: Vero trusts only the licence keys "
+                    + "of its own build. Remove the setting.");
+        }
+        Optional<LicenceBuild> build = VeroLicenceBuild.load();
+        if (build.isEmpty()) {
+            log.info("This build trusts no licence key: entity activation is refused.");
             return Optional::empty;
         }
-        return LicenceSlots.of(readOnlyLicence(ds, keys.get()));
+        if (build.get().keys().keyIds().stream().anyMatch(build.get().keys()::isDevelopmentKey)) {
+            log.warn("This is a DEVELOPMENT build of Vero: it trusts the demo licence. It must never be given to a customer.");
+        }
+        return LicenceSlots.of(readOnlyLicence(ds, build.get()));
     }
 
     /**
-     * Task 0057 (platform-core 0.5.1, fix 2): whether the stored licence in force is signed by a key the trusted-keys
-     * file marks {@code "development": true}. Only then may a login server on this machine use http (the local and
+     * Task 0057 (platform-core 0.5.1, fix 2): whether the stored licence in force is signed by a development
+     * key, which only a development build trusts. Only then may a login server on this machine use http (the local and
      * demo setup); platform-core's test sign-in asks it. This is what identity gives Spring apps that do not run
-     * platform-licensing-spring ({@link LicenceSigningKey}), over the read-only licence above. Without the keys file:
+     * platform-licensing-spring ({@link LicenceSigningKey}), over the read-only licence above. Without keys:
      * never (http refused, {@code IDN_HTTP_ISSUER_NOT_ALLOWED}).
      */
     @Bean
-    DevelopmentLicence developmentLicence(DataSource ds, @Value("${sdv.identity.trusted-keys-file:}") String keysFile) {
-        return trustedKeys(keysFile)
-                .map(keys -> LicenceSigningKey.of(readOnlyLicence(ds, keys), keys))
+    DevelopmentLicence developmentLicence(DataSource ds) {
+        return VeroLicenceBuild.load()
+                .map(build -> LicenceSigningKey.of(readOnlyLicence(ds, build), build.keys()))
                 .orElse(DevelopmentLicence.NONE);
     }
 
-    /** The release's trusted-keys file; empty when the setting is blank. A file that can't be read stops Vero. */
-    static Optional<TrustedKeys> trustedKeys(String keysFile) {
-        if (keysFile == null || keysFile.isBlank()) return Optional.empty();
-        try {
-            return Optional.of(TrustedKeys.parse(Files.readString(Path.of(keysFile.trim()), StandardCharsets.UTF_8)));
-        } catch (Exception e) {
-            throw new StartupFailure(SdvErrorCode.SYS_005, "sdv.identity.trusted-keys-file could not be read as a "
-                    + "trusted-keys file (" + e.getClass().getSimpleName() + ").");
-        }
-    }
-
-    /** The stored licence, read only: verified with {@code keys}; nothing stored, counted or promoted. */
-    public static LicenceService readOnlyLicence(DataSource ds, TrustedKeys keys) {
-        return new LicenceService(readOnly(new PostgresLicenceStore(ds)), new LicenceVerifier(keys),
-                new ClockGuard(Clock.systemUTC(), readOnly(new PostgresLastSeenStore(ds))), NO_USAGE, VeroProduct.CODE, null);
+    /** The stored licence, read only: verified with the build's keys; nothing stored, counted or promoted. */
+    public static LicenceService readOnlyLicence(DataSource ds, LicenceBuild build) {
+        return new LicenceService(readOnly(new PostgresLicenceStore(ds)), new LicenceVerifier(build.keys()),
+                new ClockGuard(Clock.systemUTC(), ClockGuard.DEFAULT_TOLERANCE, readOnly(new PostgresLastSeenStore(ds)), build.builtAt()),
+                NO_USAGE, VeroProduct.CODE, null);
     }
 
     static LicenceStore readOnly(LicenceStore store) {
@@ -188,6 +185,7 @@ public class PlatformIdentityConfiguration {
             @Override public Optional<Stored> get(Slot slot) { return store.get(slot); }
             @Override public void put(Slot slot, Stored licence) { throw new UnsupportedOperationException("read only"); }
             @Override public void remove(Slot slot) { throw new UnsupportedOperationException("read only"); }
+            @Override public long highestVersion(Slot slot) { return store.highestVersion(slot); }
             /** A renewal waiting for its start date is promoted by licensing, once Vero turns it on; not here. */
             @Override public void promoteWaiting(String licenceId) { }
         };

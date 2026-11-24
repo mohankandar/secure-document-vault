@@ -11,7 +11,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Task 0057 (LV-16 item 3): platform-level grants in Vero's role mapping, checked by platform-core's setup command
- * against the scratch database of the schema check (identity schema V4). Only {@code plan}: nothing is written.
+ * against the scratch database of the schema check (identity schema V5). Only {@code plan}: nothing is written.
  * PostgreSQL only, like the other {@code *PostgresTest}s (CI and step 4f of {@code Test-SDV-SchemaUpgrade.ps1}).
  */
 @EnabledIfEnvironmentVariable(named = "SDV_IT_JDBC_URL", matches = "jdbc:postgresql://localhost:5433/sdv_schema_test")

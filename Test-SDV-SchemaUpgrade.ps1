@@ -122,7 +122,7 @@ $has032 = $newChangesets -contains '032-steward-notices'
 $has033 = $newChangesets -contains '033-unidentified-intake-attempts'
 $has034 = $newChangesets -contains '034-unidentified-intake-attempt-counts'
 # Task 0041: 035 drops the old identity tables (014-016) and two of 025's tables; the schema step then also runs
-# platform-core's identity (V1-V4 since task 0057) and licensing (V1) tables, which no earlier version had.
+# platform-core's identity (V1-V5 since task 0067) and licensing (V1-V2) tables, which no earlier version had.
 $has035 = $newChangesets -contains '035-drop-old-identity'
 # Task 0048: 036 adds the three quarantine tables.
 $has036 = $newChangesets -contains '036-quarantine'
@@ -164,7 +164,7 @@ $heldTablesBefore = if ($has043) { '0' } else { '2' }
 $has044 = $newChangesets -contains '044-hold-release'
 $hasHoldColumnSql = "select count(*) from information_schema.columns where table_name='access_requests' and column_name='hold_id';"
 $holdColumnBefore = if ($has044) { '0' } else { '1' }
-$platformRuns = @('identity V1 (platform-core)', 'identity V2 (platform-core)', 'identity V3 (platform-core)', 'identity V4 (platform-core)', 'licensing V1 (platform-core)')
+$platformRuns = @('identity V1 (platform-core)', 'identity V2 (platform-core)', 'identity V3 (platform-core)', 'identity V4 (platform-core)', 'identity V5 (platform-core)', 'licensing V1 (platform-core)', 'licensing V2 (platform-core)')
 # Task 0033: an uncorrected copy received at the previous version, which 032 must turn into one stored notice.
 $oldCopyEvent = '50000000-0000-0000-0000-0000000000c1'
 $reportIndexes = @('idx_submissions_tenant_created', 'idx_documents_tenant_ingested', 'idx_audit_events_redaction_old_sha')
@@ -1049,11 +1049,11 @@ rollback;
         $gone = Get-Value "select count(*) from pg_tables where tablename in ('enterprise_identity_connections', 'enterprise_identity_connection_history', 'role_group_mappings_seen', 'role_mapping_notices');"
         Assert-That ($gone -eq '0') "035 should drop the old identity tables, $gone left"
         Assert-That ((Get-Value "select count(*) from pg_tables where tablename = 'role_conflict_problems';") -eq '1') 'role_conflict_problems must stay'
-        Assert-That ((Get-Value 'select max(version) from idn_schema_version;') -eq '4') 'identity tables should be at version 4 (task 0057: platform-core 0.6.1)'
-        Assert-That ((Get-Value 'select max(version) from lic_schema_version;') -eq '1') 'licensing tables should be at version 1'
-        Assert-That ([int](Get-Value 'select count(*) from idn_schema_history where success;') -ge 4) 'the identity run should record V1-V4 in idn_schema_history'
-        Assert-That ([int](Get-Value 'select count(*) from lic_schema_history where success;') -ge 1) 'the licensing run should record V1 in lic_schema_history'
-        Write-Step '4k. After 035 and the platform runs' 0 'old identity and watch tables dropped, role conflicts kept; identity V4 and licensing V1, own history tables'
+        Assert-That ((Get-Value 'select max(version) from idn_schema_version;') -eq '5') 'identity tables should be at version 5 (task 0067: platform-core 0.7.0)'
+        Assert-That ((Get-Value 'select max(version) from lic_schema_version;') -eq '2') 'licensing tables should be at version 2'
+        Assert-That ([int](Get-Value 'select count(*) from idn_schema_history where success;') -ge 5) 'the identity run should record V1-V5 in idn_schema_history'
+        Assert-That ([int](Get-Value 'select count(*) from lic_schema_history where success;') -ge 2) 'the licensing run should record V1-V2 in lic_schema_history'
+        Write-Step '4k. After 035 and the platform runs' 0 'old identity and watch tables dropped, role conflicts kept; identity V5 and licensing V2, own history tables'
     }
     Write-Step '4. After: nothing else changed' $w.Elapsed.TotalSeconds 'other document columns and every other table unchanged'
 

@@ -22,7 +22,7 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * Task 0041: makes Vero's demo licence and its development trusted-keys file in {@code dev/setup/}. Runs only when
+ * Task 0041: makes Vero's demo licence in {@code dev/setup/} and the development build's licence keys. Runs only when
  * asked:
  *
  * <pre>mvn -pl sdv-setup test -Dtest=DemoLicenceGenerator -Dsdv.demo.regenerate=true</pre>
@@ -48,7 +48,7 @@ class DemoLicenceGenerator {
                 LocalDate.parse("2036-12-31"), Deployment.ON_PREM, DEV_KEY_ID, Instant.parse("2026-11-22T00:00:00Z"));
         Files.writeString(DEV_SETUP.resolve("licence-vero-demo.json"), DevelopmentLicences.sign(licence, dev.getPrivate()),
                 StandardCharsets.UTF_8);
-        Files.writeString(DEV_SETUP.resolve("development-trusted-keys.json"),
+        Files.writeString(Path.of("..", "licence-build", "development", "META-INF", "platform", "licence-keys.json"),
                 TrustedKeys.of(Map.of(DEV_KEY_ID, dev.getPublic()), Set.of(DEV_KEY_ID)).toJson(), StandardCharsets.UTF_8);
     }
 }

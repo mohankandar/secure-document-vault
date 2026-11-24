@@ -11,15 +11,14 @@ write. Vero never changes them at startup. This page is for the IT team that ins
 
 1. The schema step has run for this release (runbook "Update the database"). It creates Vero's tables and, in their
    own runs, platform-core's identity tables (history table `idn_schema_history`) and licensing tables
-   (`lic_schema_history`). Setup never creates tables. Since task 0057 (platform-core 0.6.1) the identity tables are
-   at version 4 (platform-level grants, `idn_platform_grant`); on a database at version 3 the schema step adds
-   version 4, and Vero does not start until it has (`IDN_VERSION_OLDER`).
+   (`lic_schema_history`). Setup never creates tables. Since task 0067 (platform-core 0.7.0) the identity tables are
+   at version 5 and the licensing tables at version 2; on an older database the schema step adds them, and Vero does
+   not start until it has (`IDN_VERSION_OLDER`).
 2. You have these files:
 
 | File | From | Holds |
 |---|---|---|
 | Your licence (`licence.json`) | Your account manager | Signed licence: customer (`TEN-…`), entity slots (`ENT-…`), products |
-| `trusted-keys.json` | The Vero release | The licence signing keys. Not in this release yet: ask your account manager for it |
 | `product-roles.json` | The Vero release | Vero's roles (product `SDV`). Shipped; you don't edit it |
 | Sign-in file (`signin.json`) | You write it | Your login system, Vero's browser client and API audience, the sending systems |
 | Role mapping file (`role-mapping-SDV.csv`) | You write it | Which group of your login system gets which Vero role in which entity |
@@ -103,11 +102,14 @@ client_id,entity_slot,source,description
 Windows (`setup.cmd` works the same):
 
 ```
-.\setup.ps1 plan  -Licence licence.json -Signin signin.json -Keys trusted-keys.json --no-customer-keys
-.\setup.ps1 apply -Licence licence.json -Signin signin.json -Keys trusted-keys.json --no-customer-keys
+.\setup.ps1 plan  -Licence licence.json -Signin signin.json --no-customer-keys
+.\setup.ps1 apply -Licence licence.json -Signin signin.json --no-customer-keys
 ```
 
-Linux: `./setup.sh plan --licence licence.json --signin signin.json --keys trusted-keys.json --no-customer-keys`.
+Linux: `./setup.sh plan --licence licence.json --signin signin.json --no-customer-keys`.
+
+The licence keys Vero trusts are inside its jars (task 0067). No file, setting or option adds one, and
+`SDV_TRUSTED_KEYS_FILE` stops the start. This release has no release keys yet: ask your account manager.
 
 - The wrapper fills in Vero's product (`--product SDV`) and `product-roles.json`; every other option goes to
   platform-core's setup command (its install guide lists them: `--remove-unlisted-grants`, `--replace-connection`,
@@ -128,7 +130,7 @@ names it (they can sign in before any entity is active):
 POST /api/v1/admin/entities/ENT-…/activate      {"name": "Acme Mortgage"}
 ```
 
-Vero checks the stored licence (read only, with the release's trusted keys: setting `SDV_TRUSTED_KEYS_FILE`), makes
+Vero checks the stored licence (read only, with the keys of its own build), makes
 its own row for the entity and audits `ENTITY_ACTIVATED`. Refusals: `SDV-ENT-001` (not in the licence, already
 activated, name not usable) and `SDV-ENT-002` (not a Business Admin of that slot). The activation screen comes in a
 later release.
@@ -142,9 +144,8 @@ later release.
 | `SDV_AUTH_JWT_PROVIDER_ID` | The sign-in file's `providerId` (default `customer-oidc`) |
 | `SDV_AUTH_JWT_GROUPS_CLAIM` | The claim with the person's groups (default `groups`) |
 | `SDV_AUTH_JWT_CLIENT_ID_CLAIMS` | Where a sending system's client ID is (default `azp,client_id,cid`) |
-| `SDV_AUTH_JWT_MACHINE_CLAIM`, `SDV_AUTH_JWT_MACHINE_CLAIM_VALUE` | Task 0062, recommended: the mark your login system puts on a client's own (client-credentials) token, so that only those count as a sending system's. `{client}` in the value is the client ID. Keycloak: `preferred_username` and `service-account-{client}`. Entra ID: `idtyp` and `app`. Without it, Vero still refuses a bound client's token that has claims of a person's sign-in. Also: give a sending system's client no browser, device or password sign-in |
+| `SDV_AUTH_JWT_MACHINE_CLAIM`, `SDV_AUTH_JWT_MACHINE_CLAIM_VALUE` | Task 0062, recommended: the mark your login system puts on a client's own (client-credentials) token, so that only those count as a sending system's. `{client}` in the value is the client ID. Keycloak: `preferred_username` and `service-account-{client}`. Entra ID: `idtyp` and `app`. Without it, Vero still refuses a bound client's token that has claims of a person's sign-in or that name a person (`SDV_AUTH_JWT_PERSON_CLAIMS`, default `email,upn,given_name,family_name,name,uid`). Also: give a sending system's client no browser, device or password sign-in |
 | `SDV_AUTH_JWT_MAX_TOKEN_LIFETIME_SECONDS`, `SDV_AUTH_BROWSER_SCOPE` | Task 0065: see the runbook, "Sign-in in the browser" and "All settings" |
-| `SDV_TRUSTED_KEYS_FILE` | The release's `trusted-keys.json`, for activation (and, task 0057, to tell a development-signed licence, which alone allows a login server on this machine over `http`) |
 | `SDV_OUTBOUND_INSTALLATION` | Task 0057: `on-premises` (default) or `hosted`, for platform-core's outbound rules that the test sign-in uses |
 | `SDV_OUTBOUND_ALLOW_INTERNAL_ADDRESSES` | `true` only if your login system is at an internal address (default `false`: the test sign-in refuses internal and cloud-metadata addresses, `OUT_ADDRESS_BLOCKED`) |
 | `PLATFORM_OUTBOUND_PROXY_*`, `PLATFORM_OUTBOUND_PRIVATE_CA_FILE` | Your proxy and private certificate authority, if Vero reaches the login system through them (platform-core's outbound settings) |
@@ -174,10 +175,15 @@ the owner creates, platform-core's `idn_` and `lic_` tables included. platform-c
 `idn_grant_history` the table itself refuses changes). If the rights are short, Vero does not start and names the
 table (`IDN_PRIVILEGES_MISSING`).
 
+**Upgrading to platform-core 0.7.0 (task 0067).** After the schema step, take away rights the app's user no longer needs:
+`revoke delete on lic_last_seen from <app user>; revoke update, delete on lic_clock_reset from <app user>;` The tables
+refuse these changes in any case. Then check your groups: names count **exactly** as your login system sends them (no
+trimming), and a groups claim that is one text is one group. The role mapping file must match character by character.
+
 ## 7. On a developer computer
 
 `dev\setup\` holds demo files only (customer `TEN-VERO-DEMO-0001`, slots `ENT-VERO-DEMO-0001` and `-0002`), with a
 **development** signing key that no release trusts. `.\Seed-SDV-Canvas-Demo.ps1` runs setup with them
-(`.\setup.ps1 … -Development`) and then Vero's demo step, which activates both demo entities. The development key file
-is never part of a release. The demo role mapping has one platform-level grant (task 0057):
+and then Vero's demo step, which activates both demo entities. Only a development build
+(`.\Build-SDV-All.ps1` without `-Release`) trusts that key. The demo role mapping has one platform-level grant (task 0057):
 `*,,PlatformOperations,PLATFORM_OPERATIONS_ADMIN`, for the development login server's group `PlatformOperations`.

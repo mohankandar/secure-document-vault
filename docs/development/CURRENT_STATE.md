@@ -44,6 +44,9 @@ the schema step (never at startup, the local profile included).
   demo step; demo entity UUIDs are derived from the demo slot IDs.
 - Licensing is not turned on: its tables and the stored licence exist, activation reads the licence, nothing checks the
   allowance. `docs/verification` keeps the earlier identity checkpoints as history.
+- **Task 0067 (2026-11-24): platform-core 0.7.0**, still identity only. Identity tables at version **5**, licensing **2**.
+  Licence keys come only from the build (`backend/licence-build`); `Build-SDV-All.ps1` makes a development build unless
+  `-Release`. A sending system's token may not name a person.
 - **Task 0057 (2026-11-23): platform-core 0.6.1**, still identity only. Identity tables at version **4**
   (`idn_platform_grant`). Platform-level grants (the role mapping's `*` rows) give `PLATFORM_OPERATIONS_ADMIN` in every
   ACTIVE entity; the separation rules run on all roles together. The IT Admin's Sign-in tab has a read-only

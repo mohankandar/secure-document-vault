@@ -11,13 +11,13 @@ class SchemaVersionTest {
     private static final SchemaVersion.Shipped SHIPPED = SchemaVersion.shipped();
     private static final SchemaVersion.Key SEED = new SchemaVersion.Key("002-local-foundation-seed", "sdv");
 
-    /** Task 0057: platform-core 0.6.1's identity tables are version 4 (platform-level grants); licensing stays 1. */
+    /** Task 0057: platform-core 0.7.0's identity tables are version 5, licensing 2 (task 0067). */
     @Test
-    void theIdentityRunIsAtVersionFourAndLicensingAtOne() {
-        assertEquals(4, SchemaVersion.IDENTITY.version());
-        assertEquals(1, SchemaVersion.LICENSING.version());
-        assertEquals("identity V4", SchemaVersion.IDENTITY.key(4).id());
-        assertTrue(com.documentplatform.identity.jdbc.IdentitySchema.scripts().contains("V4__platform_grants.sql"));
+    void theIdentityRunIsAtVersionFiveAndLicensingAtTwo() {
+        assertEquals(5, SchemaVersion.IDENTITY.version());
+        assertEquals(2, SchemaVersion.LICENSING.version());
+        assertEquals("identity V5", SchemaVersion.IDENTITY.key(5).id());
+        assertTrue(com.documentplatform.identity.jdbc.IdentitySchema.scripts().contains("V5__identity_history_and_search_path.sql"));
     }
 
     /** Task 0057: platform-core 0.6.0 starts its start-up messages with their code; Vero never writes it twice. */

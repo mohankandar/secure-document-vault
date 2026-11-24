@@ -126,7 +126,7 @@ class SignInChainTest {
             body(withToken("/api/v1/ingestion/submissions", true, sign(KEY, sendingSystem().claim(claim, "x"))), 401, "SDV-AUT-003",
                     "Please sign in again.");
         }
-        for (String claim : List.of("sid", "auth_time", "s_hash", "amr", "_claim_names", "hasgroups")) {
+        for (String claim : List.of("sid", "auth_time", "s_hash", "amr", "_claim_names", "hasgroups", "email", "upn", "given_name", "family_name", "name", "uid")) {
             body(withToken("/api/v1/ingestion/submissions", true, sign(KEY, sendingSystem().claim(claim, "x"))), 401, "SDV-AUT-005",
                     "Your sign-in is missing details Vero needs. Your IT team can fix this.");
         }
@@ -137,14 +137,34 @@ class SignInChainTest {
 
     @Test
     void theInstallersMarkOfASendingSystemMustMatchExactly() {
-        var keycloak = new OidcJwtAuthenticationConverter.MachineTokens("preferred_username", "service-account-{client}");
+        var keycloak = new OidcJwtAuthenticationConverter.MachineTokens("preferred_username", "service-account-{client}", List.of());
         var jwt = org.springframework.security.oauth2.jwt.Jwt.withTokenValue("t").header("alg", "RS256").subject("s");
         assertNull(keycloak.problem(jwt.claim("preferred_username", "service-account-c1").build(), "c1"));
         assertNotNull(keycloak.problem(jwt.claim("preferred_username", "pat").build(), "c1"));
         assertNotNull(keycloak.problem(jwt.claim("preferred_username", "service-account-c2").build(), "c1"));
         assertNotNull(keycloak.problem(jwt.claims(c -> c.remove("preferred_username")).build(), "c1"));
         for (String[] bad : new String[][] {{"x", ""}, {"", "x"}}) {
-            assertThrows(com.sdv.platform.domain.error.StartupFailure.class, () -> new OidcJwtAuthenticationConverter.MachineTokens(bad[0], bad[1]));
+            assertThrows(com.sdv.platform.domain.error.StartupFailure.class, () -> new OidcJwtAuthenticationConverter.MachineTokens(bad[0], bad[1], List.of()));
+        }
+    }
+
+    /** Task 0067: Vero refuses every claim that platform-core's own push-caller check refuses by default. */
+    @Test
+    void versosRuleCoversPlatformCores() {
+        var properties = new com.documentplatform.identity.spring.PushCallerProperties();
+        var veros = new java.util.HashSet<>(OidcJwtAuthenticationConverter.MachineTokens.PERSON_NAMING);
+        veros.addAll(OidcJwtAuthenticationConverter.MachineTokens.USER_ONLY);
+        veros.add("groups"); // refused before, by the groups rule
+        for (String claim : properties.getUserClaims()) assertTrue(veros.contains(claim), claim);
+        assertFalse(OidcJwtAuthenticationConverter.DEFAULT_CLIENT_ID_CLAIMS.contains("sub"));
+    }
+
+    /** Task 0067: group names count exactly; a claim that is one text is one group. */
+    @Test
+    void groupNamesAreExact() throws Exception {
+        assertEquals(200, withToken("/api/v1/session", false, sign(KEY, person("s-exact", List.of("vero-users")))).status());
+        for (Object groups : List.of(List.of("vero-users "), List.of(" vero-users"), List.of("VERO-USERS"), "other vero-users", "other,vero-users")) {
+            assertEquals(401, withToken("/api/v1/session", false, sign(KEY, person("s-exact", List.of()).claim("groups", groups))).status(), groups.toString());
         }
     }
 
