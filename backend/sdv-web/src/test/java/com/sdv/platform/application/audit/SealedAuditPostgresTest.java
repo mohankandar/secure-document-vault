@@ -26,7 +26,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * for the owner too. A report generated through the real tables is registered with the fingerprint of its CSV, its
  * generation is audited, and verify matches the unchanged file only.
  */
-@EnabledIfEnvironmentVariable(named = "SDV_IT_JDBC_URL", matches = "jdbc:postgresql://localhost:5433/sdv_schema_test")
+@EnabledIfEnvironmentVariable(named = "SDV_IT_JDBC_URL", matches = "jdbc:postgresql://localhost:5433/sdv_schema_test(_[1-9])?")
 class SealedAuditPostgresTest {
     private static final UUID TENANT = UUID.fromString("10000000-0000-0000-0000-000000005001");
 
