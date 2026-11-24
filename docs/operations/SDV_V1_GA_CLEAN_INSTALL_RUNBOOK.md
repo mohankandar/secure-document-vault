@@ -395,6 +395,35 @@ rights back from every other user (the default privileges above give them to new
 the triggers refuse them anyway.
 `Test-SDV-CleanInstall.ps1` checks that Vero runs with such a user.
 
+### Keys for a customer
+
+Task 0083, for the move to keys per customer (task 0076). Until then Vero uses the old keys, and this step changes nothing for
+it. Whoever looks after Vault runs it once, with a Vault token that may add mounts, policies and an AppRole:
+
+```powershell
+.\Setup-SDV-VaultTransit.ps1
+```
+
+It asks for the token (not shown) and adds, only where missing: the Transit mount `vero-transit/`; the policies
+`platform-crypto-app`, `-setup` and `-offboard`; the AppRole method; Vero's role; and one file with the role ID and secret ID
+(default `C:\dev\sdv\secrets\vero-vault-approle.properties`, this Windows user only; elsewhere: `-OutFile <full path>`).
+The old `transit/` mount stays: an older build still reads the documents encrypted with it. It never initialises, unseals
+or seals a Vault and changes no mount, key, policy or role that is there; when something is there but different, it says so
+and changes nothing. Run again: "Everything is there already."
+
+| It says | Do |
+|---|---|
+| Vault is sealed | Unseal it as usual, run again |
+| The role is there, but the file isn't | Run again with `-NewSecretId` |
+| The policy is there with another text | Another product may use it: give `-PolicyPrefix` another name |
+
+Who gets which policy: the running Vero `-app` only (it can't make or delete keys); the setup command `-setup`, as a token for
+that run (`vault token create -policy=platform-crypto-setup -ttl=15m -no-default-policy`); `-offboard` only at a customer's exit.
+
+**Undo, on a scratch Vault only:** `vault secrets disable vero-transit`, `vault delete auth/approle/role/vero`, `vault policy
+delete platform-crypto-app` (and `-setup`, `-offboard`). Never on a Vault with customers' keys: disabling the mount destroys
+them, and every document encrypted with them, for good.
+
 ### The schema step
 
 It is in the Vero application package: `Update-SDV-Schema.ps1` (Windows) or `update-sdv-schema.sh` (Linux), next
