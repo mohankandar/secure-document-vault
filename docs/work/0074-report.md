@@ -30,7 +30,7 @@ Outcome: built and proven locally. Merges on green `ci-passed`.
 | `.\Test-SDV-SchemaUpgrade.ps1` | not run: no changeset and no platform schema version (speed rules); CI runs the same tests |
 | `npm run ui:smoke`, scratch database | 7 passed, with the new list, bundle, refusals and health details in the IT and Operations steps |
 | Busy, live, pool of 1 | readiness 503 BUSY with `Retry-After` 5, liveness 200, ready again after |
-| `ci-passed` | see "Not done" |
+| `ci-passed` | green on the branch; see "CI" |
 
 First runs that failed: the clean install once (my login-system check read the licence while Vero started; it now reads when it
 runs) and the type check once (a wrong callout tone).
@@ -42,12 +42,11 @@ runs) and the type check once (a wrong callout tone).
   "a check that hangs is down, and readiness never waits".
 - `Test-SDV-CleanInstall.ps1`: steps 1, 5a and 5b, for question 8.
 
-## Not done, and why
+## CI
 
-**CI can't run** since about 19:30 UTC on 2026-11-24, on any branch, also on `release/vero-r7`: GitHub Packages answers 403 for
-platform-core with the repository secret `PLATFORM_PACKAGES_TOKEN`. Three attempts. Owner step: check that token (expired, or no
-longer `read:packages` with access to the platform-core packages) and the account's Packages quota and billing; renew the secret;
-re-run the failed checks.
+From about 19:30 to 20:45 UTC on 2026-11-24 CI failed on every branch before any test: GitHub Packages answered 403 for
+platform-core. Re-running the failed jobs passed later; nothing was changed for it. If it comes back: the token
+`PLATFORM_PACKAGES_TOKEN` and the Packages quota.
 
 ## No other product's name or behaviour in code: yes
 
