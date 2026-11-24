@@ -70,3 +70,10 @@ The live checks, as above.
 ## Suggested next step
 
 Owner runs the step; then seed, live check, `ui:capture`, merge.
+
+## 2026-11-24: brought up to date with `release/vero-r7` (`2f0c94a`)
+
+Merged, two conflicts resolved (CI, the schema check). Built: 43 + 69 + 2 + 4 + 643 + 10 = 771 tests, 0 failures;
+`Test-SDV-CleanInstall.ps1` and `Test-SDV-SchemaUpgrade.ps1` PASS. The owner's schema step from this branch now applies
+identity V5, licensing V2 **and** changeset 043 (task 0066): check the branch out, `.\Build-SDV-All.ps1`, then
+`.\Update-SDV-Schema.ps1 update -Url jdbc:postgresql://localhost:5433/sdv -Username sdv`.
