@@ -24,10 +24,13 @@ public class LocalFilesystemVolumeProbe implements StorageVolumeProbe {
     static final String DEFAULT_ROOT = "data";
 
     private final List<Path> roots;
+    private final Path eraseLog;
 
     /** @param allowedRoots `sdv.storage.allowed-roots`: folders, separated by ';'. Empty: only {@value #DEFAULT_ROOT}. */
     @Autowired
-    public LocalFilesystemVolumeProbe(@Value("${sdv.storage.allowed-roots:}") String allowedRoots) {
+    public LocalFilesystemVolumeProbe(@Value("${sdv.storage.allowed-roots:}") String allowedRoots, @Value("${platform.erase-log.location:}") String eraseLogFolder) {
+        // Task 0080: the erase log and documents never share a folder.
+        this.eraseLog = eraseLogFolder == null || eraseLogFolder.isBlank() ? null : normalizePath(eraseLogFolder);
         List<Path> parsed = new ArrayList<>();
         for (String part : (allowedRoots == null || allowedRoots.isBlank() ? DEFAULT_ROOT : allowedRoots).split(";")) {
             if (part.isBlank()) continue;
@@ -43,6 +46,10 @@ public class LocalFilesystemVolumeProbe implements StorageVolumeProbe {
         this.roots = List.copyOf(parsed);
     }
 
+    public LocalFilesystemVolumeProbe(String allowedRoots) {
+        this(allowedRoots, null);
+    }
+
     private static boolean shareOrDevice(String path) {
         return path.startsWith("\\\\") || path.startsWith("//") || path.startsWith("\\/") || path.startsWith("/\\");
     }
@@ -56,6 +63,7 @@ public class LocalFilesystemVolumeProbe implements StorageVolumeProbe {
         } catch (IllegalArgumentException ex) {
             return false;
         }
+        if (eraseLog != null && (path.startsWith(eraseLog) || eraseLog.startsWith(path))) return false;
         for (Path root : roots) {
             if (path.startsWith(root) && noLinkBetween(root, path)) return true;
         }

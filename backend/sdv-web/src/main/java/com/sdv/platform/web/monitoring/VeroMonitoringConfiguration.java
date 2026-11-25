@@ -1,5 +1,6 @@
 package com.sdv.platform.web.monitoring;
 
+import com.documentplatform.eraselog.EraseGuard;
 import com.documentplatform.identity.signin.DevelopmentLicence;
 import com.documentplatform.identity.signin.IssuerFetch;
 import com.documentplatform.identity.store.LoginConnectionStore;
@@ -111,6 +112,20 @@ public class VeroMonitoringConfiguration {
             case NOT_CONFIGURED -> Verdict.problems(VeroCheckCode.KEY_SERVICE, details);
             case DOWN -> Verdict.down(VeroCheckCode.KEY_SERVICE, details);
         };
+    }
+
+    @Bean
+    DependencyCheck veroEraseLogCheck(EraseGuard guard) {
+        return new VeroCheck("erase-log", "erase-log", EVERY, () -> eraseLog(guard.state()));
+    }
+
+    /** IDs and codes only; an entry holds nothing else. */
+    static Verdict eraseLog(EraseGuard.State state) {
+        if (!state.mayTakeWork()) return Verdict.down(VeroCheckCode.ERASE_LOG, Map.of("code", state.code() == null ? "" : state.code().code()));
+        EraseGuard.ApplyFailure f = state.lastFailure();
+        if (f == null) return Verdict.working();
+        return Verdict.problems(VeroCheckCode.ERASE_PENDING, Map.of("seq", f.seq(), "kind", f.kind(), "record", f.recordId(),
+                "code", com.sdv.platform.web.erase.EraseIds.shown(f.handlerCode() == null ? f.code().code() : f.handlerCode())));
     }
 
     @Bean

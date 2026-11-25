@@ -23,6 +23,7 @@ import com.sdv.platform.persistence.ingestion.JdbcSecureIngestionRepository;
 import com.sdv.platform.persistence.legalhold.JdbcLegalHoldRepository;
 import com.sdv.platform.persistence.redaction.JdbcDocumentRedactionRepository;
 import com.sdv.platform.persistence.redaction.JdbcHeldRedactionRepository;
+import com.sdv.platform.web.erase.EraseKit;
 import com.sdv.platform.web.ingestion.TestPdfs;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
@@ -143,12 +144,13 @@ class HeldRedactionPostgresTest {
             ciphertext.transferTo(plaintext);
         }
     };
+    private final EraseKit erase = new EraseKit(dataSource, tx, List.of(storage));
     private final StoragePlacementService placement = mock(StoragePlacementService.class);
     private final CorrectiveRedactionService redaction = new CorrectiveRedactionService(foundation, foundation, ingestion, redactionStore, ingestion,
-            placement, List.of(storage), crypto, new PdfSanitizingRedactor(), foundation, tx, guard, PdfWork.defaults(), held, approvals);
+            placement, List.of(storage), crypto, new PdfSanitizingRedactor(), foundation, tx, guard, PdfWork.defaults(), held, approvals, erase.port);
     private final DocumentViewerService viewer = new DocumentViewerService(ingestion, ingestion, List.of(storage), crypto, foundation,
             new JdbcPageViewAuditRepository(jdbc), guard, PdfWork.defaults(), (t, s) -> 100);
-    private final SealedOriginalService sealed = new SealedOriginalService(held, ingestion, redactionStore, ingestion, List.of(storage), guard, viewer, foundation, tx);
+    private final SealedOriginalService sealed = new SealedOriginalService(held, ingestion, redactionStore, erase.port, erase.erased, guard, viewer, tx);
 
     private static String sha(byte[] bytes) {
         try {

@@ -44,6 +44,8 @@ the schema step (never at startup, the local profile included).
   demo step; demo entity UUIDs are derived from the demo slot IDs.
 - Licensing is on (task 0075): Vero starts only with a licence; intake stops after the grace time; usage is recorded, never
   enforced. `docs/verification` keeps the earlier identity checkpoints as history.
+- **Task 0080 (2026-11-25): erase log, platform-core 1.1.1.** Everything is erased through `ErasePort` (kinds `document`, `sealed-original`, `replaced-version`,
+  `case-fields`); `EraseGateFilter` and `WorkGate` stop work while the log says no; `--erase-replay` after a restore. Local log: `~/.vero/erase-log`.
 - **Task 0094 (2026-11-25): platform-core 1.1.0.** A results page is opened with `FieldValues.readSensitive(list)`, one key-service call; Vero no longer
   calls the key service itself for opening.
 - **Task 0077 (2026-11-24): field definitions in platform-fields** (`fld_` tables). What a sending system adds is an extension

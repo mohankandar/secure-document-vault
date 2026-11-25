@@ -30,8 +30,6 @@ public interface RetentionRepository {
      */
     boolean claimDueDocument(UUID tenantId, UUID documentId, Instant startedAt);
 
-    void finalizeExpiredDocument(UUID tenantId, UUID documentId, Instant deletedAt, String deletionReason);
-
     record PolicyVersion(
             UUID policyVersionId,
             UUID tenantId,

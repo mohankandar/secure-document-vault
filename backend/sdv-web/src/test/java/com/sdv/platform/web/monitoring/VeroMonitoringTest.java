@@ -62,7 +62,8 @@ class VeroMonitoringTest {
     void everyCodeHasItsTextsAndFillsItsDetails() {
         for (PlatformCode code : VeroCheckCode.values()) {
             for (String text : new String[]{code.cause(), code.fix(), code.userMessage(), code.supportNote(), code.family()}) assertFalse(text.isBlank());
-            String filled = PlatformError.fill(code, Map.of("count", 3, "host", "idp.test", "reason", "HTTP 503", "warning", 1, "stopped", 2, "active", 3, "state", "DOWN"));
+            String filled = PlatformError.fill(code, new java.util.HashMap<String, Object>(Map.of("count", 3, "host", "idp.test", "reason", "HTTP 503", "warning", 1, "stopped", 2, "active", 3, "state", "DOWN",
+                    "seq", 4L, "code", "X")) {{ put("kind", "document"); put("record", "40000000-0000-0000-0000-000000000001"); }});
             assertFalse(filled.contains("{"), filled);
         }
     }

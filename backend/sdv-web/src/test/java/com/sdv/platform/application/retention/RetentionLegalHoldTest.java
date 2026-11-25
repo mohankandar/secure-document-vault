@@ -2,8 +2,9 @@ package com.sdv.platform.application.retention;
 
 import com.sdv.platform.application.port.AuditEventPort;
 import com.sdv.platform.application.port.DocumentIntakeRepository;
+import com.sdv.platform.application.port.ErasePort;
+import com.sdv.platform.application.port.EraseRepository;
 import com.sdv.platform.application.port.RetentionRepository;
-import com.sdv.platform.application.port.StorageVolumeRepository;
 import com.sdv.platform.persistence.legalhold.JdbcLegalHoldRepository;
 import com.sdv.platform.persistence.retention.JdbcRetentionRepository;
 import org.junit.jupiter.api.Test;
@@ -47,7 +48,7 @@ class RetentionLegalHoldTest {
         when(repository.claimDueDocument(eq(TENANT), eq(DOCUMENT), any())).thenReturn(false); // someone else had it
         DocumentIntakeRepository documents = mock(DocumentIntakeRepository.class);
         RetentionDeletionService service = new RetentionDeletionService(repository, documents,
-                mock(StorageVolumeRepository.class), List.of(), mock(AuditEventPort.class), tx);
+                mock(ErasePort.class), mock(EraseRepository.class), mock(AuditEventPort.class), tx);
 
         RetentionDeletionService.SweepResult result = service.sweep(100);
         assertEquals(3L, result.heldSkipped());

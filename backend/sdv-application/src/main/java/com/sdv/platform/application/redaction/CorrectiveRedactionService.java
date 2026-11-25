@@ -54,6 +54,7 @@ public class CorrectiveRedactionService {
     private final TransactionTemplate transactions;
     private final PdfWork work;
     private final HeldRedactionRepository held;
+    private final ErasePort erase;
     private final AccessRequestService requests;
     private final ObjectMapper json = VeroJson.mapper();
     private final Clock clock = Clock.systemUTC();
@@ -73,7 +74,9 @@ public class CorrectiveRedactionService {
             DocumentAccessGuard access,
             PdfWork work,
             HeldRedactionRepository held,
-            AccessRequestService requests) {
+            AccessRequestService requests,
+            ErasePort erase) {
+        this.erase = Objects.requireNonNull(erase, "erase");
         this.held = Objects.requireNonNull(held, "held");
         this.requests = Objects.requireNonNull(requests, "requests");
         this.work = Objects.requireNonNull(work, "work");
@@ -335,11 +338,12 @@ public class CorrectiveRedactionService {
         SealedCopy[] sealed = new SealedCopy[1];
         RedactionResult result;
         try {
-            result = transactions.execute(status -> finalizeTransaction(operation, regionCount, correlationId, completedAt, sealed));
+            result = erase.inTurn(() -> transactions.execute(status -> finalizeTransaction(operation, regionCount, correlationId, completedAt, sealed)));
             if (result == null) throw new RedactionFailedException("Corrective redaction finalization returned no result.");
         } catch (RuntimeException ex) {
             // Not committed: the sealed copy belongs to nothing; the original is as it was and a later run seals it again.
             if (sealed[0] != null) safeDelete(sealed[0].provider(), operation.tenantId(), sealed[0].volume(), sealed[0].stored().objectKey());
+            if (ex instanceof ErasePort.EraseFailed) throw new RedactionFailedException("Permanent redaction cannot complete until the prior ciphertext is removed.", ex);
             throw ex;
         }
         // Task 0076: committed, so the sealed copy is the original now. The old object's data key is gone from the database; what
@@ -406,22 +410,6 @@ public class CorrectiveRedactionService {
         }
     }
 
-    private void deleteOriginal(RedactionOperation operation) {
-        StorageVolume oldVolume = volumes.findById(operation.tenantId(), operation.oldStorageVolumeId())
-                .orElseThrow(() -> new RedactionFailedException("Original storage volume is unavailable."));
-        StorageProvider oldProvider = provider(operation.oldProviderId());
-
-        try {
-            oldProvider.delete(operation.tenantId(), oldVolume, operation.oldObjectKey());
-            if (oldProvider.exists(operation.tenantId(), oldVolume, operation.oldObjectKey())) {
-                throw new IOException("Original ciphertext still exists after corrective-redaction cleanup.");
-            }
-        } catch (IOException ex) {
-            throw new RedactionFailedException(
-                    "Permanent redaction cannot complete until the prior ciphertext is removed.", ex);
-        }
-    }
-
     private RedactionResult finalizeTransaction(RedactionOperation expected, int regionCount,
                                                 String correlationId, Instant completedAt, SealedCopy[] sealed) {
         RedactionOperation pending = redactions.lockPending(expected.tenantId(), expected.documentId())
@@ -438,11 +426,13 @@ public class CorrectiveRedactionService {
         }
 
         // Task 0066: decided here, under the document's row lock (placing a hold takes the same one): a held document's
-        // original is sealed, also when the hold came while the redaction was running; any other is deleted now.
+        // original is sealed, also when the hold came while the redaction was running; any other is erased now.
         DocumentCryptoMetadata oldCrypto = crypto(expected);
+        UUID auditId = UUID.randomUUID();
         UUID sealedId = null;
         if (expected.accessRequestId() == null && !held.onHold(expected.tenantId(), expected.documentId())) {
-            deleteOriginal(expected);
+            // Task 0080: through the erase log, outside this transaction, which only holds the locks meanwhile.
+            erase.replacedVersion(expected.tenantId(), expected.documentId(), oldCrypto.objectVersion(), auditId);
         } else {
             sealedId = UUID.randomUUID();
             sealed[0] = sealCopy(expected, oldCrypto, sealedId);
@@ -467,7 +457,7 @@ public class CorrectiveRedactionService {
                 completedAt);
 
         audit.append(new AuditEvent(
-                UUID.randomUUID(), expected.tenantId(), "USER", expected.actorId(),
+                auditId, expected.tenantId(), "USER", expected.actorId(),
                 "DOCUMENT_PERMANENTLY_REDACTED", "DOCUMENT", expected.documentId().toString(),
                 completedAt, correlationId, AuditOutcome.SUCCESS, successAuditJson(expected, regionCount, sealedId)));
 

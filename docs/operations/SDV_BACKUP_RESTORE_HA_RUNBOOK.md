@@ -8,7 +8,7 @@ V1 is **single-region, HA-ready**. Multi-region active-active is not part of V1.
 
 ## 1. Recovery set
 
-A usable SDV recovery point consists of four coordinated parts:
+A usable SDV recovery point consists of four coordinated parts (the erase log is **not** one of them: it is backed up on its own and never restored with the rest, section 10):
 
 | Component | Required recovery content |
 |---|---|
@@ -125,10 +125,34 @@ A practical restore sequence is:
 5. restore non-secret topology/config and separately inject secrets;
 6. deploy the matching SDV application version;
 7. keep external traffic disabled;
+   run the erase replay ("Restore: the erase log goes first", below);
 8. run the validation checklist below;
 9. enable traffic only after validation passes.
 
 The exact infrastructure order may vary, but SDV must not serve a recovery as successful until the whole set validates.
+
+### Restore: the erase log goes first
+
+The erase log (`SDV_ERASE_LOG_FOLDER`, install runbook) is **never** restored with the database. Restore **the database and the
+encrypted storage of the same time together**; the log stays as it is now. Only if its own storage was lost: its newest backup.
+
+1. Stop every Vero. Restore the database and the storage. If the backup is from an older Vero, run the schema step.
+2. Start nothing for users yet. A start now is paused by itself: readiness `503 SDV-ERS-001`, `ERASE_LOG_RESTORE_DETECTED`. A
+   restore under a running Vero is noticed within a minute and pauses it the same way.
+3. **Replay**, once, with Vero's normal settings and the working folder, while no Vero runs: `java -jar sdv-web-<version>.jar --erase-replay`.
+   It erases again everything erased after the backup, checks that nothing in the log can be read, and ends with 0; with 1 and
+   the code when something is left: fix it and run the same command again. It is always safe to repeat.
+4. Start Vero. Readiness is 200.
+
+- **Only the storage was restored:** nothing shows at the start. Run step 3 before users come back.
+- **A document that was redacted after the backup** is erased by the replay: the backup has its original, and the redacted
+  copy isn't in it. The audit says so (`DOCUMENT_ERASED_AFTER_RESTORE`). The sending system can't put it back under the same ID;
+  deliver the redacted copy as a new document.
+- **A document that was redacted while on legal hold** comes back as the original, on hold, when the original was still sealed:
+  nothing was erased. Ask for the redaction again.
+- A legal hold that had ended keeps nothing from the replay, also when the restored database still has it.
+- Entries older than the log's retention are gone, and so are the backups they could apply to. Never restore an older one
+  (`ERASE_LOG_GAP`).
 
 ## 11. Restore validation checklist
 
@@ -147,6 +171,7 @@ For at least one representative document per required tenant/storage/key path:
 - [ ] authorized secure viewer can serve metadata/page content;
 - [ ] unauthorized/cross-tenant access still fails;
 - [ ] application/database/key/storage health is green or intentionally understood;
+- [ ] the erase replay ended with 0, and readiness is 200;
 - [ ] audit remains append-capable after restore.
 
 ## 12. Failure behavior
@@ -181,5 +206,7 @@ Do not put document plaintext, removed redaction text, credentials or raw privat
 ## 14. Recovery manifest/exportability helper
 
 `tools/recovery/Export-SdvRecoveryManifest.ps1` creates a credential-free manifest that ties together an operator-created PostgreSQL backup, encrypted-storage backup root, key-management backup artifact, and application artifact. It records SHA-256/size evidence for file artifacts and a per-object relative-path/SHA-256/size inventory plus object-count/byte-count evidence for the encrypted storage tree. It does **not** create plaintext document copies and does not read/store DB passwords, Vault tokens, OIDC secrets, or key plaintext.
+
+Since task 0080 it also names the erase log's folder (`-EraseLogFolder`), its ID and its entries of then. The validator accepts a log that has grown, and refuses a missing, different, shorter or changed one.
 
 Validate the same material before a drill with `tools/recovery/Test-SdvRecoveryManifest.ps1`. The validator fails closed on missing artifacts, checksum changes (including same-size encrypted-object corruption), path escape attempts, or storage inventory mismatch. The scripts are compatible with Windows PowerShell 5.1 and newer PowerShell versions. These tools do not replace the provider-native backup procedure; they make the coordinated recovery set explicit and portable for acceptance/DR evidence.

@@ -40,7 +40,13 @@ public interface HeldRedactionRepository {
     /** From SEALED to DESTROYING: nobody opens it from here on. Call with the document's row locked, after {@link #onHold}. */
     boolean startDestroying(UUID tenantId, UUID sealedId, Instant at);
 
-    /** From DESTROYING to DESTROYED; its data key is forgotten. */
+    /** The database has a row for it, in any state. */
+    boolean knowsSealed(UUID tenantId, UUID sealedId);
+
+    /** SEALED or DESTROYING. */
+    Optional<Sealed> findUndestroyed(UUID tenantId, UUID sealedId);
+
+    /** To DESTROYED; its data key is forgotten. Only the erase log's handler calls it. */
     boolean markDestroyed(UUID tenantId, UUID sealedId, Instant at);
 
     record Approved(UUID requestId, UUID tenantId, UUID documentId, String requestedBy, String reason, String regionsJson,

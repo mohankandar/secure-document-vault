@@ -148,6 +148,8 @@ $packagedSettings = [ordered]@{
     # Task 0076: an address where nothing listens, and a login that is no secret: Vero starts without calling the key service.
     SDV_CUSTOMER_ID = 'TEN-VERO-DEMO-0001'
     SDV_KEY_SERVICE_ADDRESS = 'http://127.0.0.1:8299'
+    # Task 0080: this check's own erase log.
+    SDV_ERASE_LOG_FOLDER = (Join-Path $run 'erase-log')
     PLATFORM_CRYPTO_VAULT_LOGIN = 'TOKEN_FILE'
     PLATFORM_CRYPTO_VAULT_TOKENFILE = $placeholderToken
 }
@@ -374,18 +376,19 @@ alter default privileges for role $owner in schema public grant select, insert, 
     Assert-That ($up.Code -eq 0) "update failed: $($up.Err.Trim()) $($up.Out.Trim())"
     # Task 0041: "would run" counts Vero's changesets and platform-core's identity (V1-V5, task 0067) and licensing (V1-V2) versions.
     $liquibase = (Invoke-Sql -Database $db -Sql "select count(*) from databasechangelog;").Out.Trim()
-    $platform = (Invoke-Sql -Database $db -Sql "select (select max(version) from idn_schema_version) || ' ' || (select max(version) from lic_schema_version) || ' ' || (select count(*) from idn_schema_history where success) || ' ' || (select count(*) from lic_schema_history where success) || ' ' || (select max(version) from fld_schema_version) || ' ' || (select count(*) from fld_schema_history where success);").Out.Trim().Split(' ')
+    $platform = (Invoke-Sql -Database $db -Sql "select (select max(version) from idn_schema_version) || ' ' || (select max(version) from lic_schema_version) || ' ' || (select count(*) from idn_schema_history where success) || ' ' || (select count(*) from lic_schema_history where success) || ' ' || (select max(version) from fld_schema_version) || ' ' || (select count(*) from fld_schema_history where success) || ' ' || (select max(version) from erl_schema_version) || ' ' || (select count(*) from erl_schema_history where success);").Out.Trim().Split(' ')
     Assert-That ($platform[0] -eq '5' -and $platform[1] -eq '2') "identity tables at version $($platform[0]) (5 expected), licensing at $($platform[1]) (2 expected)"
     Assert-That ([int]$platform[2] -ge 5 -and [int]$platform[3] -ge 2) 'the identity and licensing runs must each record their versions in their own history table'
     Assert-That ($platform[4] -eq '2' -and [int]$platform[5] -ge 2) "case field tables at version $($platform[4]) (2 expected), $($platform[5]) versions recorded"
-    $applied = [int]$liquibase + [int]$platform[0] + [int]$platform[1] + [int]$platform[4]
+    Assert-That ($platform[6] -eq '3' -and [int]$platform[7] -ge 3) "erase log table at version $($platform[6]) (3 expected), $($platform[7]) versions recorded"
+    $applied = [int]$liquibase + [int]$platform[0] + [int]$platform[1] + [int]$platform[4] + [int]$platform[6]
     $seedRows = (Invoke-Sql -Database $db -Sql "select count(*) from databasechangelog where id = '002-local-foundation-seed';").Out.Trim()
     Assert-That ("$applied" -eq $wouldRun -and $seedRows -eq '0') "update applied $applied changesets and platform versions (expected $wouldRun), seed rows $seedRows"
     $oldIdentity = (Invoke-Sql -Database $db -Sql "select count(*) from pg_tables where tablename in ('enterprise_identity_connections', 'enterprise_identity_connection_history', 'role_group_mappings_seen', 'role_mapping_notices');").Out.Trim()
     Assert-That ($oldIdentity -eq '0') "changeset 035 must drop the old identity tables, $oldIdentity left"
     $invalid = (Invoke-Sql -Database $db -Sql "select count(*) from pg_index where not indisvalid;").Out.Trim()
     Assert-That ($invalid -eq '0') "$invalid indexes are invalid after the concurrent index step"
-    Write-Step '2c. Schema step update' $up.Seconds "$liquibase changesets and identity V5, licensing V2, fields V2 applied (own history tables), old identity tables dropped, 018 indexes valid"
+    Write-Step '2c. Schema step update' $up.Seconds "$liquibase changesets and identity V5, licensing V2, fields V2, erase log V3 applied (own history tables), old identity tables dropped, 018 indexes valid"
     $up.Out | Set-Content -Encoding utf8 (Join-Path $run 'schema-update.out.txt')
 
     # Task 0073: the app user's rights on two licensing tables are narrower than the default ones; the rest are there.
@@ -393,6 +396,9 @@ alter default privileges for role $owner in schema public grant select, insert, 
     Assert-That ($narrow -eq 'lic_clock_reset:DELETE=false lic_clock_reset:INSERT=true lic_clock_reset:SELECT=true lic_clock_reset:UPDATE=false lic_last_seen:DELETE=false lic_last_seen:INSERT=true lic_last_seen:SELECT=true lic_last_seen:UPDATE=true') "rights on the licensing tables: $narrow"
     $refusedDelete = Invoke-Sql -Database $db -User $app -Environment @{ PGPASSWORD = $appPassword } -Sql 'delete from lic_clock_reset where false;' -AllowFailure
     Assert-That ($refusedDelete.Code -ne 0 -and $refusedDelete.Err -match 'permission denied') "the app user may delete clock resets: $($refusedDelete.Err.Trim())"
+    # Task 0080: the applied position of the erase log is never deleted.
+    $position = (Invoke-Sql -Database $db -Sql "select string_agg(p || '=' || has_table_privilege('$app', 'erl_position', p), ' ' order by p) from unnest(array['SELECT','INSERT','UPDATE','DELETE']) p;").Out.Trim()
+    Assert-That ($position -eq 'DELETE=false INSERT=true SELECT=true UPDATE=true') "rights on erl_position: $position"
     $again = Invoke-SchemaStep @('update')
     Assert-That ($again.Code -eq 0 -and $again.Out -match 'Up to date') "a second update should say up to date: $($again.Out.Trim()) $($again.Err.Trim())"
 

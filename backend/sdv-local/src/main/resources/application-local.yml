@@ -15,6 +15,9 @@ spring:
 platform:
   licensing:
     tenant-id: TEN-VERO-DEMO-0001
+  # Task 0080: the erase log of the local database. A check script names its own folder for its scratch database.
+  erase-log:
+    location: ${SDV_ERASE_LOG_FOLDER:${user.home}/.vero/erase-log}
   # Task 0076: the local key service: the owner's Vault step (vero-transit and Vero's login file beside the repository).
   crypto:
     vault:

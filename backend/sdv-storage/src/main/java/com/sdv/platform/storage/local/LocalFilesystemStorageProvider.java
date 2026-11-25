@@ -75,6 +75,8 @@ public class LocalFilesystemStorageProvider implements StorageProvider {
     @Override
     public void delete(UUID tenantId, StorageVolume volume, String objectKey) throws IOException {
         requireTenantAndProvider(tenantId, volume);
+        // Task 0080: a folder that isn't there (not mounted) is no proof that a file is gone.
+        if (!Files.isDirectory(Path.of(volume.rootPath()))) throw new IOException("The volume's folder is not there.");
         Path path = resolveObject(Path.of(volume.rootPath()).toAbsolutePath().normalize(), objectKey);
         Files.deleteIfExists(path);
     }

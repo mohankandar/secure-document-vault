@@ -44,7 +44,7 @@ $password = & (Join-Path $root 'scripts\local\Get-SdvLocalDbPassword.ps1') -Root
 if ([int](Sql 'postgres' "select count(*) from pg_database where datname = '$db';") -gt 0) { throw "The database $db is there already (an earlier run?). Look at it and drop it first." }
 
 $script:app = $null
-$settings = 'SDV_KEY_SERVICE_ADDRESS', 'SDV_VAULT_LOGIN_FILE', 'PLATFORM_SETUP_VAULT_ADDR', 'PLATFORM_SETUP_VAULT_TOKEN_FILE', 'PLATFORM_SETUP_VAULT_TRANSIT_MOUNT', 'SDV_LOCAL_DB_PASSWORD', 'SDV_AUTH_MODE', 'SDV_AUTH_JWT_ISSUER', 'SDV_AUTH_JWT_JWK_SET_URI', 'SDV_AUTH_JWT_AUDIENCE', 'SDV_AUTH_JWT_PROVIDER_ID', 'SDV_AUTH_BROWSER_CLIENT_ID', 'SDV_SCHEMA_DB_PASSWORD'
+$settings = 'SDV_KEY_SERVICE_ADDRESS', 'SDV_ERASE_LOG_FOLDER', 'SDV_VAULT_LOGIN_FILE', 'PLATFORM_SETUP_VAULT_ADDR', 'PLATFORM_SETUP_VAULT_TOKEN_FILE', 'PLATFORM_SETUP_VAULT_TRANSIT_MOUNT', 'SDV_LOCAL_DB_PASSWORD', 'SDV_AUTH_MODE', 'SDV_AUTH_JWT_ISSUER', 'SDV_AUTH_JWT_JWK_SET_URI', 'SDV_AUTH_JWT_AUDIENCE', 'SDV_AUTH_JWT_PROVIDER_ID', 'SDV_AUTH_BROWSER_CLIENT_ID', 'SDV_SCHEMA_DB_PASSWORD'
 $before = @{}; foreach ($n in $settings) { $before[$n] = [Environment]::GetEnvironmentVariable($n) }
 function Start-Vero([string]$Name) {
     $script:app = Start-Process -FilePath 'java' -PassThru -WindowStyle Hidden -WorkingDirectory $root -ArgumentList @('-jar', "`"$jar`"", '--spring.profiles.active=local', "--server.port=$Port", "--spring.datasource.url=jdbc:postgresql://localhost:5433/$db") -RedirectStandardOutput (Join-Path $run "$Name.out.log") -RedirectStandardError (Join-Path $run "$Name.err.log")
@@ -60,6 +60,8 @@ function Stop-Vero { if ($script:app -and -not $script:app.HasExited) { Stop-Pro
 $code = 1
 try {
     & (Join-Path $root 'scripts\local\Use-SdvScratchVault.ps1')
+    # Task 0080: the scratch database's own erase log.
+    $env:SDV_ERASE_LOG_FOLDER = (Join-Path $run 'erase-log')
     $null = Sql 'postgres' "create database $db owner sdv;"
     $env:SDV_SCHEMA_DB_PASSWORD = $password
     $ErrorActionPreference = 'Continue'

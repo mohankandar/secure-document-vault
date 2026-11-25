@@ -117,15 +117,26 @@ public class JdbcHeldRedactionRepository implements HeldRedactionRepository {
     }
 
     @Override
+    public boolean knowsSealed(UUID tenantId, UUID sealedId) {
+        return Boolean.TRUE.equals(jdbc.queryForObject("select exists(select 1 from sealed_originals where tenant_id=:tenantId and sealed_id=:id)",
+                request(tenantId, sealedId), Boolean.class));
+    }
+
+    @Override
+    public Optional<Sealed> findUndestroyed(UUID tenantId, UUID sealedId) {
+        return jdbc.query(SEALED + " where s.tenant_id=:tenantId and s.sealed_id=:id and s.state<>'DESTROYED'",
+                request(tenantId, sealedId), sealed()).stream().findFirst();
+    }
+
+    @Override
     public List<Sealed> findToDestroy(int limit) {
         return jdbc.query(SEALED + """
                  where s.state='DESTROYING'
                     or (s.state='SEALED' and not exists (
-                        select 1 from legal_holds h
-                         where h.tenant_id=s.tenant_id and h.document_id=s.document_id and h.released_at is null))
+                        select 1 from documents where documents.tenant_id=s.tenant_id and documents.document_id=s.document_id and exists (%s)))
                  order by s.sealed_at, s.sealed_id
                  limit :limit
-                """, new MapSqlParameterSource("limit", limit), sealed());
+                """.formatted(com.sdv.platform.persistence.retention.JdbcRetentionRepository.ACTIVE_HOLD), new MapSqlParameterSource("limit", limit), sealed());
     }
 
     @Override
@@ -147,8 +158,8 @@ public class JdbcHeldRedactionRepository implements HeldRedactionRepository {
     public boolean markDestroyed(UUID tenantId, UUID sealedId, Instant at) {
         return jdbc.update("""
                 update sealed_originals
-                   set state='DESTROYED', destroyed_at=:at, protected_data_key_reference=null
-                 where tenant_id=:tenantId and sealed_id=:id and state='DESTROYING'
+                   set state='DESTROYED', destroying_at=coalesce(destroying_at, :at), destroyed_at=:at, protected_data_key_reference=null
+                 where tenant_id=:tenantId and sealed_id=:id and state<>'DESTROYED'
                 """, request(tenantId, sealedId).addValue("at", Timestamp.from(at))) == 1;
     }
 

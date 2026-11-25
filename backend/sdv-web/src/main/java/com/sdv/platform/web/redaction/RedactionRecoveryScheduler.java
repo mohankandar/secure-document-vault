@@ -2,7 +2,7 @@ package com.sdv.platform.web.redaction;
 
 import com.sdv.platform.application.redaction.CorrectiveRedactionService;
 import com.sdv.platform.application.redaction.SealedOriginalService;
-import com.sdv.platform.web.schema.DatabaseSchemaCheck;
+import com.sdv.platform.web.erase.WorkGate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -14,13 +14,13 @@ public class RedactionRecoveryScheduler {
     private static final int SWEEP_LIMIT = 20;
 
     private final CorrectiveRedactionService redaction;
-    private final DatabaseSchemaCheck schema;
+    private final WorkGate gate;
     private final SealedOriginalService sealed;
 
-    public RedactionRecoveryScheduler(CorrectiveRedactionService redaction, SealedOriginalService sealed, DatabaseSchemaCheck schema) {
+    public RedactionRecoveryScheduler(CorrectiveRedactionService redaction, SealedOriginalService sealed, WorkGate gate) {
         this.redaction = redaction;
         this.sealed = sealed;
-        this.schema = schema;
+        this.gate = gate;
     }
 
     /** Task 0066: approved redactions of held documents, and originals whose last hold was released. */
@@ -28,7 +28,7 @@ public class RedactionRecoveryScheduler {
             initialDelayString = "${sdv.redaction.held-initial-delay-ms:20000}",
             fixedDelayString = "${sdv.redaction.held-sweep-delay-ms:10000}")
     public void heldDocuments() {
-        if (!schema.current()) return;
+        if (!gate.open()) return;
         try {
             CorrectiveRedactionService.ApplySweepResult result = redaction.applyApproved(SWEEP_LIMIT);
             if (result.taken() > 0) {
@@ -51,7 +51,7 @@ public class RedactionRecoveryScheduler {
             initialDelayString = "${sdv.redaction.recovery-initial-delay-ms:30000}",
             fixedDelayString = "${sdv.redaction.recovery-sweep-delay-ms:60000}")
     public void recoverStale() {
-        if (!schema.current()) return; // the database doesn't match this version (DatabaseSchemaCheck)
+        if (!gate.open()) return; // the database doesn't match this version, or the erase log stops all work
         try {
             CorrectiveRedactionService.RecoverySweepResult result = redaction.recoverStale(SWEEP_LIMIT);
             if (result.completed() > 0 || result.failed() > 0) {

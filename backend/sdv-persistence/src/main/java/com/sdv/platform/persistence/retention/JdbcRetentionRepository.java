@@ -128,7 +128,7 @@ public class JdbcRetentionRepository implements RetentionRepository {
     }
 
     /** Task 0027: the document has a legal hold in place (uq_legal_holds_active covers this lookup). */
-    static final String ACTIVE_HOLD = """
+    public static final String ACTIVE_HOLD = """
             select 1 from legal_holds h
              where h.tenant_id=documents.tenant_id and h.document_id=documents.document_id and h.released_at is null
             union all
@@ -215,38 +215,6 @@ public class JdbcRetentionRepository implements RetentionRepository {
                 .addValue("documentId", documentId)
                 .addValue("startedAt", Timestamp.from(startedAt)));
         return updated == 1;
-    }
-
-    @Override
-    public void finalizeExpiredDocument(UUID tenantId, UUID documentId, Instant deletedAt, String deletionReason) {
-        // Protected content/key references are removed, while the document tombstone itself remains.
-        jdbc.update("""
-                delete from document_crypto_metadata
-                 where tenant_id=:tenantId and document_id=:documentId
-                """, params(tenantId, documentId));
-        jdbc.update("""
-                delete from document_storage_refs
-                 where tenant_id=:tenantId and document_id=:documentId
-                """, params(tenantId, documentId));
-
-        int updated = jdbc.update("""
-                update documents
-                   set status='EXPIRED_DELETED',
-                       deleted_at=:deletedAt,
-                       deletion_reason=:deletionReason,
-                       retention_delete_started_at=null,
-                       processing_error_code=null
-                 where tenant_id=:tenantId
-                   and document_id=:documentId
-                   and status='RETENTION_DELETING'
-                   and expires_at is not null
-                   and expires_at <= current_timestamp
-                """, params(tenantId, documentId)
-                .addValue("deletedAt", Timestamp.from(deletedAt))
-                .addValue("deletionReason", deletionReason));
-        if (updated != 1) {
-            throw new InternalCheckFailed("Retention finalization did not update exactly one RETENTION_DELETING document.");
-        }
     }
 
     private static MapSqlParameterSource params(UUID tenantId, UUID documentId) {

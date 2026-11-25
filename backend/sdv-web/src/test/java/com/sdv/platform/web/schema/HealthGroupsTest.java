@@ -58,7 +58,8 @@ class HealthGroupsTest {
                 .withBean("databaseSchema", HealthIndicator.class,
                         () -> new DatabaseSchemaHealthIndicator(schema, event -> { }))
                 .withBean("databaseConnection", HealthIndicator.class, () -> () -> Health.status(database).build())
-                .withBean("signInKeys", HealthIndicator.class, () -> () -> Health.status(keys).build());
+                .withBean("signInKeys", HealthIndicator.class, () -> () -> Health.status(keys).build())
+                .withBean("eraseLogState", HealthIndicator.class, () -> () -> Health.up().build());
     }
 
     private record Answer(Status status, int http) { }

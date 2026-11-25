@@ -1154,6 +1154,36 @@ Task 0037: SYS-003 to SYS-012 are start-up codes. A start that stops prints one 
 - **What the user should do:** try again in a few minutes. A sending system keeps the delivery and sends it again.
 - **What support should tell the customer:** check the key service on the Health page; unseal it or put its login right (runbook, "Keys for a customer").
 
+## Erase log (ERS)
+
+### SDV-ERS-001: Vero is paused by the erase log
+
+- **HTTP status:** 503, for everything but health, before sign-in. `/actuator/health/readiness` is 503 with this code and the log's own in `eraseLog`. Also a check on Platform operations, Health.
+- **Meaning:** task 0080. The erase log says this database must not be worked with: it was restored from a backup (`ERASE_LOG_RESTORE_DETECTED`), or the log can't be read, was changed, or is not this database's. Nothing was done; scheduled jobs wait too. Message: "Vero is paused until IT has checked the erase log. Nothing was done."
+- **What the user should do:** tell IT. Sending systems send again later.
+- **What support should tell the customer:** IT reads the log's code in readiness or the server log and follows the runbook, "Restore" and "Erase log". After a restore: the erase replay, once. Vero goes on by itself when the cause is gone.
+
+### SDV-ERS-002: the erase log is in a document volume
+
+- **HTTP status:** none. Vero doesn't start.
+- **Meaning:** `SDV_ERASE_LOG_FOLDER` is inside a document volume, or a volume is inside it. A backup of the documents would bring an old log back with them.
+- **What the user should do:** nothing.
+- **What support should tell the customer:** IT sets `SDV_ERASE_LOG_FOLDER` to a folder outside every volume and moves the log's files there, if there are any.
+
+### SDV-ERS-003: a logged erasure can't be finished
+
+- **HTTP status:** none. A check on Platform operations, Health: the entry's number, kind and record ID; and the `eraseLogState` health details. (In the erase log module it is written `SDV_ERS_003`.)
+- **Meaning:** a file could not be erased: its folder or share isn't there, or Vero may not delete in it. The entry stays in the log and everything after it waits, so that the log and the database stay in step.
+- **What the user should do:** nothing.
+- **What support should tell the customer:** IT makes the folder reachable or gives the rights back. The next cleanup or erasure finishes the entry first.
+
+### SDV-ERS-004: an erasure was refused
+
+- **HTTP status:** none. The cleanup counts it as failed; the code is in the audit event `DOCUMENT_RETENTION_DELETE_FAILED`.
+- **Meaning:** just before it was logged the document was found on legal hold, quarantined, or no longer in the state to be erased. Nothing was logged or erased.
+- **What the user should do:** nothing.
+- **What support should tell the customer:** it is erased by a later cleanup when nothing keeps it any more.
+
 ## Viewing, print and download (DOC)
 
 Task 0043. Sent by the viewer (`GET /api/v1/business/documents/{id}/viewer`, `…/viewer/pages/{n}`, `…/viewer/previews`, `…/viewer/search`), download (`…/download`), print (`…/print-event`), tags and comments (`…/tags`, `…/comments`) and a document's activity (`…/activity`). They replace `VIEWER_UNAVAILABLE` and `DOWNLOAD_UNAVAILABLE`, which covered every cause with one code and were never logged (owner answer 3 to report 0034). The level check still comes first: a restricted document gets SDV-SEN-008, never one of these.

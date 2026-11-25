@@ -144,6 +144,9 @@ class SenderProfileServerContractTest {
         settings.put("platform.crypto.vault.address", "http://127.0.0.1:" + closed);
         settings.put("platform.crypto.vault.login", "TOKEN_FILE");
         settings.put("platform.crypto.vault.token-file", vaultToken.toString());
+        // Task 0080: the log of the other tests on this database (a database has one); they have no key service.
+        settings.put("platform.erase-log.location", com.sdv.platform.web.erase.EraseKit.folder(db).toString());
+        settings.put("platform.erase-log.keyed", "false");
         // Command-line arguments, so they win over application.yml (builder properties are only defaults).
         // The real app, without the test classpath's own @Configuration classes (other tests' stacks).
         vero = new SpringApplicationBuilder(SdvApplication.class).initializers(context -> context.getBeanFactory().registerSingleton("profileCheckLicenceBuild", build),

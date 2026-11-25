@@ -411,6 +411,42 @@ An IT Admin adds storage volumes only inside the folders named here (task 0062).
 - Set it **before an upgrade** if new volumes will be outside the default. Volumes that exist stay usable.
 - Links inside an allowed folder are refused. Vero's service account needs rights only to these folders.
 
+### The erase log: `SDV_ERASE_LOG_FOLDER`
+
+Every erasure (a document at the end of its time, a version a redaction replaces, a sealed original after its hold, the search
+field values of a record whose last document went) is written to the erase log first: IDs only, never a value. After a restore
+the log says what must be erased again before anyone works with the database (task 0080).
+
+| Setting | Default | Value |
+|---|---|---|
+| `SDV_ERASE_LOG_FOLDER` | none; Vero doesn't start without it | An absolute path |
+| `SDV_BACKUP_RETENTION_DAYS` | `35` | How long database backups are kept, 30 to 90; the log keeps its entries 30 days longer |
+
+- **Not in a document volume** (`SDV-ERS-002` stops the start), **not on the database's storage**, not in either one's backups.
+- **Backed up on its own**, for at least as long as the log keeps its entries.
+- **The same folder for every Vero of one installation**, and one folder for one database. A test database has its own.
+- Only the service account may write there. Vero makes the folder and its files; nobody edits them: a changed or forged
+  entry stops all work (`ERASE_LOG_CHAIN_BROKEN`). The entries are keyed with the customer's key in the key service.
+- **Moving it:** stop every Vero, move **all** files, change the setting, start. Never start an empty log for a database that
+  used one.
+- The app user has no DELETE on `erl_position`; the schema step takes it away.
+- A log from before it was keyed is sealed once: `java -jar sdv-web-<version>.jar --erase-log-seal`. A new log needs nothing.
+
+When the log stops work, every request but health is `503 SDV-ERS-001`, the jobs wait, and readiness names the log's code:
+
+| Code | Do |
+|---|---|
+| `ERASE_LOG_RESTORE_DETECTED` | The database was restored: [backup runbook](SDV_BACKUP_RESTORE_HA_RUNBOOK.md), "Restore" |
+| `ERASE_LOG_UNREACHABLE` | The folder isn't mounted, or rights are missing |
+| `ERASE_LOG_KEY_UNAVAILABLE` | The key service must answer; Vero goes on by itself |
+| `ERASE_LOG_BEHIND_DATABASE` | The log lost entries: put its newest backup back |
+| `ERASE_LOG_WRONG_LOG` | The setting names another database's log |
+| `ERASE_LOG_CHAIN_BROKEN`, `ERASE_LOG_FORMAT`, `ERASE_LOG_LINK_REFUSED` | Somebody changed the folder: restore the log from its own backup, and call support |
+| `ERASE_LOG_GAP` | The database backup is older than the log's entries: use a newer one |
+
+An entry that can't be finished (a share that is away) shows on Platform operations, Health, with its number and ID
+(`SDV-ERS-003`); later erasures wait for it.
+
 ### How large a request may be
 
 | Setting | Default | Value |
@@ -497,6 +533,7 @@ section 5; those with a section of their own above are not repeated.
 | `SDV_AUTH_JWT_ENTITY_CLAIM`, `..._SOURCE_ID_CLAIM`, `..._SOURCE_KEY_CLAIM` | `sdv_entity_id`, `sdv_source_id`, `sdv_source_key` | Optional claims of a sending system's token; when there, they must match its binding |
 | `SDV_TENANT_STATUS_CACHE_SECONDS` | `30` | How soon a suspended entity is refused, 0 to 60 |
 | `SDV_INTAKE_REQUESTS_PER_MINUTE` | `6000` | Intake requests a minute from one sending system, for each Vero process, 60 to 1,000,000. Above it: `SDV-SYS-018` with `Retry-After` |
+| `SDV_ERASE_LOG_FOLDER`, `SDV_BACKUP_RETENTION_DAYS` | none, `35` | "The erase log" above. The folder is required |
 | `SDV_RETENTION_DAILY_AT` | `02:00` | The daily cleanup, HH:mm in the server's time zone |
 | `SDV_RETENTION_CRON` | empty | For check scripts only. Leave empty |
 | `SDV_DEFAULT_TIME_ZONE` | `UTC` | The zone an entity's days are counted in when it has none; an unknown name stops the start |
@@ -650,7 +687,7 @@ It is in the Vero application package: `Update-SDV-Schema.ps1` (Windows) or `upd
 to the application jar (`sdv-web-<version>.jar`; use `-Jar` / `--jar` if it is elsewhere). It needs Java 21 and
 runs the Liquibase bundled in the jar, then, in their own runs with their own history tables, platform-core's
 identity tables (`db/platform/identity`, history `idn_schema_history`) and licensing tables (`db/platform/licensing`,
-history `lic_schema_history`) and, since task 0077, case field tables (`fld_…`, history `fld_schema_history`). It always uses the `production` context, so no test data can be
+history `lic_schema_history`) and, since task 0077, case field tables (`fld_…`, history `fld_schema_history`) and, since task 0080, the erase log's table (`erl_position`, history `erl_schema_history`). It always uses the `production` context, so no test data can be
 added, and it can't be changed.
 
 The connection comes from parameters or environment variables:
@@ -707,7 +744,7 @@ After the schema step and setup. Unless `SDV_TENANT_FILE` and `SDV_VAULT_LOGIN_F
 folder**. Without `SDV_STORAGE_ALLOWED_ROOTS`, documents may be kept only in `data` there.
 
 Linux, as a service. `/etc/vero/vero.env` (owner root, mode 600) holds `SDV_DB_URL`, `SDV_DB_USERNAME`, `SDV_DB_PASSWORD`,
-`SDV_KEY_SERVICE_ADDRESS`, `SDV_AUTH_MODE=enterprise-jwt`, the `SDV_AUTH_JWT_*` settings, and `JAVA_TOOL_OPTIONS` if you made a
+`SDV_ERASE_LOG_FOLDER`, `SDV_KEY_SERVICE_ADDRESS`, `SDV_AUTH_MODE=enterprise-jwt`, the `SDV_AUTH_JWT_*` settings, and `JAVA_TOOL_OPTIONS` if you made a
 trust store:
 
 ```ini
@@ -740,7 +777,8 @@ Vero brings no Windows service of its own.
 | A start that stops says | Do |
 |---|---|
 | `SDV-SYS-003` | The database can't be reached: address, port, password, TLS |
-| `LIC_TABLES_MISSING`, `IDN_VERSION_OLDER` | Run the schema step |
+| `ERASE_LOG_SETTINGS_INVALID`, `SDV-ERS-002` | `SDV_ERASE_LOG_FOLDER`: "The erase log" |
+| `LIC_TABLES_MISSING`, `IDN_VERSION_OLDER`, `ERL_TABLES_MISSING` | Run the schema step |
 | `IDN_PRIVILEGES_MISSING`, `LIC_PRIVILEGES_MISSING` | The app user's rights ("Two database users") |
 | `LICENCE_MISSING` | Run setup, or store the licence ("The licence") |
 | `LICENCE_UNKNOWN_KEY_ID` | The licence isn't signed with a key of this build: ask your account manager |

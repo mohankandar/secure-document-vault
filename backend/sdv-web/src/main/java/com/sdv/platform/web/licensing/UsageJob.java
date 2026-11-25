@@ -4,7 +4,7 @@ import com.documentplatform.licensing.AllowanceType;
 import com.documentplatform.licensing.LicenceService;
 import com.sdv.platform.application.port.TenantRepository;
 import com.sdv.platform.persistence.identity.PlatformIdentityReads;
-import com.sdv.platform.web.schema.DatabaseSchemaCheck;
+import com.sdv.platform.web.erase.WorkGate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -32,7 +32,7 @@ public class UsageJob {
     @FunctionalInterface
     interface Ledger { void record(String slotId, AllowanceType type, YearMonth month, long amount); }
 
-    private final DatabaseSchemaCheck schema;
+    private final WorkGate gate;
     private final TenantRepository tenants;
     private final PlatformIdentityReads identity;
     private final JdbcTemplate db;
@@ -45,9 +45,9 @@ public class UsageJob {
     private final Map<SeatMeter.Month, Integer> namedWritten = new HashMap<>();
     private final NamedSeats named;
 
-    public UsageJob(DatabaseSchemaCheck schema, TenantRepository tenants, PlatformIdentityReads identity, JdbcTemplate db,
+    public UsageJob(WorkGate gate, TenantRepository tenants, PlatformIdentityReads identity, JdbcTemplate db,
                     SeatMeter seats, LicenceService licence, NamedSeats named) {
-        this.schema = schema;
+        this.gate = gate;
         this.tenants = tenants;
         this.identity = identity;
         this.db = db;
@@ -58,7 +58,7 @@ public class UsageJob {
 
     @Scheduled(initialDelayString = "${sdv.licensing.usage-initial-delay-ms:60000}", fixedDelayString = "${sdv.licensing.usage-delay-ms:300000}")
     public synchronized void run() {
-        if (!schema.current()) return;
+        if (!gate.open()) return;
         writeNamed();
         try {
             LocalDate today = LocalDate.now(clock.withZone(ZoneOffset.UTC));
@@ -100,7 +100,7 @@ public class UsageJob {
     /** Task 0090: also when Vero stops, so a planned restart loses nobody. */
     @jakarta.annotation.PreDestroy
     void writeNamed() {
-        if (!named.usable() || !schema.current()) return;
+        if (!named.usable() || !gate.open()) return;
         seats.takePending().forEach((month, people) -> {
             try {
                 named.add(month.entity(), month.month(), people);

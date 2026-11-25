@@ -1,7 +1,7 @@
 package com.sdv.platform.web.quarantine;
 
 import com.sdv.platform.application.quarantine.QuarantineService;
-import com.sdv.platform.web.schema.DatabaseSchemaCheck;
+import com.sdv.platform.web.erase.WorkGate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -18,14 +18,14 @@ public class QuarantinePreparationScheduler {
     private static final Logger log = LoggerFactory.getLogger(QuarantinePreparationScheduler.class);
 
     private final QuarantineService quarantine;
-    private final DatabaseSchemaCheck schema;
+    private final WorkGate gate;
     private final int batchesPerRun;
 
-    public QuarantinePreparationScheduler(QuarantineService quarantine, DatabaseSchemaCheck schema,
+    public QuarantinePreparationScheduler(QuarantineService quarantine, WorkGate gate,
                                           @org.springframework.beans.factory.annotation.Value(
                                                   "${sdv.quarantine.prepare-batches-per-run:20}") int batchesPerRun) {
         this.quarantine = quarantine;
-        this.schema = schema;
+        this.gate = gate;
         this.batchesPerRun = Math.max(1, batchesPerRun);
     }
 
@@ -33,7 +33,7 @@ public class QuarantinePreparationScheduler {
             initialDelayString = "${sdv.quarantine.prepare-initial-delay-ms:10000}",
             fixedDelayString = "${sdv.quarantine.prepare-delay-ms:2000}")
     public void prepare() {
-        if (!schema.current()) return; // the database doesn't match this version (DatabaseSchemaCheck)
+        if (!gate.open()) return; // the database doesn't match this version, or the erase log stops all work
         try {
             int batches = quarantine.prepare(batchesPerRun);
             if (batches > 0) log.debug("Quarantine preparation wrote {} batches", batches);
