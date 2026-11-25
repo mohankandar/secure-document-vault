@@ -153,11 +153,12 @@ public class JdbcIntakeReportRepository implements IntakeReportRepository {
         for (List<String> chunk : chunks(normalizedValues.stream().map(CaseFieldSql::searchForm).distinct().toList())) {
             known.addAll(jdbc.queryForList("""
                     select distinct v.search_value
-                      from fld_value v
+                      from ingestion_sources src
+                      join fld_value v on v.entity_uuid=src.tenant_id and v.record_type='s-'||src.source_id::text
                       join fld_record fr on fr.record_uuid=v.record_uuid
                       join submissions rs on rs.tenant_id=fr.entity_uuid and 's-'||rs.source_id::text=fr.record_type and rs.record_id=fr.record_id::uuid
                     %s
-                     where v.entity_uuid=:tenantId and v.product_code='%s' and v.field_key in (:keys)
+                     where src.tenant_id=:tenantId and v.product_code='%s' and v.field_key in (:keys)
                        and v.search_value in (:values) and %s
                        and rs.created_at < :before
                     """.formatted(CaseFieldSql.field("rs"), com.sdv.platform.domain.identity.VeroProduct.CODE, CaseFieldSql.IDENTIFIER), new MapSqlParameterSource()

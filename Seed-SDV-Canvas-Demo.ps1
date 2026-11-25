@@ -128,7 +128,7 @@ $steward = Headers 'local-document-steward' 'DOCUMENT_STEWARD'
 # field whose settings were changed is saved again with the seed's settings.
 function EnsureField([string]$SourceId, [string]$Key, [string]$Label, [string]$Type, [bool]$Identifier, [bool]$Required, [string]$Normalization, [string]$Mode, [bool]$Searchable = $true) {
     $want = "$Label|$Type|$($Required.ToString().ToLower())|$($Identifier.ToString().ToLower())|$($Searchable.ToString().ToLower())|$Normalization|$Mode"
-    $have = Db "select display_label || '|' || field_type || '|' || required::text || '|' || business_identifier::text || '|' || searchable::text || '|' || normalization || '|' || search_mode from metadata_field_definitions where tenant_id='$Tenant' and source_id='$SourceId' and field_key=$(Lit $Key) and active order by version desc limit 1;"
+    $have = Db "select (v->>'label') || '|' || f.field_type || '|' || (v->>'required') || '|' || (v->>'identifier') || '|' || (v->>'searchable') || '|' || (v->>'normalization') || '|' || (v->>'mode') from fld_field_definition f join fld_field_extension x on x.definition_id=f.definition_id, lateral (select x.value::jsonb v) j where f.entity_uuid='$Tenant' and x.name='source.$SourceId' and f.field_key=$(Lit $Key) and f.active;"
     if ($have -and ($have -ceq $want -or -not $Reset)) { Ok "Field already there: $Label"; return }
     $null = Api 'PUT' "/api/v1/admin/ingestion-sources/$SourceId/metadata-fields/$Key" $admin @{
         displayLabel = $Label; fieldType = $Type; required = $Required; businessIdentifier = $Identifier; searchable = $Searchable
@@ -354,28 +354,24 @@ $null = EnsureKeys $RedactionId 'display-order' @('contractNumber', 'firstName',
 $null = EnsureKeys $RedactionId 'record-title' @('firstName', 'lastName')
 Ok 'Redaction Service field order (Loan Type last) and Record title: First Name + Last Name'
 
-# Names for the deliveries that were sent without them, and a loan type on every Redaction Service delivery. Written as a
-# delivery would have stored them (trimmed text: stored and normalized values are the same).
-$names = @{ '100000000001' = @('Jordan', 'Ellis'); '100000000002' = @('Priya', 'Shah'); '100000000003' = @('Marcus', 'Lee') }
+# A loan type on every Redaction Service delivery, as a delivery would have stored it (it isn't sensitive). Task 0078: values belong to
+# the record, and only a delivery can store a sensitive one, so the names come with the deliveries.
 function AddValue([string]$SubmissionId, [string]$Key, [string]$Value, [string]$SourceId = $RedactionId) {
     $null = Db @"
-insert into business_metadata_values (metadata_value_id, tenant_id, submission_id, definition_id, field_key, definition_version, stored_value, normalized_value, source_id)
-select gen_random_uuid(), d.tenant_id, '$SubmissionId', d.definition_id, d.field_key, d.version, $(Lit $Value), $(Lit $Value), d.source_id
-from metadata_field_definitions d
-where d.tenant_id='$Tenant' and d.source_id='$SourceId' and d.field_key='$Key' and d.active
-  and not exists (select 1 from business_metadata_values v where v.tenant_id='$Tenant' and v.submission_id='$SubmissionId' and v.field_key='$Key')
-order by d.version desc limit 1;
+insert into fld_value(record_uuid, customer_id, entity_uuid, product_code, record_type, field_key, position, sensitive, display_value, normalised_value, search_value)
+select fr.record_uuid, fr.customer_id, fr.entity_uuid, fr.product_code, fr.record_type, $(Lit $Key), 0, false, $(Lit $Value), $(Lit $Value), lower($(Lit $Value))
+from submissions s join fld_record fr on fr.entity_uuid=s.tenant_id and fr.product_code='SDV' and fr.record_type='s-' || s.source_id::text and fr.record_id=s.record_id::text
+where s.tenant_id='$Tenant' and s.source_id='$SourceId' and s.submission_id='$SubmissionId'
+  and not exists (select 1 from fld_value v where v.record_uuid=fr.record_uuid and lower(v.field_key)=lower($(Lit $Key)));
 "@
 }
-$rows = Db "select s.submission_id || '|' || coalesce((select v.normalized_value from business_metadata_values v where v.submission_id=s.submission_id and v.field_key='contractNumber'),'') from submissions s where s.tenant_id='$Tenant' and s.source_id='$RedactionId' order by s.created_at, s.submission_id;"
+$rows = Db "select s.submission_id from submissions s where s.tenant_id='$Tenant' and s.source_id='$RedactionId' order by s.created_at, s.submission_id;"
 $index = 0
 foreach ($line in ($rows -split "`n" | Where-Object { $_.Trim() })) {
-    $sid, $contract = $line.Trim().Split('|')
-    if ($names.ContainsKey($contract)) { AddValue $sid 'firstName' $names[$contract][0]; AddValue $sid 'lastName' $names[$contract][1] }
-    AddValue $sid 'loanType' $(if ($index % 3 -eq 2) { 'Auto' } else { 'Mortgage' })
+    AddValue $line.Trim() 'loanType' $(if ($index % 3 -eq 2) { 'Auto' } else { 'Mortgage' })
     $index++
 }
-Ok "Redaction Service: names on 100000000001-100000000003, a loan type on $index deliveries"
+Ok "Redaction Service: a loan type on $index deliveries"
 
 # Task 0023: what the tour reads as a business user on 100000000001's Terms and Conditions.pdf: a tag and a comment.
 $termsId = Db "select d.document_id from documents d join submissions s on s.submission_id=d.submission_id and s.tenant_id=d.tenant_id where d.tenant_id='$Tenant' and s.source_id='$RedactionId' and d.source_document_id='r3-demo-doc-100000000001-3' limit 1;"
@@ -419,6 +415,7 @@ $records = @(
     # Delivered after page counts were kept (task 0018 follow-up): its documents show "2 pages" in the lists.
     @{ n = '300000000009'; who = 'Noah Kim'; type = 'Auto'; closing = '2026-12-04'; files = @('loan-agreement.pdf', 'borrower-id.pdf') }
 )
+$extra = @{ '300000000004' = @('coBorrower', 'Priya Patel'); '300000000006' = @('closingAgent', 'Patel & Sons Title') }
 foreach ($r in $records) {
     $files = @($r.files)
     $missing = @(); if ($r.ContainsKey('missing')) { $missing = @($r.missing) }
@@ -426,16 +423,13 @@ foreach ($r in $records) {
     $expected = @(); for ($i = 0; $i -lt $files.Count; $i++) { $expected += "$subKey-$($i + 1)" }
     $expected += $missing
     $docs = @(); for ($i = 0; $i -lt $files.Count; $i++) { $docs += @{ id = "$subKey-$($i + 1)"; file = [string]$files[$i]; path = $PdfPath } }
-    $null = Deliver $LosId $subKey @{ contractNumber = $r.n; borrowerName = $r.who; loanType = $r.type; closingDate = $r.closing } $expected $docs "$($r.n) $($r.who)"
+    $values = @{ contractNumber = $r.n; borrowerName = $r.who; loanType = $r.type; closingDate = $r.closing }
+    # Task 0022: a value on two records for the fields that aren't columns.
+    if ($extra.ContainsKey($r.n)) { $values[$extra[$r.n][0]] = $extra[$r.n][1] }
+    $null = Deliver $LosId $subKey $values $expected $docs "$($r.n) $($r.who)"
 }
 Ok 'Loan Origination System records delivered'
 
-# Task 0022: a value on two existing records for the fields that aren't columns. No new record or document.
-$extra = @{ '300000000004' = @('coBorrower', 'Priya Patel'); '300000000006' = @('closingAgent', 'Patel & Sons Title') }
-foreach ($n in $extra.Keys) {
-    $sid = Db "select submission_id from submissions where tenant_id='$Tenant' and source_id='$LosId' and source_submission_id='canvas-demo-$n' limit 1;"
-    if ($sid) { AddValue $sid $extra[$n][0] $extra[$n][1] $LosId }
-}
 Ok 'Loan Origination System: Co-borrower on 300000000004, Closing agent on 300000000006'
 
 # ---- Admin canvas (task 0019): a standby volume and a paused sending system ----
@@ -526,7 +520,7 @@ function AskLower([hashtable]$As, [string]$Doc, [string]$Level, [string]$Reason)
 function Decide([string]$Id, [string]$Decision, [hashtable]$As = $approver) { $null = Api 'POST' "/api/v1/admin/access-requests/$Id/$Decision" $As }
 # Task 0035: what the request steps below need, read just before each one.
 function OwnLevel([string]$Doc) { Db "select sensitivity_level from documents where tenant_id='$Tenant' and document_id='$Doc';" }
-function ContractLevel([string]$SourceId, [string]$Contract) { $l = Db "select sensitivity_level from record_sensitivity_levels where tenant_id='$Tenant' and source_id='$SourceId' and record_key like '%$Contract%' limit 1;"; if ($l) { $l } else { 'STANDARD' } }
+function ContractLevel([string]$SourceId, [string]$Contract) { $l = Db "select sensitivity_level from record_sensitivity_levels l where l.tenant_id='$Tenant' and l.source_id='$SourceId' and (select v.search_value from fld_record r join fld_value v on v.record_uuid=r.record_uuid where r.record_id=l.record_id::text and r.record_type='s-' || l.source_id::text and v.field_key='contractNumber' limit 1)='$Contract' limit 1;"; if ($l) { $l } else { 'STANDARD' } }
 function RecordRef([string]$SourceId, [string]$Contract) {
     $found = Api 'POST' '/api/v1/business/search' $restricted @{ sourceId = $SourceId; criteria = @{ contractNumber = $Contract }; page = 1; pageSize = 5 }
     [string](@($found.records)[0].recordRef)
@@ -547,7 +541,7 @@ if ($Reset) {
     # 1. Waiting requests: the seed's are kept (one of each), every other one is declined.
     $mine = @{}
     $declined = 0
-    $pendingRows = Db "select request_id || '|' || requested_by || '|' || kind || '|' || coalesce(document_id::text, '') || '|' || coalesce(requested_level, '') || '|' || coalesce(source_id::text, '') || '|' || coalesce(record_key, '') from access_requests where tenant_id='$Tenant' and status='PENDING' and expires_at > now() order by requested_at, request_id;"
+    $pendingRows = Db "select request_id || '|' || requested_by || '|' || kind || '|' || coalesce(document_id::text, '') || '|' || coalesce(requested_level, '') || '|' || coalesce(source_id::text, '') || '|' || coalesce((select v.search_value from fld_record r join fld_value v on v.record_uuid=r.record_uuid where r.record_id=a.record_id::text and r.record_type='s-' || a.source_id::text and v.field_key='contractNumber' limit 1), '') from access_requests a where tenant_id='$Tenant' and status='PENDING' and expires_at > now() order by requested_at, request_id;"
     foreach ($line in ($pendingRows -split "`n" | Where-Object { $_.Trim() })) {
         $id, $who, $kind, $doc, $level, $src, $key = $line.Trim().Split('|', 7)
         $sig = $null
@@ -565,7 +559,7 @@ if ($Reset) {
 
     # 2. Levels, contracts first (a document's level counts with its contract's): 300000000002 Highly Confidential as a
     # whole contract, every other contract Standard; then each document at the seed's level, every other one Standard.
-    $recordRows = Db "select source_id || '|' || sensitivity_level || '|' || record_key from record_sensitivity_levels where tenant_id='$Tenant' order by record_key;"
+    $recordRows = Db "select source_id || '|' || sensitivity_level || '|' || coalesce((select v.search_value from fld_record r join fld_value v on v.record_uuid=r.record_uuid where r.record_id=l.record_id::text and r.record_type='s-' || l.source_id::text and v.field_key='contractNumber' limit 1), '') from record_sensitivity_levels l where tenant_id='$Tenant' order by 1;"
     foreach ($line in ($recordRows -split "`n" | Where-Object { $_.Trim() })) {
         $src, $now, $key = $line.Trim().Split('|', 3)
         $contract = ([regex]::Match($key, '\d{6,}')).Value

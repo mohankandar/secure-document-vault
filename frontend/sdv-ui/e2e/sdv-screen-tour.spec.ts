@@ -289,7 +289,7 @@ async function searchFieldsChecks(page: Page, testInfo: TestInfo) {
   type FieldDefinition = { fieldKey: string; displayLabel: string; fieldType: string; required: boolean; businessIdentifier: boolean; searchable: boolean; normalization: string; searchMode: string; validationRulesJson: string; active: boolean }
   const readFields = async () => (await (await page.request.get(`/api/v1/admin/ingestion-sources/${sourceId}/metadata-fields`, { headers: ADMIN_HEADERS })).json() as FieldDefinition[]).filter((f) => f.active)
   const fields = await readFields()
-  const savedLastName = fields.find((f) => f.fieldKey === 'lastName')
+  const savedLoanType = fields.find((f) => f.fieldKey === 'loanType')
   const saved = {
     // No stored order means label order (A to Z); the server only accepts a full list, so that is what is put back.
     order: storedOrder.length ? storedOrder : [...fields].sort((a, b) => a.displayLabel.localeCompare(b.displayLabel, undefined, { sensitivity: 'base' }) || a.fieldKey.localeCompare(b.fieldKey)).map((f) => f.fieldKey),
@@ -300,14 +300,14 @@ async function searchFieldsChecks(page: Page, testInfo: TestInfo) {
       const r = await page.request.put(path(what), { headers: { ...ADMIN_HEADERS, 'Content-Type': 'application/json' }, data: { fieldKeys } })
       expect(r.ok(), `restoring ${what}`).toBeTruthy()
     }
-    // Task 0035: Last Name's match too, if a step stopped between changing it and changing it back.
-    const now = (await readFields()).find((f) => f.fieldKey === 'lastName')
-    if (savedLastName && now && (now.searchMode !== savedLastName.searchMode || now.normalization !== savedLastName.normalization)) {
-      const s = savedLastName
-      const r = await page.request.put(`/api/v1/admin/ingestion-sources/${sourceId}/metadata-fields/lastName`, { headers: { ...ADMIN_HEADERS, 'Content-Type': 'application/json' }, data: {
+    // Task 0035: Loan Type's match too, if a step stopped between changing it and changing it back.
+    const now = (await readFields()).find((f) => f.fieldKey === 'loanType')
+    if (savedLoanType && now && (now.searchMode !== savedLoanType.searchMode || now.normalization !== savedLoanType.normalization)) {
+      const s = savedLoanType
+      const r = await page.request.put(`/api/v1/admin/ingestion-sources/${sourceId}/metadata-fields/loanType`, { headers: { ...ADMIN_HEADERS, 'Content-Type': 'application/json' }, data: {
         displayLabel: s.displayLabel, fieldType: s.fieldType, required: s.required, businessIdentifier: s.businessIdentifier, searchable: s.searchable,
         normalization: s.normalization, searchMode: s.searchMode, validationRules: JSON.parse(s.validationRulesJson || '{}') } })
-      expect(r.ok(), 'restoring how Last Name matches').toBeTruthy()
+      expect(r.ok(), 'restoring how Loan Type matches').toBeTruthy()
     }
   }
 
@@ -337,13 +337,15 @@ async function searchFieldsChecks(page: Page, testInfo: TestInfo) {
   }
   await expect(table.locator('tbody tr').filter({ hasText: 'Contract Number' })).toContainText('Identifier · always searchable')
 
-  // How it matches: change Last Name to Starts with, save, then put it back.
+  // How it matches: change Loan Type to Starts with, save, then put it back (task 0078: Last Name is sensitive: the whole value only).
   const lastName = table.locator('tbody tr').filter({ hasText: 'Last Name' })
-  const match = lastName.locator('td[data-label="How it matches"]')
+  await expect(lastName.locator('td[data-label="How it matches"]')).toHaveText('Whole value only, any case')
+  const loanType = table.locator('tbody tr').filter({ hasText: 'Loan Type' })
+  const match = loanType.locator('td[data-label="How it matches"]')
   const originalMatch = (await match.innerText()).trim()
   const choose = async (choice: RegExp) => {
-    await lastName.getByRole('button', { name: 'Edit Last Name' }).click()
-    const panel = page.getByRole('dialog', { name: 'Last Name' })
+    await loanType.getByRole('button', { name: 'Edit Loan Type' }).click()
+    const panel = page.getByRole('dialog', { name: 'Loan Type' })
     await panel.getByRole('radio', { name: choice }).check()
     await panel.getByRole('button', { name: 'Save', exact: true }).click()
     await expect(panel).toHaveCount(0, { timeout: 15000 })
@@ -1090,8 +1092,8 @@ async function captureSectionTabs(page: Page, testInfo: TestInfo, sectionsLabel:
   }
 }
 
-/** A lower-case name part matching the Contains/Starts with field of the seeded demo data: also checks that case is ignored. */
-const demoName = process.env.SDV_DEMO_NAME ?? 'pat'
+/** A whole last name of the seeded demo data in lower case (task 0078: a sensitive name is found by the whole value only, any case). */
+const demoName = process.env.SDV_DEMO_NAME ?? 'patel'
 /** The demo record's member number: typed in the box it is read as a contract number, which triggers the suggestion. */
 const demoMember = process.env.SDV_DEMO_MEMBER ?? '20000000001'
 const allowNoData = process.env.SDV_E2E_ALLOW_NO_DATA === '1'
@@ -1310,11 +1312,13 @@ async function tryBusinessRecordJourney(page: Page, testInfo: TestInfo, role: st
   await expect(chip(page, new RegExp(`Member Number is ${demoMember}`))).toBeVisible()
   await expect(resultRows(page).filter({ hasText: demoRecord })).toBeVisible({ timeout: 15000 })
 
-  // 3. Search by name in lower case, everywhere: Contains/Starts with ignore case ("pat" finds "Patel").
+  // 3. Search by a name, in lower case: the whole value, in its own field (task 0078). A part of it finds nothing.
   await clearSearch(page)
-  await searchFor(page, demoName)
-  await expect(chip(page, new RegExp(`^Anywhere ${demoName}`))).toBeVisible()
-  if (!(await expectRows(page, testInfo, `no record whose name contains "${demoName}"`))) return
+  await searchBox(page).fill(demoName)
+  await expect(page.getByText(/^Only by the whole value, in Filters or below: .*Last Name/)).toBeVisible()
+  await page.getByRole('listbox', { name: 'Search suggestions' }).getByRole('option', { name: new RegExp(`^Last Name is .${demoName}.`) }).click()
+  await expect(chip(page, new RegExp(`Last Name is ${demoName}`))).toBeVisible()
+  if (!(await expectRows(page, testInfo, `no record with the last name "${demoName}"`))) return
   const nameRows = await resultRows(page).count()
   await capture(page, testInfo, 'results-name')
 
@@ -1324,11 +1328,11 @@ async function tryBusinessRecordJourney(page: Page, testInfo: TestInfo, role: st
   await page.getByRole('button', { name: /^Filters/ }).click()
   let filters = page.getByRole('dialog', { name: 'Filters' })
   await expect(filters).toBeVisible()
-  // Task 0020 (item 6): hints from each field's settings inside the empty boxes (demo: Contract Number is digits only, First Name exact).
+  // Task 0020 (item 6): hints from each field's settings inside the empty boxes (demo: Contract Number is digits only, First Name sensitive).
   await expect(filters.getByLabel(/^Contract Number/)).toHaveAttribute('placeholder', 'Digits only')
-  await expect(filters.getByLabel(/^First Name/)).toHaveAttribute('placeholder', 'Any')
+  await expect(filters.getByLabel(/^First Name/)).toHaveAttribute('placeholder', 'The whole value')
   for (const box of await filters.locator('.ws-filter-fields input[type="text"]').all()) {
-    await expect(box).toHaveAttribute('placeholder', /^(Digits only|Any|The first letters|Any part)$/)
+    await expect(box).toHaveAttribute('placeholder', /^(Digits only|Any|The whole value|The first letters|Any part)$/)
   }
   await capture(page, testInfo, 'filters')
   await filters.getByLabel(/^First Name/).fill(firstRowFirstName.split(/\s/)[0])
@@ -2807,7 +2811,7 @@ test.describe('SDV role-based screen capture', () => {
     await searchBox(page).fill('patel')
     await expect(list).toBeVisible()
     await expect(option(/^Search everywhere for .patel./)).toHaveAttribute('aria-selected', 'true')
-    for (const name of [/^Borrower contains .patel./, /^Loan type is .patel./, /^Co-borrower contains .patel./, /^Closing agent starts with .patel./]) {
+    for (const name of [/^Borrower is .patel./, /^Loan type is .patel./, /^Co-borrower contains .patel./, /^Closing agent starts with .patel./]) {
       await expect(option(name)).toBeVisible()
     }
     // Digits-only fields need digits; dates stay in Filters.
@@ -2868,11 +2872,13 @@ test.describe('SDV role-based screen capture', () => {
     await expect(page.getByRole('region', { name: 'Search results' }).locator('[aria-busy="true"]')).toHaveCount(0, { timeout: 15000 })
     await capture(page, testInfo, 'quick-search-with-date-range')
 
-    // ---- By name, everywhere: the borrower's name is marked in the title ----
+    // ---- By name (task 0078): the whole value in its own field; the name stays in the list ----
     await clearSearch(page)
-    await searchFor(page, 'gomez')
-    await expect(resultRows(page).first()).toContainText('300000000004', { timeout: 15000 })
-    await expect(resultRows(page).first().locator('td.ws-name mark')).toHaveText('Gomez')
+    await searchBox(page).fill('ana gomez')
+    await option(/^Borrower is .ana gomez./).click()
+    await expect(resultRows(page)).toHaveCount(1, { timeout: 15000 })
+    await expect(resultRows(page).first()).toContainText('300000000004')
+    await expect(resultRows(page).first().locator('td.ws-name')).toContainText('Ana Gomez')
 
     // ---- A contract number lands first ----
     await clearSearch(page)

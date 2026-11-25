@@ -172,6 +172,11 @@ Once the clean-machine acceptance passes:
 
 ## Update the database
 
+**Task 0078 (changeset 048):** the schema step refuses a database that holds field values of an earlier Vero and changes nothing. Make a
+new database beside it and deliver again. Searching for a part of a value needs PostgreSQL's `pg_trgm` (trusted since 13: the schema step
+makes it when the owner may create extensions). Without it "contains" works as "starts with" and the Filters panel says so; the database
+team can add it later with `db/platform/fields-optional/partial-search.sql` from Vero's jar. Back up the whole database, not one schema.
+
 From task 0013 on, **starting Vero never changes the database**. The customer's database team applies Vero's
 database changes themselves with the **schema step**, using their own database owner account. Vero's team never
 needs that password. Task 0041: local mode on a developer computer uses the schema step too (it no longer updates the

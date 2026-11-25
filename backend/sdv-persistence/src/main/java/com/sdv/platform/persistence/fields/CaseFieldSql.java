@@ -56,8 +56,11 @@ public final class CaseFieldSql {
 
     /** The submissions of the entity {@code :tenantId} one of whose readable identifiers is the text (search form). */
     public static String submissionsByIdentifier(String text) {
-        return "select rs.submission_id from fld_value v join fld_record fr on fr.record_uuid=v.record_uuid"
-                + " join submissions rs on rs.tenant_id=fr.entity_uuid and 's-'||rs.source_id::text=fr.record_type and rs.record_id=fr.record_id::uuid"
-                + field("rs") + "where v.entity_uuid=:tenantId and v.product_code='" + VeroProduct.CODE + "' and v.search_value=" + text + " and " + IDENTIFIER;
+        // From the identifier fields of each sending system (few) to their values, by the whole value index.
+        return "select rs.submission_id from fld_field_definition f join fld_field_extension x on x.definition_id=f.definition_id and x.name like 'source.%' and " + IDENTIFIER
+                + " join fld_value v on v.entity_uuid=f.entity_uuid and v.product_code=f.product_code and v.record_type='s-'||substr(x.name, 8) and v.field_key=f.field_key and v.search_value=" + text
+                + " join fld_record fr on fr.record_uuid=v.record_uuid"
+                + " join submissions rs on rs.tenant_id=fr.entity_uuid and rs.source_id=substr(x.name, 8)::uuid and rs.record_id=fr.record_id::uuid"
+                + " where f.entity_uuid=:tenantId and f.product_code='" + VeroProduct.CODE + "'";
     }
 }

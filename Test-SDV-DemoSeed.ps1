@@ -34,6 +34,8 @@ param(
     [int]$UiPort = 5193,
     [int]$StartTimeoutSeconds = 150,
     [switch]$WithTour,
+    # Task 0078: only the tour steps whose title matches (Playwright's -g), without the comparison; with -WithTour.
+    [string]$TourSteps = '',
     # Drop a scratch database left by an earlier run of this script that could not clean up.
     [switch]$DropLeftover
 )
@@ -123,7 +125,7 @@ try {
     $sources = Scalar "select string_agg(display_name || ':' || status, ', ' order by display_name) from ingestion_sources where tenant_id=$T;"
     Assert-That ($sources -eq 'Loan Origination System:ACTIVE, Redaction Service:ACTIVE, Title Records:DISABLED, Tour test system 20261118181639:DISABLED') "Sending systems: $sources"
     # Distinct: since tasks 0029 and 0030 some loan-system contracts have a second delivery (task 0035 fix of this check).
-    $contracts = Scalar "select string_agg(distinct v.normalized_value, ',' order by v.normalized_value) from business_metadata_values v where v.tenant_id=$T and v.field_key='contractNumber';"
+    $contracts = Scalar "select string_agg(distinct v.search_value, ',' order by v.search_value) from fld_value v where v.entity_uuid=$T and v.field_key='contractNumber';"
     $want = '100000000001,100000000002,100000000003,300000000001,300000000002,300000000003,300000000004,300000000005,300000000006,300000000007,300000000008,300000000009,300000000076,300000000077,300000000078,300000000090,300000000092,300000000094,300000000095,300000000096'
     Assert-That ($contracts -eq $want) "20 demo records (Redaction Service 100000000001-3, 300000000076-78, 090, 092, 094-096; loan system 300000000001-9): $contracts"
     $terms = Scalar "select count(*) from documents d join submissions s on s.submission_id=d.submission_id where s.source_submission_id='r3-demo-contract-100000000001';"
@@ -138,7 +140,7 @@ try {
     Assert-That ([int]$comment -eq 1) 'One demo comment on the same document'
     $problems = Scalar "select string_agg(d.status, ',' order by s.source_submission_id) from documents d join submissions s on s.submission_id=d.submission_id where s.source_submission_id like 'problem-demo-%';"
     Assert-That ($problems -eq 'PROCESSING_FAILED,PROCESSING,AVAILABLE') "Problems demo: could not store, stuck, missing ($problems)"
-    $tourFields = Scalar "select count(*) filter (where f.searchable) || '/' || count(*) from metadata_field_definitions f join ingestion_sources s on s.source_id=f.source_id where s.source_key='tour-20261118181639' and f.active;"
+    $tourFields = Scalar "select count(*) filter (where (x.value::jsonb->>'searchable')::boolean) || '/' || count(*) from fld_field_definition f join fld_field_extension x on x.definition_id=f.definition_id join ingestion_sources s on x.name='source.' || s.source_id::text where s.source_key='tour-20261118181639' and f.active;"
     Assert-That ($tourFields -eq '0/2') 'Tour test system: paused, two fields, none searchable'
     $volumes = Scalar "select string_agg(display_name || ':' || state, ', ' order by priority, display_name) from storage_volumes where tenant_id=$T;"
     Assert-That ($volumes -eq 'primary-a:ACTIVE, primary-b:ACTIVE') "Volumes: $volumes"
@@ -222,7 +224,7 @@ from information_schema.tables where table_schema='public' and table_type='BASE 
     Assert-That ((Scalar "select status from access_requests where request_id='$stray';") -eq 'DECLINED') 'Reset: the stray waiting request was declined'
     $holds = Scalar "select string_agg(d.source_document_id, ',' order by d.source_document_id) from legal_holds h join documents d on d.document_id=h.document_id where h.tenant_id=$T and h.released_at is null;"
     Assert-That ($holds -eq 'canvas-demo-300000000005-sensitivity-1,canvas-demo-300000000007-approvals-1,canvas-demo-300000000007-approvals-2') "Reset: the seed's three legal holds ($holds)"
-    Assert-That ((Scalar "select search_mode from metadata_field_definitions where source_id='$redactionId' and field_key='lastName' and active;") -eq 'PARTIAL') 'Reset: Last Name matches "Contains" again'
+    Assert-That ((Scalar "select x.value::jsonb->>'mode' from fld_field_definition f join fld_field_extension x on x.definition_id=f.definition_id where x.name='source.$redactionId' and f.field_key='lastName' and f.active;") -eq 'PARTIAL') 'Reset: Last Name matches "Contains" again'
     $printNow = (Call 'GET' '/api/v1/admin/role-capabilities' $priya).roles.BUSINESS_USER.PRINT_DOCUMENT
     Assert-That (-not $printNow) 'Reset: Business user has no Print again'
     Assert-That (-not ((Get-Content (Join-Path $run 'reset-1.log') -Raw) -match '\[SKIP\]')) 'Reset run 1 skipped nothing'
@@ -245,12 +247,17 @@ from information_schema.tables where table_schema='public' and table_type='BASE 
         }
         Pass "Second Vite on port $UiPort, talking to the scratch Vero"
         # "localhost", not 127.0.0.1: the local test role switch is only offered on localhost (src/api.ts).
-        $env:SDV_UI_BASE_URL = "http://localhost:$UiPort"
+        $env:SDV_UI_BASE_URL = "http://localhost:$UiPort"; $env:SDV_API_TARGET = "http://127.0.0.1:$Port"
         Push-Location $frontend
         try {
-            & npm run ui:capture *> (Join-Path $run 'ui-capture.log'); $capture = $LASTEXITCODE
-            & npm run ui:compare *> (Join-Path $run 'ui-compare.log'); $compare = $LASTEXITCODE
-        } finally { Pop-Location; Remove-Item Env:SDV_UI_BASE_URL -ErrorAction SilentlyContinue }
+            if ($TourSteps) {
+                & npm run ui:capture '--' '--project=desktop-chromium' '-g' $TourSteps *> (Join-Path $run 'ui-capture.log'); $capture = $LASTEXITCODE
+                $compare = 0; Set-Content (Join-Path $run 'ui-compare.log') 'not run'
+            } else {
+                & npm run ui:capture *> (Join-Path $run 'ui-capture.log'); $capture = $LASTEXITCODE
+                & npm run ui:compare *> (Join-Path $run 'ui-compare.log'); $compare = $LASTEXITCODE
+            }
+        } finally { Pop-Location; Remove-Item Env:SDV_UI_BASE_URL, Env:SDV_API_TARGET -ErrorAction SilentlyContinue }
         foreach ($f in 'ui-capture', 'ui-compare') { Get-Content (Join-Path $run "$f.log") | Select-String -Pattern '^\s+\d+ (passed|failed|skipped|flaky)' | ForEach-Object { Write-Host "  $f $($_.Line.Trim())" } }
         Assert-That ($capture -eq 0) 'npm run ui:capture against the seeded scratch database'
         Assert-That ($compare -eq 0) 'npm run ui:compare against the seeded scratch database'

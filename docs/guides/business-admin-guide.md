@@ -38,7 +38,12 @@ IT adds the fields a sending system sends. Under **Search fields** you choose wh
 **The first identifier field in the order shown is the record's identifier on all admin pages. Put the contract, member,
 loan or patient number first.** Otherwise approvals, holds and reports name records by something else.
 
-A change to a field applies to new deliveries; documents already stored keep the values they came with.
+A record has one set of values: the latest delivery's replace earlier ones; a field a delivery leaves out keeps its value.
+
+**Sensitive fields** (names and addresses by default) are stored encrypted. People find them by the whole value only, in their own field;
+searching everywhere and "contains" leave them out. In a list or a record they are shown to people who may open the record's documents;
+others see the identifier. A sensitive identifier is not shown on admin pages. Switch "Sensitive" off before the first document with a
+value arrives; afterwards it is locked.
 
 ## Keeping documents
 

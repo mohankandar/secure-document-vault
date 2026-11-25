@@ -136,7 +136,8 @@ class RecordOpenAuditTest {
         // Document events are still found through their document, within the tenant.
         assertTrue(s.contains("(target_type='DOCUMENT' and target_id in ( select d.document_id::text"), s);
         assertTrue(s.contains("where d.tenant_id=:tenantId and d.submission_id in (select rs.submission_id"), s);
-        assertTrue(s.contains("where v.entity_uuid=:tenantId and v.product_code='SDV' and v.search_value=:recordNumber and (x.value::jsonb->>'identifier')::boolean"), s);
+        assertTrue(s.contains("and v.field_key=f.field_key and v.search_value=:recordNumber"), s);
+        assertTrue(s.contains("where f.entity_uuid=:tenantId and f.product_code='SDV'"), s);
         // Record opens are found through the submission named in their safe details, with the same UUID guard as the list.
         assertTrue(s.contains("or (target_type='BUSINESS_RECORD' and (case when audit_events.safe_details->>'submissionId' ~ :uuidPattern"
                 + " then (audit_events.safe_details->>'submissionId')::uuid end) in (select rs.submission_id"), s);
