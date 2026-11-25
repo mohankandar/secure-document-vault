@@ -1,10 +1,8 @@
 package com.sdv.platform.application.access;
 
 import com.sdv.platform.domain.error.InternalCheckFailed;
-import com.sdv.platform.application.business.RecordKey;
 import com.sdv.platform.application.port.AuditEventPort;
 import com.sdv.platform.application.port.BusinessRecordRepository;
-import com.sdv.platform.application.port.BusinessRecordRepository.MetadataSnapshot;
 import com.sdv.platform.domain.audit.AuditEvent;
 import com.sdv.platform.domain.audit.AuditOutcome;
 import com.sdv.platform.domain.document.Document;
@@ -101,11 +99,10 @@ public class DocumentAccessGuard {
 
     /** The document's effective level: its own, or its record's when that is higher. */
     public SensitivityLevel effectiveLevel(Document document) {
-        List<MetadataSnapshot> metadata = records.findMetadataSnapshots(
-                document.tenantId(), document.sourceId(), List.of(document.submissionId()));
-        String key = RecordKey.forSubmission(document.submissionId(), metadata);
+        UUID recordId = records.findRecordIds(document.tenantId(), document.sourceId(), List.of(document.submissionId())).get(document.submissionId());
+        if (recordId == null) return SensitivityLevel.HIGHLY_CONFIDENTIAL; // a record that can't be read: never shown by mistake
         SensitivityLevel recordLevel = records.findRecordSensitivityLevel(
-                document.tenantId(), document.sourceId(), key).orElse(null);
+                document.tenantId(), document.sourceId(), recordId).orElse(null);
         return SensitivityLevel.effective(document.sensitivityLevel(), recordLevel);
     }
 
@@ -203,7 +200,7 @@ public class DocumentAccessGuard {
     public record DocumentLevelRef(UUID documentId, UUID sourceId, UUID submissionId, SensitivityLevel ownLevel) { }
 
     /**
-     * Effective levels for many documents of one tenant: one metadata query and one record-level query per sending
+     * Effective levels for many documents of one tenant: one record query and one record-level query per sending
      * system. A document whose own level is missing is treated as Highly Confidential (never shown by mistake).
      */
     public Map<UUID, SensitivityLevel> effectiveLevels(UUID tenantId, List<DocumentLevelRef> documents) {
@@ -222,19 +219,16 @@ public class DocumentAccessGuard {
             UUID sourceId = entry.getKey();
             List<UUID> submissions = new ArrayList<>(refs.stream().map(DocumentLevelRef::submissionId)
                     .filter(Objects::nonNull).collect(Collectors.toCollection(LinkedHashSet::new)));
-            List<MetadataSnapshot> metadata = submissions.isEmpty() ? List.of()
-                    : records.findMetadataSnapshots(tenantId, sourceId, submissions);
-            Map<UUID, String> keyBySubmission = new HashMap<>();
-            for (UUID submission : submissions) keyBySubmission.put(submission, RecordKey.forSubmission(submission, metadata));
-            Map<String, SensitivityLevel> recordLevels = keyBySubmission.isEmpty() ? Map.of()
-                    : records.findRecordSensitivityLevels(tenantId, sourceId, keyBySubmission.values());
+            Map<UUID, UUID> recordOf = submissions.isEmpty() ? Map.of() : records.findRecordIds(tenantId, sourceId, submissions);
+            Map<UUID, SensitivityLevel> recordLevels = recordOf.isEmpty() ? Map.of()
+                    : records.findRecordSensitivityLevels(tenantId, sourceId, recordOf.values());
             for (DocumentLevelRef ref : refs) {
-                if (ref.ownLevel() == null || ref.submissionId() == null) {
+                if (ref.ownLevel() == null || ref.submissionId() == null || !recordOf.containsKey(ref.submissionId())) {
                     result.put(ref.documentId(), SensitivityLevel.HIGHLY_CONFIDENTIAL);
                     continue;
                 }
                 SensitivityLevel recordLevel = recordLevels == null ? null
-                        : recordLevels.get(keyBySubmission.get(ref.submissionId()));
+                        : recordLevels.get(recordOf.get(ref.submissionId()));
                 result.put(ref.documentId(), SensitivityLevel.effective(ref.ownLevel(), recordLevel));
             }
         }

@@ -1,5 +1,6 @@
 package com.sdv.platform.application.business;
 
+import com.sdv.platform.persistence.fields.CaseRows;
 import com.sdv.platform.application.operations.ProblemRecordResolver;
 import com.sdv.platform.application.port.AuditQueryPort;
 import com.sdv.platform.application.reports.StorageReportService;
@@ -50,20 +51,12 @@ class PrimaryIdentifierPostgresTest {
         jdbc.getJdbcTemplate().execute(statement);
     }
 
-    private UUID field(String key, String label, boolean identifier, int position) {
-        UUID definition = UUID.randomUUID();
-        sql("insert into metadata_field_definitions(definition_id, tenant_id, source_id, field_key, version, display_label, field_type, "
-                + "required, business_identifier, searchable, normalization, search_mode) values ('" + definition + "', '" + t + "', '" + s
-                + "', '" + key + "', 1, '" + label + "', 'TEXT', false, " + identifier + ", true, 'NONE', 'EXACT')");
-        sql("insert into metadata_field_display_order(tenant_id, source_id, field_key, display_position) values ('" + t + "', '" + s
-                + "', '" + key + "', " + position + ")");
-        return definition;
+    private void field(String key, String label, boolean identifier, int position) {
+        CaseRows.field(jdbc.getJdbcTemplate(), t, s, key, label, identifier, "NONE", position);
     }
 
-    private void value(UUID submission, UUID definition, String key, String value) {
-        sql("insert into business_metadata_values(metadata_value_id, tenant_id, source_id, submission_id, definition_id, field_key, "
-                + "definition_version, stored_value, normalized_value) values ('" + UUID.randomUUID() + "', '" + t + "', '" + s + "', '"
-                + submission + "', '" + definition + "', '" + key + "', 1, '" + value + "', '" + value.strip() + "')");
+    private void value(UUID submission, String key, String value) {
+        CaseRows.value(jdbc.getJdbcTemplate(), t, s, submission, key, value);
     }
 
     private void document(UUID submission, UUID document) {
@@ -81,31 +74,30 @@ class PrimaryIdentifierPostgresTest {
         sql("insert into tenants(tenant_id, tenant_key, display_name, status) values ('" + t + "', 'pid-" + t + "', 'Primary identifier 0056', 'ACTIVE')");
         sql("insert into ingestion_sources(source_id, tenant_id, source_key, display_name, status, auth_type) values ('" + s + "', '" + t
                 + "', 'policies', 'Policies', 'ACTIVE', 'JWT_BEARER')");
-        UUID branch = field("branch", "Branch", false, 0);
-        UUID policy = field("policyNumber", "Policy number", true, 1);
-        UUID account = field("accountRef", "Account reference", true, 2);
+        field("branch", "Branch", false, 1);
+        field("policyNumber", "Policy number", true, 2);
+        field("accountRef", "Account reference", true, 3);
         for (UUID sub : List.of(sub1, sub2)) {
             sql("insert into submissions(submission_id, tenant_id, source_id, source_submission_id, expected_document_count, status) values ('"
                     + sub + "', '" + t + "', '" + s + "', '" + sub + "', 1, 'COMPLETE')");
         }
-        value(sub1, branch, "branch", "North");
-        value(sub1, policy, "policyNumber", "P-100");
-        value(sub1, account, "accountRef", "A-900");
-        value(sub2, policy, "policyNumber", "  ");
-        value(sub2, account, "accountRef", "A-901");
+        value(sub1, "branch", "North");
+        value(sub1, "policyNumber", "P-100");
+        value(sub1, "accountRef", "A-900");
+        value(sub2, "policyNumber", "  ");
+        value(sub2, "accountRef", "A-901");
         document(sub1, doc1);
         document(sub2, doc2);
-        String key = RecordKey.ofIdentifiers(List.of(new RecordKey.Part("accountRef", "A-900"), new RecordKey.Part("policyNumber", "P-100")));
-        sql("insert into record_sensitivity_levels(record_level_id, tenant_id, source_id, record_key, record_key_sha256, sensitivity_level, "
-                + "reason, set_by, set_at, updated_at) values (gen_random_uuid(), '" + t + "', '" + s + "', '" + key
-                + "', encode(sha256(convert_to('" + key + "', 'UTF8')), 'hex'), 'CONFIDENTIAL', 'Reason', 'ada', now(), now())");
+        sql("insert into record_sensitivity_levels(record_level_id, tenant_id, source_id, record_id, sensitivity_level, "
+                + "reason, set_by, set_at, updated_at) values (gen_random_uuid(), '" + t + "', '" + s + "', '" + sub1
+                + "', 'CONFIDENTIAL', 'Reason', 'ada', now(), now())");
 
         everyPageNames("P-100", "A-900", "Policy number");
 
         // The Business admin puts accountRef before policyNumber: every page follows.
-        sql("update metadata_field_display_order set display_position=9 where tenant_id='" + t + "' and field_key='policyNumber'");
-        sql("update metadata_field_display_order set display_position=1 where tenant_id='" + t + "' and field_key='accountRef'");
-        sql("update metadata_field_display_order set display_position=2 where tenant_id='" + t + "' and field_key='policyNumber'");
+        CaseRows.place(jdbc.getJdbcTemplate(), t, "policyNumber", 9);
+        CaseRows.place(jdbc.getJdbcTemplate(), t, "accountRef", 1);
+        CaseRows.place(jdbc.getJdbcTemplate(), t, "policyNumber", 2);
         everyPageNames("A-900", "P-100", "Account reference");
     }
 
@@ -140,12 +132,12 @@ class PrimaryIdentifierPostgresTest {
         assertEquals(Map.of(doc1.toString(), primary, doc2.toString(), "A-901"), audit);
         // Problems
         JdbcFoundationRepository foundation = new JdbcFoundationRepository(jdbc);
-        var problems = new ProblemRecordResolver(new JdbcBusinessRecordRepository(jdbc), foundation, foundation)
+        var problems = new ProblemRecordResolver(new JdbcBusinessRecordRepository(jdbc), new com.sdv.platform.persistence.fields.PlatformFieldRepository(jdbc.getJdbcTemplate().getDataSource()), foundation)
                 .resolve(t, Map.of(sub1, s, sub2, s));
         assertEquals(primary, problems.get(sub1).recordNumber());
         assertEquals(label, problems.get(sub1).recordNumberLabel());
         assertEquals("A-901", problems.get(sub2).recordNumber());
-        // Restrictions: the record key holds both identifiers; the primary one names it
+        // Restrictions: the record has both identifiers; the primary one names it
         var restrictions = new RestrictionsService(new JdbcRestrictionsRepository(jdbc), mock(StorageReportService.class));
         RestrictionsService.RestrictedRecord record = restrictions.records(t, null).items().getFirst();
         assertEquals(primary, record.identifier());

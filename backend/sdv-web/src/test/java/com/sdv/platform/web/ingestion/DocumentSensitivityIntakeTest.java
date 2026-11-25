@@ -102,7 +102,7 @@ class DocumentSensitivityIntakeTest {
         when(submissions.findById(TENANT, SOURCE, SUBMISSION)).thenReturn(Optional.of(submission));
         when(documents.lockSubmission(TENANT, SOURCE, SUBMISSION)).thenReturn(submission);
         when(records.ofSubmission(TENANT, SOURCE, SUBMISSION)).thenReturn(new com.sdv.platform.application.business.RecordReferences.ResolvedRecord(
-                SOURCE, "submission:" + SUBMISSION, List.of(SUBMISSION)));
+                SOURCE, SUBMISSION, List.of(SUBMISSION)));
 
         StorageVolume volume = new StorageVolume(UUID.randomUUID(), TENANT, "LOCAL_FILESYSTEM", "primary-a", "/tmp",
                 StorageVolumeState.values()[0], 1, 80, 95, NOW, NOW);

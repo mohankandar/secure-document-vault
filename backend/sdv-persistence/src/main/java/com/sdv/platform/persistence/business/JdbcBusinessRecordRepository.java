@@ -1,5 +1,7 @@
 package com.sdv.platform.persistence.business;
 
+import com.sdv.platform.domain.identity.VeroProduct;
+import com.sdv.platform.persistence.fields.CaseFieldSql;
 import com.sdv.platform.domain.document.SensitivityLevel;
 import com.sdv.platform.application.port.BusinessRecordRepository;
 import com.sdv.platform.domain.metadata.MetadataSearchMode;
@@ -47,9 +49,13 @@ public class JdbcBusinessRecordRepository implements BusinessRecordRepository {
         MapSqlParameterSource params = new MapSqlParameterSource()
                 .addValue("tenantId", tenantId)
                 .addValue("sourceId", sourceId)
+                .addValue("recordType", CaseFieldSql.recordType(sourceId))
                 .addValue("offset", offset)
                 .addValue("limit", limit);
-        if (anywhere != null) appendAnywhereRank(sql, params, anywhere);
+        if (anywhere != null) {
+            sql.append(CaseFieldSql.record("s"));
+            appendAnywhereRank(sql, params, anywhere);
+        }
         sql.append(" where s.tenant_id=:tenantId and s.source_id=:sourceId");
         // A submission none of whose fields matches gets no rank and is left out.
         if (anywhere != null) sql.append(" and m.match_rank is not null");
@@ -66,34 +72,27 @@ public class JdbcBusinessRecordRepository implements BusinessRecordRepository {
             String prefix = "c" + i;
             params.addValue(prefix + "Field", criterion.fieldKey());
 
-            sql.append("""
-                     and exists (
-                         select 1
-                           from business_metadata_values v
-                          where v.tenant_id=s.tenant_id
-                            and v.source_id=s.source_id
-                            and v.submission_id=s.submission_id
-                            and v.field_key=
-                    """).append(":").append(prefix).append("Field and (");
-
+            // The record's values, by the value index when the planner prefers it (a selective search), else per record.
+            sql.append(" and exists (select 1").append(anywhere != null ? " from fld_value v where v.record_uuid=fr.record_uuid"
+                    : " from fld_record fr join fld_value v on v.record_uuid=fr.record_uuid where fr.entity_uuid=s.tenant_id and fr.product_code='" + VeroProduct.CODE
+                    + "' and fr.record_type=:recordType and fr.record_id=s.record_id::text")
+                    .append(" and v.entity_uuid=:tenantId and v.product_code='" + VeroProduct.CODE + "' and v.record_type=:recordType and v.field_key=:").append(prefix).append("Field and (");
+            if (!criterion.fingerprints().isEmpty()) {
+                sql.append("v.fingerprint in (:").append(prefix).append("Prints)))");
+                params.addValue(prefix + "Prints", criterion.fingerprints());
+                continue;
+            }
+            if (criterion.normalizedVariants().isEmpty()) {
+                sql.append("false))"); // a value the field can't have
+                continue;
+            }
             List<String> variants = criterion.normalizedVariants();
             for (int v = 0; v < variants.size(); v++) {
                 if (v > 0) sql.append(" or ");
                 String valueParam = prefix + "Value" + v;
-                params.addValue(valueParam, variants.get(v));
-                // Exact keeps the field's configured normalization, and ignores case on exact text fields that are
-                // neither an identifier nor digits-only. Starts with and Contains ignore case: "pat" finds "Patel".
-                // The row is already found through the unique (tenant_id, submission_id, field_key) index, so
-                // lower() does not change index use.
-                if (criterion.searchMode() == MetadataSearchMode.EXACT && criterion.ignoreCase()) {
-                    sql.append("lower(v.normalized_value)=lower(:").append(valueParam).append(")");
-                } else if (criterion.searchMode() == MetadataSearchMode.EXACT) {
-                    sql.append("v.normalized_value=:").append(valueParam);
-                } else if (criterion.searchMode() == MetadataSearchMode.PREFIX) {
-                    sql.append("position(lower(:").append(valueParam).append(") in lower(v.normalized_value))=1");
-                } else {
-                    sql.append("position(lower(:").append(valueParam).append(") in lower(v.normalized_value))>0");
-                }
+                // Task 0078: compared as stored for search (no capitals, single spaces); a sensitive value has no such form.
+                params.addValue(valueParam, pattern(criterion.searchMode(), variants.get(v)));
+                sql.append("v.search_value").append(criterion.searchMode() == MetadataSearchMode.EXACT ? "=:" : " like :").append(valueParam);
             }
             sql.append("))");
         }
@@ -122,16 +121,14 @@ public class JdbcBusinessRecordRepository implements BusinessRecordRepository {
             keys.add(field.fieldKey());
             List<String> equal = new ArrayList<>(), starts = new ArrayList<>(), contains = new ArrayList<>();
             for (int v = 0; v < field.normalizedVariants().size(); v++) {
-                String value = ":" + prefix + "Value" + v;
-                params.addValue(prefix + "Value" + v, field.normalizedVariants().get(v));
-                if (field.searchMode() == MetadataSearchMode.EXACT && !field.ignoreCase()) {
-                    equal.add("v.normalized_value=" + value);
-                } else if (field.searchMode() == MetadataSearchMode.EXACT) {
-                    equal.add("lower(v.normalized_value)=lower(" + value + ")");
-                } else {
-                    equal.add("lower(v.normalized_value)=lower(" + value + ")");
-                    starts.add("position(lower(" + value + ") in lower(v.normalized_value))=1");
-                    contains.add("position(lower(" + value + ") in lower(v.normalized_value))>0");
+                String value = ":" + prefix + "Value" + v, like = ":" + prefix + "Like" + v;
+                String wanted = CaseFieldSql.searchForm(field.normalizedVariants().get(v));
+                params.addValue(prefix + "Value" + v, wanted);
+                equal.add("v.search_value=" + value);
+                if (field.searchMode() != MetadataSearchMode.EXACT) {
+                    params.addValue(prefix + "Like" + v, escape(wanted));
+                    starts.add("v.search_value like " + like + "||'%'");
+                    contains.add("v.search_value like '%'||" + like + "||'%'");
                 }
             }
             int exactRank = field.businessIdentifier() ? 0 : 1;
@@ -153,13 +150,24 @@ public class JdbcBusinessRecordRepository implements BusinessRecordRepository {
         params.addValue("anywhereFields", keys);
         sql.append("""
                      end) as match_rank
-                       from business_metadata_values v
-                      where v.tenant_id=s.tenant_id
-                        and v.source_id=s.source_id
-                        and v.submission_id=s.submission_id
+                       from fld_value v
+                      where v.record_uuid=fr.record_uuid and not v.sensitive
                         and v.field_key in (:anywhereFields)
                  ) m
                 """);
+    }
+
+    private static String escape(String text) {
+        return text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_");
+    }
+
+    private static String pattern(MetadataSearchMode mode, String text) {
+        String wanted = CaseFieldSql.searchForm(text);
+        return switch (mode) {
+            case EXACT -> wanted;
+            case PREFIX -> escape(wanted) + "%";
+            case PARTIAL -> "%" + escape(wanted) + "%";
+        };
     }
 
     @Override
@@ -220,109 +228,56 @@ public class JdbcBusinessRecordRepository implements BusinessRecordRepository {
     }
 
     @Override
-    public List<UUID> findSubmissionIdsByRecordIdentity(
-            UUID tenantId,
-            UUID sourceId,
-            List<IdentifierCriterion> identifiers) {
-        if (identifiers.isEmpty()) return List.of();
+    public List<UUID> findSubmissionIdsOfRecord(UUID tenantId, UUID sourceId, UUID recordId) {
+        return jdbc.queryForList("select submission_id from submissions where tenant_id=:tenantId and source_id=:sourceId and record_id=:recordId order by created_at desc, submission_id",
+                new MapSqlParameterSource().addValue("tenantId", tenantId).addValue("sourceId", sourceId).addValue("recordId", recordId), UUID.class);
+    }
 
-        StringBuilder sql = new StringBuilder("""
-                select s.submission_id
-                  from submissions s
-                 where s.tenant_id=:tenantId
-                   and s.source_id=:sourceId
-                """);
-        MapSqlParameterSource params = new MapSqlParameterSource()
-                .addValue("tenantId", tenantId)
-                .addValue("sourceId", sourceId)
-                .addValue("identityCount", identifiers.size());
-
-        for (int i = 0; i < identifiers.size(); i++) {
-            IdentifierCriterion identifier = identifiers.get(i);
-            String prefix = "i" + i;
-            params.addValue(prefix + "Field", identifier.fieldKey());
-            params.addValue(prefix + "Value", identifier.normalizedValue());
-            sql.append("""
-                     and exists (
-                         select 1
-                           from business_metadata_values v
-                           join metadata_field_definitions d
-                             on d.tenant_id=v.tenant_id
-                            and d.source_id=v.source_id
-                            and d.definition_id=v.definition_id
-                            and d.field_key=v.field_key
-                            and d.version=v.definition_version
-                          where v.tenant_id=s.tenant_id
-                            and v.source_id=s.source_id
-                            and v.submission_id=s.submission_id
-                            and d.business_identifier=true
-                            and v.field_key=
-                    """).append(":").append(prefix).append("Field")
-                    .append(" and v.normalized_value=:").append(prefix).append("Value)");
-        }
-
-        sql.append("""
-                 and (
-                     select count(*)
-                       from business_metadata_values iv
-                       join metadata_field_definitions idf
-                         on idf.tenant_id=iv.tenant_id
-                        and idf.source_id=iv.source_id
-                        and idf.definition_id=iv.definition_id
-                        and idf.field_key=iv.field_key
-                        and idf.version=iv.definition_version
-                      where iv.tenant_id=s.tenant_id
-                        and iv.source_id=s.source_id
-                        and iv.submission_id=s.submission_id
-                        and idf.business_identifier=true
-                 )=:identityCount
-                 order by s.created_at desc, s.submission_id
-                """);
-
-        return jdbc.query(sql.toString(), params,
-                (rs, rowNum) -> rs.getObject("submission_id", UUID.class));
+    @Override
+    public java.util.Map<UUID, UUID> findRecordIds(UUID tenantId, UUID sourceId, java.util.Collection<UUID> submissionIds) {
+        java.util.Map<UUID, UUID> out = new java.util.HashMap<>();
+        if (submissionIds.isEmpty()) return out;
+        jdbc.query("select submission_id, record_id from submissions where tenant_id=:tenantId and source_id=:sourceId and submission_id in (:ids)",
+                new MapSqlParameterSource().addValue("tenantId", tenantId).addValue("sourceId", sourceId).addValue("ids", List.copyOf(submissionIds)),
+                rs -> { out.put(rs.getObject(1, UUID.class), rs.getObject(2, UUID.class)); });
+        return out;
     }
 
     @Override
     public java.util.Optional<SensitivityLevel> findRecordSensitivityLevel(
             UUID tenantId,
             UUID sourceId,
-            String recordKey) {
+            UUID recordId) {
         return jdbc.query("""
                 select sensitivity_level
                   from record_sensitivity_levels
-                 where tenant_id=:tenantId and source_id=:sourceId and record_key_sha256=:sha
+                 where tenant_id=:tenantId and source_id=:sourceId and record_id=:recordId
                 """, new MapSqlParameterSource()
                 .addValue("tenantId", tenantId)
                 .addValue("sourceId", sourceId)
-                .addValue("sha", com.sdv.platform.application.business.RecordKey.sha256(recordKey)),
+                .addValue("recordId", recordId),
                 (rs, rowNum) -> SensitivityLevel.valueOf(rs.getString("sensitivity_level")))
                 .stream().findFirst();
     }
 
     /** Task 0026: one query for a page of records, by the unique (tenant, source, key SHA-256) index. */
     @Override
-    public java.util.Map<String, SensitivityLevel> findRecordSensitivityLevels(
+    public java.util.Map<UUID, SensitivityLevel> findRecordSensitivityLevels(
             UUID tenantId,
             UUID sourceId,
-            java.util.Collection<String> recordKeys) {
-        if (recordKeys.isEmpty()) return java.util.Map.of();
-        java.util.Map<String, String> keyBySha = new java.util.HashMap<>();
-        for (String key : recordKeys) {
-            keyBySha.put(com.sdv.platform.application.business.RecordKey.sha256(key), key);
-        }
-        java.util.Map<String, SensitivityLevel> levels = new java.util.HashMap<>();
+            java.util.Collection<UUID> recordIds) {
+        if (recordIds.isEmpty()) return java.util.Map.of();
+        java.util.Map<UUID, SensitivityLevel> levels = new java.util.HashMap<>();
         jdbc.query("""
-                select record_key_sha256, sensitivity_level
+                select record_id, sensitivity_level
                   from record_sensitivity_levels
-                 where tenant_id=:tenantId and source_id=:sourceId and record_key_sha256 in (:shas)
+                 where tenant_id=:tenantId and source_id=:sourceId and record_id in (:ids)
                 """, new MapSqlParameterSource()
                 .addValue("tenantId", tenantId)
                 .addValue("sourceId", sourceId)
-                .addValue("shas", List.copyOf(keyBySha.keySet())),
+                .addValue("ids", List.copyOf(new java.util.LinkedHashSet<>(recordIds))),
                 rs -> {
-                    String key = keyBySha.get(rs.getString("record_key_sha256"));
-                    if (key != null) levels.put(key, SensitivityLevel.valueOf(rs.getString("sensitivity_level")));
+                    levels.put(rs.getObject("record_id", UUID.class), SensitivityLevel.valueOf(rs.getString("sensitivity_level")));
                 });
         return levels;
     }
@@ -334,20 +289,17 @@ public class JdbcBusinessRecordRepository implements BusinessRecordRepository {
             List<UUID> submissionIds) {
         if (submissionIds.isEmpty()) return List.of();
         return jdbc.query("""
-                select v.submission_id, v.field_key, d.display_label, v.stored_value,
-                       v.normalized_value, d.business_identifier
-                  from business_metadata_values v
-                  join metadata_field_definitions d
-                    on d.tenant_id=v.tenant_id
-                   and d.source_id=v.source_id
-                   and d.definition_id=v.definition_id
-                   and d.field_key=v.field_key
-                   and d.version=v.definition_version
-                 where v.tenant_id=:tenantId
-                   and v.source_id=:sourceId
-                   and v.submission_id in (:submissionIds)
-                 order by v.submission_id, v.field_key
-                """, new MapSqlParameterSource()
+                select s.submission_id, v.field_key, %s as display_label, v.display_value as stored_value,
+                       v.search_value as normalized_value, %s as business_identifier
+                  from submissions s
+                %s
+                  join fld_value v on v.record_uuid=fr.record_uuid and not v.sensitive and v.position=0
+                %s
+                 where s.tenant_id=:tenantId
+                   and s.source_id=:sourceId
+                   and s.submission_id in (:submissionIds)
+                 order by s.submission_id, v.field_key
+                """.formatted(CaseFieldSql.LABEL, CaseFieldSql.IDENTIFIER, CaseFieldSql.record("s"), CaseFieldSql.field("s")), new MapSqlParameterSource()
                 .addValue("tenantId", tenantId)
                 .addValue("sourceId", sourceId)
                 .addValue("submissionIds", submissionIds),

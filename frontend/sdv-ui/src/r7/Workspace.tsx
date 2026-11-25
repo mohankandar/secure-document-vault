@@ -8,7 +8,7 @@ import { schema, search, record, record as loadRecord, toSource, toSummary, toRe
 import { LoadErrorCard, failureText, loadFailed, type Failure } from './CardError'
 import { Badge, Callout, Drawer, Empty, Skeleton, actorWords, auditEventLabel, fmtDate, fmtRel, fmtShortDate } from './ui'
 import { Viewer } from './Viewer'
-import { MODE_HINT, MODE_WORD, QUICK_RANGES, filterHint, boxLabel, quickRange, rangeLabel, type Range } from './searchRouting'
+import { MODE_WORD, modeHint, QUICK_RANGES, filterHint, boxLabel, quickRange, rangeLabel, type Range } from './searchRouting'
 import { NOTHING_TO_SEARCH, defaultSource, nothingToSearchIn, rememberSourceChoice, searchableSources } from './sourceChoice'
 import { extraField, orderedPreview, titleLabel } from './recordColumns'
 import { anywhereProblem, hiddenMatch, identifierCriteria, type MatchedField } from './quickSearchRules'
@@ -388,7 +388,7 @@ function FiltersPanel({ sources, initial, onApply, onClose }: { sources: Source[
         <div className="ws-filter-fields">
           {fields.map((f) => (
             <label key={f.key} className="v-field">
-              <span>{f.label}<span className="v-hint">{MODE_HINT[f.mode]}</span></span>
+              <span>{f.label}<span className="v-hint">{modeHint(f)}</span></span>
               <input className="v-input" type={f.type === 'DATE' ? 'date' : 'text'} value={draft[f.key] ?? ''} autoComplete="off" spellCheck={false}
                 inputMode={f.normalizationRaw === 'DIGITS_ONLY' ? 'numeric' : undefined} placeholder={filterHint(f)}
                 onChange={(e) => setDraft((d) => ({ ...d, [f.key]: e.target.value }))} />

@@ -40,7 +40,7 @@ class RecordSensitivityReadTest {
     private static final UUID FIRST = UUID.fromString("00000000-0000-0000-0000-00000000000a");
     private static final UUID LATER = UUID.fromString("00000000-0000-0000-0000-00000000000b");
     private static final Instant NOW = Instant.parse("2026-11-20T12:00:00Z");
-    private static final String KEY = RecordKey.ofIdentifiers(List.of(new RecordKey.Part("contractNumber", "300000000076")));
+    private static final UUID KEY = TestRecordRefs.id("contractNumber", "300000000076");
 
     private final TenantRepository tenants = mock(TenantRepository.class);
     private final IngestionSourceRepository sources = mock(IngestionSourceRepository.class);
@@ -56,7 +56,8 @@ class RecordSensitivityReadTest {
         IngestionSource source = mock(IngestionSource.class);
         when(source.sourceId()).thenReturn(SOURCE);
         when(sources.findById(TENANT, SOURCE)).thenReturn(Optional.of(source));
-        when(records.findSubmissionIdsByRecordIdentity(eq(TENANT), eq(SOURCE), anyList())).thenReturn(List.of(FIRST, LATER));
+        TestRecordRefs.group(records);
+        when(records.findSubmissionIdsOfRecord(eq(TENANT), eq(SOURCE), any())).thenReturn(List.of(FIRST, LATER));
         when(records.findSubmissionsByIds(eq(TENANT), eq(SOURCE), anyList())).thenReturn(List.of(
                 new Submission(FIRST, TENANT, SOURCE, "s1", 1, "sha", SubmissionStatus.COMPLETE, NOW.minusSeconds(600), NOW, null),
                 new Submission(LATER, TENANT, SOURCE, "s2", 2, "sha", SubmissionStatus.COMPLETE, NOW.minusSeconds(60), NOW, null)));
@@ -75,9 +76,7 @@ class RecordSensitivityReadTest {
     }
 
     private BusinessExperienceView.RecordView open() {
-        var codec = new BusinessRecordRefCodec();
-        String ref = codec.encode(new BusinessRecordRefCodec.RecordIdentity(SOURCE,
-                List.of(new BusinessRecordRefCodec.IdentifierPart("contractNumber", "300000000076")), null));
+        String ref = TestRecordRefs.of(SOURCE, "contractNumber", "300000000076");
         // Task 0026: read with full clearance; locking is tested in DocumentLevelEnforcementTest.
         return service.record(TENANT, ref, "maya", "corr", com.sdv.platform.application.access.Clearance.ALL);
     }
@@ -122,11 +121,11 @@ class RecordSensitivityReadTest {
         when(records.findMetadataSnapshots(TENANT, SOURCE, List.of(alone))).thenReturn(List.of());
         when(records.findAvailableDocuments(TENANT, SOURCE, List.of(alone))).thenReturn(List.of(
                 document(alone, "note.pdf", SensitivityLevel.STANDARD)));
-        when(records.findRecordSensitivityLevel(TENANT, SOURCE, RecordKey.ofSubmission(alone)))
+        when(records.findRecordSensitivityLevel(TENANT, SOURCE, alone))
                 .thenReturn(Optional.of(SensitivityLevel.HIGHLY_CONFIDENTIAL));
 
-        var codec = new BusinessRecordRefCodec();
-        var view = service.record(TENANT, codec.encode(new BusinessRecordRefCodec.RecordIdentity(SOURCE, List.of(), alone)),
+        when(records.findSubmissionIdsOfRecord(TENANT, SOURCE, alone)).thenReturn(List.of(alone));
+        var view = service.record(TENANT, TestRecordRefs.ref(SOURCE, alone),
                 "maya", "corr", com.sdv.platform.application.access.Clearance.ALL);
         assertEquals("HIGHLY_CONFIDENTIAL", view.recordSensitivityLevel());
         assertEquals(Map.of("note.pdf", List.of("STANDARD", "HIGHLY_CONFIDENTIAL")), levels(view));

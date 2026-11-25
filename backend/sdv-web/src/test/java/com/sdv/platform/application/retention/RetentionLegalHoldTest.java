@@ -135,7 +135,7 @@ class RetentionLegalHoldTest {
         assertTrue(flat(reads.getAllValues().get(2)).contains("for update"), "releasing locks the hold row");
         String lookup = flat(reads.getAllValues().get(3));
         assertTrue(lookup.contains("d.status not in ('EXPIRED_DELETED', 'RETENTION_DELETING')"), lookup);
-        assertTrue(lookup.contains("order by o.display_position nulls last, v.field_key"), "the primary identifier: " + lookup);
+        assertTrue(lookup.contains("order by nullif((x.value::jsonb->>'order')::int, 0) nulls last, v.field_key"), "the primary identifier: " + lookup);
         assertTrue(flat(writes.getAllValues().get(1)).contains("released_at is null"), "only an active hold is released");
     }
 }

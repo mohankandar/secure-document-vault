@@ -4,7 +4,6 @@ import com.sdv.platform.application.port.IngestionSourceRepository;
 import com.sdv.platform.application.port.MetadataFieldDefinitionRepository;
 import com.sdv.platform.application.port.SubmissionRepository;
 import com.sdv.platform.domain.audit.AuditEvent;
-import com.sdv.platform.domain.document.BusinessMetadataValue;
 import com.sdv.platform.domain.metadata.MetadataFieldDefinition;
 import com.sdv.platform.domain.metadata.MetadataFieldType;
 import com.sdv.platform.domain.metadata.MetadataNormalization;
@@ -54,15 +53,16 @@ class SubmissionServiceTest {
         CreateSubmissionCommand command = command("source-submission-1", "9375-5221-2763");
         SubmissionDetails created = service.create(tenantId, sourceId, command, "producer", "corr-1");
         assertFalse(created.idempotentReplay());
-        assertEquals(1, created.metadataValues().getFirst().definitionVersion());
-        assertEquals("937552212763", created.metadataValues().getFirst().normalizedValue());
+        assertEquals(Map.of("contractNumber", "9375-5221-2763"), created.metadata());
 
         // A later configuration revision must not make an exact retry revalidate/rewrite history.
         definitions.values = List.of();
         SubmissionDetails replay = service.create(tenantId, sourceId, command, "producer", "corr-2");
         assertTrue(replay.idempotentReplay());
         assertEquals(created.submission().submissionId(), replay.submission().submissionId());
-        assertEquals(1, replay.metadataValues().getFirst().definitionVersion());
+        assertEquals(created.metadata(), replay.metadata());
+        assertTrue(audit.getFirst().safeDetailsJson().contains("\"fields\":[\"contractNumber\"]"), "the fields delivered, never a value");
+        assertFalse(audit.getFirst().safeDetailsJson().contains("9375"));
         assertEquals(1, audit.size(), "An idempotent replay must not append a second SUBMISSION_CREATED event.");
     }
 
@@ -88,7 +88,7 @@ class SubmissionServiceTest {
     }
 
     @Test
-    void firstCreateUsesCurrentMetadataRulesAndPinsExactDefinitionVersion() {
+    void firstCreateUsesCurrentMetadataRules() {
         UUID tenantId = UUID.randomUUID();
         UUID sourceId = UUID.randomUUID();
         MutableDefinitionRepository definitions = new MutableDefinitionRepository(
@@ -106,9 +106,7 @@ class SubmissionServiceTest {
 
         SubmissionDetails good = service.create(
                 tenantId, sourceId, command("good", "9375-5221-2763"), "producer", "corr");
-        BusinessMetadataValue value = good.metadataValues().getFirst();
-        assertEquals(4, value.definitionVersion());
-        assertEquals(definitions.values.getFirst().definitionId(), value.definitionId());
+        assertEquals(Map.of("contractNumber", "9375-5221-2763"), good.metadata());
     }
 
     private static CreateSubmissionCommand command(String sourceSubmissionId, String contractNumber) {
@@ -156,14 +154,12 @@ class SubmissionServiceTest {
         @Override public Optional<MetadataFieldDefinition> findCurrent(UUID tenantId, UUID sourceId, String fieldKey) {
             return values.stream().filter(MetadataFieldDefinition::active).filter(v -> v.fieldKey().equals(fieldKey)).findFirst();
         }
-        @Override public void retire(UUID tenantId, UUID sourceId, String fieldKey, Instant retiredAt) { throw new UnsupportedOperationException(); }
         @Override public void insert(MetadataFieldDefinition definition) { throw new UnsupportedOperationException(); }
     }
 
     private static final class MemorySubmissionRepository implements SubmissionRepository {
         private final Map<String, Submission> values = new LinkedHashMap<>();
         private final Map<UUID, List<SubmissionExpectedDocument>> expected = new LinkedHashMap<>();
-        private final Map<UUID, List<BusinessMetadataValue>> metadata = new LinkedHashMap<>();
 
         @Override public InsertResult insertIfAbsent(Submission candidate) {
             String key = key(candidate.tenantId(), candidate.sourceId(), candidate.sourceSubmissionId());
@@ -182,14 +178,8 @@ class SubmissionServiceTest {
         @Override public List<SubmissionExpectedDocument> findExpectedDocuments(UUID tenantId, UUID submissionId) {
             return expected.getOrDefault(submissionId, List.of());
         }
-        @Override public List<BusinessMetadataValue> findBusinessMetadata(UUID tenantId, UUID sourceId, UUID submissionId) {
-            return metadata.getOrDefault(submissionId, List.of());
-        }
         @Override public void insertExpectedDocuments(List<SubmissionExpectedDocument> documents) {
             if (!documents.isEmpty()) expected.put(documents.getFirst().submissionId(), List.copyOf(documents));
-        }
-        @Override public void insertBusinessMetadata(List<BusinessMetadataValue> values) {
-            if (!values.isEmpty()) metadata.put(values.getFirst().submissionId(), List.copyOf(values));
         }
         private static String key(UUID tenantId, UUID sourceId, String sourceSubmissionId) {
             return tenantId + "|" + sourceId + "|" + sourceSubmissionId;

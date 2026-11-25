@@ -96,7 +96,7 @@ class SensitivityLevelChangeTest {
 
     @Test
     void aRaiseIsComparedWithTheEffectiveLevelThroughTheRecord() {
-        w.recordLevels.put(recordKey(CONTRACT_A), SensitivityLevel.CONFIDENTIAL);
+        w.recordLevels.put(recordId(CONTRACT_A), SensitivityLevel.CONFIDENTIAL);
         // S1 is Standard itself but Confidential through its record: raising it to Confidential is no raise.
         assertEquals("SDV-SEN-013", code(() -> w.levels.raiseDocument(TENANT, STEWARD_ID, null, STEWARD, S1.toString(),
                 "CONFIDENTIAL", "Same as the record", "c")));
@@ -200,18 +200,18 @@ class SensitivityLevelChangeTest {
     @Test
     void aStewardAsksToLowerOnlyFromConfidentialARestrictedStewardFromHigher() {
         String ref = recordRef(CONTRACT_A);
-        w.recordLevels.put(recordKey(CONTRACT_A), SensitivityLevel.HIGHLY_CONFIDENTIAL);
+        w.recordLevels.put(recordId(CONTRACT_A), SensitivityLevel.HIGHLY_CONFIDENTIAL);
         assertEquals("SDV-SEN-015", code(() -> w.levels.requestLowerRecord(TENANT, STEWARD_ID, null, STEWARD, ref,
                 "CONFIDENTIAL", "Not that sensitive", "c")));
         LevelChange asked = w.levels.requestLowerRecord(TENANT, RS, null, RESTRICTED, ref, "CONFIDENTIAL",
                 "Not that sensitive", "c");
         assertEquals(LevelChange.Outcome.REQUESTED, asked.outcome());
-        assertEquals(SensitivityLevel.HIGHLY_CONFIDENTIAL, w.recordLevels.level(SOURCE, recordKey(CONTRACT_A)).orElseThrow(),
+        assertEquals(SensitivityLevel.HIGHLY_CONFIDENTIAL, w.recordLevels.level(SOURCE, recordId(CONTRACT_A)).orElseThrow(),
                 "not lowered yet");
 
         // From Confidential, a Steward may ask.
         String refB = recordRef(CONTRACT_B);
-        w.recordLevels.put(recordKey(CONTRACT_B), SensitivityLevel.CONFIDENTIAL);
+        w.recordLevels.put(recordId(CONTRACT_B), SensitivityLevel.CONFIDENTIAL);
         assertEquals(LevelChange.Outcome.REQUESTED, w.levels.requestLowerRecord(TENANT, STEWARD_ID, null, STEWARD, refB,
                 "STANDARD", "Back to normal", "c").outcome());
     }
@@ -227,7 +227,7 @@ class SensitivityLevelChangeTest {
         LevelChange raised = w.levels.raiseRecord(TENANT, STEWARD_ID, "Sam Steward", STEWARD, ref, "CONFIDENTIAL",
                 "Litigation", "corr-4");
         assertEquals(LevelChange.Outcome.APPLIED, raised.outcome());
-        assertEquals(SensitivityLevel.CONFIDENTIAL, w.recordLevels.level(SOURCE, recordKey(CONTRACT_B)).orElseThrow(),
+        assertEquals(SensitivityLevel.CONFIDENTIAL, w.recordLevels.level(SOURCE, recordId(CONTRACT_B)).orElseThrow(),
                 "applied at once");
         AuditEvent event = w.last("RECORD_SENSITIVITY_RAISED");
         assertEquals("USER", event.actorType());
@@ -246,13 +246,13 @@ class SensitivityLevelChangeTest {
         assertEquals("SDV-SEN-013", code(() -> w.levels.raiseRecord(TENANT, STEWARD_ID, null, STEWARD, ref, "CONFIDENTIAL",
                 "Again", "c")));
         w.levels.raiseRecord(TENANT, STEWARD_ID, null, STEWARD, ref, "HIGHLY_CONFIDENTIAL", "Worse", "c");
-        assertEquals(SensitivityLevel.HIGHLY_CONFIDENTIAL, w.recordLevels.level(SOURCE, recordKey(CONTRACT_B)).orElseThrow());
+        assertEquals(SensitivityLevel.HIGHLY_CONFIDENTIAL, w.recordLevels.level(SOURCE, recordId(CONTRACT_B)).orElseThrow());
         assertEquals("CONFIDENTIAL", details(w.last("RECORD_SENSITIVITY_RAISED")).get("from").asString());
 
         // Lowering the record: a request, approved one at a time.
         LevelChange asked = w.levels.requestLowerRecord(TENANT, RS, null, RESTRICTED, ref, "STANDARD", "Case closed", "c");
         w.approvals.decide(TENANT, ADMIN, null, asked.requestId().toString(), AccessRequestService.Decision.APPROVE, "c");
-        assertEquals(SensitivityLevel.STANDARD, w.recordLevels.level(SOURCE, recordKey(CONTRACT_B)).orElseThrow());
+        assertEquals(SensitivityLevel.STANDARD, w.recordLevels.level(SOURCE, recordId(CONTRACT_B)).orElseThrow());
         AuditEvent lowered = w.last("RECORD_SENSITIVITY_LOWERED");
         assertEquals("HIGHLY_CONFIDENTIAL", details(lowered).get("from").asString());
         assertEquals("STANDARD", details(lowered).get("to").asString());

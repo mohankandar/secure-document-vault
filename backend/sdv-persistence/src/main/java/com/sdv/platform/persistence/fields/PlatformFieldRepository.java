@@ -9,7 +9,11 @@ import com.documentplatform.fields.FieldSpec;
 import com.documentplatform.fields.SearchMode;
 import com.documentplatform.fields.file.FieldFileException;
 import com.documentplatform.fields.file.ImportReport;
+import com.documentplatform.fields.FieldStore;
+import com.documentplatform.fields.FieldValidator;
+import com.documentplatform.fields.FieldValue;
 import com.documentplatform.fields.jdbc.PostgresFieldStore;
+import com.documentplatform.fields.jdbc.PostgresValueStore;
 import com.sdv.platform.application.port.CaseFieldsPort;
 import com.sdv.platform.application.port.MetadataFieldDefinitionRepository;
 import com.sdv.platform.domain.error.CodedRefusal;
@@ -17,8 +21,6 @@ import com.sdv.platform.domain.error.SdvErrorCode;
 import com.sdv.platform.domain.error.SetupProblem;
 import com.sdv.platform.domain.identity.VeroProduct;
 import com.sdv.platform.domain.metadata.MetadataFieldDefinition;
-import com.sdv.platform.persistence.foundation.JdbcFoundationRepository;
-import org.springframework.context.annotation.Primary;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
@@ -36,23 +38,21 @@ import java.util.function.Supplier;
 
 /**
  * Task 0077: the field definitions, in platform-fields. One definition per entity and key: type, rules, identifier, sensitivity. What a
- * sending system adds is its own ({@link SourceField}). Vero's old rows are only a copy of these, written in the same transaction, because
- * stored values point to them until 0078; they give the definition's ID and version number, nothing else is read from them.
+ * sending system adds is its own ({@link SourceField}). Task 0078: nothing else holds them.
  */
 @Repository
-@Primary
 public class PlatformFieldRepository implements MetadataFieldDefinitionRepository, CaseFieldsPort {
     /** The history of who changed what for whom is Vero's audit; the definition's own history says which application. */
     private static final String VERO = "vero";
-    private final JdbcFoundationRepository old;
     private final JdbcTemplate db;
+    private final PostgresValueStore values;
     private final FieldDefinitions definitions;
 
-    public PlatformFieldRepository(JdbcFoundationRepository old, DataSource dataSource) {
-        this.old = old;
+    public PlatformFieldRepository(DataSource dataSource) {
         this.db = new JdbcTemplate(dataSource);
-        PostgresFieldStore store = new PostgresFieldStore(new JoinedDataSource(dataSource));
-        this.definitions = new FieldDefinitions(store, (scope, key) -> valuesExist(scope.entity(), key.value()));
+        JoinedDataSource joined = new JoinedDataSource(dataSource);
+        this.values = new PostgresValueStore(joined);
+        this.definitions = new FieldDefinitions(new PostgresFieldStore(joined), values);
     }
 
     private static FieldScope scope(UUID entity) {
@@ -60,25 +60,34 @@ public class PlatformFieldRepository implements MetadataFieldDefinitionRepositor
     }
 
     private boolean valuesExist(UUID entity, String key) {
-        return Boolean.TRUE.equals(db.queryForObject("select exists (select 1 from business_metadata_values where tenant_id = ? and field_key = ?)", Boolean.class, entity, key));
+        return values.valuesExist(scope(entity), FieldKey.of(key));
     }
 
     // ---- reading
 
     /** One system's fields: the definition's type, rules and identifier flag, the system's own label and search settings. */
-    private MetadataFieldDefinition merged(MetadataFieldDefinition copy, FieldDefinition definition, SourceField source) {
+    private static MetadataFieldDefinition merged(UUID entity, UUID sourceId, FieldDefinition definition, SourceField source) {
         FieldSpec spec = definition.spec();
         var type = FieldSpecs.type(spec);
-        if (type == null || source == null) throw setup(copy);
-        return new MetadataFieldDefinition(copy.definitionId(), copy.tenantId(), copy.sourceId(), copy.fieldKey(), copy.version(), source.label(), type,
+        if (type == null) throw setup(definition.key().value());
+        Instant since = Instant.ofEpochMilli(source.since());
+        return new MetadataFieldDefinition(definition.id(), entity, sourceId, definition.key().value(), source.version(), source.label(), type,
                 source.required(), source.identifier(), source.searchable(), source.normalization(), source.mode(), FieldSpecs.rules(spec), true,
-                copy.effectiveAt(), null, copy.createdAt());
+                since, null, definition.createdAt());
     }
 
-    /** A copy without its definition: Vero's setup, never the sender's request. Refused, not guessed. */
-    private static SetupProblem setup(MetadataFieldDefinition copy) {
-        return new SetupProblem(SdvErrorCode.INT_010, "Vero's setup for field '" + copy.fieldKey() + "' is broken, so this submission can't be checked. Nothing was stored. Your IT team has been told.",
-                "field=" + copy.fieldKey() + " rule: no definition for this sending system");
+    /** A type a delivery can't carry as one text: Vero's setup, never the sender's request. Refused, not guessed. */
+    private static SetupProblem setup(String key) {
+        return new SetupProblem(SdvErrorCode.INT_010, "Vero's setup for field '" + key + "' is broken, so this submission can't be checked. Nothing was stored. Your IT team has been told.",
+                "field=" + key + " rule: a type a delivery can't carry");
+    }
+
+    /** Every field the system sends, in one read. */
+    private Map<String, SourceField> sourceFields(UUID entity, UUID source) {
+        Map<String, SourceField> out = new TreeMap<>();
+        db.query("select f.field_key, x.value from fld_field_definition f join fld_field_extension x on x.definition_id = f.definition_id and x.name = ? where f.entity_uuid = ? and f.product_code = ?",
+                rs -> { out.put(rs.getString(1), SourceField.parse(rs.getString(2))); }, SourceField.name(source), entity, VeroProduct.CODE);
+        return out;
     }
 
     private SourceField sourceField(UUID entity, String key, UUID source) {
@@ -89,41 +98,56 @@ public class PlatformFieldRepository implements MetadataFieldDefinitionRepositor
 
     @Override
     public List<MetadataFieldDefinition> findCurrent(UUID tenantId, UUID sourceId) {
-        Map<String, FieldDefinition> byKey = new TreeMap<>();
-        for (FieldDefinition d : definitions.active(scope(tenantId))) byKey.put(d.key().value(), d);
-        List<MetadataFieldDefinition> out = new ArrayList<>();
-        for (MetadataFieldDefinition copy : old.findCurrent(tenantId, sourceId)) {
-            FieldDefinition d = byKey.get(copy.fieldKey());
-            if (d == null) throw setup(copy);
-            out.add(merged(copy, d, sourceField(tenantId, copy.fieldKey(), sourceId)));
-        }
-        return out;
+        Map<String, SourceField> sent = sourceFields(tenantId, sourceId);
+        if (sent.isEmpty()) return List.of();
+        return definitions.active(scope(tenantId)).stream().filter(d -> sent.containsKey(d.key().value())).sorted(Comparator.comparing(d -> d.key().value()))
+                .map(d -> merged(tenantId, sourceId, d, sent.get(d.key().value()))).toList();
     }
 
     @Override
     public Optional<MetadataFieldDefinition> findCurrent(UUID tenantId, UUID sourceId, String fieldKey) {
-        return old.findCurrent(tenantId, sourceId, fieldKey).map(copy -> merged(copy,
-                definitions.find(scope(tenantId), FieldKey.of(fieldKey)).filter(FieldDefinition::active).orElseThrow(() -> setup(copy)), sourceField(tenantId, fieldKey, sourceId)));
+        SourceField source = sourceFields(tenantId, sourceId).get(fieldKey);
+        if (source == null) return Optional.empty();
+        return definitions.find(scope(tenantId), FieldKey.of(fieldKey)).filter(FieldDefinition::active).map(d -> merged(tenantId, sourceId, d, source));
     }
 
-    /** What was, as it was recorded then. */
+    /** The system's settings now, then what the definition was before, newest first. */
     @Override
     public List<MetadataFieldDefinition> findHistory(UUID tenantId, UUID sourceId, String fieldKey) {
-        return old.findHistory(tenantId, sourceId, fieldKey);
+        MetadataFieldDefinition now = findCurrent(tenantId, sourceId, fieldKey).orElse(null);
+        if (now == null) return List.of();
+        List<MetadataFieldDefinition> out = new ArrayList<>(List.of(now));
+        List<FieldStore.HistoryEntry> entries = definitions.history(scope(tenantId), FieldKey.of(fieldKey)).stream()
+                .sorted(Comparator.comparingInt(FieldStore.HistoryEntry::version).reversed()).toList();
+        Instant until = null;
+        for (FieldStore.HistoryEntry e : entries) {
+            var type = FieldSpecs.type(e.spec());
+            if (until != null && type != null) {
+                out.add(new MetadataFieldDefinition(now.definitionId(), tenantId, sourceId, fieldKey, e.version(), e.spec().label(), type, now.required(), e.spec().primary(),
+                        e.spec().searchable(), FieldSpecs.normalization(e.spec()), com.sdv.platform.domain.metadata.MetadataSearchMode.valueOf(e.spec().searchMode().name()),
+                        FieldSpecs.rules(e.spec()), false, e.at(), until, now.createdAt()));
+            }
+            until = e.at();
+        }
+        return out;
+    }
+
+    /** A typed search text as the field's values are stored (a date in another form, for example); nothing when it isn't such a value. */
+    @Override
+    public List<String> storedForms(UUID tenantId, String fieldKey, String text) {
+        FieldDefinition d = definitions.find(scope(tenantId), FieldKey.of(fieldKey)).orElse(null);
+        if (d == null || d.type() == com.documentplatform.fields.FieldType.ADDRESS) return List.of();
+        FieldValidator.Checked checked = FieldValidator.check(d.spec(), FieldValue.text(text));
+        return checked.ok() ? List.of(checked.valid().normalisedText()) : List.of();
     }
 
     // ---- writing
 
     @Override
-    public void retire(UUID tenantId, UUID sourceId, String fieldKey, Instant retiredAt) {
-        old.retire(tenantId, sourceId, fieldKey, retiredAt);
-    }
-
-    @Override
     @Transactional
     public void insert(MetadataFieldDefinition sent) {
         MetadataFieldDefinition d = coded(sent.fieldKey(), () -> withKnownRules(sent));
-        FieldSpec stored = coded(d.fieldKey(), () -> {
+        coded(d.fieldKey(), () -> {
             FieldScope scope = scope(d.tenantId());
             FieldKey key = FieldKey.of(d.fieldKey());
             FieldDefinition before = definitions.find(scope, key).orElse(null);
@@ -141,7 +165,6 @@ public class PlatformFieldRepository implements MetadataFieldDefinitionRepositor
             definitions.putExtension(scope, key, SourceField.name(d.sourceId()), SourceField.of(d, sourceField(d.tenantId(), d.fieldKey(), d.sourceId())).json());
             return spec;
         });
-        old.insert(withRules(d, FieldSpecs.rules(stored)));
     }
 
     /** A system that starts to send a field without rules of its own takes the field's rules: a key has one set of them. */
@@ -168,14 +191,11 @@ public class PlatformFieldRepository implements MetadataFieldDefinitionRepositor
                 .anyMatch(e -> e.getKey().startsWith("source.") && !e.getKey().equals(SourceField.name(d.sourceId())) && SourceField.parse(e.getValue()).identifier());
     }
 
-    // ---- order and record title: the system's own settings, and their copies
+    // ---- order and record title: the system's own settings
 
     private List<String> places(UUID tenantId, UUID sourceId, java.util.function.ToIntFunction<SourceField> place) {
         Map<String, Integer> found = new TreeMap<>();
-        for (FieldDefinition d : definitions.list(scope(tenantId))) {
-            SourceField s = sourceField(tenantId, d.key().value(), sourceId);
-            if (s != null && place.applyAsInt(s) > 0) found.put(d.key().value(), place.applyAsInt(s));
-        }
+        sourceFields(tenantId, sourceId).forEach((key, s) -> { if (place.applyAsInt(s) > 0) found.put(key, place.applyAsInt(s)); });
         return found.entrySet().stream().sorted(Map.Entry.<String, Integer>comparingByValue().thenComparing(Map.Entry.comparingByKey())).map(Map.Entry::getKey).toList();
     }
 
@@ -183,12 +203,10 @@ public class PlatformFieldRepository implements MetadataFieldDefinitionRepositor
     private interface Placed { SourceField at(SourceField field, int place); }
 
     private void place(UUID tenantId, UUID sourceId, List<String> keys, Placed placed) {
-        for (FieldDefinition d : definitions.list(scope(tenantId))) {
-            SourceField s = sourceField(tenantId, d.key().value(), sourceId);
-            if (s == null) continue;
-            SourceField next = placed.at(s, keys.indexOf(d.key().value()) + 1);
-            if (!next.equals(s)) definitions.putExtension(scope(tenantId), d.key(), SourceField.name(sourceId), next.json());
-        }
+        sourceFields(tenantId, sourceId).forEach((key, s) -> {
+            SourceField next = placed.at(s, keys.indexOf(key) + 1);
+            if (!next.equals(s)) definitions.putExtension(scope(tenantId), FieldKey.of(key), SourceField.name(sourceId), next.json());
+        });
     }
 
     @Override
@@ -200,7 +218,6 @@ public class PlatformFieldRepository implements MetadataFieldDefinitionRepositor
     @Transactional
     public void replaceDisplayOrder(UUID tenantId, UUID sourceId, List<String> fieldKeys) {
         place(tenantId, sourceId, fieldKeys, SourceField::withOrder);
-        old.replaceDisplayOrder(tenantId, sourceId, fieldKeys);
     }
 
     @Override
@@ -212,7 +229,6 @@ public class PlatformFieldRepository implements MetadataFieldDefinitionRepositor
     @Transactional
     public void replaceRecordTitleFields(UUID tenantId, UUID sourceId, List<String> fieldKeys) {
         place(tenantId, sourceId, fieldKeys, SourceField::withTitle);
-        old.replaceRecordTitleFields(tenantId, sourceId, fieldKeys);
     }
 
     // ---- the entity's list
@@ -280,37 +296,5 @@ public class PlatformFieldRepository implements MetadataFieldDefinitionRepositor
                 default -> throw new CodedRefusal.BadRequest(SdvErrorCode.FLD_001, ex.getMessage(), detail);
             }
         }
-    }
-
-    /** Every entity and sending system with a field of before this task; entities that are switched off too. */
-    public List<UUID[]> systems() {
-        return db.query("select distinct tenant_id, source_id from metadata_field_definitions where active order by 1, 2",
-                (rs, n) -> new UUID[]{rs.getObject(1, UUID.class), rs.getObject(2, UUID.class)});
-    }
-
-    /**
-     * A database of before this task: every current row becomes a definition, the same way a new field does. Safe to run again: only a
-     * row without its definition is taken. Returns how many were.
-     */
-    @Transactional
-    public int adopt(UUID tenantId, UUID sourceId) {
-        int taken = 0;
-        for (MetadataFieldDefinition d : old.findCurrent(tenantId, sourceId)) {
-            FieldScope scope = scope(tenantId);
-            FieldKey key = FieldKey.of(d.fieldKey());
-            FieldDefinition before = definitions.find(scope, key).orElse(null);
-            if (before != null && sourceField(tenantId, d.fieldKey(), sourceId) != null) continue;
-            if (before == null) definitions.create(scope, FieldSpecs.spec(d, null, d.businessIdentifier()), VERO);
-            else if (d.businessIdentifier() && !before.spec().primary()) {
-                definitions.change(scope, before.spec().toBuilder().primary(true).build(), before.version(), VERO);
-            }
-            definitions.putExtension(scope, key, SourceField.name(sourceId), SourceField.of(d, null).json());
-            taken++;
-        }
-        if (taken > 0) {
-            place(tenantId, sourceId, old.findDisplayOrder(tenantId, sourceId), SourceField::withOrder);
-            place(tenantId, sourceId, old.findRecordTitleFields(tenantId, sourceId), SourceField::withTitle);
-        }
-        return taken;
     }
 }

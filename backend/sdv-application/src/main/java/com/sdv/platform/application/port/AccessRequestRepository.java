@@ -122,7 +122,7 @@ public interface AccessRequestRepository {
     List<LevelChange> findDocumentLevelChanges(UUID tenantId, UUID documentId, int limit);
 
     /** A record's level changes, newest first. */
-    List<LevelChange> findRecordLevelChanges(UUID tenantId, UUID sourceId, String recordKey, int limit);
+    List<LevelChange> findRecordLevelChanges(UUID tenantId, UUID sourceId, UUID recordId, int limit);
 
     record AccessRequest(
             UUID requestId,
@@ -130,7 +130,7 @@ public interface AccessRequestRepository {
             AccessRequestKind kind,
             UUID documentId,
             UUID sourceId,
-            String recordKey,
+            UUID recordId,
             SensitivityLevel requestedLevel,
             String reason,
             String requestedBy,
@@ -164,7 +164,7 @@ public interface AccessRequestRepository {
     record LockedDocument(UUID documentId, String status, SensitivityLevel ownLevel) { }
 
     /**
-     * Task 0029 (0.4): one level change. scope DOCUMENT names documentId; scope RECORD names sourceId and recordKey.
+     * Task 0029 (0.4): one level change. scope DOCUMENT names documentId; scope RECORD names sourceId and recordId.
      * from is null only for a record's first level. accessRequestId names the approved request of a lowering.
      */
     record LevelChange(
@@ -173,7 +173,7 @@ public interface AccessRequestRepository {
             Scope scope,
             UUID documentId,
             UUID sourceId,
-            String recordKey,
+            UUID recordId,
             Direction direction,
             SensitivityLevel from,
             SensitivityLevel to,

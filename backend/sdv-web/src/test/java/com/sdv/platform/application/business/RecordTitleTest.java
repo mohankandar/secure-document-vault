@@ -101,7 +101,8 @@ class RecordTitleTest {
                 new MetadataSnapshot(SUB, "firstName", "First Name", "Anna", "ANNA", false),
                 new MetadataSnapshot(SUB, "lastName", "Last Name", "Patel", "PATEL", false));
         when(records.findMetadataSnapshots(eq(TENANT), eq(SOURCE), anyList())).thenReturn(metadata);
-        when(records.findSubmissionIdsByRecordIdentity(eq(TENANT), eq(SOURCE), anyList())).thenReturn(List.of(SUB));
+        TestRecordRefs.group(records);
+        when(records.findSubmissionIdsOfRecord(eq(TENANT), eq(SOURCE), any())).thenReturn(List.of(SUB));
         when(records.findSubmissionsByIds(eq(TENANT), eq(SOURCE), anyList())).thenReturn(List.of(
                 new Submission(SUB, TENANT, SOURCE, "src-1", 1, "sha", SubmissionStatus.COMPLETE, NOW.minusSeconds(60), NOW, null)));
         when(records.findAvailableDocuments(eq(TENANT), eq(SOURCE), anyList())).thenReturn(List.of(

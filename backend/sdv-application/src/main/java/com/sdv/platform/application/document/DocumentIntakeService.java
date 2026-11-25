@@ -9,7 +9,6 @@ import com.sdv.platform.domain.error.SdvErrorCode;
 import com.sdv.platform.application.source.ActiveSource;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.ObjectMapper;
-import com.sdv.platform.application.business.RecordKey;
 import com.sdv.platform.application.business.RecordReferences;
 import com.sdv.platform.application.port.AccessRequestRepository;
 import com.sdv.platform.application.pdf.EncryptedScratch;
@@ -196,7 +195,7 @@ public class DocumentIntakeService {
         }
 
         // Task 0031: the record this submission belongs to (grouped as search groups it), for the duplicate check.
-        String recordKey = records.ofSubmission(tenantId, sourceId, submissionId).recordKey();
+        UUID recordId = records.ofSubmission(tenantId, sourceId, submissionId).recordId();
 
         long placementBytes = estimateEncryptedSize(
                 declaredContentLength >= 0 ? declaredContentLength : maxPdfBytes);
@@ -242,7 +241,7 @@ public class DocumentIntakeService {
             commitResult = transactions.execute(status -> commitReceipt(
                     tenant, source, submissionId, expected, normalizedSourceDocumentId, normalizedIdempotencyKey,
                     filename, normalizedMediaType, level, contentSha256, contentSizeBytes, candidateDocumentId,
-                    volume, stored, envelope, now, sourceSubject, correlationId, recordKey));
+                    volume, stored, envelope, now, sourceSubject, correlationId, recordId));
         } catch (RuntimeException ex) {
             safeDelete(provider, tenantId, volume, stored.objectKey());
             throw ex;
@@ -346,7 +345,7 @@ public class DocumentIntakeService {
                                        Instant now,
                                        String sourceSubject,
                                        String correlationId,
-                                       String recordKey) {
+                                       UUID recordId) {
         Submission locked = documents.lockSubmission(tenant.tenantId(), source.sourceId(), submissionId);
 
         Document raced = findExistingIdentity(
@@ -367,7 +366,7 @@ public class DocumentIntakeService {
 
         // Task 0031, case 2: the same file for the same record from this sending system is already kept. The lock makes
         // two such deliveries at once take turns; the record's submissions are read after it.
-        documents.lockDuplicateCheck(tenant.tenantId(), source.sourceId(), recordKey, contentSha256);
+        documents.lockDuplicateCheck(tenant.tenantId(), source.sourceId(), recordId, contentSha256);
         List<UUID> recordSubmissions = records.ofSubmission(tenant.tenantId(), source.sourceId(), submissionId).submissionIds();
         Document original = documents.findDuplicateOf(
                 tenant.tenantId(), source.sourceId(), recordSubmissions, contentSha256).orElse(null);
@@ -376,7 +375,7 @@ public class DocumentIntakeService {
         if (lockedOriginal != null && !GONE.contains(DocumentStatus.valueOf(lockedOriginal.status()))) {
             return recordDuplicate(tenant.tenantId(), source.sourceId(), submissionId, locked, sourceDocumentId,
                     duplicateKey, original, lockedOriginal, sensitivityLevel, contentSha256, contentSizeBytes,
-                    recordKey, now, sourceSubject, correlationId, false);
+                    recordId, now, sourceSubject, correlationId, false);
         }
 
         // Task 0032 (0): the file is what a document of this record was before a permanent corrective redaction. Storing
@@ -389,7 +388,7 @@ public class DocumentIntakeService {
         if (lockedCorrected != null && !GONE.contains(DocumentStatus.valueOf(lockedCorrected.status()))) {
             return recordDuplicate(tenant.tenantId(), source.sourceId(), submissionId, locked, sourceDocumentId,
                     duplicateKey, corrected, lockedCorrected, sensitivityLevel, contentSha256, contentSizeBytes,
-                    recordKey, now, sourceSubject, correlationId, true);
+                    recordId, now, sourceSubject, correlationId, true);
         }
 
         long aggregateLimit = effectiveMaxAggregateBytes(tenant, source);
@@ -445,7 +444,7 @@ public class DocumentIntakeService {
                                          String sourceDocumentId, String duplicateKey, Document original,
                                          AccessRequestRepository.LockedDocument lockedOriginal,
                                          SensitivityLevel sentLevel, String contentSha256, long contentSizeBytes,
-                                         String recordKey, Instant now, String sourceSubject, String correlationId,
+                                         UUID recordId, Instant now, String sourceSubject, String correlationId,
                                          boolean uncorrectedCopy) {
         SensitivityLevel own = lockedOriginal.ownLevel();
         boolean raise = sentLevel.compareTo(own) > 0;
@@ -484,7 +483,7 @@ public class DocumentIntakeService {
         details.put("requestIdKind", sourceDocumentId != null ? "SOURCE_DOCUMENT_ID" : "IDEMPOTENCY_KEY");
         details.put("sourceId", sourceId.toString());
         details.put("submissionId", submissionId.toString());
-        details.put("recordKeySha256", RecordKey.sha256(recordKey));
+        details.put("recordId", recordId.toString());
         details.put("contentSha256", contentSha256);
         details.put("existingDocumentId", original.documentId().toString());
         details.put("duplicateId", receipt.duplicateId().toString());

@@ -19,4 +19,9 @@ public final class SearchValueNormalizer {
             case DIGITS_ONLY -> value.replaceAll("\\D", "");
         };
     }
+
+    /** Task 0078: a value or search text as stored for search: no capitals, single spaces. */
+    public static String searchForm(String text) {
+        return text.strip().replaceAll("\\s+", " ").toLowerCase(java.util.Locale.ROOT);
+    }
 }

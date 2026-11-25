@@ -1,7 +1,5 @@
 package com.sdv.platform.application.restrictions;
 
-import com.sdv.platform.application.business.PrimaryIdentifierRule;
-import com.sdv.platform.application.business.RecordKey;
 import com.sdv.platform.application.port.RestrictionsRepository;
 import com.sdv.platform.application.port.RestrictionsRepository.Holds;
 import com.sdv.platform.application.port.RestrictionsRepository.Identifier;
@@ -23,7 +21,6 @@ import java.time.Instant;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Base64;
-import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -107,10 +104,10 @@ public class RestrictionsService {
             RecordLevel last = rows.getLast();
             next = cursor(last.setAt(), last.levelId());
         }
-        Names names = names(tenantId, rows.stream().map(r -> new Ref(r.sourceId(), r.recordKey(), null)).toList());
+        Names names = names(tenantId, rows.stream().map(r -> new Ref(r.recordId(), null)).toList());
         List<RestrictedRecord> items = new ArrayList<>();
         for (RecordLevel r : rows) {
-            Identifier id = names.of(new Ref(r.sourceId(), r.recordKey(), null));
+            Identifier id = names.of(new Ref(r.recordId(), null));
             items.add(new RestrictedRecord(id.label(), id.value(), SensitivityLevel.valueOf(r.level()), r.setAt()));
         }
         return new RecordPage(items, next);
@@ -131,10 +128,10 @@ public class RestrictionsService {
             LevelChange last = rows.getLast();
             next = cursor(last.changedAt(), last.changeId());
         }
-        Names names = names(tenantId, rows.stream().map(c -> new Ref(c.sourceId(), c.recordKey(), c.submissionId())).toList());
+        Names names = names(tenantId, rows.stream().map(c -> new Ref(c.recordId(), c.submissionId())).toList());
         List<Change> items = new ArrayList<>();
         for (LevelChange c : rows) {
-            Identifier id = names.of(new Ref(c.sourceId(), c.recordKey(), c.submissionId()));
+            Identifier id = names.of(new Ref(c.recordId(), c.submissionId()));
             items.add(new Change(c.changedBy(), c.changedAt(), c.scope(), c.fromLevel(), c.toLevel(), id.label(), id.value()));
         }
         return new ChangePage(items, next);
@@ -142,50 +139,25 @@ public class RestrictionsService {
 
     // ------------------------------------------------------------------ naming a record by its primary identifier
 
-    /** A record as a key (source and record key) or as a document's submission. */
-    private record Ref(UUID sourceId, String recordKey, UUID submissionId) { }
+    /** A record by its ID, or as a document's submission. */
+    private record Ref(UUID recordId, UUID submissionId) { }
 
-    private record Names(Map<UUID, Identifier> submissions, Map<UUID, List<String>> displayOrders,
-                         Map<UUID, Map<String, String>> labels) {
+    private record Names(Map<UUID, Identifier> submissions, Map<UUID, Identifier> records) {
         static final Identifier UNKNOWN = new Identifier(null, null);
 
         Identifier of(Ref ref) {
             if (ref.submissionId() != null) return submissions.getOrDefault(ref.submissionId(), UNKNOWN);
-            if (ref.recordKey() == null) return UNKNOWN;
-            RecordKey.Parsed parsed;
-            try {
-                parsed = RecordKey.parse(ref.recordKey());
-            } catch (RuntimeException ex) {
-                return UNKNOWN; // a key that can't be read names nothing (never a guess)
-            }
-            if (parsed.submissionId() != null) return submissions.getOrDefault(parsed.submissionId(), UNKNOWN);
-            if (parsed.identifiers().isEmpty()) return UNKNOWN;
-            // The key's identifier values in the one rule's order (task 0056): the first is the primary identifier.
-            Comparator<String> order = PrimaryIdentifierRule.fieldOrder(displayOrders.getOrDefault(ref.sourceId(), List.of()));
-            RecordKey.Part part = parsed.identifiers().stream()
-                    .min(Comparator.comparing(RecordKey.Part::fieldKey, order)).orElseThrow();
-            String label = labels.getOrDefault(ref.sourceId(), Map.of()).get(part.fieldKey());
-            return new Identifier(label, part.normalizedValue());
+            return ref.recordId() == null ? UNKNOWN : records.getOrDefault(ref.recordId(), UNKNOWN);
         }
     }
 
     private Names names(UUID tenantId, List<Ref> refs) {
-        Set<UUID> submissions = new LinkedHashSet<>();
-        Set<UUID> sources = new LinkedHashSet<>();
+        Set<UUID> submissions = new LinkedHashSet<>(), recordIds = new LinkedHashSet<>();
         for (Ref r : refs) {
             if (r.submissionId() != null) submissions.add(r.submissionId());
-            if (r.sourceId() != null) sources.add(r.sourceId());
-            if (r.recordKey() != null) {
-                try {
-                    UUID s = RecordKey.parse(r.recordKey()).submissionId();
-                    if (s != null) submissions.add(s);
-                } catch (RuntimeException ignored) {
-                    // named as unknown
-                }
-            }
+            else if (r.recordId() != null) recordIds.add(r.recordId());
         }
-        return new Names(restrictions.findSubmissionIdentifiers(tenantId, submissions),
-                restrictions.findDisplayOrders(tenantId, sources), restrictions.findIdentifierLabels(tenantId, sources));
+        return new Names(restrictions.findSubmissionIdentifiers(tenantId, submissions), restrictions.findRecordIdentifiers(tenantId, recordIds));
     }
 
     // ------------------------------------------------------------------ page positions

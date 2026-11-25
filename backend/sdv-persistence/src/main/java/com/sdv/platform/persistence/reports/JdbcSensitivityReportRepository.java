@@ -1,12 +1,11 @@
 package com.sdv.platform.persistence.reports;
 
 import com.sdv.platform.application.json.VeroJson;
-import com.sdv.platform.persistence.business.PrimaryIdentifierSql;
+import com.sdv.platform.persistence.fields.CaseFieldSql;
 import com.sdv.platform.domain.error.InternalCheckFailed;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
-import com.sdv.platform.application.business.RecordKey;
 import com.sdv.platform.application.port.SensitivityReportRepository;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
@@ -26,15 +25,8 @@ import java.util.UUID;
  * never a name, title, file name, metadata value or content. Every query is limited to one tenant.
  * <p>
  * <b>Effective levels in one statement.</b> A document's effective level is the higher of its own level and its
- * record's level. A record is named by its key (see {@link RecordKey}): its business-identifier values, or one
- * submission. The record levels above Standard are read first and their keys parsed here; the submissions of each
- * record are then found in SQL exactly as record search finds them (findSubmissionIdsByRecordIdentity: every value
- * matches and the submission has no other identifier value), and every stored document is counted once at
- * greatest(own level, its record's level). A key that can't be read stops the report (never a guessed count).
- * <p>
- * Indexes used: documents (tenant_id, ...), business_metadata_values (tenant_id, field_key, normalized_value),
- * record_sensitivity_levels (tenant_id, source_id, ...), legal_holds active (tenant_id, ...), audit_events (tenant_id,
- * action, occurred_at). No new index.
+ * record's level; a level names its record by ID (task 0078), and every stored document is counted once at
+ * greatest(own level, its record's level).
  */
 @Repository
 public class JdbcSensitivityReportRepository implements SensitivityReportRepository {
@@ -165,25 +157,23 @@ public class JdbcSensitivityReportRepository implements SensitivityReportReposit
     @Override
     public Optional<String> findPrimaryIdentifierLabel(UUID tenantId, UUID sourceId) {
         MapSqlParameterSource p = new MapSqlParameterSource().addValue("tenantId", tenantId);
-        String source = "";
+        String source = "like 'source.%'";
         if (sourceId != null) {
             p.addValue("sourceId", sourceId);
-            source = " and f.source_id=:sourceId";
+            source = "='source.'||cast(:sourceId as text)";
         }
         // Each sending system's primary identifier field (the one rule, task 0056); the label most of them use.
         return jdbc.query("""
                 select label from (
-                    select distinct on (f.source_id) f.source_id, f.display_label as label
-                      from metadata_field_definitions f
-                """ + PrimaryIdentifierSql.FIELD_POSITION + """
-                     where f.tenant_id=:tenantId and f.business_identifier and f.active""" + source + """
-
-                     order by f.source_id, """ + PrimaryIdentifierSql.FIELD_ORDER + """
-                , f.version desc) x
+                    select distinct on (x.name) x.name, %s as label
+                      from fld_field_definition f
+                      join fld_field_extension x on x.definition_id=f.definition_id and x.name %s
+                     where f.entity_uuid=:tenantId and f.product_code='%s' and f.active and not f.sensitive and %s
+                     order by x.name, %s nulls last, f.field_key) x
                  group by label
                  order by count(*) desc, label
                  limit 1
-                """, p, (rs, row) -> rs.getString("label")).stream().findFirst();
+                """.formatted(CaseFieldSql.LABEL, source, com.sdv.platform.domain.identity.VeroProduct.CODE, CaseFieldSql.IDENTIFIER, CaseFieldSql.PLACE), p, (rs, row) -> rs.getString("label")).stream().findFirst();
     }
 
     private static MapSqlParameterSource range(UUID tenantId, Instant from, Instant to) {
@@ -231,82 +221,19 @@ public class JdbcSensitivityReportRepository implements SensitivityReportReposit
             + "coalesce(sl.lvl, 0))";
 
     /**
-     * Task 0053 (from task 0033's count, unchanged): reads the tenant's record levels above Standard, parses their keys,
-     * and returns the "with" part naming each submission's record level ({@code submission_levels}), with its
-     * parameters added to {@code p} (which must hold :tenantId; and :sourceId when {@code sourceId} is set).
+     * Task 0053, 0078: reads the tenant's record levels and returns the "with" part naming each submission's record level above Standard
+     * ({@code submission_levels}), with its parameters added to {@code p} (which must hold :tenantId; and :sourceId when {@code sourceId} is set).
      */
     static LevelSql effectiveLevels(NamedParameterJdbcTemplate jdbc, UUID tenantId, UUID sourceId, MapSqlParameterSource p) {
         String recordSource = sourceId == null ? "" : " and source_id=:sourceId";
-        record Level(UUID sourceId, String key, String level) { }
-        List<Level> levels = jdbc.query("select source_id, record_key, sensitivity_level from record_sensitivity_levels"
-                        + " where tenant_id=:tenantId" + recordSource, p,
-                (rs, row) -> new Level(rs.getObject("source_id", UUID.class), rs.getString("record_key"),
-                        rs.getString("sensitivity_level")));
-
-        // The records above Standard: their parts (identifier records) or their one submission.
-        List<Map<String, Object>> parts = new ArrayList<>();
-        List<Map<String, Object>> records = new ArrayList<>();
-        int rec = 0;
-        for (Level level : levels) {
-            int rank = rank(level.level());
-            if (rank == 0) continue;
-            RecordKey.Parsed parsed;
-            try {
-                parsed = RecordKey.parse(level.key());
-            } catch (RuntimeException ex) {
-                throw new InternalCheckFailed("A record level names a record key that can't be read, so the documents "
-                        + "can't be counted by level.", ex);
-            }
-            rec++;
-            Map<String, Object> r = new LinkedHashMap<>();
-            r.put("rec", rec);
-            r.put("lvl", rank);
-            r.put("n", parsed.identifiers().size());
-            r.put("submission_id", parsed.submissionId() == null ? null : parsed.submissionId().toString());
-            records.add(r);
-            for (RecordKey.Part part : parsed.identifiers()) {
-                Map<String, Object> x = new LinkedHashMap<>();
-                x.put("rec", rec);
-                x.put("source_id", level.sourceId().toString());
-                x.put("field_key", part.fieldKey());
-                x.put("value", part.normalizedValue());
-                parts.add(x);
-            }
-        }
-        p.addValue("parts", json(parts)).addValue("records", json(records));
+        List<String> levels = jdbc.queryForList("select sensitivity_level from record_sensitivity_levels where tenant_id=:tenantId" + recordSource, p, String.class);
+        levels.forEach(JdbcSensitivityReportRepository::rank); // a level that isn't one of the three stops the report
         return new LevelSql("""
-                with parts as (
-                    select * from jsonb_to_recordset(cast(:parts as jsonb)) as x(rec int, source_id uuid, field_key text, value text)
-                ), records as (
-                    select * from jsonb_to_recordset(cast(:records as jsonb)) as x(rec int, lvl int, n int, submission_id uuid)
-                ), hits as (
-                    select pt.rec, v.source_id, v.submission_id, count(distinct (pt.field_key, pt.value)) as n
-                      from parts pt
-                      join business_metadata_values v
-                        on v.tenant_id=:tenantId and v.source_id=pt.source_id
-                       and v.field_key=pt.field_key and v.normalized_value=pt.value
-                      join metadata_field_definitions f
-                        on f.tenant_id=v.tenant_id and f.source_id=v.source_id and f.definition_id=v.definition_id
-                       and f.field_key=v.field_key and f.version=v.definition_version and f.business_identifier
-                     group by pt.rec, v.source_id, v.submission_id
-                ), matched as (
-                    select h.rec, h.submission_id
-                      from hits h
-                      join records r on r.rec=h.rec and r.n=h.n
-                     where (select count(*)
-                              from business_metadata_values iv
-                              join metadata_field_definitions idf
-                                on idf.tenant_id=iv.tenant_id and idf.source_id=iv.source_id
-                               and idf.definition_id=iv.definition_id and idf.field_key=iv.field_key
-                               and idf.version=iv.definition_version and idf.business_identifier
-                             where iv.tenant_id=:tenantId and iv.source_id=h.source_id and iv.submission_id=h.submission_id
-                               and iv.normalized_value ~ '\\S') = r.n
-                    union all
-                    select r.rec, r.submission_id from records r where r.submission_id is not null
-                ), submission_levels as (
-                    select m.submission_id, max(r.lvl) as lvl
-                      from matched m join records r on r.rec=m.rec
-                     group by m.submission_id
+                with submission_levels as (
+                    select s.submission_id, case l.sensitivity_level when 'CONFIDENTIAL' then 1 else 2 end as lvl
+                      from record_sensitivity_levels l
+                      join submissions s on s.tenant_id=l.tenant_id and s.source_id=l.source_id and s.record_id=l.record_id
+                     where l.tenant_id=:tenantId and l.sensitivity_level<>'STANDARD'
                 )
                 """, levels.size());
     }

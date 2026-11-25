@@ -206,7 +206,7 @@ class AccessRequestApprovalsTest {
         UUID p2 = ask(RS, H2, "DOWNLOAD");
         UUID lower = w.levels.requestLowerDocument(TENANT, STEWARD_ID, null, STEWARD, C1.toString(), "STANDARD", "Mistake",
                 "c").requestId();
-        w.recordLevels.put(recordKey(CONTRACT_B), SensitivityLevel.CONFIDENTIAL);
+        w.recordLevels.put(recordId(CONTRACT_B), SensitivityLevel.CONFIDENTIAL);
         UUID record = w.levels.requestLowerRecord(TENANT, STEWARD_ID, null, STEWARD, recordRef(CONTRACT_B), "STANDARD",
                 "Closed", "c").requestId();
 
@@ -231,7 +231,7 @@ class AccessRequestApprovalsTest {
         assertEquals("SDV-APR-009", w.approvals.decideMany(TENANT, ADMIN, null, "DECLINE", List.of(record.toString()), "c")
                 .results().getFirst().code());
         assertEquals(AccessRequestStatus.APPROVED, approve(ADMIN, record).status());
-        assertEquals(SensitivityLevel.STANDARD, w.recordLevels.level(SOURCE, recordKey(CONTRACT_B)).orElseThrow());
+        assertEquals(SensitivityLevel.STANDARD, w.recordLevels.level(SOURCE, recordId(CONTRACT_B)).orElseThrow());
 
         assertEquals("SDV-APR-010", code(() -> w.approvals.decideMany(TENANT, ADMIN, null, "approve", List.of(p1.toString()), "c")));
         assertEquals("SDV-APR-010", code(() -> w.approvals.decideMany(TENANT, ADMIN, null, "APPROVE", List.of(), "c")));
@@ -280,7 +280,7 @@ class AccessRequestApprovalsTest {
         // changes only its own level: the contract keeps it Confidential.
         UUID lowerC = w.levels.requestLowerDocument(TENANT, STEWARD_ID, null, STEWARD, C1.toString(), "STANDARD",
                 "Mistake", "c").requestId();
-        w.recordLevels.put(recordKey(CONTRACT_A), SensitivityLevel.CONFIDENTIAL);
+        w.recordLevels.put(recordId(CONTRACT_A), SensitivityLevel.CONFIDENTIAL);
         var row = w.approvals.pending(TENANT, "LOWER_LEVEL", null, "c").groups().getFirst().requests().getFirst();
         assertEquals(lowerC, row.requestId());
         assertEquals(SensitivityLevel.CONFIDENTIAL, row.level(), "effective level");
@@ -295,7 +295,7 @@ class AccessRequestApprovalsTest {
         UUID p1 = ask(RS, H1, "PRINT");
         w.clock.advance(Duration.ofMinutes(1));
         UUID lowerB;
-        w.recordLevels.put(recordKey(CONTRACT_B), SensitivityLevel.CONFIDENTIAL);
+        w.recordLevels.put(recordId(CONTRACT_B), SensitivityLevel.CONFIDENTIAL);
         lowerB = w.levels.requestLowerRecord(TENANT, STEWARD_ID, "Sam Steward", STEWARD, recordRef(CONTRACT_B), "STANDARD",
                 "Closed", "c").requestId();
         w.clock.advance(Duration.ofMinutes(1));

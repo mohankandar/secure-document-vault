@@ -73,32 +73,34 @@ public interface BusinessRecordRepository {
             UUID sourceId,
             List<UUID> submissionIds);
 
-    List<UUID> findSubmissionIdsByRecordIdentity(
-            UUID tenantId,
-            UUID sourceId,
-            List<IdentifierCriterion> identifiers);
+    /** The record's submissions, newest first. */
+    List<UUID> findSubmissionIdsOfRecord(UUID tenantId, UUID sourceId, UUID recordId);
+
+    /** Task 0078: each submission's record; a submission that isn't there is left out. */
+    java.util.Map<UUID, UUID> findRecordIds(UUID tenantId, UUID sourceId, java.util.Collection<UUID> submissionIds);
 
     /** Task 0024, part 2: the record's own level (record_sensitivity_levels); empty when the record has none. */
     java.util.Optional<SensitivityLevel> findRecordSensitivityLevel(
             UUID tenantId,
             UUID sourceId,
-            String recordKey);
+            UUID recordId);
 
     /**
      * Task 0026: the levels of several records of one sending system at once, by record key; records without a level
      * are left out. The default asks one record at a time.
      */
-    default java.util.Map<String, SensitivityLevel> findRecordSensitivityLevels(
+    default java.util.Map<UUID, SensitivityLevel> findRecordSensitivityLevels(
             UUID tenantId,
             UUID sourceId,
-            java.util.Collection<String> recordKeys) {
-        java.util.Map<String, SensitivityLevel> levels = new java.util.HashMap<>();
-        for (String key : new java.util.LinkedHashSet<>(recordKeys)) {
+            java.util.Collection<UUID> recordIds) {
+        java.util.Map<UUID, SensitivityLevel> levels = new java.util.HashMap<>();
+        for (UUID key : new java.util.LinkedHashSet<>(recordIds)) {
             findRecordSensitivityLevel(tenantId, sourceId, key).ifPresent(level -> levels.put(key, level));
         }
         return levels;
     }
 
+    /** Each submission's record's values that aren't sensitive (task 0078: a record has one set, the latest delivery's). */
     List<MetadataSnapshot> findMetadataSnapshots(
             UUID tenantId,
             UUID sourceId,
@@ -126,9 +128,20 @@ public interface BusinessRecordRepository {
             String fieldKey,
             MetadataSearchMode searchMode,
             List<String> normalizedVariants,
-            boolean ignoreCase) {
+            boolean ignoreCase,
+            /* Task 0078: a sensitive field: what its value is compared with; the variants are then empty. */
+            List<String> fingerprints) {
         public SearchCriterion {
             normalizedVariants = List.copyOf(normalizedVariants);
+            fingerprints = List.copyOf(fingerprints);
+        }
+
+        public SearchCriterion(String fieldKey, MetadataSearchMode searchMode, List<String> normalizedVariants, boolean ignoreCase) {
+            this(fieldKey, searchMode, normalizedVariants, ignoreCase, List.of());
+        }
+
+        public static SearchCriterion sensitive(String fieldKey, List<String> fingerprints) {
+            return new SearchCriterion(fieldKey, MetadataSearchMode.EXACT, List.of(), false, fingerprints);
         }
 
         /** Exact keeps capitals. */
@@ -166,8 +179,6 @@ public interface BusinessRecordRepository {
             if (fields.isEmpty()) throw new com.sdv.platform.domain.error.CodedRefusal.BadRequest(com.sdv.platform.domain.error.SdvErrorCode.SCH_001, "An anywhere search needs at least one field.");
         }
     }
-
-    record IdentifierCriterion(String fieldKey, String normalizedValue) { }
 
     record MetadataSnapshot(
             UUID submissionId,

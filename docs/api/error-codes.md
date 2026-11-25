@@ -1147,6 +1147,13 @@ Task 0037: SYS-003 to SYS-012 are start-up codes. A start that stops prints one 
 - **What the user should do:** nothing; tell the IT team.
 - **What support should tell the customer:** the install has no key service configured. Remove `SDV_CRYPTO_ENABLED` and set the key service (runbook, "Keys for a customer"), then start Vero again.
 
+### SDV-KEY-002: the key service can't be used now
+
+- **HTTP status:** 503, no `Retry-After` (task 0078). On a search by a sensitive field, and on a submission or a quarantine filter with one. Nothing was stored. Lists and records still open, without the names and other sensitive values.
+- **Meaning:** the key service doesn't answer, refuses Vero's login or is sealed. The ERROR line names its own code (`CRYPTO_…`); never a token, a key or a value.
+- **What the user should do:** try again in a few minutes. A sending system keeps the delivery and sends it again.
+- **What support should tell the customer:** check the key service on the Health page; unseal it or put its login right (runbook, "Keys for a customer").
+
 ## Viewing, print and download (DOC)
 
 Task 0043. Sent by the viewer (`GET /api/v1/business/documents/{id}/viewer`, `…/viewer/pages/{n}`, `…/viewer/previews`, `…/viewer/search`), download (`…/download`), print (`…/print-event`), tags and comments (`…/tags`, `…/comments`) and a document's activity (`…/activity`). They replace `VIEWER_UNAVAILABLE` and `DOWNLOAD_UNAVAILABLE`, which covered every cause with one code and were never logged (owner answer 3 to report 0034). The level check still comes first: a restricted document gets SDV-SEN-008, never one of these.

@@ -40,7 +40,7 @@ export const ROLES: RoleDef[] = [
 ]
 
 export type SearchMode = 'EXACT' | 'PREFIX' | 'PARTIAL'
-export type Field = { key: string; label: string; type: 'STRING' | 'DATE'; identifier: boolean; searchable: boolean; mode: SearchMode; normalization: 'NONE' | 'DIGITS_ONLY' | 'UPPERCASE'; /** The server's normalization as configured (e.g. TRIM, LOWERCASE); used to route search-box input. */ normalizationRaw?: string }
+export type Field = { key: string; label: string; type: 'STRING' | 'DATE'; identifier: boolean; searchable: boolean; mode: SearchMode; normalization: 'NONE' | 'DIGITS_ONLY' | 'UPPERCASE'; /** The server's normalization as configured (e.g. TRIM, LOWERCASE); used to route search-box input. */ normalizationRaw?: string; /** Task 0078: found by its whole value only. */ sensitive?: boolean; /** Contains, but the database can only search from the beginning. */ partialAsPrefix?: boolean }
 /** status, hasRecords and lastDeliveredAt come from the search schema (task 0023); lastDeliveredAt is null with no record. */
 export type Source = { id: string; key: string; name: string; status: 'ACTIVE' | 'PAUSED'; hasRecords: boolean; lastDeliveredAt: string | null; fields: Field[] }
 

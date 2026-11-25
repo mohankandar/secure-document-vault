@@ -2,7 +2,7 @@ import { useId, useMemo, useState, type KeyboardEvent, type ReactNode } from 're
 import { CornerDownLeft, Search } from 'lucide-react'
 import type { Field } from './model'
 import type { RecentRecord } from './liveApi'
-import { MODE_WORD } from './searchRouting'
+import { MODE_WORD, notEverywhere } from './searchRouting'
 import { ANYWHERE_MIN, fieldsFor, markParts, recentMatches } from './quickSearchRules'
 import { fmtRel } from './ui'
 
@@ -78,6 +78,7 @@ export function useQuickSearch({ text, fields, recent, onPick }: { text: string;
     <div className="qs-list">
       <ul id={listId} role="listbox" aria-label="Search suggestions">
         {row(0, <><Search size={16} aria-hidden className="qs-icon" /><span><strong>Search everywhere</strong> for {quoted}</span></>, 'qs-everywhere')}
+        {notEverywhere(fields) && <li role="presentation" className="qs-head">{notEverywhere(fields)}</li>}
         {fieldRows.length > 0 && <li role="presentation" className="qs-head">Or only in one field</li>}
         {fieldRows.map(({ item, i }) => item.kind === 'field' && row(i, <span>{item.field.label} <span className="qs-word">{MODE_WORD[item.field.mode]}</span> {quoted}</span>))}
         {recentRows.length > 0 && <li role="presentation" className="qs-head">Records you opened recently</li>}

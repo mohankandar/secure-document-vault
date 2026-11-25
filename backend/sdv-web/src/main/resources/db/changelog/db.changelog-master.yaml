@@ -133,3 +133,6 @@ databaseChangeLog:
 
   - include:
       file: db/changelog/047-document-object-version.yaml
+
+  - include:
+      file: db/changelog/048-records.yaml

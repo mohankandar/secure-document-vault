@@ -1,6 +1,5 @@
 package com.sdv.platform.web.ingestion;
 
-import com.sdv.platform.application.business.RecordKey;
 import com.sdv.platform.application.business.RecordReferences;
 import com.sdv.platform.application.document.DocumentFinalizationService;
 import com.sdv.platform.application.document.DocumentIntakeService;
@@ -80,7 +79,7 @@ class DocumentDuplicateIntakeTest {
     private static final Instant NOW = Instant.parse("2026-11-20T10:00:00Z");
     private static final byte[] PDF = "%PDF-1.7\nhello\n%%EOF".getBytes(StandardCharsets.US_ASCII);
     private static final String SHA = sha(PDF);
-    private static final String RECORD_KEY = RecordKey.ofIdentifiers(List.of(new RecordKey.Part("contractNumber", "300000000001")));
+    private static final UUID RECORD = UUID.fromString("77777777-7777-7777-7777-777777777777");
     private static final String URL = "/api/v1/ingestion/submissions/" + SUBMISSION + "/documents";
 
     private final TenantRepository tenants = mock(TenantRepository.class);
@@ -129,7 +128,7 @@ class DocumentDuplicateIntakeTest {
         when(submissions.findById(TENANT, SOURCE, SUBMISSION)).thenReturn(Optional.of(submission));
         when(documents.lockSubmission(TENANT, SOURCE, SUBMISSION)).thenReturn(submission);
         when(records.ofSubmission(TENANT, SOURCE, SUBMISSION)).thenReturn(
-                new RecordReferences.ResolvedRecord(SOURCE, RECORD_KEY, List.of(EARLIER_SUBMISSION, SUBMISSION)));
+                new RecordReferences.ResolvedRecord(SOURCE, RECORD, List.of(EARLIER_SUBMISSION, SUBMISSION)));
 
         volume = new StorageVolume(UUID.randomUUID(), TENANT, "LOCAL_FILESYSTEM", "primary-a", "/tmp",
                 StorageVolumeState.values()[0], 1, 80, 95, NOW, NOW);
@@ -240,7 +239,7 @@ class DocumentDuplicateIntakeTest {
         // The encrypted bytes written while the checksum was worked out are removed before the answer.
         verify(storage).delete(TENANT, volume, "tmp-object");
         // The lookup is limited to this tenant, this sending system and this record's submissions, under the lock.
-        verify(documents).lockDuplicateCheck(TENANT, SOURCE, RECORD_KEY, SHA);
+        verify(documents).lockDuplicateCheck(TENANT, SOURCE, RECORD, SHA);
         verify(documents).findDuplicateOf(TENANT, SOURCE, List.of(EARLIER_SUBMISSION, SUBMISSION), SHA);
 
         DuplicateReceipt receipt = recordedDuplicate();
@@ -262,7 +261,7 @@ class DocumentDuplicateIntakeTest {
         assertEquals(ORIGINAL.toString(), event.targetId());
         String d = event.safeDetailsJson();
         for (String part : List.of("\"requestId\":\"doc-2\"", "\"sourceId\":\"" + SOURCE + "\"",
-                "\"submissionId\":\"" + SUBMISSION + "\"", "\"recordKeySha256\":\"" + RecordKey.sha256(RECORD_KEY) + "\"",
+                "\"submissionId\":\"" + SUBMISSION + "\"", "\"recordId\":\"" + RECORD + "\"",
                 "\"contentSha256\":\"" + SHA + "\"", "\"existingDocumentId\":\"" + ORIGINAL + "\"",
                 "\"duplicateId\":\"" + receipt.duplicateId() + "\"", "\"levelOutcome\":\"KEPT\"")) {
             assertTrue(d.contains(part), part + " in " + d);
@@ -459,7 +458,7 @@ class DocumentDuplicateIntakeTest {
         nothingStored();
         verify(storage).delete(TENANT, volume, "tmp-object");
         // Same scope as an exact duplicate (tenant, sending system, record's submissions), under the same lock.
-        verify(documents).lockDuplicateCheck(TENANT, SOURCE, RECORD_KEY, SHA);
+        verify(documents).lockDuplicateCheck(TENANT, SOURCE, RECORD, SHA);
         verify(documents).findCorrectedOriginalOf(TENANT, SOURCE, List.of(EARLIER_SUBMISSION, SUBMISSION), SHA);
         // The corrected document is unchanged (same level: nothing raised).
         verify(levels, never()).updateDocumentLevel(any(), any(), any());

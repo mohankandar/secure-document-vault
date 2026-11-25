@@ -80,9 +80,9 @@ class BusinessExperienceServiceHomeTest {
             List<UUID> ids = inv.getArgument(2);
             return ids.stream().flatMap(id -> contract(id, id.equals(SUB_A) ? "300000000001" : "300000000002").stream()).toList();
         });
-        when(records.findSubmissionIdsByRecordIdentity(eq(TENANT), eq(SOURCE), anyList())).thenAnswer(inv -> {
-            List<BusinessRecordRepository.IdentifierCriterion> ids = inv.getArgument(2);
-            return List.of(ids.getFirst().normalizedValue().equals("300000000001") ? SUB_A : SUB_B);
+        TestRecordRefs.group(records);
+        when(records.findSubmissionIdsOfRecord(eq(TENANT), eq(SOURCE), any())).thenAnswer(inv -> {
+            return List.of(TestRecordRefs.id("contractNumber", "300000000001").equals(inv.getArgument(2)) ? SUB_A : SUB_B);
         });
         when(records.findSubmissionsByIds(eq(TENANT), eq(SOURCE), anyList())).thenAnswer(inv -> {
             List<UUID> ids = inv.getArgument(2);

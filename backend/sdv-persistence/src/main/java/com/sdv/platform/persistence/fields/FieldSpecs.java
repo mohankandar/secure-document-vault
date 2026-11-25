@@ -35,7 +35,7 @@ final class FieldSpecs {
         };
     }
 
-    /** A definition Vero's intake can check; null for a structured address, which a delivery can't carry as one text (until 0078). */
+    /** A definition Vero's intake can check; null for a structured address, which a delivery can't carry as one text. */
     static MetadataFieldType type(FieldSpec spec) {
         return switch (spec.type()) {
             case TEXT, CUSTOM_PATTERN -> MetadataFieldType.TEXT;
@@ -61,6 +61,15 @@ final class FieldSpecs {
         };
     }
 
+    static MetadataNormalization normalization(FieldSpec spec) {
+        if (spec.normalisation().strip() == Normalisation.Strip.NON_DIGITS) return MetadataNormalization.DIGITS_ONLY;
+        return switch (spec.normalisation().letterCase()) {
+            case UPPER -> MetadataNormalization.UPPERCASE;
+            case LOWER -> MetadataNormalization.LOWERCASE;
+            case PRESERVE -> MetadataNormalization.TRIM;
+        };
+    }
+
     /**
      * The definition for Vero's settings. before: the one there is, whose sensitivity and place stay; null: a new one, sensitive by
      * default when its key or label says it is a name or an address. primary: any of the entity's systems uses it as an identifier.
@@ -79,7 +88,7 @@ final class FieldSpecs {
             b.options("true", "false");
         }
         if (type == FieldType.DROPDOWN && before != null && type(before) == MetadataFieldType.TEXT) b.normalisation(before.normalisation());
-        // Sensitive fields are found by all of their value only; how people search them until 0078 is the system's own setting.
+        // Sensitive fields are found by all of their value only.
         if (d.searchable() || primary) b.searchable(sensitive ? SearchMode.EXACT : mode(d.searchMode()));
         JsonNode rules = VeroJson.mapper().readTree(d.validationRulesJson() == null || d.validationRulesJson().isBlank() ? "{}" : d.validationRulesJson());
         // A list's values and a money amount's form are the definition's; the rules Vero shows for them are derived from it.

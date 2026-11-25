@@ -4,7 +4,6 @@ import com.sdv.platform.domain.error.InternalCheckFailed;
 import com.sdv.platform.application.port.DocumentIntakeRepository;
 import com.sdv.platform.application.port.StorageVolumeRepository;
 import com.sdv.platform.application.port.SubmissionRepository;
-import com.sdv.platform.domain.document.BusinessMetadataValue;
 import com.sdv.platform.domain.document.Document;
 import com.sdv.platform.domain.document.SensitivityLevel;
 import com.sdv.platform.domain.document.DocumentCryptoMetadata;
@@ -83,19 +82,6 @@ public class JdbcSecureIngestionRepository implements SubmissionRepository, Stor
     }
 
     @Override
-    public List<BusinessMetadataValue> findBusinessMetadata(UUID tenantId, UUID sourceId, UUID submissionId) {
-        var p = new MapSqlParameterSource()
-                .addValue("tenantId", tenantId).addValue("sourceId", sourceId).addValue("submissionId", submissionId);
-        return jdbc.query("""
-                select metadata_value_id, tenant_id, submission_id, source_id, definition_id,
-                       field_key, definition_version, stored_value, normalized_value
-                  from business_metadata_values
-                 where tenant_id=:tenantId and source_id=:sourceId and submission_id=:submissionId
-                 order by field_key
-                """, p, businessMetadataMapper());
-    }
-
-    @Override
     public void insertExpectedDocuments(List<SubmissionExpectedDocument> expectedDocuments) {
         for (SubmissionExpectedDocument expected : expectedDocuments) {
             var p = new MapSqlParameterSource()
@@ -113,29 +99,6 @@ public class JdbcSecureIngestionRepository implements SubmissionRepository, Stor
                         received_document_id, created_at, received_at)
                     values (:id, :tenantId, :submissionId, :sourceDocumentId, :state,
                         :receivedDocumentId, :createdAt, :receivedAt)
-                    """, p);
-        }
-    }
-
-    @Override
-    public void insertBusinessMetadata(List<BusinessMetadataValue> metadataValues) {
-        for (BusinessMetadataValue value : metadataValues) {
-            var p = new MapSqlParameterSource()
-                    .addValue("id", value.metadataValueId())
-                    .addValue("tenantId", value.tenantId())
-                    .addValue("submissionId", value.submissionId())
-                    .addValue("sourceId", value.sourceId())
-                    .addValue("definitionId", value.definitionId())
-                    .addValue("fieldKey", value.fieldKey())
-                    .addValue("definitionVersion", value.definitionVersion())
-                    .addValue("storedValue", value.storedValue())
-                    .addValue("normalizedValue", value.normalizedValue());
-            jdbc.update("""
-                    insert into business_metadata_values(
-                        metadata_value_id, tenant_id, submission_id, source_id, definition_id,
-                        field_key, definition_version, stored_value, normalized_value)
-                    values (:id, :tenantId, :submissionId, :sourceId, :definitionId,
-                        :fieldKey, :definitionVersion, :storedValue, :normalizedValue)
                     """, p);
         }
     }
@@ -346,10 +309,10 @@ public class JdbcSecureIngestionRepository implements SubmissionRepository, Stor
     }
 
     @Override
-    public void lockDuplicateCheck(UUID tenantId, UUID sourceId, String recordKey, String contentSha256) {
+    public void lockDuplicateCheck(UUID tenantId, UUID sourceId, UUID recordId, String contentSha256) {
         jdbc.queryForObject("select pg_advisory_xact_lock(hashtextextended(:key, 0))",
                 new MapSqlParameterSource("key",
-                        "sdv-duplicate:" + tenantId + ":" + sourceId + ":" + recordKey + ":" + contentSha256),
+                        "sdv-duplicate:" + tenantId + ":" + sourceId + ":" + recordId + ":" + contentSha256),
                 Object.class);
     }
 
@@ -772,13 +735,6 @@ public class JdbcSecureIngestionRepository implements SubmissionRepository, Stor
                 instant(rs, "created_at"), instant(rs, "received_at"));
     }
 
-    private static RowMapper<BusinessMetadataValue> businessMetadataMapper() {
-        return (rs, rowNum) -> new BusinessMetadataValue(
-                rs.getObject("metadata_value_id", UUID.class), rs.getObject("tenant_id", UUID.class),
-                rs.getObject("submission_id", UUID.class), rs.getObject("source_id", UUID.class),
-                rs.getObject("definition_id", UUID.class), rs.getString("field_key"),
-                rs.getInt("definition_version"), rs.getString("stored_value"), rs.getString("normalized_value"));
-    }
 
 
     private static RowMapper<Document> documentMapper() {

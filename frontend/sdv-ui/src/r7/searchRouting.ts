@@ -22,7 +22,19 @@ export function boxLabel(fields: Field[]): string | null {
 }
 
 export const MODE_WORD = { EXACT: 'is', PREFIX: 'starts with', PARTIAL: 'contains' } as const
-export const MODE_HINT = { EXACT: 'Exact', PREFIX: 'Starts with', PARTIAL: 'Contains' } as const
+const MODE_HINT = { EXACT: 'Exact', PREFIX: 'Starts with', PARTIAL: 'Contains' } as const
+
+/** How a field is found, beside its label. Task 0078: a sensitive field only by its whole value; Contains without its index is Starts with. */
+export function modeHint(f: Field): string {
+  if (f.sensitive) return 'Whole value only'
+  return f.partialAsPrefix ? 'Starts with (Contains isn’t set up)' : MODE_HINT[f.mode]
+}
+
+/** What searching everywhere leaves out, in the source's own labels; null when it leaves out nothing. */
+export function notEverywhere(fields: Field[]): string | null {
+  const labels = fields.filter((f) => f.searchable && f.sensitive).map((f) => f.label)
+  return labels.length ? `Only by the whole value, in Filters or below: ${labels.join(', ')}` : null
+}
 
 /**
  * Task 0020 (item 6): the hint inside an empty Filters box, from the field's settings only (never its name).
@@ -32,6 +44,7 @@ export const MODE_HINT = { EXACT: 'Exact', PREFIX: 'Starts with', PARTIAL: 'Cont
 export function filterHint(f: Field): string | undefined {
   if (f.type === 'DATE') return undefined
   if (f.normalizationRaw === 'DIGITS_ONLY') return 'Digits only'
+  if (f.sensitive) return 'The whole value'
   if (f.mode === 'EXACT') return 'Any'
   if (f.mode === 'PREFIX') return 'The first letters'
   if (f.mode === 'PARTIAL') return 'Any part'

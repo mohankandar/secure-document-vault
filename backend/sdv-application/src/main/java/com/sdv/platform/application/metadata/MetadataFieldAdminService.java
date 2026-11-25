@@ -174,7 +174,6 @@ public class MetadataFieldAdminService {
                 command.businessIdentifier(), command.normalization());
         int nextVersion = previous.map(d -> d.version() + 1).orElse(1);
         Instant now = clock.instant();
-        previous.ifPresent(ignore -> definitions.retire(tenantId, sourceId, fieldKey, now));
 
         MetadataFieldDefinition definition = new MetadataFieldDefinition(
                 UUID.randomUUID(), tenantId, sourceId, fieldKey, nextVersion,
@@ -214,7 +213,6 @@ public class MetadataFieldAdminService {
         refuseIfRecordIdentityChanges(tenantId, sourceId, fieldKey, java.util.Optional.of(previous),
                 command.businessIdentifier(), command.normalization());
         Instant now = clock.instant();
-        definitions.retire(tenantId, sourceId, fieldKey, now);
         MetadataFieldDefinition revised = new MetadataFieldDefinition(
                 UUID.randomUUID(), tenantId, sourceId, fieldKey, previous.version() + 1,
                 command.displayLabel().trim(), previous.fieldType(), previous.required(), command.businessIdentifier(),
@@ -247,7 +245,6 @@ public class MetadataFieldAdminService {
                 previous.map(MetadataFieldDefinition::businessIdentifier).orElse(false), command.normalization());
         int nextVersion = previous.map(d -> d.version() + 1).orElse(1);
         Instant now = clock.instant();
-        previous.ifPresent(ignore -> definitions.retire(tenantId, sourceId, fieldKey, now));
         boolean searchable = previous.map(MetadataFieldDefinition::searchable).orElse(false);
         boolean businessIdentifier = previous.map(MetadataFieldDefinition::businessIdentifier).orElse(false);
         MetadataSearchMode searchMode = previous.map(MetadataFieldDefinition::searchMode).orElse(MetadataSearchMode.EXACT);

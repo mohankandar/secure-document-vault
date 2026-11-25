@@ -47,6 +47,7 @@ class ProblemsAndAuditRecordsTest {
         when(sources.findById(TENANT, SOURCE)).thenReturn(Optional.of(source));
         when(definitions.findDisplayOrder(TENANT, SOURCE)).thenReturn(List.of("memberNumber", "contractNumber", "lastName"));
         when(definitions.findRecordTitleFields(TENANT, SOURCE)).thenReturn(List.of("firstName", "lastName"));
+        com.sdv.platform.application.business.TestRecordRefs.group(records);
         when(records.findMetadataSnapshots(eq(TENANT), eq(SOURCE), anyList())).thenReturn(List.of(
                 new MetadataSnapshot(SUB_KNOWN, "contractNumber", "Contract Number", "300000000090", "300000000090", true),
                 new MetadataSnapshot(SUB_KNOWN, "memberNumber", "Member Number", "20000000090", "20000000090", true),
@@ -214,7 +215,7 @@ class ProblemsAndAuditRecordsTest {
     /** Task 0026: a real guard; with no record level a Standard document stays Standard. */
     private static com.sdv.platform.application.access.DocumentAccessGuard guard() {
         return new com.sdv.platform.application.access.DocumentAccessGuard(
-                mock(com.sdv.platform.application.port.BusinessRecordRepository.class), mock(AuditEventPort.class));
+                com.sdv.platform.application.business.TestRecordRefs.grouped(), mock(AuditEventPort.class));
     }
 
     @Test

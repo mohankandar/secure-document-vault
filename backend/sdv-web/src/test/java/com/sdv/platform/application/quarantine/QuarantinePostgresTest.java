@@ -1,5 +1,6 @@
 package com.sdv.platform.application.quarantine;
 
+import com.sdv.platform.persistence.fields.CaseRows;
 import com.sdv.platform.application.access.Clearance;
 import com.sdv.platform.application.access.DocumentAccessGuard;
 import com.sdv.platform.application.approvals.ApprovalSettings;
@@ -64,7 +65,7 @@ class QuarantinePostgresTest {
     private final DocumentAccessGuard guard = new DocumentAccessGuard(new JdbcBusinessRecordRepository(jdbc), foundation,
             com.sdv.platform.application.access.SensitiveAccessGrants.NONE, repository);
     private final QuarantineService quarantine = new QuarantineService(repository, guard,
-            foundation, foundation, ApprovalSettings.defaults(), tx);
+            new com.sdv.platform.persistence.fields.PlatformFieldRepository(jdbc.getJdbcTemplate().getDataSource()), foundation, ApprovalSettings.defaults(), tx, com.sdv.platform.application.port.RecordValuesPort.NONE);
     private final JdbcSecureIngestionRepository ingestion = new JdbcSecureIngestionRepository(jdbc);
     private final RetentionDeletionService retention = new RetentionDeletionService(
             new JdbcRetentionRepository(jdbc), ingestion, ingestion, List.of(), foundation, tx);
@@ -93,13 +94,8 @@ class QuarantinePostgresTest {
                     + t[1] + "', '" + t[0] + "', 'loans', 'Loans', 'ACTIVE', 'JWT_BEARER')");
             sql("insert into submissions(submission_id, tenant_id, source_id, source_submission_id, expected_document_count, status) values ('"
                     + t[2] + "', '" + t[0] + "', '" + t[1] + "', 'sub', 3, 'COMPLETE')");
-            UUID definition = UUID.randomUUID();
-            sql("insert into metadata_field_definitions(definition_id, tenant_id, source_id, field_key, version, display_label, field_type, "
-                    + "required, business_identifier, searchable, normalization, search_mode) values ('" + definition + "', '" + t[0]
-                    + "', '" + t[1] + "', 'contractNumber', 1, 'Contract number', 'TEXT', true, true, true, 'DIGITS_ONLY', 'EXACT')");
-            sql("insert into business_metadata_values(metadata_value_id, tenant_id, source_id, submission_id, definition_id, field_key, "
-                    + "definition_version, stored_value, normalized_value) values ('" + UUID.randomUUID() + "', '" + t[0] + "', '"
-                    + t[1] + "', '" + t[2] + "', '" + definition + "', 'contractNumber', 1, '" + CONTRACT + "', '" + CONTRACT + "')");
+            CaseRows.field(jdbc.getJdbcTemplate(), (UUID) t[0], (UUID) t[1], "contractNumber", "Contract number", true, "DIGITS_ONLY", 0);
+            CaseRows.value(jdbc.getJdbcTemplate(), (UUID) t[0], (UUID) t[1], (UUID) t[2], "contractNumber", CONTRACT);
         }
         insertDocument(T1, S1, SUB1, A, "a-secret-name.pdf", true, null, "STANDARD");
         insertDocument(T1, S1, SUB1, B, "b-secret-name.pdf", true, null, "STANDARD");

@@ -3,18 +3,15 @@ package com.sdv.platform.web.fields;
 import com.sdv.platform.application.port.CaseFieldsPort;
 import com.sdv.platform.domain.error.CodedRefusal;
 import com.sdv.platform.domain.error.SdvErrorCode;
-import com.sdv.platform.domain.error.SetupProblem;
 import com.sdv.platform.domain.metadata.MetadataFieldDefinition;
 import com.sdv.platform.domain.metadata.MetadataFieldType;
 import com.sdv.platform.domain.metadata.MetadataNormalization;
 import com.sdv.platform.domain.metadata.MetadataSearchMode;
 import com.sdv.platform.persistence.fields.PlatformFieldRepository;
-import com.sdv.platform.persistence.foundation.JdbcFoundationRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -25,13 +22,12 @@ import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-/** Task 0077, on a real PostgreSQL: the definitions are the one truth, the old rows only their copy, and both are stored together. */
+/** Task 0077, on a real PostgreSQL: the definitions are the one truth. */
 @EnabledIfEnvironmentVariable(named = "SDV_IT_JDBC_URL", matches = "jdbc:postgresql://localhost:5433/sdv_schema_test(_[1-9])?")
 class PlatformFieldsPostgresTest {
     private final DriverManagerDataSource data = new DriverManagerDataSource(System.getenv("SDV_IT_JDBC_URL"), System.getenv("SDV_IT_JDBC_USER"), System.getenv("SDV_IT_JDBC_PASSWORD"));
     private final JdbcTemplate db = new JdbcTemplate(data);
-    private final JdbcFoundationRepository old = new JdbcFoundationRepository(new NamedParameterJdbcTemplate(data));
-    private final PlatformFieldRepository fields = new PlatformFieldRepository(old, data);
+    private final PlatformFieldRepository fields = new PlatformFieldRepository(data);
     private final TransactionTemplate tx = new TransactionTemplate(new DataSourceTransactionManager(data));
     private final UUID entity = UUID.randomUUID(), a = UUID.randomUUID(), b = UUID.randomUUID();
 
@@ -45,14 +41,13 @@ class PlatformFieldsPostgresTest {
 
     private MetadataFieldDefinition field(UUID source, String key, String label, MetadataFieldType type, boolean identifier, String rules) {
         Instant now = Instant.now();
-        int version = old.findCurrent(entity, source, key).map(d -> d.version() + 1).orElse(1);
+        int version = fields.findCurrent(entity, source, key).map(d -> d.version() + 1).orElse(1);
         return new MetadataFieldDefinition(UUID.randomUUID(), entity, source, key, version, label, type, identifier, identifier, true,
                 MetadataNormalization.TRIM, MetadataSearchMode.EXACT, rules, true, now, null, now);
     }
 
     private void save(MetadataFieldDefinition d) {
         tx.executeWithoutResult(s -> {
-            fields.retire(entity, d.sourceId(), d.fieldKey(), d.effectiveAt());
             fields.insert(d);
         });
     }
@@ -60,11 +55,9 @@ class PlatformFieldsPostgresTest {
     /** A stored value, as a delivery leaves it. */
     private void value(MetadataFieldDefinition d) {
         UUID submission = UUID.randomUUID();
-        MetadataFieldDefinition current = old.findCurrent(entity, d.sourceId(), d.fieldKey()).orElseThrow();
         db.update("insert into submissions(submission_id, tenant_id, source_id, source_submission_id, expected_document_count, status) values (?, ?, ?, ?, 1, 'COMPLETE')",
                 submission, entity, d.sourceId(), submission.toString());
-        db.update("insert into business_metadata_values(metadata_value_id, tenant_id, source_id, submission_id, definition_id, field_key, definition_version, stored_value, normalized_value) values (?, ?, ?, ?, ?, ?, ?, 'x', 'x')",
-                UUID.randomUUID(), entity, d.sourceId(), submission, current.definitionId(), d.fieldKey(), current.version());
+        com.sdv.platform.persistence.fields.CaseRows.value(db, entity, d.sourceId(), submission, d.fieldKey(), "x");
     }
 
     private static SdvErrorCode code(org.junit.jupiter.api.function.Executable work) {
@@ -89,11 +82,15 @@ class PlatformFieldsPostgresTest {
             save(field(a, "t" + t, "Type " + t, t, false, "{}"));
             assertEquals(t, fields.findCurrent(entity, a, "t" + t).orElseThrow().fieldType());
         }
-        db.update("update metadata_field_definitions set field_type = 'DATE', business_identifier = false, display_label = 'Changed' where tenant_id = ? and source_id = ? and field_key = 'contractNumber'", entity, a);
+        // A later setting of one system is the next version of it; the definition's earlier forms are its history.
+        save(field(a, "contractNumber", "Contract no.", MetadataFieldType.TEXT, true, "{\"maxLength\":30}"));
         MetadataFieldDefinition again = fields.findCurrent(entity, a, "contractNumber").orElseThrow();
-        assertEquals(MetadataFieldType.TEXT, again.fieldType());
-        assertTrue(again.businessIdentifier());
-        assertEquals("Contract Number", again.displayLabel());
+        assertEquals(2, again.version());
+        assertEquals(1, fields.findCurrent(entity, b, "contractNumber").orElseThrow().version());
+        List<MetadataFieldDefinition> history = fields.findHistory(entity, a, "contractNumber");
+        assertEquals(again, history.getFirst());
+        assertTrue(history.size() > 1 && history.stream().skip(1).noneMatch(MetadataFieldDefinition::active), history.toString());
+        assertEquals("{\"maxLength\":20}", history.get(1).validationRulesJson());
     }
 
     @Test
@@ -104,7 +101,6 @@ class PlatformFieldsPostgresTest {
         assertEquals(List.of("three", "one", "two"), fields.findDisplayOrder(entity, a));
         assertEquals(List.of("two"), fields.findRecordTitleFields(entity, a));
         assertEquals(List.of(), fields.findDisplayOrder(entity, b));
-        assertEquals(fields.findDisplayOrder(entity, a), old.findDisplayOrder(entity, a), "the copy for the old reads");
         save(field(a, "one", "One more", MetadataFieldType.TEXT, false, "{}"));
         assertEquals(List.of("three", "one", "two"), fields.findDisplayOrder(entity, a), "a saved label keeps the order");
     }
@@ -123,7 +119,7 @@ class PlatformFieldsPostgresTest {
         assertEquals("Member ID", fields.findCurrent(entity, a, "member").orElseThrow().displayLabel());
         assertEquals(SdvErrorCode.FLD_003, code(() -> save(field(b, "Member", "Other capitals", MetadataFieldType.TEXT, false, "{}"))));
         assertEquals(SdvErrorCode.FLD_001, code(() -> save(field(a, "due", "Due", MetadataFieldType.DATE, false, "{\"pattern\":\"x\"}"))));
-        assertTrue(old.findCurrent(entity, a, "due").isEmpty());
+        assertTrue(fields.findCurrent(entity, a, "due").isEmpty());
         // A key has one type, whichever system sends it.
         save(field(a, "due", "Due", MetadataFieldType.DATE, false, "{}"));
         assertEquals(SdvErrorCode.FLD_003, code(() -> save(field(b, "due", "Due", MetadataFieldType.TEXT, false, "{}"))));
@@ -150,14 +146,14 @@ class PlatformFieldsPostgresTest {
     }
 
     @Test
-    void aFailedTransactionLeavesNeitherTheDefinitionNorTheCopy() {
+    void aFailedTransactionLeavesNothing() {
         assertThrows(IllegalStateException.class, () -> tx.executeWithoutResult(s -> {
             fields.insert(field(a, "gone", "Gone", MetadataFieldType.TEXT, false, "{}"));
             assertEquals(1, fields.fields(entity).size(), "seen inside");
             throw new IllegalStateException("after the write");
         }));
         assertEquals(List.of(), fields.fields(entity));
-        assertTrue(old.findCurrent(entity, a, "gone").isEmpty());
+        assertTrue(fields.findCurrent(entity, a, "gone").isEmpty());
     }
 
     @Test
@@ -173,23 +169,5 @@ class PlatformFieldsPostgresTest {
         tx.executeWithoutResult(s -> fields.importFile(other, file, "admin"));
         assertEquals("contractNumber", fields.fields(other).getFirst().fieldKey());
         assertEquals(SdvErrorCode.FLD_004, code(() -> fields.previewImport(entity, "{\"no\":1}")));
-    }
-
-    @Test
-    void aDatabaseOfBeforeIsTakenOverOnceAndUntilThenRefused() {
-        for (UUID s : List.of(a, b)) old.insert(field(s, "contractNumber", "Contract " + s, MetadataFieldType.TEXT, s == b, "{\"minLength\":2}"));
-        old.insert(field(a, "firstName", "First", MetadataFieldType.TEXT, false, "{}"));
-        old.replaceDisplayOrder(entity, a, List.of("firstName", "contractNumber"));
-        old.replaceRecordTitleFields(entity, a, List.of("firstName"));
-        assertThrows(SetupProblem.class, () -> fields.findCurrent(entity, a));
-        assertTrue(fields.systems().stream().anyMatch(s -> s[0].equals(entity) && s[1].equals(a)));
-        assertEquals(2, (int) tx.<Integer>execute(s -> fields.adopt(entity, a)));
-        assertEquals(1, (int) tx.<Integer>execute(s -> fields.adopt(entity, b)));
-        assertEquals(0, (int) tx.<Integer>execute(s -> fields.adopt(entity, a)));
-        assertEquals(List.of("firstName", "contractNumber"), fields.findDisplayOrder(entity, a));
-        assertEquals(List.of("firstName"), fields.findRecordTitleFields(entity, a));
-        assertTrue(state("contractNumber").primary(), "the identifier of one system");
-        assertTrue(state("firstName").sensitive());
-        assertEquals("{\"minLength\":2}", fields.findCurrent(entity, b, "contractNumber").orElseThrow().validationRulesJson());
     }
 }

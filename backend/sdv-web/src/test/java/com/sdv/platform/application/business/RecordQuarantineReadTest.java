@@ -65,7 +65,8 @@ class RecordQuarantineReadTest {
         IngestionSource source = mock(IngestionSource.class);
         when(source.sourceId()).thenReturn(SOURCE);
         when(sources.findById(TENANT, SOURCE)).thenReturn(Optional.of(source));
-        when(records.findSubmissionIdsByRecordIdentity(eq(TENANT), eq(SOURCE), anyList())).thenReturn(List.of(SUB));
+        TestRecordRefs.group(records);
+        when(records.findSubmissionIdsOfRecord(eq(TENANT), eq(SOURCE), any())).thenReturn(List.of(SUB));
         when(records.findSubmissionsByIds(eq(TENANT), eq(SOURCE), anyList())).thenReturn(List.of(
                 new Submission(SUB, TENANT, SOURCE, "s1", 3, "sha", SubmissionStatus.COMPLETE, NOW.minusSeconds(600), NOW, null)));
         when(records.findMetadataSnapshots(eq(TENANT), eq(SOURCE), anyList())).thenReturn(List.of(
@@ -78,8 +79,7 @@ class RecordQuarantineReadTest {
     }
 
     private BusinessExperienceView.RecordView open(Clearance clearance) {
-        String ref = new BusinessRecordRefCodec().encode(new BusinessRecordRefCodec.RecordIdentity(SOURCE,
-                List.of(new BusinessRecordRefCodec.IdentifierPart("contractNumber", "300000000076")), null));
+        String ref = TestRecordRefs.of(SOURCE, "contractNumber", "300000000076");
         return service.record(TENANT, ref, "maya", "corr", clearance);
     }
 

@@ -1,5 +1,6 @@
 package com.sdv.platform.application.document;
 
+import com.sdv.platform.persistence.fields.CaseRows;
 import com.sdv.platform.application.business.RecordReferences;
 import com.sdv.platform.application.port.DocumentIntakeRepository.DuplicateReceipt;
 import com.sdv.platform.application.port.StorageProvider;
@@ -152,9 +153,7 @@ class DuplicateIntakePostgresTest {
     private void source(UUID tenant, UUID source, String key) {
         sql("insert into ingestion_sources(source_id, tenant_id, source_key, display_name, status, auth_type) values ('"
                 + source + "', '" + tenant + "', '" + key + "', '" + key + "', 'ACTIVE', 'JWT_BEARER')");
-        sql("insert into metadata_field_definitions(definition_id, tenant_id, source_id, field_key, version, display_label, field_type, "
-                + "required, business_identifier, searchable, normalization, search_mode) values ('" + definition(source) + "', '"
-                + tenant + "', '" + source + "', 'contractNumber', 1, 'Contract number', 'TEXT', true, true, true, 'DIGITS_ONLY', 'EXACT')");
+        CaseRows.field(jdbc.getJdbcTemplate(), tenant, source, "contractNumber", "Contract number", true, "DIGITS_ONLY", 0);
     }
 
     private static UUID definition(UUID source) {
@@ -164,9 +163,7 @@ class DuplicateIntakePostgresTest {
     private void submission(UUID tenant, UUID source, UUID submission, String key, int expected, String status, String contract) {
         sql("insert into submissions(submission_id, tenant_id, source_id, source_submission_id, expected_document_count, status) values ('"
                 + submission + "', '" + tenant + "', '" + source + "', '" + key + "', " + expected + ", '" + status + "')");
-        sql("insert into business_metadata_values(metadata_value_id, tenant_id, source_id, submission_id, definition_id, field_key, "
-                + "definition_version, stored_value, normalized_value) values ('" + UUID.randomUUID() + "', '" + tenant + "', '"
-                + source + "', '" + submission + "', '" + definition(source) + "', 'contractNumber', 1, '" + contract + "', '" + contract + "')");
+        CaseRows.value(jdbc.getJdbcTemplate(), tenant, source, submission, "contractNumber", contract);
     }
 
     private void document(UUID tenant, UUID source, UUID submission, UUID document, String level, String received) {

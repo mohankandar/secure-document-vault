@@ -150,18 +150,13 @@ class StoredJsonBaselineTest {
     @Test
     void recordReferencesAndWhatTheyAccept() throws Exception {
         String codec = "application.business.BusinessRecordRefCodec";
-        Constructor<?> part = Class.forName("com.sdv.platform." + codec + "$IdentifierPart").getDeclaredConstructors()[0];
         Constructor<?> identity = Class.forName("com.sdv.platform." + codec + "$RecordIdentity").getDeclaredConstructors()[0];
-        part.setAccessible(true);
         identity.setAccessible(true);
-        Object byIds = identity.newInstance(ID, List.of(part.newInstance("memberNumber", "M/1 ë"), part.newInstance("contractNumber", "3")), null);
-        assertEquals("{\"s\":\"" + ID + "\",\"i\":[{\"k\":\"contractNumber\",\"v\":\"3\"},{\"k\":\"memberNumber\",\"v\":\"M/1 ë\"}]}",
-                new String(Base64.getUrlDecoder().decode((String) call(codec, "encode", byIds)), StandardCharsets.UTF_8));
-        String good = "{\"s\":\"" + ID + "\",\"u\":\"" + ID + "\"}";
-        assertEquals(good, new String(Base64.getUrlDecoder().decode((String) call(codec, "encode", identity.newInstance(ID, List.of(), ID))), StandardCharsets.UTF_8));
+        String good = "{\"s\":\"" + ID + "\",\"r\":\"" + ID + "\"}";
+        assertEquals(good, new String(Base64.getUrlDecoder().decode((String) call(codec, "encode", identity.newInstance(ID, ID))), StandardCharsets.UTF_8));
         StringBuilder text = new StringBuilder();
         for (String json : List.of(good, good + " ", good + " trailing", good + "{}", good.replace("}", ",\"more\":1}"),
-                good.replace("}", ",\"u\":\"" + ID + "\"}"), "[]", "null", "", "x")) {
+                good.replace("}", ",\"r\":\"" + ID + "\"}"), good.replace("\"r\"", "\"u\""), "[]", "null", "", "x")) {
             String token = Base64.getUrlEncoder().withoutPadding().encodeToString(json.getBytes(StandardCharsets.UTF_8));
             text.append(json.replace(ID.toString(), "ID")).append(" -> ").append(outcome(codec, "decode", token).replaceAll("read .*", "read")).append('\n');
         }

@@ -14,8 +14,8 @@ class MetadataValueLimitsTest {
     @Test
     void aValueHasALongestLength() {
         MetadataFieldDefinition field = text("{}");
-        assertEquals(4000, MetadataValueValidator.validate(field, "x".repeat(4000)).storedValue().length());
-        var refused = assertThrows(CodedRefusal.BadRequest.class, () -> MetadataValueValidator.validate(field, "x".repeat(4001)));
+        assertEquals(512, MetadataValueValidator.validate(field, "x".repeat(512)).storedValue().length());
+        var refused = assertThrows(CodedRefusal.BadRequest.class, () -> MetadataValueValidator.validate(field, "x".repeat(513)));
         assertEquals("SDV-INT-009", refused.errorCode().code());
         assertFalse(refused.getMessage().contains("xxx"), "never the value");
     }

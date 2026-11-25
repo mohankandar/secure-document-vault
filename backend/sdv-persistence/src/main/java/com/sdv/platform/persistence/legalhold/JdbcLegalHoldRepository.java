@@ -1,6 +1,7 @@
 package com.sdv.platform.persistence.legalhold;
 
 import com.sdv.platform.persistence.business.PrimaryIdentifierSql;
+import com.sdv.platform.persistence.fields.CaseFieldSql;
 import com.sdv.platform.domain.error.InternalCheckFailed;
 import com.sdv.platform.application.port.LegalHoldRepository;
 import com.sdv.platform.domain.document.SensitivityLevel;
@@ -100,18 +101,15 @@ public class JdbcLegalHoldRepository implements LegalHoldRepository {
         // value), then only those where that value is the primary identifier.
         return jdbc.query("select " + DOCUMENT_COLUMNS + " from documents d " + PRIMARY_IDENTIFIER + """
                  where d.tenant_id=:tenantId
-                   and d.submission_id in (
-                       select v.submission_id
-                         from business_metadata_values v
-                         join metadata_field_definitions f on f.definition_id=v.definition_id and f.business_identifier
-                        where v.tenant_id=:tenantId and (v.normalized_value=:value or v.stored_value=:value))
-                   and (pid.normalized_value=:value or pid.stored_value=:value)
+                   and d.submission_id in (""" + CaseFieldSql.submissionsByIdentifier(":value") + """
+)
+                   and pid.search_value=:value
                    and d.status not in ('EXPIRED_DELETED', 'RETENTION_DELETING')
                  order by d.ingested_at desc, d.document_id
                  limit :limit
                 """, new MapSqlParameterSource()
                 .addValue("tenantId", tenantId)
-                .addValue("value", value)
+                .addValue("value", CaseFieldSql.searchForm(value))
                 .addValue("limit", limit), (rs, row) -> facts(rs));
     }
 

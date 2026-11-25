@@ -6,7 +6,6 @@ import tools.jackson.core.JacksonException;
 import tools.jackson.databind.ObjectMapper;
 import com.sdv.platform.application.access.Clearance;
 import com.sdv.platform.application.access.DocumentAccessGuard;
-import com.sdv.platform.application.business.RecordKey;
 import com.sdv.platform.application.business.RecordReferences;
 import com.sdv.platform.application.port.AccessRequestRepository;
 import com.sdv.platform.application.port.AccessRequestRepository.AccessRequest;
@@ -194,7 +193,7 @@ public class AccessRequestService {
                                           SensitivityLevel requestedLevel, String reason, String correlationId) {
         Instant now = clock.instant();
         AccessRequest request = new AccessRequest(UUID.randomUUID(), tenantId, AccessRequestKind.LOWER_RECORD_LEVEL, null,
-                record.sourceId(), record.recordKey(), requestedLevel, reason, actorId, blankToNull(actorName), now,
+                record.sourceId(), record.recordId(), requestedLevel, reason, actorId, blankToNull(actorName), now,
                 AccessRequestStatus.PENDING, null, null, null, now.plus(settings.pendingWindow(tenantId)), null);
         Map<String, Object> details = new LinkedHashMap<>();
         details.put("level", currentLevel.name());
@@ -307,7 +306,7 @@ public class AccessRequestService {
                         : RequestView.of(r, f.sourceId(), f.primaryIdentifier(), f.primaryIdentifierLabel()));
             } else {
                 Optional<AccessRequestRepository.PrimaryIdentifier> id = recordIds.computeIfAbsent(
-                        r.sourceId() + "|" + r.recordKey(), k -> recordIdentifier(tenantId, r));
+                        r.sourceId() + "|" + r.recordId(), k -> recordIdentifier(tenantId, r));
                 views.add(id.map(p -> RequestView.of(r, r.sourceId(), p.value(), p.label())).orElseGet(() -> RequestView.of(r)));
             }
         }
@@ -316,7 +315,7 @@ public class AccessRequestService {
 
     private Optional<AccessRequestRepository.PrimaryIdentifier> recordIdentifier(UUID tenantId, AccessRequest r) {
         try {
-            return recordReferences.fromKey(tenantId, r.sourceId(), r.recordKey())
+            return recordReferences.ofRecord(tenantId, r.sourceId(), r.recordId())
                     .flatMap(found -> found.submissionIds().stream()
                             .map(id -> requests.findPrimaryIdentifier(tenantId, id))
                             .flatMap(Optional::stream).findFirst());
@@ -394,7 +393,7 @@ public class AccessRequestService {
                 id = f == null || f.primaryIdentifier() == null ? null
                         : new AccessRequestRepository.PrimaryIdentifier(f.primaryIdentifier(), f.primaryIdentifierLabel());
             } else {
-                id = recordIds.computeIfAbsent(r.sourceId() + "|" + r.recordKey(), k -> recordIdentifier(tenantId, r))
+                id = recordIds.computeIfAbsent(r.sourceId() + "|" + r.recordId(), k -> recordIdentifier(tenantId, r))
                         .orElse(null);
             }
             String decider = r.decidedByName() == null || r.decidedByName().isBlank() ? r.decidedBy() : r.decidedByName();
@@ -416,9 +415,9 @@ public class AccessRequestService {
         boolean recordLevelKnown = false;
         try {
             RecordReferences.ResolvedRecord record = recordReferences.ofSubmission(tenantId, f.sourceId(), f.submissionId());
-            recordLevel = records.findRecordSensitivityLevel(tenantId, f.sourceId(), record.recordKey()).orElse(null);
+            recordLevel = records.findRecordSensitivityLevel(tenantId, f.sourceId(), record.recordId()).orElse(null);
             recordLevelKnown = true;
-            List<AvailableDocumentSnapshot> onRecord = cache.computeIfAbsent(f.sourceId() + "|" + record.recordKey(),
+            List<AvailableDocumentSnapshot> onRecord = cache.computeIfAbsent(f.sourceId() + "|" + record.recordId(),
                     k -> records.findAvailableDocuments(tenantId, f.sourceId(), record.submissionIds()));
             position = position(r.documentId(), onRecord);
         } catch (RuntimeException ex) {
@@ -429,15 +428,15 @@ public class AccessRequestService {
     }
 
     private PendingRequestView recordView(UUID tenantId, AccessRequest r, Map<String, List<AvailableDocumentSnapshot>> cache) {
-        Optional<RecordReferences.ResolvedRecord> record = recordReferences.fromKey(tenantId, r.sourceId(), r.recordKey());
+        Optional<RecordReferences.ResolvedRecord> record = recordReferences.ofRecord(tenantId, r.sourceId(), r.recordId());
         if (record.isEmpty()) return PendingRequestView.of(r, null, null, null, null, 0, null, null, Levels.UNKNOWN);
         RecordReferences.ResolvedRecord found = record.get();
         AccessRequestRepository.PrimaryIdentifier identifier = found.submissionIds().stream()
                 .map(id -> requests.findPrimaryIdentifier(tenantId, id))
                 .flatMap(Optional::stream).findFirst().orElse(null);
-        int count = cache.computeIfAbsent(r.sourceId() + "|" + r.recordKey(),
+        int count = cache.computeIfAbsent(r.sourceId() + "|" + r.recordId(),
                 k -> records.findAvailableDocuments(tenantId, r.sourceId(), found.submissionIds())).size();
-        SensitivityLevel level = records.findRecordSensitivityLevel(tenantId, r.sourceId(), r.recordKey()).orElse(null);
+        SensitivityLevel level = records.findRecordSensitivityLevel(tenantId, r.sourceId(), r.recordId()).orElse(null);
         return PendingRequestView.of(r, identifier == null ? null : identifier.value(),
                 identifier == null ? null : identifier.label(), null, null, count, null, level,
                 new Levels(null, level, null, null));
@@ -625,13 +624,13 @@ public class AccessRequestService {
     }
 
     private void lowerRecord(AccessRequest r, String actorId, String actorName, Instant now, String correlationId) {
-        RecordSensitivityRepository.StoredRecordLevel stored = recordLevels.lockByKey(r.tenantId(), r.sourceId(), r.recordKey())
+        RecordSensitivityRepository.StoredRecordLevel stored = recordLevels.lockByKey(r.tenantId(), r.sourceId(), r.recordId())
                 .orElseThrow(AccessRequestService::noLongerApplies);
         if (stored.level().compareTo(r.requestedLevel()) <= 0) throw noLongerApplies();
         recordLevels.setLevel(r.tenantId(), stored.recordLevelId(), r.requestedLevel(), actorId, r.reason(), now);
         UUID changeId = UUID.randomUUID();
         requests.insertLevelChange(new AccessRequestRepository.LevelChange(changeId, r.tenantId(),
-                AccessRequestRepository.LevelChange.Scope.RECORD, null, r.sourceId(), r.recordKey(),
+                AccessRequestRepository.LevelChange.Scope.RECORD, null, r.sourceId(), r.recordId(),
                 AccessRequestRepository.LevelChange.Direction.LOWERED, stored.level(), r.requestedLevel(),
                 r.reason(), actorId, blankToNull(actorName), now, r.requestId()));
         Map<String, Object> details = new LinkedHashMap<>();
@@ -691,9 +690,9 @@ public class AccessRequestService {
         return r.kind().scope() == AccessRequestKind.Scope.DOCUMENT ? "DOCUMENT" : "RECORD";
     }
 
-    /** A document request names the document; a record request names the record by its key's SHA-256. */
+    /** A document request names the document; a record request names the record. */
     static String targetId(AccessRequest r) {
-        return r.kind().scope() == AccessRequestKind.Scope.DOCUMENT ? r.documentId().toString() : RecordKey.sha256(r.recordKey());
+        return r.kind().scope() == AccessRequestKind.Scope.DOCUMENT ? r.documentId().toString() : r.recordId().toString();
     }
 
     private void append(UUID tenantId, String actorType, String actorId, String actorName, String action,

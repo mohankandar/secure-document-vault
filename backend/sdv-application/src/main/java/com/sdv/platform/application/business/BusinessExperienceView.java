@@ -40,7 +40,11 @@ public final class BusinessExperienceView {
             MetadataFieldType fieldType,
             boolean businessIdentifier,
             MetadataNormalization normalization,
-            MetadataSearchMode searchMode) { }
+            MetadataSearchMode searchMode,
+            /* Task 0078: found by its whole value only, and not by free search. */
+            boolean sensitive,
+            /* Set to "contains", but this database can only search from the beginning. */
+            boolean partialAsPrefix) { }
 
     public record FieldValue(
             String fieldKey,

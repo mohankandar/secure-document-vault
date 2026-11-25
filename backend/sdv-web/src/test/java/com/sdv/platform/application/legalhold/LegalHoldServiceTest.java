@@ -48,6 +48,7 @@ class LegalHoldServiceTest {
 
     LegalHoldServiceTest() {
         when(tx.getTransaction(any())).thenReturn(txStatus);
+        com.sdv.platform.application.business.TestRecordRefs.group(records);
         service = new LegalHoldService(repository, new DocumentAccessGuard(records, audit), audit, tx,
                 Clock.fixed(NOW, ZoneOffset.UTC));
     }

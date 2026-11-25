@@ -64,8 +64,8 @@ class RestrictedNamesInAdminViewsTest {
         when(records.findMetadataSnapshots(eq(TENANT), eq(SOURCE), anyList())).thenReturn(List.of(
                 new MetadataSnapshot(PLAIN_SUB, "contractNumber", "Contract", "300000000001", "300000000001", true),
                 new MetadataSnapshot(RAISED_SUB, "contractNumber", "Contract", "300000000002", "300000000002", true)));
-        String raisedKey = com.sdv.platform.application.business.RecordKey.ofIdentifiers(
-                List.of(new com.sdv.platform.application.business.RecordKey.Part("contractNumber", "300000000002")));
+        com.sdv.platform.application.business.TestRecordRefs.group(records);
+        UUID raisedKey = com.sdv.platform.application.business.TestRecordRefs.id("contractNumber", "300000000002");
         when(records.findRecordSensitivityLevels(eq(TENANT), eq(SOURCE), anyCollection()))
                 .thenAnswer(call -> ((java.util.Collection<?>) call.getArgument(2)).contains(raisedKey)
                         ? Map.of(raisedKey, SensitivityLevel.HIGHLY_CONFIDENTIAL) : Map.of());
@@ -204,21 +204,9 @@ class RestrictedNamesInAdminViewsTest {
     }
 
     @Test
-    void aDocumentsRecordKeyIsTheSameAsSearchGivesItsRecord() {
-        List<MetadataSnapshot> metadata = List.of(
-                new MetadataSnapshot(PLAIN_SUB, "contractNumber", "Contract", "300-000", "300000", true),
-                new MetadataSnapshot(PLAIN_SUB, "branch", "Branch", "North", "north", true),
-                new MetadataSnapshot(PLAIN_SUB, "borrower", "Borrower", "Ana", "ana", false),
-                new MetadataSnapshot(RAISED_SUB, "contractNumber", "Contract", "1", "1", true));
-        assertEquals(com.sdv.platform.application.business.RecordKey.ofIdentifiers(List.of(
-                        new com.sdv.platform.application.business.RecordKey.Part("branch", "north"),
-                        new com.sdv.platform.application.business.RecordKey.Part("contractNumber", "300000"))),
-                com.sdv.platform.application.business.RecordKey.forSubmission(PLAIN_SUB, metadata),
-                "identifier values only, of this submission only, in key order");
-        UUID alone = UUID.randomUUID();
-        assertEquals(com.sdv.platform.application.business.RecordKey.ofSubmission(alone),
-                com.sdv.platform.application.business.RecordKey.forSubmission(alone, List.of(
-                        new MetadataSnapshot(alone, "contractNumber", "Contract", " ", " ", true))),
-                "no identifier value: the submission is its own record");
+    void aDocumentWhoseRecordCantBeReadIsHighlyConfidential() {
+        org.mockito.Mockito.doReturn(Map.of()).when(records).findRecordIds(any(), any(), anyCollection());
+        UUID document = UUID.randomUUID();
+        assertEquals(SensitivityLevel.HIGHLY_CONFIDENTIAL, guard.effectiveLevels(TENANT, List.of(ref(document, PLAIN_SUB, SensitivityLevel.STANDARD))).get(document));
     }
 }

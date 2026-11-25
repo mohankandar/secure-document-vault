@@ -77,6 +77,7 @@ public final class ErrorReplies {
     static final String STO_001_MESSAGE =
             "Vero has no storage space for new documents right now. Nothing was stored; send it again later.";
     /** Task 0040 part 2 (owner answer 2): the upload's volume names a storage provider this install doesn't have. */
+    static final String KEY_002_MESSAGE = "The key service can't be used now, so this can't be done and nothing was stored. Try again in a few minutes.";
     static final String STO_004_MESSAGE = "Storage for this tenant isn't available, so nothing was stored. The "
             + "installer must fix it.";
     /** Task 0040 part 2: too busy (database pool full); the answer carries Retry-After. */
@@ -134,6 +135,9 @@ public final class ErrorReplies {
         }
         if (ex instanceof StorageProviderMissingException provider) {
             return new Reply(HttpStatus.SERVICE_UNAVAILABLE, provider.errorCode(), STO_004_MESSAGE);
+        }
+        if (ex instanceof com.sdv.platform.domain.error.KeyServiceDown keys) {
+            return new Reply(HttpStatus.SERVICE_UNAVAILABLE, keys.errorCode(), KEY_002_MESSAGE);
         }
         if (isBusy(ex)) {
             return new Reply(HttpStatus.SERVICE_UNAVAILABLE, SdvErrorCode.SYS_018, SYS_018_MESSAGE);

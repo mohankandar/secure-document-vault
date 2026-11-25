@@ -1,6 +1,7 @@
 package com.sdv.platform.persistence.reports;
 
 import com.sdv.platform.persistence.business.PrimaryIdentifierSql;
+import com.sdv.platform.persistence.fields.CaseFieldSql;
 import com.sdv.platform.application.port.IntakeReportRepository;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
@@ -24,7 +25,7 @@ import java.util.UUID;
  * <p>
  * Indexes (changeset 031 and earlier): submissions (tenant_id, created_at), documents (tenant_id, ingested_at),
  * document_duplicate_receipts (tenant_id, received_at, source_id), audit_events (tenant_id, action, occurred_at),
- * business_metadata_values (tenant_id, field_key, normalized_value).
+ * fld_value (entity, product, record type, field key, search value).
  */
 @Repository
 public class JdbcIntakeReportRepository implements IntakeReportRepository {
@@ -149,17 +150,17 @@ public class JdbcIntakeReportRepository implements IntakeReportRepository {
                                              Collection<String> normalizedValues, Instant before) {
         Set<String> known = new HashSet<>();
         if (fieldKeys.isEmpty() || normalizedValues.isEmpty()) return known;
-        for (List<String> chunk : chunks(List.copyOf(normalizedValues))) {
+        for (List<String> chunk : chunks(normalizedValues.stream().map(CaseFieldSql::searchForm).distinct().toList())) {
             known.addAll(jdbc.queryForList("""
-                    select distinct coalesce(nullif(btrim(v.normalized_value), ''), v.stored_value) as compared
-                      from business_metadata_values v
-                      join metadata_field_definitions f on f.definition_id=v.definition_id and f.business_identifier
-                      join submissions s on s.tenant_id=v.tenant_id and s.submission_id=v.submission_id
-                     where v.tenant_id=:tenantId and v.field_key in (:keys)
-                       and (v.normalized_value in (:values)
-                            or (coalesce(btrim(v.normalized_value), '')='' and v.stored_value in (:values)))
-                       and s.created_at < :before
-                    """, new MapSqlParameterSource()
+                    select distinct v.search_value
+                      from fld_value v
+                      join fld_record fr on fr.record_uuid=v.record_uuid
+                      join submissions rs on rs.tenant_id=fr.entity_uuid and 's-'||rs.source_id::text=fr.record_type and rs.record_id=fr.record_id::uuid
+                    %s
+                     where v.entity_uuid=:tenantId and v.product_code='%s' and v.field_key in (:keys)
+                       and v.search_value in (:values) and %s
+                       and rs.created_at < :before
+                    """.formatted(CaseFieldSql.field("rs"), com.sdv.platform.domain.identity.VeroProduct.CODE, CaseFieldSql.IDENTIFIER), new MapSqlParameterSource()
                     .addValue("tenantId", tenantId)
                     .addValue("keys", List.copyOf(fieldKeys))
                     .addValue("values", chunk)

@@ -1,6 +1,6 @@
 package com.sdv.platform.application.reports;
 
-import com.sdv.platform.application.business.RecordKey;
+import com.sdv.platform.persistence.fields.CaseRows;
 import com.sdv.platform.application.port.SensitivityReportRepository;
 import com.sdv.platform.persistence.foundation.JdbcFoundationRepository;
 import com.sdv.platform.persistence.reports.JdbcIntakeReportRepository;
@@ -79,9 +79,7 @@ class SensitivityReportPostgresTest {
     }
 
     private void field(UUID tenant, UUID source, String key, String label) {
-        sql("insert into metadata_field_definitions(definition_id, tenant_id, source_id, field_key, version, display_label, field_type, "
-                + "required, business_identifier, searchable, normalization, search_mode) values ('" + id(source + key) + "', '"
-                + tenant + "', '" + source + "', '" + key + "', 1, '" + label + "', 'TEXT', false, true, true, 'TRIM', 'EXACT')");
+        CaseRows.field(jdbc.getJdbcTemplate(), tenant, source, key, label, true, "TRIM", 0);
     }
 
     /** A delivery with these identifier values (field, value, field, value ...), or none. */
@@ -89,12 +87,7 @@ class SensitivityReportPostgresTest {
         UUID submission = id(name);
         sql("insert into submissions(submission_id, tenant_id, source_id, source_submission_id, expected_document_count, status, created_at, last_activity_at) values ('"
                 + submission + "', '" + tenant + "', '" + source + "', '" + name + "', 1, 'OPEN', '2026-10-01T12:00:00Z', '2026-10-01T12:00:00Z')");
-        for (int i = 0; i < identifiers.length; i += 2) {
-            sql("insert into business_metadata_values(metadata_value_id, tenant_id, source_id, submission_id, definition_id, field_key, "
-                    + "definition_version, stored_value, normalized_value) values ('" + UUID.randomUUID() + "', '" + tenant + "', '"
-                    + source + "', '" + submission + "', '" + id(source + identifiers[i]) + "', '" + identifiers[i] + "', 1, '"
-                    + identifiers[i + 1] + "', '" + identifiers[i + 1] + "')");
-        }
+        CaseRows.identified(jdbc.getJdbcTemplate(), tenant, source, submission, identifiers);
         return submission;
     }
 
@@ -111,16 +104,19 @@ class SensitivityReportPostgresTest {
         return document;
     }
 
-    private UUID recordLevel(UUID tenant, UUID source, String key, String level) {
-        UUID levelId = id("level-" + source + key);
-        sql("insert into record_sensitivity_levels(record_level_id, tenant_id, source_id, record_key, record_key_sha256, sensitivity_level, "
-                + "set_by, set_at, updated_at) values ('" + levelId + "', '" + tenant + "', '" + source + "', '" + key.replace("'", "''")
-                + "', '" + RecordKey.sha256(key) + "', '" + level + "', 'SOURCE', '2026-10-01T12:00:00Z', '2026-10-01T12:00:00Z')");
+    private UUID recordLevel(UUID tenant, UUID source, UUID record, String level) {
+        UUID levelId = id("level-" + source + record);
+        sql("insert into record_sensitivity_levels(record_level_id, tenant_id, source_id, record_id, sensitivity_level, "
+                + "set_by, set_at, updated_at) values ('" + levelId + "', '" + tenant + "', '" + source + "', '" + record
+                + "', '" + level + "', 'SOURCE', '2026-10-01T12:00:00Z', '2026-10-01T12:00:00Z')");
         return levelId;
     }
 
-    private static String contract(String value) {
-        return RecordKey.ofIdentifiers(List.of(new RecordKey.Part("contractNumber", value)));
+    /** The record of the sending system with this contract number alone. */
+    private UUID contract(UUID source, String value) {
+        return UUID.fromString(jdbc.getJdbcTemplate().queryForObject("select fr.record_id from fld_record fr join fld_value v on v.record_uuid = fr.record_uuid"
+                + " where fr.record_type = ? and v.field_key = 'contractNumber' and v.search_value = ?"
+                + " and (select count(*) from fld_value o where o.record_uuid = fr.record_uuid) = 1", String.class, "s-" + source, value));
     }
 
     private void hold(UUID tenant, UUID document, boolean active) {
@@ -135,9 +131,9 @@ class SensitivityReportPostgresTest {
         boolean used = "USED".equals(status);
         String level = kind.startsWith("LOWER") ? "'STANDARD'" : "null";
         String target = "LOWER_RECORD_LEVEL".equals(kind)
-                ? "null, '" + RS + "', '" + contract(C1) + "', '" + RecordKey.sha256(contract(C1)) + "'"
-                : "'" + document + "', null, null, null";
-        sql("insert into access_requests(request_id, tenant_id, kind, document_id, source_id, record_key, record_key_sha256, requested_level, "
+                ? "null, '" + RS + "', '" + contract(RS, C1) + "'"
+                : "'" + document + "', null, null";
+        sql("insert into access_requests(request_id, tenant_id, kind, document_id, source_id, record_id, requested_level, "
                 + "reason, requested_by, requested_at, status, decided_by, decided_at, expires_at, used_at) values ('" + UUID.randomUUID()
                 + "', '" + tenant + "', '" + kind + "', " + target + ", " + level + ", 'For the audit file', '" + who + "', '" + requestedAt
                 + "', '" + status + "', " + (decided ? "'admin', '" + requestedAt + "'::timestamptz + interval '1 hour'" : "null, null")
@@ -187,16 +183,16 @@ class SensitivityReportPostgresTest {
         document(T, RS, s6, "d9", "STANDARD", "AVAILABLE");
         // The same contract number from the other sending system is that system's own record.
         UUID d8 = document(T, LOS, s5, "d8", "STANDARD", "AVAILABLE");
-        recordLevel(T, RS, contract(C1), "HIGHLY_CONFIDENTIAL");
-        recordLevel(T, RS, RecordKey.ofSubmission(s4), "CONFIDENTIAL");
-        recordLevel(T, RS, contract(C2), "STANDARD");
+        recordLevel(T, RS, contract(RS, C1), "HIGHLY_CONFIDENTIAL");
+        recordLevel(T, RS, s4, "CONFIDENTIAL");
+        recordLevel(T, RS, contract(RS, C2), "STANDARD");
         hold(T, d1, true);
         hold(T, d6, false);
         hold(T, d3, true);
         // The other tenant: never counted.
         UUID xs = submission(TX, XS, "x1", "contractNumber", C1);
         UUID xd = document(TX, XS, xs, "x-d1", "HIGHLY_CONFIDENTIAL", "AVAILABLE");
-        recordLevel(TX, XS, contract(C1), "HIGHLY_CONFIDENTIAL");
+        recordLevel(TX, XS, contract(XS, C1), "HIGHLY_CONFIDENTIAL");
         hold(TX, xd, true);
 
         // ---- Requests (November in New York starts at 04:00 UTC on 1 November; now is 21 November 15:00 UTC).
@@ -218,7 +214,7 @@ class SensitivityReportPostgresTest {
         request(TX, "DOWNLOAD", xd, "PENDING", false, "2026-11-10T10:00:00Z", "2026-11-17T10:00:00Z", "rx");
 
         // ---- Level changes.
-        UUID c1Level = id("level-" + RS + contract(C1));
+        UUID c1Level = id("level-" + RS + contract(RS, C1));
         event(T, "USER", "dee", "DOCUMENT_SENSITIVITY_RAISED", "DOCUMENT", d2, "2026-11-02T10:00:00Z", "SUCCESS", "{\"to\":\"CONFIDENTIAL\"}");
         event(T, "USER", "dee", "RECORD_SENSITIVITY_RAISED", "RECORD_SENSITIVITY", c1Level, "2026-11-02T11:00:00Z", "SUCCESS", "{\"sourceId\":\"" + RS + "\"}");
         event(T, "SOURCE", "loans", "RECORD_SENSITIVITY_RAISED", "RECORD_SENSITIVITY", c1Level, "2026-11-03T10:00:00Z", "SUCCESS", "{\"sourceId\":\"" + RS + "\",\"setBy\":\"SOURCE\"}");
