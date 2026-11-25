@@ -8,6 +8,9 @@ write. Vero never changes them at startup. This page is for the IT team that ins
 
 ## 1. Before you start
 
+Everything in the runbook's "Before you install", and Vault's part of "Keys for a customer": setup refuses without the customer's
+key settings (`SETUP_KEY_SERVICE_SETTINGS_MISSING`; `--no-customer-keys` is refused with `SETUP_CUSTOMER_KEYS_REQUIRED`).
+
 1. The schema step has run for this release (runbook "Update the database"). It creates Vero's tables and, in their
    own runs, platform-core's identity tables (history table `idn_schema_history`) and licensing tables
    (`lic_schema_history`). Setup never creates tables. Since task 0067 (platform-core 0.7.0) the identity tables are
@@ -115,6 +118,9 @@ The licence keys Vero trusts are inside its jars (task 0067). No file, setting o
   `--run-log`, `--config-out`).
 - **Customer's keys** (task 0076): `apply` makes them in the key service. Give it Vault's address, mount and a short-lived token
   with the set-up policy in the environment (runbook, "Keys for a customer"). `plan` only says whether they are there.
+- Run it **in Vero's working folder**: `apply` writes `platform-tenant.properties` there (or at `--config-out`), and Vero reads it.
+- **Check it:** `plan` again: every item `unchanged`, exit code 0. A refusal starts with a `SETUP_…` code and says what to do;
+  nothing was changed. `LICENCE_UNKNOWN_KEY_ID`: the licence isn't signed with a key of this build.
 - `plan` changes nothing and lists every item (`create`, `unchanged`, `switch off`, …). `apply` writes the licence,
   the customer, the entity slots (not activated), the login connection, the grants and the client bindings in one
   transaction. Running it again is safe. Exit codes: 0 done, 1 failed, 2 refused (nothing changed), 3 done except
@@ -127,6 +133,13 @@ names it (they can sign in before any entity is active):
 
 ```
 POST /api/v1/admin/entities/ENT-…/activate      {"name": "Acme Mortgage"}
+```
+
+For example, with the Business Admin's access token in a file only you can read (one line: `header = "Authorization: Bearer …"`;
+delete it afterwards):
+
+```sh
+curl -i -K token.txt -X POST 'https://<vero>/api/v1/admin/entities/ENT-…/activate' -H 'Content-Type: application/json' -d '{"name": "Acme Mortgage"}'
 ```
 
 Vero checks the stored licence (read only, with the keys of its own build), makes

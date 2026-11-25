@@ -96,9 +96,10 @@ Running it does not.
 ## Upgrades
 
 1. Read the release's notes and the settings in the [runbook](../operations/SDV_V1_GA_CLEAN_INSTALL_RUNBOOK.md).
-2. Back up the database and storage, and know your key service's backup.
+2. Back up the database, the storage, the key service and the settings together ([backup runbook](../operations/SDV_BACKUP_RESTORE_HA_RUNBOOK.md)).
+   Going back means restoring that set: an older Vero refuses a newer database.
 3. Stop Vero; your database team runs the **schema step** (`status`, `sql`, `update`).
-4. Start Vero; readiness turns 200. Run setup again when the release says so.
+4. Replace the application jar, the setup jar and the screens together. Start Vero; readiness turns 200. Run setup again when the release says so.
 
 Before this version in particular:
 - `SDV_STORAGE_ALLOWED_ROOTS`, if new volumes will be outside `data`. Existing volumes stay usable.
