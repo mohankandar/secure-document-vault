@@ -1,0 +1,8 @@
+databaseChangeLog:
+  - changeSet:
+      id: 046-usage-named-seats
+      author: sdv
+      changes:
+        - sqlFile:
+            path: db/changelog/046-usage-named-seats.sql
+            relativeToChangelogFile: false
