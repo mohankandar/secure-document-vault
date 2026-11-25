@@ -11,34 +11,20 @@ class BusinessRecordRefCodecTest {
     private final BusinessRecordRefCodec codec = new BusinessRecordRefCodec();
 
     @Test
-    void identifierReferenceRoundTripsCanonically() {
-        UUID sourceId = UUID.randomUUID();
-        var identity = new BusinessRecordRefCodec.RecordIdentity(
-                sourceId,
-                List.of(
-                        new BusinessRecordRefCodec.IdentifierPart("memberId", "M-2"),
-                        new BusinessRecordRefCodec.IdentifierPart("contractNumber", "123456")),
-                null);
-
+    void aReferenceIsTheSendingSystemAndTheRecordsId() {
+        var identity = new BusinessRecordRefCodec.RecordIdentity(UUID.randomUUID(), UUID.randomUUID());
         String token = codec.encode(identity);
-        var decoded = codec.decode(token);
-
-        assertEquals(sourceId, decoded.sourceId());
-        assertNull(decoded.fallbackSubmissionId());
-        assertEquals("contractNumber\u001f123456\u001ememberId\u001fM-2", decoded.canonicalKey());
+        assertEquals(identity, codec.decode(token));
         assertTrue(token.matches("[A-Za-z0-9_-]+"));
     }
 
     @Test
-    void fallbackSubmissionReferenceRoundTrips() {
-        UUID sourceId = UUID.randomUUID();
-        UUID submissionId = UUID.randomUUID();
-        var identity = new BusinessRecordRefCodec.RecordIdentity(sourceId, List.of(), submissionId);
-
-        var decoded = codec.decode(codec.encode(identity));
-        assertEquals(sourceId, decoded.sourceId());
-        assertEquals(submissionId, decoded.fallbackSubmissionId());
-        assertTrue(decoded.identifiers().isEmpty());
+    void aReferenceOfBeforeIsNotFoundAndNothingIsGuessed() {
+        for (String json : List.of("{\"s\":\"" + UUID.randomUUID() + "\",\"u\":\"" + UUID.randomUUID() + "\"}",
+                "{\"s\":\"" + UUID.randomUUID() + "\",\"i\":[{\"k\":\"contractNumber\",\"v\":\"1\"}]}")) {
+            String token = java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(json.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            assertEquals(RecordRefusals.MESSAGE, assertThrows(java.util.NoSuchElementException.class, () -> codec.decode(token)).getMessage());
+        }
     }
 
     @Test
@@ -47,7 +33,5 @@ class BusinessRecordRefCodecTest {
         // Task 0043: SDV-SCH-002, with the same sentence as a record that is not found.
         assertEquals("SDV-SCH-002", ((com.sdv.platform.domain.error.CodedRefusal) ex).errorCode().code());
         assertEquals(RecordRefusals.MESSAGE, ex.getMessage());
-        assertEquals("SDV-SCH-002", ((com.sdv.platform.domain.error.CodedRefusal) assertThrows(IllegalArgumentException.class,
-                () -> RecordKey.parse("nonsense"))).errorCode().code());
     }
 }

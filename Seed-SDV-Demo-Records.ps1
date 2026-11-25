@@ -49,7 +49,7 @@ function DbScalar([string]$Sql) {
 # so sending it again on each run would change the data every time.
 function EnsureField([string]$SourceId,[string]$FieldKey,[string]$Label,[bool]$Identifier,[bool]$Required,[string]$Normalization,[string]$SearchMode) {
     $admin = UserHeaders 'local-demo-business-admin' 'BUSINESS_ADMIN'
-    $have = DbScalar "select count(*) from metadata_field_definitions where tenant_id='$Tenant' and source_id='$SourceId' and field_key='$FieldKey' and active;"
+    $have = DbScalar "select count(*) from fld_field_definition f join fld_field_extension x on x.definition_id=f.definition_id where f.entity_uuid='$Tenant' and x.name='source.$SourceId' and f.field_key='$FieldKey' and f.active;"
     if ([int]$have -gt 0) { Ok "Metadata field already there: $Label"; return }
     InvokeJson 'PUT' "$Base/api/v1/admin/ingestion-sources/$SourceId/metadata-fields/$FieldKey" $admin @{
         displayLabel=$Label; fieldType='TEXT'; required=$Required; businessIdentifier=$Identifier; searchable=$true
@@ -132,12 +132,12 @@ if ($FreshTestData) {
     for ($j = 0; $j -lt $Count; $j++) {
         $contract = ($startContract + $j).ToString('D12')
         $member = ($startMember + $j).ToString('D11')
-        $existingContract = DbScalar "select count(distinct submission_id) from business_metadata_values where tenant_id='$Tenant' and source_id='$SourceId' and field_key='contractNumber' and normalized_value='$contract';"
+        $existingContract = DbScalar "select count(distinct s.submission_id) from fld_value v join fld_record r on r.record_uuid=v.record_uuid join submissions s on s.tenant_id=r.entity_uuid and s.record_id::text=r.record_id and r.record_type='s-' || s.source_id::text where v.entity_uuid='$Tenant' and r.record_type='s-$SourceId' and v.field_key='contractNumber' and v.search_value='$contract';"
         $existingSubmission = DbScalar "select count(*) from submissions where tenant_id='$Tenant' and source_id='$SourceId' and source_submission_id='vault-persistence-test-$contract';"
         if ([int]$existingContract -gt 0 -or [int]$existingSubmission -gt 0) {
             # Resume only the exact fixture created by this script, never a pre-existing
             # business record or a different source submission using this contract.
-            $matchingMember = DbScalar "select count(*) from business_metadata_values v join submissions s on s.submission_id=v.submission_id and s.tenant_id=v.tenant_id where v.tenant_id='$Tenant' and v.source_id='$SourceId' and v.field_key='memberNumber' and v.normalized_value='$member' and s.source_submission_id='vault-persistence-test-$contract';"
+            $matchingMember = DbScalar "select count(*) from fld_value v join fld_record r on r.record_uuid=v.record_uuid join submissions s on s.tenant_id=r.entity_uuid and s.record_id::text=r.record_id and r.record_type='s-' || s.source_id::text where v.entity_uuid='$Tenant' and r.record_type='s-$SourceId' and v.field_key='memberNumber' and v.search_value='$member' and s.source_submission_id='vault-persistence-test-$contract';"
             if ([int]$existingContract -ne 1 -or [int]$existingSubmission -ne 1 -or [int]$matchingMember -ne 1) {
                 throw "Contract $contract is occupied by another or inconsistent record. Nothing new was created during preflight."
             }
@@ -154,10 +154,12 @@ if ($FreshTestData) {
     EnsureField $SourceId 'contractNumber' 'Contract Number' $true $true 'DIGITS_ONLY' 'EXACT'
     EnsureField $SourceId 'memberNumber' 'Member Number' $true $true 'DIGITS_ONLY' 'EXACT'
     EnsureField $SourceId 'serviceEntity' 'Service Entity' $true $true 'TRIM' 'EXACT'
+    EnsureField $SourceId 'firstName' 'First Name' $false $false 'TRIM' 'EXACT'
+    EnsureField $SourceId 'lastName' 'Last Name' $false $false 'TRIM' 'EXACT'
     $records = @(
-        @{ contract='100000000001'; member='20000000001'; service='001'; files=@('Member Agreement.pdf','Identity Verification.pdf','Terms and Conditions.pdf') },
-        @{ contract='100000000002'; member='20000000002'; service='002'; files=@('Application Form.pdf') },
-        @{ contract='100000000003'; member='20000000003'; service='003'; files=@('Member Correspondence.pdf') }
+        @{ contract='100000000001'; member='20000000001'; service='001'; firstName='Jordan'; lastName='Ellis'; files=@('Member Agreement.pdf','Identity Verification.pdf','Terms and Conditions.pdf') },
+        @{ contract='100000000002'; member='20000000002'; service='002'; firstName='Priya'; lastName='Shah'; files=@('Application Form.pdf') },
+        @{ contract='100000000003'; member='20000000003'; service='003'; firstName='Marcus'; lastName='Lee'; files=@('Member Correspondence.pdf') }
     )
 }
 
@@ -176,7 +178,7 @@ foreach ($row in $records) {
             sourceSubmissionId=$sourceSubmissionId
             expectedDocumentCount=$files.Count
             expectedDocuments=$manifest
-            metadata=$(if ($FreshTestData) { @{ contractNumber=$row.contract; memberNumber=$row.member; serviceEntity=$row.service; firstName=$row.firstName; lastName=$row.lastName } } else { @{ contractNumber=$row.contract; memberNumber=$row.member; serviceEntity=$row.service } })
+            metadata=@{ contractNumber=$row.contract; memberNumber=$row.member; serviceEntity=$row.service; firstName=$row.firstName; lastName=$row.lastName }
         }
         $submissionId=[string]$submission.submissionId
         Ok "Created business record $($row.contract)"

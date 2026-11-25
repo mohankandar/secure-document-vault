@@ -962,7 +962,7 @@ class IngestionContractTest {
         });
         when(DOCUMENT_STORE.lockSubmission(TENANT, SOURCE, SUBMISSION)).thenReturn(submission());
         when(RECORDS.ofSubmission(TENANT, SOURCE, SUBMISSION)).thenReturn(
-                new RecordReferences.ResolvedRecord(SOURCE, "submission:" + SUBMISSION, List.of(SUBMISSION)));
+                new RecordReferences.ResolvedRecord(SOURCE, SUBMISSION, List.of(SUBMISSION)));
         StorageVolume volume = new StorageVolume(UUID.randomUUID(), TENANT, "LOCAL_FILESYSTEM", "primary-a", "/tmp",
                 StorageVolumeState.values()[0], 1, 80, 95, NOW, NOW);
         StoragePlacementService.PlacementDecision decision = mock(StoragePlacementService.PlacementDecision.class);
@@ -1233,7 +1233,7 @@ class IngestionContractTest {
 
         @Bean SubmissionController submissionController() {
             return new SubmissionController(new SecurityContextFacade(), new SubmissionService(TENANTS, SOURCES, DEFINITIONS,
-                    SUBMISSION_STORE, DOCUMENT_STORE, RECORD_LEVELS, AUDIT));
+                    SUBMISSION_STORE, DOCUMENT_STORE, RECORD_LEVELS, AUDIT, com.sdv.platform.application.port.RecordValuesPort.NONE, null));
         }
 
         @Bean DocumentIntakeController documentIntakeController() {

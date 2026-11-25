@@ -88,9 +88,9 @@ class QuickSearchTest {
             List<UUID> ids = inv.getArgument(2);
             return ids.stream().flatMap(id -> (id.equals(SUB_OMAR) ? omar() : lena()).stream()).toList();
         });
-        when(records.findSubmissionIdsByRecordIdentity(eq(TENANT), eq(SOURCE), anyList())).thenAnswer(inv -> {
-            List<BusinessRecordRepository.IdentifierCriterion> ids = inv.getArgument(2);
-            return List.of(ids.getFirst().normalizedValue().equals("300000000041") ? SUB_OMAR : SUB_LENA);
+        TestRecordRefs.group(records);
+        when(records.findSubmissionIdsOfRecord(eq(TENANT), eq(SOURCE), any())).thenAnswer(inv -> {
+            return List.of(TestRecordRefs.id("contractNumber", "300000000041").equals(inv.getArgument(2)) ? SUB_OMAR : SUB_LENA);
         });
         when(records.findSubmissionsByIds(eq(TENANT), eq(SOURCE), anyList())).thenAnswer(inv -> {
             List<UUID> ids = inv.getArgument(2);

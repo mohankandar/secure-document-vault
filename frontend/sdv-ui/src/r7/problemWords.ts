@@ -142,6 +142,7 @@ export const CODE_WORDS: Record<string, string> = {
   'SDV-FLD-002': 'The field has values, so this setting is locked. Add a new field instead.',
   'SDV-FLD-003': 'The key is another field’s, or somebody changed the field meanwhile. Load the page again.',
   'SDV-FLD-004': 'This isn’t a field list Vero can read. Nothing was changed.',
+  'SDV-KEY-002': 'The key service can’t be used now. Nothing was stored. Try again in a few minutes.',
   'SDV-LIC-001': 'Vero takes no new documents: its licence doesn’t allow it now. Nothing was stored.',
   'SDV-LIC-002': 'Vero can’t check its licence, so it takes no new documents. Nothing was stored.',
   'SDV-LIC-003': 'The anchor kept for usage files isn’t the last export’s. Nothing was exported. Tell support first.',

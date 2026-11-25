@@ -48,10 +48,10 @@ public class JdbcRestrictionsRepository implements RestrictionsRepository {
             from = " and (set_at, record_level_id) < (:at, :id)";
             p.addValue("at", Timestamp.from(after.setAt())).addValue("id", after.levelId());
         }
-        return jdbc.query("select record_level_id, source_id, record_key, sensitivity_level, set_at from record_sensitivity_levels"
+        return jdbc.query("select record_level_id, source_id, record_id, sensitivity_level, set_at from record_sensitivity_levels"
                         + " where tenant_id=:t and " + RESTRICTED + from + " order by set_at desc, record_level_id desc limit :limit", p,
                 (rs, row) -> new RecordLevel(rs.getObject("record_level_id", UUID.class), rs.getObject("source_id", UUID.class),
-                        rs.getString("record_key"), rs.getString("sensitivity_level"), instant(rs, "set_at")));
+                        rs.getObject("record_id", UUID.class), rs.getString("sensitivity_level"), instant(rs, "set_at")));
     }
 
     @Override
@@ -65,7 +65,7 @@ public class JdbcRestrictionsRepository implements RestrictionsRepository {
         // A document's change names its record through the document's submission (never the document ID).
         return jdbc.query("""
                 select c.change_id, coalesce(nullif(btrim(c.changed_by_display_name), ''), c.changed_by) as who, c.changed_at,
-                       c.scope, c.from_level, c.to_level, c.source_id, c.record_key, d.submission_id
+                       c.scope, c.from_level, c.to_level, c.source_id, c.record_id, d.submission_id
                   from sensitivity_level_changes c
                   left join documents d on d.tenant_id=c.tenant_id and d.document_id=c.document_id
                  where c.tenant_id=:t and c.changed_at >= :since""" + from + """
@@ -73,7 +73,7 @@ public class JdbcRestrictionsRepository implements RestrictionsRepository {
                  order by c.changed_at desc, c.change_id desc limit :limit
                 """, p, (rs, row) -> new LevelChange(rs.getObject("change_id", UUID.class), rs.getString("who"),
                 instant(rs, "changed_at"), rs.getString("scope"), rs.getString("from_level"), rs.getString("to_level"),
-                rs.getObject("source_id", UUID.class), rs.getString("record_key"), rs.getObject("submission_id", UUID.class)));
+                rs.getObject("source_id", UUID.class), rs.getObject("record_id", UUID.class), rs.getObject("submission_id", UUID.class)));
     }
 
     @Override
@@ -96,31 +96,14 @@ public class JdbcRestrictionsRepository implements RestrictionsRepository {
     }
 
     @Override
-    public Map<UUID, Map<String, String>> findIdentifierLabels(UUID tenantId, Collection<UUID> sourceIds) {
-        Map<UUID, Map<String, String>> out = new LinkedHashMap<>();
-        if (sourceIds == null || sourceIds.isEmpty()) return out;
-        jdbc.query("""
-                select source_id, field_key, display_label from metadata_field_definitions
-                 where tenant_id=:t and source_id in (:ids) and business_identifier
-                 order by source_id, field_key, version desc
-                """, new MapSqlParameterSource("t", tenantId).addValue("ids", List.copyOf(sourceIds)), rs -> {
-            out.computeIfAbsent(rs.getObject("source_id", UUID.class), k -> new LinkedHashMap<>())
-                    .putIfAbsent(rs.getString("field_key"), rs.getString("display_label"));
-        });
-        return out;
-    }
-
-    @Override
-    public Map<UUID, List<String>> findDisplayOrders(UUID tenantId, Collection<UUID> sourceIds) {
-        Map<UUID, List<String>> out = new LinkedHashMap<>();
-        if (sourceIds == null || sourceIds.isEmpty()) return out;
-        jdbc.query("""
-                select source_id, field_key from metadata_field_display_order
-                 where tenant_id=:t and source_id in (:ids)
-                 order by source_id, display_position
-                """, new MapSqlParameterSource("t", tenantId).addValue("ids", List.copyOf(sourceIds)), rs -> {
-            out.computeIfAbsent(rs.getObject("source_id", UUID.class), k -> new ArrayList<>()).add(rs.getString("field_key"));
-        });
+    public Map<UUID, Identifier> findRecordIdentifiers(UUID tenantId, Collection<UUID> recordIds) {
+        Map<UUID, Identifier> out = new LinkedHashMap<>();
+        if (recordIds == null || recordIds.isEmpty()) return out;
+        jdbc.query("select s.record_id, pid.stored_value, pid.display_label from submissions s "
+                        + PrimaryIdentifierSql.join("s.tenant_id", "s.submission_id") + """
+                 where s.tenant_id=:t and s.record_id in (:ids) and pid.stored_value is not null
+                """, new MapSqlParameterSource("t", tenantId).addValue("ids", List.copyOf(recordIds)),
+                rs -> { out.putIfAbsent(rs.getObject("record_id", UUID.class), new Identifier(rs.getString("display_label"), rs.getString("stored_value"))); });
         return out;
     }
 

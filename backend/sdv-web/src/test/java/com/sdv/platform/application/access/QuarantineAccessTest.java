@@ -49,6 +49,7 @@ class QuarantineAccessTest {
 
     private Document document(SensitivityLevel level) {
         when(records.findMetadataSnapshots(any(), any(), any())).thenReturn(List.of());
+        com.sdv.platform.application.business.TestRecordRefs.group(records);
         when(records.findRecordSensitivityLevel(any(), any(), any())).thenReturn(Optional.empty());
         return new Document(UUID.randomUUID(), TENANT, UUID.randomUUID(), UUID.randomUUID(), "d1", null, "secret.pdf",
                 "application/pdf", "a".repeat(64), 10L, DocumentStatus.AVAILABLE, null, Instant.now(), null, Instant.now(),

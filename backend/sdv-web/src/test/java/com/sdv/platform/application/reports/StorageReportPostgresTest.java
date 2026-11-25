@@ -114,10 +114,9 @@ class StorageReportPostgresTest {
         // The other entity is never counted.
         document(TX, SX, subX, "other", "STANDARD", "AVAILABLE", 9, 9999, "now() - interval '1 hour'", 30, "now() + interval '5 days'");
         // S2's submission is a record at Confidential: its stored document counts at Confidential.
-        String key = "submission:" + sub2;
-        sql("insert into record_sensitivity_levels(record_level_id, tenant_id, source_id, record_key, record_key_sha256, sensitivity_level, "
-                + "set_by, set_at, updated_at) values ('" + id("level") + "', '" + T + "', '" + S2 + "', '" + key + "', '"
-                + com.sdv.platform.application.business.RecordKey.sha256(key) + "', 'CONFIDENTIAL', 'SOURCE', now(), now())");
+        sql("insert into record_sensitivity_levels(record_level_id, tenant_id, source_id, record_id, sensitivity_level, "
+                + "set_by, set_at, updated_at) values ('" + id("level") + "', '" + T + "', '" + S2 + "', '" + sub2
+                + "', 'CONFIDENTIAL', 'SOURCE', now(), now())");
         for (UUID d : List.of(held, both)) {
             sql("insert into legal_holds(hold_id, tenant_id, document_id, reason, placed_by, placed_at) values (gen_random_uuid(), '"
                     + T + "', '" + d + "', 'Court order', 'ada', now())");

@@ -66,7 +66,8 @@ class RecordOpenAuditTest {
         when(records.findMetadataSnapshots(eq(TENANT), eq(SOURCE), anyList())).thenReturn(List.of(
                 new MetadataSnapshot(SUB, "contractNumber", "Contract Number", NUMBER, NUMBER, true),
                 new MetadataSnapshot(SUB, "lastName", "Last Name", "Patel", "PATEL", false)));
-        when(records.findSubmissionIdsByRecordIdentity(eq(TENANT), eq(SOURCE), anyList())).thenReturn(List.of(SUB));
+        TestRecordRefs.group(records);
+        when(records.findSubmissionIdsOfRecord(eq(TENANT), eq(SOURCE), any())).thenReturn(List.of(SUB));
         when(records.findSubmissionsByIds(eq(TENANT), eq(SOURCE), anyList())).thenReturn(List.of(
                 new Submission(SUB, TENANT, SOURCE, "src-1", 1, "sha", SubmissionStatus.COMPLETE, NOW.minusSeconds(60), NOW, null)));
         when(records.findAvailableDocuments(eq(TENANT), eq(SOURCE), anyList())).thenReturn(List.of(
@@ -74,8 +75,7 @@ class RecordOpenAuditTest {
     }
 
     private static String recordRef() {
-        return new BusinessRecordRefCodec().encode(new BusinessRecordRefCodec.RecordIdentity(
-                SOURCE, List.of(new BusinessRecordRefCodec.IdentifierPart("contractNumber", NUMBER)), null));
+        return TestRecordRefs.of(SOURCE, "contractNumber", NUMBER);
     }
 
     @Test
@@ -115,9 +115,9 @@ class RecordOpenAuditTest {
         // Only record opens offer a submission, read from the safe details.
         assertTrue(s.contains("case when target_type='BUSINESS_RECORD' then safe_details->>'submissionId' end as record_submission_id"), s);
         // The lookup stays in the event's own tenant, and only a UUID-shaped value is ever cast.
-        assertTrue(s.contains("where v.tenant_id=a.tenant_id"), s);
+        assertTrue(s.contains("where rs.tenant_id=a.tenant_id"), s);
         // Task 0056: through the shared primary-identifier join.
-        assertTrue(s.contains("v.submission_id=coalesce(d.submission_id, case when a.record_submission_id ~ :uuidPattern then a.record_submission_id::uuid end)"), s);
+        assertTrue(s.contains("rs.submission_id=coalesce(d.submission_id, case when a.record_submission_id ~ :uuidPattern then a.record_submission_id::uuid end)"), s);
         assertTrue(s.contains("where tenant_id=:tenantId"), s);
         assertEquals(TENANT, params.getValue().getValue("tenantId"));
     }
@@ -135,15 +135,12 @@ class RecordOpenAuditTest {
 
         // Document events are still found through their document, within the tenant.
         assertTrue(s.contains("(target_type='DOCUMENT' and target_id in ( select d.document_id::text"), s);
-        assertTrue(s.contains("where d.tenant_id=:tenantId and (v.normalized_value=:recordNumber or v.stored_value=:recordNumber)"), s);
-        // Record opens are found through the submission named in their safe details, in the event's own tenant,
-        // with the same UUID guard as the list, matching the typed or the normalized identifier value.
-        assertTrue(s.contains("or (target_type='BUSINESS_RECORD' and exists ( select 1 from business_metadata_values v"
-                + " join metadata_field_definitions f on f.definition_id=v.definition_id and f.business_identifier"
-                + " where v.tenant_id=audit_events.tenant_id"
-                + " and v.submission_id = (case when audit_events.safe_details->>'submissionId' ~ :uuidPattern"
-                + " then (audit_events.safe_details->>'submissionId')::uuid end)"
-                + " and (v.normalized_value=:recordNumber or v.stored_value=:recordNumber))))"), s);
+        assertTrue(s.contains("where d.tenant_id=:tenantId and d.submission_id in (select rs.submission_id"), s);
+        assertTrue(s.contains("and v.field_key=f.field_key and v.search_value=:recordNumber"), s);
+        assertTrue(s.contains("where f.entity_uuid=:tenantId and f.product_code='SDV'"), s);
+        // Record opens are found through the submission named in their safe details, with the same UUID guard as the list.
+        assertTrue(s.contains("or (target_type='BUSINESS_RECORD' and (case when audit_events.safe_details->>'submissionId' ~ :uuidPattern"
+                + " then (audit_events.safe_details->>'submissionId')::uuid end) in (select rs.submission_id"), s);
         // The outer query is still limited to the caller's tenant.
         assertTrue(s.contains("from audit_events where tenant_id=:tenantId"), s);
         assertEquals(TENANT, params.getValue().getValue("tenantId"));

@@ -107,7 +107,7 @@ class IntakeCodesTest {
                 List.of(storage), crypto, mock(DocumentFinalizationService.class), mock(AuditEventPort.class), records,
                 mock(AccessRequestRepository.class), mock(PlatformTransactionManager.class), TestPdfs.UNCHECKED);
         SubmissionService submissionService = new SubmissionService(tenants, sources, definitions, submissions, documents,
-                mock(RecordSensitivityRepository.class), mock(AuditEventPort.class));
+                mock(RecordSensitivityRepository.class), mock(AuditEventPort.class), com.sdv.platform.application.port.RecordValuesPort.NONE, null);
         mvc = MockMvcBuilders.standaloneSetup(new DocumentIntakeController(security, intake),
                         new SubmissionController(security, submissionService))
                 .setControllerAdvice(new FoundationExceptionHandler())
@@ -119,7 +119,7 @@ class IntakeCodesTest {
         when(submissions.findById(TENANT, SOURCE, SUBMISSION)).thenReturn(Optional.of(submission));
         when(documents.lockSubmission(TENANT, SOURCE, SUBMISSION)).thenReturn(submission);
         when(records.ofSubmission(TENANT, SOURCE, SUBMISSION)).thenReturn(new RecordReferences.ResolvedRecord(
-                SOURCE, "submission:" + SUBMISSION, List.of(SUBMISSION)));
+                SOURCE, SUBMISSION, List.of(SUBMISSION)));
         StorageVolume volume = new StorageVolume(UUID.randomUUID(), TENANT, "LOCAL_FILESYSTEM", "primary-a", "/tmp",
                 StorageVolumeState.values()[0], 1, 80, 95, NOW, NOW);
         StoragePlacementService.PlacementDecision decision = mock(StoragePlacementService.PlacementDecision.class);

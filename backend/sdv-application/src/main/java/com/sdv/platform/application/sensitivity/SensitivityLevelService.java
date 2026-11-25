@@ -7,7 +7,6 @@ import tools.jackson.databind.ObjectMapper;
 import com.sdv.platform.application.access.Clearance;
 import com.sdv.platform.application.access.DocumentAccessGuard;
 import com.sdv.platform.application.approvals.AccessRequestService;
-import com.sdv.platform.application.business.RecordKey;
 import com.sdv.platform.application.business.RecordReferences;
 import com.sdv.platform.application.port.AccessRequestRepository;
 import com.sdv.platform.application.port.AuditEventPort;
@@ -165,17 +164,17 @@ public class SensitivityLevelService {
         Instant now = clock.instant();
         return transactions.execute(status -> {
             RecordSensitivityRepository.StoredRecordLevel stored =
-                    recordLevels.lockByKey(tenantId, record.sourceId(), record.recordKey()).orElse(null);
+                    recordLevels.lockByKey(tenantId, record.sourceId(), record.recordId()).orElse(null);
             UUID recordLevelId = null;
             if (stored == null) {
                 requireRaise(target, null);
                 UUID newId = UUID.randomUUID();
                 if (recordLevels.insertIfAbsent(new RecordSensitivityRepository.NewRecordLevel(newId,
-                        tenantId, record.sourceId(), record.recordKey(), target, why, actorId, now))) {
+                        tenantId, record.sourceId(), record.recordId(), target, why, actorId, now))) {
                     recordLevelId = newId;
                 } else {
                     // A delivery set a first level at the same moment: compare with that one instead.
-                    stored = recordLevels.lockByKey(tenantId, record.sourceId(), record.recordKey())
+                    stored = recordLevels.lockByKey(tenantId, record.sourceId(), record.recordId())
                             .orElseThrow(() -> new InternalCheckFailed("The record's level could not be read."));
                 }
             }
@@ -187,7 +186,7 @@ public class SensitivityLevelService {
             }
             UUID changeId = UUID.randomUUID();
             documentLevels.insertLevelChange(new AccessRequestRepository.LevelChange(changeId, tenantId,
-                    AccessRequestRepository.LevelChange.Scope.RECORD, null, record.sourceId(), record.recordKey(),
+                    AccessRequestRepository.LevelChange.Scope.RECORD, null, record.sourceId(), record.recordId(),
                     AccessRequestRepository.LevelChange.Direction.RAISED, from, target, why, actorId,
                     blankToNull(actorName), now, null));
             Map<String, Object> details = new LinkedHashMap<>();
@@ -209,7 +208,7 @@ public class SensitivityLevelService {
         RecordReferences.ResolvedRecord record = record(tenantId, recordReference);
         SensitivityLevel target = level(levelText);
         String why = AccessRequestService.reasonOf(reason, SdvErrorCode.SEN_012);
-        SensitivityLevel current = records.findRecordSensitivityLevel(tenantId, record.sourceId(), record.recordKey())
+        SensitivityLevel current = records.findRecordSensitivityLevel(tenantId, record.sourceId(), record.recordId())
                 .orElse(null);
         if (current == null || target.compareTo(current) >= 0) {
             throw new CodedRefusal.Conflict(SdvErrorCode.SEN_014, "A lowering must go to a level lower than the record's "
@@ -248,7 +247,7 @@ public class SensitivityLevelService {
     /** Task 0029 (0.4): a record's level changes with their reasons, newest first. */
     public List<HistoryEntry> recordHistory(UUID tenantId, String recordReference) {
         RecordReferences.ResolvedRecord record = record(tenantId, recordReference);
-        return documentLevels.findRecordLevelChanges(tenantId, record.sourceId(), record.recordKey(), HISTORY_LIMIT)
+        return documentLevels.findRecordLevelChanges(tenantId, record.sourceId(), record.recordId(), HISTORY_LIMIT)
                 .stream().map(HistoryEntry::of).toList();
     }
 
@@ -290,9 +289,8 @@ public class SensitivityLevelService {
 
     /** The document's record level alone (null when the record has none). */
     private SensitivityLevel recordLevel(Document document) {
-        String key = RecordKey.forSubmission(document.submissionId(), records.findMetadataSnapshots(
-                document.tenantId(), document.sourceId(), List.of(document.submissionId())));
-        return records.findRecordSensitivityLevel(document.tenantId(), document.sourceId(), key).orElse(null);
+        UUID recordId = recordReferences.ofSubmission(document.tenantId(), document.sourceId(), document.submissionId()).recordId();
+        return records.findRecordSensitivityLevel(document.tenantId(), document.sourceId(), recordId).orElse(null);
     }
 
     private static void requireRaise(SensitivityLevel target, SensitivityLevel current) {

@@ -22,7 +22,7 @@ import static org.mockito.Mockito.when;
 /**
  * Checks the search SQL the repository sends. (sdv-persistence has no test dependencies, so this test lives in
  * sdv-web, which already depends on sdv-persistence and spring-boot-starter-test.)
- * Contains and Starts with must ignore case; Exact must keep the field's configured normalization.
+ * Task 0078: every comparison is with the value as stored for search.
  */
 class JdbcBusinessRecordRepositorySearchSqlTest {
     private static final UUID TENANT = UUID.fromString("11111111-1111-1111-1111-111111111111");
@@ -42,22 +42,34 @@ class JdbcBusinessRecordRepositorySearchSqlTest {
     }
 
     @Test
-    void containsIgnoresCase() {
-        String sql = sqlFor(new SearchCriterion("lastName", MetadataSearchMode.PARTIAL, List.of("pat")), null, null);
-        assertTrue(sql.contains("position(lower(:c0Value0) in lower(v.normalized_value))>0"), sql);
+    void containsStartsWithAndExactCompareTheStoredSearchFormWhichIgnoresCaseAndTakesNoWildcards() {
+        for (var c : java.util.Map.of(MetadataSearchMode.PARTIAL, "%pa\\_t%", MetadataSearchMode.PREFIX, "pa\\_t%", MetadataSearchMode.EXACT, "pa_t").entrySet()) {
+            org.mockito.Mockito.reset(jdbc);
+            SqlParameterSource params = paramsFor(new SearchCriterion("loanType", c.getKey(), List.of(" PA_T ")));
+            assertEquals(c.getValue(), params.getValue("c0Value0"), c.getKey().name());
+        }
+        org.mockito.Mockito.reset(jdbc);
+        String sql = sqlFor(new SearchCriterion("loanType", MetadataSearchMode.PARTIAL, List.of("pat")), null, null);
+        assertTrue(sql.contains("v.search_value like :c0Value0"), sql);
+        assertTrue(sql.contains("v.entity_uuid=:tenantId") && sql.contains("v.record_type=:recordType"), sql);
     }
 
     @Test
-    void startsWithIgnoresCase() {
-        String sql = sqlFor(new SearchCriterion("lastName", MetadataSearchMode.PREFIX, List.of("PAT")), null, null);
-        assertTrue(sql.contains("position(lower(:c0Value0) in lower(v.normalized_value))=1"), sql);
+    void aSensitiveFieldIsComparedByItsFingerprintsOnly() {
+        String sql = sqlFor(SearchCriterion.sensitive("lastName", List.of("f1.x", "f2.y")), null, null);
+        assertTrue(sql.contains("v.fingerprint in (:c0Prints)") && !sql.contains("search_value"), sql);
+        org.mockito.Mockito.reset(jdbc);
+        sql = sqlFor(SearchCriterion.sensitive("lastName", List.of()), null, null);
+        assertTrue(sql.contains("and (false)"), "a value the field can't have finds nothing: " + sql);
     }
 
-    @Test
-    void exactKeepsConfiguredNormalization() {
-        String sql = sqlFor(new SearchCriterion("contractNumber", MetadataSearchMode.EXACT, List.of("300000000076")), null, null);
-        assertTrue(sql.contains("v.normalized_value=:c0Value0"), sql);
-        assertFalse(sql.contains("lower("), "Exact matches must not be lower-cased: " + sql);
+    @SuppressWarnings("unchecked")
+    private SqlParameterSource paramsFor(SearchCriterion criterion) {
+        when(jdbc.query(anyString(), any(SqlParameterSource.class), any(RowMapper.class))).thenReturn(List.of());
+        repository.findMatchingSubmissions(TENANT, SOURCE, List.of(criterion), null, null, null, null, 0, 26);
+        ArgumentCaptor<SqlParameterSource> params = ArgumentCaptor.forClass(SqlParameterSource.class);
+        verify(jdbc).query(anyString(), params.capture(), any(RowMapper.class));
+        return params.getValue();
     }
 
     @SuppressWarnings("unchecked")

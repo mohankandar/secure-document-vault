@@ -1,5 +1,6 @@
 package com.sdv.platform.application.approvals;
 
+import com.sdv.platform.persistence.fields.CaseRows;
 import com.sdv.platform.application.access.Clearance;
 import com.sdv.platform.application.access.DocumentAccessGuard;
 import com.sdv.platform.application.business.RecordReferences;
@@ -114,18 +115,10 @@ class AccessRequestPostgresTest {
                     + t[2] + "', '" + t[0] + "', '" + t[1] + "', 'sub', 3, 'COMPLETE')");
             UUID contract = UUID.randomUUID();
             UUID name = UUID.randomUUID();
-            sql("insert into metadata_field_definitions(definition_id, tenant_id, source_id, field_key, version, display_label, field_type, "
-                    + "required, business_identifier, searchable, normalization, search_mode) values ('" + contract + "', '" + t[0]
-                    + "', '" + t[1] + "', 'contractNumber', 1, 'Contract number', 'TEXT', true, true, true, 'DIGITS_ONLY', 'EXACT')");
-            sql("insert into metadata_field_definitions(definition_id, tenant_id, source_id, field_key, version, display_label, field_type, "
-                    + "required, business_identifier, searchable, normalization, search_mode) values ('" + name + "', '" + t[0]
-                    + "', '" + t[1] + "', 'lastName', 1, 'Last name', 'TEXT', false, false, true, 'NONE', 'EXACT')");
-            sql("insert into business_metadata_values(metadata_value_id, tenant_id, source_id, submission_id, definition_id, field_key, "
-                    + "definition_version, stored_value, normalized_value) values ('" + UUID.randomUUID() + "', '" + t[0] + "', '"
-                    + t[1] + "', '" + t[2] + "', '" + contract + "', 'contractNumber', 1, '" + CONTRACT + "', '" + CONTRACT + "')");
-            sql("insert into business_metadata_values(metadata_value_id, tenant_id, source_id, submission_id, definition_id, field_key, "
-                    + "definition_version, stored_value, normalized_value) values ('" + UUID.randomUUID() + "', '" + t[0] + "', '"
-                    + t[1] + "', '" + t[2] + "', '" + name + "', 'lastName', 1, 'Patel', 'Patel')");
+            CaseRows.field(jdbc.getJdbcTemplate(), (UUID) t[0], (UUID) t[1], "contractNumber", "Contract number", true, "DIGITS_ONLY", 0);
+            CaseRows.field(jdbc.getJdbcTemplate(), (UUID) t[0], (UUID) t[1], "lastName", "Last name", false, "NONE", 0);
+            CaseRows.value(jdbc.getJdbcTemplate(), (UUID) t[0], (UUID) t[1], (UUID) t[2], "contractNumber", CONTRACT);
+            CaseRows.value(jdbc.getJdbcTemplate(), (UUID) t[0], (UUID) t[1], (UUID) t[2], "lastName", "Patel");
         }
         insertDocument(T1, S1, SUB1, H, "HIGHLY_CONFIDENTIAL", "2026-11-14 09:00:00+00", 9);
         insertDocument(T1, S1, SUB1, H2, "HIGHLY_CONFIDENTIAL", "2026-11-14 15:00:00+00", 9);
@@ -299,9 +292,9 @@ class AccessRequestPostgresTest {
         approvals.decide(T1, "ba-1", null, lower.toString(), AccessRequestService.Decision.APPROVE, "c");
         assertEquals("STANDARD", one("select sensitivity_level from documents where document_id='" + C + "'"));
 
-        String ref = TestRecordRefs.of(S1, "contractNumber", CONTRACT);
+        String ref = TestRecordRefs.ref(S1, SUB1);
         levels.raiseRecord(T1, "steward-1", null, new Clearance(true, false), ref, "CONFIDENTIAL", "Litigation", "c");
-        String key = TestRecordRefs.key("contractNumber", CONTRACT);
+        UUID key = SUB1;
         assertEquals("CONFIDENTIAL", recordLevels.lockByKey(T1, S1, key).orElseThrow().level().name());
         UUID lowerRecord = levels.requestLowerRecord(T1, "steward-1", null, new Clearance(true, false), ref, "STANDARD",
                 "Closed", "c").requestId();
@@ -363,22 +356,23 @@ class AccessRequestPostgresTest {
                 "another tenant's events are never found");
 
         // ---- The table's checks.
-        String base = "insert into access_requests(request_id, tenant_id, kind, document_id, source_id, record_key, record_key_sha256, "
+        String base = "insert into access_requests(request_id, tenant_id, kind, document_id, source_id, record_id, "
                 + "requested_level, reason, requested_by, requested_at, status, expires_at, decided_by, decided_at, used_at) values (";
         String[][] bad = {
-                {"ck_access_requests_kind", "'COPY', '" + H + "', null, null, null, null, 'Reason', 'x', now(), 'PENDING', now() + interval '1 day', null, null, null"},
-                {"ck_access_requests_target", "'PRINT', null, null, null, null, null, 'Reason', 'x', now(), 'PENDING', now() + interval '1 day', null, null, null"},
-                {"ck_access_requests_target", "'LOWER_RECORD_LEVEL', null, '" + S1 + "', 'k', 'wrong', 'STANDARD', 'Reason', 'x', now(), 'PENDING', now() + interval '1 day', null, null, null"},
-                {"ck_access_requests_target", "'LOWER_RECORD_LEVEL', null, '" + S1 + "', 'k', null, 'STANDARD', 'Reason', 'x', now(), 'PENDING', now() + interval '1 day', null, null, null"},
-                {"ck_access_requests_requested_level", "'PRINT', '" + H + "', null, null, null, 'STANDARD', 'Reason', 'x', now(), 'PENDING', now() + interval '1 day', null, null, null"},
-                {"ck_access_requests_requested_level", "'LOWER_LEVEL', '" + H + "', null, null, null, null, 'Reason', 'x', now(), 'PENDING', now() + interval '1 day', null, null, null"},
-                {"ck_access_requests_reason", "'PRINT', '" + H + "', null, null, null, null, ' ab ', 'x', now(), 'PENDING', now() + interval '1 day', null, null, null"},
-                {"ck_access_requests_decided_status", "'PRINT', '" + H + "', null, null, null, null, 'Reason', 'x', now(), 'APPROVED', now() + interval '1 day', null, null, null"},
-                {"ck_access_requests_not_own", "'PRINT', '" + H + "', null, null, null, null, 'Reason', 'x', now(), 'DECLINED', now() + interval '1 day', 'x', now(), null"},
-                {"ck_access_requests_used", "'PRINT', '" + H + "', null, null, null, null, 'Reason', 'x', now(), 'USED', now() + interval '1 day', 'y', now(), null"},
-                {"ck_access_requests_used_kind", "'LOWER_LEVEL', '" + H + "', null, null, null, 'STANDARD', 'Reason', 'x', now(), 'USED', now() + interval '1 day', 'y', now(), now()"},
-                {"ck_access_requests_expires", "'PRINT', '" + H + "', null, null, null, null, 'Reason', 'x', now(), 'PENDING', now() - interval '1 day', null, null, null"},
-                {"fk_access_requests_document", "'PRINT', '" + X + "', null, null, null, null, 'Reason', 'x', now(), 'PENDING', now() + interval '1 day', null, null, null"},
+                {"ck_access_requests_kind", "'COPY', '" + H + "', null, null, null, 'Reason', 'x', now(), 'PENDING', now() + interval '1 day', null, null, null"},
+                {"ck_access_requests_target", "'PRINT', null, null, null, null, 'Reason', 'x', now(), 'PENDING', now() + interval '1 day', null, null, null"},
+                {"ck_access_requests_target", "'LOWER_RECORD_LEVEL', null, '" + S1 + "', null, 'STANDARD', 'Reason', 'x', now(), 'PENDING', now() + interval '1 day', null, null, null"},
+                {"ck_access_requests_target", "'LOWER_RECORD_LEVEL', null, null, '" + SUB1 + "', 'STANDARD', 'Reason', 'x', now(), 'PENDING', now() + interval '1 day', null, null, null"},
+                {"ck_access_requests_requested_level", "'PRINT', '" + H + "', null, null, 'STANDARD', 'Reason', 'x', now(), 'PENDING', now() + interval '1 day', null, null, null"},
+                {"ck_access_requests_requested_level", "'LOWER_LEVEL', '" + H + "', null, null, null, 'Reason', 'x', now(), 'PENDING', now() + interval '1 day', null, null, null"},
+                {"ck_access_requests_reason", "'PRINT', '" + H + "', null, null, null, ' ab ', 'x', now(), 'PENDING', now() + interval '1 day', null, null, null"},
+                {"ck_access_requests_decided_status", "'PRINT', '" + H + "', null, null, null, 'Reason', 'x', now(), 'APPROVED', now() + interval '1 day', null, null, null"},
+                {"ck_access_requests_not_own", "'PRINT', '" + H + "', null, null, null, 'Reason', 'x', now(), 'DECLINED', now() + interval '1 day', 'x', now(), null"},
+                {"ck_access_requests_used", "'PRINT', '" + H + "', null, null, null, 'Reason', 'x', now(), 'USED', now() + interval '1 day', 'y', now(), null"},
+                {"ck_access_requests_used_kind", "'LOWER_LEVEL', '" + H + "', null, null, 'STANDARD', 'Reason', 'x', now(), 'USED', now() + interval '1 day', 'y', now(), now()"},
+                {"ck_access_requests_expires", "'PRINT', '" + H + "', null, null, null, 'Reason', 'x', now(), 'PENDING', now() - interval '1 day', null, null, null"},
+                {"fk_access_requests_record", "'LOWER_RECORD_LEVEL', null, '" + S1 + "', '" + UUID.randomUUID() + "', 'STANDARD', 'Reason', 'x', now(), 'PENDING', now() + interval '1 day', null, null, null"},
+                {"fk_access_requests_document", "'PRINT', '" + X + "', null, null, null, 'Reason', 'x', now(), 'PENDING', now() + interval '1 day', null, null, null"},
         };
         for (String[] row : bad) {
             Exception thrown = assertThrows(org.springframework.dao.DataIntegrityViolationException.class,
@@ -387,19 +381,18 @@ class AccessRequestPostgresTest {
         }
 
         // Task 0029 (0.4): the level-change history's checks.
-        String changes = "insert into sensitivity_level_changes(change_id, tenant_id, scope, document_id, source_id, record_key, "
-                + "record_key_sha256, direction, from_level, to_level, reason, changed_by, changed_at, access_request_id) values (";
+        String changes = "insert into sensitivity_level_changes(change_id, tenant_id, scope, document_id, source_id, record_id, direction, from_level, to_level, reason, changed_by, changed_at, access_request_id) values (";
         String[][] badChanges = {
-                {"ck_level_changes_scope", "'FOLDER', '" + H + "', null, null, null, 'RAISED', 'STANDARD', 'CONFIDENTIAL', 'Reason', 'x', now(), null"},
-                {"ck_level_changes_target", "'DOCUMENT', null, null, null, null, 'RAISED', 'STANDARD', 'CONFIDENTIAL', 'Reason', 'x', now(), null"},
-                {"ck_level_changes_target", "'RECORD', null, '" + S1 + "', 'k', 'wrong', 'RAISED', null, 'CONFIDENTIAL', 'Reason', 'x', now(), null"},
-                {"ck_level_changes_direction", "'DOCUMENT', '" + H + "', null, null, null, 'SIDEWAYS', 'STANDARD', 'CONFIDENTIAL', 'Reason', 'x', now(), null"},
-                {"ck_level_changes_levels", "'DOCUMENT', '" + H + "', null, null, null, 'RAISED', 'STANDARD', 'SECRET', 'Reason', 'x', now(), null"},
-                {"ck_level_changes_from", "'DOCUMENT', '" + H + "', null, null, null, 'RAISED', null, 'CONFIDENTIAL', 'Reason', 'x', now(), null"},
-                {"ck_level_changes_request", "'DOCUMENT', '" + H + "', null, null, null, 'LOWERED', 'CONFIDENTIAL', 'STANDARD', 'Reason', 'x', now(), null"},
-                {"ck_level_changes_reason", "'DOCUMENT', '" + H + "', null, null, null, 'RAISED', 'STANDARD', 'CONFIDENTIAL', ' ab ', 'x', now(), null"},
-                {"ck_level_changes_changed_by", "'DOCUMENT', '" + H + "', null, null, null, 'RAISED', 'STANDARD', 'CONFIDENTIAL', 'Reason', '', now(), null"},
-                {"fk_level_changes_document", "'DOCUMENT', '" + X + "', null, null, null, 'RAISED', 'STANDARD', 'CONFIDENTIAL', 'Reason', 'x', now(), null"},
+                {"ck_level_changes_scope", "'FOLDER', '" + H + "', null, null, 'RAISED', 'STANDARD', 'CONFIDENTIAL', 'Reason', 'x', now(), null"},
+                {"ck_level_changes_target", "'DOCUMENT', null, null, null, 'RAISED', 'STANDARD', 'CONFIDENTIAL', 'Reason', 'x', now(), null"},
+                {"ck_level_changes_target", "'RECORD', null, '" + S1 + "', null, 'RAISED', null, 'CONFIDENTIAL', 'Reason', 'x', now(), null"},
+                {"ck_level_changes_direction", "'DOCUMENT', '" + H + "', null, null, 'SIDEWAYS', 'STANDARD', 'CONFIDENTIAL', 'Reason', 'x', now(), null"},
+                {"ck_level_changes_levels", "'DOCUMENT', '" + H + "', null, null, 'RAISED', 'STANDARD', 'SECRET', 'Reason', 'x', now(), null"},
+                {"ck_level_changes_from", "'DOCUMENT', '" + H + "', null, null, 'RAISED', null, 'CONFIDENTIAL', 'Reason', 'x', now(), null"},
+                {"ck_level_changes_request", "'DOCUMENT', '" + H + "', null, null, 'LOWERED', 'CONFIDENTIAL', 'STANDARD', 'Reason', 'x', now(), null"},
+                {"ck_level_changes_reason", "'DOCUMENT', '" + H + "', null, null, 'RAISED', 'STANDARD', 'CONFIDENTIAL', ' ab ', 'x', now(), null"},
+                {"ck_level_changes_changed_by", "'DOCUMENT', '" + H + "', null, null, 'RAISED', 'STANDARD', 'CONFIDENTIAL', 'Reason', '', now(), null"},
+                {"fk_level_changes_document", "'DOCUMENT', '" + X + "', null, null, 'RAISED', 'STANDARD', 'CONFIDENTIAL', 'Reason', 'x', now(), null"},
         };
         for (String[] row : badChanges) {
             Exception thrown = assertThrows(org.springframework.dao.DataIntegrityViolationException.class,

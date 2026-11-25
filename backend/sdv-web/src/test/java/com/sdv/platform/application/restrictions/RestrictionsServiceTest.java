@@ -1,7 +1,6 @@
 package com.sdv.platform.application.restrictions;
 
 import tools.jackson.databind.ObjectMapper;
-import com.sdv.platform.application.business.RecordKey;
 import com.sdv.platform.application.port.RestrictionsRepository;
 import com.sdv.platform.application.port.RestrictionsRepository.Holds;
 import com.sdv.platform.application.port.RestrictionsRepository.Identifier;
@@ -49,12 +48,11 @@ class RestrictionsServiceTest {
                         new StorageReportService.StoredRow(LOANS, "Loans", SensitivityLevel.HIGHLY_CONFIDENTIAL, 2, 0, 0),
                         new StorageReportService.StoredRow(CARDS, "Cards", SensitivityLevel.CONFIDENTIAL, 3, 0, 0)),
                 List.of(), null, List.of(), List.of(), List.of(), null));
-        String identifiers = RecordKey.ofIdentifiers(List.of(new RecordKey.Part("contractNumber", "300000000001"),
-                new RecordKey.Part("customerId", "C77")));
+        UUID identifiers = UUID.randomUUID(), unknown = UUID.randomUUID();
         List<RecordLevel> records = new ArrayList<>();
         records.add(new RecordLevel(UUID.randomUUID(), LOANS, identifiers, "HIGHLY_CONFIDENTIAL", NOW.minusSeconds(60)));
-        records.add(new RecordLevel(UUID.randomUUID(), CARDS, "submission:" + SUB, "CONFIDENTIAL", NOW.minusSeconds(120)));
-        records.add(new RecordLevel(UUID.randomUUID(), CARDS, "not a key", "CONFIDENTIAL", NOW.minusSeconds(180)));
+        records.add(new RecordLevel(UUID.randomUUID(), CARDS, SUB, "CONFIDENTIAL", NOW.minusSeconds(120)));
+        records.add(new RecordLevel(UUID.randomUUID(), CARDS, unknown, "CONFIDENTIAL", NOW.minusSeconds(180)));
         when(repo.findRestrictedRecords(eq(T), any(), anyInt())).thenReturn(records);
         when(repo.countRestrictedRecords(T)).thenReturn(3L);
         when(repo.findLevelChanges(eq(T), any(), any(), anyInt())).thenReturn(List.of(
@@ -62,10 +60,9 @@ class RestrictionsServiceTest {
                 new LevelChange(UUID.randomUUID(), "Ada Admin", NOW.minusSeconds(90), "RECORD", "HIGHLY_CONFIDENTIAL", "CONFIDENTIAL", LOANS, identifiers, null)));
         when(repo.countLevelChanges(eq(T), any())).thenReturn(2L);
         when(repo.findSubmissionIdentifiers(eq(T), any())).thenReturn(Map.of(
-                SUB, new Identifier("Card number", "4000123412341234"), DOC_SUB, new Identifier("Contract number", "300000000009")));
-        // Task 0056: a non-identifier field first; the contract number is the first identifier shown.
-        when(repo.findDisplayOrders(eq(T), any())).thenReturn(Map.of(LOANS, List.of("branch", "contractNumber", "customerId")));
-        when(repo.findIdentifierLabels(eq(T), any())).thenReturn(Map.of(LOANS, Map.of("contractNumber", "Contract number", "customerId", "Customer ID")));
+                DOC_SUB, new Identifier("Contract number", "300000000009")));
+        // Task 0056, 0078: the database names the primary identifier by the display order (PrimaryIdentifierPostgresTest).
+        when(repo.findRecordIdentifiers(eq(T), any())).thenReturn(Map.of(identifiers, new Identifier("Contract number", "300000000001"), SUB, new Identifier("Card number", "4000123412341234")));
         when(repo.findWaitingLowerings(T)).thenReturn(new Waiting(2, NOW.minusSeconds(86_400)));
         when(repo.countHolds(T)).thenReturn(new Holds(4, 6));
         when(repo.countQuarantine(T)).thenReturn(new Quarantine(2, 1500, 1));
@@ -96,23 +93,11 @@ class RestrictionsServiceTest {
         assertEquals("300000000001", r.get(0).identifier(), "the primary field, not the other identifier");
         assertEquals(SensitivityLevel.HIGHLY_CONFIDENTIAL, r.get(0).level());
         assertEquals("4000123412341234", r.get(1).identifier(), "a record of one submission: its primary identifier");
-        assertNull(r.get(2).identifier(), "a key that can't be read names nothing, never a guess");
+        assertNull(r.get(2).identifier(), "a record without an identifier has no name, never a guess");
         // A document's change names its record, never the document.
         assertEquals("300000000009", o.changes().items().get(0).identifier());
         assertEquals("DOCUMENT", o.changes().items().get(0).scope());
         assertEquals("300000000001", o.changes().items().get(1).identifier());
-    }
-
-    @Test
-    void theDisplayOrderNotTheFieldKeyPicksThePrimaryIdentifier() {
-        // Task 0056: customerId is shown before contractNumber, though contractNumber comes first by field key.
-        when(repo.findDisplayOrders(eq(T), any())).thenReturn(Map.of(LOANS, List.of("branch", "customerId", "contractNumber")));
-        RestrictionsService.RestrictedRecord r = service.overview(T).records().items().getFirst();
-        assertEquals("Customer ID", r.identifierLabel());
-        assertEquals("C77", r.identifier());
-        // No saved display order: by field key.
-        when(repo.findDisplayOrders(eq(T), any())).thenReturn(Map.of());
-        assertEquals("300000000001", service.overview(T).records().items().getFirst().identifier());
     }
 
     @Test
@@ -127,7 +112,7 @@ class RestrictionsServiceTest {
     void listsPageWithPositionsVeroGave() {
         List<RecordLevel> many = new ArrayList<>();
         for (int i = 0; i < RestrictionsService.PAGE + 1; i++) {
-            many.add(new RecordLevel(UUID.randomUUID(), LOANS, "submission:" + SUB, "CONFIDENTIAL", NOW.minusSeconds(i)));
+            many.add(new RecordLevel(UUID.randomUUID(), LOANS, SUB, "CONFIDENTIAL", NOW.minusSeconds(i)));
         }
         when(repo.findRestrictedRecords(eq(T), isNull(), eq(RestrictionsService.PAGE + 1))).thenReturn(many);
         RestrictionsService.RecordPage first = service.records(T, null);

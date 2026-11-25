@@ -51,7 +51,8 @@ class DocumentSensitivityReadTest {
         when(sources.findById(TENANT, SOURCE)).thenReturn(Optional.of(source));
         when(records.findMetadataSnapshots(eq(TENANT), eq(SOURCE), anyList())).thenReturn(List.of(
                 new MetadataSnapshot(SUB, "contractNumber", "Contract Number", "300000000076", "300000000076", true)));
-        when(records.findSubmissionIdsByRecordIdentity(eq(TENANT), eq(SOURCE), anyList())).thenReturn(List.of(SUB));
+        TestRecordRefs.group(records);
+        when(records.findSubmissionIdsOfRecord(eq(TENANT), eq(SOURCE), any())).thenReturn(List.of(SUB));
         Submission submission = new Submission(SUB, TENANT, SOURCE, "src-1", 3, "sha", SubmissionStatus.COMPLETE, NOW.minusSeconds(60), NOW, null);
         when(records.findSubmissionsByIds(eq(TENANT), eq(SOURCE), anyList())).thenReturn(List.of(submission));
         when(records.findMatchingSubmissions(eq(TENANT), eq(SOURCE), anyList(), any(), any(), any(), any(), anyBoolean(), eq(0), anyInt()))

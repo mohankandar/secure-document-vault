@@ -1,10 +1,15 @@
 package com.sdv.platform.web.crypto;
 
+import com.documentplatform.crypto.CryptoError;
+import com.documentplatform.crypto.CryptoException;
 import com.documentplatform.crypto.CustomerId;
 import com.documentplatform.crypto.KeyService;
 import com.documentplatform.crypto.envelope.StreamCipher;
+import com.documentplatform.crypto.spring.CryptoProperties;
+import com.documentplatform.crypto.vault.VaultKeyService;
 import com.sdv.platform.application.port.KeyServiceHealthProbe;
 import com.sdv.platform.application.port.StreamingCryptoPort;
+import com.sdv.platform.persistence.fields.BatchUnwrap;
 import org.springframework.beans.factory.support.BeanDefinitionRegistryPostProcessor;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
@@ -34,6 +39,20 @@ public class CryptoConfiguration {
         @Bean
         StreamingCryptoPort documentCrypto(StreamCipher cipher, CustomerId customer) {
             return new BoundStreamCrypto(cipher, customer);
+        }
+
+        /** Task 0078: only with Vault; another key service opens a page's keys not at all, and its list shows no names. */
+        @Bean
+        BatchUnwrap batchUnwrap(KeyService service, CryptoProperties properties) {
+            if (!(service instanceof VaultKeyService keys)) {
+                return (customer, wrapped) -> {
+                    throw new CryptoException(CryptoError.CRYPTO_KEY_SERVICE_ERROR, "this key service opens no batch");
+                };
+            }
+            CryptoProperties.Vault v = properties.getVault();
+            return new VaultBatchUnwrap(new VaultBatchUnwrap.Settings(v.getAddress(), v.getNamespace(), v.getLogin() == null ? "APPROLE" : v.getLogin().name(), v.getToken(), v.getTokenFile(),
+                    v.getApproleMount() == null ? "approle" : v.getApproleMount(), v.getRoleId(), v.getSecretId(), v.getSecretIdFile(),
+                    v.getTransitMount() == null ? VaultKeyService.DEFAULT_MOUNT : v.getTransitMount(), v.getTimeout() == null ? java.time.Duration.ofSeconds(10) : v.getTimeout()), keys::wrappingKeyName);
         }
 
         @Bean

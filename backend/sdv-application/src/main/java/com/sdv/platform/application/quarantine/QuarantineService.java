@@ -11,6 +11,7 @@ import com.sdv.platform.application.business.SearchValueNormalizer;
 import com.sdv.platform.application.port.AuditEventPort;
 import com.sdv.platform.application.port.MetadataFieldDefinitionRepository;
 import com.sdv.platform.application.port.QuarantineRepository;
+import com.sdv.platform.application.port.RecordValuesPort;
 import com.sdv.platform.application.port.QuarantineRepository.Counts;
 import com.sdv.platform.application.port.QuarantineRepository.DocumentFacts;
 import com.sdv.platform.application.port.QuarantineRepository.Exposure;
@@ -130,17 +131,24 @@ public class QuarantineService {
     private final ApprovalSettings settings;
     private final TransactionTemplate transactions;
     private final Clock clock;
+    private final RecordValuesPort recordValues;
 
     @Autowired
     public QuarantineService(QuarantineRepository quarantine, DocumentAccessGuard access,
                              MetadataFieldDefinitionRepository definitions, AuditEventPort audit,
-                             ApprovalSettings settings, PlatformTransactionManager transactionManager) {
-        this(quarantine, access, definitions, audit, settings, transactionManager, Clock.systemUTC());
+                             ApprovalSettings settings, PlatformTransactionManager transactionManager, RecordValuesPort recordValues) {
+        this(quarantine, access, definitions, audit, settings, transactionManager, recordValues, Clock.systemUTC());
     }
 
     QuarantineService(QuarantineRepository quarantine, DocumentAccessGuard access,
                       MetadataFieldDefinitionRepository definitions, AuditEventPort audit, ApprovalSettings settings,
                       PlatformTransactionManager transactionManager, Clock clock) {
+        this(quarantine, access, definitions, audit, settings, transactionManager, RecordValuesPort.NONE, clock);
+    }
+
+    QuarantineService(QuarantineRepository quarantine, DocumentAccessGuard access,
+                      MetadataFieldDefinitionRepository definitions, AuditEventPort audit, ApprovalSettings settings,
+                      PlatformTransactionManager transactionManager, RecordValuesPort recordValues, Clock clock) {
         this.quarantine = Objects.requireNonNull(quarantine, "quarantine");
         this.access = Objects.requireNonNull(access, "access");
         this.definitions = Objects.requireNonNull(definitions, "definitions");
@@ -148,6 +156,7 @@ public class QuarantineService {
         this.settings = Objects.requireNonNull(settings, "settings");
         this.transactions = new TransactionTemplate(Objects.requireNonNull(transactionManager, "transactionManager"));
         this.clock = clock;
+        this.recordValues = Objects.requireNonNull(recordValues, "recordValues");
     }
 
     /** Who is acting: the server's clearance decides the levels; the web layer has already checked the capability. */
@@ -1025,7 +1034,8 @@ public class QuarantineService {
             throw new CodedRefusal.BadRequest(SdvErrorCode.QUA_004, "The 'to' date is before the 'from' date.");
         }
         UUID sourceId = blank(f.sourceId()) ? null : parse(f.sourceId(), SdvErrorCode.QUA_004, "This sending system isn't known.");
-        Map<String, String> fields = new LinkedHashMap<>();
+        Map<String, String> fields = new LinkedHashMap<>(), asSensitive = new LinkedHashMap<>();
+        java.util.Set<String> sensitive = f.fields() == null || f.fields().isEmpty() ? java.util.Set.of() : recordValues.sensitiveKeys(tenantId);
         Map<String, String> asked = f.fields() == null ? Map.of() : f.fields();
         if (!asked.isEmpty() && sourceId == null) {
             throw new CodedRefusal.BadRequest(SdvErrorCode.QUA_004, "Choose the sending system before filtering by its fields.");
@@ -1044,8 +1054,11 @@ public class QuarantineService {
             if (normalized.isBlank()) {
                 throw new CodedRefusal.BadRequest(SdvErrorCode.QUA_004, "A field value is empty after it is normalized.");
             }
-            fields.put(field.fieldKey(), normalized);
+            if (sensitive.contains(field.fieldKey())) asSensitive.put(field.fieldKey(), value);
+            else fields.put(field.fieldKey(), SearchValueNormalizer.searchForm(definitions.storedForms(tenantId, field.fieldKey(), value).stream().findFirst().orElse(normalized)));
         }
+        // Task 0078: a sensitive value is kept and compared as its fingerprints only.
+        recordValues.fingerprints(tenantId, asSensitive).forEach((key, prints) -> fields.put(key, "fingerprint:" + String.join("|", prints)));
         return new Filter(from.atStartOfDay(ZoneOffset.UTC).toInstant(),
                 to.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant(), sourceId, fields);
     }

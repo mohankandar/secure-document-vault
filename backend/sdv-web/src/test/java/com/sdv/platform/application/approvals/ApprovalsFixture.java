@@ -113,22 +113,19 @@ final class ApprovalsFixture {
             }
             return out;
         });
-        when(records.findSubmissionIdsByRecordIdentity(any(), any(), anyList())).thenAnswer(i -> {
+        com.sdv.platform.application.business.TestRecordRefs.group(records);
+        when(records.findSubmissionIdsOfRecord(any(), any(), any())).thenAnswer(i -> {
             if (!TENANT.equals(i.getArgument(0)) || !SOURCE.equals(i.getArgument(1))) return List.of();
-            List<?> criteria = i.getArgument(2);
-            if (criteria.size() != 1) return List.of();
-            BusinessRecordRepository.IdentifierCriterion c = (BusinessRecordRepository.IdentifierCriterion) criteria.getFirst();
-            if (!"contractNumber".equals(c.fieldKey())) return List.of();
-            return CONTRACT_A.equals(c.normalizedValue()) ? List.of(SUB_A)
-                    : CONTRACT_B.equals(c.normalizedValue()) ? List.of(SUB_B) : List.of();
+            UUID record = i.getArgument(2);
+            return id(CONTRACT_A).equals(record) ? List.of(SUB_A) : id(CONTRACT_B).equals(record) ? List.of(SUB_B) : List.of();
         });
-        when(records.findRecordSensitivityLevel(any(), any(), anyString())).thenAnswer(i ->
+        when(records.findRecordSensitivityLevel(any(), any(), any())).thenAnswer(i ->
                 TENANT.equals(i.getArgument(0)) ? recordLevels.level((UUID) i.getArgument(1), i.getArgument(2)) : Optional.empty());
         when(records.findRecordSensitivityLevels(any(), any(), anyCollection())).thenAnswer(i -> {
-            Map<String, SensitivityLevel> out = new HashMap<>();
+            Map<UUID, SensitivityLevel> out = new HashMap<>();
             if (!TENANT.equals(i.getArgument(0))) return out;
             for (Object key : (Collection<?>) i.getArgument(2)) {
-                recordLevels.level((UUID) i.getArgument(1), (String) key).ifPresent(l -> out.put((String) key, l));
+                recordLevels.level((UUID) i.getArgument(1), (UUID) key).ifPresent(l -> out.put((UUID) key, l));
             }
             return out;
         });
@@ -191,8 +188,8 @@ final class ApprovalsFixture {
         return TestRecordRefs.of(SOURCE, "contractNumber", contract);
     }
 
-    static String recordKey(String contract) {
-        return TestRecordRefs.key("contractNumber", contract);
+    static UUID recordId(String contract) {
+        return TestRecordRefs.id("contractNumber", contract);
     }
 
     List<AuditEvent> events(String action) {
@@ -222,26 +219,30 @@ final class ApprovalsFixture {
         @Override public Instant instant() { return now; }
     }
 
+    static UUID id(String contract) {
+        return com.sdv.platform.application.business.TestRecordRefs.id("contractNumber", contract);
+    }
+
     /** record_sensitivity_levels, in memory. */
     static final class MemoryRecordLevels implements RecordSensitivityRepository {
         final Map<String, Object[]> rows = new LinkedHashMap<>();
 
-        Optional<SensitivityLevel> level(UUID source, String key) {
+        Optional<SensitivityLevel> level(UUID source, UUID key) {
             Object[] row = rows.get(source + "|" + key);
             return row == null ? Optional.empty() : Optional.of((SensitivityLevel) row[1]);
         }
 
-        void put(String key, SensitivityLevel level) {
+        void put(UUID key, SensitivityLevel level) {
             rows.put(SOURCE + "|" + key, new Object[]{UUID.randomUUID(), level, "SOURCE", null});
         }
 
         @Override public boolean insertIfAbsent(NewRecordLevel l) {
-            return rows.putIfAbsent(l.sourceId() + "|" + l.recordKey(),
+            return rows.putIfAbsent(l.sourceId() + "|" + l.recordId(),
                     new Object[]{l.recordLevelId(), l.level(), l.setBy(), l.reason()}) == null;
         }
 
-        @Override public Optional<StoredRecordLevel> lockByKey(UUID tenantId, UUID sourceId, String recordKey) {
-            Object[] row = TENANT.equals(tenantId) ? rows.get(sourceId + "|" + recordKey) : null;
+        @Override public Optional<StoredRecordLevel> lockByKey(UUID tenantId, UUID sourceId, UUID recordId) {
+            Object[] row = TENANT.equals(tenantId) ? rows.get(sourceId + "|" + recordId) : null;
             return row == null ? Optional.empty() : Optional.of(new StoredRecordLevel((UUID) row[0], (SensitivityLevel) row[1]));
         }
 
@@ -303,7 +304,7 @@ final class ApprovalsFixture {
                     && o.tenantId().equals(r.tenantId()) && o.requestedBy().equals(r.requestedBy())
                     && (r.documentId() != null
                         ? o.kind() == r.kind() && r.documentId().equals(o.documentId())
-                        : o.kind() == r.kind() && Objects.equals(o.sourceId(), r.sourceId()) && Objects.equals(o.recordKey(), r.recordKey())));
+                        : o.kind() == r.kind() && Objects.equals(o.sourceId(), r.sourceId()) && Objects.equals(o.recordId(), r.recordId())));
             if (duplicate) return false;
             rows.put(r.requestId(), r);
             return true;
@@ -454,15 +455,15 @@ final class ApprovalsFixture {
                     .sorted(Comparator.comparing(LevelChange::changedAt).reversed()).limit(limit).toList();
         }
 
-        @Override public List<LevelChange> findRecordLevelChanges(UUID tenantId, UUID sourceId, String recordKey, int limit) {
+        @Override public List<LevelChange> findRecordLevelChanges(UUID tenantId, UUID sourceId, UUID recordId, int limit) {
             return reversed().filter(c -> c.tenantId().equals(tenantId) && c.scope() == LevelChange.Scope.RECORD
-                            && sourceId.equals(c.sourceId()) && recordKey.equals(c.recordKey()))
+                            && sourceId.equals(c.sourceId()) && recordId.equals(c.recordId()))
                     .sorted(Comparator.comparing(LevelChange::changedAt).reversed()).limit(limit).toList();
         }
 
         private static AccessRequest copy(AccessRequest r, AccessRequestStatus status, String decidedBy, String decidedByName,
                                           Instant decidedAt, Instant expiresAt, Instant usedAt) {
-            return new AccessRequest(r.requestId(), r.tenantId(), r.kind(), r.documentId(), r.sourceId(), r.recordKey(),
+            return new AccessRequest(r.requestId(), r.tenantId(), r.kind(), r.documentId(), r.sourceId(), r.recordId(),
                     r.requestedLevel(), r.reason(), r.requestedBy(), r.requestedByName(), r.requestedAt(), status, decidedBy,
                     decidedByName, decidedAt, expiresAt, usedAt);
         }

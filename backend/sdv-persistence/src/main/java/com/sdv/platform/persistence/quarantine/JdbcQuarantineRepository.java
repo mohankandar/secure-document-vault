@@ -2,6 +2,7 @@ package com.sdv.platform.persistence.quarantine;
 
 import com.sdv.platform.application.json.VeroJson;
 import com.sdv.platform.persistence.business.PrimaryIdentifierSql;
+import com.sdv.platform.persistence.fields.CaseFieldSql;
 import tools.jackson.core.JacksonException;
 import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.ObjectMapper;
@@ -66,15 +67,11 @@ public class JdbcQuarantineRepository implements QuarantineRepository {
                 and %1$s.ingested_at <= qi.cutoff_received_at
                 and (qi.filter_source_id is null or %1$s.source_id=qi.filter_source_id)
                 and not exists (select 1 from jsonb_each_text(qi.filter_fields) ff
-                                 where not exists (select 1 from business_metadata_values bv
-                                                    where bv.tenant_id=%1$s.tenant_id
-                                                      and bv.submission_id=%1$s.submission_id
-                                                      and bv.field_key=ff.key
-                                                      and coalesce(bv.normalized_value, bv.stored_value)=ff.value))
+                                 where not %2$s)
                 and not exists (select 1 from quarantined_documents qr
                                  where qr.tenant_id=%1$s.tenant_id and qr.document_id=%1$s.document_id
                                    and qr.released_at is not null and qr.released_at >= qi.created_at)"""
-                .formatted(d);
+                .formatted(d, CaseFieldSql.hasValue(d + ".tenant_id", d + ".submission_id", "ff.key", "ff.value"));
     }
 
     private final NamedParameterJdbcTemplate jdbc;
@@ -232,9 +229,7 @@ public class JdbcQuarantineRepository implements QuarantineRepository {
         int i = 0;
         for (Map.Entry<String, String> field : f.fields().entrySet()) {
             String k = "fk" + i, v = "fv" + i;
-            sql.append(" and exists (select 1 from business_metadata_values v where v.tenant_id=d.tenant_id")
-                    .append(" and v.submission_id=d.submission_id and v.field_key=:").append(k)
-                    .append(" and coalesce(v.normalized_value, v.stored_value)=:").append(v).append(")");
+            sql.append(" and ").append(CaseFieldSql.hasValue("d.tenant_id", "d.submission_id", ":" + k, ":" + v));
             p.addValue(k, field.getKey()).addValue(v, field.getValue());
             i++;
         }

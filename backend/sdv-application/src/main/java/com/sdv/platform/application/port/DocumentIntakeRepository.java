@@ -54,7 +54,7 @@ public interface DocumentIntakeRepository {
      * Held until the transaction ends: two deliveries of the same file for the same record can't both decide that
      * nothing is stored yet, so one is stored and the other becomes its duplicate.
      */
-    void lockDuplicateCheck(UUID tenantId, UUID sourceId, String recordKey, String contentSha256);
+    void lockDuplicateCheck(UUID tenantId, UUID sourceId, UUID recordId, String contentSha256);
 
     /** The duplicate this delivery (sourceDocumentId, or the idempotency key when there is none) already was. */
     Optional<DuplicateReceipt> findDuplicateReceipt(UUID tenantId, UUID submissionId, String sourceDocumentId,

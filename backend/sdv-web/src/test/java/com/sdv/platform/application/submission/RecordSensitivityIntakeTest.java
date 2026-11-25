@@ -1,6 +1,6 @@
 package com.sdv.platform.application.submission;
 
-import com.sdv.platform.application.business.RecordKey;
+import com.sdv.platform.application.business.TestRecordRefs;
 import com.sdv.platform.application.port.DocumentIntakeRepository;
 import com.sdv.platform.application.port.IngestionSourceRepository;
 import com.sdv.platform.application.port.MetadataFieldDefinitionRepository;
@@ -8,7 +8,6 @@ import com.sdv.platform.application.port.RecordSensitivityRepository;
 import com.sdv.platform.application.port.SubmissionRepository;
 import com.sdv.platform.application.port.TenantRepository;
 import com.sdv.platform.domain.audit.AuditEvent;
-import com.sdv.platform.domain.document.BusinessMetadataValue;
 import com.sdv.platform.domain.document.SensitivityLevel;
 import com.sdv.platform.domain.metadata.MetadataFieldDefinition;
 import com.sdv.platform.domain.metadata.MetadataFieldType;
@@ -47,7 +46,7 @@ class RecordSensitivityIntakeTest {
     private static final UUID TENANT = UUID.fromString("11111111-1111-1111-1111-111111111111");
     private static final UUID SOURCE = UUID.fromString("22222222-2222-2222-2222-222222222222");
     private static final Instant NOW = Instant.parse("2026-11-20T10:00:00Z");
-    private static final String CONTRACT_KEY = RecordKey.ofIdentifiers(List.of(new RecordKey.Part("contractNumber", "937552212763")));
+    private static final UUID CONTRACT_KEY = TestRecordRefs.id("contractNumber", "937552212763");
 
     private final MetadataFieldDefinitionRepository definitions = mock(MetadataFieldDefinitionRepository.class);
     private final MemorySubmissions submissions = new MemorySubmissions();
@@ -68,7 +67,7 @@ class RecordSensitivityIntakeTest {
                 field("lastName", false, false, MetadataNormalization.TRIM),
                 field("memberId", true, false, MetadataNormalization.TRIM)));
         service = new SubmissionService(tenants, sources, definitions, submissions,
-                mock(DocumentIntakeRepository.class), levels, audit::add, Clock.fixed(NOW, ZoneOffset.UTC));
+                mock(DocumentIntakeRepository.class), levels, audit::add, new GroupedValues(), null, Clock.fixed(NOW, ZoneOffset.UTC));
     }
 
     private static MetadataFieldDefinition field(String key, boolean identifier, boolean required, MetadataNormalization normalization) {
@@ -146,8 +145,8 @@ class RecordSensitivityIntakeTest {
         SubmissionDetails first = deliver("s1", Map.of("lastName", "Patel"), "CONFIDENTIAL");
         SubmissionDetails second = deliver("s2", Map.of("lastName", "Patel"), "STANDARD");
 
-        String firstKey = RecordKey.ofSubmission(first.submission().submissionId());
-        String secondKey = RecordKey.ofSubmission(second.submission().submissionId());
+        UUID firstKey = first.submission().submissionId();
+        UUID secondKey = second.submission().submissionId();
         assertEquals(SensitivityLevel.CONFIDENTIAL, levels.levelOf(firstKey));
         assertEquals(SensitivityLevel.STANDARD, levels.levelOf(secondKey), "a separate record: not kept, but set");
         assertEquals(List.of("RECORD_SENSITIVITY_SET", "RECORD_SENSITIVITY_SET"), recordAudit());
@@ -157,10 +156,9 @@ class RecordSensitivityIntakeTest {
     void allIdentifierValuesTogetherMakeTheRecord() {
         deliver("s1", Map.of("contractNumber", "937552212763", "memberId", "M-1"), "CONFIDENTIAL");
         deliver("s2", Map.of("contractNumber", "937552212763"), "STANDARD");
-        assertEquals(SensitivityLevel.CONFIDENTIAL, levels.levelOf(RecordKey.ofIdentifiers(List.of(
-                new RecordKey.Part("contractNumber", "937552212763"), new RecordKey.Part("memberId", "M-1")))));
+        assertEquals(SensitivityLevel.CONFIDENTIAL, levels.levelOf(TestRecordRefs.id("contractNumber", "937552212763", "memberId", "M-1")));
         assertEquals(SensitivityLevel.STANDARD, levels.levelOf(CONTRACT_KEY),
-                "contract alone is a different record, as in findSubmissionIdsByRecordIdentity");
+                "contract alone is a different record, as in PlatformRecordValuesPostgresTest");
     }
 
     @Test
@@ -253,11 +251,11 @@ class RecordSensitivityIntakeTest {
         static final class Row {
             UUID id; SensitivityLevel level; String reason; String setBy;
         }
-        final Map<String, Row> rows = new LinkedHashMap<>();
+        final Map<UUID, Row> rows = new LinkedHashMap<>();
         int locks;
         int raises;
 
-        SensitivityLevel levelOf(String key) {
+        SensitivityLevel levelOf(UUID key) {
             Row row = rows.get(key);
             return row == null ? null : row.level;
         }
@@ -265,15 +263,15 @@ class RecordSensitivityIntakeTest {
         @Override public boolean insertIfAbsent(NewRecordLevel level) {
             assertEquals(TENANT, level.tenantId());
             assertEquals(SOURCE, level.sourceId());
-            if (rows.containsKey(level.recordKey())) return false;
+            if (rows.containsKey(level.recordId())) return false;
             Row row = new Row();
             row.id = level.recordLevelId(); row.level = level.level(); row.reason = level.reason(); row.setBy = level.setBy();
-            rows.put(level.recordKey(), row);
+            rows.put(level.recordId(), row);
             return true;
         }
-        @Override public Optional<StoredRecordLevel> lockByKey(UUID tenantId, UUID sourceId, String recordKey) {
+        @Override public Optional<StoredRecordLevel> lockByKey(UUID tenantId, UUID sourceId, UUID recordId) {
             locks++;
-            Row row = rows.get(recordKey);
+            Row row = rows.get(recordId);
             return row == null ? Optional.empty() : Optional.of(new StoredRecordLevel(row.id, row.level));
         }
         @Override public void raise(UUID tenantId, UUID recordLevelId, SensitivityLevel level, String setBy, Instant updatedAt) {
@@ -285,9 +283,23 @@ class RecordSensitivityIntakeTest {
         @Override public long countForSource(UUID tenantId, UUID sourceId) { return rows.size(); }
     }
 
+    /** Stands in for the records: one per set of identifier values, as the real one is tested to group (PlatformRecordValuesPostgresTest). */
+    private static final class GroupedValues implements com.sdv.platform.application.port.RecordValuesPort {
+        @Override public UUID store(UUID tenantId, UUID sourceId, UUID submissionId, Map<String, String> values) {
+            List<String> pairs = new ArrayList<>();
+            if (values.containsKey("contractNumber")) pairs.addAll(List.of("contractNumber", values.get("contractNumber").replaceAll("\\D", "")));
+            if (values.containsKey("memberId")) pairs.addAll(List.of("memberId", values.get("memberId").trim()));
+            return pairs.isEmpty() ? submissionId : TestRecordRefs.id(pairs.toArray(String[]::new));
+        }
+        @Override public List<Opened> open(UUID tenantId, UUID sourceId, UUID recordId) { return List.of(); }
+        @Override public Map<UUID, List<Opened>> openPage(UUID tenantId, UUID sourceId, java.util.Collection<UUID> recordIds) { return Map.of(); }
+        @Override public java.util.Set<String> sensitiveKeys(UUID tenantId) { return java.util.Set.of(); }
+        @Override public Map<String, List<String>> fingerprints(UUID tenantId, Map<String, String> values) { return Map.of(); }
+        @Override public boolean partialSearch() { return true; }
+    }
+
     private static final class MemorySubmissions implements SubmissionRepository {
         final Map<String, Submission> values = new LinkedHashMap<>();
-        final Map<UUID, List<BusinessMetadataValue>> metadata = new LinkedHashMap<>();
 
         @Override public InsertResult insertIfAbsent(Submission candidate) {
             Submission existing = values.putIfAbsent(candidate.sourceSubmissionId(), candidate);
@@ -300,12 +312,6 @@ class RecordSensitivityIntakeTest {
             return Optional.ofNullable(values.get(sourceSubmissionId));
         }
         @Override public List<SubmissionExpectedDocument> findExpectedDocuments(UUID tenantId, UUID submissionId) { return List.of(); }
-        @Override public List<BusinessMetadataValue> findBusinessMetadata(UUID tenantId, UUID sourceId, UUID submissionId) {
-            return metadata.getOrDefault(submissionId, List.of());
-        }
         @Override public void insertExpectedDocuments(List<SubmissionExpectedDocument> expectedDocuments) { }
-        @Override public void insertBusinessMetadata(List<BusinessMetadataValue> values) {
-            if (!values.isEmpty()) metadata.put(values.getFirst().submissionId(), List.copyOf(values));
-        }
     }
 }

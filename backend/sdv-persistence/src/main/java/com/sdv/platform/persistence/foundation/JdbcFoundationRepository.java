@@ -3,13 +3,8 @@ package com.sdv.platform.persistence.foundation;
 import com.sdv.platform.domain.error.InternalCheckFailed;
 import com.sdv.platform.application.port.AuditEventPort;
 import com.sdv.platform.application.port.IngestionSourceRepository;
-import com.sdv.platform.application.port.MetadataFieldDefinitionRepository;
 import com.sdv.platform.application.port.TenantRepository;
 import com.sdv.platform.domain.audit.AuditEvent;
-import com.sdv.platform.domain.metadata.MetadataFieldDefinition;
-import com.sdv.platform.domain.metadata.MetadataFieldType;
-import com.sdv.platform.domain.metadata.MetadataNormalization;
-import com.sdv.platform.domain.metadata.MetadataSearchMode;
 import com.sdv.platform.domain.source.IngestionSource;
 import com.sdv.platform.domain.source.IngestionSourceAuthType;
 import com.sdv.platform.domain.source.IngestionSourceStatus;
@@ -31,8 +26,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 @Repository
-public class JdbcFoundationRepository implements TenantRepository, IngestionSourceRepository,
-        MetadataFieldDefinitionRepository, AuditEventPort {
+public class JdbcFoundationRepository implements TenantRepository, IngestionSourceRepository, AuditEventPort {
 
     private final NamedParameterJdbcTemplate jdbc;
 
@@ -148,114 +142,6 @@ public class JdbcFoundationRepository implements TenantRepository, IngestionSour
 
 
     @Override
-    public List<String> findDisplayOrder(UUID tenantId, UUID sourceId) {
-        return jdbc.queryForList("""
-                select field_key from metadata_field_display_order
-                where tenant_id=:tenantId and source_id=:sourceId
-                order by display_position, field_key
-                """, params("tenantId", tenantId).addValue("sourceId", sourceId), String.class);
-    }
-
-    @Override
-    public void replaceDisplayOrder(UUID tenantId, UUID sourceId, List<String> fieldKeys) {
-        var scope = params("tenantId", tenantId).addValue("sourceId", sourceId);
-        jdbc.update("delete from metadata_field_display_order where tenant_id=:tenantId and source_id=:sourceId", scope);
-        for (int i=0; i<fieldKeys.size(); i++) {
-            jdbc.update("""
-                    insert into metadata_field_display_order (tenant_id, source_id, field_key, display_position)
-                    values (:tenantId, :sourceId, :fieldKey, :position)
-                    """, params("tenantId", tenantId).addValue("sourceId", sourceId)
-                         .addValue("fieldKey", fieldKeys.get(i)).addValue("position", i));
-        }
-    }
-
-    @Override
-    public List<String> findRecordTitleFields(UUID tenantId, UUID sourceId) {
-        return jdbc.queryForList("""
-                select field_key from record_title_fields
-                where tenant_id=:tenantId and source_id=:sourceId
-                order by title_position
-                """, params("tenantId", tenantId).addValue("sourceId", sourceId), String.class);
-    }
-
-    @Override
-    public void replaceRecordTitleFields(UUID tenantId, UUID sourceId, List<String> fieldKeys) {
-        var scope = params("tenantId", tenantId).addValue("sourceId", sourceId);
-        jdbc.update("delete from record_title_fields where tenant_id=:tenantId and source_id=:sourceId", scope);
-        for (int i=0; i<fieldKeys.size(); i++) {
-            jdbc.update("""
-                    insert into record_title_fields (tenant_id, source_id, field_key, title_position)
-                    values (:tenantId, :sourceId, :fieldKey, :position)
-                    """, params("tenantId", tenantId).addValue("sourceId", sourceId)
-                         .addValue("fieldKey", fieldKeys.get(i)).addValue("position", i));
-        }
-    }
-
-    @Override
-    public List<MetadataFieldDefinition> findCurrent(UUID tenantId, UUID sourceId) {
-        var p = params("tenantId", tenantId).addValue("sourceId", sourceId);
-        return jdbc.query(metadataSelect() + " where tenant_id=:tenantId and source_id=:sourceId and active=true order by field_key",
-                p, metadataMapper());
-    }
-
-    @Override
-    public List<MetadataFieldDefinition> findHistory(UUID tenantId, UUID sourceId, String fieldKey) {
-        var p = params("tenantId", tenantId).addValue("sourceId", sourceId).addValue("fieldKey", fieldKey);
-        return jdbc.query(metadataSelect() + " where tenant_id=:tenantId and source_id=:sourceId and field_key=:fieldKey order by version",
-                p, metadataMapper());
-    }
-
-    @Override
-    public Optional<MetadataFieldDefinition> findCurrent(UUID tenantId, UUID sourceId, String fieldKey) {
-        var p = params("tenantId", tenantId).addValue("sourceId", sourceId).addValue("fieldKey", fieldKey);
-        return jdbc.query(metadataSelect() + " where tenant_id=:tenantId and source_id=:sourceId and field_key=:fieldKey and active=true",
-                p, metadataMapper()).stream().findFirst();
-    }
-
-    @Override
-    public void retire(UUID tenantId, UUID sourceId, String fieldKey, Instant retiredAt) {
-        var p = params("tenantId", tenantId).addValue("sourceId", sourceId).addValue("fieldKey", fieldKey)
-                .addValue("retiredAt", Timestamp.from(retiredAt));
-        int updated = jdbc.update("""
-                update metadata_field_definitions
-                   set active=false, retired_at=:retiredAt
-                 where tenant_id=:tenantId and source_id=:sourceId and field_key=:fieldKey and active=true
-                """, p);
-        if (updated > 1) throw new InternalCheckFailed("More than one current metadata definition existed.");
-    }
-
-    @Override
-    public void insert(MetadataFieldDefinition definition) {
-        var p = new MapSqlParameterSource()
-                .addValue("definitionId", definition.definitionId())
-                .addValue("tenantId", definition.tenantId())
-                .addValue("sourceId", definition.sourceId())
-                .addValue("fieldKey", definition.fieldKey())
-                .addValue("version", definition.version())
-                .addValue("displayLabel", definition.displayLabel())
-                .addValue("fieldType", definition.fieldType().name())
-                .addValue("required", definition.required())
-                .addValue("businessIdentifier", definition.businessIdentifier())
-                .addValue("searchable", definition.searchable())
-                .addValue("normalization", definition.normalization().name())
-                .addValue("searchMode", definition.searchMode().name())
-                .addValue("validationRules", definition.validationRulesJson())
-                .addValue("active", definition.active())
-                .addValue("effectiveAt", Timestamp.from(definition.effectiveAt()))
-                .addValue("retiredAt", definition.retiredAt() == null ? null : Timestamp.from(definition.retiredAt()))
-                .addValue("createdAt", Timestamp.from(definition.createdAt()));
-        jdbc.update("""
-                insert into metadata_field_definitions(
-                    definition_id, tenant_id, source_id, field_key, version, display_label, field_type,
-                    required, business_identifier, searchable, normalization, search_mode, validation_rules,
-                    active, effective_at, retired_at, created_at)
-                values (:definitionId, :tenantId, :sourceId, :fieldKey, :version, :displayLabel, :fieldType,
-                    :required, :businessIdentifier, :searchable, :normalization, :searchMode, cast(:validationRules as jsonb),
-                    :active, :effectiveAt, :retiredAt, :createdAt)
-                """, p);
-    }
-
-    @Override
     public void append(AuditEvent event) {
         jdbc.update(INSERT_AUDIT, auditParameters(event));
     }
@@ -298,15 +184,6 @@ public class JdbcFoundationRepository implements TenantRepository, IngestionSour
                        max_pdf_bytes, max_pages_per_pdf, max_documents_per_submission,
                        max_aggregate_submission_bytes, incomplete_attention_hours, created_at, updated_at
                   from ingestion_sources
-                """;
-    }
-
-    private static String metadataSelect() {
-        return """
-                select definition_id, tenant_id, source_id, field_key, version, display_label, field_type,
-                       required, business_identifier, searchable, normalization, search_mode,
-                       validation_rules::text validation_rules, active, effective_at, retired_at, created_at
-                  from metadata_field_definitions
                 """;
     }
 
@@ -369,16 +246,5 @@ public class JdbcFoundationRepository implements TenantRepository, IngestionSour
                         nullableInt(rs, "max_documents_per_submission"), nullableLong(rs, "max_aggregate_submission_bytes"),
                         nullableInt(rs, "incomplete_attention_hours")),
                 instant(rs, "created_at"), instant(rs, "updated_at"));
-    }
-
-    private static RowMapper<MetadataFieldDefinition> metadataMapper() {
-        return (rs, rowNum) -> new MetadataFieldDefinition(
-                rs.getObject("definition_id", UUID.class), rs.getObject("tenant_id", UUID.class),
-                rs.getObject("source_id", UUID.class), rs.getString("field_key"), rs.getInt("version"),
-                rs.getString("display_label"), MetadataFieldType.valueOf(rs.getString("field_type")),
-                rs.getBoolean("required"), rs.getBoolean("business_identifier"), rs.getBoolean("searchable"),
-                MetadataNormalization.valueOf(rs.getString("normalization")),
-                MetadataSearchMode.valueOf(rs.getString("search_mode")), rs.getString("validation_rules"),
-                rs.getBoolean("active"), instant(rs, "effective_at"), instant(rs, "retired_at"), instant(rs, "created_at"));
     }
 }

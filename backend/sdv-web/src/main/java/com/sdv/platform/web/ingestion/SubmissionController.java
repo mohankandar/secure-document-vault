@@ -5,7 +5,6 @@ import com.sdv.platform.application.document.DocumentIntakeService;
 import com.sdv.platform.application.submission.CreateSubmissionCommand;
 import com.sdv.platform.application.submission.SubmissionDetails;
 import com.sdv.platform.application.submission.SubmissionService;
-import com.sdv.platform.domain.document.BusinessMetadataValue;
 import com.sdv.platform.domain.document.Document;
 import com.sdv.platform.domain.submission.SubmissionExpectedDocument;
 import com.sdv.platform.security.auth.IngestionSourcePrincipal;
@@ -141,11 +140,7 @@ public class SubmissionController {
             boolean idempotentReplay) {
 
         static SubmissionResponse from(SubmissionDetails details) {
-            Map<String, String> metadata = new LinkedHashMap<>();
-            details.metadataValues().stream()
-                    .sorted(java.util.Comparator.comparing(BusinessMetadataValue::fieldKey))
-                    .forEach(value -> metadata.put(value.fieldKey(), value.storedValue()));
-
+            Map<String, String> metadata = new LinkedHashMap<>(new java.util.TreeMap<>(details.metadata()));
             SubmissionProgressResponse progress = details.progress() == null ? null :
                     new SubmissionProgressResponse(
                             details.progress().expectedCount(),

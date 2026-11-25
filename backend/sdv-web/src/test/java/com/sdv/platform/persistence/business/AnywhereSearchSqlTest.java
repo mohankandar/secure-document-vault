@@ -53,24 +53,24 @@ class AnywhereSearchSqlTest {
     @Test
     void exactFieldsMatchTheNormalizedValueAsConfigured_identifierRanksFirst() {
         String sql = send(List.of(), PATEL, null, null).sql();
-        assertTrue(sql.contains("when v.field_key=:a0Field and (v.normalized_value=:a0Value0) then 0"), sql);
-        assertTrue(sql.contains("when v.field_key=:a1Field and (v.normalized_value=:a1Value0) then 1"), sql);
+        assertTrue(sql.contains("when v.field_key=:a0Field and (v.search_value=:a0Value0) then 0"), sql);
+        assertTrue(sql.contains("when v.field_key=:a1Field and (v.search_value=:a1Value0) then 1"), sql);
     }
 
     @Test
     void startsWithFieldsMatchOnlyFromTheStart_ignoringCase() {
         String sql = send(List.of(), PATEL, null, null).sql();
-        assertTrue(sql.contains("when v.field_key=:a2Field and (position(lower(:a2Value0) in lower(v.normalized_value))=1) then"
-                + " case when lower(v.normalized_value)=lower(:a2Value0) then 1"
-                + " when position(lower(:a2Value0) in lower(v.normalized_value))=1 then 2 else 3 end"), sql);
+        assertTrue(sql.contains("when v.field_key=:a2Field and (v.search_value like :a2Like0||'%') then"
+                + " case when v.search_value=:a2Value0 then 1"
+                + " when v.search_value like :a2Like0||'%' then 2 else 3 end"), sql);
     }
 
     @Test
     void containsFieldsMatchAnyPart_ignoringCase_andRankExactThenStartsWithThenContains() {
         String sql = send(List.of(), PATEL, null, null).sql();
-        assertTrue(sql.contains("when v.field_key=:a3Field and (position(lower(:a3Value0) in lower(v.normalized_value))>0) then"
-                + " case when lower(v.normalized_value)=lower(:a3Value0) then 1"
-                + " when position(lower(:a3Value0) in lower(v.normalized_value))=1 then 2 else 3 end"), sql);
+        assertTrue(sql.contains("when v.field_key=:a3Field and (v.search_value like '%'||:a3Like0||'%') then"
+                + " case when v.search_value=:a3Value0 then 1"
+                + " when v.search_value like :a3Like0||'%' then 2 else 3 end"), sql);
     }
 
     @Test
@@ -85,8 +85,8 @@ class AnywhereSearchSqlTest {
         Sent sent = send(List.of(), PATEL, null, null);
         String sql = sent.sql();
         assertTrue(sql.contains("where s.tenant_id=:tenantId and s.source_id=:sourceId"), sql);
-        assertTrue(sql.contains("where v.tenant_id=s.tenant_id and v.source_id=s.source_id and v.submission_id=s.submission_id"), sql);
-        assertTrue(sql.contains("and v.field_key in (:anywhereFields)"), sql);
+        assertTrue(sql.contains("join fld_record fr on fr.entity_uuid=s.tenant_id and fr.product_code='SDV' and fr.record_type='s-'||s.source_id::text and fr.record_id=s.record_id::text"), sql);
+        assertTrue(sql.contains("where v.record_uuid=fr.record_uuid and not v.sensitive and v.field_key in (:anywhereFields)"), sql);
         assertEquals(TENANT, sent.params().getValue("tenantId"));
         assertEquals(SOURCE, sent.params().getValue("sourceId"));
         assertEquals(List.of("contractNumber", "loanType", "closingAgent", "borrowerName"), sent.params().getValue("anywhereFields"));
@@ -98,29 +98,29 @@ class AnywhereSearchSqlTest {
         String sql = send(List.of(new SearchCriterion("loanType", MetadataSearchMode.EXACT, List.of("Auto"))), PATEL,
                 Instant.parse("2026-11-01T00:00:00Z"), Instant.parse("2026-11-15T23:59:59Z")).sql();
         assertTrue(sql.contains("s.created_at>=:createdFrom") && sql.contains("s.created_at<=:createdTo"), sql);
-        assertTrue(sql.contains("v.field_key= :c0Field and (v.normalized_value=:c0Value0)"), sql);
+        assertTrue(sql.contains("v.field_key=:c0Field and (v.search_value=:c0Value0)"), sql);
         assertTrue(sql.contains("and m.match_rank is not null"), sql);
     }
 
     // ---- follow-up: exact text fields ignore capitals ----
 
     @Test
-    void anExactFieldThatIgnoresCaseComparesLowerCase_inQuickSearch() {
+    void anExactFieldIsComparedInTheStoredSearchForm_inQuickSearch() {
         AnywhereCriterion mortgage = new AnywhereCriterion(List.of(
                 new AnywhereField("contractNumber", MetadataSearchMode.EXACT, List.of("300000000041"), true, false),
                 new AnywhereField("loanType", MetadataSearchMode.EXACT, List.of("mortgage"), false, true)));
         String sql = send(List.of(), mortgage, null, null).sql();
-        assertTrue(sql.contains("when v.field_key=:a0Field and (v.normalized_value=:a0Value0) then 0"), sql);
-        assertTrue(sql.contains("when v.field_key=:a1Field and (lower(v.normalized_value)=lower(:a1Value0)) then 1"), sql);
+        assertTrue(sql.contains("when v.field_key=:a0Field and (v.search_value=:a0Value0) then 0"), sql);
+        assertTrue(sql.contains("when v.field_key=:a1Field and (v.search_value=:a1Value0) then 1"), sql);
     }
 
     @Test
-    void anExactFieldThatIgnoresCaseComparesLowerCase_inSingleFieldSearch() {
+    void anExactFieldIsComparedInTheStoredSearchForm_inSingleFieldSearch() {
         String sql = send(List.of(
                 new SearchCriterion("contractNumber", MetadataSearchMode.EXACT, List.of("300000000041"), false),
                 new SearchCriterion("loanType", MetadataSearchMode.EXACT, List.of("mortgage"), true)), null, null, null).sql();
-        assertTrue(sql.contains("v.field_key= :c0Field and (v.normalized_value=:c0Value0)"), sql);
-        assertTrue(sql.contains("v.field_key= :c1Field and (lower(v.normalized_value)=lower(:c1Value0))"), sql);
+        assertTrue(sql.contains("v.field_key=:c0Field and (v.search_value=:c0Value0)"), sql);
+        assertTrue(sql.contains("v.field_key=:c1Field and (v.search_value=:c1Value0)"), sql);
     }
 
     @Test

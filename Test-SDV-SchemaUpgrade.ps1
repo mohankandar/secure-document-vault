@@ -82,8 +82,9 @@
 param(
     [string]$Jar,
     # The first changeset the upgrade applies; the scratch database is built up to the one before it.
-    [ValidateSet('026', '027', '028', '029', '030', '031', '032', '033', '034', '035', '036', '037', '038', '039', '040', '041', '042', '043', '044', '045', '046', '047')]
-    [string]$From = '047',
+    # Task 0078: earlier ones are no longer offered: 048 replaces the record key and drops the field tables they check.
+    [ValidateSet('048')]
+    [string]$From = '048',
     # Task 0052: documents in QuarantineScalePostgresTest's one incident (250,000 as in CI; 1,000,000 for the local run).
     [ValidateRange(1000, 5000000)]
     [int]$QuarantineScale = 250000,
@@ -108,7 +109,7 @@ $db = 'sdv_schema_test'
 $owner = 'sdv_schema_owner'
 $hostUrl = 'jdbc:postgresql://localhost:5433/' + $db
 # In order. The upgrade applies every changeset from -From on.
-$checked = @('022-retention-policy-creator-name', '023-document-sensitivity-level', '024-record-sensitivity-levels', '025-role-separation', '026-legal-holds', '027-access-requests', '028-sensitivity-level-changes', '029-document-duplicate-receipts', '030-tenant-time-zone', '031-intake-report-indexes', '032-steward-notices', '033-unidentified-intake-attempts', '034-unidentified-intake-attempt-counts', '035-drop-old-identity', '036-quarantine', '037-sealed-audit', '038-quarantine-filter-blocking', '039-quarantine-scale', '040-report-storage', '041-report-activity', '042-restrictions-indexes', '043-held-redaction', '044-hold-release', '045-usage-export-anchor', '046-usage-named-seats', '047-document-object-version')
+$checked = @('022-retention-policy-creator-name', '023-document-sensitivity-level', '024-record-sensitivity-levels', '025-role-separation', '026-legal-holds', '027-access-requests', '028-sensitivity-level-changes', '029-document-duplicate-receipts', '030-tenant-time-zone', '031-intake-report-indexes', '032-steward-notices', '033-unidentified-intake-attempts', '034-unidentified-intake-attempt-counts', '035-drop-old-identity', '036-quarantine', '037-sealed-audit', '038-quarantine-filter-blocking', '039-quarantine-scale', '040-report-storage', '041-report-activity', '042-restrictions-indexes', '043-held-redaction', '044-hold-release', '045-usage-export-anchor', '046-usage-named-seats', '047-document-object-version', '048-records')
 $start = [array]::IndexOf(($checked | ForEach-Object { $_.Substring(0, 3) }), $From)
 $newChangesets = @($checked[$start..($checked.Count - 1)])
 $newChangeset = $newChangesets[0]
@@ -180,6 +181,12 @@ $seatsTableBefore = if ($has046) { '0' } else { '1' }
 $has047 = $newChangesets -contains '047-document-object-version'
 $hasObjectVersionSql = "select count(*) from information_schema.columns where table_name='document_crypto_metadata' and column_name='object_version';"
 $objectVersionBefore = if ($has047) { '0' } else { '1' }
+# Task 0078: 048 adds records and drops Vero's own field tables.
+$has048 = $newChangesets -contains '048-records'
+$hasRecordsSql = "select count(*) from information_schema.tables where table_name='records';"
+$oldFieldTablesSql = "select count(*) from information_schema.tables where table_name in ('metadata_field_definitions', 'business_metadata_values', 'metadata_field_display_order', 'record_title_fields');"
+$submissionsOldColumnsSql = "select count(*) || ':' || md5(string_agg((to_jsonb(x) - 'record_id')::text, '|' order by x.submission_id)) from submissions x;"
+$recordsBefore = if ($has048) { '0' } else { '1' }
 $platformRuns = @('identity V1 (platform-core)', 'identity V2 (platform-core)', 'identity V3 (platform-core)', 'identity V4 (platform-core)', 'identity V5 (platform-core)', 'licensing V1 (platform-core)', 'licensing V2 (platform-core)', 'fields V1 (platform-core)', 'fields V2 (platform-core)')
 # Task 0033: an uncorrected copy received at the previous version, which 032 must turn into one stored notice.
 $oldCopyEvent = '50000000-0000-0000-0000-0000000000c1'
@@ -254,7 +261,7 @@ function Invoke-SchemaStep([string[]]$StepArgs) {
 $otherTablesSql = @"
 select string_agg(t.relname || '=' || (xpath('/row/c/text()', query_to_xml(format('select count(*) || '':'' || coalesce(md5(string_agg(x::text, ''|'' order by x::text)), '''') as c from %I x', t.relname), false, true, '')))[1]::text, ',' order by t.relname)
   from pg_stat_user_tables t
- where t.relname not like 'idn_%' and t.relname not like 'lic_%' and t.relname not like 'fld_%' and t.relname not in ('usage_export_anchor', 'usage_named_seats', 'document_crypto_metadata', 'enterprise_identity_connections', 'enterprise_identity_connection_history', 'documents', 'record_sensitivity_levels', 'role_conflict_problems', 'role_group_mappings_seen', 'role_mapping_notices', 'legal_holds', 'access_requests', 'sensitivity_level_changes', 'document_duplicate_receipts', 'tenants', 'steward_notices', 'unidentified_intake_attempts', 'quarantine_incidents', 'quarantined_documents', 'quarantine_release_requests', 'audit_reports', 'report_storage_counts', 'report_activity_counts', 'report_activity_people', 'report_activity_days', 'held_redactions', 'sealed_originals', 'databasechangelog', 'databasechangeloglock');
+ where t.relname not like 'idn_%' and t.relname not like 'lic_%' and t.relname not like 'fld_%' and t.relname not in ('submissions', 'records', 'metadata_field_definitions', 'business_metadata_values', 'metadata_field_display_order', 'record_title_fields', 'usage_export_anchor', 'usage_named_seats', 'document_crypto_metadata', 'enterprise_identity_connections', 'enterprise_identity_connection_history', 'documents', 'record_sensitivity_levels', 'role_conflict_problems', 'role_group_mappings_seen', 'role_mapping_notices', 'legal_holds', 'access_requests', 'sensitivity_level_changes', 'document_duplicate_receipts', 'tenants', 'steward_notices', 'unidentified_intake_attempts', 'quarantine_incidents', 'quarantined_documents', 'quarantine_release_requests', 'audit_reports', 'report_storage_counts', 'report_activity_counts', 'report_activity_people', 'report_activity_days', 'held_redactions', 'sealed_originals', 'databasechangelog', 'databasechangeloglock');
 "@
 # Task 0032: tenants with every column it had before 030 (030 adds time_zone, null for every existing tenant).
 $tenantsOldColumnsSql = "select count(*) || ':' || md5(string_agg((to_jsonb(x) - 'time_zone')::text, '|' order by x.tenant_id)) from tenants x;"
@@ -357,6 +364,7 @@ revoke all on database $db from public;
     Assert-That ((Get-Value $hasFilterColumnsSql) -eq $filterColumnsBefore) "the quarantine filter columns should $(if ($has038) { 'not ' })exist at the previous version"
     Assert-That ((Get-Value $hasHeldTablesSql) -eq $heldTablesBefore) "the held-redaction tables should $(if ($has043) { 'not ' })exist at the previous version"
     Assert-That ((Get-Value $hasHoldColumnSql) -eq $holdColumnBefore) "access_requests.hold_id should $(if ($has044) { 'not ' })exist at the previous version"
+    Assert-That ((Get-Value $hasRecordsSql) -eq $recordsBefore) 'records should not exist at the previous version'
     Assert-That ((Get-Value $hasObjectVersionSql) -eq $objectVersionBefore) "document_crypto_metadata.object_version should $(if ($has047) { 'not ' })exist at the previous version"
     Assert-That ((Get-Value $hasSeatsTableSql) -eq $seatsTableBefore) "usage_named_seats should $(if ($has046) { 'not ' })exist at the previous version"
     Assert-That ((Get-Value $hasAnchorTableSql) -eq $anchorTableBefore) "usage_export_anchor should $(if ($has045) { 'not ' })exist at the previous version"
@@ -427,14 +435,14 @@ insert into unidentified_intake_attempts(attempt_id, tenant_id, occurred_at, cal
         Assert-That ($holdsBefore -match '^1:[0-9a-f]{32}$') "legal_holds fingerprint looks wrong: $holdsBefore"
     }
     # Task 0029: with access_requests already there, a request made before 028 must keep every column it had.
-    $requestsOldColumnsSql = "select count(*) || ':' || coalesce(md5(string_agg(x::text, '|' order by x.request_id)), '') from access_requests x;"
+    $requestsOldColumnsSql = "select count(*) || ':' || coalesce(md5(string_agg((to_jsonb(x) - 'record_key' - 'record_key_sha256' - 'record_id')::text, '|' order by x.request_id)), '') from access_requests x;"
     if (-not $has027) {
         $null = Invoke-Sql -Database $db -AsOwner -Sql "insert into access_requests(request_id, tenant_id, kind, document_id, requested_level, reason, requested_by, requested_at, status, expires_at) values ('90000000-0000-0000-0000-0000000000a1', '10000000-0000-0000-0000-000000000001', 'LOWER_LEVEL', '40000000-0000-0000-0000-000000000001', 'STANDARD', 'Marked by mistake', 'steward', now(), 'PENDING', now() + interval '7 days');"
         $requestsBefore = Get-Value $requestsOldColumnsSql
         Assert-That ($requestsBefore -match '^1:[0-9a-f]{32}$') "access_requests fingerprint looks wrong: $requestsBefore"
     }
     # Task 0031: with sensitivity_level_changes already there, a level change made before 029 must keep every column.
-    $changesOldColumnsSql = "select count(*) || ':' || coalesce(md5(string_agg(x::text, '|' order by x.change_id)), '') from sensitivity_level_changes x;"
+    $changesOldColumnsSql = "select count(*) || ':' || coalesce(md5(string_agg((to_jsonb(x) - 'record_key' - 'record_key_sha256' - 'record_id')::text, '|' order by x.change_id)), '') from sensitivity_level_changes x;"
     if (-not $has028) {
         $null = Invoke-Sql -Database $db -AsOwner -Sql "insert into sensitivity_level_changes(change_id, tenant_id, scope, document_id, direction, from_level, to_level, reason, changed_by, changed_at) values ('a0000000-0000-0000-0000-0000000000c1', '10000000-0000-0000-0000-000000000001', 'DOCUMENT', '40000000-0000-0000-0000-000000000001', 'RAISED', 'CONFIDENTIAL', 'HIGHLY_CONFIDENTIAL', 'Salary details', 'steward', now());"
         $changesBefore = Get-Value $changesOldColumnsSql
@@ -446,7 +454,7 @@ insert into unidentified_intake_attempts(attempt_id, tenant_id, occurred_at, cal
     Assert-That ($tenantsBefore -match '^[1-9][0-9]*:[0-9a-f]{32}$') "tenants fingerprint looks wrong: $tenantsBefore"
     # The fingerprints must really hold the rows, or "unchanged" below would prove nothing.
     Assert-That ($docsBefore -match '^4:[0-9a-f]{32}$') "documents fingerprint looks wrong: $docsBefore"
-    Assert-That ($othersBefore -match '(^|,)submissions=1:[0-9a-f]{32}(,|$)' -and $othersBefore -match '(^|,)ingestion_sources=1:[0-9a-f]{32}(,|$)') "table fingerprints look wrong: $othersBefore"
+    Assert-That ($othersBefore -match '(^|,)ingestion_sources=1:[0-9a-f]{32}(,|$)') "table fingerprints look wrong: $othersBefore"
     $levelsNote = if ($has023) { '' } else { '; levels CONFIDENTIAL, HIGHLY_CONFIDENTIAL, STANDARD, STANDARD' }
     Write-Step '2. Data at the previous version' $w.Elapsed.TotalSeconds "4 documents (available, received, failed, deleted)$levelsNote"
 
@@ -561,6 +569,7 @@ insert into unidentified_intake_attempts(attempt_id, tenant_id, occurred_at, cal
             Assert-That ($upgradeText.Contains($c)) "the reviewable SQL lacks $c"
         }
     }
+    if ($has048) { Assert-That ($upgradeText.Contains('create table records') -and $upgradeText.Contains('drop table business_metadata_values')) 'the reviewable SQL lacks records' }
     if ($has047) { Assert-That ($upgradeText.Contains('add column object_version')) 'the reviewable SQL lacks add column object_version' }
     if ($has046) { Assert-That ($upgradeText.Contains('create table usage_named_seats')) 'the reviewable SQL lacks create table usage_named_seats' }
     if ($has045) { Assert-That ($upgradeText.Contains('create table usage_export_anchor')) 'the reviewable SQL lacks create table usage_export_anchor' }
@@ -608,6 +617,28 @@ insert into unidentified_intake_attempts(attempt_id, tenant_id, occurred_at, cal
     Assert-That ((Get-Value $hasFilterColumnsSql) -eq $filterColumnsBefore) 'sql changed the database (quarantine filter columns)'
     Write-Step '3b. Schema step sql (the SQL to review)' $sq.Seconds "only $($newChangesets.ForEach({ $_.Substring(0, 3) }) -join ' and '); database unchanged"
 
+    if ($has048) {
+        # Task 0078: a database that holds values of before is refused and unchanged; without them its levels go to the records by ID.
+        $w = [System.Diagnostics.Stopwatch]::StartNew()
+        $null = Invoke-Sql -Database $db -AsOwner -Sql @"
+insert into metadata_field_definitions(definition_id, tenant_id, source_id, field_key, version, display_label, field_type, required, business_identifier, searchable, normalization, search_mode)
+  select '48000000-0000-0000-0000-000000000001', s.tenant_id, s.source_id, 'contractNumber', 1, 'Contract number', 'TEXT', true, true, true, 'TRIM', 'EXACT' from submissions s order by s.submission_id limit 1;
+insert into business_metadata_values(metadata_value_id, tenant_id, source_id, submission_id, definition_id, field_key, definition_version, stored_value, normalized_value)
+  select gen_random_uuid(), s.tenant_id, s.source_id, s.submission_id, '48000000-0000-0000-0000-000000000001', 'contractNumber', 1, 'kept', 'kept' from submissions s order by s.submission_id limit 1;
+insert into record_sensitivity_levels(record_level_id, tenant_id, source_id, record_key, record_key_sha256, sensitivity_level, set_by, set_at, updated_at)
+  select gen_random_uuid(), s.tenant_id, s.source_id, k.key, encode(sha256(convert_to(k.key, 'UTF8')), 'hex'), k.level, 'SOURCE', now(), now()
+    from (select * from submissions order by submission_id limit 1) s, lateral (values ('submission:' || s.submission_id, 'CONFIDENTIAL'), ('identifiers:[["contractNumber","1"]]', 'HIGHLY_CONFIDENTIAL')) k(key, level);
+"@
+        $submissionsBefore = Get-Value $submissionsOldColumnsSql
+        $refused = Invoke-SchemaStep @('update')
+        Assert-That ($refused.Code -ne 0 -and ($refused.Err + $refused.Out) -match 'does not move') "a database with values of before should be refused: $($refused.Err.Trim())"
+        Assert-That ((Get-Value $hasRecordsSql) -eq '0' -and (Get-Value "select stored_value from business_metadata_values;") -eq 'kept') 'a refused update should change nothing'
+        $null = Invoke-Sql -Database $db -AsOwner -Sql 'delete from business_metadata_values;'
+        $refused = Invoke-SchemaStep @('update')
+        Assert-That ($refused.Code -ne 0 -and ($refused.Err + $refused.Out) -match 'does not move') 'definitions of before without the case field tables should be refused'
+        $null = Invoke-Sql -Database $db -AsOwner -Sql 'delete from metadata_field_definitions;'
+        Write-Step '3d. A database with values of before' $w.Elapsed.TotalSeconds 'refused twice, nothing changed'
+    }
     $up = Invoke-SchemaStep @('update')
     Assert-That ($up.Code -eq 0) "update failed: $($up.Err.Trim()) $($up.Out.Trim())"
     Write-Step '3c. Schema step update' $up.Seconds (($up.Out.Trim() -split "`n" | Select-Object -Last 1).Trim())
@@ -973,6 +1004,17 @@ rollback;
         Write-Step '4q. After 039: quarantine counts on the incident' $w.Elapsed.TotalSeconds 'thirteen new columns, two triggers; rows at 038 get their received time and are counted; level filled, release and new row move the counts; checks refuse a bad level, counts that do not add up, no received time'
         $w = [System.Diagnostics.Stopwatch]::StartNew()
     }
+    if ($has048) {
+        Assert-That ((Get-Value $hasRecordsSql) -eq '1' -and (Get-Value $oldFieldTablesSql) -eq '0') 'records should be there and the old field tables gone'
+        Assert-That ((Get-Value $submissionsOldColumnsSql) -eq $submissionsBefore) 'a submission column that existed before changed'
+        Assert-That ((Get-Value 'select count(*) from submissions where record_id <> submission_id;') -eq '0') 'every submission should be its own record'
+        $kept = Get-Value "select string_agg(l.sensitivity_level || ' ' || (exists (select 1 from submissions s where s.record_id = l.record_id))::text, ',' order by l.sensitivity_level) from record_sensitivity_levels l join records r on r.record_id = l.record_id;"
+        Assert-That ($kept -eq 'CONFIDENTIAL true,HIGHLY_CONFIDENTIAL false') "levels should be kept, the submission's on its record; got $kept"
+        Assert-That ((Get-Value "select count(*) from information_schema.columns where column_name in ('record_key', 'record_key_sha256');") -eq '0') 'no record key should be left'
+        $null = Invoke-Sql -Database $db -AsOwner -Sql 'delete from record_sensitivity_levels; delete from records r where not exists (select 1 from submissions s where s.record_id = r.record_id);'
+        Write-Step '4z. After 048: records' $w.Elapsed.TotalSeconds 'every submission its own record, levels kept by ID, old field tables gone'
+        $w = [System.Diagnostics.Stopwatch]::StartNew()
+    }
     if ($has047) {
         Assert-That ((Get-Value $hasObjectVersionSql) -eq '1' -and (Get-Value 'select count(*) from document_crypto_metadata where object_version <> 1;') -eq '0') 'every stored document should be at version 1'
         Write-Step '4y. After 047: the stored document''s version' $w.Elapsed.TotalSeconds 'one column, every document at version 1'
@@ -1048,7 +1090,7 @@ rollback;
         Write-Step '4r. After 040: Storage and retention report counts' $w.Elapsed.TotalSeconds 'table there and empty; checks refuse a negative time, counts not an object, an unknown entity'
         $w = [System.Diagnostics.Stopwatch]::StartNew()
     }
-    if ($has027 -or $has028 -or $has029 -or $has030 -or $has031 -or $has032 -or $has033 -or $has034 -or $has035 -or $has036 -or $has037 -or $has038 -or $has039 -or $has040 -or $has041 -or $has042 -or $has043 -or $has044 -or $has045 -or $has046 -or $has047) {
+    if ($has027 -or $has028 -or $has029 -or $has030 -or $has031 -or $has032 -or $has033 -or $has034 -or $has035 -or $has036 -or $has037 -or $has038 -or $has039 -or $has040 -or $has041 -or $has042 -or $has043 -or $has044 -or $has045 -or $has046 -or $has047 -or $has048) {
 
         # The application's own repositories and services against this database: holds and the retention cleanup
         # (LegalHoldPostgresTest), requests, grants, expiry and the table's checks (AccessRequestPostgresTest), exact
@@ -1060,12 +1102,12 @@ rollback;
         Assert-That ($copies.Code -eq 0) "could not copy the scratch database: $($copies.Err.Trim())"
         $mvn = (Get-Command mvn.cmd -ErrorAction Stop).Source
         $it = Invoke-Native -File $mvn -Arguments @('-o', '-f', (Join-Path $root 'backend\pom.xml'), '-pl', 'sdv-web,sdv-setup', '-am', 'test',
-            '-Dtest=LegalHoldPostgresTest,AccessRequestPostgresTest,DuplicateIntakePostgresTest,IntakeReportPostgresTest,SensitivityReportPostgresTest,PlatformIdentityPostgresTest,SenderProfileServerContractTest,UnidentifiedIntakeAttemptPostgresTest,QuarantinePostgresTest,QuarantineFilterBlockingPostgresTest,QuarantineScalePostgresTest,StorageReportPostgresTest,ActivityReportPostgresTest,RestrictionsPostgresTest,PrimaryIdentifierPostgresTest,SealedAuditPostgresTest,HeldRedactionPostgresTest,UsageExportPostgresTest,NamedSeatsPostgresTest,PlatformFieldsPostgresTest,VeroSetupPlanPostgresTest', '-Dsurefire.failIfNoSpecifiedTests=false', '-Ppostgres-copies', "-Dit.forks=$forks", "-Dit.url=$hostUrl") -Environment @{
+            '-Dtest=LegalHoldPostgresTest,AccessRequestPostgresTest,DuplicateIntakePostgresTest,IntakeReportPostgresTest,SensitivityReportPostgresTest,PlatformIdentityPostgresTest,SenderProfileServerContractTest,UnidentifiedIntakeAttemptPostgresTest,QuarantinePostgresTest,QuarantineFilterBlockingPostgresTest,QuarantineScalePostgresTest,StorageReportPostgresTest,ActivityReportPostgresTest,RestrictionsPostgresTest,PrimaryIdentifierPostgresTest,SealedAuditPostgresTest,HeldRedactionPostgresTest,UsageExportPostgresTest,NamedSeatsPostgresTest,PlatformFieldsPostgresTest,PlatformRecordValuesPostgresTest,RecordSearchScalePostgresTest,VeroSetupPlanPostgresTest', '-Dsurefire.failIfNoSpecifiedTests=false', '-Ppostgres-copies', "-Dit.forks=$forks", "-Dit.url=$hostUrl") -Environment @{
             SDV_IT_JDBC_USER = $owner; SDV_IT_JDBC_PASSWORD = $ownerPassword; SDV_IT_QUARANTINE_SCALE = "$QuarantineScale"; SDV_IT_REPORT_SCALE = "$ReportScale"; SDV_IT_ACTIVITY_PER_DAY = "$ActivityPerDay" }
-        foreach ($test in @('application.legalhold.LegalHoldPostgresTest', 'application.approvals.AccessRequestPostgresTest', 'application.document.DuplicateIntakePostgresTest', 'application.reports.IntakeReportPostgresTest', 'application.reports.SensitivityReportPostgresTest', 'application.identity.PlatformIdentityPostgresTest', 'web.SenderProfileServerContractTest', 'application.reports.UnidentifiedIntakeAttemptPostgresTest', 'application.quarantine.QuarantinePostgresTest', 'application.quarantine.QuarantineFilterBlockingPostgresTest', 'application.quarantine.QuarantineScalePostgresTest', 'application.reports.StorageReportPostgresTest', 'application.reports.ActivityReportPostgresTest', 'application.restrictions.RestrictionsPostgresTest', 'application.business.PrimaryIdentifierPostgresTest', 'application.audit.SealedAuditPostgresTest', 'application.redaction.HeldRedactionPostgresTest', 'web.licensing.UsageExportPostgresTest', 'web.licensing.NamedSeatsPostgresTest', 'web.fields.PlatformFieldsPostgresTest', 'setup.VeroSetupPlanPostgresTest')) {
+        foreach ($test in @('application.legalhold.LegalHoldPostgresTest', 'application.approvals.AccessRequestPostgresTest', 'application.document.DuplicateIntakePostgresTest', 'application.reports.IntakeReportPostgresTest', 'application.reports.SensitivityReportPostgresTest', 'application.identity.PlatformIdentityPostgresTest', 'web.SenderProfileServerContractTest', 'application.reports.UnidentifiedIntakeAttemptPostgresTest', 'application.quarantine.QuarantinePostgresTest', 'application.quarantine.QuarantineFilterBlockingPostgresTest', 'application.quarantine.QuarantineScalePostgresTest', 'application.reports.StorageReportPostgresTest', 'application.reports.ActivityReportPostgresTest', 'application.restrictions.RestrictionsPostgresTest', 'application.business.PrimaryIdentifierPostgresTest', 'application.audit.SealedAuditPostgresTest', 'application.redaction.HeldRedactionPostgresTest', 'web.licensing.UsageExportPostgresTest', 'web.licensing.NamedSeatsPostgresTest', 'web.fields.PlatformFieldsPostgresTest', 'web.fields.PlatformRecordValuesPostgresTest', 'web.fields.RecordSearchScalePostgresTest', 'setup.VeroSetupPlanPostgresTest')) {
             $itLine = ($it.Out -split "`n" | Where-Object { $_ -match ('Tests run: .* in com\.sdv\.platform\.' + [regex]::Escape($test)) } | Select-Object -First 1)
             # Task 0039 part 2: UnidentifiedIntakeAttemptPostgresTest has two tests (the flood of 1,000 requests).
-            $wantRun = switch ($test) { 'application.reports.UnidentifiedIntakeAttemptPostgresTest' { 2 } 'application.identity.PlatformIdentityPostgresTest' { 6 } 'setup.VeroSetupPlanPostgresTest' { 3 } 'web.fields.PlatformFieldsPostgresTest' { 7 } default { 1 } }
+            $wantRun = switch ($test) { 'application.reports.UnidentifiedIntakeAttemptPostgresTest' { 2 } 'application.identity.PlatformIdentityPostgresTest' { 6 } 'setup.VeroSetupPlanPostgresTest' { 3 } 'web.fields.PlatformFieldsPostgresTest' { 6 } 'web.fields.PlatformRecordValuesPostgresTest' { 13 } default { 1 } }
             if ($it.Code -ne 0 -or -not $itLine -or $itLine -notmatch "Tests run: $wantRun, Failures: 0, Errors: 0, Skipped: 0") {
                 $it.Out | Set-Content -Encoding utf8 (Join-Path $run 'postgres-tests.log')
                 throw "FAIL: $test did not pass (exit $($it.Code)): $(if ($itLine) { $itLine.Trim() } else { 'no result line' }). Log: $run\postgres-tests.log"
@@ -1080,6 +1122,8 @@ rollback;
         if (Test-Path $activityTimes) { Copy-Item $activityTimes (Join-Path $run "activity-report-times-$ActivityPerDay.txt") }
         $restrictionTimes = Join-Path $root 'backend\sdv-web\target\restrictions-times.txt'
         if (Test-Path $restrictionTimes) { Copy-Item $restrictionTimes (Join-Path $run 'restrictions-times.txt') }
+        $searchTimes = Join-Path $root 'backend\sdv-web\target\record-search-times.txt'
+        if (Test-Path $searchTimes) { Copy-Item $searchTimes (Join-Path $run 'record-search-times.txt') }
         Write-Step '4f. Holds, requests, grants, duplicates and reports on PostgreSQL' $w.Elapsed.TotalSeconds 'holds and cleanup; grants, expiry, level history, duplicates, uncorrected copies, stored notices, the intake and Sensitivity reports, checks'
         $w = [System.Diagnostics.Stopwatch]::StartNew()
     }

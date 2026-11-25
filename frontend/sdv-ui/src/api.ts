@@ -210,6 +210,10 @@ export type SearchField = {
   businessIdentifier: boolean
   normalization: string
   searchMode: 'EXACT' | 'PREFIX' | 'PARTIAL'
+  /** Task 0078: found by its whole value only, and not by searching everywhere. */
+  sensitive?: boolean
+  /** Set to Contains, but this database can only search from the beginning. */
+  partialAsPrefix?: boolean
 }
 
 export type SearchSource = {

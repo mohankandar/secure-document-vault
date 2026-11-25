@@ -13,7 +13,7 @@ import {
 // Task 0009 Part B (finding 22) and Part C: search fields in words, drag to reorder, and the Record title setting.
 
 /** How a field matches, in words. Starts with and Contains ignore case on the server; Exact follows the stored form. */
-export const MATCH_WORDS: Record<SearchMode, string> = { EXACT: 'Exact', PREFIX: 'Starts with, any case', PARTIAL: 'Contains, any case' }
+export const MATCH_WORDS: Record<SearchMode, string> = { EXACT: 'Exact, any case', PREFIX: 'Starts with, any case', PARTIAL: 'Contains, any case' }
 const MATCH_CHOICES: { mode: SearchMode; label: string; example: string }[] = [
   { mode: 'EXACT', label: 'Exact', example: 'Must match all of it' },
   { mode: 'PREFIX', label: 'Starts with', example: '“Pat” finds Patel' },
@@ -23,13 +23,8 @@ const MATCH_CHOICES: { mode: SearchMode; label: string; example: string }[] = [
 const MAX_PAGE_SIZE = 50
 const sameList = (a: string[], b: string[]) => a.length === b.length && a.every((x, i) => x === b[i])
 
-function caseNote(f: AdminMetadataField): string {
-  if (f.searchMode !== 'EXACT') return 'Upper and lower case never matter for Starts with and Contains.'
-  // Exact compares the value as stored; a field stored in one case matches any case typed.
-  return (f.normalization as string) === 'UPPERCASE' || (f.normalization as string) === 'LOWERCASE'
-    ? 'Upper and lower case never matter for this field.'
-    : 'Exact compares the value as it was sent, so upper and lower case count. Starts with and Contains ignore case.'
-}
+/** Task 0078: values are compared without capitals and with single spaces. */
+const CASE_NOTE = 'Upper and lower case never matter.'
 
 export function SearchFields() {
   const { can, toast } = useStore()
@@ -199,7 +194,7 @@ export function SearchFields() {
               <td className="lead" data-label="Field"><strong>{f.displayLabel}</strong>{f.businessIdentifier && <small className="faint sf-sub">Identifier · always searchable</small>}{rules.get(f.fieldKey)?.sensitive && <small className="faint sf-sub">Sensitive</small>}</td>
               <td data-label="Searchable">{f.businessIdentifier ? <span className="muted">Always</span>
                 : <Switch label={`${f.displayLabel} searchable`} checked={f.searchable} disabled={!allowed || busy} onChange={(v) => void saveField({ ...f, searchable: v })} />}</td>
-              <td data-label="How it matches">{f.searchable ? MATCH_WORDS[f.searchMode] : <span className="faint">—</span>}</td>
+              <td data-label="How it matches">{f.searchable ? (rules.get(f.fieldKey)?.sensitive ? 'Whole value only, any case' : MATCH_WORDS[f.searchMode]) : <span className="faint">—</span>}</td>
               <td className="act"><button type="button" className="v-btn sm" aria-label={`Edit ${f.displayLabel}`} disabled={!allowed || busy} onClick={() => setDraft({ ...f })}>Edit</button></td>
             </tr>
           ))}</tbody>
@@ -241,7 +236,7 @@ export function SearchFields() {
             <span><strong>{c.label}</strong><small className="faint">{c.example}</small></span>
           </label>
         ))}
-        <small className="muted">{caseNote(draft)}</small>
+        <small className="muted">{rules.get(draft.fieldKey)?.sensitive ? 'A sensitive field is found by its whole value only, whatever is set here.' : CASE_NOTE}</small>
       </fieldset>
       <TechDetails flat hint="field key, type, normalization, version">
         <dl className="v-kv"><div><dt>Field key</dt><dd className="mono">{draft.fieldKey}</dd></div><div><dt>Type</dt><dd className="mono">{draft.fieldType}</dd></div>

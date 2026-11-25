@@ -38,21 +38,6 @@ class RecordKeyTest {
     }
 
     @Test
-    void theRecordReferenceGivesTheSameKeyAsIntake() {
-        var codec = new BusinessRecordRefCodec();
-        UUID source = UUID.randomUUID();
-        var identity = new BusinessRecordRefCodec.RecordIdentity(source, List.of(
-                new BusinessRecordRefCodec.IdentifierPart("memberId", "M-2"),
-                new BusinessRecordRefCodec.IdentifierPart("contractNumber", "123456")), null);
-        String expected = RecordKey.ofIdentifiers(List.of(
-                new RecordKey.Part("contractNumber", "123456"), new RecordKey.Part("memberId", "M-2")));
-        assertEquals(expected, codec.decode(codec.encode(identity)).recordKey());
-        UUID submission = UUID.randomUUID();
-        assertEquals(RecordKey.ofSubmission(submission),
-                new BusinessRecordRefCodec.RecordIdentity(source, List.of(), submission).recordKey());
-    }
-
-    @Test
     void theShaIsOverTheUtf8BytesAsTheDatabaseCheckComputesIt() {
         // The same value is checked in Postgres by Test-SDV-SchemaUpgrade.ps1 (024).
         assertEquals("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad", RecordKey.sha256("abc"));

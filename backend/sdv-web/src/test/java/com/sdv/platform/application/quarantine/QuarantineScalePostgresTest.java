@@ -1,5 +1,6 @@
 package com.sdv.platform.application.quarantine;
 
+import com.sdv.platform.persistence.fields.CaseRows;
 import com.sdv.platform.application.access.Clearance;
 import com.sdv.platform.application.access.DocumentAccessGuard;
 import com.sdv.platform.application.approvals.ApprovalSettings;
@@ -73,7 +74,7 @@ class QuarantineScalePostgresTest {
     private final Map<String, Long> times = new LinkedHashMap<>();
 
     private QuarantineService service() {
-        return new QuarantineService(repository, guard, foundation, foundation, ApprovalSettings.defaults(), tx);
+        return new QuarantineService(repository, guard, new com.sdv.platform.persistence.fields.PlatformFieldRepository(jdbc.getJdbcTemplate().getDataSource()), foundation, ApprovalSettings.defaults(), tx, com.sdv.platform.application.port.RecordValuesPort.NONE);
     }
 
     private void sql(String statement) {
@@ -122,17 +123,12 @@ class QuarantineScalePostgresTest {
         sql("insert into tenants(tenant_id, tenant_key, display_name, status) values ('" + T + "', 'quarantine-0052', 'Quarantine 0052', 'ACTIVE')");
         sql("insert into ingestion_sources(source_id, tenant_id, source_key, display_name, status, auth_type) values ('"
                 + S + "', '" + T + "', 'loans', 'Loans', 'ACTIVE', 'JWT_BEARER')");
-        UUID definition = UUID.randomUUID();
-        sql("insert into metadata_field_definitions(definition_id, tenant_id, source_id, field_key, version, display_label, field_type, "
-                + "required, business_identifier, searchable, normalization, search_mode) values ('" + definition + "', '" + T
-                + "', '" + S + "', 'contractNumber', 1, 'Contract number', 'TEXT', true, true, true, 'DIGITS_ONLY', 'EXACT')");
+        CaseRows.field(jdbc.getJdbcTemplate(), T, S, "contractNumber", "Contract number", true, "DIGITS_ONLY", 0);
         // Each statement has its own connection here, so the submissions get IDs worked out from their number.
         String submissionsSql = "(select n, md5('5201-' || n)::uuid as submission_id from generate_series(1, " + submissions + ") n)";
         sql("insert into submissions(submission_id, tenant_id, source_id, source_submission_id, expected_document_count, status) "
                 + "select submission_id, '" + T + "', '" + S + "', 'sub-' || n, " + PER_SUBMISSION + ", 'COMPLETE' from " + submissionsSql + " s");
-        sql("insert into business_metadata_values(metadata_value_id, tenant_id, source_id, submission_id, definition_id, field_key, "
-                + "definition_version, stored_value, normalized_value) select gen_random_uuid(), '" + T + "', '" + S + "', submission_id, '"
-                + definition + "', 'contractNumber', 1, '5200' || lpad(n::text, 8, '0'), '5200' || lpad(n::text, 8, '0') from " + submissionsSql + " s");
+        CaseRows.values(jdbc.getJdbcTemplate(), T, S, submissionsSql, "contractNumber", "'5200' || lpad(n::text, 8, '0')");
         sql("insert into documents(document_id, tenant_id, submission_id, source_id, source_document_id, original_filename, media_type, "
                 + "content_sha256, content_size_bytes, status, available_at, ingested_at, page_count, retention_days_snapshot, expires_at, "
                 + "sensitivity_level) select gen_random_uuid(), '" + T + "', s.submission_id, '" + S + "', 'doc-' || g, 'secret-name-' || g || '.pdf', "

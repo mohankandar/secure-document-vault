@@ -27,7 +27,7 @@ import java.util.UUID;
 @Repository
 public class JdbcAccessRequestRepository implements AccessRequestRepository {
     static final String COLUMNS = """
-            request_id, tenant_id, kind, document_id, source_id, record_key, requested_level, reason, requested_by,
+            request_id, tenant_id, kind, document_id, source_id, record_id, requested_level, reason, requested_by,
             requested_by_display_name, requested_at, status, decided_by, decided_by_display_name, decided_at,
             expires_at, used_at
             """;
@@ -80,10 +80,10 @@ public class JdbcAccessRequestRepository implements AccessRequestRepository {
     private boolean insertPending(AccessRequest r, UUID holdId) {
         // The partial unique indexes allow one pending request per person and target; a second one inserts nothing.
         int inserted = jdbc.update("""
-                insert into access_requests(request_id, tenant_id, kind, document_id, source_id, record_key,
-                    record_key_sha256, requested_level, reason, requested_by, requested_by_display_name, requested_at,
+                insert into access_requests(request_id, tenant_id, kind, document_id, source_id, record_id,
+                    requested_level, reason, requested_by, requested_by_display_name, requested_at,
                     status, expires_at, hold_id)
-                values (:id, :tenantId, :kind, :documentId, :sourceId, :recordKey, :sha, :requestedLevel, :reason,
+                values (:id, :tenantId, :kind, :documentId, :sourceId, :recordId, :requestedLevel, :reason,
                     :requestedBy, :requestedByName, :requestedAt, 'PENDING', :expiresAt, :holdId)
                 on conflict do nothing
                 """, new MapSqlParameterSource()
@@ -92,8 +92,7 @@ public class JdbcAccessRequestRepository implements AccessRequestRepository {
                 .addValue("kind", r.kind().name())
                 .addValue("documentId", r.documentId())
                 .addValue("sourceId", r.sourceId())
-                .addValue("recordKey", r.recordKey())
-                .addValue("sha", r.recordKey() == null ? null : RecordKey.sha256(r.recordKey()))
+                .addValue("recordId", r.recordId())
                 .addValue("requestedLevel", r.requestedLevel() == null ? null : r.requestedLevel().name())
                 .addValue("reason", r.reason())
                 .addValue("requestedBy", r.requestedBy())
@@ -168,7 +167,7 @@ public class JdbcAccessRequestRepository implements AccessRequestRepository {
                    set status='EXPIRED'
                   from due
                  where a.tenant_id=:tenantId and a.request_id=due.request_id
-                returning a.request_id, a.tenant_id, a.kind, a.document_id, a.source_id, a.record_key, a.requested_level,
+                returning a.request_id, a.tenant_id, a.kind, a.document_id, a.source_id, a.record_id, a.requested_level,
                           a.reason, a.requested_by, a.requested_by_display_name, a.requested_at, due.was as status,
                           a.decided_by, a.decided_by_display_name, a.decided_at, a.expires_at, a.used_at
                 """, new MapSqlParameterSource().addValue("tenantId", tenantId).addValue("now", Timestamp.from(now)),
@@ -333,23 +332,21 @@ public class JdbcAccessRequestRepository implements AccessRequestRepository {
     }
 
     static final String CHANGE_COLUMNS = """
-            change_id, tenant_id, scope, document_id, source_id, record_key, direction, from_level, to_level, reason,
+            change_id, tenant_id, scope, document_id, source_id, record_id, direction, from_level, to_level, reason,
             changed_by, changed_by_display_name, changed_at, access_request_id
             """;
 
     @Override
     public void insertLevelChange(LevelChange c) {
-        boolean record = c.scope() == LevelChange.Scope.RECORD;
-        jdbc.update("insert into sensitivity_level_changes(" + CHANGE_COLUMNS + ", record_key_sha256) values ("
-                + ":changeId, :tenantId, :scope, :documentId, :sourceId, :recordKey, :direction, :fromLevel, :toLevel,"
-                + " :reason, :changedBy, :changedByName, :changedAt, :accessRequestId, :sha)", new MapSqlParameterSource()
+        jdbc.update("insert into sensitivity_level_changes(" + CHANGE_COLUMNS + ") values ("
+                + ":changeId, :tenantId, :scope, :documentId, :sourceId, :recordId, :direction, :fromLevel, :toLevel,"
+                + " :reason, :changedBy, :changedByName, :changedAt, :accessRequestId)", new MapSqlParameterSource()
                 .addValue("changeId", c.changeId())
                 .addValue("tenantId", c.tenantId())
                 .addValue("scope", c.scope().name())
                 .addValue("documentId", c.documentId())
                 .addValue("sourceId", c.sourceId())
-                .addValue("recordKey", c.recordKey())
-                .addValue("sha", record && c.recordKey() != null ? RecordKey.sha256(c.recordKey()) : null)
+                .addValue("recordId", c.recordId())
                 .addValue("direction", c.direction().name())
                 .addValue("fromLevel", c.from() == null ? null : c.from().name())
                 .addValue("toLevel", c.to().name())
@@ -374,16 +371,16 @@ public class JdbcAccessRequestRepository implements AccessRequestRepository {
     }
 
     @Override
-    public List<LevelChange> findRecordLevelChanges(UUID tenantId, UUID sourceId, String recordKey, int limit) {
+    public List<LevelChange> findRecordLevelChanges(UUID tenantId, UUID sourceId, UUID recordId, int limit) {
         return jdbc.query("select " + CHANGE_COLUMNS + """
                   from sensitivity_level_changes
-                 where tenant_id=:tenantId and scope='RECORD' and source_id=:sourceId and record_key_sha256=:sha
+                 where tenant_id=:tenantId and scope='RECORD' and source_id=:sourceId and record_id=:recordId
                  order by changed_at desc, change_id
                  limit :limit
                 """, new MapSqlParameterSource()
                 .addValue("tenantId", tenantId)
                 .addValue("sourceId", sourceId)
-                .addValue("sha", RecordKey.sha256(recordKey))
+                .addValue("recordId", recordId)
                 .addValue("limit", limit), (rs, rowNum) -> change(rs));
     }
 
@@ -395,7 +392,7 @@ public class JdbcAccessRequestRepository implements AccessRequestRepository {
                 LevelChange.Scope.valueOf(rs.getString("scope")),
                 rs.getObject("document_id", UUID.class),
                 rs.getObject("source_id", UUID.class),
-                rs.getString("record_key"),
+                rs.getObject("record_id", UUID.class),
                 LevelChange.Direction.valueOf(rs.getString("direction")),
                 from == null ? null : SensitivityLevel.valueOf(from),
                 SensitivityLevel.valueOf(rs.getString("to_level")),
@@ -424,7 +421,7 @@ public class JdbcAccessRequestRepository implements AccessRequestRepository {
                 AccessRequestKind.valueOf(rs.getString("kind")),
                 rs.getObject("document_id", UUID.class),
                 rs.getObject("source_id", UUID.class),
-                rs.getString("record_key"),
+                rs.getObject("record_id", UUID.class),
                 level == null ? null : SensitivityLevel.valueOf(level),
                 rs.getString("reason"),
                 rs.getString("requested_by"),

@@ -23,8 +23,8 @@ import java.util.regex.PatternSyntaxException;
 final class MetadataValueValidator {
     private static final ObjectMapper JSON = VeroJson.mapper();
 
-    /** Task 0063: no metadata value is longer, whatever its field's rules say. */
-    static final int MAX_VALUE_LENGTH = 4_000;
+    /** Task 0063, 0078: no metadata value is longer, whatever its field's rules say (platform-fields' limit). */
+    static final int MAX_VALUE_LENGTH = 512;
     /** Task 0063: the longest one pattern check may take. */
     static final long PATTERN_NANOS = java.time.Duration.ofMillis(250).toNanos();
 

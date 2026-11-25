@@ -14,12 +14,12 @@ import com.sdv.platform.application.port.BusinessRecordRepository.AnywhereField;
 import com.sdv.platform.application.port.BusinessRecordRepository.AvailableDocumentSnapshot;
 import com.sdv.platform.application.port.BusinessRecordRepository.DocumentCount;
 import com.sdv.platform.application.port.BusinessRecordRepository.ExpectedDocumentSnapshot;
-import com.sdv.platform.application.port.BusinessRecordRepository.IdentifierCriterion;
 import com.sdv.platform.application.port.BusinessRecordRepository.MetadataSnapshot;
 import com.sdv.platform.application.port.BusinessRecordRepository.RecentDocumentView;
 import com.sdv.platform.application.port.BusinessRecordRepository.SearchCriterion;
 import com.sdv.platform.application.port.IngestionSourceRepository;
 import com.sdv.platform.application.port.MetadataFieldDefinitionRepository;
+import com.sdv.platform.application.port.RecordValuesPort;
 import com.sdv.platform.application.port.TenantRepository;
 import com.sdv.platform.domain.audit.AuditEvent;
 import com.sdv.platform.domain.audit.AuditOutcome;
@@ -73,6 +73,8 @@ public class BusinessExperienceService {
     private final AuditEventPort audit;
     /* Task 0048: which documents are quarantined now (search rows and the record panel show them as unavailable). */
     private final QuarantineLookup quarantine;
+    /* Task 0078: the sensitive values: exact search, and opened for who may see them. */
+    private final RecordValuesPort values;
     private final BusinessRecordRefCodec refs = new BusinessRecordRefCodec();
     private final Clock clock;
 
@@ -92,8 +94,9 @@ public class BusinessExperienceService {
             MetadataFieldDefinitionRepository definitions,
             BusinessRecordRepository records,
             AuditEventPort audit,
-            QuarantineLookup quarantine) {
-        this(tenants, sources, definitions, records, audit, quarantine, Clock.systemUTC());
+            QuarantineLookup quarantine,
+            RecordValuesPort values) {
+        this(tenants, sources, definitions, records, audit, quarantine, values, Clock.systemUTC());
     }
 
     BusinessExperienceService(
@@ -114,12 +117,25 @@ public class BusinessExperienceService {
             AuditEventPort audit,
             QuarantineLookup quarantine,
             Clock clock) {
+        this(tenants, sources, definitions, records, audit, quarantine, RecordValuesPort.NONE, clock);
+    }
+
+    BusinessExperienceService(
+            TenantRepository tenants,
+            IngestionSourceRepository sources,
+            MetadataFieldDefinitionRepository definitions,
+            BusinessRecordRepository records,
+            AuditEventPort audit,
+            QuarantineLookup quarantine,
+            RecordValuesPort values,
+            Clock clock) {
         this.tenants = tenants;
         this.sources = sources;
         this.definitions = definitions;
         this.records = records;
         this.audit = audit;
         this.quarantine = Objects.requireNonNull(quarantine, "quarantine");
+        this.values = Objects.requireNonNull(values, "values");
         this.clock = clock;
     }
 
@@ -143,6 +159,8 @@ public class BusinessExperienceService {
         for (BusinessRecordRepository.SourceActivity a : records.findSourceActivity(tenantId)) {
             if (a.lastDeliveredAt() != null) lastDelivered.put(a.sourceId(), a.lastDeliveredAt());
         }
+        Set<String> sensitive = values.sensitiveKeys(tenantId);
+        boolean partial = values.partialSearch();
         List<BusinessExperienceView.SourceSchema> sourceSchemas = sources.findAll(tenantId).stream()
                 .sorted(Comparator.comparing(IngestionSource::displayName, String.CASE_INSENSITIVE_ORDER)
                         .thenComparing(IngestionSource::sourceKey))
@@ -158,7 +176,9 @@ public class BusinessExperienceService {
                                         field.fieldType(),
                                         field.businessIdentifier(),
                                         field.normalization(),
-                                        field.searchMode()))
+                                        sensitive.contains(field.fieldKey()) ? MetadataSearchMode.EXACT : mode(field, partial),
+                                        sensitive.contains(field.fieldKey()),
+                                        !partial && field.searchMode() == MetadataSearchMode.PARTIAL && !sensitive.contains(field.fieldKey())))
                                 .toList(),
                         source.status() == IngestionSourceStatus.ACTIVE ? "ACTIVE" : "PAUSED",
                         lastDelivered.containsKey(source.sourceId()),
@@ -301,13 +321,12 @@ public class BusinessExperienceService {
         Map<String, MetadataFieldDefinition> current = definitions.findCurrent(tenantId, sourceId).stream()
                 .collect(Collectors.toMap(MetadataFieldDefinition::fieldKey, Function.identity()));
 
-        List<SearchCriterion> criteria = safeCriteria.entrySet().stream()
-                .sorted(Map.Entry.comparingByKey())
-                .map(entry -> buildCriterion(tenantId, sourceId, current, entry.getKey(), entry.getValue()))
-                .toList();
+        Set<String> sensitive = values.sensitiveKeys(tenantId);
+        boolean partial = values.partialSearch();
+        List<SearchCriterion> criteria = criteria(tenantId, sourceId, current, safeCriteria, sensitive, partial);
 
         boolean isAnywhere = anywhereText != null;
-        AnywhereCriterion anywhereCriterion = isAnywhere ? anywhereCriterion(tenantId, sourceId, anywhereText) : null;
+        AnywhereCriterion anywhereCriterion = isAnywhere ? anywhereCriterion(tenantId, sourceId, anywhereText, sensitive, partial) : null;
         if (isAnywhere && anywhereCriterion == null) {
             // No field of this source can match the text (e.g. letters and only digits-only fields): nothing found.
             appendSearchAudit(tenantId, actorId, sourceId, criteria.size(), 0, true, correlationId);
@@ -320,7 +339,7 @@ public class BusinessExperienceService {
         int scanBatchSize = Math.max(200, pageSize * 4);
         boolean exhausted = false;
 
-        LinkedHashMap<String, BusinessRecordRefCodec.RecordIdentity> candidates = new LinkedHashMap<>();
+        LinkedHashMap<UUID, BusinessRecordRefCodec.RecordIdentity> candidates = new LinkedHashMap<>();
         while (candidates.size() < requiredCandidateCount && !exhausted) {
             List<Submission> matching = anywhereCriterion == null
                     ? records.findMatchingSubmissions(
@@ -338,15 +357,10 @@ public class BusinessExperienceService {
             }
 
             List<UUID> matchingIds = matching.stream().map(Submission::submissionId).toList();
-            Map<UUID, List<MetadataSnapshot>> matchedMetadata = groupMetadata(
-                    records.findMetadataSnapshots(tenantId, sourceId, matchingIds));
-
+            Map<UUID, UUID> recordOf = records.findRecordIds(tenantId, sourceId, matchingIds);
             for (Submission submission : matching) {
-                BusinessRecordRefCodec.RecordIdentity identity = identityFor(
-                        sourceId,
-                        submission.submissionId(),
-                        matchedMetadata.getOrDefault(submission.submissionId(), List.of()));
-                candidates.putIfAbsent(identity.canonicalKey(), identity);
+                UUID recordId = recordOf.get(submission.submissionId());
+                if (recordId != null) candidates.putIfAbsent(recordId, new BusinessRecordRefCodec.RecordIdentity(sourceId, recordId));
             }
 
             scanOffset += matching.size();
@@ -368,13 +382,16 @@ public class BusinessExperienceService {
             if (!aggregate.submissions().isEmpty()) pageAggregates.add(aggregate);
         }
         // Task 0026: the page's record levels in one query.
-        Map<String, SensitivityLevel> recordLevels = pageAggregates.isEmpty() ? Map.of()
+        Map<UUID, SensitivityLevel> recordLevels = pageAggregates.isEmpty() ? Map.of()
                 : records.findRecordSensitivityLevels(tenantId, sourceId,
-                        pageAggregates.stream().map(a -> a.identity().recordKey()).toList());
+                        pageAggregates.stream().map(a -> a.identity().recordId()).toList());
+        // Task 0078: the names of the page's records, for the records whose documents this person may open: one key-service call.
+        Map<UUID, List<RecordValuesPort.Opened>> names = opened(tenantId, sourceId, pageAggregates.stream()
+                .filter(a -> mayOpen(a, levelOf(recordLevels, a), clearance)).toList(), sensitive);
         List<BusinessExperienceView.RecordSummary> results = new ArrayList<>();
         for (RecordAggregate aggregate : pageAggregates) {
-            results.add(summary(aggregate, titleFields, matchedFields(aggregate, anywhereCriterion),
-                    levelOf(recordLevels, aggregate), clearance));
+            results.add(summary(aggregate.with(names.get(aggregate.identity().recordId())), titleFields, matchedFields(aggregate, anywhereCriterion),
+                    levelOf(recordLevels, aggregate), clearance, sensitive));
         }
 
         boolean hasMore = ordered.size() > firstIndex + pageSize || !exhausted;
@@ -417,51 +434,53 @@ public class BusinessExperienceService {
         List<RecentDocumentView> views = records.findRecentlyViewedDocuments(
                 tenantId, actorId, clock.instant().minus(RECENT_WINDOW), RECENT_EVENT_SCAN);
 
-        Map<UUID, List<MetadataSnapshot>> metadataBySubmission = new HashMap<>();
+        Map<UUID, UUID> recordOf = new HashMap<>();
         views.stream()
                 .collect(Collectors.groupingBy(RecentDocumentView::sourceId, LinkedHashMap::new,
                         Collectors.mapping(RecentDocumentView::submissionId, Collectors.toCollection(LinkedHashSet::new))))
-                .forEach((sourceId, submissionIds) -> metadataBySubmission.putAll(groupMetadata(
-                        records.findMetadataSnapshots(tenantId, sourceId, List.copyOf(submissionIds)))));
+                .forEach((sourceId, submissionIds) -> recordOf.putAll(records.findRecordIds(tenantId, sourceId, submissionIds)));
 
         // One entry per record, keeping the newest open (views are already newest first).
-        LinkedHashMap<String, BusinessExperienceView.RecentRecord> byRecord = new LinkedHashMap<>();
-        LinkedHashMap<String, Instant> openedByRecord = new LinkedHashMap<>();
-        LinkedHashMap<String, BusinessRecordRefCodec.RecordIdentity> identities = new LinkedHashMap<>();
+        LinkedHashMap<UUID, Instant> openedByRecord = new LinkedHashMap<>();
+        LinkedHashMap<UUID, BusinessRecordRefCodec.RecordIdentity> identities = new LinkedHashMap<>();
         for (RecentDocumentView view : views) {
-            BusinessRecordRefCodec.RecordIdentity identity = identityFor(
-                    view.sourceId(), view.submissionId(),
-                    metadataBySubmission.getOrDefault(view.submissionId(), List.of()));
-            if (identities.putIfAbsent(identity.canonicalKey(), identity) == null) {
-                openedByRecord.put(identity.canonicalKey(), view.lastOpenedAt());
+            UUID recordId = recordOf.get(view.submissionId());
+            if (recordId != null && identities.putIfAbsent(recordId, new BusinessRecordRefCodec.RecordIdentity(view.sourceId(), recordId)) == null) {
+                openedByRecord.put(recordId, view.lastOpenedAt());
             }
         }
 
         Map<UUID, Optional<IngestionSource>> sourceCache = new HashMap<>();
         Map<UUID, List<String>> titleFieldsBySource = new HashMap<>();
-        for (Map.Entry<String, BusinessRecordRefCodec.RecordIdentity> entry : identities.entrySet()) {
-            if (byRecord.size() >= limit) break;
-            BusinessRecordRefCodec.RecordIdentity identity = entry.getValue();
+        LinkedHashMap<RecordAggregate, SensitivityLevel> found = new LinkedHashMap<>();
+        for (BusinessRecordRefCodec.RecordIdentity identity : identities.values()) {
+            if (found.size() >= limit) break;
             Optional<IngestionSource> source = sourceCache.computeIfAbsent(
                     identity.sourceId(), id -> sources.findById(tenantId, id));
             if (source.isEmpty()) continue;
             RecordAggregate aggregate = aggregate(tenantId, source.get(), identity);
             if (aggregate.submissions().isEmpty() || aggregate.documents().isEmpty()) continue;
-            SensitivityLevel recordLevel = records.findRecordSensitivityLevel(
-                    tenantId, identity.sourceId(), identity.recordKey()).orElse(null);
-            byRecord.put(entry.getKey(), new BusinessExperienceView.RecentRecord(
-                    identity.sourceId(),
-                    summary(aggregate, titleFieldsBySource.computeIfAbsent(identity.sourceId(),
-                            id -> definitions.findRecordTitleFields(tenantId, id)), List.of(), recordLevel, clearance),
-                    openedByRecord.get(entry.getKey())));
+            found.put(aggregate, records.findRecordSensitivityLevel(tenantId, identity.sourceId(), identity.recordId()).orElse(null));
         }
+        // Task 0078: the names, one key-service call for each sending system in the list.
+        Set<String> sensitive = values.sensitiveKeys(tenantId);
+        Map<UUID, List<RecordValuesPort.Opened>> names = new HashMap<>();
+        found.entrySet().stream().filter(e -> mayOpen(e.getKey(), e.getValue(), clearance)).map(Map.Entry::getKey)
+                .collect(Collectors.groupingBy(a -> a.identity().sourceId()))
+                .forEach((sourceId, aggregates) -> names.putAll(opened(tenantId, sourceId, aggregates, sensitive)));
+        List<BusinessExperienceView.RecentRecord> recent = new ArrayList<>();
+        found.forEach((aggregate, recordLevel) -> recent.add(new BusinessExperienceView.RecentRecord(
+                aggregate.identity().sourceId(),
+                summary(aggregate.with(names.get(aggregate.identity().recordId())), titleFieldsBySource.computeIfAbsent(aggregate.identity().sourceId(),
+                        id -> definitions.findRecordTitleFields(tenantId, id)), List.of(), recordLevel, clearance, sensitive),
+                openedByRecord.get(aggregate.identity().recordId()))));
 
         audit.append(new AuditEvent(
                 UUID.randomUUID(), tenantId, "USER", actorId,
                 "BUSINESS_RECENT_RECORDS_LISTED", "USER", actorId,
                 clock.instant(), correlationId, AuditOutcome.SUCCESS,
-                "{\"resultCount\":" + byRecord.size() + "}"));
-        return new BusinessExperienceView.RecentRecords(List.copyOf(byRecord.values()));
+                "{\"resultCount\":" + recent.size() + "}"));
+        return new BusinessExperienceView.RecentRecords(List.copyOf(recent));
     }
 
     public BusinessExperienceView.RecordView record(
@@ -494,11 +513,15 @@ public class BusinessExperienceService {
             throw RecordRefusals.notFound("no submission left for the reference");
         }
 
-        // Task 0024, part 2: the record's own level, from the same grouping as the record itself.
+        // Task 0024, part 2: the record's own level.
         SensitivityLevel recordLevel = records.findRecordSensitivityLevel(
-                tenantId, source.sourceId(), identity.recordKey()).orElse(null);
+                tenantId, source.sourceId(), identity.recordId()).orElse(null);
+        // Task 0078: its sensitive values only for who may open its documents: one key-service call.
+        if (mayOpen(aggregate, recordLevel, clearance)) {
+            aggregate = aggregate.with(openOne(tenantId, source.sourceId(), identity.recordId()));
+        }
         BusinessExperienceView.RecordView view = recordView(aggregate, recordLevel,
-                definitions.findRecordTitleFields(tenantId, source.sourceId()), clearance);
+                definitions.findRecordTitleFields(tenantId, source.sourceId()), clearance, values.sensitiveKeys(tenantId));
         // submissionId is an internal reference (a UUID, never a readable value); the audit list
         // looks up the record number from it within the tenant (task 0020 item 1).
         audit.append(new AuditEvent(
@@ -515,12 +538,55 @@ public class BusinessExperienceService {
         return view;
     }
 
+    private static MetadataSearchMode mode(MetadataFieldDefinition field, boolean partial) {
+        return field.searchMode() == MetadataSearchMode.PARTIAL && !partial ? MetadataSearchMode.PREFIX : field.searchMode();
+    }
+
+    /** Task 0078: every field checked first, then the sensitive ones' fingerprints in one go (two key-service calls at most). */
+    private List<SearchCriterion> criteria(UUID tenantId, UUID sourceId, Map<String, MetadataFieldDefinition> current, Map<String, String> asked,
+                                           Set<String> sensitive, boolean partial) {
+        List<SearchCriterion> out = new ArrayList<>();
+        Map<String, String> exact = new TreeMap<>();
+        for (Map.Entry<String, String> entry : new TreeMap<>(asked).entrySet()) {
+            SearchCriterion criterion = buildCriterion(tenantId, sourceId, current, entry.getKey(), entry.getValue(), partial);
+            if (sensitive.contains(entry.getKey())) exact.put(entry.getKey(), entry.getValue());
+            else out.add(criterion);
+        }
+        values.fingerprints(tenantId, exact).forEach((key, prints) -> out.add(SearchCriterion.sensitive(key, prints)));
+        out.sort(Comparator.comparing(SearchCriterion::fieldKey));
+        return out;
+    }
+
+    /**
+     * Task 0078: sensitive values are shown to who may open the record's documents (those not quarantined) at their effective level; a record
+     * without a document, at its own level.
+     */
+    private static boolean mayOpen(RecordAggregate aggregate, SensitivityLevel recordLevel, Clearance clearance) {
+        return clearance.canOpen(recordLevel == null ? SensitivityLevel.STANDARD : recordLevel)
+                && aggregate.notQuarantined().stream().allMatch(d -> clearance.canOpen(SensitivityLevel.effective(d.sensitivityLevel(), recordLevel)));
+    }
+
+    private Map<UUID, List<RecordValuesPort.Opened>> opened(UUID tenantId, UUID sourceId, List<RecordAggregate> aggregates, Set<String> sensitive) {
+        if (aggregates.isEmpty() || sensitive.isEmpty()) return Map.of();
+        return values.openPage(tenantId, sourceId, aggregates.stream().map(a -> a.identity().recordId()).toList());
+    }
+
+    /** Without the key service the record opens without its sensitive values (its documents can't be opened then either). */
+    private List<RecordValuesPort.Opened> openOne(UUID tenantId, UUID sourceId, UUID recordId) {
+        try {
+            return values.open(tenantId, sourceId, recordId);
+        } catch (com.sdv.platform.domain.error.KeyServiceDown ex) {
+            return List.of();
+        }
+    }
+
     private SearchCriterion buildCriterion(
             UUID tenantId,
             UUID sourceId,
             Map<String, MetadataFieldDefinition> current,
             String fieldKey,
-            String rawValue) {
+            String rawValue,
+            boolean partial) {
         MetadataFieldDefinition field = current.get(fieldKey);
         if (field == null || !field.searchable()) {
             throw new CodedRefusal.BadRequest(SdvErrorCode.SCH_001,
@@ -538,7 +604,7 @@ public class BusinessExperienceService {
             throw new CodedRefusal.BadRequest(SdvErrorCode.SCH_001,
                     "Search value for '" + fieldKey + "' is empty after configured normalization.");
         }
-        return new SearchCriterion(fieldKey, field.searchMode(), variants, exactIgnoresCase(field));
+        return new SearchCriterion(fieldKey, mode(field, partial), variants, exactIgnoresCase(field));
     }
 
     /**
@@ -565,22 +631,24 @@ public class BusinessExperienceService {
                 });
         String currentNormalized = SearchValueNormalizer.normalize(field.normalization(), rawValue);
         if (!currentNormalized.isBlank()) variants.add(currentNormalized);
+        if (field.searchMode() == MetadataSearchMode.EXACT) variants.addAll(definitions.storedForms(tenantId, field.fieldKey(), rawValue));
         return List.copyOf(variants);
     }
 
     /**
-     * The fields "anywhere" text is tried in, in the source's display order: every searchable field except dates,
+     * The fields "anywhere" text is tried in, in the source's display order: every searchable field except dates and sensitive fields,
      * and digits-only fields only when the text has a digit. Null when no field can match the text.
      */
-    private AnywhereCriterion anywhereCriterion(UUID tenantId, UUID sourceId, String text) {
+    private AnywhereCriterion anywhereCriterion(UUID tenantId, UUID sourceId, String text, Set<String> sensitive, boolean partial) {
         boolean hasDigit = text.chars().anyMatch(Character::isDigit);
         List<AnywhereField> fields = new ArrayList<>();
         for (MetadataFieldDefinition field : orderedSearchFields(tenantId, sourceId)) {
             if (!field.searchable() || !field.active() || field.fieldType() == MetadataFieldType.DATE) continue;
+            if (sensitive.contains(field.fieldKey())) continue; // only the whole value finds those (task 0078)
             if (field.normalization() == MetadataNormalization.DIGITS_ONLY && !hasDigit) continue;
             List<String> variants = normalizedVariants(tenantId, sourceId, field, text);
             if (variants.isEmpty()) continue;
-            fields.add(new AnywhereField(field.fieldKey(), field.searchMode(), variants, field.businessIdentifier(),
+            fields.add(new AnywhereField(field.fieldKey(), mode(field, partial), variants, field.businessIdentifier(),
                     exactIgnoresCase(field)));
         }
         return fields.isEmpty() ? null : new AnywhereCriterion(fields);
@@ -640,24 +708,15 @@ public class BusinessExperienceService {
             UUID tenantId,
             IngestionSource source,
             BusinessRecordRefCodec.RecordIdentity identity) {
-        List<UUID> memberIds;
-        if (identity.fallbackSubmissionId() != null) {
-            memberIds = List.of(identity.fallbackSubmissionId());
-        } else {
-            List<IdentifierCriterion> identifiers = identity.identifiers().stream()
-                    .map(part -> new IdentifierCriterion(part.fieldKey(), part.normalizedValue()))
-                    .toList();
-            memberIds = records.findSubmissionIdsByRecordIdentity(
-                    tenantId, source.sourceId(), identifiers);
-        }
+        List<UUID> memberIds = records.findSubmissionIdsOfRecord(tenantId, source.sourceId(), identity.recordId());
         if (memberIds.isEmpty()) {
-            return new RecordAggregate(source, identity, List.of(), List.of(), List.of(), List.of(), Map.of(), Set.of());
+            return new RecordAggregate(source, identity, List.of(), List.of(), List.of(), List.of(), Map.of(), Set.of(), List.of());
         }
 
         List<Submission> submissions = records.findSubmissionsByIds(
                 tenantId, source.sourceId(), memberIds);
         if (submissions.isEmpty()) {
-            return new RecordAggregate(source, identity, List.of(), List.of(), List.of(), List.of(), Map.of(), Set.of());
+            return new RecordAggregate(source, identity, List.of(), List.of(), List.of(), List.of(), Map.of(), Set.of(), List.of());
         }
 
         List<UUID> ids = submissions.stream().map(Submission::submissionId).toList();
@@ -670,11 +729,11 @@ public class BusinessExperienceService {
 
         Set<UUID> quarantined = documents.isEmpty() ? Set.of()
                 : quarantine.quarantined(tenantId, documents.stream().map(AvailableDocumentSnapshot::documentId).toList());
-        return new RecordAggregate(source, identity, submissions, metadata, documents, expected, documentCounts, quarantined);
+        return new RecordAggregate(source, identity, submissions, metadata, documents, expected, documentCounts, quarantined, List.of());
     }
 
-    private static SensitivityLevel levelOf(Map<String, SensitivityLevel> recordLevels, RecordAggregate aggregate) {
-        return recordLevels == null ? null : recordLevels.get(aggregate.identity().recordKey());
+    private static SensitivityLevel levelOf(Map<UUID, SensitivityLevel> recordLevels, RecordAggregate aggregate) {
+        return recordLevels == null ? null : recordLevels.get(aggregate.identity().recordId());
     }
 
     /** Task 0026: the highest effective level among the record's documents this clearance can't open, or null. */
@@ -691,11 +750,12 @@ public class BusinessExperienceService {
             List<String> titleFields,
             List<BusinessExperienceView.MatchedField> matchedFields,
             SensitivityLevel recordLevel,
-            Clearance clearance) {
+            Clearance clearance,
+            Set<String> sensitive) {
         List<BusinessExperienceView.FieldValue> latestMetadata = latestMetadata(aggregate);
         List<BusinessExperienceView.FieldValue> identifiers = displayIdentifiers(aggregate, latestMetadata);
         List<BusinessExperienceView.FieldValue> preview = latestMetadata.stream()
-                .filter(value -> !value.businessIdentifier())
+                .filter(value -> !value.businessIdentifier() && !aggregate.isOpened(value.fieldKey()))
                 .limit(4)
                 .toList();
         List<Submission> open = aggregate.submissions().stream()
@@ -709,7 +769,7 @@ public class BusinessExperienceService {
 
         return new BusinessExperienceView.RecordSummary(
                 refs.encode(aggregate.identity()),
-                recordTitle(latestMetadata, titleFields),
+                title(aggregate, latestMetadata, titleFields, sensitive),
                 identifiers,
                 preview,
                 aggregate.submissions().size(),
@@ -725,7 +785,8 @@ public class BusinessExperienceService {
     }
 
     private BusinessExperienceView.RecordView recordView(RecordAggregate aggregate, SensitivityLevel recordLevel,
-                                                          List<String> titleFields, Clearance clearance) {
+                                                          List<String> titleFields, Clearance clearance,
+                                                          Set<String> sensitive) {
         List<BusinessExperienceView.FieldValue> metadata = latestMetadata(aggregate);
         List<BusinessExperienceView.FieldValue> identifiers = displayIdentifiers(aggregate, metadata);
         // Task 0048: a quarantined document is listed as unavailable (its reference only, no level, no reason),
@@ -779,7 +840,7 @@ public class BusinessExperienceService {
 
         return new BusinessExperienceView.RecordView(
                 refs.encode(aggregate.identity()),
-                recordTitle(metadata, titleFields),
+                title(aggregate, metadata, titleFields, sensitive),
                 aggregate.source().sourceId(),
                 aggregate.source().sourceKey(),
                 aggregate.source().displayName(),
@@ -794,6 +855,12 @@ public class BusinessExperienceService {
                 restrictedLevel(aggregate.documents().stream()
                         .filter(document -> !unavailableIds.contains(document.documentId())).toList(), recordLevel, clearance),
                 unavailable);
+    }
+
+    /** Task 0078: a title whose fields this person may not see is left out, and the screen falls back to the identifier. */
+    private static String title(RecordAggregate aggregate, List<BusinessExperienceView.FieldValue> latestMetadata, List<String> titleFields, Set<String> sensitive) {
+        if (titleFields != null && titleFields.stream().anyMatch(key -> sensitive.contains(key) && !aggregate.isOpened(key))) return null;
+        return recordTitle(latestMetadata, titleFields);
     }
 
     /**
@@ -837,6 +904,7 @@ public class BusinessExperienceService {
                                     value.fieldKey(), value.displayLabel(),
                                     value.storedValue(), value.businessIdentifier())));
         }
+        aggregate.opened().forEach(v -> latest.put(v.fieldKey(), new BusinessExperienceView.FieldValue(v.fieldKey(), v.label(), v.value(), v.identifier())));
         return latest.values().stream()
                 .sorted(Comparator.comparing(BusinessExperienceView.FieldValue::displayLabel, String.CASE_INSENSITIVE_ORDER)
                         .thenComparing(BusinessExperienceView.FieldValue::fieldKey))
@@ -846,38 +914,8 @@ public class BusinessExperienceService {
     private static List<BusinessExperienceView.FieldValue> displayIdentifiers(
             RecordAggregate aggregate,
             List<BusinessExperienceView.FieldValue> latestMetadata) {
-        if (aggregate.identity().fallbackSubmissionId() != null) return List.of();
-        Map<String, BusinessExperienceView.FieldValue> latestByKey = latestMetadata.stream()
-                .collect(Collectors.toMap(BusinessExperienceView.FieldValue::fieldKey, Function.identity(), (a, b) -> a));
-
-        return aggregate.identity().identifiers().stream()
-                .map(part -> {
-                    BusinessExperienceView.FieldValue display = latestByKey.get(part.fieldKey());
-                    return display != null
-                            ? new BusinessExperienceView.FieldValue(
-                                    display.fieldKey(), display.displayLabel(), display.value(), true)
-                            : new BusinessExperienceView.FieldValue(
-                                    part.fieldKey(), part.fieldKey(), part.normalizedValue(), true);
-                })
-                .toList();
-    }
-
-    private static BusinessRecordRefCodec.RecordIdentity identityFor(
-            UUID sourceId,
-            UUID submissionId,
-            List<MetadataSnapshot> metadata) {
-        List<BusinessRecordRefCodec.IdentifierPart> identifiers = metadata.stream()
-                .filter(MetadataSnapshot::businessIdentifier)
-                .map(value -> new BusinessRecordRefCodec.IdentifierPart(
-                        value.fieldKey(), value.normalizedValue()))
-                .filter(part -> part.normalizedValue() != null && !part.normalizedValue().isBlank())
-                .sorted(Comparator.comparing(BusinessRecordRefCodec.IdentifierPart::fieldKey)
-                        .thenComparing(BusinessRecordRefCodec.IdentifierPart::normalizedValue))
-                .toList();
-
-        return identifiers.isEmpty()
-                ? new BusinessRecordRefCodec.RecordIdentity(sourceId, List.of(), submissionId)
-                : new BusinessRecordRefCodec.RecordIdentity(sourceId, identifiers, null);
+        return latestMetadata.stream().filter(BusinessExperienceView.FieldValue::businessIdentifier)
+                .sorted(Comparator.comparing(BusinessExperienceView.FieldValue::fieldKey)).toList();
     }
 
     private static Map<UUID, List<MetadataSnapshot>> groupMetadata(List<MetadataSnapshot> metadata) {
@@ -928,7 +966,8 @@ public class BusinessExperienceService {
             List<AvailableDocumentSnapshot> documents,
             List<ExpectedDocumentSnapshot> expected,
             Map<UUID, Integer> documentCounts,
-            Set<UUID> quarantined) {
+            Set<UUID> quarantined,
+            List<RecordValuesPort.Opened> opened) {
         RecordAggregate {
             submissions = submissions.stream()
                     .sorted(Comparator.comparing(Submission::createdAt).reversed()
@@ -943,6 +982,15 @@ public class BusinessExperienceService {
             expected = List.copyOf(expected);
             documentCounts = Map.copyOf(documentCounts);
             quarantined = Set.copyOf(quarantined);
+        }
+
+        RecordAggregate with(List<RecordValuesPort.Opened> sensitive) {
+            return sensitive == null || sensitive.isEmpty() ? this
+                    : new RecordAggregate(source, identity, submissions, metadata, documents, expected, documentCounts, quarantined, List.copyOf(sensitive));
+        }
+
+        boolean isOpened(String fieldKey) {
+            return opened.stream().anyMatch(v -> v.fieldKey().equals(fieldKey));
         }
 
         /** Task 0048: the documents not quarantined now. */

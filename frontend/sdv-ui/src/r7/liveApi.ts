@@ -38,7 +38,7 @@ export function toSource(s: SearchSource): Source {
   return { id:s.sourceId, key:s.sourceKey, name:s.displayName, status:s.status === 'ACTIVE' ? 'ACTIVE' : 'PAUSED', hasRecords:s.hasRecords === true, lastDeliveredAt:s.lastDeliveredAt ?? null, fields:s.fields.map(f=>({
     key:f.fieldKey, label:f.displayLabel, type:f.fieldType === 'DATE' ? 'DATE':'STRING',
     identifier:f.businessIdentifier, searchable:true, mode:f.searchMode, normalization:
-    f.normalization === 'DIGITS_ONLY' || f.normalization === 'UPPERCASE' ? f.normalization : 'NONE', normalizationRaw:f.normalization
+    f.normalization === 'DIGITS_ONLY' || f.normalization === 'UPPERCASE' ? f.normalization : 'NONE', normalizationRaw:f.normalization, sensitive:f.sensitive === true, partialAsPrefix:f.partialAsPrefix === true
   } as Field)) }
 }
 const fields = (a: {displayLabel:string,value:string}[]) => a.map(f=>({ label:f.displayLabel,value:f.value }))

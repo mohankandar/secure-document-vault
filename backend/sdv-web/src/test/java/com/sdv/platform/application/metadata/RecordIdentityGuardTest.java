@@ -81,7 +81,6 @@ class RecordIdentityGuardTest {
         assertEquals("SDV-SEN-007", ex.errorCode().code());
         assertTrue(ex.getMessage().contains(expectedCount + " of this sending system"), ex.getMessage());
         assertTrue(ex.getMessage().contains("sensitivity level"), ex.getMessage());
-        verify(definitions, never()).retire(any(), any(), any(), any());
         verify(definitions, never()).insert(any());
     }
 

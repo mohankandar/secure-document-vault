@@ -6,17 +6,17 @@ import com.sdv.platform.domain.error.InternalCheckFailed;
 import com.sdv.platform.domain.error.CodedRefusal;
 import com.sdv.platform.domain.error.SdvErrorCode;
 import com.sdv.platform.application.source.ActiveSource;
-import com.sdv.platform.application.business.RecordKey;
 import com.sdv.platform.application.port.AuditEventPort;
 import com.sdv.platform.application.port.DocumentIntakeRepository;
 import com.sdv.platform.application.port.IngestionSourceRepository;
 import com.sdv.platform.application.port.MetadataFieldDefinitionRepository;
+import com.sdv.platform.application.port.BusinessRecordRepository;
 import com.sdv.platform.application.port.RecordSensitivityRepository;
+import com.sdv.platform.application.port.RecordValuesPort;
 import com.sdv.platform.application.port.SubmissionRepository;
 import com.sdv.platform.application.port.TenantRepository;
 import com.sdv.platform.domain.audit.AuditEvent;
 import com.sdv.platform.domain.audit.AuditOutcome;
-import com.sdv.platform.domain.document.BusinessMetadataValue;
 import com.sdv.platform.domain.document.Document;
 import com.sdv.platform.domain.document.SensitivityLevel;
 import com.sdv.platform.domain.metadata.MetadataFieldDefinition;
@@ -58,6 +58,9 @@ public class SubmissionService {
     private final DocumentIntakeRepository documents;
     private final RecordSensitivityRepository recordLevels;
     private final AuditEventPort audit;
+    private final RecordValuesPort recordValues;
+    /* Null in set-ups that read no values back. */
+    private final BusinessRecordRepository records;
     private final Clock clock;
 
     /** The submission JSON field that carries the record's level (task 0024, part 2). */
@@ -70,8 +73,10 @@ public class SubmissionService {
                              SubmissionRepository submissions,
                              DocumentIntakeRepository documents,
                              RecordSensitivityRepository recordLevels,
-                             AuditEventPort audit) {
-        this(tenants, sources, definitions, submissions, documents, recordLevels, audit, Clock.systemUTC());
+                             AuditEventPort audit,
+                             RecordValuesPort recordValues,
+                             BusinessRecordRepository records) {
+        this(tenants, sources, definitions, submissions, documents, recordLevels, audit, recordValues, records, Clock.systemUTC());
     }
 
     SubmissionService(TenantRepository tenants,
@@ -82,6 +87,19 @@ public class SubmissionService {
                       RecordSensitivityRepository recordLevels,
                       AuditEventPort audit,
                       Clock clock) {
+        this(tenants, sources, definitions, submissions, documents, recordLevels, audit, RecordValuesPort.NONE, null, clock);
+    }
+
+    SubmissionService(TenantRepository tenants,
+                      IngestionSourceRepository sources,
+                      MetadataFieldDefinitionRepository definitions,
+                      SubmissionRepository submissions,
+                      DocumentIntakeRepository documents,
+                      RecordSensitivityRepository recordLevels,
+                      AuditEventPort audit,
+                      RecordValuesPort recordValues,
+                      BusinessRecordRepository records,
+                      Clock clock) {
         this.tenants = tenants;
         this.sources = sources;
         this.definitions = definitions;
@@ -89,6 +107,8 @@ public class SubmissionService {
         this.documents = documents;
         this.recordLevels = recordLevels;
         this.audit = audit;
+        this.recordValues = recordValues;
+        this.records = records;
         this.clock = clock;
     }
 
@@ -118,7 +138,7 @@ public class SubmissionService {
         var existing = submissions.findBySourceIdentity(tenantId, sourceId, canonical.sourceSubmissionId());
         if (existing.isPresent()) {
             ensureSameCreateRequest(existing.get(), canonical);
-            return details(existing.get(), true);
+            return details(existing.get(), true, canonical.metadata());
         }
 
         int maxDocuments = effectiveMaxDocuments(tenant, source);
@@ -133,8 +153,7 @@ public class SubmissionService {
         }
 
         List<MetadataFieldDefinition> currentDefinitions = definitions.findCurrent(tenantId, sourceId);
-        List<BusinessMetadataValue> metadataValues = validateAndBuildMetadata(
-                tenantId, sourceId, currentDefinitions, canonical.metadata(), null);
+        validateMetadata(currentDefinitions, canonical.metadata());
 
         Instant now = clock.instant();
         Submission candidate = new Submission(
@@ -145,7 +164,7 @@ public class SubmissionService {
         SubmissionRepository.InsertResult insertResult = submissions.insertIfAbsent(candidate);
         if (!insertResult.inserted()) {
             ensureSameCreateRequest(insertResult.submission(), canonical);
-            return details(insertResult.submission(), true);
+            return details(insertResult.submission(), true, canonical.metadata());
         }
 
         UUID submissionId = candidate.submissionId();
@@ -155,20 +174,11 @@ public class SubmissionService {
                         ExpectedDocumentState.EXPECTED, null, now, null))
                 .toList();
 
-        // Rebind metadata values to the generated submission identity only after this create won the
-        // database-level idempotency race.
-        List<BusinessMetadataValue> boundMetadata = metadataValues.stream()
-                .map(value -> new BusinessMetadataValue(
-                        value.metadataValueId(), value.tenantId(), submissionId, value.sourceId(),
-                        value.definitionId(), value.fieldKey(), value.definitionVersion(),
-                        value.storedValue(), value.normalizedValue()))
-                .toList();
-
         submissions.insertExpectedDocuments(expectedDocuments);
-        submissions.insertBusinessMetadata(boundMetadata);
+        UUID recordId = recordValues.store(tenantId, sourceId, submissionId, canonical.metadata());
         if (canonical.recordSensitivityLevel() != null) {
             applyRecordLevel(tenantId, sourceId, submissionId,
-                    recordKey(submissionId, currentDefinitions, boundMetadata),
+                    recordId,
                     canonical.recordSensitivityLevel(), sourceSubject, correlationId, now);
         }
         audit.append(new AuditEvent(
@@ -177,9 +187,10 @@ public class SubmissionService {
                 AuditOutcome.SUCCESS,
                 "{\"sourceId\":\"" + sourceId + "\",\"expectedDocumentCount\":"
                         + canonical.expectedDocumentCount() + ",\"manifestCount\":" + expectedDocuments.size()
-                        + ",\"metadataFieldCount\":" + boundMetadata.size() + "}"));
+                        + ",\"metadataFieldCount\":" + canonical.metadata().size()
+                        + ",\"fields\":[" + fieldNames(canonical.metadata()) + "]}"));
 
-        return details(candidate, false);
+        return details(candidate, false, canonical.metadata());
     }
 
     public SubmissionDetails get(UUID tenantId, UUID sourceId, UUID submissionId) {
@@ -187,7 +198,7 @@ public class SubmissionService {
         requireActiveSource(tenantId, sourceId);
         Submission submission = submissions.findById(tenantId, sourceId, submissionId)
                 .orElseThrow(() -> ActiveSource.noSuchSubmission(submissionId));
-        return details(submission, false);
+        return details(submission, false, null);
     }
 
     public SubmissionDetails getBySourceSubmissionId(UUID tenantId, UUID sourceId, String sourceSubmissionId) {
@@ -197,10 +208,23 @@ public class SubmissionService {
         Submission submission = submissions.findBySourceIdentity(tenantId, sourceId, normalized)
                 .orElseThrow(() -> new CodedRefusal.NotFound(SdvErrorCode.INT_004, ActiveSource.NO_SUCH_SUBMISSION,
                         "no submission with this sourceSubmissionId"));
-        return details(submission, false);
+        return details(submission, false, null);
     }
 
-    private SubmissionDetails details(Submission submission, boolean replay) {
+    /** The delivered fields' keys (letters, digits, '.', '_', '-'; they need no escaping). Never a value. */
+    private static String fieldNames(Map<String, String> metadata) {
+        return metadata.keySet().stream().sorted().map(k -> "\"" + k + "\"").collect(java.util.stream.Collectors.joining(","));
+    }
+
+    private Map<String, String> readable(Submission submission) {
+        Map<String, String> out = new java.util.TreeMap<>();
+        if (records == null) return out;
+        records.findMetadataSnapshots(submission.tenantId(), submission.sourceId(), List.of(submission.submissionId()))
+                .forEach(v -> out.put(v.fieldKey(), v.storedValue()));
+        return out;
+    }
+
+    private SubmissionDetails details(Submission submission, boolean replay, Map<String, String> sent) {
         Submission effective = refreshIncompleteStatus(submission);
         List<SubmissionExpectedDocument> expectedDocuments =
                 submissions.findExpectedDocuments(effective.tenantId(), effective.submissionId());
@@ -226,7 +250,7 @@ public class SubmissionService {
         return new SubmissionDetails(
                 effective,
                 expectedDocuments,
-                submissions.findBusinessMetadata(effective.tenantId(), effective.sourceId(), effective.submissionId()),
+                sent != null ? sent : readable(effective),
                 documentList,
                 progress,
                 replay);
@@ -309,12 +333,7 @@ public class SubmissionService {
                 Map.copyOf(metadata), recordLevel, requestSha);
     }
 
-    private static List<BusinessMetadataValue> validateAndBuildMetadata(
-            UUID tenantId,
-            UUID sourceId,
-            List<MetadataFieldDefinition> definitions,
-            Map<String, String> supplied,
-            UUID submissionId) {
+    private static void validateMetadata(List<MetadataFieldDefinition> definitions, Map<String, String> supplied) {
         Map<String, MetadataFieldDefinition> byKey = new HashMap<>();
         definitions.forEach(definition -> byKey.put(definition.fieldKey(), definition));
 
@@ -333,37 +352,8 @@ public class SubmissionService {
             }
         }
 
-        List<BusinessMetadataValue> result = new ArrayList<>();
-        supplied.entrySet().stream()
-                .sorted(Map.Entry.comparingByKey())
-                .forEach(entry -> {
-                    MetadataFieldDefinition definition = byKey.get(entry.getKey());
-                    MetadataValueValidator.ValidatedValue validated = MetadataValueValidator.validate(definition, entry.getValue());
-                    String searchValue = definition.searchable() || definition.businessIdentifier()
-                            ? validated.normalizedValue() : null;
-                    result.add(new BusinessMetadataValue(
-                            UUID.randomUUID(), tenantId, submissionId, sourceId,
-                            definition.definitionId(), definition.fieldKey(), definition.version(),
-                            validated.storedValue(), searchValue));
-                });
-        return List.copyOf(result);
-    }
-
-    /**
-     * The record this submission belongs to, as record search and record detail group it: its identifier values
-     * (normalized, as stored), or the submission alone when it has none.
-     */
-    static String recordKey(UUID submissionId,
-                            List<MetadataFieldDefinition> definitionsUsed,
-                            List<BusinessMetadataValue> values) {
-        Map<String, MetadataFieldDefinition> byKey = new HashMap<>();
-        definitionsUsed.forEach(definition -> byKey.put(definition.fieldKey(), definition));
-        List<RecordKey.Part> identifiers = values.stream()
-                .filter(value -> byKey.containsKey(value.fieldKey()) && byKey.get(value.fieldKey()).businessIdentifier())
-                .filter(value -> value.normalizedValue() != null && !value.normalizedValue().isBlank())
-                .map(value -> new RecordKey.Part(value.fieldKey(), value.normalizedValue()))
-                .toList();
-        return identifiers.isEmpty() ? RecordKey.ofSubmission(submissionId) : RecordKey.ofIdentifiers(identifiers);
+        supplied.entrySet().stream().sorted(Map.Entry.comparingByKey())
+                .forEach(entry -> MetadataValueValidator.validate(byKey.get(entry.getKey()), entry.getValue()));
     }
 
     /**
@@ -371,17 +361,17 @@ public class SubmissionService {
      * value is ignored and audited ("record level kept at ..."), not an error. The row is locked, so two deliveries
      * for one record can't both raise it from the same starting level.
      */
-    private void applyRecordLevel(UUID tenantId, UUID sourceId, UUID submissionId, String recordKey,
+    private void applyRecordLevel(UUID tenantId, UUID sourceId, UUID submissionId, UUID recordId,
                                   SensitivityLevel requested, String sourceSubject, String correlationId, Instant now) {
         String where = "{\"sourceId\":\"" + sourceId + "\",\"submissionId\":\"" + submissionId + "\"";
         UUID newId = UUID.randomUUID();
         if (recordLevels.insertIfAbsent(new RecordSensitivityRepository.NewRecordLevel(
-                newId, tenantId, sourceId, recordKey, requested, null, "SOURCE", now))) {
+                newId, tenantId, sourceId, recordId, requested, null, "SOURCE", now))) {
             auditRecordLevel(tenantId, sourceSubject, "RECORD_SENSITIVITY_SET", newId, now, correlationId,
                     where + ",\"level\":\"" + requested.name() + "\",\"setBy\":\"SOURCE\"}");
             return;
         }
-        RecordSensitivityRepository.StoredRecordLevel stored = recordLevels.lockByKey(tenantId, sourceId, recordKey)
+        RecordSensitivityRepository.StoredRecordLevel stored = recordLevels.lockByKey(tenantId, sourceId, recordId)
                 .orElseThrow(() -> new InternalCheckFailed("The record's sensitivity level could not be read."));
         if (requested.compareTo(stored.level()) > 0) {
             recordLevels.raise(tenantId, stored.recordLevelId(), requested, "SOURCE", now);
@@ -511,7 +501,7 @@ public class SubmissionService {
         @Override public long countReceived(UUID tenantId, UUID submissionId) { return 0L; }
         @Override public java.util.Optional<Document> findDuplicateOf(UUID tenantId, UUID sourceId, java.util.Collection<UUID> submissionIds, String contentSha256) { return java.util.Optional.empty(); }
         @Override public java.util.Optional<Document> findCorrectedOriginalOf(UUID tenantId, UUID sourceId, java.util.Collection<UUID> submissionIds, String contentSha256) { return java.util.Optional.empty(); }
-        @Override public void lockDuplicateCheck(UUID tenantId, UUID sourceId, String recordKey, String contentSha256) { throw new UnsupportedOperationException(); }
+        @Override public void lockDuplicateCheck(UUID tenantId, UUID sourceId, UUID recordId, String contentSha256) { throw new UnsupportedOperationException(); }
         @Override public java.util.Optional<DuplicateReceipt> findDuplicateReceipt(UUID tenantId, UUID submissionId, String sourceDocumentId, String producerIdempotencyKey) { return java.util.Optional.empty(); }
         @Override public void insertDuplicateReceipt(DuplicateReceipt receipt) { throw new UnsupportedOperationException(); }
         @Override public void insertUncorrectedCopyNotice(UUID noticeId, UUID tenantId, UUID sourceId, UUID submissionId,
@@ -537,7 +527,7 @@ public class SubmissionService {
             return new UnsupportedOperationException("Record sensitivity levels are not available here.");
         }
         @Override public boolean insertIfAbsent(NewRecordLevel level) { throw unavailable(); }
-        @Override public java.util.Optional<StoredRecordLevel> lockByKey(UUID tenantId, UUID sourceId, String recordKey) {
+        @Override public java.util.Optional<StoredRecordLevel> lockByKey(UUID tenantId, UUID sourceId, UUID recordId) {
             throw unavailable();
         }
         @Override public void raise(UUID tenantId, UUID recordLevelId, SensitivityLevel level, String setBy, Instant updatedAt) {

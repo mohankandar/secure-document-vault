@@ -87,7 +87,7 @@ class ApprovalsScreenSupportTest {
     @Test
     void theRequestersOwnListNamesTheRecordOfEachRequest() throws Exception {
         UUID print = ask(RS, H1, "PRINT");
-        w.recordLevels.put(recordKey(CONTRACT_B), SensitivityLevel.CONFIDENTIAL);
+        w.recordLevels.put(recordId(CONTRACT_B), SensitivityLevel.CONFIDENTIAL);
         w.clock.advance(Duration.ofMinutes(1));
         UUID record = w.levels.requestLowerRecord(TENANT, RS, "Rae Restricted", RESTRICTED, recordRef(CONTRACT_B), "STANDARD",
                 "Closed", "c").requestId();
@@ -128,7 +128,7 @@ class ApprovalsScreenSupportTest {
         w.clock.advance(Duration.ofDays(31));
         UUID print = ask(RS, H1, "PRINT");
         UUID download = ask("rs-2", H2, "DOWNLOAD");
-        w.recordLevels.put(recordKey(CONTRACT_B), SensitivityLevel.CONFIDENTIAL);
+        w.recordLevels.put(recordId(CONTRACT_B), SensitivityLevel.CONFIDENTIAL);
         UUID record = w.levels.requestLowerRecord(TENANT, RS, "Rae Restricted", RESTRICTED, recordRef(CONTRACT_B), "STANDARD",
                 "Closed", "c").requestId();
         UUID waiting = ask("rs-3", H2, "PRINT");

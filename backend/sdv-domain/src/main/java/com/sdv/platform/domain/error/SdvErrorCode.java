@@ -383,7 +383,9 @@ public enum SdvErrorCode {
     /** Task 0075: no finished month is left to export (400). */
     LIC_004("SDV-LIC-004", false, true),
     /** Task 0037: no key service is set up: WARN at a local start, and a packaged start refuses. */
-    KEY_001("SDV-KEY-001", true);
+    KEY_001("SDV-KEY-001", true),
+    /** Task 0078: the key service can't be used now, so a sensitive value can't be stored, searched or opened (503). Nothing was stored. */
+    KEY_002("SDV-KEY-002", true);
 
     /**
      * Task 0039: the line an expected refusal (no person must act) gets: none, DEBUG or INFO. Task 0043: WARN or ERROR

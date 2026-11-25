@@ -158,10 +158,11 @@ class DocumentLevelEnforcementTest {
             when(documents.findDocumentByIdForTenant(TENANT, DOC)).thenReturn(Optional.of(document(DOC, ownLevel)));
             when(records.findMetadataSnapshots(eq(TENANT), eq(SOURCE), anyList())).thenReturn(List.of(
                     new MetadataSnapshot(SUB, "contractNumber", "Contract Number", "300000000076", "300000000076", true)));
-            when(records.findRecordSensitivityLevel(eq(TENANT), eq(SOURCE), anyString()))
+            when(records.findRecordSensitivityLevel(eq(TENANT), eq(SOURCE), any()))
                     .thenReturn(Optional.ofNullable(recordLevel));
             when(records.findRecordSensitivityLevels(eq(TENANT), eq(SOURCE), anyCollection())).thenCallRealMethod();
-            when(records.findSubmissionIdsByRecordIdentity(eq(TENANT), eq(SOURCE), anyList())).thenReturn(List.of(SUB));
+            com.sdv.platform.application.business.TestRecordRefs.group(records);
+            when(records.findSubmissionIdsOfRecord(eq(TENANT), eq(SOURCE), any())).thenReturn(List.of(SUB));
             Submission submission = new Submission(SUB, TENANT, SOURCE, "src-1", 2, "sha", SubmissionStatus.COMPLETE,
                     NOW.minusSeconds(60), NOW, null);
             when(records.findSubmissionsByIds(eq(TENANT), eq(SOURCE), anyList())).thenReturn(List.of(submission));

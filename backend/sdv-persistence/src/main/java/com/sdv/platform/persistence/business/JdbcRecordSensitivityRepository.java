@@ -27,16 +27,15 @@ public class JdbcRecordSensitivityRepository implements RecordSensitivityReposit
         // A concurrent first delivery for the same record waits here and then inserts nothing.
         int inserted = jdbc.update("""
                 insert into record_sensitivity_levels(
-                    record_level_id, tenant_id, source_id, record_key, record_key_sha256,
+                    record_level_id, tenant_id, source_id, record_id,
                     sensitivity_level, reason, set_by, set_at, updated_at)
-                values (:id, :tenantId, :sourceId, :recordKey, :sha, :level, :reason, :setBy, :setAt, :setAt)
-                on conflict (tenant_id, source_id, record_key_sha256) do nothing
+                values (:id, :tenantId, :sourceId, :recordId, :level, :reason, :setBy, :setAt, :setAt)
+                on conflict (tenant_id, source_id, record_id) do nothing
                 """, new MapSqlParameterSource()
                 .addValue("id", level.recordLevelId())
                 .addValue("tenantId", level.tenantId())
                 .addValue("sourceId", level.sourceId())
-                .addValue("recordKey", level.recordKey())
-                .addValue("sha", RecordKey.sha256(level.recordKey()))
+                .addValue("recordId", level.recordId())
                 .addValue("level", level.level().name())
                 .addValue("reason", level.reason())
                 .addValue("setBy", level.setBy())
@@ -45,16 +44,16 @@ public class JdbcRecordSensitivityRepository implements RecordSensitivityReposit
     }
 
     @Override
-    public Optional<StoredRecordLevel> lockByKey(UUID tenantId, UUID sourceId, String recordKey) {
+    public Optional<StoredRecordLevel> lockByKey(UUID tenantId, UUID sourceId, UUID recordId) {
         return jdbc.query("""
                 select record_level_id, sensitivity_level
                   from record_sensitivity_levels
-                 where tenant_id=:tenantId and source_id=:sourceId and record_key_sha256=:sha
+                 where tenant_id=:tenantId and source_id=:sourceId and record_id=:recordId
                    for update
                 """, new MapSqlParameterSource()
                 .addValue("tenantId", tenantId)
                 .addValue("sourceId", sourceId)
-                .addValue("sha", RecordKey.sha256(recordKey)),
+                .addValue("recordId", recordId),
                 (rs, rowNum) -> new StoredRecordLevel(
                         rs.getObject("record_level_id", UUID.class),
                         SensitivityLevel.valueOf(rs.getString("sensitivity_level"))))

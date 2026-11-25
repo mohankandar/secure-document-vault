@@ -14,7 +14,7 @@ public interface RecordSensitivityRepository {
     boolean insertIfAbsent(NewRecordLevel level);
 
     /** The record's level, locked until the end of the transaction so two deliveries can't both raise it. */
-    Optional<StoredRecordLevel> lockByKey(UUID tenantId, UUID sourceId, String recordKey);
+    Optional<StoredRecordLevel> lockByKey(UUID tenantId, UUID sourceId, UUID recordId);
 
     /** Raises a level; the caller has checked under the lock that the new level is higher. */
     void raise(UUID tenantId, UUID recordLevelId, SensitivityLevel level, String setBy, Instant updatedAt);
@@ -36,7 +36,7 @@ public interface RecordSensitivityRepository {
             UUID recordLevelId,
             UUID tenantId,
             UUID sourceId,
-            String recordKey,
+            UUID recordId,
             SensitivityLevel level,
             String reason,
             String setBy,

@@ -33,7 +33,7 @@ class AuditExportTest {
     private final AuditQueryService service = new AuditQueryService(query, audit,
             // Task 0026: a real guard; with no record level every document below is Standard, so its name shows.
             new com.sdv.platform.application.access.DocumentAccessGuard(
-                    mock(com.sdv.platform.application.port.BusinessRecordRepository.class), audit),
+                    com.sdv.platform.application.business.TestRecordRefs.grouped(), audit),
             Clock.fixed(NOW, ZoneOffset.UTC));
 
     static final UUID DOCUMENT = UUID.fromString("40000000-0000-0000-0000-000000000076");
