@@ -7,7 +7,7 @@
   prompt; they are never stored, printed or put on a command line. It sets:
     - client sdv-web: public, standard flow only, PKCE S256, redirect http://localhost:5183/, web origin
       http://localhost:5183, the sdv-api audience and the group names in the access token;
-    - one test person per Vero role, in the groups of dev\setup\role-mapping-SDV.csv, and one in no group.
+    - one test person per Vero role (two Business Admins: some decisions need a second one), in the groups of dev\setup\role-mapping-SDV.csv, and one in no group.
   The generated passwords go only to -OutFile (this Windows user only). They are development accounts for demo data.
   No other client, person or realm setting is changed; a missing group is added. Run again, it says "nothing changed".
 
@@ -36,7 +36,9 @@ $People = @(
     @{ Key = 'DOCUMENT_STEWARD'; Name = 'vero-test-document-steward'; Group = 'DocumentStewards'; Last = 'Document Steward' }
     @{ Key = 'RESTRICTED_STEWARD'; Name = 'vero-test-restricted-steward'; Group = 'RestrictedStewards'; Last = 'Restricted Steward' }
     @{ Key = 'BUSINESS_ADMIN'; Name = 'vero-test-business-admin'; Group = 'BusinessAdmins'; Last = 'Business Admin' }
+    @{ Key = 'BUSINESS_ADMIN_2'; Name = 'vero-test-business-admin-2'; Group = 'BusinessAdmins'; Last = 'Business Admin Two' }
     @{ Key = 'IT_ADMIN'; Name = 'vero-test-it-admin'; Group = 'TenantITAdmins'; Last = 'IT Admin' }
+    @{ Key = 'PLATFORM_OPERATIONS'; Name = 'vero-test-platform-operations'; Group = 'PlatformOperations'; Last = 'Platform Operations' }
     @{ Key = 'NO_GROUP'; Name = 'vero-test-no-group'; Group = ''; Last = 'No Group' }
 )
 
@@ -94,7 +96,7 @@ function New-TestPassword {
 }
 $saved = [ordered]@{}
 if (Test-Path -LiteralPath $OutFile) {
-    foreach ($line in [IO.File]::ReadAllLines($OutFile)) { if ($line -match '^([A-Z_]+\.(?:username|password))=(.+)$') { $saved[$Matches[1]] = $Matches[2] } }
+    foreach ($line in [IO.File]::ReadAllLines($OutFile)) { if ($line -match '^([A-Z_0-9]+\.(?:username|password))=(.+)$') { $saved[$Matches[1]] = $Matches[2] } }
 }
 function Save-People {
     if (-not (Test-Path -LiteralPath $OutFile)) { New-Item -ItemType File -Path $OutFile | Out-Null }
