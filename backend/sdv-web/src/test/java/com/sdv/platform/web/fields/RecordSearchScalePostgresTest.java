@@ -2,6 +2,7 @@ package com.sdv.platform.web.fields;
 
 import com.documentplatform.crypto.CustomerId;
 import com.documentplatform.crypto.testkit.InMemoryKeyService;
+import com.zaxxer.hikari.HikariDataSource;
 import com.sdv.platform.application.access.Clearance;
 import com.sdv.platform.application.access.QuarantineLookup;
 import com.sdv.platform.application.business.BusinessExperienceService;
@@ -13,12 +14,12 @@ import com.sdv.platform.persistence.business.JdbcBusinessRecordRepository;
 import com.sdv.platform.persistence.fields.PlatformFieldRepository;
 import com.sdv.platform.persistence.fields.PlatformRecordValues;
 import com.sdv.platform.persistence.foundation.JdbcFoundationRepository;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
-import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.nio.file.Files;
@@ -39,7 +40,8 @@ class RecordSearchScalePostgresTest {
     private static final int N = Integer.parseInt(System.getenv().getOrDefault("SDV_IT_RECORDS", "100000"));
     /** A search page, the Business Users' first screen. */
     private static final long LIMIT_MS = 3_000;
-    private final DriverManagerDataSource data = new DriverManagerDataSource(System.getenv("SDV_IT_JDBC_URL"), System.getenv("SDV_IT_JDBC_USER"), System.getenv("SDV_IT_JDBC_PASSWORD"));
+    /** A pool, as the app has: a page is many small statements, and a new connection for each would be what is measured. */
+    private final HikariDataSource data = pool();
     private final JdbcTemplate db = new JdbcTemplate(data);
     private final NamedParameterJdbcTemplate named = new NamedParameterJdbcTemplate(data);
     private final PlatformFieldRepository fields = new PlatformFieldRepository(data);
@@ -55,6 +57,20 @@ class RecordSearchScalePostgresTest {
     private final TransactionTemplate tx = new TransactionTemplate(new DataSourceTransactionManager(data));
     private final UUID entity = UUID.randomUUID(), source = UUID.randomUUID();
     private final List<String> lines = new ArrayList<>();
+
+    private static HikariDataSource pool() {
+        HikariDataSource d = new HikariDataSource();
+        d.setJdbcUrl(System.getenv("SDV_IT_JDBC_URL"));
+        d.setUsername(System.getenv("SDV_IT_JDBC_USER"));
+        d.setPassword(System.getenv("SDV_IT_JDBC_PASSWORD"));
+        d.setMaximumPoolSize(5);
+        return d;
+    }
+
+    @AfterEach
+    void close() {
+        data.close();
+    }
 
     private void field(String key, String label, boolean identifier, MetadataNormalization n, MetadataSearchMode mode) {
         Instant now = Instant.now();
