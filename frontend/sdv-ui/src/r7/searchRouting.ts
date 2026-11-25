@@ -26,9 +26,15 @@ const MODE_HINT = { EXACT: 'Exact', PREFIX: 'Starts with', PARTIAL: 'Contains' }
 
 /** How a field is found, beside its label. Task 0078: a sensitive field only by its whole value; Contains without its index is Starts with. */
 export function modeHint(f: Field): string {
-  if (f.sensitive) return 'Whole value only'
+  if (f.sensitive) return 'Sensitive · whole value only'
   return f.partialAsPrefix ? 'Starts with (Contains isn’t set up)' : MODE_HINT[f.mode]
 }
+
+/** Task 0079: the longest value a field can have (the server's limit). */
+export const FIELD_VALUE_MAX = 512
+
+/** Where only whole values match (quarantine by filter): a sensitive field is marked, never offered by a part. */
+export const wholeHint = (f: Field) => (f.sensitive ? 'Sensitive · whole value' : 'Exact')
 
 /** What searching everywhere leaves out, in the source's own labels; null when it leaves out nothing. */
 export function notEverywhere(fields: Field[]): string | null {

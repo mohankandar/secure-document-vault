@@ -6,9 +6,9 @@ import type { RecordItem, Source } from './model'
 import { LOCKED_MESSAGE, LevelBadge, LevelDialog, RecordLevelBox } from './Sensitivity'
 import { schema, search, record, record as loadRecord, toSource, toSummary, toRecord, documentActivity, recentRecords as loadRecentRecords, RECENT_LIMIT, SEARCH_PAGE_SIZE, type LiveDocumentActivity } from './liveApi'
 import { LoadErrorCard, failureText, loadFailed, type Failure } from './CardError'
-import { Badge, Callout, Drawer, Empty, Skeleton, actorWords, auditEventLabel, fmtDate, fmtRel, fmtShortDate } from './ui'
+import { Badge, Callout, Drawer, Empty, Skeleton, actorWords, auditEventLabel, fmtDate, fmtRel, fmtShortDate, SensitiveMark } from './ui'
 import { Viewer } from './Viewer'
-import { MODE_WORD, modeHint, QUICK_RANGES, filterHint, boxLabel, quickRange, rangeLabel, type Range } from './searchRouting'
+import { MODE_WORD, modeHint, QUICK_RANGES, filterHint, FIELD_VALUE_MAX, boxLabel, quickRange, rangeLabel, type Range } from './searchRouting'
 import { NOTHING_TO_SEARCH, defaultSource, nothingToSearchIn, rememberSourceChoice, searchableSources } from './sourceChoice'
 import { extraField, orderedPreview, titleLabel } from './recordColumns'
 import { anywhereProblem, hiddenMatch, identifierCriteria, type MatchedField } from './quickSearchRules'
@@ -390,7 +390,7 @@ function FiltersPanel({ sources, initial, onApply, onClose }: { sources: Source[
             <label key={f.key} className="v-field">
               <span>{f.label}<span className="v-hint">{modeHint(f)}</span></span>
               <input className="v-input" type={f.type === 'DATE' ? 'date' : 'text'} value={draft[f.key] ?? ''} autoComplete="off" spellCheck={false}
-                inputMode={f.normalizationRaw === 'DIGITS_ONLY' ? 'numeric' : undefined} placeholder={filterHint(f)}
+                inputMode={f.normalizationRaw === 'DIGITS_ONLY' ? 'numeric' : undefined} placeholder={filterHint(f)} maxLength={FIELD_VALUE_MAX}
                 onChange={(e) => setDraft((d) => ({ ...d, [f.key]: e.target.value }))} />
             </label>
           ))}
@@ -513,7 +513,7 @@ function RecordPanelBody({ record, summary, onOpen, source, action, needle }: { 
   const loadingDocs = docCount === 0 && (summary?.docs ?? 0) > 0
   return (
     <>
-      <div className={`ws-ids${record.identifiers.length > 2 ? " wrap" : ""}`}>{record.identifiers.map((i) => <div key={i.label}><span>{i.label}</span><strong title={i.value}>{i.value}</strong></div>)}</div>
+      <div className={`ws-ids${record.identifiers.length > 2 ? " wrap" : ""}`}>{record.identifiers.map((i) => <div key={i.label}><span>{i.label}<SensitiveMark on={i.sensitive} /></span><strong title={i.value}>{i.value}</strong></div>)}</div>
       {/* Task 0029, board Sens-Results: the record's own level; Level for Document and Restricted stewards only (hidden for others). */}
       <RecordLevelBox record={record} action={can('CHANGE_SENSITIVITY_LEVEL') ? <button type="button" className="v-btn sm" onClick={() => setLevelOpen(true)} disabled={record.recordLevel === undefined}>Level</button> : undefined} />
       {(inc || summary?.incomplete) && (
@@ -573,7 +573,7 @@ function RecordPanelBody({ record, summary, onOpen, source, action, needle }: { 
         <div className="stack" style={{ gap: 10 }}>
           <h3>Details</h3>
           {/* Canvas board 2: label beside value; the number is in the box above, so it isn't repeated. */}
-          <dl className="ws-kv">{details.map((m) => <div key={m.label}><dt>{m.label}</dt><dd><Mark text={m.value} needle={needle} /></dd></div>)}</dl>
+          <dl className="ws-kv">{details.map((m) => <div key={m.label}><dt>{m.label}<SensitiveMark on={m.sensitive} /></dt><dd><Mark text={m.value} needle={needle} /></dd></div>)}</dl>
         </div>
       )}
       {action}

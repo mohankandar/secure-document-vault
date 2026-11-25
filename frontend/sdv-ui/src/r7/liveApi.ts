@@ -41,7 +41,7 @@ export function toSource(s: SearchSource): Source {
     f.normalization === 'DIGITS_ONLY' || f.normalization === 'UPPERCASE' ? f.normalization : 'NONE', normalizationRaw:f.normalization, sensitive:f.sensitive === true, partialAsPrefix:f.partialAsPrefix === true
   } as Field)) }
 }
-const fields = (a: {displayLabel:string,value:string}[]) => a.map(f=>({ label:f.displayLabel,value:f.value }))
+const fields = (a: {displayLabel:string,value:string,sensitive?:boolean}[]) => a.map(f=>({ label:f.displayLabel,value:f.value,sensitive:f.sensitive === true }))
 /** The server's record title; a record without one is named by its identifier (never guessed from other fields). */
 export const recordName = (title: string | null | undefined, ids: {value:string}[], ref: string) => title || ids.map(x=>x.value).join(' · ') || ref
 export function toSummary(r: RecordSummary, sourceId:string):RecordItem {

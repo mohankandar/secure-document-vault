@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Vero (Secure Document Vault) Ingestion API",
-    "version": "1.4.0",
+    "version": "1.5.0",
     "description": "The contract for sending systems: create a submission, upload its PDFs, read their state. Sign-in is an OAuth2 client-credentials token from the customer's sign-in server; the entity and the sending system come from the verified token's client ID (its client binding, set up by the customer's IT with Vero's setup command), never from a request header. Every error has the same body (Error) with a stable code. Each answer below says whether to send the request again (x-sdv-retry). The versioning policy, the sender's guide and the changelog are in docs/api/README.md. The build checks this file against the running API (IngestionContractTest).",
     "contact": {"name": "Vero team"}
   },
@@ -81,7 +81,7 @@
             "headers": {"X-Correlation-Id": {"$ref": "#/components/headers/CorrelationId"}},
             "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}
           },
-          "503": {"$ref": "#/components/responses/UnavailableIntake"}
+          "503": {"$ref": "#/components/responses/UnavailableCreate"}
         }
       },
       "get": {
@@ -294,7 +294,7 @@
           "code": {"type": "string", "description": "Only when busy: SDV-SYS-018.", "enum": ["SDV-SYS-018"]},
           "message": {"type": "string", "description": "Only when busy: a plain sentence."}}
       },
-      "ScalarMetadataValue": {"description": "One JSON value: a string, a number or true/false. null, an object or a list is refused (400 SDV-INT-008).", "oneOf": [{"type": "string"}, {"type": "number"}, {"type": "boolean"}]},
+      "ScalarMetadataValue": {"description": "One JSON value: a string, a number or true/false. null, an object or a list is refused (400 SDV-INT-008).", "oneOf": [{"type": "string", "maxLength": 512}, {"type": "number"}, {"type": "boolean"}]},
       "ExpectedDocumentRequest": {
         "type": "object",
         "required": ["sourceDocumentId"],
@@ -309,7 +309,7 @@
           "sourceSubmissionId": {"type": "string", "minLength": 1, "maxLength": 200, "description": "Your stable ID for this submission. A retry sends the same one."},
           "expectedDocumentCount": {"type": "integer", "minimum": 1, "description": "How many documents will be uploaded. At most the tenant's or the sending system's limit (400 SDV-INT-007)."},
           "expectedDocuments": {"type": "array", "uniqueItems": true, "description": "Optional list of the documents to come, by your sourceDocumentId; at most expectedDocumentCount entries. A complete list (expectedDocumentCount entries) makes X-SDV-Source-Document-Id required on each upload.", "items": {"$ref": "#/components/schemas/ExpectedDocumentRequest"}},
-          "metadata": {"type": "object", "description": "The fields IT set up for this sending system, by key. Unknown keys and missing required fields are refused (400 SDV-INT-008); a value that breaks its field's rule too (400 SDV-INT-009).", "additionalProperties": {"$ref": "#/components/schemas/ScalarMetadataValue"}},
+          "metadata": {"type": "object", "description": "The fields IT set up for this sending system, by key. Unknown keys and missing required fields are refused (400 SDV-INT-008); a value that breaks its field's rule, is of the wrong type or is longer than 512 characters too (400 SDV-INT-009; the message names the field and the rule, never the value). By type: INTEGER, DECIMAL; DATE as 2026-11-21; DATETIME as 2026-11-21T10:15:30Z or with another offset from UTC (required); BOOLEAN true or false in any letter case; EMAIL; UUID in any letter case.", "additionalProperties": {"$ref": "#/components/schemas/ScalarMetadataValue"}},
           "recordSensitivityLevel": {"allOf": [{"$ref": "#/components/schemas/SensitivityLevel"}], "description": "Optional level for the whole record this submission belongs to (the submissions of this sending system with the same identifier values). Sets the record's first level or raises it; a lower or equal value is ignored and audited, not refused. Not exactly one of the names, also blank, lower case or not a string: 400 SDV-SEN-002. A retry must send the same value or none as the first: 409 SDV-SEN-004."}
         }
       },
@@ -355,7 +355,7 @@
           "expectedDocuments": {"type": "array", "items": {"$ref": "#/components/schemas/ExpectedDocument"}},
           "documents": {"type": "array", "items": {"$ref": "#/components/schemas/DocumentStatus"}},
           "progress": {"$ref": "#/components/schemas/SubmissionProgress"},
-          "metadata": {"type": "object", "additionalProperties": {"type": "string"}, "description": "The values as Vero stored them, as text."},
+          "metadata": {"type": "object", "additionalProperties": {"type": "string"}, "description": "Creating, or sending the same create again: the values sent, as text. A status query: the record's values now (the latest delivery's), without sensitive fields."},
           "idempotentReplay": {"type": "boolean", "description": "True when this answer is for a retry of an earlier create."}
         }
       },
@@ -466,6 +466,12 @@
         "headers": {"X-Correlation-Id": {"$ref": "#/components/headers/CorrelationId"}, "Retry-After": {"$ref": "#/components/headers/RetryAfter"}},
         "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}
       },
+      "UnavailableCreate": {
+        "description": "Vero can't take the request right now. Send the same request again. SDV-SYS-018: Vero is busy; wait the seconds in the Retry-After header first. Every other code here means unavailable and has no Retry-After; wait with back-off (check readiness): SDV-SYS-001, SDV-SYS-002: Vero's database is being upgraded. SDV-SYS-014: the database can't be reached. SDV-AUT-004: the sign-in server's keys can't be fetched. SDV-LIC-001, SDV-LIC-002 (no Retry-After, retry rule after-fix): the customer's licence stops new work; nothing was stored. Keep it and send it again when the customer says so. SDV-KEY-002 (no Retry-After): the submission has a sensitive field and the key service can't be used now; nothing was stored. Wait with back-off and send it again.",
+        "x-sdv-codes": ["SDV-SYS-001", "SDV-SYS-002", "SDV-SYS-014", "SDV-SYS-018", "SDV-AUT-004", "SDV-LIC-001", "SDV-LIC-002", "SDV-KEY-002"], "x-error-codes": ["SDV-SYS-001", "SDV-SYS-002", "SDV-SYS-014", "SDV-SYS-018", "SDV-AUT-004", "SDV-LIC-001", "SDV-LIC-002", "SDV-KEY-002"],
+        "headers": {"X-Correlation-Id": {"$ref": "#/components/headers/CorrelationId"}, "Retry-After": {"$ref": "#/components/headers/RetryAfter"}},
+        "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}
+      },
       "Unavailable": {
         "description": "Vero can't take the request right now. Send the same request again. SDV-SYS-018: Vero is busy; wait the seconds in the Retry-After header first. Every other code here means unavailable and has no Retry-After; wait with back-off (check readiness): SDV-SYS-001, SDV-SYS-002: Vero's database is being upgraded. SDV-SYS-014: the database can't be reached. SDV-AUT-004: the sign-in server's keys can't be fetched.",
         "x-sdv-codes": ["SDV-SYS-001", "SDV-SYS-002", "SDV-SYS-014", "SDV-SYS-018", "SDV-AUT-004"], "x-error-codes": ["SDV-SYS-001", "SDV-SYS-002", "SDV-SYS-014", "SDV-SYS-018", "SDV-AUT-004"],
@@ -548,6 +554,7 @@
     "503 SDV-STO-001": {"retry": "yes", "summary": "No storage can take the document (storage full)."},
     "503 SDV-LIC-001": {"retry": "after-fix", "summary": "The customer's licence doesn't allow new work now. Nothing was stored."},
     "503 SDV-LIC-002": {"retry": "after-fix", "summary": "The customer's licence can't be checked. Nothing was stored."},
+    "503 SDV-KEY-002": {"retry": "yes", "summary": "The submission has a sensitive field and the key service can't be used now. Nothing was stored."},
     "503 SDV-STO-004": {"retry": "after-fix", "summary": "Storage for this tenant isn't available: the storage volume Vero picked names a storage provider this install doesn't have. The installer must fix it."}
   },
   "x-sdv-compatibility": {

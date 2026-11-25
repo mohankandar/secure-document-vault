@@ -41,8 +41,8 @@ loan or patient number first.** Otherwise approvals, holds and reports name reco
 A record has one set of values: the latest delivery's replace earlier ones; a field a delivery leaves out keeps its value.
 
 **Sensitive fields** (names and addresses by default) are stored encrypted. People find them by the whole value only, in their own field;
-searching everywhere and "contains" leave them out. In a list or a record they are shown to people who may open the record's documents;
-others see the identifier. A sensitive identifier is not shown on admin pages. Switch "Sensitive" off before the first document with a
+searching everywhere and "contains" leave them out, and Vero marks them "Sensitive". In a list or a record they are shown to people who may open the record's documents;
+others see the identifier, and the value isn't there at all (nothing is masked). A sensitive identifier is not shown on admin pages. Switch "Sensitive" off before the first document with a
 value arrives; afterwards it is locked.
 
 ## Keeping documents

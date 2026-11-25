@@ -88,6 +88,9 @@ param(
     # Task 0052: documents in QuarantineScalePostgresTest's one incident (250,000 as in CI; 1,000,000 for the local run).
     [ValidateRange(1000, 5000000)]
     [int]$QuarantineScale = 250000,
+    # Task 0079: records of one document in RecordSearchScalePostgresTest (100,000; 1,000,000 for the local run).
+    [ValidateRange(10000, 5000000)]
+    [int]$SearchScale = 100000,
     # Task 0053: documents in StorageReportPostgresTest's large entity (250,000 as in CI).
     [ValidateRange(1000, 5000000)]
     [int]$ReportScale = 250000,
@@ -1103,11 +1106,11 @@ rollback;
         $mvn = (Get-Command mvn.cmd -ErrorAction Stop).Source
         $it = Invoke-Native -File $mvn -Arguments @('-o', '-f', (Join-Path $root 'backend\pom.xml'), '-pl', 'sdv-web,sdv-setup', '-am', 'test',
             '-Dtest=LegalHoldPostgresTest,AccessRequestPostgresTest,DuplicateIntakePostgresTest,IntakeReportPostgresTest,SensitivityReportPostgresTest,PlatformIdentityPostgresTest,SenderProfileServerContractTest,UnidentifiedIntakeAttemptPostgresTest,QuarantinePostgresTest,QuarantineFilterBlockingPostgresTest,QuarantineScalePostgresTest,StorageReportPostgresTest,ActivityReportPostgresTest,RestrictionsPostgresTest,PrimaryIdentifierPostgresTest,SealedAuditPostgresTest,HeldRedactionPostgresTest,UsageExportPostgresTest,NamedSeatsPostgresTest,PlatformFieldsPostgresTest,PlatformRecordValuesPostgresTest,RecordSearchScalePostgresTest,VeroSetupPlanPostgresTest', '-Dsurefire.failIfNoSpecifiedTests=false', '-Ppostgres-copies', "-Dit.forks=$forks", "-Dit.url=$hostUrl") -Environment @{
-            SDV_IT_JDBC_USER = $owner; SDV_IT_JDBC_PASSWORD = $ownerPassword; SDV_IT_QUARANTINE_SCALE = "$QuarantineScale"; SDV_IT_REPORT_SCALE = "$ReportScale"; SDV_IT_ACTIVITY_PER_DAY = "$ActivityPerDay" }
+            SDV_IT_JDBC_USER = $owner; SDV_IT_JDBC_PASSWORD = $ownerPassword; SDV_IT_QUARANTINE_SCALE = "$QuarantineScale"; SDV_IT_RECORDS = "$SearchScale"; SDV_IT_REPORT_SCALE = "$ReportScale"; SDV_IT_ACTIVITY_PER_DAY = "$ActivityPerDay" }
         foreach ($test in @('application.legalhold.LegalHoldPostgresTest', 'application.approvals.AccessRequestPostgresTest', 'application.document.DuplicateIntakePostgresTest', 'application.reports.IntakeReportPostgresTest', 'application.reports.SensitivityReportPostgresTest', 'application.identity.PlatformIdentityPostgresTest', 'web.SenderProfileServerContractTest', 'application.reports.UnidentifiedIntakeAttemptPostgresTest', 'application.quarantine.QuarantinePostgresTest', 'application.quarantine.QuarantineFilterBlockingPostgresTest', 'application.quarantine.QuarantineScalePostgresTest', 'application.reports.StorageReportPostgresTest', 'application.reports.ActivityReportPostgresTest', 'application.restrictions.RestrictionsPostgresTest', 'application.business.PrimaryIdentifierPostgresTest', 'application.audit.SealedAuditPostgresTest', 'application.redaction.HeldRedactionPostgresTest', 'web.licensing.UsageExportPostgresTest', 'web.licensing.NamedSeatsPostgresTest', 'web.fields.PlatformFieldsPostgresTest', 'web.fields.PlatformRecordValuesPostgresTest', 'web.fields.RecordSearchScalePostgresTest', 'setup.VeroSetupPlanPostgresTest')) {
             $itLine = ($it.Out -split "`n" | Where-Object { $_ -match ('Tests run: .* in com\.sdv\.platform\.' + [regex]::Escape($test)) } | Select-Object -First 1)
             # Task 0039 part 2: UnidentifiedIntakeAttemptPostgresTest has two tests (the flood of 1,000 requests).
-            $wantRun = switch ($test) { 'application.reports.UnidentifiedIntakeAttemptPostgresTest' { 2 } 'application.identity.PlatformIdentityPostgresTest' { 6 } 'setup.VeroSetupPlanPostgresTest' { 3 } 'web.fields.PlatformFieldsPostgresTest' { 6 } 'web.fields.PlatformRecordValuesPostgresTest' { 13 } default { 1 } }
+            $wantRun = switch ($test) { 'application.reports.UnidentifiedIntakeAttemptPostgresTest' { 2 } 'application.identity.PlatformIdentityPostgresTest' { 6 } 'setup.VeroSetupPlanPostgresTest' { 3 } 'web.fields.PlatformFieldsPostgresTest' { 6 } 'web.fields.PlatformRecordValuesPostgresTest' { 15 } default { 1 } }
             if ($it.Code -ne 0 -or -not $itLine -or $itLine -notmatch "Tests run: $wantRun, Failures: 0, Errors: 0, Skipped: 0") {
                 $it.Out | Set-Content -Encoding utf8 (Join-Path $run 'postgres-tests.log')
                 throw "FAIL: $test did not pass (exit $($it.Code)): $(if ($itLine) { $itLine.Trim() } else { 'no result line' }). Log: $run\postgres-tests.log"

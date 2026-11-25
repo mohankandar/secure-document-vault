@@ -45,20 +45,14 @@ public class JdbcBusinessRecordRepository implements BusinessRecordRepository {
             boolean incompleteOnly,
             int offset,
             int limit) {
-        StringBuilder sql = new StringBuilder(submissionSelect());
+        StringBuilder sql = new StringBuilder();
         MapSqlParameterSource params = new MapSqlParameterSource()
                 .addValue("tenantId", tenantId)
                 .addValue("sourceId", sourceId)
                 .addValue("recordType", CaseFieldSql.recordType(sourceId))
                 .addValue("offset", offset)
                 .addValue("limit", limit);
-        if (anywhere != null) {
-            sql.append(CaseFieldSql.record("s"));
-            appendAnywhereRank(sql, params, anywhere);
-        }
         sql.append(" where s.tenant_id=:tenantId and s.source_id=:sourceId");
-        // A submission none of whose fields matches gets no rank and is left out.
-        if (anywhere != null) sql.append(" and m.match_rank is not null");
 
         if (createdFrom != null) { sql.append(" and s.created_at>=:createdFrom"); params.addValue("createdFrom", Timestamp.from(createdFrom)); }
         if (createdTo != null) { sql.append(" and s.created_at<=:createdTo"); params.addValue("createdTo", Timestamp.from(createdTo)); }
@@ -73,8 +67,7 @@ public class JdbcBusinessRecordRepository implements BusinessRecordRepository {
             params.addValue(prefix + "Field", criterion.fieldKey());
 
             // The record's values, by the value index when the planner prefers it (a selective search), else per record.
-            sql.append(" and exists (select 1").append(anywhere != null ? " from fld_value v where v.record_uuid=fr.record_uuid"
-                    : " from fld_record fr join fld_value v on v.record_uuid=fr.record_uuid where fr.entity_uuid=s.tenant_id and fr.product_code='" + VeroProduct.CODE
+            sql.append(" and exists (select 1 from fld_record fr join fld_value v on v.record_uuid=fr.record_uuid where fr.entity_uuid=s.tenant_id and fr.product_code='" + VeroProduct.CODE
                     + "' and fr.record_type=:recordType and fr.record_id=s.record_id::text")
                     .append(" and v.entity_uuid=:tenantId and v.product_code='" + VeroProduct.CODE + "' and v.record_type=:recordType and v.field_key=:").append(prefix).append("Field and (");
             if (!criterion.fingerprints().isEmpty()) {
@@ -97,64 +90,88 @@ public class JdbcBusinessRecordRepository implements BusinessRecordRepository {
             sql.append("))");
         }
 
-        // Best match first when the text is searched anywhere; otherwise (and for ties) newest first.
-        sql.append(anywhere != null ? " order by m.match_rank, " : " order by ")
-                .append("s.created_at desc, s.submission_id offset :offset limit :limit");
-        return jdbc.query(sql.toString(), params, submissionMapper());
+        if (anywhere == null) return jdbc.query(submissionSelect() + sql + NEWEST_FIRST, params, submissionMapper());
+        return findAnywhere(anywhere, sql.toString(), params, offset, limit);
+    }
+
+    private static final String NEWEST_FIRST = " order by s.created_at desc, s.submission_id offset :offset limit :limit";
+
+    /** Up to this many records with a rank are read by the value index; more are found newest first (they are many, so soon). */
+    static final int RANK_RECORDS_MAX = 5_000;
+
+    /**
+     * Task 0079: best match first, newest first within a rank, one rank after the other until the page is full, so that a million records
+     * are not ranked for one page. A submission comes with its best rank only. where: the search's other conditions, on submission s.
+     */
+    private List<Submission> findAnywhere(AnywhereCriterion anywhere, String where, MapSqlParameterSource params, int offset, int limit) {
+        List<Submission> out = new ArrayList<>();
+        java.util.Set<String> seen = new java.util.HashSet<>();
+        // The conditions of better ranks: all that have records, and those with too many to list.
+        List<String> better = new ArrayList<>(), many = new ArrayList<>();
+        int skip = offset;
+        for (int rank = 0; rank <= RANK_CONTAINS && out.size() < limit; rank++) {
+            String matches = rankCondition(anywhere, rank, params);
+            if (matches == null) continue;
+            List<String> records = jdbc.queryForList("select distinct p.record_uuid::text from (select v.record_uuid from fld_value v where" + VALUE + "(" + matches + ") limit "
+                    + (RANK_RECORDS_MAX + 1) + ") p", params, String.class);
+            if (records.isEmpty()) continue;
+            String condition;
+            if (records.size() <= RANK_RECORDS_MAX) {
+                List<String> fresh = records.stream().filter(seen::add).toList();
+                String already = many.isEmpty() ? "" : " and not " + ofRecord(String.join(" or ", many));
+                better.add(matches);
+                if (fresh.isEmpty()) continue;
+                params.addValue("records", "{" + String.join(",", fresh) + "}");
+                condition = " and s.record_id in (select fr.record_id::uuid from fld_record fr where fr.record_uuid=any(cast(:records as uuid[])))" + already;
+            } else {
+                condition = " and " + ofRecord(matches) + (better.isEmpty() ? "" : " and not " + ofRecord(String.join(" or ", better)));
+                better.add(matches);
+                many.add(matches);
+            }
+            params.addValue("offset", skip).addValue("limit", limit - out.size());
+            List<Submission> found = jdbc.query(submissionSelect() + where + condition + NEWEST_FIRST, params, submissionMapper());
+            if (!found.isEmpty()) {
+                out.addAll(found);
+                skip = 0;
+            } else if (skip > 0) {
+                Integer all = jdbc.queryForObject("select count(*) from submissions s" + where + condition, params, Integer.class);
+                skip -= all == null ? 0 : all;
+            }
+        }
+        return out;
+    }
+
+    private static final String VALUE = " v.entity_uuid=:tenantId and v.product_code='" + VeroProduct.CODE + "' and v.record_type=:recordType and not v.sensitive and ";
+
+    private static String ofRecord(String matches) {
+        return "exists (select 1 from fld_record fr join fld_value v on v.record_uuid=fr.record_uuid where fr.entity_uuid=s.tenant_id and fr.product_code='" + VeroProduct.CODE
+                + "' and fr.record_type=:recordType and fr.record_id=s.record_id::text and" + VALUE + "(" + matches + "))";
     }
 
     /**
-     * The submission's best anywhere match, as m.match_rank (null when no field matches). Each field is tried with
-     * its own match: Exact compares the normalized value as configured (ignoring case when the field says so);
-     * Starts with and Contains ignore case, as the field search does. Only this submission's own rows in its own tenant and source are read.
+     * What a value v must be to match with this rank (a better one may match too); null when no field can. Each field is tried with its own
+     * match: Exact the whole value, Starts with and Contains; all in the stored search form.
      */
-    private static void appendAnywhereRank(StringBuilder sql, MapSqlParameterSource params, AnywhereCriterion anywhere) {
-        List<String> keys = new ArrayList<>();
-        sql.append("""
-                 cross join lateral (
-                     select min(case
-                """);
+    private static String rankCondition(AnywhereCriterion anywhere, int rank, MapSqlParameterSource params) {
+        List<String> fields = new ArrayList<>();
         for (int i = 0; i < anywhere.fields().size(); i++) {
             AnywhereField field = anywhere.fields().get(i);
+            boolean exact = rank == (field.businessIdentifier() ? 0 : 1);
+            boolean starts = rank == RANK_STARTS_WITH && field.searchMode() != MetadataSearchMode.EXACT;
+            boolean contains = rank == RANK_CONTAINS && field.searchMode() == MetadataSearchMode.PARTIAL;
+            if (!exact && !starts && !contains) continue;
             String prefix = "a" + i;
             params.addValue(prefix + "Field", field.fieldKey());
-            keys.add(field.fieldKey());
-            List<String> equal = new ArrayList<>(), starts = new ArrayList<>(), contains = new ArrayList<>();
+            List<String> values = new ArrayList<>();
             for (int v = 0; v < field.normalizedVariants().size(); v++) {
-                String value = ":" + prefix + "Value" + v, like = ":" + prefix + "Like" + v;
                 String wanted = CaseFieldSql.searchForm(field.normalizedVariants().get(v));
-                params.addValue(prefix + "Value" + v, wanted);
-                equal.add("v.search_value=" + value);
-                if (field.searchMode() != MetadataSearchMode.EXACT) {
-                    params.addValue(prefix + "Like" + v, escape(wanted));
-                    starts.add("v.search_value like " + like + "||'%'");
-                    contains.add("v.search_value like '%'||" + like + "||'%'");
-                }
+                String name = prefix + (exact ? "Value" : starts ? "Starts" : "Contains") + v;
+                params.addValue(name, exact ? wanted : starts ? escape(wanted) + "%" : "%" + escape(wanted) + "%");
+                values.add("v.search_value" + (exact ? "=:" : " like :") + name);
             }
-            int exactRank = field.businessIdentifier() ? 0 : 1;
-            String allowed = switch (field.searchMode()) {
-                case EXACT -> String.join(" or ", equal);
-                case PREFIX -> String.join(" or ", starts);
-                case PARTIAL -> String.join(" or ", contains);
-            };
-            sql.append(" when v.field_key=:").append(prefix).append("Field and (").append(allowed).append(") then ");
-            if (field.searchMode() == MetadataSearchMode.EXACT) {
-                sql.append(exactRank);
-            } else {
-                sql.append("case when ").append(String.join(" or ", equal)).append(" then ").append(exactRank)
-                        .append(" when ").append(String.join(" or ", starts)).append(" then ").append(RANK_STARTS_WITH)
-                        .append(" else ").append(RANK_CONTAINS).append(" end");
-            }
-            sql.append('\n');
+            fields.add("(v.field_key=:" + prefix + "Field and (" + String.join(" or ", values) + "))");
         }
-        params.addValue("anywhereFields", keys);
-        sql.append("""
-                     end) as match_rank
-                       from fld_value v
-                      where v.record_uuid=fr.record_uuid and not v.sensitive
-                        and v.field_key in (:anywhereFields)
-                 ) m
-                """);
+        return fields.isEmpty() ? null : String.join(" or ", fields);
     }
 
     private static String escape(String text) {

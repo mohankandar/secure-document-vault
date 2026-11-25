@@ -190,6 +190,7 @@ class IngestionContractTest {
     static final DocumentIntakeRepository DOCUMENT_STORE = mock(DocumentIntakeRepository.class);
     static final MetadataFieldDefinitionRepository DEFINITIONS = mock(MetadataFieldDefinitionRepository.class);
     static final RecordSensitivityRepository RECORD_LEVELS = mock(RecordSensitivityRepository.class);
+    static final com.sdv.platform.application.port.RecordValuesPort RECORD_VALUES = mock(com.sdv.platform.application.port.RecordValuesPort.class);
     static final AuditEventPort AUDIT = mock(AuditEventPort.class);
     static final StoragePlacementService PLACEMENT = mock(StoragePlacementService.class);
     static final StorageProvider STORAGE = mock(StorageProvider.class);
@@ -771,6 +772,11 @@ class IngestionContractTest {
                 test -> test.alreadyCreated(CREATE_BODY), 409, "SDV-SEN-004"));
         all.add(refused(c, "not JSON", () -> signed(post(SUBMISSIONS).contentType(MediaType.TEXT_PLAIN).content(CREATE_BODY)),
                 NOTHING, 415, "SDV-SYS-015"));
+        // Task 0079: the contract's length, and the key service away.
+        all.add(refused(c, "a value longer than 512", () -> signed(create("{\"sourceSubmissionId\":\"s-1\",\"expectedDocumentCount\":1,\"metadata\":{\"code\":\"" + "x".repeat(513) + "\"}}")),
+                test -> fields(field("code", MetadataFieldType.TEXT, "{}")), 400, "SDV-INT-009"));
+        all.add(refused(c, "the key service is down", () -> signed(create(CREATE_BODY)),
+                test -> when(RECORD_VALUES.store(any(), any(), any(), any())).thenThrow(new com.sdv.platform.domain.error.KeyServiceDown("CRYPTO_UNAVAILABLE")), 503, "SDV-KEY-002"));
         all.add(refused(c, "a field's rule is broken", () -> signed(create("{\"sourceSubmissionId\":\"s-1\",\"expectedDocumentCount\":1,\"metadata\":{\"code\":\"x\"}}")),
                 test -> fields(field("code", MetadataFieldType.TEXT, "{\"pattern\":\"[\"}")), 500, "SDV-INT-010"));
 
@@ -942,7 +948,7 @@ class IngestionContractTest {
 
     private void defaults() throws Exception {
         LICENCE.set(() -> true);
-        reset(TENANTS, SOURCES, SUBMISSION_STORE, DOCUMENT_STORE, DEFINITIONS, RECORD_LEVELS, AUDIT, PLACEMENT, STORAGE,
+        reset(RECORD_VALUES, TENANTS, SOURCES, SUBMISSION_STORE, DOCUMENT_STORE, DEFINITIONS, RECORD_LEVELS, AUDIT, PLACEMENT, STORAGE,
                 CRYPTO, FINALIZATION, RECORDS, LEVELS, SCHEMA);
         DECODER.set(decoder(HUB.getAddress().getPort()));
         resetPlatform();
@@ -1233,7 +1239,7 @@ class IngestionContractTest {
 
         @Bean SubmissionController submissionController() {
             return new SubmissionController(new SecurityContextFacade(), new SubmissionService(TENANTS, SOURCES, DEFINITIONS,
-                    SUBMISSION_STORE, DOCUMENT_STORE, RECORD_LEVELS, AUDIT, com.sdv.platform.application.port.RecordValuesPort.NONE, null));
+                    SUBMISSION_STORE, DOCUMENT_STORE, RECORD_LEVELS, AUDIT, RECORD_VALUES, null));
         }
 
         @Bean DocumentIntakeController documentIntakeController() {

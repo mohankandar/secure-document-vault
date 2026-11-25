@@ -51,7 +51,7 @@ public class BusinessExperienceService {
     private static final int MAX_LIMIT = 50;
     private static final int MAX_PAGE = 10_000;
     private static final int MAX_CRITERIA = 10;
-    private static final int MAX_QUERY_VALUE_LENGTH = 500;
+    private static final int MAX_QUERY_VALUE_LENGTH = 512;
     /** "Anywhere" text, after trimming (task 0022). */
     static final int ANYWHERE_MIN_LENGTH = 2;
     static final int ANYWHERE_MAX_LENGTH = 100;
@@ -904,7 +904,7 @@ public class BusinessExperienceService {
                                     value.fieldKey(), value.displayLabel(),
                                     value.storedValue(), value.businessIdentifier())));
         }
-        aggregate.opened().forEach(v -> latest.put(v.fieldKey(), new BusinessExperienceView.FieldValue(v.fieldKey(), v.label(), v.value(), v.identifier())));
+        aggregate.opened().forEach(v -> latest.put(v.fieldKey(), new BusinessExperienceView.FieldValue(v.fieldKey(), v.label(), v.value(), v.identifier(), true)));
         return latest.values().stream()
                 .sorted(Comparator.comparing(BusinessExperienceView.FieldValue::displayLabel, String.CASE_INSENSITIVE_ORDER)
                         .thenComparing(BusinessExperienceView.FieldValue::fieldKey))

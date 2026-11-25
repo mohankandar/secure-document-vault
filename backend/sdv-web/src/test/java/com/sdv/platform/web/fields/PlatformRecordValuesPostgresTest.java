@@ -204,7 +204,8 @@ class PlatformRecordValuesPostgresTest {
         before = keys.calls();
         var opened = business.record(entity, page.getFirst().recordRef(), "maya", "c", Clearance.STANDARD_ONLY);
         assertEquals(before + 1, keys.calls());
-        assertTrue(opened.metadata().stream().anyMatch(v -> v.fieldKey().equals("lastName")));
+        assertEquals(Map.of("firstName", true, "lastName", true, "loanType", false, "contractNumber", false),
+                opened.metadata().stream().collect(java.util.stream.Collectors.toMap(v -> v.fieldKey(), v -> v.sensitive())), "task 0079: the sensitive ones are marked");
         assertEquals(page.getFirst().title(), opened.title());
     }
 
@@ -287,6 +288,65 @@ class PlatformRecordValuesPostgresTest {
         assertEquals("SDV-INT-009", refused.errorCode().code());
         assertFalse(refused.getMessage().contains("Secret"), refused.getMessage());
         assertEquals(0, db.queryForObject("select count(*) from submissions where tenant_id = ?", Integer.class, entity));
+    }
+
+    /** Task 0079: rank by rank gives the same order as ranking every record: best match, then newest; every page in turn; nothing twice. */
+    @Test
+    void searchingEverywhereIsBestMatchFirstThenNewestOnEveryPage() {
+        String[][] rows = {{"901", "Big Auto loan"}, {"902", "auto"}, {"903", "Auto lease"}, {"auto", "Auto"}, {"904", "AUTO"}, {"905", "Autumn"}, {"906", "Semi auto"}, {"907", "Boat"}};
+        field(b, "ref", "Ref", true, MetadataNormalization.TRIM, MetadataSearchMode.EXACT);
+        field(b, "loanType", "Loan type", false, MetadataNormalization.TRIM, MetadataSearchMode.PARTIAL);
+        for (int i = 0; i < rows.length; i++) {
+            UUID s = deliver(b, Map.of("ref", rows[i][0], "loanType", rows[i][1]));
+            db.update("update submissions set created_at = now() - ? * interval '1 hour' where submission_id = ?", rows.length - i, s);
+        }
+        List<String> all = List.of("auto", "904", "902", "903", "906", "901");
+        for (int size : List.of(1, 2, 4, 50)) {
+            List<String> got = new ArrayList<>();
+            for (int page = 1; page <= 7; page++) {
+                business.search(entity, b, Map.of(), "auto", null, null, null, null, false, page, size, "maya", "c", Clearance.STANDARD_ONLY).records()
+                        .forEach(r -> got.add(r.identifiers().getFirst().value()));
+            }
+            assertEquals(all, got, "page size " + size);
+        }
+        // The repository's own pages, as deep as the results and beyond.
+        var criterion = new com.sdv.platform.application.port.BusinessRecordRepository.AnywhereCriterion(List.of(
+                new com.sdv.platform.application.port.BusinessRecordRepository.AnywhereField("ref", MetadataSearchMode.EXACT, List.of("auto"), true),
+                new com.sdv.platform.application.port.BusinessRecordRepository.AnywhereField("loanType", MetadataSearchMode.PARTIAL, List.of("auto"), false)));
+        for (int offset = 0; offset <= 7; offset++) {
+            assertEquals(Math.max(0, Math.min(2, 6 - offset)), records.findMatchingSubmissions(entity, b, List.of(), criterion, null, null, null, null, false, offset, 2).size(), "offset " + offset);
+        }
+    }
+
+    private UUID typed(String key, MetadataFieldType type) {
+        Instant now = Instant.now();
+        tx.executeWithoutResult(s -> fields.insert(new MetadataFieldDefinition(UUID.randomUUID(), entity, b, key, 1, key, type, false, false, true,
+                MetadataNormalization.TRIM, MetadataSearchMode.EXACT, "{}", true, now, null, now)));
+        return b;
+    }
+
+    private long found(String key, String value) {
+        return business.search(entity, b, Map.of(key, value), null, null, null, null, null, false, 1, 50, "maya", "c", Clearance.STANDARD_ONLY).records().size();
+    }
+
+    /** Task 0079, as the contract says: types with the offset from UTC, letter case, and 512 characters. */
+    @Test
+    void typesOffsetsLetterCaseAndLengthAreAsTheContractSays() {
+        typed("signedAt", MetadataFieldType.DATETIME);
+        typed("active", MetadataFieldType.BOOLEAN);
+        typed("caseId", MetadataFieldType.UUID);
+        typed("closing", MetadataFieldType.DATE);
+        typed("note", MetadataFieldType.TEXT);
+        String long512 = "n".repeat(512);
+        deliver(b, Map.of("signedAt", "2026-11-21T10:15:30+02:00", "active", "TRUE", "caseId", "5E7D0000-0000-4000-8000-0000000000A1", "closing", "2026-11-21", "note", long512));
+        assertEquals(1, found("active", "true"));
+        assertEquals(1, found("caseId", "5e7d0000-0000-4000-8000-0000000000a1"));
+        assertEquals(1, found("closing", "2026-11-21"));
+        assertEquals(1, found("signedAt", "2026-11-21T10:15:30+02:00"));
+        assertEquals(1, found("note", long512.toUpperCase()));
+        for (Map<String, String> bad : List.of(Map.of("signedAt", "2026-11-21T10:15:30"), Map.of("active", "maybe"), Map.of("caseId", "1-1-1-1-1"), Map.of("note", long512 + "n"))) {
+            assertEquals("SDV-INT-009", assertThrows(CodedRefusal.BadRequest.class, () -> deliver(b, bad), bad.keySet().toString()).errorCode().code());
+        }
     }
 
     @Test

@@ -275,3 +275,8 @@ export function levelWords(level: string | null | undefined): string {
   if (level === 'HIGHLY_CONFIDENTIAL') return 'Highly Confidential'
   return 'Not known'
 }
+
+/** Task 0079: marks a sensitive field beside its label. */
+export function SensitiveMark({ on }: { on?: boolean }) {
+  return on ? <span className="v-hint" title="Stored encrypted. Shown to people who may open the record's documents.">Sensitive</span> : null
+}

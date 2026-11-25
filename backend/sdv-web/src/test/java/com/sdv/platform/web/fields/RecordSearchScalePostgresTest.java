@@ -4,8 +4,12 @@ import com.documentplatform.crypto.CustomerId;
 import com.documentplatform.crypto.testkit.InMemoryKeyService;
 import com.zaxxer.hikari.HikariDataSource;
 import com.sdv.platform.application.access.Clearance;
+import com.sdv.platform.application.access.DocumentAccessGuard;
 import com.sdv.platform.application.access.QuarantineLookup;
+import com.sdv.platform.application.access.SensitiveAccessGrants;
+import com.sdv.platform.application.approvals.ApprovalSettings;
 import com.sdv.platform.application.business.BusinessExperienceService;
+import com.sdv.platform.application.quarantine.QuarantineService;
 import com.sdv.platform.domain.metadata.MetadataFieldDefinition;
 import com.sdv.platform.domain.metadata.MetadataFieldType;
 import com.sdv.platform.domain.metadata.MetadataNormalization;
@@ -14,6 +18,7 @@ import com.sdv.platform.persistence.business.JdbcBusinessRecordRepository;
 import com.sdv.platform.persistence.fields.PlatformFieldRepository;
 import com.sdv.platform.persistence.fields.PlatformRecordValues;
 import com.sdv.platform.persistence.foundation.JdbcFoundationRepository;
+import com.sdv.platform.persistence.quarantine.JdbcQuarantineRepository;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
@@ -34,7 +39,7 @@ import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-/** Task 0078: record search with encrypted names, SDV_IT_RECORDS records (100,000). Writes target/record-search-times.txt. */
+/** Tasks 0078, 0079: search, intake and quarantine by filter with encrypted names, SDV_IT_RECORDS records of one document (100,000). Writes target/record-search-times.txt. */
 @EnabledIfEnvironmentVariable(named = "SDV_IT_JDBC_URL", matches = "jdbc:postgresql://localhost:5433/sdv_schema_test(_[1-9])?")
 class RecordSearchScalePostgresTest {
     private static final int N = Integer.parseInt(System.getenv().getOrDefault("SDV_IT_RECORDS", "100000"));
@@ -76,6 +81,29 @@ class RecordSearchScalePostgresTest {
         Instant now = Instant.now();
         tx.executeWithoutResult(s -> fields.insert(new MetadataFieldDefinition(UUID.randomUUID(), entity, source, key, 1, label, MetadataFieldType.TEXT, identifier, identifier, true, n, mode,
                 "{}", true, now, null, now)));
+    }
+
+    /** A delivery, and the count of a quarantine filter (task 0052). */
+    private static final long INTAKE_MS = 1_000, COUNT_MS = 3_000;
+
+    private void measured(String what, long limit, Runnable work) {
+        long[] t = new long[3];
+        for (int i = -1; i < 3; i++) {
+            long start = System.nanoTime();
+            work.run();
+            if (i >= 0) t[i] = (System.nanoTime() - start) / 1_000_000;
+        }
+        Arrays.sort(t);
+        lines.add("%-62s %6d ms".formatted(what, t[1]));
+        assertTrue(t[1] < limit, what + ": " + t[1] + " ms");
+    }
+
+    private void delivery(String number, String lastName) {
+        UUID submission = UUID.randomUUID();
+        tx.executeWithoutResult(s -> {
+            db.update("insert into submissions(submission_id, tenant_id, source_id, source_submission_id, expected_document_count, status) values (?, ?, ?, ?, 1, 'COMPLETE')", submission, entity, source, submission.toString());
+            values.store(entity, source, submission, Map.of("contractNumber", number, "lastName", lastName, "loanType", "Mortgage"));
+        });
     }
 
     /** Median of three after one warm-up, within the limit. */
@@ -121,6 +149,8 @@ class RecordSearchScalePostgresTest {
                 values.store(entity, source, submission, Map.of("contractNumber", number, "lastName", "Okafor", "loanType", "Mortgage"));
             });
         }
+        db.execute("insert into documents(document_id, tenant_id, submission_id, source_id, source_document_id, original_filename, media_type, content_sha256, content_size_bytes, status, available_at, ingested_at, sensitivity_level) select gen_random_uuid(), '"
+                + entity + "', id, '" + source + "', 'd', 'x.pdf', 'application/pdf', repeat('a', 64), 1, 'AVAILABLE', now(), now() - interval '1 day', 'STANDARD' from " + rows + " s");
         db.execute("analyze");
 
         lines.add("Record search (task 0078): " + N + " records with an encrypted name. A page of 25, the median of 3 after one warm-up.");
@@ -133,6 +163,23 @@ class RecordSearchScalePostgresTest {
         assertEquals(1, timed("sensitive name and identifier", Map.of("lastName", "Patel", "contractNumber", "700000005000"), null));
         timed("everywhere, one record", Map.of(), "700000050000");
         timed("everywhere, nearly every record", Map.of(), "mortgage");
+        timed("everywhere, a part of nearly every value", Map.of(), "ortgage");
+        timed("everywhere, the start of every identifier, part of some values", Map.of(), "70");
+        timed("everywhere, none has it", Map.of(), "zeppelin");
+        int[] n = {0};
+        measured("intake: a delivery that makes a record", INTAKE_MS, () -> delivery("9000000000" + n[0]++, "Okafor"));
+        // A record of its own per round: the bulk rows' names have no real key to open or replace.
+        measured("intake: a delivery to a record there is", INTAKE_MS, () -> delivery("800000000001", "Haddad"));
+        JdbcQuarantineRepository quarantined = new JdbcQuarantineRepository(named);
+        QuarantineService quarantine = new QuarantineService(quarantined, new DocumentAccessGuard(new JdbcBusinessRecordRepository(named), foundation, SensitiveAccessGrants.NONE, quarantined),
+                fields, foundation, ApprovalSettings.defaults(), new DataSourceTransactionManager(data), values);
+        QuarantineService.Actor steward = new QuarantineService.Actor(entity, "rita", "Rita", new Clearance(true, true, List.of("RESTRICTED_STEWARD"), true), "c");
+        String from = java.time.LocalDate.now(java.time.ZoneOffset.UTC).minusDays(3).toString(), to = java.time.LocalDate.now(java.time.ZoneOffset.UTC).toString();
+        for (Map.Entry<Map<String, String>, Long> e : Map.of(Map.<String, String>of(), (long) N, Map.of("contractNumber", "700000000500"), 1L, Map.of("lastName", "patel"), (long) N / 1000).entrySet()) {
+            var filter = new QuarantineService.FilterRequest(from, to, source.toString(), e.getKey());
+            measured("quarantine filter: count, by " + (e.getKey().isEmpty() ? "received dates" : e.getKey().keySet()), COUNT_MS,
+                    () -> assertEquals(e.getValue(), quarantine.countMatching(steward, filter).count()));
+        }
         Files.createDirectories(Path.of("target"));
         Files.write(Path.of("target", "record-search-times.txt"), lines);
         lines.forEach(System.out::println);

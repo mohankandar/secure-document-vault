@@ -228,7 +228,7 @@ export function SearchFields() {
           ? 'Documents have values for this field, so its type, whether it identifies a record and whether it is sensitive are locked.'
           : 'Type, identifier and sensitivity lock once the first document with a value arrives. The switch saves at once, for every sending system.'}</small>
       </>}
-      <fieldset className="v-field sf-match" disabled={!draft.searchable}>
+      {rules.get(draft.fieldKey)?.sensitive ? <div className="v-field sf-match"><strong>How it matches</strong><span>Whole value only, any case. A sensitive field can’t be searched by a part of its value.</span></div> : <fieldset className="v-field sf-match" disabled={!draft.searchable}>
         <legend>How it matches</legend>
         {MATCH_CHOICES.map((c) => (
           <label key={c.mode} className="sf-choice">
@@ -236,8 +236,8 @@ export function SearchFields() {
             <span><strong>{c.label}</strong><small className="faint">{c.example}</small></span>
           </label>
         ))}
-        <small className="muted">{rules.get(draft.fieldKey)?.sensitive ? 'A sensitive field is found by its whole value only, whatever is set here.' : CASE_NOTE}</small>
-      </fieldset>
+        <small className="muted">{CASE_NOTE}</small>
+      </fieldset>}
       <TechDetails flat hint="field key, type, normalization, version">
         <dl className="v-kv"><div><dt>Field key</dt><dd className="mono">{draft.fieldKey}</dd></div><div><dt>Type</dt><dd className="mono">{draft.fieldType}</dd></div>
           <div><dt>Normalization</dt><dd className="mono">{draft.normalization}</dd></div><div><dt>Version</dt><dd>{draft.version}</dd></div></dl>
