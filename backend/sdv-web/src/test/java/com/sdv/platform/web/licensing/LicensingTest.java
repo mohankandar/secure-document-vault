@@ -147,28 +147,30 @@ class LicensingTest {
         meter.seen(e, "b", Set.of(SdvRole.DOCUMENT_STEWARD));
         meter.seen(e, "b", Set.of(SdvRole.DOCUMENT_STEWARD));
         assertEquals(2, meter.counts().get(e).concurrentPeak());
-        assertEquals(1, meter.counts().get(e).named(), "a business user is no named seat");
+        assertEquals(Map.of(new SeatMeter.Month(e, YearMonth.of(2027, 3)), Set.of("b")), meter.takePending(), "a business user is no named seat");
         clock.now = clock.now.plus(Duration.ofMinutes(16));
         meter.seen(e, "c", Set.of(SdvRole.BUSINESS_ADMIN));
         assertEquals(2, meter.counts().get(e).concurrentPeak(), "the day's peak stays");
-        assertEquals(2, meter.counts().get(e).named());
+        assertEquals(Set.of("c"), meter.takePending().get(new SeatMeter.Month(e, YearMonth.of(2027, 3))), "each once");
+        meter.giveBack(new SeatMeter.Month(e, YearMonth.of(2027, 3)), Set.of("c"));
         clock.now = Instant.parse("2027-04-01T09:00:00Z");
         meter.seen(e, "a", Set.of(SdvRole.BUSINESS_USER));
         assertEquals(1, meter.counts().get(e).concurrentPeak(), "a new day");
-        assertEquals(0, meter.counts().get(e).named(), "a new month");
+        meter.seen(e, "b", Set.of(SdvRole.DOCUMENT_STEWARD));
+        assertEquals(Map.of(new SeatMeter.Month(e, YearMonth.of(2027, 3)), Set.of("c"), new SeatMeter.Month(e, YearMonth.of(2027, 4)), Set.of("b")), meter.takePending(), "a new month; what was not written yet stays the old one's");
     }
 
     @Test
     void theLedgerGetsNumbersWhenTheyGrow() {
         List<String> rows = new ArrayList<>();
-        UsageJob.Ledger ledger = (slot, type, amount) -> rows.add(slot + " " + type + " " + amount);
-        YearMonth month = YearMonth.of(2027, 3);
-        SeatMeter.Counts first = new SeatMeter.Counts(LocalDate.of(2027, 3, 1), 2, month, 1), same = first, more = new SeatMeter.Counts(LocalDate.of(2027, 3, 1), 3, month, 1);
-        UsageJob.seats(SLOT, first, null, month, ledger);
-        UsageJob.seats(SLOT, same, first, month, ledger);
-        UsageJob.seats(SLOT, more, first, month, ledger);
-        UsageJob.seats(SLOT, new SeatMeter.Counts(LocalDate.of(2027, 2, 28), 9, YearMonth.of(2027, 2), 9), null, month, ledger);
-        assertEquals(List.of(SLOT + " CONCURRENT_SEATS 2", SLOT + " NAMED_SEATS 1", SLOT + " CONCURRENT_SEATS 3"), rows);
+        UsageJob.Ledger ledger = (slot, type, month, amount) -> rows.add(slot + " " + type + " " + amount);
+        YearMonth march = YearMonth.of(2027, 3);
+        SeatMeter.Counts first = new SeatMeter.Counts(LocalDate.of(2027, 3, 1), 2), same = first, more = new SeatMeter.Counts(LocalDate.of(2027, 3, 1), 3);
+        UsageJob.seats(SLOT, first, null, march, ledger);
+        UsageJob.seats(SLOT, same, first, march, ledger);
+        UsageJob.seats(SLOT, more, first, march, ledger);
+        UsageJob.seats(SLOT, new SeatMeter.Counts(LocalDate.of(2027, 2, 28), 9), null, march, ledger);
+        assertEquals(List.of(SLOT + " CONCURRENT_SEATS 2", SLOT + " CONCURRENT_SEATS 3"), rows);
         assertEquals(0, UsageJob.gigabytes(0));
         assertEquals(1, UsageJob.gigabytes(1));
         assertEquals(1, UsageJob.gigabytes(1_000_000_000L));

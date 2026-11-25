@@ -30,7 +30,7 @@ public class UsageJob {
     static final long GB = 1_000_000_000L;
 
     @FunctionalInterface
-    interface Ledger { void record(String slotId, AllowanceType type, long amount); }
+    interface Ledger { void record(String slotId, AllowanceType type, YearMonth month, long amount); }
 
     private final DatabaseSchemaCheck schema;
     private final TenantRepository tenants;
@@ -39,24 +39,34 @@ public class UsageJob {
     private final SeatMeter seats;
     private final Ledger ledger;
     private final Clock clock = Clock.systemUTC();
+    private LocalDate cleaned;
     private final Map<UUID, LocalDate> storageDone = new HashMap<>();
     private final Map<UUID, SeatMeter.Counts> written = new HashMap<>();
+    private final Map<SeatMeter.Month, Integer> namedWritten = new HashMap<>();
+    private final NamedSeats named;
 
     public UsageJob(DatabaseSchemaCheck schema, TenantRepository tenants, PlatformIdentityReads identity, JdbcTemplate db,
-                    SeatMeter seats, LicenceService licence) {
+                    SeatMeter seats, LicenceService licence, NamedSeats named) {
         this.schema = schema;
         this.tenants = tenants;
         this.identity = identity;
         this.db = db;
         this.seats = seats;
-        this.ledger = (slot, type, amount) -> licence.recordUsage(slot, type, amount, true);
+        this.named = named;
+        this.ledger = (slot, type, month, amount) -> licence.usage().record(slot, licence.productCode().orElseThrow(), type, month, amount, true);
     }
 
     @Scheduled(initialDelayString = "${sdv.licensing.usage-initial-delay-ms:60000}", fixedDelayString = "${sdv.licensing.usage-delay-ms:300000}")
     public synchronized void run() {
         if (!schema.current()) return;
+        writeNamed();
         try {
             LocalDate today = LocalDate.now(clock.withZone(ZoneOffset.UTC));
+            YearMonth thisMonth = YearMonth.from(today);
+            if (!today.equals(cleaned)) {
+                named.deleteOlder(thisMonth);
+                cleaned = today;
+            }
             Map<UUID, SeatMeter.Counts> counts = seats.counts();
             for (var tenant : tenants.findActive()) {
                 UUID entity = tenant.tenantId();
@@ -64,17 +74,41 @@ public class UsageJob {
                 if (slot == null) continue;
                 if (!today.equals(storageDone.get(entity))) {
                     Long bytes = db.queryForObject("select coalesce(sum(content_size_bytes), 0) from documents where tenant_id = ? and status = 'AVAILABLE'", Long.class, entity);
-                    ledger.record(slot, AllowanceType.STORAGE, gigabytes(bytes == null ? 0 : bytes));
+                    ledger.record(slot, AllowanceType.STORAGE, thisMonth, gigabytes(bytes == null ? 0 : bytes));
                     storageDone.put(entity, today);
                 }
                 if (counts.containsKey(entity)) {
-                    seats(slot, counts.get(entity), written.get(entity), YearMonth.from(today), ledger);
+                    seats(slot, counts.get(entity), written.get(entity), thisMonth, ledger);
                     written.put(entity, counts.get(entity));
+                }
+                // The previous month too, for who signed in just before it ended.
+                for (YearMonth month : new YearMonth[]{thisMonth.minusMonths(1), thisMonth}) {
+                    SeatMeter.Month key = new SeatMeter.Month(entity, month);
+                    int people = named.count(entity, month);
+                    boolean known = namedWritten.containsKey(key);
+                    if (month.equals(thisMonth) ? people > namedWritten.getOrDefault(key, 0) : known && people > namedWritten.get(key)) {
+                        ledger.record(slot, AllowanceType.NAMED_SEATS, month, people);
+                        namedWritten.put(key, people);
+                    }
                 }
             }
         } catch (RuntimeException ex) {
             log.warn("Writing the usage failed; the next run continues. Nothing is limited by it. Cause: {}", ex.getClass().getSimpleName());
         }
+    }
+
+    /** Task 0090: also when Vero stops, so a planned restart loses nobody. */
+    @jakarta.annotation.PreDestroy
+    void writeNamed() {
+        if (!named.usable() || !schema.current()) return;
+        seats.takePending().forEach((month, people) -> {
+            try {
+                named.add(month.entity(), month.month(), people);
+            } catch (RuntimeException ex) {
+                seats.giveBack(month, people);
+                log.warn("Named seats can't be written just now; the next run continues. Cause: {}", ex.getClass().getSimpleName());
+            }
+        });
     }
 
     static long gigabytes(long bytes) {
@@ -85,11 +119,7 @@ public class UsageJob {
     static void seats(String slot, SeatMeter.Counts now, SeatMeter.Counts before, YearMonth month, Ledger ledger) {
         if (YearMonth.from(now.day()).equals(month) && now.concurrentPeak() > 0
                 && (before == null || !now.day().equals(before.day()) || now.concurrentPeak() > before.concurrentPeak())) {
-            ledger.record(slot, AllowanceType.CONCURRENT_SEATS, now.concurrentPeak());
-        }
-        if (now.month().equals(month) && now.named() > 0
-                && (before == null || !now.month().equals(before.month()) || now.named() > before.named())) {
-            ledger.record(slot, AllowanceType.NAMED_SEATS, now.named());
+            ledger.record(slot, AllowanceType.CONCURRENT_SEATS, month, now.concurrentPeak());
         }
     }
 }

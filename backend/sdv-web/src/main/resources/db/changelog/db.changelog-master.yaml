@@ -127,3 +127,6 @@ databaseChangeLog:
 
   - include:
       file: db/changelog/045-usage-export-anchor.yaml
+
+  - include:
+      file: db/changelog/046-usage-named-seats.yaml
