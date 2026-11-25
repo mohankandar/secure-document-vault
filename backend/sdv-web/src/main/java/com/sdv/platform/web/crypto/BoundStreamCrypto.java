@@ -21,13 +21,13 @@ import java.util.UUID;
 
 /**
  * Task 0076: documents through platform-core's {@link StreamCipher}, with the customer's key. The cipher knows only the
- * customer, so Vero puts a header first inside the encrypted content: {@code VERODOC} and version 1, the kind (document or sealed
- * original), and the IDs of entity, document and sealed original (zeros for a document). Nothing of the document is
+ * customer, so Vero puts a header first inside the encrypted content: {@code VERODOC} and header version 2 (task 0091), the kind (document or
+ * sealed original), the document's version (0 for a sealed original), and the IDs of entity, document and sealed original (zeros for a document). Nothing of the document is
  * handed out before the header was authenticated and is exactly the expected one. Sizes and the checksum are the document's own.
  */
 public final class BoundStreamCrypto implements StreamingCryptoPort {
-    static final int HEADER_BYTES = 8 + 1 + 3 * 16;
-    private static final byte[] MAGIC = {'V', 'E', 'R', 'O', 'D', 'O', 'C', 1};
+    static final int HEADER_BYTES = 8 + 1 + 4 + 3 * 16;
+    private static final byte[] MAGIC = {'V', 'E', 'R', 'O', 'D', 'O', 'C', 2};
     /** The stored copy or its key is not the right one: a failed check. Everything else is the key service. */
     private static final Set<CryptoError> CHECK = EnumSet.of(CryptoError.CRYPTO_CIPHERTEXT_INVALID, CryptoError.CRYPTO_FORMAT_UNKNOWN,
             CryptoError.CRYPTO_WRONG_CUSTOMER, CryptoError.CRYPTO_KEY_SERVICE_MISMATCH, CryptoError.CRYPTO_KEY_MISSING, CryptoError.CRYPTO_KEY_DISABLED);
@@ -41,7 +41,7 @@ public final class BoundStreamCrypto implements StreamingCryptoPort {
     }
 
     static byte[] header(Binding binding) {
-        ByteBuffer header = ByteBuffer.allocate(HEADER_BYTES).put(MAGIC).put((byte) (binding.sealedId() == null ? 1 : 2));
+        ByteBuffer header = ByteBuffer.allocate(HEADER_BYTES).put(MAGIC).put((byte) (binding.sealedId() == null ? 1 : 2)).putInt(binding.version());
         for (UUID id : new UUID[]{binding.entityId(), binding.documentId(), binding.sealedId() == null ? new UUID(0, 0) : binding.sealedId()}) {
             header.putLong(id.getMostSignificantBits()).putLong(id.getLeastSignificantBits());
         }

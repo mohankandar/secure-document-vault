@@ -39,7 +39,7 @@ above one's level.
 | VSEC-18 | Error texts | Fixed, PR #34 |
 | VSEC-19 | Request references | Fixed, PR #34 |
 | VSEC-20 | PDF checks at intake | Fixed, PR #36, without the malware-scan hook (it waits for platform-core) |
-| VSEC-21 | Data under a replaced version | Partly, task 0076: a sealed original can't take the document's place; earlier versions of one document: open |
+| VSEC-21 | Data under a replaced version | Fixed, tasks 0076 and 0091 |
 | VSEC-22 | Browser hardening | Fixed, PR #43 |
 | VSEC-23 | Metadata value limits | Fixed, PR #36 |
 | VSEC-24 | CI package token | Fixed, PR #37 |

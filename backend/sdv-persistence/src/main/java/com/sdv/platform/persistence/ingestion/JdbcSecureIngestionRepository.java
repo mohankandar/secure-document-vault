@@ -463,9 +463,9 @@ public class JdbcSecureIngestionRepository implements SubmissionRepository, Stor
         jdbc.update("""
                 insert into document_crypto_metadata(
                     document_id, tenant_id, crypto_profile, crypto_version, key_provider_id,
-                    protected_data_key_reference, key_provider_version)
+                    protected_data_key_reference, key_provider_version, object_version)
                 values (:documentId, :tenantId, :profile, :version, :providerId,
-                        :protectedReference, :providerVersion)
+                        :protectedReference, :providerVersion, :objectVersion)
                 """, new MapSqlParameterSource()
                 .addValue("documentId", cryptoMetadata.documentId())
                 .addValue("tenantId", cryptoMetadata.tenantId())
@@ -473,6 +473,7 @@ public class JdbcSecureIngestionRepository implements SubmissionRepository, Stor
                 .addValue("version", cryptoMetadata.cryptoVersion())
                 .addValue("providerId", cryptoMetadata.keyProviderId())
                 .addValue("protectedReference", cryptoMetadata.protectedDataKeyReference())
+                .addValue("objectVersion", cryptoMetadata.objectVersion())
                 .addValue("providerVersion", cryptoMetadata.keyProviderVersion()));
     }
 
@@ -500,7 +501,7 @@ public class JdbcSecureIngestionRepository implements SubmissionRepository, Stor
     public Optional<DocumentCryptoMetadata> findCryptoMetadata(UUID tenantId, UUID documentId) {
         return jdbc.query("""
                 select document_id, tenant_id, crypto_profile, crypto_version, key_provider_id,
-                       protected_data_key_reference, key_provider_version
+                       protected_data_key_reference, key_provider_version, object_version
                   from document_crypto_metadata
                  where tenant_id=:tenantId and document_id=:documentId
                 """, new MapSqlParameterSource()
@@ -512,7 +513,8 @@ public class JdbcSecureIngestionRepository implements SubmissionRepository, Stor
                         rs.getInt("crypto_version"),
                         rs.getString("key_provider_id"),
                         rs.getString("protected_data_key_reference"),
-                        rs.getString("key_provider_version")))
+                        rs.getString("key_provider_version"),
+                        rs.getInt("object_version")))
                 .stream().findFirst();
     }
 

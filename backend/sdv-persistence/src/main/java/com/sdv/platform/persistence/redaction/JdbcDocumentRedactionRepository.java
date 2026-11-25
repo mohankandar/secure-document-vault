@@ -200,13 +200,15 @@ public class JdbcDocumentRedactionRepository implements DocumentRedactionReposit
         int cryptoUpdated = jdbc.update("""
                 update document_crypto_metadata
                    set crypto_profile=:profile, crypto_version=:version, key_provider_id=:providerId,
-                       protected_data_key_reference=:protectedReference, key_provider_version=:providerVersion
-                 where tenant_id=:tenantId and document_id=:documentId
+                       protected_data_key_reference=:protectedReference, key_provider_version=:providerVersion,
+                       object_version=:objectVersion
+                 where tenant_id=:tenantId and document_id=:documentId and object_version=:objectVersion - 1
                 """, params(tenantId, documentId)
                 .addValue("profile", crypto.cryptoProfile())
                 .addValue("version", crypto.cryptoVersion())
                 .addValue("providerId", crypto.keyProviderId())
                 .addValue("protectedReference", crypto.protectedDataKeyReference())
+                .addValue("objectVersion", crypto.objectVersion())
                 .addValue("providerVersion", crypto.keyProviderVersion()));
         if (cryptoUpdated != 1) throw new IllegalStateException("Corrective redaction crypto switch failed.");
     }

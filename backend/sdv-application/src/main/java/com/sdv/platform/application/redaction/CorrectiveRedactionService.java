@@ -218,7 +218,7 @@ public class CorrectiveRedactionService {
             final StreamingCryptoPort.CryptoEnvelope[] holder = new StreamingCryptoPort.CryptoEnvelope[1];
             byte[] replacementBytes = sanitized;
             newStored = newProvider.store(tenantId, newVolume, output ->
-                    holder[0] = crypto.encrypt(StreamingCryptoPort.Binding.document(tenantId, documentId), new ByteArrayInputStream(replacementBytes), output));
+                    holder[0] = crypto.encrypt(StreamingCryptoPort.Binding.document(tenantId, documentId, oldCrypto.objectVersion() + 1), new ByteArrayInputStream(replacementBytes), output));
             StreamingCryptoPort.CryptoEnvelope envelope = Objects.requireNonNull(
                     holder[0], "Corrective-redaction encryption did not return envelope metadata.");
 
@@ -348,6 +348,12 @@ public class CorrectiveRedactionService {
         return result;
     }
 
+    /** The document's key row as it is now: before the switch, the old version's. */
+    private DocumentCryptoMetadata crypto(RedactionOperation op) {
+        return documents.findCryptoMetadata(op.tenantId(), op.documentId())
+                .orElseThrow(() -> new RedactionFailedException("Document crypto metadata is unavailable."));
+    }
+
     private record SealedCopy(StorageProvider provider, StorageVolume volume, StorageProvider.StoredObject stored, StreamingCryptoPort.CryptoEnvelope envelope) { }
 
     /**
@@ -364,7 +370,7 @@ public class CorrectiveRedactionService {
         byte[] original = null;
         StorageProvider.StoredObject stored = null;
         try {
-            original = verified(op.tenantId(), StreamingCryptoPort.Binding.document(op.tenantId(), op.documentId()), old, envelope(oldCrypto, old),
+            original = verified(op.tenantId(), StreamingCryptoPort.Binding.document(op.tenantId(), op.documentId(), oldCrypto.objectVersion()), old, envelope(oldCrypto, old),
                     op.oldContentSha256(), op.oldContentSizeBytes(), volume, provider);
             byte[] bytes = original;
             StreamingCryptoPort.CryptoEnvelope[] holder = new StreamingCryptoPort.CryptoEnvelope[1];
@@ -433,12 +439,11 @@ public class CorrectiveRedactionService {
 
         // Task 0066: decided here, under the document's row lock (placing a hold takes the same one): a held document's
         // original is sealed, also when the hold came while the redaction was running; any other is deleted now.
+        DocumentCryptoMetadata oldCrypto = crypto(expected);
         UUID sealedId = null;
         if (expected.accessRequestId() == null && !held.onHold(expected.tenantId(), expected.documentId())) {
             deleteOriginal(expected);
         } else {
-            DocumentCryptoMetadata oldCrypto = documents.findCryptoMetadata(expected.tenantId(), expected.documentId())
-                    .orElseThrow(() -> new RedactionFailedException("Document crypto metadata is unavailable."));
             sealedId = UUID.randomUUID();
             sealed[0] = sealCopy(expected, oldCrypto, sealedId);
             StreamingCryptoPort.CryptoEnvelope e = sealed[0].envelope();
@@ -446,7 +451,7 @@ public class CorrectiveRedactionService {
                     new DocumentStorageRef(expected.documentId(), expected.tenantId(), expected.oldProviderId(),
                             expected.oldStorageVolumeId(), sealed[0].stored().objectKey(), e.encryptedSizeBytes(), e.ciphertextSha256()),
                     new DocumentCryptoMetadata(expected.documentId(), expected.tenantId(), e.cryptoProfile(), e.cryptoVersion(), e.keyProviderId(),
-                            e.protectedDataKeyReference(), e.keyProviderVersion()), expected.oldContentSha256(), expected.oldContentSizeBytes(), completedAt));
+                            e.protectedDataKeyReference(), e.keyProviderVersion(), 0), expected.oldContentSha256(), expected.oldContentSizeBytes(), completedAt));
             if (expected.accessRequestId() != null) held.markApplied(expected.tenantId(), expected.accessRequestId(), completedAt);
         }
 
@@ -458,7 +463,7 @@ public class CorrectiveRedactionService {
                         expected.newEncryptedSizeBytes(), expected.newIntegrityValue()),
                 new DocumentCryptoMetadata(expected.documentId(), expected.tenantId(),
                         expected.newCryptoProfile(), expected.newCryptoVersion(), expected.newKeyProviderId(),
-                        expected.newProtectedDataKeyReference(), expected.newKeyProviderVersion()),
+                        expected.newProtectedDataKeyReference(), expected.newKeyProviderVersion(), oldCrypto.objectVersion() + 1),
                 completedAt);
 
         audit.append(new AuditEvent(
@@ -484,7 +489,7 @@ public class CorrectiveRedactionService {
         FixedPlaintextBuffer plaintext = new FixedPlaintextBuffer(Math.toIntExact(expectedSize), document.contentSha256());
         try (InputStream raw = provider.open(document.tenantId(), volume, storageRef.objectKey());
              DigestingCountingInputStream encrypted = new DigestingCountingInputStream(raw)) {
-            crypto.decrypt(StreamingCryptoPort.Binding.document(document.tenantId(), document.documentId()), envelope(cryptoMetadata, storageRef), encrypted, plaintext);
+            crypto.decrypt(StreamingCryptoPort.Binding.document(document.tenantId(), document.documentId(), cryptoMetadata.objectVersion()), envelope(cryptoMetadata, storageRef), encrypted, plaintext);
             plaintext.finish();
             if (encrypted.count() != storageRef.encryptedSizeBytes()
                     || !encrypted.sha256().equals(storageRef.integrityValue())) {
@@ -508,7 +513,7 @@ public class CorrectiveRedactionService {
             plaintext = new FixedPlaintextBuffer(Math.toIntExact(op.newContentSizeBytes()), op.newContentSha256());
             try (InputStream raw = provider.open(op.tenantId(), volume, op.newObjectKey());
                  DigestingCountingInputStream encrypted = new DigestingCountingInputStream(raw)) {
-                crypto.decrypt(StreamingCryptoPort.Binding.document(op.tenantId(), op.documentId()),
+                crypto.decrypt(StreamingCryptoPort.Binding.document(op.tenantId(), op.documentId(), crypto(op).objectVersion() + 1),
                         new StreamingCryptoPort.CryptoEnvelope(
                                 op.newCryptoProfile(), op.newCryptoVersion(), op.newKeyProviderId(),
                                 op.newProtectedDataKeyReference(), op.newKeyProviderVersion(),

@@ -82,8 +82,8 @@
 param(
     [string]$Jar,
     # The first changeset the upgrade applies; the scratch database is built up to the one before it.
-    [ValidateSet('026', '027', '028', '029', '030', '031', '032', '033', '034', '035', '036', '037', '038', '039', '040', '041', '042', '043', '044', '045', '046')]
-    [string]$From = '046',
+    [ValidateSet('026', '027', '028', '029', '030', '031', '032', '033', '034', '035', '036', '037', '038', '039', '040', '041', '042', '043', '044', '045', '046', '047')]
+    [string]$From = '047',
     # Task 0052: documents in QuarantineScalePostgresTest's one incident (250,000 as in CI; 1,000,000 for the local run).
     [ValidateRange(1000, 5000000)]
     [int]$QuarantineScale = 250000,
@@ -108,7 +108,7 @@ $db = 'sdv_schema_test'
 $owner = 'sdv_schema_owner'
 $hostUrl = 'jdbc:postgresql://localhost:5433/' + $db
 # In order. The upgrade applies every changeset from -From on.
-$checked = @('022-retention-policy-creator-name', '023-document-sensitivity-level', '024-record-sensitivity-levels', '025-role-separation', '026-legal-holds', '027-access-requests', '028-sensitivity-level-changes', '029-document-duplicate-receipts', '030-tenant-time-zone', '031-intake-report-indexes', '032-steward-notices', '033-unidentified-intake-attempts', '034-unidentified-intake-attempt-counts', '035-drop-old-identity', '036-quarantine', '037-sealed-audit', '038-quarantine-filter-blocking', '039-quarantine-scale', '040-report-storage', '041-report-activity', '042-restrictions-indexes', '043-held-redaction', '044-hold-release', '045-usage-export-anchor', '046-usage-named-seats')
+$checked = @('022-retention-policy-creator-name', '023-document-sensitivity-level', '024-record-sensitivity-levels', '025-role-separation', '026-legal-holds', '027-access-requests', '028-sensitivity-level-changes', '029-document-duplicate-receipts', '030-tenant-time-zone', '031-intake-report-indexes', '032-steward-notices', '033-unidentified-intake-attempts', '034-unidentified-intake-attempt-counts', '035-drop-old-identity', '036-quarantine', '037-sealed-audit', '038-quarantine-filter-blocking', '039-quarantine-scale', '040-report-storage', '041-report-activity', '042-restrictions-indexes', '043-held-redaction', '044-hold-release', '045-usage-export-anchor', '046-usage-named-seats', '047-document-object-version')
 $start = [array]::IndexOf(($checked | ForEach-Object { $_.Substring(0, 3) }), $From)
 $newChangesets = @($checked[$start..($checked.Count - 1)])
 $newChangeset = $newChangesets[0]
@@ -176,6 +176,10 @@ $anchorTableBefore = if ($has045) { '0' } else { '1' }
 $has046 = $newChangesets -contains '046-usage-named-seats'
 $hasSeatsTableSql = "select count(*) from information_schema.tables where table_name = 'usage_named_seats';"
 $seatsTableBefore = if ($has046) { '0' } else { '1' }
+# Task 0091: 047 adds the stored document's version.
+$has047 = $newChangesets -contains '047-document-object-version'
+$hasObjectVersionSql = "select count(*) from information_schema.columns where table_name='document_crypto_metadata' and column_name='object_version';"
+$objectVersionBefore = if ($has047) { '0' } else { '1' }
 $platformRuns = @('identity V1 (platform-core)', 'identity V2 (platform-core)', 'identity V3 (platform-core)', 'identity V4 (platform-core)', 'identity V5 (platform-core)', 'licensing V1 (platform-core)', 'licensing V2 (platform-core)')
 # Task 0033: an uncorrected copy received at the previous version, which 032 must turn into one stored notice.
 $oldCopyEvent = '50000000-0000-0000-0000-0000000000c1'
@@ -250,7 +254,7 @@ function Invoke-SchemaStep([string[]]$StepArgs) {
 $otherTablesSql = @"
 select string_agg(t.relname || '=' || (xpath('/row/c/text()', query_to_xml(format('select count(*) || '':'' || coalesce(md5(string_agg(x::text, ''|'' order by x::text)), '''') as c from %I x', t.relname), false, true, '')))[1]::text, ',' order by t.relname)
   from pg_stat_user_tables t
- where t.relname not like 'idn_%' and t.relname not like 'lic_%' and t.relname not in ('usage_export_anchor', 'usage_named_seats', 'enterprise_identity_connections', 'enterprise_identity_connection_history', 'documents', 'record_sensitivity_levels', 'role_conflict_problems', 'role_group_mappings_seen', 'role_mapping_notices', 'legal_holds', 'access_requests', 'sensitivity_level_changes', 'document_duplicate_receipts', 'tenants', 'steward_notices', 'unidentified_intake_attempts', 'quarantine_incidents', 'quarantined_documents', 'quarantine_release_requests', 'audit_reports', 'report_storage_counts', 'report_activity_counts', 'report_activity_people', 'report_activity_days', 'held_redactions', 'sealed_originals', 'databasechangelog', 'databasechangeloglock');
+ where t.relname not like 'idn_%' and t.relname not like 'lic_%' and t.relname not in ('usage_export_anchor', 'usage_named_seats', 'document_crypto_metadata', 'enterprise_identity_connections', 'enterprise_identity_connection_history', 'documents', 'record_sensitivity_levels', 'role_conflict_problems', 'role_group_mappings_seen', 'role_mapping_notices', 'legal_holds', 'access_requests', 'sensitivity_level_changes', 'document_duplicate_receipts', 'tenants', 'steward_notices', 'unidentified_intake_attempts', 'quarantine_incidents', 'quarantined_documents', 'quarantine_release_requests', 'audit_reports', 'report_storage_counts', 'report_activity_counts', 'report_activity_people', 'report_activity_days', 'held_redactions', 'sealed_originals', 'databasechangelog', 'databasechangeloglock');
 "@
 # Task 0032: tenants with every column it had before 030 (030 adds time_zone, null for every existing tenant).
 $tenantsOldColumnsSql = "select count(*) || ':' || md5(string_agg((to_jsonb(x) - 'time_zone')::text, '|' order by x.tenant_id)) from tenants x;"
@@ -353,6 +357,7 @@ revoke all on database $db from public;
     Assert-That ((Get-Value $hasFilterColumnsSql) -eq $filterColumnsBefore) "the quarantine filter columns should $(if ($has038) { 'not ' })exist at the previous version"
     Assert-That ((Get-Value $hasHeldTablesSql) -eq $heldTablesBefore) "the held-redaction tables should $(if ($has043) { 'not ' })exist at the previous version"
     Assert-That ((Get-Value $hasHoldColumnSql) -eq $holdColumnBefore) "access_requests.hold_id should $(if ($has044) { 'not ' })exist at the previous version"
+    Assert-That ((Get-Value $hasObjectVersionSql) -eq $objectVersionBefore) "document_crypto_metadata.object_version should $(if ($has047) { 'not ' })exist at the previous version"
     Assert-That ((Get-Value $hasSeatsTableSql) -eq $seatsTableBefore) "usage_named_seats should $(if ($has046) { 'not ' })exist at the previous version"
     Assert-That ((Get-Value $hasAnchorTableSql) -eq $anchorTableBefore) "usage_export_anchor should $(if ($has045) { 'not ' })exist at the previous version"
     Assert-That ((Get-Value $hasRestrictionIndexesSql) -eq $restrictionIndexesBefore) "the restrictions indexes should $(if ($has042) { 'not ' })exist at the previous version"
@@ -556,6 +561,7 @@ insert into unidentified_intake_attempts(attempt_id, tenant_id, occurred_at, cal
             Assert-That ($upgradeText.Contains($c)) "the reviewable SQL lacks $c"
         }
     }
+    if ($has047) { Assert-That ($upgradeText.Contains('add column object_version')) 'the reviewable SQL lacks add column object_version' }
     if ($has046) { Assert-That ($upgradeText.Contains('create table usage_named_seats')) 'the reviewable SQL lacks create table usage_named_seats' }
     if ($has045) { Assert-That ($upgradeText.Contains('create table usage_export_anchor')) 'the reviewable SQL lacks create table usage_export_anchor' }
     if ($has044) {
@@ -967,6 +973,11 @@ rollback;
         Write-Step '4q. After 039: quarantine counts on the incident' $w.Elapsed.TotalSeconds 'thirteen new columns, two triggers; rows at 038 get their received time and are counted; level filled, release and new row move the counts; checks refuse a bad level, counts that do not add up, no received time'
         $w = [System.Diagnostics.Stopwatch]::StartNew()
     }
+    if ($has047) {
+        Assert-That ((Get-Value $hasObjectVersionSql) -eq '1' -and (Get-Value 'select count(*) from document_crypto_metadata where object_version <> 1;') -eq '0') 'every stored document should be at version 1'
+        Write-Step '4y. After 047: the stored document''s version' $w.Elapsed.TotalSeconds 'one column, every document at version 1'
+        $w = [System.Diagnostics.Stopwatch]::StartNew()
+    }
     if ($has046) {
         Assert-That ((Get-Value $hasSeatsTableSql) -eq '1' -and (Get-Value 'select count(*) from usage_named_seats;') -eq '0') 'usage_named_seats should be there, empty'
         Write-Step '4x. After 046: named seats' $w.Elapsed.TotalSeconds 'one table, empty'
@@ -1037,7 +1048,7 @@ rollback;
         Write-Step '4r. After 040: Storage and retention report counts' $w.Elapsed.TotalSeconds 'table there and empty; checks refuse a negative time, counts not an object, an unknown entity'
         $w = [System.Diagnostics.Stopwatch]::StartNew()
     }
-    if ($has027 -or $has028 -or $has029 -or $has030 -or $has031 -or $has032 -or $has033 -or $has034 -or $has035 -or $has036 -or $has037 -or $has038 -or $has039 -or $has040 -or $has041 -or $has042 -or $has043 -or $has044 -or $has045 -or $has046) {
+    if ($has027 -or $has028 -or $has029 -or $has030 -or $has031 -or $has032 -or $has033 -or $has034 -or $has035 -or $has036 -or $has037 -or $has038 -or $has039 -or $has040 -or $has041 -or $has042 -or $has043 -or $has044 -or $has045 -or $has046 -or $has047) {
 
         # The application's own repositories and services against this database: holds and the retention cleanup
         # (LegalHoldPostgresTest), requests, grants, expiry and the table's checks (AccessRequestPostgresTest), exact

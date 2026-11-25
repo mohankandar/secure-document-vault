@@ -15,20 +15,23 @@ public interface StreamingCryptoPort {
 
     void decrypt(Binding binding, CryptoEnvelope envelope, InputStream ciphertext, OutputStream plaintext) throws IOException;
 
-    /** The entity, the document and, for a sealed original, its own ID. */
-    record Binding(UUID entityId, UUID documentId, UUID sealedId) {
+    /** The entity, the document and its version (task 0091); for a sealed original its own ID and no version (0). */
+    record Binding(UUID entityId, UUID documentId, int version, UUID sealedId) {
         public Binding {
             if (entityId == null || documentId == null) {
                 throw new com.sdv.platform.domain.error.InternalCheckFailed("A stored document's ciphertext needs its entity and document.");
             }
+            if (sealedId == null ? version < 1 : version != 0) {
+                throw new com.sdv.platform.domain.error.InternalCheckFailed("A stored document's ciphertext needs its version, a sealed original's has none.");
+            }
         }
 
-        public static Binding document(UUID entityId, UUID documentId) {
-            return new Binding(entityId, documentId, null);
+        public static Binding document(UUID entityId, UUID documentId, int version) {
+            return new Binding(entityId, documentId, version, null);
         }
 
         public static Binding sealed(UUID entityId, UUID documentId, UUID sealedId) {
-            return new Binding(entityId, documentId, java.util.Objects.requireNonNull(sealedId, "sealedId"));
+            return new Binding(entityId, documentId, 0, java.util.Objects.requireNonNull(sealedId, "sealedId"));
         }
     }
 
