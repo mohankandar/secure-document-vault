@@ -1,0 +1,12 @@
+{
+  "customer": "Example Customer Ltd",
+  "tenantId": "new",
+  "version": 1,
+  "kind": "NON_PRODUCTION",
+  "deployment": "ON_PREM",
+  "startsOn": "2026-12-01",
+  "expiresOn": "2099-11-30",
+  "entities": [
+    { "slotId": "new", "storageGb": 100, "concurrentSeats": 25, "namedSeats": 50 }
+  ]
+}

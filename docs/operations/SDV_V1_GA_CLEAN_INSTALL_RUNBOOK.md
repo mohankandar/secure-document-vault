@@ -273,6 +273,51 @@ step, setup (it stores the licence and writes `platform-tenant.properties`), the
   start a new series, which is in the audit.
 - **Local development:** a new database needs `.\Seed-SDV-Canvas-Demo.ps1 -SetupOnly` before Vero's first start.
 
+### Release licence keys
+
+For the owner; a customer never sees this. A release build starts only with a licence signed with a key it trusts (tasks 0073
+and 0075). The signing key is made and used by the owner alone, on the owner's computer: **no coding session runs these two
+scripts with a real key, opens its folder or sees the key.** Windows PowerShell 5.1, after Vero was built once on this computer.
+
+1. Make a folder outside every repository and outside folders that are copied to the cloud (OneDrive), on an encrypted drive
+   (BitLocker): `New-Item -ItemType Directory D:\vero-licence-keys`.
+2. Make the key, in the checkout of a new branch from `release/vero-r7`:
+
+   ```powershell
+   .\New-SDV-ReleaseLicenceKey.ps1 -KeyFolder D:\vero-licence-keys -KeyId vero-release-2026
+   ```
+
+   It writes `vero-release-2026.private-key` (this Windows user only) and `vero-release-2026.public.json` to the folder, and the
+   public key to `backend\licence-build\release`. It never replaces a key and prints nothing secret.
+3. **Offline copy, at once:** copy the private key file to two encrypted USB sticks (BitLocker To Go), kept in two places, with
+   the stick's password kept apart from it. Not by e-mail, not in a chat, a ticket, a cloud folder or a repository. Compare the
+   copy: `Get-FileHash` of both files shows the same value.
+4. Commit `backend\licence-build\release` (two files, public only) and have it merged. From the next release build on, licences
+   of this key are accepted.
+5. Sign a licence. Copy `dev\licence\licence-input.example.json` to a folder outside the repository and fill it in: customer,
+   entities, dates, storage, people at the same time, named people. A field the script doesn't know, a price for example, refuses the file.
+
+   ```powershell
+   .\New-SDV-Licence.ps1 -KeyFolder D:\vero-licence-keys -KeyId vero-release-2026 -InputFile D:\licences\acme-1.json -OutFile D:\licences\acme-1.licence.json
+   ```
+
+   `"tenantId": "new"` (version 1) and `"slotId": "new"` make the IDs, which it shows: write them into the input file and keep
+   it. A renewal is the same file with the same IDs, the next `version` and new dates. `kind`: `PRODUCTION`, `NON_PRODUCTION`
+   (testers: `TEN-VERO-TESTERS-0001` and its two slots) or `INSTALL` (at most 60 days). The licence file isn't secret.
+
+| It says | Do |
+|---|---|
+| The key is listed, or the file is there, already | Give a new key a new `-KeyId`. Nothing was changed |
+| The public key isn't in the release build | Run again with `-PublishOnly` |
+| The release build doesn't trust the key | The checkout has no such public key: update it, or `-PublishOnly` |
+| The private key isn't the one the release build trusts | Wrong folder or file: take the offline copy |
+
+**Lost key:** make a new one with a new `-KeyId` and ship a release; licences signed before keep working. Never take an old key
+out of the release build while a licence signed with it is in use. **Somebody else may have the key:** make a new one, ship a
+release without the old one, and sign every customer's licence again, as its next version, before they install that release.
+
+`.\Test-SDV-ReleaseLicenceKey.ps1` checks both scripts with throwaway keys in a temporary folder.
+
 ### The checks
 
 Platform operations, Health and IT, Problems list what Vero depends on: state, code, why, what to do. The same list is on
