@@ -290,6 +290,34 @@ class PlatformRecordValuesPostgresTest {
         assertEquals(0, db.queryForObject("select count(*) from submissions where tenant_id = ?", Integer.class, entity));
     }
 
+    /** Task 0079: rank by rank gives the same order as ranking every record: best match, then newest; every page in turn; nothing twice. */
+    @Test
+    void searchingEverywhereIsBestMatchFirstThenNewestOnEveryPage() {
+        String[][] rows = {{"901", "Big Auto loan"}, {"902", "auto"}, {"903", "Auto lease"}, {"auto", "Auto"}, {"904", "AUTO"}, {"905", "Autumn"}, {"906", "Semi auto"}, {"907", "Boat"}};
+        field(b, "ref", "Ref", true, MetadataNormalization.TRIM, MetadataSearchMode.EXACT);
+        field(b, "loanType", "Loan type", false, MetadataNormalization.TRIM, MetadataSearchMode.PARTIAL);
+        for (int i = 0; i < rows.length; i++) {
+            UUID s = deliver(b, Map.of("ref", rows[i][0], "loanType", rows[i][1]));
+            db.update("update submissions set created_at = now() - ? * interval '1 hour' where submission_id = ?", rows.length - i, s);
+        }
+        List<String> all = List.of("auto", "904", "902", "903", "906", "901");
+        for (int size : List.of(1, 2, 4, 50)) {
+            List<String> got = new ArrayList<>();
+            for (int page = 1; page <= 7; page++) {
+                business.search(entity, b, Map.of(), "auto", null, null, null, null, false, page, size, "maya", "c", Clearance.STANDARD_ONLY).records()
+                        .forEach(r -> got.add(r.identifiers().getFirst().value()));
+            }
+            assertEquals(all, got, "page size " + size);
+        }
+        // The repository's own pages, as deep as the results and beyond.
+        var criterion = new com.sdv.platform.application.port.BusinessRecordRepository.AnywhereCriterion(List.of(
+                new com.sdv.platform.application.port.BusinessRecordRepository.AnywhereField("ref", MetadataSearchMode.EXACT, List.of("auto"), true),
+                new com.sdv.platform.application.port.BusinessRecordRepository.AnywhereField("loanType", MetadataSearchMode.PARTIAL, List.of("auto"), false)));
+        for (int offset = 0; offset <= 7; offset++) {
+            assertEquals(Math.max(0, Math.min(2, 6 - offset)), records.findMatchingSubmissions(entity, b, List.of(), criterion, null, null, null, null, false, offset, 2).size(), "offset " + offset);
+        }
+    }
+
     private UUID typed(String key, MetadataFieldType type) {
         Instant now = Instant.now();
         tx.executeWithoutResult(s -> fields.insert(new MetadataFieldDefinition(UUID.randomUUID(), entity, b, key, 1, key, type, false, false, true,

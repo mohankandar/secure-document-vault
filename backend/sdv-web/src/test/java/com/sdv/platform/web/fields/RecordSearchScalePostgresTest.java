@@ -163,6 +163,9 @@ class RecordSearchScalePostgresTest {
         assertEquals(1, timed("sensitive name and identifier", Map.of("lastName", "Patel", "contractNumber", "700000005000"), null));
         timed("everywhere, one record", Map.of(), "700000050000");
         timed("everywhere, nearly every record", Map.of(), "mortgage");
+        timed("everywhere, a part of nearly every value", Map.of(), "ortgage");
+        timed("everywhere, the start of every identifier, part of some values", Map.of(), "70");
+        timed("everywhere, none has it", Map.of(), "zeppelin");
         int[] n = {0};
         measured("intake: a delivery that makes a record", INTAKE_MS, () -> delivery("9000000000" + n[0]++, "Okafor"));
         // A record of its own per round: the bulk rows' names have no real key to open or replace.
