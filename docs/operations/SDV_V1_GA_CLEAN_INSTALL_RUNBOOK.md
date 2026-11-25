@@ -170,6 +170,54 @@ Once the clean-machine acceptance passes:
 - use that exact archive/hash for pilot deployment;
 - do not rebuild a different archive without repeating checksum + clean-install validation.
 
+## Before you install
+
+Read this first on a new server. The order: this section, "Two database users", "Keys for a customer" (Vault's part), "The
+schema step", setup (`docs/install/SETUP.md`), "The first start", activate the entities.
+
+| You need | Which |
+|---|---|
+| A server | Windows or Linux, its clock kept right (NTP) |
+| Java | 21, on the path of whoever runs Vero, setup and the schema step. Check: `java -version` |
+| PostgreSQL | 16 is what Vero is tested with. A database of Vero's own and two users. No extension is needed |
+| Vault | 1.17 is what Vero is tested with. Transit and AppRole, reached over https |
+| Login system | OpenID Connect, access tokens signed RS256, a public browser client, an API audience, a groups claim, one client for each sending system |
+| Web server | Serves the screens, does TLS, sends `/api/` to Vero |
+| Certificates | For the web address people use. If your own authority signed the certificate of Vault, the database or the login system: that authority's certificate as a PEM file |
+| Files from us | The application jar, the setup jar, `setup.ps1` or `setup.sh`, `Update-SDV-Schema.ps1` or `update-sdv-schema.sh`, `product-roles.json`, the screens (`dist`), your licence |
+| A service account | Runs Vero: write in Vero's working folder and the document folders, read on the login file, nothing more |
+| Backups | Database, document folders, Vault and settings together (`SDV_BACKUP_RESTORE_HA_RUNBOOK.md`), arranged before the first document |
+
+| From | To | Port |
+|---|---|---|
+| People's browsers | web server; login system | 443 |
+| Sending systems | web server (`/api/v1/ingestion/`); login system | 443 |
+| Web server | Vero | `SDV_SERVER_PORT`, 8280; closed to everyone else |
+| Vero, setup, schema step | PostgreSQL | 5432, or yours |
+| Vero, setup | Vault | 8200, or yours |
+| Vero | login system (discovery and keys) | 443 |
+
+**Your own certificate authority.** Vero and setup use Java's trust store for Vault, and Vero for the login system's signing
+keys. Make a trust store that also holds your authority, and name it for Vero and for setup. Linux:
+
+```sh
+cp "$JAVA_HOME/lib/security/cacerts" /opt/vero/vero-trust.jks
+"$JAVA_HOME/bin/keytool" -importcert -noprompt -alias company-ca -file company-ca.pem -keystore /opt/vero/vero-trust.jks -storepass changeit
+export JAVA_TOOL_OPTIONS="-Djavax.net.ssl.trustStore=/opt/vero/vero-trust.jks"
+```
+
+Windows:
+
+```powershell
+Copy-Item "$env:JAVA_HOME\lib\security\cacerts" C:\vero\vero-trust.jks
+& "$env:JAVA_HOME\bin\keytool.exe" -importcert -noprompt -alias company-ca -file company-ca.pem -keystore C:\vero\vero-trust.jks -storepass changeit
+$env:JAVA_TOOL_OPTIONS = '-Djavax.net.ssl.trustStore=C:\vero\vero-trust.jks'
+```
+
+(`changeit` is Java's own default for this file of public certificates, not a secret.) `PLATFORM_OUTBOUND_PRIVATE_CA_FILE`
+(SETUP.md section 5) is separate and needed too: the login system's discovery document is read with it. For the database, put
+TLS in its address: `jdbc:postgresql://db01:5432/vero?sslmode=verify-full&sslrootcert=/opt/vero/company-ca.pem`.
+
 ## Update the database
 
 From task 0013 on, **starting Vero never changes the database**. The customer's database team applies Vero's
@@ -215,6 +263,7 @@ step, setup (it stores the licence and writes `platform-tenant.properties`), the
   set PLATFORM_LICENSING_DB_PASSWORD=<the app user's password>
   java -cp sdv-web-<version>.jar -Dloader.main=com.documentplatform.licensing.command.LicenceCommand org.springframework.boot.loader.launch.PropertiesLauncher store --file licence.json --jdbc-url <url> --db-user <app user> --tenant-id <TEN-…> --product-code SDV
   ```
+  Linux: `read -rs PLATFORM_LICENSING_DB_PASSWORD; export PLATFORM_LICENSING_DB_PASSWORD` in place of the first line.
   `status` in place of `store --file …` shows it.
 - **Clock reset:** when the server clock was once far in the future, licence dates stay there. Ask for a clock reset file and
   apply it with `apply-reset --file reset.json` and the **schema owner's** database user. It works once, for a few days.
@@ -344,7 +393,7 @@ running app, local mode and the schema step).
 
 ### Sign-in in the browser, and serving the screens
 
-Vero's screens are the folder `dist` of the build. Your web server or proxy serves them, sends `/api/` to Vero, and does TLS.
+Vero's screens are the folder `dist` of the build (`frontend/sdv-ui/dist`). Your web server or proxy serves them, sends `/api/` to Vero, and does TLS.
 A person signs in at your login system (authorization code with PKCE); the browser then holds the tokens in memory only, so
 a reload or a new tab goes through the login system again, which usually asks nothing.
 
@@ -369,6 +418,9 @@ X-Content-Type-Options: nosniff
 Permissions-Policy: camera=(), microphone=(), geolocation=()
 ```
 
+Don't pass `/actuator/` on: probes reach Vero directly. The proxy's own limit on a request's size must not be below the sending
+systems' document limit (nginx: `client_max_body_size`). `dev/testers/Caddyfile` is an example for Caddy.
+
 The two font addresses may be left out: the screens then use fonts of the computer, and nothing is loaded from outside.
 
 **Check it:** Test sign-in (IT, Sign-in) checks what Vero can see. It can't see whether the browser may call the token address:
@@ -384,7 +436,7 @@ section 5; those with a section of their own above are not repeated.
 | `SDV_SERVER_PORT` | `8280` | Vero's port. Keep it private: the proxy does TLS |
 | `SDV_DB_URL`, `SDV_DB_USERNAME`, `SDV_DB_PASSWORD` | none | The app user's connection (below) |
 | `SDV_DB_POOL_MAX`, `SDV_DB_POOL_MIN` | `10`, `1` | Database connections of one Vero |
-| `SDV_KEY_SERVICE_ADDRESS` | none | Vault's address, https outside a test computer |
+| `SDV_KEY_SERVICE_ADDRESS` | none | Vault's address, https outside a test computer. An address in the login file counts first |
 | `SDV_VAULT_LOGIN_FILE` | `./vero-vault-login.properties` | A file with `platform.crypto.vault.role-id` and `.secret-id` (`Setup-SDV-VaultTransit.ps1` writes it). Other logins: `platform.crypto.vault.login=TOKEN_FILE` and `.token-file` |
 | `SDV_KEY_SERVICE_MOUNT` | `vero-transit` | The Transit mount with the customer's keys |
 | `SDV_CRYPTO_ENABLED` | `true` | `false` only in a local start (`SDV-KEY-001` otherwise) |
@@ -417,7 +469,8 @@ Licensing: "The licence" above.
 | Owner, for example `vero_owner` | The schema step only | Owns the database (or at least schema `public`): creates and changes tables and indexes |
 | App, for example `vero_app` | The running Vero (`SDV_DB_USERNAME`, `SDV_DB_PASSWORD`) | Connect, and `SELECT`, `INSERT`, `UPDATE`, `DELETE` on the tables, except the audit trail (`audit_events`) and the audit report register (`audit_reports`): `SELECT` and `INSERT` only. No create, no alter |
 
-Once, when the database is created (as a PostgreSQL superuser or the owner):
+Once, when the database is created, in `psql` as a PostgreSQL superuser, **before** the schema step (the default privileges
+cover only tables made afterwards). `...`: passwords of your own.
 
 ```sql
 create role vero_owner login password '...';
@@ -426,6 +479,7 @@ create database vero owner vero_owner;
 revoke all on database vero from public;
 grant connect on database vero to vero_app;
 \c vero
+-- PostgreSQL 14 and earlier (not tested) also need: grant usage, create on schema public to vero_owner;
 revoke create on schema public from public;
 grant usage on schema public to vero_app;
 -- Tables the owner creates later (first install and every upgrade) are readable and writable by the app user:
@@ -438,6 +492,7 @@ audit trail is append-only: one function (`sdv_refuse_append_only_change`) and i
 and `TRUNCATE` on `audit_events` and `audit_reports` for everyone, the owner included, and the schema step takes those
 rights back from every other user (the default privileges above give them to new tables). Do not grant them again;
 the triggers refuse them anyway.
+**Check it,** in `psql`: `\l vero` names `vero_owner` as the owner, and `\ddp` shows `vero_app=arwd/vero_owner`.
 `Test-SDV-CleanInstall.ps1` checks that Vero runs with such a user.
 
 ### Keys for a customer
@@ -455,6 +510,45 @@ The old `transit/` mount stays: an older build still reads the documents encrypt
 or seals a Vault and changes no mount, key, policy or role that is there; when something is there but different, it says so
 and changes nothing. Run again: "Everything is there already."
 
+**Without Windows**, the same with Vault's own command line, by the person who looks after Vault (`VAULT_ADDR` set, after
+`vault login`). The lines marked "must" are checks: when one answers otherwise, stop and compare, don't overwrite.
+
+```sh
+vault secrets list                          # vero-transit/ must not be there
+vault policy list                           # platform-crypto-app, -setup and -offboard must not be there
+vault read auth/approle/role/vero           # must find nothing
+vault secrets enable -path=vero-transit transit
+vault policy write platform-crypto-app - <<'HCL'
+path "vero-transit/datakey/plaintext/customer-*" { capabilities = ["update"] }
+path "vero-transit/decrypt/customer-*" { capabilities = ["update"] }
+path "vero-transit/rewrap/customer-*" { capabilities = ["update"] }
+path "vero-transit/hmac/customer-*" { capabilities = ["update"] }
+path "vero-transit/keys/customer-*" { capabilities = ["read"] }
+path "secret/data/platform/*" { capabilities = ["read"] }
+HCL
+vault policy write platform-crypto-setup - <<'HCL'
+path "vero-transit/keys/+" { capabilities = ["create", "update", "read"] }
+path "vero-transit/keys/+/rotate" { capabilities = ["update"] }
+HCL
+vault policy write platform-crypto-offboard - <<'HCL'
+path "vero-transit/keys/+" { capabilities = ["read", "delete"] }
+path "vero-transit/keys/+/config" { capabilities = ["update"] }
+HCL
+vault auth enable approle                   # leave out when "vault auth list" shows approle/
+vault write auth/approle/role/vero token_policies=platform-crypto-app token_no_default_policy=true bind_secret_id=true token_ttl=1h token_max_ttl=4h
+( umask 077; set -C; { echo "platform.crypto.vault.address=$VAULT_ADDR"
+  echo "platform.crypto.vault.login=APPROLE"
+  echo "platform.crypto.vault.approle-mount=approle"
+  echo "platform.crypto.vault.transit-mount=vero-transit"
+  echo "platform.crypto.vault.role-id=$(vault read -field=role_id auth/approle/role/vero/role-id)"
+  echo "platform.crypto.vault.secret-id=$(vault write -f -field=secret_id auth/approle/role/vero/secret-id)"
+} > vero-vault-login.properties )
+```
+
+Move the file to Vero's working folder and make the service account its owner (`chown vero`). On Windows the script's file can
+be read only by the person who ran it: give Vero's service account read rights to it. The file's address and mount count
+before `SDV_KEY_SERVICE_ADDRESS` and `SDV_KEY_SERVICE_MOUNT`.
+
 | It says | Do |
 |---|---|
 | Vault is sealed | Unseal it as usual, run again |
@@ -468,9 +562,25 @@ The customer's keys are made by the setup command, with the `-setup` token of th
 
 ```powershell
 $env:PLATFORM_SETUP_VAULT_ADDR = '<Vault address>'; $env:PLATFORM_SETUP_VAULT_TRANSIT_MOUNT = 'vero-transit'
-$env:PLATFORM_SETUP_VAULT_TOKEN = (Read-Host 'setup token')
+$env:PLATFORM_SETUP_VAULT_TOKEN = [Net.NetworkCredential]::new('', (Read-Host 'setup token' -AsSecureString)).Password
 .\setup.ps1 apply -Licence licence.json -Signin signin.json
+.\setup.ps1 plan -Licence licence.json -Signin signin.json
+Remove-Item Env:PLATFORM_SETUP_VAULT_TOKEN
 ```
+
+Linux:
+
+```sh
+export PLATFORM_SETUP_VAULT_ADDR='<Vault address>' PLATFORM_SETUP_VAULT_TRANSIT_MOUNT=vero-transit
+read -rs PLATFORM_SETUP_VAULT_TOKEN; export PLATFORM_SETUP_VAULT_TOKEN
+./setup.sh apply --licence licence.json --signin signin.json
+./setup.sh plan --licence licence.json --signin signin.json
+unset PLATFORM_SETUP_VAULT_TOKEN
+```
+
+**Check it:** the second command, `plan`, shows the customer keys as `unchanged`. `SETUP_KEY_SERVICE_FAILED` names a `CRYPTO_…`
+code: `CRYPTO_KEY_SERVICE_UNREACHABLE` or `_TLS`, the address or certificate; `_SEALED`, unseal Vault; `CRYPTO_PERMISSION_DENIED`,
+the token hasn't the `-setup` policy, has ended, or the mount is another one.
 
 Vero doesn't call the key service when it starts. While it is away, documents can't be stored or read (503), everything else goes
 on. **Documents of versions before 0076 can't be read** by this one; keep the older build and its database to read them.
@@ -501,7 +611,7 @@ The connection comes from parameters or environment variables:
 | Owner user | `-Username vero_owner` | `--username …` | `SDV_SCHEMA_DB_USERNAME` |
 | Password | typed when asked | typed when asked | `SDV_SCHEMA_DB_PASSWORD` |
 
-The password is never a parameter, and Vero never stores any of these.
+The password is never a parameter, and Vero never stores any of these. Linux, once: `chmod +x update-sdv-schema.sh setup.sh`.
 
 | Step | What it does |
 |---|---|
@@ -525,12 +635,12 @@ Exit codes: 0 done, 2 wrong use (nothing was tried), 3 the database is newer tha
      `idn_schema_version` and `lic_schema_version`; when a later release has a platform run to do, `update` starts
      its history (`idn_schema_history`, `lic_schema_history`) at the version the tables are at.
 4. **Update:** `.\Update-SDV-Schema.ps1 update`. It ends with "Done: N changesets applied. You can start Vero now."
-5. **Start Vero** with the app user. The log says "Database schema check: the database matches this Vero version".
+5. First install: run setup now (SETUP.md); Vero starts only with your licence. **Start Vero** with the app user ("The first start"). The log says "Database schema check: the database matches this Vero version".
    Health shows no database notice.
 
 Running `status` or `update` again is safe: when nothing is left it says "Up to date".
 
-Then load sign-in, entities and sending systems with the setup command: `docs/install/SETUP.md`. The role mapping
+Setup loads sign-in, entities and sending systems: `docs/install/SETUP.md`. The role mapping
 file there also grants the Platform Operations Admin, once for the whole customer, on a row with `*` as its entity
 (platform-level grant, task 0057); the separation rules hold for it (never with Restricted Steward).
 
@@ -539,6 +649,57 @@ two licensing tables. Task 0067 (platform-core 0.7.0): this release's identity t
 `status` lists what is missing and `update` applies it. Before, task 0057 (platform-core 0.6.1): identity tables are at version 4 (`idn_platform_grant`). On a
 database whose identity tables are at version 3, `status` lists `identity V4 (platform-core)` and `update` applies it
 in the identity run; Vero refuses to start until then (`IDN_VERSION_OLDER`).
+
+### The first start
+
+After the schema step and setup. Unless `SDV_TENANT_FILE` and `SDV_VAULT_LOGIN_FILE` say otherwise, Vero reads
+`platform-tenant.properties` (setup wrote it in the folder it ran in) and `vero-vault-login.properties` from its **working
+folder**. Without `SDV_STORAGE_ALLOWED_ROOTS`, documents may be kept only in `data` there.
+
+Linux, as a service. `/etc/vero/vero.env` (owner root, mode 600) holds `SDV_DB_URL`, `SDV_DB_USERNAME`, `SDV_DB_PASSWORD`,
+`SDV_KEY_SERVICE_ADDRESS`, `SDV_AUTH_MODE=enterprise-jwt`, the `SDV_AUTH_JWT_*` settings, and `JAVA_TOOL_OPTIONS` if you made a
+trust store:
+
+```ini
+[Unit]
+Description=Vero
+After=network-online.target
+Wants=network-online.target
+[Service]
+User=vero
+WorkingDirectory=/opt/vero
+EnvironmentFile=/etc/vero/vero.env
+ExecStart=/usr/bin/java -jar /opt/vero/sdv-web-<version>.jar
+SuccessExitStatus=143
+Restart=always
+RestartSec=10
+[Install]
+WantedBy=multi-user.target
+```
+
+Save it as `/etc/systemd/system/vero.service`, then `systemctl daemon-reload` and `systemctl enable --now vero`. The log:
+`journalctl -u vero`.
+
+Windows: set the same settings in a PowerShell window and run `java -jar sdv-web-<version>.jar` in the working folder. For every
+day, run the same command with your service wrapper, as the service account, with that working folder and a restart on failure.
+Vero brings no Windows service of its own.
+
+**Check it,** on the server (Windows: `curl.exe`): `curl -i http://127.0.0.1:8280/actuator/health/readiness` answers 200 and
+`UP`, and the log says "Database schema check: the database matches this Vero version".
+
+| A start that stops says | Do |
+|---|---|
+| `SDV-SYS-003` | The database can't be reached: address, port, password, TLS |
+| `LIC_TABLES_MISSING`, `IDN_VERSION_OLDER` | Run the schema step |
+| `IDN_PRIVILEGES_MISSING`, `LIC_PRIVILEGES_MISSING` | The app user's rights ("Two database users") |
+| `LICENCE_MISSING` | Run setup, or store the licence ("The licence") |
+| `LICENCE_UNKNOWN_KEY_ID` | The licence isn't signed with a key of this build: ask your account manager |
+| `platform.licensing.tenant-id is missing` | `platform-tenant.properties` isn't in the working folder, and `SDV_CUSTOMER_ID` isn't set |
+| `CRYPTO_SETTINGS_INVALID` | The key service's settings that the log names |
+| `SDV-SYS-005`, `SDV-SYS-006`, `SDV-KEY-001` | The setting the log names ([error codes](../api/error-codes.md)) |
+
+Vero doesn't call Vault when it starts. Afterwards sign in as a Business Admin and activate the entity (SETUP.md section 4); as
+IT Admin run **Test sign-in**, add a storage volume, and look at **Problems**: every check works, the key service too.
 
 ### Checking it on a test computer
 

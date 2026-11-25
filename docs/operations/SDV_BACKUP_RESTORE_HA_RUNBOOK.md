@@ -82,6 +82,7 @@ Retain versioned deployment configuration sufficient to restore:
 - storage-provider/volume mappings;
 - key-provider endpoint, Transit mount and tenant-key prefix;
 - enterprise authentication issuer/JWKS/audience/claim mapping;
+- the setup files (sign-in, role mapping, client bindings), `platform-tenant.properties` and the licence file;
 - retention scheduler settings;
 - application artifact/container version;
 - TLS/ingress/runtime configuration.
@@ -98,7 +99,7 @@ Recommended V1 topology:
 - shared/redundant PostgreSQL service;
 - shared/redundant encrypted storage visible consistently to all nodes;
 - highly available key service;
-- load balancer/ingress health checks against `/actuator/health`;
+- load balancer/ingress health checks against `/actuator/health/readiness` (restart only on `/actuator/health/liveness`);
 - no sticky-session requirement for correctness.
 
 Before adding another active application node, verify it has identical trusted authentication configuration and equivalent connectivity to PostgreSQL, storage and key service.

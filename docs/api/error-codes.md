@@ -7,7 +7,7 @@ Every error from Vero comes back with one body: a short, stable `code`, a plain 
 ```
 
 - **Reference:** made by Vero for each request (task 0062: never the caller's own), the same as the `X-Correlation-Id` response header. It is on Vero's log line for the error, and on the audit event when one was written. Give it to support.
-- **Format:** `SDV-<AREA>-<NNN>`. `SDV` is the product. `AREA` is three letters: `SEN` sensitivity, `ROL` roles, `AUT` sign-in, `IDP` sign-in connections, `HLD` legal hold, `APR` approvals, `INT` intake, `RPT` reports, `SYS` the server as a whole, `STO` storage, `KEY` the key service, `DOC` viewing, print and download, `SCH` search.
+- **Format:** `SDV-<AREA>-<NNN>`. `SDV` is the product. `AREA` is three letters: `SEN` sensitivity, `ROL` roles, `AUT` sign-in, `IDP` sign-in connections, `ENT` entities, `HLD` legal hold, `QUA` quarantine, `AUD` the audit report, `APR` approvals, `INT` intake, `RPT` reports, `RST` restrictions, `FLD` fields, `LIC` the licence, `SYS` the server as a whole, `STO` storage, `KEY` the key service, `DOC` viewing, print and download, `SCH` search.
 - **Stable:** a code never changes meaning once it is released. A code that is no longer used stays listed and is marked retired. Its number is never reused.
 - **Messages** may be reworded. Programs should read the `code`, not the message.
 - **Not yet coded:** errors that are not listed here still send a generic code (`BAD_REQUEST`, `CONFLICT`, `NOT_FOUND`, `FORBIDDEN` and so on). They get an `SDV-` code when their area is worked on. The failure catalog at the end of this file (task 0034) lists every such point and proposes its code.
