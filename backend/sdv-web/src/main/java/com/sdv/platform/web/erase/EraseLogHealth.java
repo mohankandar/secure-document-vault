@@ -24,7 +24,7 @@ public class EraseLogHealth implements HealthIndicator {
         if (s.checkedAt() != null) h.withDetail("checkedAt", s.checkedAt().toString());
         EraseGuard.ApplyFailure f = s.lastFailure();
         if (f != null) {
-            h.withDetail("lastFailure", "entry " + f.seq() + " " + f.kind() + " " + f.recordId() + " " + (f.handlerCode() == null ? f.code().code() : f.handlerCode()));
+            h.withDetail("lastFailure", "entry " + f.seq() + " " + f.kind() + " " + f.recordId() + " " + EraseIds.shown(f.handlerCode() == null ? f.code().code() : f.handlerCode()));
         }
         return h.build();
     }

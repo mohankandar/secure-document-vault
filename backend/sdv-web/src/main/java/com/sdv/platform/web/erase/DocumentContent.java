@@ -73,11 +73,11 @@ class DocumentContent {
     }
 
     static EraseHandlerException failed() {
-        return new EraseHandlerException(SdvErrorCode.ERS_003.code(), "a file can't be erased: its folder, share or rights");
+        return new EraseHandlerException(EraseIds.handlerCode(SdvErrorCode.ERS_003), "a file can't be erased: its folder, share or rights");
     }
 
     static EraseHandlerException refused() {
-        return new EraseHandlerException(SdvErrorCode.ERS_004.code(), "it is kept: a legal hold, a quarantine, or its state changed");
+        return new EraseHandlerException(EraseIds.handlerCode(SdvErrorCode.ERS_004), "it is kept: a legal hold, a quarantine, or its state changed");
     }
 
     /** True while the document's file is there and its key too. */

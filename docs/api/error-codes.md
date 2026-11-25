@@ -1172,7 +1172,7 @@ Task 0037: SYS-003 to SYS-012 are start-up codes. A start that stops prints one 
 
 ### SDV-ERS-003: a logged erasure can't be finished
 
-- **HTTP status:** none. A check on Platform operations, Health: the entry's number, kind and record ID; and `handlerCode` in the log.
+- **HTTP status:** none. A check on Platform operations, Health: the entry's number, kind and record ID; and the `eraseLogState` health details. (In the erase log module it is written `SDV_ERS_003`.)
 - **Meaning:** a file could not be erased: its folder or share isn't there, or Vero may not delete in it. The entry stays in the log and everything after it waits, so that the log and the database stay in step.
 - **What the user should do:** nothing.
 - **What support should tell the customer:** IT makes the folder reachable or gives the rights back. The next cleanup or erasure finishes the entry first.

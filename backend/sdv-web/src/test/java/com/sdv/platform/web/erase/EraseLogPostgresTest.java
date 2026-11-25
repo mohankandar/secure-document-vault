@@ -181,11 +181,11 @@ class EraseLogPostgresTest {
         RetentionDeletionService.SweepResult swept = retention.sweep(100);
         assertEquals(1, swept.failed(), "the first one stops the run");
         assertEquals(0, swept.completed());
-        assertEquals("SDV-ERS-003", erase.guard.state().lastFailure().handlerCode());
+        assertEquals("SDV_ERS_003", erase.guard.state().lastFailure().handlerCode());
         assertEquals(0, events("DOCUMENT_RETENTION_DELETED", a) + events("DOCUMENT_RETENTION_DELETED", b));
         assertTrue(files.contains("file-" + a) && files.contains("file-" + b));
         com.documentplatform.monitoring.Verdict shown = com.sdv.platform.web.monitoring.EraseLogVerdict.of(erase.guard.state());
-        assertNotNull(shown);
+        assertEquals("SDV-ERS-003", shown.details().get("code"));
 
         folderAway = false;
         assertEquals(0, retention.sweep(100).failed());

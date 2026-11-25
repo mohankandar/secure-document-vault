@@ -125,7 +125,7 @@ public class VeroMonitoringConfiguration {
         EraseGuard.ApplyFailure f = state.lastFailure();
         if (f == null) return Verdict.working();
         return Verdict.problems(VeroCheckCode.ERASE_PENDING, Map.of("seq", f.seq(), "kind", f.kind(), "record", f.recordId(),
-                "code", f.handlerCode() == null ? f.code().code() : f.handlerCode()));
+                "code", com.sdv.platform.web.erase.EraseIds.shown(f.handlerCode() == null ? f.code().code() : f.handlerCode())));
     }
 
     @Bean

@@ -63,7 +63,7 @@ public class LoggedErasures implements ErasePort {
             try {
                 outside.executeWithoutResult(status -> eraser.erase(request));
             } catch (EraseLogException ex) {
-                throw new EraseFailed(ex.handlerCode().orElse(ex.code().code()), ex);
+                throw new EraseFailed(EraseIds.shown(ex.handlerCode().orElse(ex.code().code())), ex);
             }
             return null;
         });

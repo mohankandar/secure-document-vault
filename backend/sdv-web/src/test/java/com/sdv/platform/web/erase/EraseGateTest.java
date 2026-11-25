@@ -91,7 +91,7 @@ class EraseGateTest {
         assertEquals(com.documentplatform.monitoring.CheckState.WORKING, EraseLogVerdict.of(guard.state()).state());
 
         String id = UUID.randomUUID().toString();
-        state(null, new EraseGuard.ApplyFailure(4, "document", "document", id, "SDV-ERS-003", EraseLogError.ERASE_HANDLER_FAILED, Instant.now()));
+        state(null, new EraseGuard.ApplyFailure(4, "document", "document", id, "SDV_ERS_003", EraseLogError.ERASE_HANDLER_FAILED, Instant.now()));
         assertTrue(gate.open());
         assertEquals(com.documentplatform.monitoring.CheckState.HAVING_PROBLEMS, EraseLogVerdict.of(guard.state()).state());
         assertTrue(id.equals(EraseLogVerdict.of(guard.state()).details().get("record")));
