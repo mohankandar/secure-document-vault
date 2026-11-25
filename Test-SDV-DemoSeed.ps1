@@ -47,7 +47,6 @@ $jarPath = Join-Path $root 'backend\sdv-web\target\local\sdv-web-0.1.0-SNAPSHOT-
 $frontend = Join-Path $root 'frontend\sdv-ui'
 $run = Join-Path $root ('.runtime\seed-test\' + (Get-Date -Format 'yyyyMMdd-HHmmss'))
 New-Item -ItemType Directory -Force -Path $run | Out-Null
-$tokenFile = if ($env:SDV_VAULT_TOKEN_FILE) { $env:SDV_VAULT_TOKEN_FILE } else { Join-Path (Split-Path -Parent $root) 'secrets\sdv-app.token' }
 
 function Pass([string]$m) { Write-Host "PASS  $m" -ForegroundColor Green }
 function Assert-That([bool]$c, [string]$m) { if (-not $c) { throw "FAIL: $m" }; Pass $m }
@@ -59,7 +58,6 @@ function Sql([string]$Database, [string]$Text) {
 function Scalar([string]$Text) { Sql $db $Text }
 
 if (-not (Test-Path -LiteralPath $jarPath)) { throw "Jar not found: $jarPath. Run .\Build-SDV-All.ps1 first." }
-if (-not (Test-Path -LiteralPath $tokenFile -PathType Leaf)) { throw "The application Vault token file is missing: $tokenFile (the same file start-local uses)." }
 if (Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue) { throw "Port $Port is in use." }
 
 $exists = Sql 'postgres' "select count(*) from pg_database where datname='$db';"
@@ -84,12 +82,13 @@ try {
     } finally { Remove-Item Env:SDV_SCHEMA_DB_PASSWORD -ErrorAction SilentlyContinue }
     $ErrorActionPreference = 'Stop'
     Assert-That ($schemaExit -eq 0) "Schema step on the scratch database (exit $schemaExit; log: $run\schema.log)"
+    # Task 0076: a scratch key service, never sdv-vault.
+    & (Join-Path $root 'scripts\local\Use-SdvScratchVault.ps1')
     # Task 0075: Vero starts only with a licence.
     $ErrorActionPreference = 'Continue'
     & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $root 'Seed-SDV-Canvas-Demo.ps1') -SetupOnly -Database $db *> (Join-Path $run 'setup.log')
     $setupExit = $LASTEXITCODE; $ErrorActionPreference = 'Stop'
     Assert-That ($setupExit -eq 0) "Setup on the scratch database, before the first start (exit $setupExit; log: $run\setup.log)"
-    $env:SDV_KEY_PROVIDER = 'vault'; $env:SDV_VAULT_BASE_URL = 'http://127.0.0.1:8200'; $env:SDV_VAULT_TOKEN_FILE = $tokenFile
     $env:SDV_LOCAL_DB_PASSWORD = $localPassword
     try {
         # Task 0084: from the repository root, as start-local does: the local profile's file paths are relative to it.
@@ -97,7 +96,7 @@ try {
             -ArgumentList @('-jar', "`"$jarPath`"", '--spring.profiles.active=local', "--server.port=$Port", "--spring.datasource.url=jdbc:postgresql://localhost:5433/$db") `
             -RedirectStandardOutput (Join-Path $run 'vero.out.log') -RedirectStandardError (Join-Path $run 'vero.err.log')
     } finally {
-        foreach ($k in 'SDV_KEY_PROVIDER', 'SDV_VAULT_BASE_URL', 'SDV_VAULT_TOKEN_FILE', 'SDV_LOCAL_DB_PASSWORD') { Remove-Item "Env:$k" -ErrorAction SilentlyContinue }
+        foreach ($k in @('SDV_LOCAL_DB_PASSWORD')) { Remove-Item "Env:$k" -ErrorAction SilentlyContinue }
     }
     $watch = [Diagnostics.Stopwatch]::StartNew()
     while ($true) {

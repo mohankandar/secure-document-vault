@@ -39,7 +39,7 @@ Vero is independent of other products: they may act only as external producers t
 - PostgreSQL 16 + Liquibase
 - React + TypeScript + Vite 8 (tests: Vitest 5)
 - Node.js 22 (22.12 or later), 24, or 26 and later to build and test the frontend (Vitest 5 supports only these; not Node 25). The frontend build uses Vite's default browser target, "baseline widely available" (Chrome and Edge 111, Firefox 114, Safari 16.4 or later). Before task 0045 (Vite 5) the target was Chrome 87, Edge 88, Firefox 78, Safari 14.
-- Vault Transit behind `KeyProtectionProvider`
+- Vault Transit through platform-crypto, one key per customer
 - pluggable storage provider abstraction
 - structured/correlation-aware logging
 

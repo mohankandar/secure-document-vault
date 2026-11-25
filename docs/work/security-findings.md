@@ -30,8 +30,8 @@ above one's level.
 | ID | Topic | Status |
 |---|---|---|
 | VSEC-11 | Token lifetime and type rules | Fixed, PR #43 |
-| VSEC-12 | Connection to the key service | Open |
-| VSEC-13 | Binding of ciphertext | Open |
+| VSEC-12 | Connection to the key service | Fixed, task 0076: AppRole login renewed by itself, no redirects, time-outs, https unless on this computer is the installer's choice (runbook) |
+| VSEC-13 | Binding of ciphertext | Fixed, task 0076 |
 | VSEC-14 | Strength of the sealed report and audit trail | Open |
 | VSEC-15 | Print approval | Fixed, PR #44. Screenshots can't be stopped (guides) |
 | VSEC-16 | Role separation | Fixed, PR #34 |
@@ -39,7 +39,7 @@ above one's level.
 | VSEC-18 | Error texts | Fixed, PR #34 |
 | VSEC-19 | Request references | Fixed, PR #34 |
 | VSEC-20 | PDF checks at intake | Fixed, PR #36, without the malware-scan hook (it waits for platform-core) |
-| VSEC-21 | Data under a replaced version | Open |
+| VSEC-21 | Data under a replaced version | Partly, task 0076: a sealed original can't take the document's place; earlier versions of one document: open |
 | VSEC-22 | Browser hardening | Fixed, PR #43 |
 | VSEC-23 | Metadata value limits | Fixed, PR #36 |
 | VSEC-24 | CI package token | Fixed, PR #37 |

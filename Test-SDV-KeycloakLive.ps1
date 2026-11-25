@@ -44,7 +44,7 @@ $password = & (Join-Path $root 'scripts\local\Get-SdvLocalDbPassword.ps1') -Root
 if ([int](Sql 'postgres' "select count(*) from pg_database where datname = '$db';") -gt 0) { throw "The database $db is there already (an earlier run?). Look at it and drop it first." }
 
 $script:app = $null
-$settings = 'SDV_KEY_PROVIDER', 'SDV_VAULT_BASE_URL', 'SDV_VAULT_TOKEN_FILE', 'SDV_LOCAL_DB_PASSWORD', 'SDV_AUTH_MODE', 'SDV_AUTH_JWT_ISSUER', 'SDV_AUTH_JWT_JWK_SET_URI', 'SDV_AUTH_JWT_AUDIENCE', 'SDV_AUTH_JWT_PROVIDER_ID', 'SDV_AUTH_BROWSER_CLIENT_ID', 'SDV_SCHEMA_DB_PASSWORD'
+$settings = 'SDV_KEY_SERVICE_ADDRESS', 'SDV_VAULT_LOGIN_FILE', 'PLATFORM_SETUP_VAULT_ADDR', 'PLATFORM_SETUP_VAULT_TOKEN_FILE', 'PLATFORM_SETUP_VAULT_TRANSIT_MOUNT', 'SDV_LOCAL_DB_PASSWORD', 'SDV_AUTH_MODE', 'SDV_AUTH_JWT_ISSUER', 'SDV_AUTH_JWT_JWK_SET_URI', 'SDV_AUTH_JWT_AUDIENCE', 'SDV_AUTH_JWT_PROVIDER_ID', 'SDV_AUTH_BROWSER_CLIENT_ID', 'SDV_SCHEMA_DB_PASSWORD'
 $before = @{}; foreach ($n in $settings) { $before[$n] = [Environment]::GetEnvironmentVariable($n) }
 function Start-Vero([string]$Name) {
     $script:app = Start-Process -FilePath 'java' -PassThru -WindowStyle Hidden -WorkingDirectory $root -ArgumentList @('-jar', "`"$jar`"", '--spring.profiles.active=local', "--server.port=$Port", "--spring.datasource.url=jdbc:postgresql://localhost:5433/$db") -RedirectStandardOutput (Join-Path $run "$Name.out.log") -RedirectStandardError (Join-Path $run "$Name.err.log")
@@ -59,6 +59,7 @@ function Stop-Vero { if ($script:app -and -not $script:app.HasExited) { Stop-Pro
 
 $code = 1
 try {
+    & (Join-Path $root 'scripts\local\Use-SdvScratchVault.ps1')
     $null = Sql 'postgres' "create database $db owner sdv;"
     $env:SDV_SCHEMA_DB_PASSWORD = $password
     $ErrorActionPreference = 'Continue'
@@ -69,8 +70,6 @@ try {
     & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $root 'Seed-SDV-Canvas-Demo.ps1') -SetupOnly -Database $db *> (Join-Path $run 'setup.log')
     $step = $LASTEXITCODE; $ErrorActionPreference = 'Stop'
     if ($step -ne 0) { throw "Setup on the scratch database failed; see $run." }
-    $env:SDV_KEY_PROVIDER = 'vault'; $env:SDV_VAULT_BASE_URL = 'http://127.0.0.1:8200'
-    $env:SDV_VAULT_TOKEN_FILE = Join-Path (Split-Path -Parent $root) 'secrets\sdv-app.token'
     $env:SDV_LOCAL_DB_PASSWORD = $password
     Start-Vero 'seed'
     $ErrorActionPreference = 'Continue'

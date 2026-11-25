@@ -15,7 +15,7 @@ import java.util.List;
 import java.util.Locale;
 
 /**
- * Task 0037: sign-in (SDV_AUTH_MODE) and the key service (SDV_KEY_PROVIDER) default to "disabled", so a forgotten
+ * Task 0037: sign-in (SDV_AUTH_MODE) and the key service (then SDV_KEY_PROVIDER, now SDV_CRYPTO_ENABLED) could be off, so a forgotten
  * setting used to start Vero silently, and then every sign-in or every document action failed (SDV-SYS-006,
  * SDV-KEY-001).
  * <ul>
@@ -31,7 +31,7 @@ public class SwitchedOffCheck {
 
     static final String AUTH_OFF = "sdv.auth.mode (SDV_AUTH_MODE) is \"disabled\": nobody can sign in, so every request "
             + "except health and system information is refused (401).";
-    static final String KEY_OFF = "sdv.crypto.key-provider (SDV_KEY_PROVIDER) is \"disabled\": uploading, finishing, "
+    static final String KEY_OFF = "platform.crypto.enabled (SDV_CRYPTO_ENABLED) is \"false\": uploading, finishing, "
             + "viewing, printing, downloading and redacting documents will fail.";
 
     static final String NO_LOCAL = "The local profile (SPRING_PROFILES_ACTIVE) is for development and is not part of this Vero.";
@@ -44,7 +44,7 @@ public class SwitchedOffCheck {
         this(local(environment.acceptsProfiles(Profiles.of("local")),
                         ClassUtils.isPresent(LOCAL_MODULE, SwitchedOffCheck.class.getClassLoader())),
                 environment.getProperty("sdv.auth.mode", "disabled"),
-                environment.getProperty("sdv.crypto.key-provider", "disabled"));
+                environment.getProperty("platform.crypto.enabled", Boolean.class, true) ? "on" : "disabled");
     }
 
     SwitchedOffCheck(boolean local, String authMode, String keyProvider) {

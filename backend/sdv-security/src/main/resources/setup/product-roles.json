@@ -3,5 +3,5 @@
   "productCode": "SDV",
   "roles": ["BUSINESS_USER", "DOCUMENT_STEWARD", "RESTRICTED_STEWARD", "BUSINESS_ADMIN", "IT_ADMIN"],
   "platformRoles": ["PLATFORM_OPERATIONS_ADMIN"],
-  "customerKeys": "optional"
+  "customerKeys": "required"
 }

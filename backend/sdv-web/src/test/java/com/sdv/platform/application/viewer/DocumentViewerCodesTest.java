@@ -101,7 +101,7 @@ class DocumentViewerCodesTest {
             ((InputStream) i.getArgument(2)).readAllBytes();
             ((OutputStream) i.getArgument(3)).write(bytes);
             return null;
-        }).when(crypto).decrypt(eq(TENANT), any(), any(), any());
+        }).when(crypto).decrypt(org.mockito.ArgumentMatchers.argThat(b -> b != null && b.entityId().equals(TENANT)), any(), any(), any());
     }
 
     private static String sha(byte[] bytes) throws Exception {
@@ -141,7 +141,7 @@ class DocumentViewerCodesTest {
         assertEquals("Vero couldn't read this document from storage. Try again later.", read.getMessage());
 
         when(provider.open(eq(TENANT), any(), eq("obj"))).thenAnswer(i -> new java.io.ByteArrayInputStream(CIPHERTEXT));
-        doThrow(new IllegalStateException("key service unreachable")).when(crypto).decrypt(eq(TENANT), any(), any(), any());
+        doThrow(new IllegalStateException("key service unreachable")).when(crypto).decrypt(org.mockito.ArgumentMatchers.argThat(b -> b != null && b.entityId().equals(TENANT)), any(), any(), any());
         assertTrue(fault("SDV-DOC-003", 503, this::open).logDetail().contains("key service"));
 
         when(documents.findStorageRef(TENANT, DOC)).thenReturn(Optional.empty());
@@ -162,7 +162,7 @@ class DocumentViewerCodesTest {
 
         when(documents.findStorageRef(TENANT, DOC)).thenReturn(Optional.of(
                 new DocumentStorageRef(DOC, TENANT, "LOCAL_FILESYSTEM", VOLUME, "obj", CIPHERTEXT.length, sha(CIPHERTEXT))));
-        doThrow(new IOException("chunk authentication failed")).when(crypto).decrypt(eq(TENANT), any(), any(), any());
+        doThrow(new IOException("chunk authentication failed")).when(crypto).decrypt(org.mockito.ArgumentMatchers.argThat(b -> b != null && b.entityId().equals(TENANT)), any(), any(), any());
         assertTrue(fault("SDV-DOC-004", 500, this::open).logDetail().contains("decryption check failed"));
 
         document(sha(plaintext), Integer.MAX_VALUE, DocumentStatus.AVAILABLE);

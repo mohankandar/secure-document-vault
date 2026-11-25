@@ -141,9 +141,9 @@ class SenderProfileServerContractTest {
         settings.put("sdv.auth.jwt.issuer", issuer.issuer().toString());
         settings.put("sdv.auth.jwt.jwk-set-uri", issuer.jwksUri().toString());
         settings.put("sdv.auth.jwt.audience", AUDIENCE);
-        settings.put("sdv.crypto.key-provider", "vault");
-        settings.put("sdv.crypto.vault.base-url", "http://127.0.0.1:" + closed);
-        settings.put("sdv.crypto.vault.token-file", vaultToken.toString());
+        settings.put("platform.crypto.vault.address", "http://127.0.0.1:" + closed);
+        settings.put("platform.crypto.vault.login", "TOKEN_FILE");
+        settings.put("platform.crypto.vault.token-file", vaultToken.toString());
         // Command-line arguments, so they win over application.yml (builder properties are only defaults).
         // The real app, without the test classpath's own @Configuration classes (other tests' stacks).
         vero = new SpringApplicationBuilder(SdvApplication.class).initializers(context -> context.getBeanFactory().registerSingleton("profileCheckLicenceBuild", build),

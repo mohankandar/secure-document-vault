@@ -100,7 +100,7 @@ class DocumentViewerServicePreviewsTest {
             OutputStream out = inv.getArgument(3);
             out.write(plaintext);
             return null;
-        }).when(crypto).decrypt(eq(TENANT), any(), any(), any());
+        }).when(crypto).decrypt(org.mockito.ArgumentMatchers.argThat(b -> b != null && b.entityId().equals(TENANT)), any(), any(), any());
     }
 
     private static BufferedImage image(DocumentViewerService.PagePreview preview) throws Exception {
@@ -119,7 +119,7 @@ class DocumentViewerServicePreviewsTest {
             assertEquals(DocumentViewerService.PREVIEW_WIDTH_PX, preview.width(), 1);
             assertEquals(preview.width(), image(preview).getWidth());
         }
-        verify(crypto, times(1)).decrypt(eq(TENANT), any(), any(), any());
+        verify(crypto, times(1)).decrypt(org.mockito.ArgumentMatchers.argThat(b -> b != null && b.entityId().equals(TENANT)), any(), any(), any());
         verifyNoInteractions(audit);
         verify(pageViews).appendPreviewEventOnce(any(), eq(VIEWING), any());
     }

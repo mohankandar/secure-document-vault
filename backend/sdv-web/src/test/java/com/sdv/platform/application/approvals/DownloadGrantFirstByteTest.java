@@ -344,11 +344,11 @@ class DownloadGrantFirstByteTest {
         volatile boolean failAfterFirstChunk;
         volatile boolean corruptLastByte;
 
-        @Override public CryptoEnvelope encrypt(UUID tenantId, InputStream plaintext, OutputStream ciphertext) {
+        @Override public CryptoEnvelope encrypt(Binding binding, InputStream plaintext, OutputStream ciphertext) {
             throw new UnsupportedOperationException();
         }
 
-        @Override public void decrypt(UUID tenantId, CryptoEnvelope envelope, InputStream ciphertext, OutputStream plaintext)
+        @Override public void decrypt(Binding binding, CryptoEnvelope envelope, InputStream ciphertext, OutputStream plaintext)
                 throws IOException {
             ciphertext.readAllBytes();
             if (failBeforeWriting) throw new IllegalStateException("key service unreachable");

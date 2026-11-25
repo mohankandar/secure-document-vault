@@ -72,7 +72,7 @@ param(
     [string]$Base = 'http://127.0.0.1:8280',
     # Task 0075: only the licence, customer and entities, before Vero's first start on a new database.
     [switch]$SetupOnly,
-    [ValidatePattern('^sdv(_[a-z0-9_]+)?$')][string]$Database = 'sdv',
+    [ValidatePattern('^sdv(_[a-z0-9_]+)?$')][string]$Database = 'sdv_vero',
     # Task 0039 part 2: empty means the default under the script's folder. Windows PowerShell 5.1 leaves $PSScriptRoot
     # empty in parameter defaults under powershell.exe -File, so the defaults are filled in below, not here.
     [string]$PdfPath = '',
@@ -188,6 +188,8 @@ function Deliver([string]$SourceId, [string]$SubKey, [hashtable]$Metadata, [stri
 }
 
 Write-Host "=== SDV DEMO DATA (local only, database $Database) ==="
+# Task 0076: setup makes the customer's keys, so PLATFORM_SETUP_VAULT_ADDR, _TOKEN (or _TOKEN_FILE) and _TRANSIT_MOUNT must be
+# set for it: a short-lived token with the policy platform-crypto-setup (runbook, "Keys for a customer").
 # Task 0075: Vero starts only with a licence, so on a new database setup runs before the first start: -SetupOnly, then start
 # Vero, then this script again without it.
 if (-not $SetupOnly) {
@@ -213,7 +215,7 @@ $env:PLATFORM_SETUP_DB_URL = $localUrl; $env:PLATFORM_SETUP_DB_USER = 'sdv'; $en
 try {
     $setupOut = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $ScriptFolder 'setup.ps1') apply `
         -Licence (Join-Path $ScriptFolder 'dev\setup\licence-vero-demo.json') -Signin (Join-Path $ScriptFolder 'dev\setup\signin-vero-demo.json') `
-        --no-customer-keys --run-log (Join-Path $SetupRuntime 'platform-setup-runs.log') `
+        --run-log (Join-Path $SetupRuntime 'platform-setup-runs.log') `
         --config-out (Join-Path $SetupRuntime 'platform-tenant.properties') 2>&1
     $setupExit = $LASTEXITCODE
 } finally {

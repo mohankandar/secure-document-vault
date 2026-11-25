@@ -384,10 +384,10 @@ section 5; those with a section of their own above are not repeated.
 | `SDV_SERVER_PORT` | `8280` | Vero's port. Keep it private: the proxy does TLS |
 | `SDV_DB_URL`, `SDV_DB_USERNAME`, `SDV_DB_PASSWORD` | none | The app user's connection (below) |
 | `SDV_DB_POOL_MAX`, `SDV_DB_POOL_MIN` | `10`, `1` | Database connections of one Vero |
-| `SDV_KEY_PROVIDER` | `disabled` | `vault`. A packaged start refuses `disabled` (`SDV-KEY-001`) |
-| `SDV_VAULT_BASE_URL` | none | The key service's address, https outside a test computer |
-| `SDV_VAULT_TOKEN_FILE` **or** `SDV_VAULT_TOKEN` | none | Exactly one; the file is recommended. A token for Vero's Transit paths only |
-| `SDV_VAULT_TRANSIT_MOUNT`, `SDV_VAULT_KEY_PREFIX` | `transit`, `sdv-tenant-` | Where the entities' keys are |
+| `SDV_KEY_SERVICE_ADDRESS` | none | Vault's address, https outside a test computer |
+| `SDV_VAULT_LOGIN_FILE` | `./vero-vault-login.properties` | A file with `platform.crypto.vault.role-id` and `.secret-id` (`Setup-SDV-VaultTransit.ps1` writes it). Other logins: `platform.crypto.vault.login=TOKEN_FILE` and `.token-file` |
+| `SDV_KEY_SERVICE_MOUNT` | `vero-transit` | The Transit mount with the customer's keys |
+| `SDV_CRYPTO_ENABLED` | `true` | `false` only in a local start (`SDV-KEY-001` otherwise) |
 | `SDV_AUTH_MODE` | `disabled` | `enterprise-jwt`. A packaged start refuses `disabled` (`SDV-SYS-006`) and the local profile (`SDV-SYS-005`) |
 | `SDV_AUTH_JWT_MAX_TOKEN_LIFETIME_SECONDS` | `7200` | The longest life of a token Vero accepts, people's and sending systems', 1 to 86400. **Upgrade:** `0` (off) is refused since task 0065 |
 | `SDV_AUTH_BROWSER_SCOPE` | `openid profile email` | What the browser asks the login system for |
@@ -442,8 +442,7 @@ the triggers refuse them anyway.
 
 ### Keys for a customer
 
-Task 0083, for the move to keys per customer (task 0076). Until then Vero uses the old keys, and this step changes nothing for
-it. Whoever looks after Vault runs it once, with a Vault token that may add mounts, policies and an AppRole:
+Documents are encrypted with the customer's key (task 0076). Whoever looks after Vault runs this once, with a Vault token that may add mounts, policies and an AppRole:
 
 ```powershell
 .\Setup-SDV-VaultTransit.ps1
@@ -464,6 +463,22 @@ and changes nothing. Run again: "Everything is there already."
 
 Who gets which policy: the running Vero `-app` only (it can't make or delete keys); the setup command `-setup`, as a token for
 that run (`vault token create -policy=platform-crypto-setup -ttl=15m -no-default-policy`); `-offboard` only at a customer's exit.
+
+The customer's keys are made by the setup command, with the `-setup` token of that run only:
+
+```powershell
+$env:PLATFORM_SETUP_VAULT_ADDR = '<Vault address>'; $env:PLATFORM_SETUP_VAULT_TRANSIT_MOUNT = 'vero-transit'
+$env:PLATFORM_SETUP_VAULT_TOKEN = (Read-Host 'setup token')
+.\setup.ps1 apply -Licence licence.json -Signin signin.json
+```
+
+Vero doesn't call the key service when it starts. While it is away, documents can't be stored or read (503), everything else goes
+on. **Documents of versions before 0076 can't be read** by this one; keep the older build and its database to read them.
+Check scripts use a scratch Vault of their own (`scripts\local\Use-SdvScratchVault.ps1`), never `sdv-vault`.
+
+**Local development:** a new database `sdv_vero` beside `sdv`, which is kept:
+`docker exec sdv-postgres createdb -U sdv -O sdv sdv_vero`; the schema step on it; the two setup variables above; `.\Seed-SDV-Canvas-Demo.ps1
+-SetupOnly`; start; `.\Seed-SDV-Canvas-Demo.ps1`.
 
 **Undo, on a scratch Vault only:** `vault secrets disable vero-transit`, `vault delete auth/approle/role/vero`, `vault policy
 delete platform-crypto-app` (and `-setup`, `-offboard`). Never on a Vault with customers' keys: disabling the mount destroys

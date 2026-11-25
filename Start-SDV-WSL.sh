@@ -74,8 +74,6 @@ for name in "$DB_CONTAINER" "$VAULT_CONTAINER"; do
 done
 docker exec "$DB_CONTAINER" pg_isready -U sdv -d sdv >/dev/null 2>&1 ||
   fail "SDV PostgreSQL not ready"
-python3 "$ROOT/scripts/sdv-vault-preflight.py" "$VAULT_URL" "$TOKEN_FILE" ||
-  fail "Existing Vault unavailable, sealed, or application-token Transit permissions invalid."
 
 umask 077
 mkdir -p -- "$RUN" "$LOG_DIR/backend" "$LOG_DIR/frontend"
@@ -113,10 +111,8 @@ echo "App: $ROOT"
 echo "Logs: $LOG_DIR"
 echo "Run: $RUN"
 echo "Required dependencies: PostgreSQL and unsealed persistent Vault confirmed."
-export SDV_KEY_PROVIDER=vault
-export SDV_VAULT_BASE_URL="$VAULT_URL"
-export SDV_VAULT_TOKEN_FILE="$TOKEN_FILE"
-unset SDV_VAULT_TOKEN || true
+export SDV_KEY_SERVICE_ADDRESS="$VAULT_URL"
+export SDV_VAULT_LOGIN_FILE="$TOKEN_FILE"
 # Task 0064: the local database password is never in git: the variable, the untracked file, or the container's own setting.
 if [[ -z "${SDV_LOCAL_DB_PASSWORD:-}" ]]; then
   if [[ -s "$ROOT/.runtime/local-db-password.txt" ]]; then

@@ -5,9 +5,39 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.UUID;
 
+/**
+ * Encryption of stored documents. Task 0076: what the ciphertext belongs to ({@link Binding}) is inside it and checked before
+ * a byte is handed out. Reading: {@link CheckFailed} when the ciphertext, its key or its binding is not the right one; an
+ * unchecked exception when the key service can't be used.
+ */
 public interface StreamingCryptoPort {
-    CryptoEnvelope encrypt(UUID tenantId, InputStream plaintext, OutputStream ciphertext) throws IOException;
-    void decrypt(UUID tenantId, CryptoEnvelope envelope, InputStream ciphertext, OutputStream plaintext) throws IOException;
+    CryptoEnvelope encrypt(Binding binding, InputStream plaintext, OutputStream ciphertext) throws IOException;
+
+    void decrypt(Binding binding, CryptoEnvelope envelope, InputStream ciphertext, OutputStream plaintext) throws IOException;
+
+    /** The entity, the document and, for a sealed original, its own ID. */
+    record Binding(UUID entityId, UUID documentId, UUID sealedId) {
+        public Binding {
+            if (entityId == null || documentId == null) {
+                throw new com.sdv.platform.domain.error.InternalCheckFailed("A stored document's ciphertext needs its entity and document.");
+            }
+        }
+
+        public static Binding document(UUID entityId, UUID documentId) {
+            return new Binding(entityId, documentId, null);
+        }
+
+        public static Binding sealed(UUID entityId, UUID documentId, UUID sealedId) {
+            return new Binding(entityId, documentId, java.util.Objects.requireNonNull(sealedId, "sealedId"));
+        }
+    }
+
+    /** The stored copy isn't what it should be. The text is for the log: a step or a code, never content or a key. */
+    final class CheckFailed extends IOException {
+        public CheckFailed(String check) {
+            super(check);
+        }
+    }
 
     record CryptoEnvelope(
             String cryptoProfile,

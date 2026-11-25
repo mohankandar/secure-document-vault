@@ -1,8 +1,12 @@
 spring:
+  config:
+    # Task 0076: the owner's login file beside the repository; a check script names its own.
+    import: "optional:file:${SDV_VAULT_LOGIN_FILE:../secrets/vero-vault-approle.properties}"
   # Task 0041 (owner answer 10): the local profile no longer migrates at startup either. Run the schema step first
   # (.\Update-SDV-Schema.ps1 update), then setup and the demo step (.\Seed-SDV-Canvas-Demo.ps1 -Reset does all three).
   datasource:
-    url: jdbc:postgresql://localhost:5433/sdv
+    # Task 0076: documents of the older database sdv can not be read any more, so local work is in a new one beside it.
+    url: ${SDV_LOCAL_DB_URL:jdbc:postgresql://localhost:5433/sdv_vero}
     username: sdv
     # Task 0064: never in git. The start scripts fill it from .runtime (scripts/local/Get-SdvLocalDbPassword.ps1).
     password: ${SDV_LOCAL_DB_PASSWORD:}
@@ -11,6 +15,10 @@ spring:
 platform:
   licensing:
     tenant-id: TEN-VERO-DEMO-0001
+  # Task 0076: the local key service: the owner's Vault step (vero-transit and Vero's login file beside the repository).
+  crypto:
+    vault:
+      address: ${SDV_KEY_SERVICE_ADDRESS:http://127.0.0.1:8200}
 
 server:
   # Task 0064: this computer only; local sign-in has no password.

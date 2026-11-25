@@ -133,7 +133,7 @@ class DocumentViewerServicePageViewTest {
             ((InputStream) inv.getArgument(2)).readAllBytes();
             ((OutputStream) inv.getArgument(3)).write(pdfBytes);
             return null;
-        }).when(crypto).decrypt(eq(TENANT), any(), any(), any());
+        }).when(crypto).decrypt(org.mockito.ArgumentMatchers.argThat(b -> b != null && b.entityId().equals(TENANT)), any(), any(), any());
     }
 
     private long pageEvents() {

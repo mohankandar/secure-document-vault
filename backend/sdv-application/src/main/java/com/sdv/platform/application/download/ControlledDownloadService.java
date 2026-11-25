@@ -170,7 +170,7 @@ public class ControlledDownloadService {
                         sent,
                         current.contentSizeBytes(),
                         current.contentSha256());
-                crypto.decrypt(current.tenantId(), envelope, encrypted, validating);
+                crypto.decrypt(StreamingCryptoPort.Binding.document(current.tenantId(), documentId), envelope, encrypted, validating);
                 validating.finish();
             }
         } catch (IOException | RuntimeException ex) {
@@ -201,6 +201,8 @@ public class ControlledDownloadService {
                         ? String.valueOf(d.logDetail()).replaceFirst("^document=\\S+ step=", "")
                 : ex instanceof StorageReadFailed ? "storage read failed"
                 : ex instanceof ValidationFailed ? "check failed: " + ex.getMessage()
+                // Task 0076: changed, another key or bound to something else.
+                : ex instanceof StreamingCryptoPort.CheckFailed ? "check failed: " + ex.getMessage()
                 : ex instanceof ResponseWriteFailed ? "the browser stopped taking the file"
                 : "key service or decryption failed";
         SdvErrorCode code = partSent ? SdvErrorCode.DOC_009 : SdvErrorCode.DOC_007;

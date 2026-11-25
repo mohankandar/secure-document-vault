@@ -43,7 +43,7 @@ class SwitchedOffCheckTest {
         assertEquals(2, warnings.size());
         assertTrue(warnings.get(0).startsWith("SDV-SYS-006 Sign-in is switched off (SDV_AUTH_MODE=disabled)."), warnings.get(0));
         assertTrue(warnings.get(0).contains("every request except health and system information is refused (401)"));
-        assertTrue(warnings.get(1).startsWith("SDV-KEY-001 Encryption is not set up (SDV_KEY_PROVIDER=disabled)."), warnings.get(1));
+        assertTrue(warnings.get(1).startsWith("SDV-KEY-001 Encryption is switched off (SDV_CRYPTO_ENABLED=false)."), warnings.get(1));
         assertTrue(warnings.get(1).contains("uploading, finishing, viewing, printing, downloading and redacting documents will fail"));
         assertTrue(lines(Level.ERROR).isEmpty());
     }
@@ -54,7 +54,7 @@ class SwitchedOffCheckTest {
         assertEquals(SdvErrorCode.SYS_006, auth.errorCode());
         StartupFailure key = assertThrows(StartupFailure.class, () -> new SwitchedOffCheck(false, "enterprise-jwt", " DISABLED "));
         assertEquals(SdvErrorCode.KEY_001, key.errorCode());
-        assertTrue(key.action().contains("SDV_KEY_PROVIDER=vault"));
+        assertTrue(key.action().contains("Remove SDV_CRYPTO_ENABLED"));
     }
 
     @Test

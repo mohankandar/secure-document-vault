@@ -101,11 +101,11 @@ client_id,entity_slot,source,description
 Windows (`setup.cmd` works the same):
 
 ```
-.\setup.ps1 plan  -Licence licence.json -Signin signin.json --no-customer-keys
-.\setup.ps1 apply -Licence licence.json -Signin signin.json --no-customer-keys
+.\setup.ps1 plan  -Licence licence.json -Signin signin.json
+.\setup.ps1 apply -Licence licence.json -Signin signin.json
 ```
 
-Linux: `./setup.sh plan --licence licence.json --signin signin.json --no-customer-keys`.
+Linux: `./setup.sh plan --licence licence.json --signin signin.json`.
 
 The licence keys Vero trusts are inside its jars (task 0067). No file, setting or option adds one, and
 `SDV_TRUSTED_KEYS_FILE` stops the start. This release has no release keys yet: ask your account manager.
@@ -113,8 +113,8 @@ The licence keys Vero trusts are inside its jars (task 0067). No file, setting o
 - The wrapper fills in Vero's product (`--product SDV`) and `product-roles.json`; every other option goes to
   platform-core's setup command (its install guide lists them: `--remove-unlisted-grants`, `--replace-connection`,
   `--run-log`, `--config-out`).
-- `--no-customer-keys`: Vero keeps no customer keys yet (`"customerKeys": "optional"`); they come when Vero uses
-  platform-crypto.
+- **Customer's keys** (task 0076): `apply` makes them in the key service. Give it Vault's address, mount and a short-lived token
+  with the set-up policy in the environment (runbook, "Keys for a customer"). `plan` only says whether they are there.
 - `plan` changes nothing and lists every item (`create`, `unchanged`, `switch off`, …). `apply` writes the licence,
   the customer, the entity slots (not activated), the login connection, the grants and the client bindings in one
   transaction. Running it again is safe. Exit codes: 0 done, 1 failed, 2 refused (nothing changed), 3 done except

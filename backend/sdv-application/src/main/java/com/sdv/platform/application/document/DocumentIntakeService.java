@@ -205,13 +205,15 @@ public class DocumentIntakeService {
         StorageProvider provider = provider(volume.providerId());
 
         ValidatedPdfInputStream validated = new ValidatedPdfInputStream(input, maxPdfBytes);
+        // Task 0076: made before encrypting: the ciphertext is bound to it.
+        UUID candidateDocumentId = UUID.randomUUID();
         final StreamingCryptoPort.CryptoEnvelope[] envelopeHolder = new StreamingCryptoPort.CryptoEnvelope[1];
         StorageProvider.StoredObject stored;
         // Task 0063: while the upload is encrypted into storage, the same bytes go to encrypted working space, and the
         // PDF is checked there before anything is committed. A refused one leaves nothing behind.
         try (EncryptedScratch scratch = pdfChecks.scratch(); EncryptedScratch.Buffer copy = scratch.createBuffer()) {
             stored = provider.store(tenantId, volume, output -> {
-                StreamingCryptoPort.CryptoEnvelope envelope = crypto.encrypt(tenantId, new CopyingInputStream(validated, copy), output);
+                StreamingCryptoPort.CryptoEnvelope envelope = crypto.encrypt(StreamingCryptoPort.Binding.document(tenantId, candidateDocumentId), new CopyingInputStream(validated, copy), output);
                 validated.finish();
                 envelopeHolder[0] = envelope;
             });
@@ -234,7 +236,6 @@ public class DocumentIntakeService {
         String contentSha256 = validated.sha256();
         long contentSizeBytes = validated.sizeBytes();
         Instant now = clock.instant();
-        UUID candidateDocumentId = UUID.randomUUID();
 
         CommitResult commitResult;
         try {

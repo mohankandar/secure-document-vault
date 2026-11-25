@@ -1,3 +1,5 @@
+> **Task 0076 (2026-11-24):** the `SDV_VAULT_*` and `sdv.crypto.*` settings below are gone. Runbook, "Keys for a customer" and "All settings".
+
 # SDV Vault / Key Provider Deployment Options
 
 SDV keeps the key-provider boundary explicit. `sdv.crypto.key-provider=disabled` is allowed only for flows that do not require protected document crypto. `sdv.crypto.key-provider=vault` enables Vault Transit-backed SDV-ENC-001 processing.
