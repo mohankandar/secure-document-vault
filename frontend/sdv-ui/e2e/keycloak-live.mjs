@@ -11,7 +11,7 @@ const ORIGIN = 'http://localhost:5183'
 const DIST = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../dist')
 const people = {}
 for (const line of fs.readFileSync(usersFile, 'utf8').split(/\r?\n/)) {
-  const m = /^([A-Z_]+)\.(username|password)=(.+)$/.exec(line)
+  const m = /^([A-Z_0-9]+)\.(username|password)=(.+)$/.exec(line)
   if (m) (people[m[1]] ??= {})[m[2]] = m[3]
 }
 const secrets = Object.values(people).map((p) => p.password).filter(Boolean)
