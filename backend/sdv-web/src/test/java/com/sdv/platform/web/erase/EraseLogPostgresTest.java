@@ -121,7 +121,7 @@ class EraseLogPostgresTest {
         ErasePort.EraseFailed refused = assertThrows(ErasePort.EraseFailed.class, () -> erase.port.document(tenant, later, UUID.randomUUID()));
         assertTrue(refused.refused());
         db.update("update documents set status = 'RETENTION_DELETING' where document_id = ?", later);
-        db.update("insert into legal_holds(hold_id, tenant_id, document_id, reason, placed_by, placed_at) values (gen_random_uuid(), ?, ?, 'x', 'ba', now())", tenant, later);
+        db.update("insert into legal_holds(hold_id, tenant_id, document_id, reason, placed_by, placed_at) values (gen_random_uuid(), ?, ?, 'Litigation', 'ba', now())", tenant, later);
         assertTrue(assertThrows(ErasePort.EraseFailed.class, () -> erase.port.document(tenant, later, UUID.randomUUID())).refused());
         db.update("update documents set status = 'AVAILABLE' where document_id = ?", later);
         assertEquals(head, erase.log.head().seq());
@@ -155,7 +155,7 @@ class EraseLogPostgresTest {
         assertEquals(1, events("DOCUMENT_RETENTION_DELETED", due));
 
         // The last document goes: the record's values go with it, its row stays; a held one keeps them until then.
-        db.update("update legal_holds set released_at = now() where document_id = ?", later);
+        db.update("update legal_holds set released_at = now(), released_by = 'ba' where document_id = ?", later);
         db.update("update documents set expires_at = now() - interval '1 day' where document_id = ?", later);
         db.update("update submissions set status = 'RECEIVING' where submission_id = ?", second);
         assertEquals(0, retention.sweep(100).failed());
@@ -191,6 +191,7 @@ class EraseLogPostgresTest {
         assertEquals(0, retention.sweep(100).failed());
         assertEquals("EXPIRED_DELETED", status(a));
         assertEquals("EXPIRED_DELETED", status(b));
+        erase.guard.refresh();
         assertNull(erase.guard.state().lastFailure());
         assertEquals(1, events("DOCUMENT_RETENTION_DELETED", a));
         assertEquals(1, events("DOCUMENT_RETENTION_DELETED", b));

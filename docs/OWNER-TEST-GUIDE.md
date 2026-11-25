@@ -59,7 +59,6 @@ expected. Paste that into the chat. Please don't paste passwords.
 
 ## Not built yet: please don't test
 
-- **Erase log:** bringing a restored backup up to date (in work).
 - **Notifications** by e-mail, Teams or Slack.
 - **Approvals from messages:** approving is done inside Vero only.
 

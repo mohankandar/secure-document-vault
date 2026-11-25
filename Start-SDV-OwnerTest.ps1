@@ -113,7 +113,7 @@ else {
 $password = & (Join-Path $root 'scripts\local\Get-SdvLocalDbPassword.ps1') -Root $root
 if ([int](Sql 'postgres' "select count(*) from pg_database where datname = '$Database';") -eq 0) { $null = Sql 'postgres' "create database $Database owner sdv;"; Say "database ${Database}: made" }
 else { Say "database ${Database}: there already" }
-$settings = 'SDV_SCHEMA_DB_PASSWORD', 'SDV_LOCAL_DB_PASSWORD', 'SDV_AUTH_MODE', 'SDV_AUTH_JWT_ISSUER', 'SDV_AUTH_JWT_JWK_SET_URI', 'SDV_AUTH_JWT_AUDIENCE', 'SDV_AUTH_JWT_PROVIDER_ID', 'SDV_API_TARGET', 'VITE_SECURITY_MODE', 'PLATFORM_SETUP_VAULT_ADDR', 'PLATFORM_SETUP_VAULT_TRANSIT_MOUNT', 'PLATFORM_SETUP_VAULT_TOKEN', 'PLATFORM_SETUP_VAULT_TOKEN_FILE', 'SDV_KEY_SERVICE_ADDRESS', 'SDV_VAULT_LOGIN_FILE'
+$settings = 'SDV_SCHEMA_DB_PASSWORD', 'SDV_LOCAL_DB_PASSWORD', 'SDV_AUTH_MODE', 'SDV_AUTH_JWT_ISSUER', 'SDV_AUTH_JWT_JWK_SET_URI', 'SDV_AUTH_JWT_AUDIENCE', 'SDV_AUTH_JWT_PROVIDER_ID', 'SDV_ERASE_LOG_FOLDER', 'SDV_API_TARGET', 'VITE_SECURITY_MODE', 'PLATFORM_SETUP_VAULT_ADDR', 'PLATFORM_SETUP_VAULT_TRANSIT_MOUNT', 'PLATFORM_SETUP_VAULT_TOKEN', 'PLATFORM_SETUP_VAULT_TOKEN_FILE', 'SDV_KEY_SERVICE_ADDRESS', 'SDV_VAULT_LOGIN_FILE'
 $before = @{}; foreach ($n in $settings) { $before[$n] = [Environment]::GetEnvironmentVariable($n) }
 try {
     $env:SDV_SCHEMA_DB_PASSWORD = $password
@@ -149,6 +149,8 @@ try {
     }
 
     # ---- 5. Demo data
+    # Task 0080: a database has one erase log; another database than the local one has its own.
+    if ($Database -ne 'sdv_vero') { $env:SDV_ERASE_LOG_FOLDER = Join-Path $run "erase-log-$Database-$(Sql 'postgres' "select oid from pg_database where datname = '$Database';")" }
     $env:SDV_LOCAL_DB_PASSWORD = $password
     $seeded = Join-Path $run "seeded-$Database-$(Sql 'postgres' "select oid from pg_database where datname = '$Database';").txt"
     if (Test-Path -LiteralPath $seeded) { Say 'demo data: there already' }
