@@ -1,11 +1,11 @@
 {
   "format": "platform-integration-profile/1",
   "name": "sdv-ingestion-v1",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "description": "Vero's ingestion API, v1 (sdv-ingestion-v1.openapi.json): create a submission, then upload each PDF to it. Sign-in is a standard OAuth 2.0 client-credentials token; Vero finds the entity and the sending system from the client ID.",
   "api": {
     "title": "Vero (Secure Document Vault) Ingestion API",
-    "version": "1.4.0"
+    "version": "1.5.0"
   },
   "direction": "OUTBOUND",
   "kind": "API_PUSH",
@@ -81,7 +81,7 @@
   "notes": [
     "Create one client for the sending system in the customer's login server: client credentials only, no groups, the token's audience Vero's API audience.",
     "Vero's IT binds the client ID to its entity and sending system with Vero's setup command (client-binding file). No custom claim is needed; entity or source claims, when sent, must match the binding.",
-    "Map only the fields Vero's IT set up for this sending system.",
+    "Map only the fields Vero's IT set up for this sending system. A value is at most 512 characters; a longer one is refused (400 SDV-INT-009). A date with a time carries its offset from UTC.",
     "Vero answers 503 SDV-SYS-018 with Retry-After when it is busy: wait the seconds given, then send again."
   ]
 }

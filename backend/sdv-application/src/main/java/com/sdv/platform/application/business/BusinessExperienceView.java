@@ -50,7 +50,13 @@ public final class BusinessExperienceView {
             String fieldKey,
             String displayLabel,
             String value,
-            boolean businessIdentifier) { }
+            boolean businessIdentifier,
+            /* Task 0079: stored encrypted, shown to this person; one they may not see is not here at all. */
+            boolean sensitive) {
+        public FieldValue(String fieldKey, String displayLabel, String value, boolean businessIdentifier) {
+            this(fieldKey, displayLabel, value, businessIdentifier, false);
+        }
+    }
 
     public record SearchResponse(
             UUID sourceId,

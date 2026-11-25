@@ -3,6 +3,7 @@ import { AlertTriangle, ArrowLeft, Check, ChevronDown, ChevronRight, Download, P
 import { useStore } from './store'
 import { FailureNotice, exportFailureText, loadFailed, type Failure } from './CardError'
 import { Badge, Banner, Callout, Dialog, Drawer, PageHead, fmtDate, fmtDateTime } from './ui'
+import { FIELD_VALUE_MAX, wholeHint } from './searchRouting'
 import { LevelBadge, refusalText, whenWords } from './Sensitivity'
 import { Viewer } from './Viewer'
 import type { RecordItem, Source } from './model'
@@ -377,11 +378,11 @@ function NewIncident({ onCancel, onCreated }: { onCancel: () => void; onCreated:
           </select></label>
       </div>
       {source && source.fields.length > 0 && <div className="hold-fields">
-        {source.fields.map((f) => <label key={f.key} className="v-field" style={{ width: 220 }}><span>{f.label}<span className="v-hint">Exact</span></span>
-          <input className="v-input" type={f.type === 'DATE' ? 'date' : 'text'} value={filter.fields?.[f.key] ?? ''} maxLength={300} autoComplete="off" spellCheck={false}
+        {source.fields.map((f) => <label key={f.key} className="v-field" style={{ width: 220 }}><span>{f.label}<span className="v-hint">{wholeHint(f)}</span></span>
+          <input className="v-input" type={f.type === 'DATE' ? 'date' : 'text'} value={filter.fields?.[f.key] ?? ''} maxLength={FIELD_VALUE_MAX} autoComplete="off" spellCheck={false}
             onChange={(e) => set({ fields: { ...filter.fields, [f.key]: e.target.value } })} /></label>)}
       </div>}
-      <p className="faint" style={{ fontSize: 13 }}>Received dates are whole days in UTC. Field values must match in full, as they were stored.</p>
+      <p className="faint" style={{ fontSize: 13 }}>Received dates are whole days in UTC. Field values must match in full; capitals don’t matter.</p>
       {notYet ? <p className="faint" role="status">{notYet}</p>
         : counting ? <p className="faint" role="status">Counting the matching documents…</p>
         : countProblem ? <Callout tone="warn" title="Not counted">{countProblem}</Callout>

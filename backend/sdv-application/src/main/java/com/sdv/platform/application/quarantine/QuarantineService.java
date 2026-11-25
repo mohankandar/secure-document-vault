@@ -109,7 +109,7 @@ public class QuarantineService {
     public static final int NAME_MAX = 200;
     public static final int REASON_MIN = 3;
     public static final int REASON_MAX = 500;
-    public static final int FIELD_VALUE_MAX = 300;
+    public static final int FIELD_VALUE_MAX = 512;
     static final int LIST_LIMIT = 200;
     /** Task 0052: the review list and the exposure view come a page of this many documents at a time. */
     public static final int PAGE = 100;

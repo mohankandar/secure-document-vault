@@ -4,7 +4,7 @@ import { useStore } from './store'
 import { BUSINESS_LIMITS, type Doc, type RecordItem, type Redaction } from './model'
 import { ApiRequestError } from '../api'
 import { failureText } from './CardError'
-import { Badge, Callout, Dialog, Drawer, Tabs, TechDetails, actorWords, auditEventLabel, fmtDate, fmtDateTime, fmtRel, fmtShortDate } from './ui'
+import { Badge, Callout, Dialog, Drawer, Tabs, TechDetails, actorWords, auditEventLabel, fmtDate, fmtDateTime, fmtRel, fmtShortDate, SensitiveMark } from './ui'
 import { SealedOriginalBar } from './SealedOriginal'
 import { viewerMetadata, viewerPage, viewerSearch, record as fetchRecord, toRecord, documentActivity, type LiveDocumentActivity, type ViewerSearch, documentTags, documentComments, createDocumentTag, createDocumentComment, type LiveTag, type LiveComment, secureDownload, recordPrintEvent, permanentRedaction, viewerPreviews, myRequests, documentLevelHistory, LEVEL_NAMES, type MyRequest, type LevelHistoryEntry } from './liveApi'
 import { LOCKED_MESSAGE, LevelBadge, LevelDialog, RequestItem, RequestPopover, pendingOf, recordWord, validGrant, whenWords } from './Sensitivity'
@@ -356,7 +356,7 @@ export function Viewer({ record, results, docId, onClose, recordTitle, backLabel
             {!inDrawer && <button type="button" className="v-btn quiet icon sm" onClick={() => setFold(true)} aria-label="Hide document list" title="Hide document list"><PanelLeftClose size={16} /></button>}
           </span>
         </div>
-        <div className="ws-ids stacked">{record.identifiers.map((i) => <div key={i.label}><span>{i.label}</span><strong title={i.value}>{i.value}</strong></div>)}</div>
+        <div className="ws-ids stacked">{record.identifiers.map((i) => <div key={i.label}><span>{i.label}<SensitiveMark on={i.sensitive} /></span><strong title={i.value}>{i.value}</strong></div>)}</div>
       </div>
       <div className="stack" style={{ gap: 8 }}>
         <span className="eyebrow">Documents · {record.docs.length}</span>

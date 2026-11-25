@@ -236,6 +236,8 @@ export type FieldValue = {
   displayLabel: string
   value: string
   businessIdentifier: boolean
+  /** Task 0079: stored encrypted. One this person may not see isn't sent. */
+  sensitive?: boolean
 }
 
 export type RecordSummary = {

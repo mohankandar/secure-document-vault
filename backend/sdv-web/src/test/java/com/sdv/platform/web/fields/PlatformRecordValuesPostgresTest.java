@@ -204,7 +204,8 @@ class PlatformRecordValuesPostgresTest {
         before = keys.calls();
         var opened = business.record(entity, page.getFirst().recordRef(), "maya", "c", Clearance.STANDARD_ONLY);
         assertEquals(before + 1, keys.calls());
-        assertTrue(opened.metadata().stream().anyMatch(v -> v.fieldKey().equals("lastName")));
+        assertEquals(Map.of("firstName", true, "lastName", true, "loanType", false, "contractNumber", false),
+                opened.metadata().stream().collect(java.util.stream.Collectors.toMap(v -> v.fieldKey(), v -> v.sensitive())), "task 0079: the sensitive ones are marked");
         assertEquals(page.getFirst().title(), opened.title());
     }
 
@@ -287,6 +288,37 @@ class PlatformRecordValuesPostgresTest {
         assertEquals("SDV-INT-009", refused.errorCode().code());
         assertFalse(refused.getMessage().contains("Secret"), refused.getMessage());
         assertEquals(0, db.queryForObject("select count(*) from submissions where tenant_id = ?", Integer.class, entity));
+    }
+
+    private UUID typed(String key, MetadataFieldType type) {
+        Instant now = Instant.now();
+        tx.executeWithoutResult(s -> fields.insert(new MetadataFieldDefinition(UUID.randomUUID(), entity, b, key, 1, key, type, false, false, true,
+                MetadataNormalization.TRIM, MetadataSearchMode.EXACT, "{}", true, now, null, now)));
+        return b;
+    }
+
+    private long found(String key, String value) {
+        return business.search(entity, b, Map.of(key, value), null, null, null, null, null, false, 1, 50, "maya", "c", Clearance.STANDARD_ONLY).records().size();
+    }
+
+    /** Task 0079, as the contract says: types with the offset from UTC, letter case, and 512 characters. */
+    @Test
+    void typesOffsetsLetterCaseAndLengthAreAsTheContractSays() {
+        typed("signedAt", MetadataFieldType.DATETIME);
+        typed("active", MetadataFieldType.BOOLEAN);
+        typed("caseId", MetadataFieldType.UUID);
+        typed("closing", MetadataFieldType.DATE);
+        typed("note", MetadataFieldType.TEXT);
+        String long512 = "n".repeat(512);
+        deliver(b, Map.of("signedAt", "2026-11-21T10:15:30+02:00", "active", "TRUE", "caseId", "5E7D0000-0000-4000-8000-0000000000A1", "closing", "2026-11-21", "note", long512));
+        assertEquals(1, found("active", "true"));
+        assertEquals(1, found("caseId", "5e7d0000-0000-4000-8000-0000000000a1"));
+        assertEquals(1, found("closing", "2026-11-21"));
+        assertEquals(1, found("signedAt", "2026-11-21T10:15:30+02:00"));
+        assertEquals(1, found("note", long512.toUpperCase()));
+        for (Map<String, String> bad : List.of(Map.of("signedAt", "2026-11-21T10:15:30"), Map.of("active", "maybe"), Map.of("caseId", "1-1-1-1-1"), Map.of("note", long512 + "n"))) {
+            assertEquals("SDV-INT-009", assertThrows(CodedRefusal.BadRequest.class, () -> deliver(b, bad), bad.keySet().toString()).errorCode().code());
+        }
     }
 
     @Test

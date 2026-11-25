@@ -38,7 +38,7 @@ until something arrives. Pausing it refuses its deliveries; it must send them ag
 - **PDFs Vero refuses** (nothing is stored): unreadable (`SDV-INT-019`), encrypted or with a password (`SDV-INT-020`),
   with scripts, actions or attached files (`SDV-INT-021`), more pages than the limit (`SDV-INT-022`). The installer can
   let one system send the first three kinds with `SDV_PDF_ACCEPT`.
-- A metadata value is at most 512 characters.
+- A metadata value is at most 512 characters; a longer one is refused (`SDV-INT-009`). Dates with a time carry their offset from UTC.
 - Names, addresses and other sensitive fields are stored encrypted and found by their whole value only. They need the key service: without it lists go on without names, and deliveries with such a field are refused (`SDV-KEY-002`).
 
 Which field identifies a record is the Business Admin's setting (Search fields).

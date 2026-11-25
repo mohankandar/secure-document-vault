@@ -22,7 +22,7 @@ A sending system (a redaction service, a scanning line, any producer) builds aga
 2. `sourceSubmissionId` and `sourceDocumentId` are your stable IDs. `submissionId` and `documentId` are Vero's; treat them as opaque.
 3. A create is safe to send again: the same `sourceSubmissionId` with exactly the same body is answered 200 with the same submission. A different body is refused (409).
 4. An upload is safe to send again: the same `X-SDV-Source-Document-Id` (or `Idempotency-Key`) with the same file is answered 200 and stored once.
-5. Send only the metadata fields IT set up for your sending system, each as one JSON value (string, number, true or false).
+5. Send only the metadata fields IT set up for your sending system, each as one JSON value (string, number, true or false) of at most 512 characters.
 6. The entity and the sending system come from your verified token (its client binding), never from a header. `X-SDV-Tenant-Id` and `X-SDV-Source-Id` work only in a developer's local mode and are not part of this contract.
 7. Vero ignores submission fields it doesn't know. Send only documented fields: a later version may give an unknown name a meaning.
 
@@ -144,6 +144,7 @@ The answers a sender can get:
 | 500 | `SDV-SYS-016`, `SDV-INT-010` | after-fix |
 | 503 | `SDV-SYS-018`: **busy**, with `Retry-After` (seconds) | yes, after the header's wait |
 | 503 | `SDV-SYS-001`, `SDV-SYS-002`, `SDV-SYS-014`, `SDV-AUT-004`, `SDV-STO-001`: **unavailable**, no `Retry-After` | yes, with back-off |
+| 503 | `SDV-KEY-002` (creating only): the submission has a sensitive field and the key service can't be used now; nothing was stored. No `Retry-After` | yes, with back-off |
 | 503 | `SDV-LIC-001`, `SDV-LIC-002`: the customer's licence stops new work; nothing was stored. No `Retry-After` | after-fix |
 | 503 | `SDV-STO-004` (upload only): storage for this entity isn't available; the installer must fix it. No `Retry-After` | after-fix |
 
@@ -203,6 +204,13 @@ The record is the same grouping as for record levels (above): the submissions of
 The sample under `samples/third-party-producer/` demonstrates the contract with raw HTTP calls only.
 
 ## Changelog
+
+### 1.5.0 (task 0079, 2026-11-25). Release tag: `sdv-ingestion-v1.5.0`
+
+- **A metadata value is at most 512 characters** (it was 4,000). A longer one is refused, `400 SDV-INT-009`: "Metadata field '…' is longer than 512 characters." Nothing is stored. This is an approved exception to "`/v1` refuses nothing it accepted".
+- **Types, said in full:** a date with a time carries its offset from UTC (`2026-11-21T10:15:30Z`); true or false and UUID in any letter case. Identifier values that differ only in letter case or spaces now name the same record.
+- **New code, 503, no `Retry-After`, retry rule `yes`:** `SDV-KEY-002` on creating a submission with a sensitive field (names and addresses by default) while the key service can't be used. Nothing was stored; back off and send it again.
+- **Values belong to the record:** the latest delivery's replace earlier ones. A status query answers the record's values now, without sensitive fields; creating, and sending the same create again, answer what you sent.
 
 ### 1.4.0 (task 0075, 2026-11-24). Release tag: `sdv-ingestion-v1.4.0`
 

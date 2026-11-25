@@ -21,7 +21,7 @@
     },
     "metadata": {
       "type": "object",
-      "additionalProperties": {"type": ["string", "number", "boolean"]}
+      "additionalProperties": {"type": ["string", "number", "boolean"], "maxLength": 512}
     },
     "recordSensitivityLevel": {
       "description": "Optional level for the whole record this submission belongs to. Exact names only. A delivery may raise a record's level, never lower it.",

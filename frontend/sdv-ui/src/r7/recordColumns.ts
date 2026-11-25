@@ -9,7 +9,7 @@ import type { Source } from './model'
  * - Extra: the first field, in the sending system's own field order, that is not an identifier and is not already
  *   in the title (a preview value that the title contains is not repeated).
  */
-type Value = { fieldKey?: string; label: string; value: string }
+type Value = { fieldKey?: string; label: string; value: string; sensitive?: boolean }
 
 const words = (s: string) => s.toLocaleLowerCase().split(/\s+/).filter(Boolean)
 /** True when every word of the value appears, in order, in the title ("Patel" in "Ava Patel"). */
