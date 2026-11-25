@@ -53,11 +53,7 @@ class RecordSearchScalePostgresTest {
     private final JdbcFoundationRepository foundation = new JdbcFoundationRepository(named);
     private final InMemoryKeyService keys = new InMemoryKeyService().createKeysOnDemand();
     private final CustomerId customer = CustomerId.of(UUID.randomUUID());
-    private final PlatformRecordValues values = new PlatformRecordValues(data, customer, keys, (c, wrapped) -> {
-        Map<String, byte[]> out = new HashMap<>();
-        for (String w : wrapped) out.put(w, keys.unwrap(c, w));
-        return out;
-    });
+    private final PlatformRecordValues values = new PlatformRecordValues(data, customer, keys);
     private final BusinessExperienceService business = new BusinessExperienceService(foundation, foundation, fields, new JdbcBusinessRecordRepository(named), foundation, QuarantineLookup.NONE, values);
     private final TransactionTemplate tx = new TransactionTemplate(new DataSourceTransactionManager(data));
     private final UUID entity = UUID.randomUUID(), source = UUID.randomUUID();
