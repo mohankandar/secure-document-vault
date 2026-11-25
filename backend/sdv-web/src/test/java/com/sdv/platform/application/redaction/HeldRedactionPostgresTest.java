@@ -300,15 +300,24 @@ class HeldRedactionPostgresTest {
         assertThrows(RedactionFailedException.class, () -> ask(RACE, "Interrupted"));
         assertEquals("REDACTION_PROCESSING", one("select status from documents where document_id='" + RACE + "'"));
         holds.place(T, "ba", "Bea Admin", RACE.toString(), "Meanwhile", "c");
-        assertEquals("AVAILABLE", ask(RACE, "Interrupted").status(), "the same request goes on");
+        // Task 0076: the sealed copy can't be written: nothing is committed and the original is as it was; then it goes on.
+        afterStore = () -> { throw new IllegalStateException("disk full"); };
+        assertThrows(RedactionFailedException.class, () -> ask(RACE, "Interrupted"));
+        afterStore = () -> { };
         assertTrue(files.containsKey("original-" + RACE));
+        assertEquals("0", one("select count(*) from sealed_originals where document_id='" + RACE + "'"));
+        assertEquals("original-" + RACE, key(RACE));
+        assertEquals("AVAILABLE", ask(RACE, "Interrupted").status(), "the same request goes on");
+        String raceSealed = one("select object_key from sealed_originals where document_id='" + RACE + "'");
+        assertTrue(files.containsKey(raceSealed));
+        assertFalse(files.containsKey("original-" + RACE));
         assertEquals("1", one("select count(*) from sealed_originals where document_id='" + RACE + "' and request_id is null and state='SEALED'"));
 
         // 6. A document that changed since the request: not approved.
         UUID late = ask(RACE, "Asked again").accessRequestId();
         sql("update documents set content_sha256=repeat('b', 64) where document_id='" + RACE + "'");
         assertEquals("SDV-APR-017", code(() -> decide(late, AccessRequestService.Decision.APPROVE)));
-        assertTrue(files.containsKey("original-" + RACE));
+        assertTrue(files.containsKey(raceSealed));
 
         // 7. The tables refuse rows that make no sense.
         assertThrows(RuntimeException.class, () -> sql("update sealed_originals set state='SEALED' where sealed_id='" + sealedId + "'"));

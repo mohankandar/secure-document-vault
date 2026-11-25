@@ -58,7 +58,6 @@ function Sql([string]$Database, [string]$Text) {
 function Scalar([string]$Text) { Sql $db $Text }
 
 if (-not (Test-Path -LiteralPath $jarPath)) { throw "Jar not found: $jarPath. Run .\Build-SDV-All.ps1 first." }
-if (-not (Test-Path -LiteralPath $tokenFile -PathType Leaf)) { throw "The application Vault token file is missing: $tokenFile (the same file start-local uses)." }
 if (Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue) { throw "Port $Port is in use." }
 
 $exists = Sql 'postgres' "select count(*) from pg_database where datname='$db';"

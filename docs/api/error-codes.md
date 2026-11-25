@@ -984,7 +984,7 @@ Task 0037: SYS-003 to SYS-012 are start-up codes. A start that stops prints one 
 ### SDV-SYS-007: key service settings not valid
 
 - **HTTP status:** none; Vero doesn't start.
-- **Meaning:** with `SDV_KEY_PROVIDER=vault`, the Vault address is missing, both a token and a token file are given (or neither), the token file is empty or can't be read, or the mount or key prefix is not valid. The ERROR block names the setting; it never holds the token or the token file's contents.
+- **Meaning:** no longer sent (task 0076): the key service's settings (`platform.crypto.*`) are checked by platform-core, which stops the start with `CRYPTO_SETTINGS_INVALID` and every problem with its name; never a token or secret ID.
 - **What the user should do:** nothing; Vero is not running. Tell the IT team.
 - **What support should tell the customer:** a key service setting is wrong; the log names it. Correct it and start Vero again.
 
@@ -1115,9 +1115,9 @@ Task 0037: SYS-003 to SYS-012 are start-up codes. A start that stops prints one 
 ### SDV-KEY-001: encryption not set up
 
 - **HTTP status:** none yet. Task 0037 sends it in the start-up log; until the key service fix task, the viewer answers SDV-DOC-003 and a download SDV-DOC-007 (task 0043; they were `VIEWER_UNAVAILABLE` and `DOWNLOAD_UNAVAILABLE`), and other document actions a 500.
-- **Meaning:** `SDV_KEY_PROVIDER` is `disabled` (its default), so no document can be stored, viewed, printed, downloaded or redacted. In a local start Vero starts with one WARN line `SDV-KEY-001 …` that names what will fail. A packaged start (any start without the local profile) refuses to start, with an ERROR line and the ERROR block.
+- **Meaning:** `SDV_CRYPTO_ENABLED` is `false`, so no document can be stored, viewed, printed, downloaded or redacted. In a local start Vero starts with one WARN line `SDV-KEY-001 …` that names what will fail. A packaged start (any start without the local profile) refuses to start, with an ERROR line and the ERROR block.
 - **What the user should do:** nothing; tell the IT team.
-- **What support should tell the customer:** the install has no key service configured. Set `SDV_KEY_PROVIDER=vault` and the Vault settings (see the install guide), then start Vero again.
+- **What support should tell the customer:** the install has no key service configured. Remove `SDV_CRYPTO_ENABLED` and set the key service (runbook, "Keys for a customer"), then start Vero again.
 
 ## Viewing, print and download (DOC)
 

@@ -35,9 +35,8 @@ The default `compose.local.yml` runs Vault with `server -dev` (in-memory). Each 
 
    If `transit/` is already enabled, skip this command.
 
-7. Make the restricted application token (a policy for the SDV Transit paths only) and keep it in a file outside the
-   repository; the start scripts use that file (`SDV_VAULT_TOKEN_FILE`, default `..\secrets\sdv-app.token`). Never make a
-   token with a known ID or the root policy for Vero. Then forget the root token:
+7. Task 0076: run `.\Setup-SDV-VaultTransit.ps1` (runbook, "Keys for a customer"); it writes Vero's login file beside the
+   repository. Then forget the root token:
 
    ```powershell
    Remove-Item Env:VAULT_TOKEN
