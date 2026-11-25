@@ -318,6 +318,8 @@ from information_schema.tables where table_schema='public' and table_type='BASE 
         $oldRecord = Scalar "select record_id from submissions where submission_id='$oldSub';"
         $cutDoc = & $doc 'r3-demo-doc-100000000001-3'
         Assert-That ($oldDoc -and $oldRecord -and $cutDoc -and $oldDoc -ne $cutDoc) "A document to erase ($oldDoc), and one to redact ($cutDoc)"
+        $logFile = Join-Path (Join-Path $run 'erase-log') 'erase-log.jsonl'
+        $entriesBefore = @(if (Test-Path $logFile) { Get-Content $logFile }).Count # the tour may have erased something
         & docker exec $container pg_dump -U sdv -d $db -Fc -f "/tmp/$db.dump"
         if ($LASTEXITCODE -ne 0) { throw 'FAIL: pg_dump' }
         Pass 'The older backup: a dump of the database'
@@ -331,8 +333,8 @@ from information_schema.tables where table_schema='public' and table_type='BASE 
         Wait-For 'The cleanup erased the document that was due' { (Scalar "select status from documents where document_id='$oldDoc';") -eq 'EXPIRED_DELETED' }
         Wait-For 'and the values of its record' { (Scalar "select count(*) from fld_record where record_id='$oldRecord';") -eq '0' } 60
         Assert-That ((Scalar "select count(*) from records where record_id='$oldRecord';") -eq '1') 'The record''s row stays, with nothing but its key'
-        $logText = Get-Content -Raw (Join-Path $run 'erase-log\erase-log.jsonl')
-        Assert-That (@($logText -split "`n" | Where-Object { $_.Trim() }).Count -eq 3 -and $logText -match '"mac"' -and $logText -match 'replaced-version' -and $logText -match 'case-fields') 'The erase log has three keyed entries: the redacted version, the document, the record''s values'
+        $entries = @(Get-Content $logFile | Select-Object -Skip $entriesBefore); $logText = $entries -join ' '
+        Assert-That ($entries.Count -eq 3 -and $logText -match '"mac"' -and $logText -match 'replaced-version' -and $logText -match 'case-fields') 'The erase log has three new keyed entries: the redacted version, the document, the record''s values'
         Stop-App
 
         # The backup comes back: the database and the files of then, the log of now.
