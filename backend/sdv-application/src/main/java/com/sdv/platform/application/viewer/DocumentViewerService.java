@@ -580,7 +580,9 @@ public class DocumentViewerService {
                                 storageRef.encryptedSizeBytes(),
                                 storageRef.integrityValue());
 
-                crypto.decrypt(new StreamingCryptoPort.Binding(document.tenantId(), documentId, sealed == null ? null : sealed.sealedId()), envelope, encrypted, plaintext);
+                crypto.decrypt(sealed == null
+                        ? StreamingCryptoPort.Binding.document(document.tenantId(), documentId, cryptoMetadata.objectVersion())
+                        : StreamingCryptoPort.Binding.sealed(document.tenantId(), documentId, sealed.sealedId()), envelope, encrypted, plaintext);
                 plaintext.finish();
 
                 if (encrypted.count() != storageRef.encryptedSizeBytes()) {

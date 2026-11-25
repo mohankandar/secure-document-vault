@@ -169,7 +169,7 @@ public class JdbcHeldRedactionRepository implements HeldRedactionRepository {
                             rs.getLong("encrypted_size_bytes"), rs.getString("integrity_value")),
                     new DocumentCryptoMetadata(document, tenant, rs.getString("crypto_profile"), rs.getInt("crypto_version"),
                             rs.getString("key_provider_id"), rs.getString("protected_data_key_reference"),
-                            rs.getString("key_provider_version")),
+                            rs.getString("key_provider_version"), 0),
                     rs.getString("content_sha256"), rs.getLong("content_size_bytes"), rs.getTimestamp("sealed_at").toInstant());
         };
     }

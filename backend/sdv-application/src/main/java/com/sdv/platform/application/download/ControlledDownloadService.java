@@ -170,7 +170,7 @@ public class ControlledDownloadService {
                         sent,
                         current.contentSizeBytes(),
                         current.contentSha256());
-                crypto.decrypt(StreamingCryptoPort.Binding.document(current.tenantId(), documentId), envelope, encrypted, validating);
+                crypto.decrypt(StreamingCryptoPort.Binding.document(current.tenantId(), documentId, currentCrypto.objectVersion()), envelope, encrypted, validating);
                 validating.finish();
             }
         } catch (IOException | RuntimeException ex) {
@@ -326,7 +326,8 @@ public class ControlledDownloadService {
                 && a.cryptoVersion() == b.cryptoVersion()
                 && Objects.equals(a.keyProviderId(), b.keyProviderId())
                 && Objects.equals(a.protectedDataKeyReference(), b.protectedDataKeyReference())
-                && Objects.equals(a.keyProviderVersion(), b.keyProviderVersion());
+                && Objects.equals(a.keyProviderVersion(), b.keyProviderVersion())
+                && a.objectVersion() == b.objectVersion();
     }
 
     static final String UNVERIFIED_MESSAGE = "Vero couldn't verify this document, so it wasn't downloaded.";

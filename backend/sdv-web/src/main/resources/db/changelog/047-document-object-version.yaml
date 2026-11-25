@@ -1,0 +1,9 @@
+databaseChangeLog:
+  - changeSet:
+      id: 047-document-object-version
+      author: sdv
+      changes:
+        - sqlFile:
+            path: db/changelog/047-document-object-version.sql
+            relativeToChangelogFile: false
+            splitStatements: false

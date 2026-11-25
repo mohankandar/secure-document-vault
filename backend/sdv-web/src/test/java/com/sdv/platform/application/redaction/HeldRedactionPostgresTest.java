@@ -124,16 +124,22 @@ class HeldRedactionPostgresTest {
             return files.containsKey(objectKey);
         }
     };
+    /** What a stored copy was written as, by its key reference: the test's stand-in for the header inside the ciphertext. */
+    private final Map<String, StreamingCryptoPort.Binding> bound = new java.util.HashMap<>();
     private final StreamingCryptoPort crypto = new StreamingCryptoPort() {
         @Override
         public CryptoEnvelope encrypt(Binding binding, InputStream plaintext, OutputStream ciphertext) throws IOException {
             byte[] all = plaintext.readAllBytes();
             ciphertext.write(all);
-            return new CryptoEnvelope("COPY", 1, "test", "key-" + UUID.randomUUID(), "1", all.length, sha(all));
+            String key = "key-" + UUID.randomUUID();
+            bound.put(key, binding);
+            return new CryptoEnvelope("COPY", 1, "test", key, "1", all.length, sha(all));
         }
 
         @Override
         public void decrypt(Binding binding, CryptoEnvelope envelope, InputStream ciphertext, OutputStream plaintext) throws IOException {
+            Binding written = bound.getOrDefault(envelope.protectedDataKeyReference(), Binding.document(binding.entityId(), binding.documentId(), 1));
+            if (!written.equals(binding)) throw new CheckFailed("bound to something else");
             ciphertext.transferTo(plaintext);
         }
     };
@@ -206,6 +212,15 @@ class HeldRedactionPostgresTest {
         assertEquals("AVAILABLE", free.status());
         assertNull(free.accessRequestId());
         assertFalse(files.containsKey("original-" + FREE));
+        // Task 0091: the version rose by one, in the switch; the database never lets it fall.
+        assertEquals("2", one("select object_version::text from document_crypto_metadata where document_id='" + FREE + "'"));
+        assertThrows(RuntimeException.class, () -> sql("update document_crypto_metadata set object_version=1 where document_id='" + FREE + "'"));
+        assertEquals("AVAILABLE", ask(FREE, "Once more").status());
+        assertEquals("3", one("select object_version::text from document_crypto_metadata where document_id='" + FREE + "'"));
+        // An earlier version's ciphertext with its key, in place of the current one: a failed check.
+        bound.put("put back", StreamingCryptoPort.Binding.document(T, FREE, 2));
+        sql("update document_crypto_metadata set protected_data_key_reference='put back' where document_id='" + FREE + "'");
+        assertEquals("SDV-DOC-004", (assertThrows(com.sdv.platform.application.viewer.DocumentViewerUnavailableException.class, () -> viewer.metadata(T, FREE, Clearance.ALL, "rita", "c"))).errorCode().code());
 
         // 2. On hold: a request; nothing changes, and nothing is applied before the approval.
         LegalHoldService.LegalHoldView hold = holds.place(T, "ba", "Bea Admin", HELD.toString(), "Litigation", "c");

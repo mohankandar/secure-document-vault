@@ -47,14 +47,14 @@ class BoundStreamCryptoTest {
     @Test
     void everySizeComesBackAndTheContentIsNotReadable() throws Exception {
         Random random = new Random(76);
-        for (int size : new int[]{0, 1, 56, 57, 58, 65535 - 57, 65536 - 57, 65536, 65537, 3 * 65536 + 11, random.nextInt(400_000)}) {
+        for (int size : new int[]{0, 1, 60, 61, 62, 65535 - 61, 65536 - 61, 65536, 65537, 3 * 65536 + 11, random.nextInt(400_000)}) {
             byte[] clear = new byte[size];
             random.nextBytes(clear);
-            Stored s = write(Binding.document(entity, document), clear);
-            assertArrayEquals(clear, read(Binding.document(entity, document), s), "size " + size);
+            Stored s = write(Binding.document(entity, document, 1), clear);
+            assertArrayEquals(clear, read(Binding.document(entity, document, 1), s), "size " + size);
             assertEquals(s.bytes().length, s.envelope().encryptedSizeBytes());
         }
-        Stored s = write(Binding.document(entity, document), "%PDF-1.7 highly sensitive".getBytes());
+        Stored s = write(Binding.document(entity, document, 1), "%PDF-1.7 highly sensitive".getBytes());
         assertFalse(new String(s.bytes(), java.nio.charset.StandardCharsets.ISO_8859_1).contains("sensitive"));
         assertEquals("platform-stream", s.envelope().cryptoProfile());
         assertTrue(s.envelope().protectedDataKeyReference().length() <= 700, "fits its column");
@@ -63,26 +63,48 @@ class BoundStreamCryptoTest {
     @Test
     void aStoredCopyIsOnlyWhatItWasWrittenAs() throws Exception {
         byte[] clear = new byte[100_000];
-        Stored doc = write(Binding.document(entity, document), clear);
+        Stored doc = write(Binding.document(entity, document, 1), clear);
         Stored original = write(Binding.sealed(entity, document, sealed), clear);
-        for (Binding other : new Binding[]{Binding.document(entity, UUID.randomUUID()), Binding.document(UUID.randomUUID(), document), Binding.sealed(entity, document, sealed)}) refused(other, doc);
-        for (Binding other : new Binding[]{Binding.document(entity, document), Binding.sealed(entity, document, UUID.randomUUID()), Binding.sealed(entity, UUID.randomUUID(), sealed)}) refused(other, original);
+        for (Binding other : new Binding[]{Binding.document(entity, UUID.randomUUID(), 1), Binding.document(UUID.randomUUID(), document, 1), Binding.sealed(entity, document, sealed)}) refused(other, doc);
+        for (Binding other : new Binding[]{Binding.document(entity, document, 1), Binding.sealed(entity, document, UUID.randomUUID()), Binding.sealed(entity, UUID.randomUUID(), sealed)}) refused(other, original);
         assertArrayEquals(clear, read(Binding.sealed(entity, document, sealed), original));
+    }
+
+    /** Task 0091 (VSEC-21): an earlier version of the same document, its key with it, put in place of the current one. */
+    @Test
+    void anOtherVersionOfTheSameDocumentIsRefused() throws Exception {
+        Stored[] versions = new Stored[4];
+        for (int v = 1; v <= 3; v++) versions[v] = write(Binding.document(entity, document, v), ("version " + v).getBytes());
+        for (int now = 1; now <= 3; now++) {
+            for (int put = 1; put <= 3; put++) {
+                if (now == put) assertEquals("version " + now, new String(read(Binding.document(entity, document, now), versions[put])));
+                else refused(Binding.document(entity, document, now), versions[put]);
+            }
+        }
+        // A header of version 1 (task 0076: no document version in it) is refused.
+        byte[] old = new byte[57 + 10];
+        System.arraycopy(new byte[]{'V', 'E', 'R', 'O', 'D', 'O', 'C', 1, 1}, 0, old, 0, 9);
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        var info = cipher.encrypt(CUSTOMER, new ByteArrayInputStream(old), out);
+        refused(Binding.document(entity, document, 1), new Stored(new CryptoEnvelope(info.format(), info.formatVersion(), info.keyService(), info.wrappedKey(),
+                String.valueOf(info.keyVersion()), info.encryptedBytes(), info.ciphertextSha256()), out.toByteArray()));
+        assertThrows(InternalCheckFailed.class, () -> Binding.document(entity, document, 0));
+        assertThrows(InternalCheckFailed.class, () -> new Binding(entity, document, 1, sealed));
     }
 
     @Test
     void withoutAHeaderOrWithAShortOneItIsRefused() throws Exception {
-        for (int size : new int[]{0, 10, 56, 57, 5000}) {
+        for (int size : new int[]{0, 10, 60, 61, 5000}) {
             ByteArrayOutputStream out = new ByteArrayOutputStream();
             var info = cipher.encrypt(CUSTOMER, new ByteArrayInputStream(new byte[size]), out);
-            refused(Binding.document(entity, document), new Stored(new CryptoEnvelope(info.format(), info.formatVersion(), info.keyService(), info.wrappedKey(),
+            refused(Binding.document(entity, document, 1), new Stored(new CryptoEnvelope(info.format(), info.formatVersion(), info.keyService(), info.wrappedKey(),
                     String.valueOf(info.keyVersion()), info.encryptedBytes(), info.ciphertextSha256()), out.toByteArray()));
         }
     }
 
     @Test
     void anyChangedByteAnotherCustomerAndTheOldFormatAreRefused() throws Exception {
-        Binding binding = Binding.document(entity, document);
+        Binding binding = Binding.document(entity, document, 1);
         Stored s = write(binding, "content".getBytes());
         for (int i = 0; i < s.bytes().length; i++) {
             byte[] changed = s.bytes().clone();
@@ -97,7 +119,7 @@ class BoundStreamCryptoTest {
 
     @Test
     void theKeyServiceAwayIsNoFailedCheckAndADestroyedKeyIs() throws Exception {
-        Binding binding = Binding.document(entity, document);
+        Binding binding = Binding.document(entity, document, 1);
         Stored s = write(binding, "content".getBytes());
         keys.down(true);
         assertThrows(BoundStreamCrypto.KeyServiceUnusable.class, () -> read(binding, s));
@@ -113,11 +135,11 @@ class BoundStreamCryptoTest {
     @Test
     void theHeaderIsFixed() {
         UUID a = UUID.fromString("00112233-4455-6677-8899-aabbccddeeff"), b = UUID.fromString("01020304-0506-0708-090a-0b0c0d0e0f10");
-        assertEquals("5645524f444f430101" + "00112233445566778899aabbccddeeff" + "0102030405060708090a0b0c0d0e0f10" + "0".repeat(32),
-                HexFormat.of().formatHex(BoundStreamCrypto.header(Binding.document(a, b))));
-        assertEquals("5645524f444f430102" + "00112233445566778899aabbccddeeff" + "0102030405060708090a0b0c0d0e0f10" + "ffffffffffffffffffffffffffffffff",
+        assertEquals("5645524f444f4302" + "01" + "00000007" + "00112233445566778899aabbccddeeff" + "0102030405060708090a0b0c0d0e0f10" + "0".repeat(32),
+                HexFormat.of().formatHex(BoundStreamCrypto.header(Binding.document(a, b, 7))));
+        assertEquals("5645524f444f4302" + "02" + "00000000" + "00112233445566778899aabbccddeeff" + "0102030405060708090a0b0c0d0e0f10" + "ffffffffffffffffffffffffffffffff",
                 HexFormat.of().formatHex(BoundStreamCrypto.header(Binding.sealed(a, b, new UUID(-1, -1)))));
-        assertThrows(InternalCheckFailed.class, () -> Binding.document(null, b));
-        assertThrows(InternalCheckFailed.class, () -> Binding.document(a, null));
+        assertThrows(InternalCheckFailed.class, () -> Binding.document(null, b, 1));
+        assertThrows(InternalCheckFailed.class, () -> Binding.document(a, null, 1));
     }
 }

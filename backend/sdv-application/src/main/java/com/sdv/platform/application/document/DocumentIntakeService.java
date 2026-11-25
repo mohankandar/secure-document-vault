@@ -213,7 +213,7 @@ public class DocumentIntakeService {
         // PDF is checked there before anything is committed. A refused one leaves nothing behind.
         try (EncryptedScratch scratch = pdfChecks.scratch(); EncryptedScratch.Buffer copy = scratch.createBuffer()) {
             stored = provider.store(tenantId, volume, output -> {
-                StreamingCryptoPort.CryptoEnvelope envelope = crypto.encrypt(StreamingCryptoPort.Binding.document(tenantId, candidateDocumentId), new CopyingInputStream(validated, copy), output);
+                StreamingCryptoPort.CryptoEnvelope envelope = crypto.encrypt(StreamingCryptoPort.Binding.document(tenantId, candidateDocumentId, DocumentCryptoMetadata.FIRST_VERSION), new CopyingInputStream(validated, copy), output);
                 validated.finish();
                 envelopeHolder[0] = envelope;
             });
