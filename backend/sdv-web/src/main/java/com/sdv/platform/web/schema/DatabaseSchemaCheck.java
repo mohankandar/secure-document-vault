@@ -194,9 +194,16 @@ public class DatabaseSchemaCheck {
     static void requireIdentityRights(DataSource dataSource) throws java.sql.SQLException {
         try {
             com.documentplatform.identity.jdbc.IdentitySchema.verify(dataSource);
+            // Task 0077: the case field tables, the same way.
+            com.documentplatform.fields.jdbc.FieldSchema.verify(dataSource);
         } catch (com.documentplatform.identity.jdbc.IdentitySchemaException e) {
             if (e.problem() == com.documentplatform.identity.jdbc.IdentitySchemaException.Problem.IDN_CHECK_FAILED) {
                 throw new java.sql.SQLException("identity tables could not be checked", e);
+            }
+            throw new StartupFailure(SdvErrorCode.SYS_005, withCode(e.problem().name(), e.getMessage()), e);
+        } catch (com.documentplatform.fields.jdbc.FieldSchemaException e) {
+            if (e.problem() == com.documentplatform.fields.jdbc.FieldSchemaException.Problem.FLD_CHECK_FAILED) {
+                throw new java.sql.SQLException("case field tables could not be checked", e);
             }
             throw new StartupFailure(SdvErrorCode.SYS_005, withCode(e.problem().name(), e.getMessage()), e);
         }

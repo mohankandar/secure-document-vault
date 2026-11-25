@@ -170,7 +170,7 @@ A person who may work in more than one entity chooses one after signing in and c
 ## 6. Grants for the app's database user
 
 The runbook's default privileges already give Vero's app user `SELECT`, `INSERT`, `UPDATE`, `DELETE` on every table
-the owner creates, platform-core's `idn_` and `lic_` tables included. platform-core needs no more (on
+the owner creates, platform-core's `idn_`, `lic_` and `fld_` tables included. platform-core needs no more (on
 `idn_grant_history` the table itself refuses changes). If the rights are short, Vero does not start and names the
 table (`IDN_PRIVILEGES_MISSING`).
 

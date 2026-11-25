@@ -3,7 +3,7 @@ import { Plus, Trash2 } from 'lucide-react'
 import { FailureNotice, actionFailed, loadFailed, type Failure } from './CardError'
 import { Callout, Dialog, Drawer, TechDetails, fmtDate, fmtRel } from './ui'
 import {
-  identityOverview, itCreateSource, itFields, itSourceSummary, itSources, itStandardLimits, itUpdateSource, itUpsertField,
+  caseFields, identityOverview, itCreateSource, itFields, itSourceSummary, itSources, itStandardLimits, itUpdateSource, itUpsertField,
   type ItField, type ItSource, type ItSourceSummary,
 } from './liveApi'
 
@@ -227,6 +227,13 @@ function SourceEditor({ mode, source, fields, others, idp, standard, onClose, on
   const [credential, setCredential] = useState(source?.credentialReference ?? '')
   const [limits, setLimits] = useState<Record<string, string>>(() => Object.fromEntries(LIMIT_INPUTS.map((l) => { const n = source?.limits?.[l.key]; return [l.key, n != null ? String(Math.round((n / l.factor) * 10) / 10) : ''] })))
   const [busy, setBusy] = useState(false)
+  // Task 0077: a field with values keeps its type; said before saving.
+  const [locked, setLocked] = useState<Set<string>>(new Set())
+  useEffect(() => {
+    let active = true
+    caseFields('tenantIt').then((all) => { if (active) setLocked(new Set(all.filter((f) => f.locked).map((f) => f.fieldKey))) }).catch(() => { /* the server refuses a locked change by itself */ })
+    return () => { active = false }
+  }, [])
   const [saveError, setSaveError] = useState<Failure | null>(null)
   const kinds = useMemo(() => {
     const all = [...KINDS]
@@ -307,6 +314,7 @@ function SourceEditor({ mode, source, fields, others, idp, standard, onClose, on
             {f.original ? <small className="faint">Already in use, so it can’t be removed. Untick Required instead.</small>
               : <button type="button" className="v-btn quiet sm" aria-label={`Remove field ${i + 1}`} onClick={() => setDraft((d) => d.filter((_, j) => j !== i))}><Trash2 size={14} aria-hidden />Remove</button>}
           </div>
+          {locked.has(f.key) && <small className="faint">Documents have values for this field, so its type is locked ({kindWords(f.original?.fieldType ?? '', f.original?.normalization ?? 'NONE') || 'as it is'}).</small>}
           {fieldProblems[i] && (f.key || f.label) && <small className="bad">{fieldProblems[i]}</small>}
         </fieldset>)}
       </div>

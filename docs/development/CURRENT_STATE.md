@@ -44,6 +44,8 @@ the schema step (never at startup, the local profile included).
   demo step; demo entity UUIDs are derived from the demo slot IDs.
 - Licensing is on (task 0075): Vero starts only with a licence; intake stops after the grace time; usage is recorded, never
   enforced. `docs/verification` keeps the earlier identity checkpoints as history.
+- **Task 0077 (2026-11-24): field definitions in platform-fields** (`fld_` tables). What a sending system adds is an extension
+  (`source.<id>`). The old rows are a copy written in the same transaction until 0078.
 - **Task 0076 (2026-11-24): documents through platform-crypto**, one key per customer, bound to entity, document and sealed original.
   No reader for the old format; local work is in database `sdv_vero`, `sdv` is kept.
 - **Task 0073 (2026-11-24): platform-core 1.0.0** (identity only; no module turned on yet).

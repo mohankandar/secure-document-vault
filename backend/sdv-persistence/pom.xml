@@ -22,6 +22,11 @@
             <groupId>com.documentplatform.platform</groupId>
             <artifactId>platform-identity-jdbc</artifactId>
         </dependency>
+        <!-- Task 0077: the case field definitions (fld_ tables). -->
+        <dependency>
+            <groupId>com.documentplatform.platform</groupId>
+            <artifactId>platform-fields</artifactId>
+        </dependency>
         <dependency>
             <groupId>com.sdv.platform</groupId>
             <artifactId>sdv-domain</artifactId>
