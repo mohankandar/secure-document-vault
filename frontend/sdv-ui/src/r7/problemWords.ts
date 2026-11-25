@@ -135,6 +135,7 @@ export const CODE_WORDS: Record<string, string> = {
   'SDV-SYS-015': 'Vero couldn’t read this request. Reload the page and try again.',
   'SDV-SYS-016': 'Something inside Vero didn’t add up, so nothing was changed.',
   'SDV-SYS-017': 'Vero couldn’t record this action, so it wasn’t done.',
+  'SDV-ERS-001': 'Vero is paused until IT has checked the erase log.',
   'SDV-SYS-018': 'Vero is too busy to take this request just now.',
   'SDV-SYS-019': 'This request is larger than Vero takes. Send less at once.',
   'SDV-STO-008': 'This folder can’t be used for documents. Choose another, or ask your installer which folders are allowed.',

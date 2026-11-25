@@ -67,8 +67,9 @@ class QuarantinePostgresTest {
     private final QuarantineService quarantine = new QuarantineService(repository, guard,
             new com.sdv.platform.persistence.fields.PlatformFieldRepository(jdbc.getJdbcTemplate().getDataSource()), foundation, ApprovalSettings.defaults(), tx, com.sdv.platform.application.port.RecordValuesPort.NONE);
     private final JdbcSecureIngestionRepository ingestion = new JdbcSecureIngestionRepository(jdbc);
+    private final com.sdv.platform.web.erase.EraseKit erase = new com.sdv.platform.web.erase.EraseKit(dataSource, tx, List.of());
     private final RetentionDeletionService retention = new RetentionDeletionService(
-            new JdbcRetentionRepository(jdbc), ingestion, ingestion, List.of(), foundation, tx);
+            new JdbcRetentionRepository(jdbc), ingestion, erase.port, erase.erased, foundation, tx);
 
     private void sql(String statement) {
         jdbc.getJdbcTemplate().execute(statement);

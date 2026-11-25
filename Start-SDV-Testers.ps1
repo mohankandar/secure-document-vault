@@ -150,6 +150,8 @@ try {
     $env:SDV_AUTH_JWT_MAX_TOKEN_LIFETIME_SECONDS = '900'
     $env:SDV_TRUSTED_PROXIES = '127.0.0.1'
     $env:SDV_STORAGE_ALLOWED_ROOTS = $storage
+    # Task 0080: beside the documents' folder, never in it.
+    $env:SDV_ERASE_LOG_FOLDER = "$($storage.TrimEnd('\', '/'))-erase-log"
     $env:SDV_DEFAULT_TIME_ZONE = 'America/New_York'
     foreach ($name in $keys.Keys) { Set-Item -LiteralPath "Env:$name" -Value ([string]$keys[$name]) }
     $vero = Start-Process -FilePath (Get-Command java).Source -ArgumentList @('-jar', "`"$($jars[0].FullName)`"") -WorkingDirectory $Run -PassThru

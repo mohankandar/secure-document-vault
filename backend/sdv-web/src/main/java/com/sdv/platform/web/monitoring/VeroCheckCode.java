@@ -14,6 +14,8 @@ public enum VeroCheckCode implements PlatformCode {
     SIGN_IN_KEYS(SdvErrorCode.AUT_004, "The login system's keys at {host} can't be fetched ({reason}).", "Check that the login system runs and can be reached from this server. Vero goes on by itself."),
     STORAGE(SdvErrorCode.STO_009, "Storage volumes nearly full: {warning}. Full or not usable: {stopped}. Active: {active}.", "IT frees space, adds a volume or makes the folder reachable (IT, Storage)."),
     INTAKE_ATTEMPTS(SdvErrorCode.SYS_020, "Intake requests in the last hour that no sending system could be found for: {count}.", "See Problems, Unidentified intake attempts: check the sending system's sign-in, or who is calling."),
+    ERASE_LOG(SdvErrorCode.ERS_001, "The erase log stops all work ({code}).", "Runbook, Restore and Erase log. After a restore: run the erase replay."),
+    ERASE_PENDING(SdvErrorCode.ERS_003, "Entry {seq} of the erase log can't be finished ({code}): {kind}, {record}. Nothing after it is erased.", "Fix what the code says (a folder or share, or its rights). The next erasure or cleanup goes on by itself."),
     KEY_SERVICE(SdvErrorCode.KEY_001, "The key service does not work or isn't set up ({state}).", "Check the key service: reachable, unsealed, and Vero's login accepted.");
 
     private final SdvErrorCode code;

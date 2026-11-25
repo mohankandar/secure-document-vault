@@ -54,6 +54,9 @@ The rule under **Keeping documents** says how long Vero keeps documents: forever
 - A daily cleanup deletes documents whose time is over, for good, and records each in the audit. Legal holds and
   quarantine stop it.
 
+- When the last document of a record is erased, its search field values are erased with it. A legal hold or quarantine keeps both.
+- Erased stays erased: after a restored backup Vero erases again, before anyone works, what had been erased since.
+
 ## Sensitivity levels
 
 Standard, Confidential, Highly Confidential. A record can have a level too; **the higher of the two counts**. Stewards

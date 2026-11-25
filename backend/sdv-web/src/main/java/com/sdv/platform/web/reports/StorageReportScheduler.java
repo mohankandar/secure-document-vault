@@ -1,7 +1,7 @@
 package com.sdv.platform.web.reports;
 
 import com.sdv.platform.application.reports.StorageReportService;
-import com.sdv.platform.web.schema.DatabaseSchemaCheck;
+import com.sdv.platform.web.erase.WorkGate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -16,18 +16,18 @@ public class StorageReportScheduler {
     private static final Logger log = LoggerFactory.getLogger(StorageReportScheduler.class);
 
     private final StorageReportService storage;
-    private final DatabaseSchemaCheck schema;
+    private final WorkGate gate;
 
-    public StorageReportScheduler(StorageReportService storage, DatabaseSchemaCheck schema) {
+    public StorageReportScheduler(StorageReportService storage, WorkGate gate) {
         this.storage = storage;
-        this.schema = schema;
+        this.gate = gate;
     }
 
     @Scheduled(
             initialDelayString = "${sdv.reports.storage.count-initial-delay-ms:30000}",
             fixedDelayString = "${sdv.reports.storage.count-delay-ms:900000}")
     public void count() {
-        if (!schema.current()) return; // the database doesn't match this version (DatabaseSchemaCheck)
+        if (!gate.open()) return; // the database doesn't match this version, or the erase log stops all work
         try {
             int counted = storage.countAll();
             log.debug("Storage report counted for {} entities", counted);

@@ -1,7 +1,7 @@
 package com.sdv.platform.web.retention;
 
 import com.sdv.platform.application.retention.RetentionDeletionService;
-import com.sdv.platform.web.schema.DatabaseSchemaCheck;
+import com.sdv.platform.web.erase.WorkGate;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
@@ -27,8 +27,8 @@ public class RetentionSweepMonitor {
     private final Clock clock;
 
     @Autowired
-    public RetentionSweepMonitor(RetentionSchedule schedule, DatabaseSchemaCheck schema) {
-        this(schedule, schema::current, Clock.systemUTC());
+    public RetentionSweepMonitor(RetentionSchedule schedule, WorkGate gate) {
+        this(schedule, gate::open, Clock.systemUTC());
     }
 
     RetentionSweepMonitor(RetentionSchedule schedule, BooleanSupplier schemaCurrent, Clock clock) {

@@ -1,43 +1,40 @@
 package com.sdv.platform.application.retention;
 
 import com.sdv.platform.application.json.VeroJson;
-import com.sdv.platform.domain.error.InternalCheckFailed;
-import tools.jackson.core.JacksonException;
-import tools.jackson.databind.ObjectMapper;
 import com.sdv.platform.application.port.AuditEventPort;
 import com.sdv.platform.application.port.DocumentIntakeRepository;
+import com.sdv.platform.application.port.ErasePort;
+import com.sdv.platform.application.port.EraseRepository;
 import com.sdv.platform.application.port.RetentionRepository;
-import com.sdv.platform.application.port.StorageProvider;
-import com.sdv.platform.application.port.StorageVolumeRepository;
 import com.sdv.platform.domain.audit.AuditEvent;
 import com.sdv.platform.domain.audit.AuditOutcome;
 import com.sdv.platform.domain.document.Document;
-import com.sdv.platform.domain.document.DocumentCryptoMetadata;
 import com.sdv.platform.domain.document.DocumentStatus;
-import com.sdv.platform.domain.document.DocumentStorageRef;
-import com.sdv.platform.domain.storage.StorageVolume;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
+import tools.jackson.databind.ObjectMapper;
 
-import java.io.IOException;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
-import java.util.Optional;
 import java.util.UUID;
 
+/**
+ * The daily cleanup. Task 0080: it claims what is due; the erasing itself is the erase log's ({@link ErasePort}), which also writes the
+ * audit event. When the log can't go on, the rest of the run is left for a later one.
+ */
 @Service
 public class RetentionDeletionService {
     public static final String DELETION_REASON = "RETENTION_EXPIRED";
 
     private final RetentionRepository retention;
     private final DocumentIntakeRepository documents;
-    private final StorageVolumeRepository volumes;
-    private final List<StorageProvider> storageProviders;
+    private final ErasePort erase;
+    private final EraseRepository erased;
     private final AuditEventPort audit;
     private final TransactionTemplate transactions;
     private final ObjectMapper json = VeroJson.mapper();
@@ -46,14 +43,14 @@ public class RetentionDeletionService {
     public RetentionDeletionService(
             RetentionRepository retention,
             DocumentIntakeRepository documents,
-            StorageVolumeRepository volumes,
-            List<StorageProvider> storageProviders,
+            ErasePort erase,
+            EraseRepository erased,
             AuditEventPort audit,
             PlatformTransactionManager transactionManager) {
         this.retention = retention;
         this.documents = documents;
-        this.volumes = volumes;
-        this.storageProviders = List.copyOf(storageProviders);
+        this.erase = erase;
+        this.erased = erased;
         this.audit = audit;
         this.transactions = new TransactionTemplate(transactionManager);
     }
@@ -65,14 +62,38 @@ public class RetentionDeletionService {
         long held = retention.countHeldDueDocuments();
         int completed = 0;
         int failed = 0;
+        boolean stopped = false;
         for (RetentionRepository.DueDocument candidate : due) {
             try {
                 if (expire(candidate.tenantId(), candidate.documentId())) completed++;
+            } catch (ErasePort.EraseFailed ex) {
+                failed++;
+                if (ex.refused()) continue;
+                stopped = true; // the log goes in order: nothing after it would be erased either
+                break;
             } catch (RuntimeException ex) {
                 failed++;
             }
         }
+        if (!stopped) failed += eraseCaseFields(bounded);
         return new SweepResult(due.size(), completed, failed, held);
+    }
+
+    /** The values of records whose last document is gone. Returns the failures. */
+    private int eraseCaseFields(int limit) {
+        int failed = 0;
+        for (EraseRepository.RecordKey record : erased.findRecordsToErase(limit)) {
+            try {
+                erase.inTurn(() -> transactions.execute(status -> {
+                    if (erased.lockRecordToErase(record)) erase.caseFields(record.tenantId(), record.sourceId(), record.recordId(), UUID.randomUUID());
+                    return null;
+                }));
+            } catch (ErasePort.EraseFailed ex) {
+                failed++;
+                if (!ex.refused()) break;
+            }
+        }
+        return failed;
     }
 
     boolean expire(UUID tenantId, UUID documentId) {
@@ -89,61 +110,12 @@ public class RetentionDeletionService {
         if (document.expiresAt() == null) {
             throw new IllegalStateException("Retention deletion cannot proceed without a snapshotted expiration.");
         }
-
-        Optional<DocumentStorageRef> storageOptional = documents.findStorageRef(tenantId, documentId);
-        Optional<DocumentCryptoMetadata> cryptoOptional = documents.findCryptoMetadata(tenantId, documentId);
-        String ciphertextSha = storageOptional.map(DocumentStorageRef::integrityValue).orElse(null);
-
         try {
-            if (storageOptional.isPresent()) {
-                DocumentStorageRef storage = storageOptional.get();
-                StorageVolume volume = volumes.findById(tenantId, storage.storageVolumeId())
-                        .orElseThrow(() -> new IllegalStateException("Retention storage volume is unavailable."));
-                StorageProvider provider = provider(storage.providerId());
-                provider.delete(tenantId, volume, storage.objectKey());
-                if (provider.exists(tenantId, volume, storage.objectKey())) {
-                    throw new IOException("Protected ciphertext still exists after retention deletion attempt.");
-                }
-            }
-
-            Instant deletedAt = clock.instant();
-            transactions.executeWithoutResult(status -> {
-                retention.finalizeExpiredDocument(tenantId, documentId, deletedAt, DELETION_REASON);
-                audit.append(new AuditEvent(
-                        UUID.randomUUID(), tenantId, "SYSTEM", "retention-scheduler",
-                        "DOCUMENT_RETENTION_DELETED", "DOCUMENT", documentId.toString(),
-                        deletedAt, null, AuditOutcome.SUCCESS,
-                        successDetails(document, ciphertextSha, cryptoOptional.isPresent())));
-            });
+            erase.document(tenantId, documentId, UUID.randomUUID());
             return true;
-        } catch (Exception ex) {
+        } catch (RuntimeException ex) {
             safeFailureAudit(document, ex);
-            throw ex instanceof RuntimeException runtime
-                    ? runtime
-                    : new IllegalStateException("Retention deletion could not complete safely.", ex);
-        }
-    }
-
-    private StorageProvider provider(String providerId) {
-        return storageProviders.stream()
-                .filter(candidate -> candidate.providerId().equals(providerId))
-                .findFirst()
-                .orElseThrow(() -> new IllegalStateException("Configured storage provider is unavailable."));
-    }
-
-    private String successDetails(Document document, String ciphertextSha, boolean keyReferenceWasPresent) {
-        try {
-            Map<String, Object> safe = new LinkedHashMap<>();
-            safe.put("deletionReason", DELETION_REASON);
-            safe.put("expiresAt", document.expiresAt().toString());
-            safe.put("retentionDaysSnapshot", document.retentionDaysSnapshot());
-            safe.put("contentSha256", document.contentSha256());
-            safe.put("ciphertextSha256", ciphertextSha);
-            safe.put("protectedKeyReferenceRemoved", keyReferenceWasPresent);
-            safe.put("metadataTombstoneRetained", true);
-            return json.writeValueAsString(safe);
-        } catch (JacksonException ex) {
-            throw InternalCheckFailed.auditNotWritten("Could not serialize retention deletion audit details.", ex);
+            throw ex;
         }
     }
 
@@ -151,7 +123,7 @@ public class RetentionDeletionService {
         try {
             Map<String, Object> safe = new LinkedHashMap<>();
             safe.put("deletionReason", DELETION_REASON);
-            safe.put("errorCode", failure.getClass().getSimpleName());
+            safe.put("errorCode", failure instanceof ErasePort.EraseFailed f ? f.code() : failure.getClass().getSimpleName());
             audit.append(new AuditEvent(
                     UUID.randomUUID(), document.tenantId(), "SYSTEM", "retention-scheduler",
                     "DOCUMENT_RETENTION_DELETE_FAILED", "DOCUMENT", document.documentId().toString(),

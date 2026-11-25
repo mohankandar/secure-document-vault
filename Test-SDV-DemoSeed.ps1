@@ -22,6 +22,9 @@
        a second reset changes nothing. Before step 2, the reset is refused on the empty database (no demo data).
     6. With -WithTour: start a second Vite dev server on port 5193 that talks to that Vero, then run
        npm run ui:capture and npm run ui:compare against it.
+    7. With -WithRestore (task 0080): a dump, then a redaction and the cleanup erase; the dump is restored into
+       sdv_seed_test_restored (Vero is paused, the erase replay, start, nothing of it readable), and once more under the
+       running Vero. The scratch databases' erase log is in this run's folder.
 
   Documents delivered by the seed are stored in .runtime\seed-test\<run>\storage-a and -b (kept, like the other
   check folders under .runtime; the files are encrypted and belong to nothing once the database is dropped).
@@ -36,6 +39,8 @@ param(
     [switch]$WithTour,
     # Task 0078: only the tour steps whose title matches (Playwright's -g), without the comparison; with -WithTour.
     [string]$TourSteps = '',
+    # Task 0080: then the restore proof (a dump, erasures, the dump restored beside it, refused, replay, start).
+    [switch]$WithRestore,
     # Drop a scratch database left by an earlier run of this script that could not clean up.
     [switch]$DropLeftover
 )
@@ -68,6 +73,8 @@ if ([int]$exists -gt 0) {
     $null = Sql 'postgres' "drop database $db with (force);"
 }
 
+if ($DropLeftover) { $null = Sql 'postgres' "drop database if exists ${db}_restored with (force);" }
+
 $script:app = $null
 $script:vite = $null
 try {
@@ -86,6 +93,8 @@ try {
     Assert-That ($schemaExit -eq 0) "Schema step on the scratch database (exit $schemaExit; log: $run\schema.log)"
     # Task 0076: a scratch key service, never sdv-vault.
     & (Join-Path $root 'scripts\local\Use-SdvScratchVault.ps1')
+    # Task 0080: the scratch database's own erase log.
+    $env:SDV_ERASE_LOG_FOLDER = (Join-Path $run 'erase-log')
     # Task 0075: Vero starts only with a licence.
     $ErrorActionPreference = 'Continue'
     & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $root 'Seed-SDV-Canvas-Demo.ps1') -SetupOnly -Database $db *> (Join-Path $run 'setup.log')
@@ -263,9 +272,107 @@ from information_schema.tables where table_schema='public' and table_type='BASE 
         Assert-That ($capture -eq 0) 'npm run ui:capture against the seeded scratch database'
         Assert-That ($compare -eq 0) 'npm run ui:compare against the seeded scratch database'
     }
+    # ---- 7. Task 0080: a restored backup ----
+    if ($WithRestore) {
+        if ($script:vite -and -not $script:vite.HasExited) { & taskkill /PID $script:vite.Id /T /F *> $null }
+        $restored = "${db}_restored"
+        function Stop-App { if ($script:app -and -not $script:app.HasExited) { Stop-Process -Id $script:app.Id -Force; $null = $script:app.WaitForExit(30000) } }
+        function Start-App([string]$Name, [string]$Database, [string[]]$More = @()) {
+            $env:SDV_LOCAL_DB_PASSWORD = $localPassword
+            try {
+                $script:app = Start-Process -FilePath 'java' -PassThru -WindowStyle Hidden -WorkingDirectory $root `
+                    -ArgumentList (@('-jar', "`"$jarPath`"", '--spring.profiles.active=local', "--server.port=$Port", "--spring.datasource.url=jdbc:postgresql://localhost:5433/$Database", '--platform.erase-log.recheck=5s') + $More) `
+                    -RedirectStandardOutput (Join-Path $run "$Name.out.log") -RedirectStandardError (Join-Path $run "$Name.err.log")
+            } finally { Remove-Item Env:SDV_LOCAL_DB_PASSWORD -ErrorAction SilentlyContinue }
+        }
+        # Status and body of any answer; null while nothing answers.
+        function Answer([string]$Path, [hashtable]$H = @{}) {
+            try { $r = Invoke-WebRequest "$base$Path" -Headers $H -UseBasicParsing -TimeoutSec 10; [pscustomobject]@{ Status = [int]$r.StatusCode; Body = "$($r.Content)" } }
+            catch [System.Net.WebException] {
+                if ($null -eq $_.Exception.Response) { return $null }
+                $body = if ($_.ErrorDetails -and $_.ErrorDetails.Message) { $_.ErrorDetails.Message } else { (New-Object IO.StreamReader($_.Exception.Response.GetResponseStream())).ReadToEnd() }
+                [pscustomobject]@{ Status = [int]$_.Exception.Response.StatusCode; Body = $body }
+            }
+        }
+        function Wait-For([string]$What, [scriptblock]$Until, [int]$Seconds = 150) {
+            $w = [Diagnostics.Stopwatch]::StartNew()
+            while ($true) {
+                if (& $Until) { Pass ("$What ({0:N0} s)" -f $w.Elapsed.TotalSeconds); return }
+                if ($w.Elapsed.TotalSeconds -gt $Seconds) { throw "FAIL: $What, not within $Seconds s" }
+                Start-Sleep -Milliseconds 500
+            }
+        }
+        function Ready { $r = Answer '/actuator/health/readiness'; $r -and $r.Status -eq 200 }
+        function Paused { $r = Answer '/actuator/health/readiness'; $r -and $r.Status -eq 503 -and $r.Body -match 'ERASE_LOG_RESTORE_DETECTED' -and $r.Body -match 'SDV-ERS-001' }
+        function Replay([string]$Name, [string]$Database) {
+            Start-App $Name $Database @('--erase-replay')
+            if (-not $script:app.WaitForExit(180000)) { Stop-App; throw "FAIL: the erase replay did not end; see $run\$Name.out.log" }
+            Assert-That ($script:app.ExitCode -eq 0) "The erase replay on $Database ended with 0: $((Get-Content (Join-Path $run "$Name.out.log") | Select-String 'Erase replay' | Select-Object -First 1).Line)"
+        }
+        $steward = As 'local-document-steward' 'DOCUMENT_STEWARD'
+        $user = As 'local-business-user' 'BUSINESS_USER'
+        # A contract of one delivery goes with its last document; another document is redacted.
+        $oldSub = Scalar "select s.submission_id from submissions s where s.tenant_id=$T and s.status='COMPLETE' and s.source_id='$redactionId' and (select count(*) from documents d where d.submission_id=s.submission_id)=1 and (select count(*) from submissions o where o.record_id=s.record_id)=1 and not exists (select 1 from documents d join legal_holds h on h.document_id=d.document_id and h.released_at is null where d.submission_id=s.submission_id) and exists (select 1 from documents d where d.submission_id=s.submission_id and d.status='AVAILABLE' and d.sensitivity_level='STANDARD') order by 1 limit 1;"
+        $oldDoc = Scalar "select document_id from documents where submission_id='$oldSub';"
+        $oldRecord = Scalar "select record_id from submissions where submission_id='$oldSub';"
+        $cutDoc = & $doc 'r3-demo-doc-100000000001-3'
+        Assert-That ($oldDoc -and $oldRecord -and $cutDoc -and $oldDoc -ne $cutDoc) "A document to erase ($oldDoc), and one to redact ($cutDoc)"
+        & docker exec $container pg_dump -U sdv -d $db -Fc -f "/tmp/$db.dump"
+        if ($LASTEXITCODE -ne 0) { throw 'FAIL: pg_dump' }
+        Pass 'The older backup: a dump of the database'
+        Copy-Item -Recurse (Join-Path $run 'storage-a') (Join-Path $run 'storage-a-backup')
+
+        $answer = Call 'POST' "/api/v1/business/documents/$cutDoc/redactions" $steward @{ reason = 'Restore check'; confirmed = $true; regions = @(@{ pageNumber = 1; x = 0.1; y = 0.1; width = 0.2; height = 0.1 }) }
+        Assert-That ($answer.status -eq 'AVAILABLE') 'One document was redacted; its original is erased through the log'
+        $null = Scalar "update documents set expires_at = now() - interval '1 minute' where document_id='$oldDoc';"
+        Stop-App
+        Start-App 'restore-1-cleanup' $db @('"--sdv.retention.cron=*/5 * * * * *"')
+        Wait-For 'The cleanup erased the document that was due' { (Scalar "select status from documents where document_id='$oldDoc';") -eq 'EXPIRED_DELETED' }
+        Wait-For 'and the values of its record' { (Scalar "select count(*) from fld_record where record_id='$oldRecord';") -eq '0' } 60
+        Assert-That ((Scalar "select count(*) from records where record_id='$oldRecord';") -eq '1') 'The record''s row stays, with nothing but its key'
+        $logText = Get-Content -Raw (Join-Path $run 'erase-log\erase-log.jsonl')
+        Assert-That (@($logText -split "`n" | Where-Object { $_.Trim() }).Count -eq 3 -and $logText -match '"mac"' -and $logText -match 'replaced-version' -and $logText -match 'case-fields') 'The erase log has three keyed entries: the redacted version, the document, the record''s values'
+        Stop-App
+
+        # The backup comes back: the database and the files of then, the log of now.
+        $null = Sql 'postgres' "create database $restored owner sdv;"
+        & docker exec $container pg_restore -U sdv -d $restored "/tmp/$db.dump"
+        if ($LASTEXITCODE -ne 0) { throw 'FAIL: pg_restore' }
+        Copy-Item -Recurse -Force (Join-Path $run 'storage-a-backup\*') (Join-Path $run 'storage-a')
+        Assert-That ((Sql $restored "select status || ' ' || (select count(*) from fld_record where record_id='$oldRecord') from documents where document_id='$oldDoc';") -eq 'AVAILABLE 1') 'In the restored database the erased document and its values are back'
+        Start-App 'restore-2-refused' $restored
+        Wait-For 'Vero on the restored database is paused: readiness 503 with the log''s code' { Paused }
+        foreach ($path in "/api/v1/business/documents/$oldDoc/viewer", '/api/v1/system/info', '/api/v1/operations/summary') {
+            $r = Answer $path $user
+            Assert-That ($r.Status -eq 503 -and $r.Body -match 'SDV-ERS-001') "Nothing answers but health: $path 503 SDV-ERS-001"
+        }
+        Assert-That ((Answer '/actuator/health/liveness').Status -eq 200) 'Liveness stays up'
+        Stop-App
+        Replay 'restore-3-replay' $restored
+        Start-App 'restore-4-started' $restored
+        Wait-For 'Vero takes work again' { Ready }
+        Assert-That ((Sql $restored "select status || ' ' || (select count(*) from fld_record where record_id='$oldRecord') || ' ' || (select count(*) from document_crypto_metadata where document_id='$oldDoc') from documents where document_id='$oldDoc';") -eq 'EXPIRED_DELETED 0 0') 'The document, its key and the values are erased again'
+        Assert-That ((Sql $restored "select status || ' ' || deletion_reason || ' ' || (select count(*) from document_crypto_metadata where document_id='$cutDoc') from documents where document_id='$cutDoc';") -eq 'EXPIRED_DELETED ERASED_AFTER_RESTORE 0') 'The original of the redacted document is erased: its redacted copy is not in the older backup'
+        foreach ($d in $oldDoc, $cutDoc) { $r = Answer "/api/v1/business/documents/$d/viewer" (As 'local-restricted-steward' 'RESTRICTED_STEWARD'); Assert-That ($r.Status -ge 400) "Not readable: $d answers $($r.Status)" }
+        $keys = @((& docker exec $container pg_restore -f - -a -t document_storage_refs "/tmp/$db.dump") | Where-Object { $_ -match "^($oldDoc|$cutDoc)" } | ForEach-Object { ([regex]::Match($_, 'objects/[^\s]+')).Value })
+        Assert-That ($keys.Count -eq 2 -and @($keys | Where-Object { Test-Path (Join-Path $run "storage-a\$_") }).Count -eq 0) 'Their files, which the backup of the files had brought back, are gone'
+
+        # While Vero runs, the database is restored under it.
+        $null = Sql $restored 'drop schema public cascade; create schema public;'
+        & docker exec $container pg_restore -U sdv -d $restored "/tmp/$db.dump" 2> $null
+        Wait-For 'A restore while Vero runs is noticed' { Paused } 120
+        Stop-App
+        Replay 'restore-5-replay' $restored
+        Start-App 'restore-6-started' $restored
+        Wait-For 'Vero takes work again' { Ready }
+        Assert-That ((Sql $restored "select status from documents where document_id='$oldDoc';") -eq 'EXPIRED_DELETED') 'The document is erased again'
+        Stop-App
+    }
     Write-Host "Seed check passed. Logs: $run" -ForegroundColor Green
 } finally {
     if ($script:vite -and -not $script:vite.HasExited) { & taskkill /PID $script:vite.Id /T /F *> $null }
     if ($script:app -and -not $script:app.HasExited) { Stop-Process -Id $script:app.Id -Force; $script:app.WaitForExit(30000) | Out-Null }
+    Remove-Item Env:SDV_ERASE_LOG_FOLDER -ErrorAction SilentlyContinue
+    try { $null = Sql 'postgres' "drop database if exists ${db}_restored with (force);"; & docker exec $container rm -f "/tmp/$db.dump" } catch { Write-Warning "Could not drop ${db}_restored or the dump. $_" }
     try { $null = Sql 'postgres' "drop database if exists $db with (force);"; Write-Host "Dropped scratch database $db" } catch { Write-Warning "Could not drop $db; run again with -DropLeftover. $_" }
 }

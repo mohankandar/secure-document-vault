@@ -38,6 +38,13 @@ platform:
     vault:
       address: ${SDV_KEY_SERVICE_ADDRESS:}
       transit-mount: ${SDV_KEY_SERVICE_MOUNT:vero-transit}
+  # Task 0080: the erase log: every erasure, by ID, so that a restored backup is brought up to date before any work. Its folder is
+  # an absolute path outside the documents' folders and the database's storage, the same for every instance, backed up on its own.
+  # Without it Vero does not start. Always keyed (the key service); off only together with it, in a local start.
+  erase-log:
+    location: ${SDV_ERASE_LOG_FOLDER:}
+    backup-retention-days: ${SDV_BACKUP_RETENTION_DAYS:35}
+    keyed: ${SDV_CRYPTO_ENABLED:true}
   licensing:
     product-code: SDV
     tenant-id: ${SDV_CUSTOMER_ID:}
@@ -84,7 +91,7 @@ management:
         enabled: true
       group:
         readiness:
-          include: readinessState,databaseSchema,databaseConnection,signInKeys
+          include: readinessState,databaseSchema,databaseConnection,signInKeys,eraseLogState
           status:
             order: down,out-of-service,not-ready,busy,up,unknown
             http-mapping:

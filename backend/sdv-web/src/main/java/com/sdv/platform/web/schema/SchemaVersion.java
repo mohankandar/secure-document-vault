@@ -140,8 +140,14 @@ public final class SchemaVersion {
             com.documentplatform.fields.jdbc.FieldSchema.HISTORY_TABLE,
             com.documentplatform.fields.jdbc.FieldSchema.VERSION_TABLE,
             com.documentplatform.fields.jdbc.FieldSchema.VERSION);
+    /** Task 0080. */
+    public static final PlatformRun ERASE_LOG = new PlatformRun("erase log",
+            com.documentplatform.eraselog.jdbc.EraseLogSchema.LOCATION,
+            com.documentplatform.eraselog.jdbc.EraseLogSchema.HISTORY_TABLE,
+            com.documentplatform.eraselog.jdbc.EraseLogSchema.VERSION_TABLE,
+            com.documentplatform.eraselog.jdbc.EraseLogSchema.VERSION);
     /** In the order the schema step runs them, after Liquibase. */
-    public static final List<PlatformRun> PLATFORM_RUNS = List.of(IDENTITY, LICENSING, FIELDS);
+    public static final List<PlatformRun> PLATFORM_RUNS = List.of(IDENTITY, LICENSING, FIELDS, ERASE_LOG);
 
     /** The version a platform run's tables are at: 0 when its version table is missing or empty. */
     public static int platformVersion(Connection connection, PlatformRun run) throws SQLException {

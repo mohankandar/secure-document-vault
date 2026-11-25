@@ -1,5 +1,6 @@
 package com.sdv.platform.web.schema;
 
+import com.documentplatform.eraselog.jdbc.EraseLogSchema;
 import com.documentplatform.fields.jdbc.FieldSchema;
 import com.documentplatform.identity.jdbc.IdentitySchema;
 import com.documentplatform.licensing.jdbc.LicensingSchema;
@@ -64,7 +65,7 @@ final class PlatformSchemaRuns {
                 writer.write("\n");
             }
         }
-        writer.write("\n-- The rights of other roles on two licensing tables (task 0073; safe to run again).\n");
+        writer.write("\n-- The rights of other roles on licensing and erase log tables (tasks 0073 and 0080; safe to run again).\n");
         writer.write(NARROW_GRANTS);
     }
 
@@ -84,7 +85,9 @@ final class PlatformSchemaRuns {
                     join pg_tables t on t.tablename = g.table_name and t.schemaname = g.table_schema
                     where g.table_schema = current_schema()
                       and ((g.table_name = 'lic_last_seen' and g.privilege_type in ('DELETE', 'TRUNCATE'))
-                        or (g.table_name = 'lic_clock_reset' and g.privilege_type in ('UPDATE', 'DELETE', 'TRUNCATE')))
+                        or (g.table_name = 'lic_clock_reset' and g.privilege_type in ('UPDATE', 'DELETE', 'TRUNCATE'))
+                        or (g.table_name = 'erl_position' and g.privilege_type in ('DELETE', 'TRUNCATE'))
+                        or (g.table_name = 'erl_schema_version' and g.privilege_type in ('INSERT', 'UPDATE', 'DELETE', 'TRUNCATE')))
                       and g.grantee <> t.tableowner
                 loop
                     if r.grantee = 'PUBLIC' then
@@ -107,10 +110,10 @@ final class PlatformSchemaRuns {
     }
 
     static List<String> scripts(SchemaVersion.PlatformRun run) {
-        return run == SchemaVersion.IDENTITY ? IdentitySchema.scripts() : run == SchemaVersion.LICENSING ? LicensingSchema.scripts() : FieldSchema.scripts();
+        return run == SchemaVersion.IDENTITY ? IdentitySchema.scripts() : run == SchemaVersion.LICENSING ? LicensingSchema.scripts() : run == SchemaVersion.FIELDS ? FieldSchema.scripts() : EraseLogSchema.scripts();
     }
 
     static String script(SchemaVersion.PlatformRun run, String name) {
-        return run == SchemaVersion.IDENTITY ? IdentitySchema.script(name) : run == SchemaVersion.LICENSING ? LicensingSchema.script(name) : FieldSchema.script(name);
+        return run == SchemaVersion.IDENTITY ? IdentitySchema.script(name) : run == SchemaVersion.LICENSING ? LicensingSchema.script(name) : run == SchemaVersion.FIELDS ? FieldSchema.script(name) : EraseLogSchema.script(name);
     }
 }

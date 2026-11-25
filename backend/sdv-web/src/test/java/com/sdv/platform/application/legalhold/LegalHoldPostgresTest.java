@@ -72,8 +72,9 @@ class LegalHoldPostgresTest {
     private final LegalHoldService holds = new LegalHoldService(holdRepository,
             new DocumentAccessGuard(new JdbcBusinessRecordRepository(jdbc), foundation), foundation, tx);
     private final JdbcSecureIngestionRepository ingestion = new JdbcSecureIngestionRepository(jdbc);
+    private final com.sdv.platform.web.erase.EraseKit erase = new com.sdv.platform.web.erase.EraseKit(dataSource, tx, List.of());
     private final RetentionDeletionService retention = new RetentionDeletionService(
-            retentionRepository, ingestion, ingestion, List.of(), foundation, tx);
+            retentionRepository, ingestion, erase.port, erase.erased, foundation, tx);
 
     private void sql(String statement) {
         jdbc.getJdbcTemplate().execute(statement);

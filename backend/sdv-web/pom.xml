@@ -101,6 +101,11 @@
             <groupId>com.documentplatform.platform</groupId>
             <artifactId>platform-licensing-spring</artifactId>
         </dependency>
+        <!-- Task 0080: everything erased is in the erase log first; a restored database is brought up to date before any work. -->
+        <dependency>
+            <groupId>com.documentplatform.platform</groupId>
+            <artifactId>platform-erase-log-spring</artifactId>
+        </dependency>
         <!-- Task 0041: the schema step's two platform runs (identity, licensing), each with its own history table.
              Used by SchemaStep only, never at startup (spring.flyway.enabled=false). -->
         <dependency>

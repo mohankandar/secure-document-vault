@@ -1,35 +1,24 @@
 package com.sdv.platform.application.redaction;
 
-import com.sdv.platform.application.json.VeroJson;
-import tools.jackson.core.JacksonException;
-import tools.jackson.databind.ObjectMapper;
 import com.sdv.platform.application.access.Clearance;
 import com.sdv.platform.application.access.DocumentAccessGuard;
-import com.sdv.platform.application.port.AuditEventPort;
 import com.sdv.platform.application.port.DocumentIntakeRepository;
 import com.sdv.platform.application.port.DocumentRedactionRepository;
+import com.sdv.platform.application.port.ErasePort;
+import com.sdv.platform.application.port.EraseRepository;
 import com.sdv.platform.application.port.HeldRedactionRepository;
 import com.sdv.platform.application.port.HeldRedactionRepository.Sealed;
-import com.sdv.platform.application.port.StorageProvider;
-import com.sdv.platform.application.port.StorageVolumeRepository;
 import com.sdv.platform.application.viewer.DocumentViewerService;
-import com.sdv.platform.domain.audit.AuditEvent;
-import com.sdv.platform.domain.audit.AuditOutcome;
 import com.sdv.platform.domain.document.Document;
 import com.sdv.platform.domain.error.CodedRefusal;
-import com.sdv.platform.domain.error.InternalCheckFailed;
 import com.sdv.platform.domain.error.SdvErrorCode;
-import com.sdv.platform.domain.storage.StorageVolume;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
-import java.io.IOException;
 import java.time.Clock;
 import java.time.Instant;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -45,27 +34,23 @@ public class SealedOriginalService {
     private final HeldRedactionRepository held;
     private final DocumentIntakeRepository documents;
     private final DocumentRedactionRepository redactions;
-    private final StorageVolumeRepository volumes;
-    private final List<StorageProvider> providers;
+    private final ErasePort erase;
+    private final EraseRepository erased;
     private final DocumentAccessGuard access;
     private final DocumentViewerService viewer;
-    private final AuditEventPort audit;
     private final TransactionTemplate transactions;
     private final Clock clock = Clock.systemUTC();
-    private final ObjectMapper json = VeroJson.mapper();
 
     public SealedOriginalService(HeldRedactionRepository held, DocumentIntakeRepository documents,
-                                 DocumentRedactionRepository redactions, StorageVolumeRepository volumes,
-                                 List<StorageProvider> providers, DocumentAccessGuard access, DocumentViewerService viewer,
-                                 AuditEventPort audit, PlatformTransactionManager transactionManager) {
+                                 DocumentRedactionRepository redactions, ErasePort erase, EraseRepository erased, DocumentAccessGuard access,
+                                 DocumentViewerService viewer, PlatformTransactionManager transactionManager) {
         this.held = held;
         this.documents = documents;
         this.redactions = redactions;
-        this.volumes = volumes;
-        this.providers = List.copyOf(providers);
+        this.erase = erase;
+        this.erased = erased;
         this.access = access;
         this.viewer = viewer;
-        this.audit = audit;
         this.transactions = new TransactionTemplate(transactionManager);
     }
 
@@ -108,44 +93,27 @@ public class SealedOriginalService {
         for (Sealed sealed : held.findToDestroy(limit)) {
             try {
                 if (destroy(sealed)) destroyed++;
-            } catch (RuntimeException | IOException ex) {
+            } catch (ErasePort.EraseFailed ex) {
+                failed++;
+                if (!ex.refused()) break; // the log goes in order: a later sweep tries again
+            } catch (RuntimeException ex) {
                 failed++; // still DESTROYING: a later sweep tries again
             }
         }
         return new DestroySweepResult(destroyed, failed);
     }
 
-    private boolean destroy(Sealed sealed) throws IOException {
+    private boolean destroy(Sealed sealed) {
         UUID tenantId = sealed.tenantId();
         // Under the document's row lock, as placing a hold: a hold placed first keeps it.
         Boolean mine = transactions.execute(status -> {
             redactions.lockDocument(tenantId, sealed.documentId());
             if (held.isDestroying(tenantId, sealed.sealedId())) return true;
-            return !held.onHold(tenantId, sealed.documentId()) && held.startDestroying(tenantId, sealed.sealedId(), clock.instant());
+            return !erased.kept(tenantId, sealed.documentId()) && held.startDestroying(tenantId, sealed.sealedId(), clock.instant());
         });
         if (!Boolean.TRUE.equals(mine)) return false;
-        StorageVolume volume = volumes.findById(tenantId, sealed.storage().storageVolumeId())
-                .orElseThrow(() -> new IOException("The storage volume is not available."));
-        StorageProvider provider = providers.stream().filter(p -> p.providerId().equals(sealed.storage().providerId())).findFirst()
-                .orElseThrow(() -> new IOException("The storage provider is not available."));
-        provider.delete(tenantId, volume, sealed.storage().objectKey());
-        if (provider.exists(tenantId, volume, sealed.storage().objectKey())) throw new IOException("The sealed original still exists.");
-        return Boolean.TRUE.equals(transactions.execute(status -> {
-            Instant now = clock.instant();
-            if (!held.markDestroyed(tenantId, sealed.sealedId(), now)) return false;
-            Map<String, Object> details = new LinkedHashMap<>();
-            details.put("sealedOriginalId", sealed.sealedId().toString());
-            if (sealed.requestId() != null) details.put("accessRequestId", sealed.requestId().toString());
-            details.put("contentSha256", sealed.contentSha256());
-            details.put("sealedAt", sealed.sealedAt().toString());
-            try {
-                audit.append(new AuditEvent(UUID.randomUUID(), tenantId, "SYSTEM", "sdv-legal-hold", DESTROYED_ACTION, "DOCUMENT",
-                        sealed.documentId().toString(), now, "sealed-original-" + sealed.sealedId(), AuditOutcome.SUCCESS,
-                        json.writeValueAsString(details)));
-            } catch (JacksonException ex) {
-                throw InternalCheckFailed.auditNotWritten("The destruction could not be audited.", ex);
-            }
-            return true;
-        }));
+        // Task 0080: through the erase log, which also writes the audit event.
+        erase.sealedOriginal(tenantId, sealed.documentId(), sealed.sealedId(), UUID.randomUUID());
+        return true;
     }
 }

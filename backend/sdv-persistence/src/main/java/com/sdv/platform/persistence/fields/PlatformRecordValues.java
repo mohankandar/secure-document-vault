@@ -18,6 +18,7 @@ import com.documentplatform.fields.values.LegalHolds;
 import com.documentplatform.fields.values.RecordRef;
 import com.documentplatform.fields.values.RecordValues;
 import com.documentplatform.fields.values.SensitiveRead;
+import com.documentplatform.fields.values.ValueStore;
 import com.sdv.platform.application.port.RecordValuesPort;
 import com.sdv.platform.domain.error.CodedRefusal;
 import com.sdv.platform.domain.error.InternalCheckFailed;
@@ -77,14 +78,34 @@ public class PlatformRecordValues implements RecordValuesPort {
         return RecordRef.of(scope(entity), CaseFieldSql.recordType(source), record.toString());
     }
 
-    /** A record with a document on hold keeps its values. A hold that can't be read is an exception, and the erase is refused. */
+    /** Task 0080: for the erase log's handler of case fields, which is the only one that may erase values. */
+    public FieldValues values() {
+        return values;
+    }
+
+    public ValueStore store() {
+        return store;
+    }
+
+    public LegalHolds holds() {
+        return holds;
+    }
+
+    /**
+     * A record with a document on hold or quarantined keeps its values; a document already erased keeps nothing (a restored database can
+     * still have its hold). A hold that can't be read is an exception, and the erase is refused. */
     boolean held(RecordRef record) {
         return Boolean.TRUE.equals(db.queryForObject("""
                 select exists (select 1 from legal_holds h
                                  join documents d on d.tenant_id = h.tenant_id and d.document_id = h.document_id
                                  join submissions s on s.tenant_id = d.tenant_id and s.submission_id = d.submission_id
-                                where h.tenant_id = ? and s.record_id = ? and h.released_at is null)
-                """, Boolean.class, record.scope().entity(), UUID.fromString(record.recordId())));
+                                where h.tenant_id = ? and s.record_id = ? and h.released_at is null and d.status <> 'EXPIRED_DELETED'
+                                union all
+                                select 1 from quarantined_documents q
+                                 join documents d on d.tenant_id = q.tenant_id and d.document_id = q.document_id
+                                 join submissions s on s.tenant_id = d.tenant_id and s.submission_id = d.submission_id
+                                where q.tenant_id = ? and s.record_id = ? and q.released_at is null and d.status <> 'EXPIRED_DELETED')
+                """, Boolean.class, record.scope().entity(), UUID.fromString(record.recordId()), record.scope().entity(), UUID.fromString(record.recordId())));
     }
 
     private Map<String, FieldSpec> active(UUID entity) {
@@ -115,13 +136,17 @@ public class PlatformRecordValues implements RecordValuesPort {
             RecordRef found = values.findByPrimary(scope(tenantId), CaseFieldSql.recordType(sourceId), primary).orElse(null);
             if (found == null) {
                 // Only the identifiers: a record made meanwhile by another delivery is joined, not refused for its other values.
-                Map<String, List<FieldValue>> identity = new LinkedHashMap<>();
-                primary.forEach((key, value) -> identity.put(key, List.of(value)));
-                found = values.claim(ref(tenantId, sourceId, submissionId), identity).record();
+                found = values.claim(ref(tenantId, sourceId, submissionId), identity(primary)).record();
             }
             UUID record = UUID.fromString(found.recordId());
             // Deliveries to one record go one after the other. Before the submission joins it: its foreign key then waits for nobody.
-            db.queryForList("select record_id from records where tenant_id = ? and source_id = ? and record_id = ? for no key update", UUID.class, tenantId, sourceId, record);
+            lockRecord(tenantId, sourceId, record);
+            if (store.find(found).isEmpty()) {
+                // Task 0080: its values were erased while this delivery waited (its last document was gone). The identifiers are free again.
+                found = values.claim(ref(tenantId, sourceId, submissionId), identity(primary)).record();
+                record = UUID.fromString(found.recordId());
+                lockRecord(tenantId, sourceId, record);
+            }
             if (!record.equals(submissionId)) {
                 int joined = db.update("update submissions set record_id = ? where tenant_id = ? and source_id = ? and submission_id = ?", record, tenantId, sourceId, submissionId);
                 if (joined != 1) throw new InternalCheckFailed("The submission could not be added to its record.");
@@ -130,6 +155,16 @@ public class PlatformRecordValues implements RecordValuesPort {
             if (!rest.isEmpty()) values.update(found, rest);
             return record;
         });
+    }
+
+    private static Map<String, List<FieldValue>> identity(Map<String, FieldValue> primary) {
+        Map<String, List<FieldValue>> out = new LinkedHashMap<>();
+        primary.forEach((key, value) -> out.put(key, List.of(value)));
+        return out;
+    }
+
+    private void lockRecord(UUID tenantId, UUID sourceId, UUID record) {
+        db.queryForList("select record_id from records where tenant_id = ? and source_id = ? and record_id = ? for no key update", UUID.class, tenantId, sourceId, record);
     }
 
     // ---- opening

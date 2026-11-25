@@ -68,6 +68,9 @@ database's state there. Without sign-in, use readiness and the start-up log.
 
 Requests are limited in size (`413 SDV-SYS-019`); uploads have the sending system's own limit.
 
+**Paused by the erase log:** readiness is `503 SDV-ERS-001` with the log's code, and nothing but health answers. Usually the database was
+restored: backup runbook, "Restore". On Health, "erase-log" shows an erasure that can't be finished (IDs and a code only).
+
 ## The licence
 
 **About** shows the licence, this entity's use this month and **Export usage**. New documents stop only 30 days after the licence
@@ -103,6 +106,8 @@ Running it does not.
 4. Replace the application jar, the setup jar and the screens together. Start Vero; readiness turns 200. Run setup again when the release says so.
 
 Before this version in particular:
+- **`SDV_ERASE_LOG_FOLDER` is required:** an absolute folder outside the documents and the database's storage, backed up on its
+  own (runbook, "The erase log"). After a restore, the erase replay comes before any work (backup runbook, "Restore").
 - `SDV_STORAGE_ALLOWED_ROOTS`, if new volumes will be outside `data`. Existing volumes stay usable.
 - `SDV_PDF_ACCEPT`, for systems that send protected PDFs or PDFs with active content.
 - People who hold Business Admin with Document Steward, or IT Admin with a document role: those roles are now withheld.

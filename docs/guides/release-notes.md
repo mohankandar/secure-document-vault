@@ -14,6 +14,9 @@
 
 **For IT and sending systems**
 
+- **New required setting `SDV_ERASE_LOG_FOLDER`** and the erase log: a restored backup is brought up to date (`--erase-replay`) before Vero takes work.
+  The schema step adds one table. A document volume can't be the log's folder (`SDV-ERS-002`); probes see `SDV-ERS-001` while it stops work.
+- A record's search field values are erased with its last document.
 - The ingestion contract is 1.5.0 ([what changed](../api/README.md#changelog)): a metadata value is at most 512 characters,
   and `503 SDV-KEY-002` when a delivery has a sensitive field and the key service can't be used.
 - Identifiers that differ only in letter case or spaces name the same record.

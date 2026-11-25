@@ -13,7 +13,7 @@ key settings (`SETUP_KEY_SERVICE_SETTINGS_MISSING`; `--no-customer-keys` is refu
 
 1. The schema step has run for this release (runbook "Update the database"). It creates Vero's tables and, in their
    own runs, platform-core's identity tables (history table `idn_schema_history`) and licensing tables
-   (`lic_schema_history`). Setup never creates tables. Since task 0067 (platform-core 0.7.0) the identity tables are
+   (`lic_schema_history`). The erase log's table (`erl_schema_history`, task 0080) is the schema step's too. Setup never creates tables. Since task 0067 (platform-core 0.7.0) the identity tables are
    at version 5 and the licensing tables at version 2; on an older database the schema step adds them, and Vero does
    not start until it has (`IDN_VERSION_OLDER`).
 2. You have these files:

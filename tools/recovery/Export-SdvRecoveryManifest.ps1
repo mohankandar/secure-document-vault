@@ -3,6 +3,8 @@ param(
   [Parameter(Mandatory=$true)][string]$StorageBackupRoot,
   [Parameter(Mandatory=$true)][string]$KeyManagementBackup,
   [Parameter(Mandatory=$true)][string]$ApplicationArtifact,
+  # Task 0080: the folder of the erase log (SDV_ERASE_LOG_FOLDER), as it is now. It is never restored with the database.
+  [Parameter(Mandatory=$true)][string]$EraseLogFolder,
   [Parameter(Mandatory=$true)][string]$OutputDirectory,
   [string]$RecoveryPointId = ([DateTime]::UtcNow.ToString('yyyyMMddTHHmmssZ'))
 )
@@ -24,6 +26,7 @@ Require-File $DatabaseBackup 'Database backup'
 Require-Directory $StorageBackupRoot 'Encrypted storage backup'
 Require-File $KeyManagementBackup 'Key-management backup'
 Require-File $ApplicationArtifact 'Application artifact'
+Require-Directory $EraseLogFolder 'Erase log'
 New-Item -ItemType Directory -Force -Path $OutputDirectory | Out-Null
 $storageRoot = (Resolve-Path -LiteralPath $StorageBackupRoot).Path
 $storageFiles = @(Get-ChildItem -LiteralPath $storageRoot -File -Recurse | Sort-Object FullName)
@@ -36,8 +39,11 @@ $storageObjects = @($storageFiles | ForEach-Object {
 })
 $storageBytes = ($storageFiles | Measure-Object -Property Length -Sum).Sum
 if ($null -eq $storageBytes) { $storageBytes = 0 }
+$logRoot = (Resolve-Path -LiteralPath $EraseLogFolder).Path
+Require-File (Join-Path $logRoot 'erase-log.id') 'Erase log ID'
+$logFiles = @('erase-log.id', 'erase-log.jsonl', 'erase-log.seal', 'erase-log.applied', 'erase-log.checkpoint' | ForEach-Object { Join-Path $logRoot $_ } | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | ForEach-Object { File-Evidence $_ })
 $manifest = [ordered]@{
-  schemaVersion = 2
+  schemaVersion = 3
   recoveryPointId = $RecoveryPointId
   createdAt = [DateTime]::UtcNow.ToString('o')
   safety = [ordered]@{ containsPlaintextDocuments=$false; containsCredentials=$false; note='Manifest records references and checksums only. Backup payloads remain separately protected.' }
@@ -45,6 +51,7 @@ $manifest = [ordered]@{
   encryptedStorage = [ordered]@{ root=$storageRoot; objectCount=$storageFiles.Count; totalBytes=[int64]$storageBytes; objects=$storageObjects }
   keyManagement = (File-Evidence $KeyManagementBackup)
   application = (File-Evidence $ApplicationArtifact)
+  eraseLog = [ordered]@{ folder=$logRoot; note='Never restored with the database. It may only have grown since.'; files=$logFiles }
 }
 $manifestPath = Join-Path $OutputDirectory "sdv-recovery-manifest-$RecoveryPointId.json"
 $manifest | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $manifestPath -Encoding UTF8

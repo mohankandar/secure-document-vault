@@ -367,6 +367,14 @@ public enum SdvErrorCode {
     /** Task 0074: a storage volume is nearly full, full or can't be used (a check, never an answer). */
     STO_009("SDV-STO-009", true),
     /** Task 0077: a field's settings are not valid, or not for its type (400). */
+    /** Task 0080: the erase log doesn't let Vero take work. */
+    ERS_001("SDV-ERS-001", true),
+    /** Task 0080: the erase log's folder is in a document volume. */
+    ERS_002("SDV-ERS-002", true),
+    /** Task 0080: a logged erasure can't be finished. */
+    ERS_003("SDV-ERS-003", true),
+    /** Task 0080: the check refused an erasure before it was logged. */
+    ERS_004("SDV-ERS-004", false, true),
     FLD_001("SDV-FLD-001", false, true),
     /** Task 0077: the field has values, so its type, its identifier flag and its sensitivity are locked (409). */
     FLD_002("SDV-FLD-002", false, true),

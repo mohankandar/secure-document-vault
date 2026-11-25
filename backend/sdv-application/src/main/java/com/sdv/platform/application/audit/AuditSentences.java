@@ -82,6 +82,9 @@ public final class AuditSentences {
             case "SEALED_ORIGINAL_DESTROYED" -> "The sealed original of " + f + " was destroyed, because no legal hold keeps it any more";
             case "DOCUMENT_REDACTION_FAILED" -> w + " tried to redact part of " + f + ", but it failed";
             case "DOCUMENT_RETENTION_DELETED" -> "Vero deleted " + f + " for good, as the keeping rule says";
+            // Task 0080.
+            case "DOCUMENT_ERASED_AFTER_RESTORE" -> "Vero erased " + f + " again, because a restored backup brought its original back";
+            case "RECORD_VALUES_ERASED" -> "Vero erased the search field values of a record whose last document was erased";
             case "DOCUMENT_RETENTION_DELETE_FAILED" -> "Vero couldn't delete " + f + " when its time was up";
             case "BUSINESS_RECORD_OPENED" -> w + " opened a record";
             case "BUSINESS_SEARCH" -> number(d, "resultCount") != null ? w + " searched records and found " + number(d, "resultCount") : w + " searched records";
