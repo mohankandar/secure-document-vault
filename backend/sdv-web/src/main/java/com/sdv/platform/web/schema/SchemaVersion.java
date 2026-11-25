@@ -129,14 +129,19 @@ public final class SchemaVersion {
             com.documentplatform.identity.jdbc.IdentitySchema.HISTORY_TABLE,
             com.documentplatform.identity.jdbc.IdentitySchema.VERSION_TABLE,
             com.documentplatform.identity.jdbc.IdentitySchema.VERSION);
-    /** Licensing tables only: Vero does not turn licensing on (owner answers 1 and 15). */
     public static final PlatformRun LICENSING = new PlatformRun("licensing",
             com.documentplatform.licensing.jdbc.LicensingSchema.LOCATION,
             com.documentplatform.licensing.jdbc.LicensingSchema.HISTORY_TABLE,
             com.documentplatform.licensing.jdbc.LicensingSchema.VERSION_TABLE,
             com.documentplatform.licensing.jdbc.LicensingSchema.VERSION);
+    /** Task 0077. */
+    public static final PlatformRun FIELDS = new PlatformRun("fields",
+            com.documentplatform.fields.jdbc.FieldSchema.LOCATION,
+            com.documentplatform.fields.jdbc.FieldSchema.HISTORY_TABLE,
+            com.documentplatform.fields.jdbc.FieldSchema.VERSION_TABLE,
+            com.documentplatform.fields.jdbc.FieldSchema.VERSION);
     /** In the order the schema step runs them, after Liquibase. */
-    public static final List<PlatformRun> PLATFORM_RUNS = List.of(IDENTITY, LICENSING);
+    public static final List<PlatformRun> PLATFORM_RUNS = List.of(IDENTITY, LICENSING, FIELDS);
 
     /** The version a platform run's tables are at: 0 when its version table is missing or empty. */
     public static int platformVersion(Connection connection, PlatformRun run) throws SQLException {

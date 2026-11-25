@@ -3,9 +3,10 @@ import { GripVertical } from 'lucide-react'
 import { useStore } from './store'
 import { BUSINESS_LIMITS, type SearchMode } from './model'
 import { FailureNotice, actionFailed, loadFailed, type Failure } from './CardError'
+import { FieldList } from './FieldList'
 import { Callout, Drawer, Switch, TechDetails } from './ui'
 import {
-  adminMetadataFields, adminMetadataSources, getMetadataDisplayOrder, getRecordTitleFields, saveMetadataDisplayOrder, saveRecordTitleFields,
+  adminMetadataFields, adminMetadataSources, caseFields, setFieldSensitive, type CaseField, getMetadataDisplayOrder, getRecordTitleFields, saveMetadataDisplayOrder, saveRecordTitleFields,
   updateBusinessMetadata, type AdminMetadataField, type AdminMetadataSource,
 } from './liveApi'
 
@@ -40,6 +41,7 @@ export function SearchFields() {
   const [titleSaved, setTitleSaved] = useState<string[]>([])
   const [titleDraft, setTitleDraft] = useState<string[]>([])
   const [draft, setDraft] = useState<AdminMetadataField | null>(null)
+  const [rules, setRules] = useState<Map<string, CaseField>>(new Map())
   const [error, setError] = useState<Failure | null>(null)
   const [reload, setReload] = useState(0)
   const [loading, setLoading] = useState(true)
@@ -58,8 +60,9 @@ export function SearchFields() {
     if (!sourceId) { setFields([]); if (sources.length === 0) setLoading(false); return }
     let active = true
     setLoading(true); setError(null); setDraft(null)
-    Promise.all([adminMetadataFields(sourceId), getMetadataDisplayOrder(sourceId), getRecordTitleFields(sourceId)]).then(([rows, order, title]) => {
+    Promise.all([adminMetadataFields(sourceId), getMetadataDisplayOrder(sourceId), getRecordTitleFields(sourceId), caseFields('businessAdmin')]).then(([rows, order, title, all]) => {
       if (!active) return
+      setRules(new Map(all.map((f) => [f.fieldKey, f])))
       const keys = [...order.filter((k) => rows.some((f) => f.fieldKey === k)), ...rows.map((f) => f.fieldKey).filter((k) => !order.includes(k))]
       setFields([...rows].sort((a, b) => keys.indexOf(a.fieldKey) - keys.indexOf(b.fieldKey)))
       setSavedOrder(keys); setTitleSaved(title); setTitleDraft(title)
@@ -80,6 +83,17 @@ export function SearchFields() {
       const result = await updateBusinessMetadata(sourceId, body)
       setFields((all) => all.map((f) => (f.fieldKey === result.fieldKey ? result : f)))
       done?.(); toast({ title: 'Field saved', detail: result.displayLabel })
+    } catch (e) { setError(actionFailed('Saving a search field failed', e)) }
+    finally { setBusy(false) }
+  }
+
+  const saveSensitive = async (key: string, sensitive: boolean) => {
+    if (!allowed || busy) return
+    setBusy(true); setError(null)
+    try {
+      const stored = await setFieldSensitive(key, sensitive)
+      setRules((all) => new Map(all).set(key, stored))
+      toast({ title: 'Field saved', detail: stored.sensitive ? `${label(key)} is sensitive.` : `${label(key)} isn’t sensitive any more.` })
     } catch (e) { setError(actionFailed('Saving a search field failed', e)) }
     finally { setBusy(false) }
   }
@@ -182,7 +196,7 @@ export function SearchFields() {
                   onPointerDown={(e) => onDragStart(e, f.fieldKey)} onPointerMove={onDragMove} onPointerUp={onDragEnd} onPointerCancel={onDragEnd}
                   onKeyDown={(e) => onHandleKey(e, i)}><GripVertical size={16} aria-hidden /></button>
               </td>
-              <td className="lead" data-label="Field"><strong>{f.displayLabel}</strong>{f.businessIdentifier && <small className="faint sf-sub">Identifier · always searchable</small>}</td>
+              <td className="lead" data-label="Field"><strong>{f.displayLabel}</strong>{f.businessIdentifier && <small className="faint sf-sub">Identifier · always searchable</small>}{rules.get(f.fieldKey)?.sensitive && <small className="faint sf-sub">Sensitive</small>}</td>
               <td data-label="Searchable">{f.businessIdentifier ? <span className="muted">Always</span>
                 : <Switch label={`${f.displayLabel} searchable`} checked={f.searchable} disabled={!allowed || busy} onChange={(v) => void saveField({ ...f, searchable: v })} />}</td>
               <td data-label="How it matches">{f.searchable ? MATCH_WORDS[f.searchMode] : <span className="faint">—</span>}</td>
@@ -195,6 +209,8 @@ export function SearchFields() {
         <p className="faint sf-hint">The first identifier field in the order shown is the record's identifier on admin pages. Put your contract (or member, loan, patient) number first.</p>
       </section>
     </>}
+
+    {!loading && !error && <FieldList allowed={allowed} onImported={() => setReload((x) => x + 1)} />}
 
     {/* Canvas: the limits on one line in a small card. */}
     <section className="v-panel sf-limits-card" aria-label="Limits"><span className="v-sec">Limits</span><ul className="sf-limits">
@@ -210,6 +226,13 @@ export function SearchFields() {
       <div className="row between"><span className="v-label">People can search by it</span>
         <Switch label="People can search by it" checked={draft.businessIdentifier || draft.searchable} disabled={draft.businessIdentifier} onChange={(v) => setDraft({ ...draft, searchable: v })} /></div>
       {draft.businessIdentifier && <small className="faint">An identifier can always be searched.</small>}
+      {rules.has(draft.fieldKey) && <>
+        <div className="row between"><span className="v-label">Sensitive (a name, an address or similar)</span>
+          <Switch label="Sensitive" checked={rules.get(draft.fieldKey)!.sensitive} disabled={!allowed || busy || rules.get(draft.fieldKey)!.locked} onChange={(v) => void saveSensitive(draft.fieldKey, v)} /></div>
+        <small className="faint">{rules.get(draft.fieldKey)!.locked
+          ? 'Documents have values for this field, so its type, whether it identifies a record and whether it is sensitive are locked.'
+          : 'Type, identifier and sensitivity lock once the first document with a value arrives. The switch saves at once, for every sending system.'}</small>
+      </>}
       <fieldset className="v-field sf-match" disabled={!draft.searchable}>
         <legend>How it matches</legend>
         {MATCH_CHOICES.map((c) => (

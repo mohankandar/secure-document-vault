@@ -911,6 +911,34 @@ Task 0037: SYS-003 to SYS-012 are start-up codes. A start that stops prints one 
 - **What the user should do:** open the Restrictions page again and go from its first page.
 - **What support should tell the customer:** the page position was changed or cut short; opening the page again fixes it.
 
+### SDV-FLD-001: a field's settings are not valid
+
+- **HTTP status:** 400. Saving a field of a sending system, a search field, or a field's sensitivity. Nothing was changed.
+- **Meaning:** a rule is not valid or not for the field's type (for example a length above 512, or a pattern on a date).
+- **What the user should do:** correct what the message names.
+- **What support should tell the customer:** the log has platform-core's own code for the rule.
+
+### SDV-FLD-002: the field has values
+
+- **HTTP status:** 409. As SDV-FLD-001.
+- **Meaning:** once records have a value, a field's type, whether it identifies a record and whether it is sensitive are locked.
+- **What the user should do:** add a new field.
+- **What support should tell the customer:** old documents would no longer be found or protected the same way.
+
+### SDV-FLD-003: the key is another field's, or the field was changed meanwhile
+
+- **HTTP status:** 409. As SDV-FLD-001.
+- **Meaning:** a key has one type in an entity, whichever system sends it; two keys can't differ only in capitals; or somebody saved the field at the same time.
+- **What the user should do:** use another key, or load the page again.
+- **What support should tell the customer:** the message says which.
+
+### SDV-FLD-004: the field list can't be read
+
+- **HTTP status:** 400. Importing a field list (`/api/v1/admin/case-fields/import`). Nothing was changed.
+- **Meaning:** the file is empty, too large or not a `platform-fields/1` file.
+- **What the user should do:** export it again from the other product.
+- **What support should tell the customer:** the message names the line or field.
+
 ### SDV-LIC-001: the licence doesn't allow new work
 
 - **HTTP status:** 503, no `Retry-After`. Creating a submission, uploading a document, retrying a finalization. Nothing was stored.

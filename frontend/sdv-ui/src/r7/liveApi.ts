@@ -129,6 +129,15 @@ export const adminMetadataSources=()=>roleApi<AdminMetadataSource[]>('/api/v1/ad
 export const adminMetadataFields=(sourceId:string)=>roleApi<AdminMetadataField[]>('/api/v1/admin/ingestion-sources/'+encodeURIComponent(sourceId)+'/metadata-fields','businessAdmin')
 export const updateBusinessMetadata=(sourceId:string,field:AdminMetadataField)=>roleApi<AdminMetadataField>('/api/v1/admin/metadata-sources/'+encodeURIComponent(sourceId)+'/fields/'+encodeURIComponent(field.fieldKey),'businessAdmin',{method:'PUT',body:JSON.stringify({displayLabel:field.displayLabel,businessIdentifier:field.businessIdentifier,searchable:field.searchable,normalization:field.normalization,searchMode:field.searchMode})})
 
+/** Task 0077: the entity's case fields. locked: there are values, so type, identifier and sensitivity don't change. */
+export type CaseField = { fieldKey: string; label: string; type: string; primary: boolean; sensitive: boolean; locked: boolean; active: boolean }
+export type FieldImportLine = { fieldKey: string; label: string; outcome: 'CREATE' | 'UNCHANGED' | 'CONFLICT'; conflict: string | null; message: string | null }
+export const caseFields = (role: 'businessAdmin' | 'tenantIt') => roleApi<CaseField[]>('/api/v1/admin/case-fields', role)
+export const setFieldSensitive = (fieldKey: string, sensitive: boolean) => roleApi<CaseField>('/api/v1/admin/case-fields/' + encodeURIComponent(fieldKey) + '/sensitive', 'businessAdmin', { method: 'PUT', body: JSON.stringify({ sensitive }) })
+export const exportFieldList = () => contentBinary('/api/v1/admin/case-fields/export', 'businessAdmin')
+export const previewFieldList = (file: string) => roleApi<FieldImportLine[]>('/api/v1/admin/case-fields/import/preview', 'businessAdmin', { method: 'POST', body: JSON.stringify({ file }) })
+export const importFieldList = (file: string) => roleApi<FieldImportLine[]>('/api/v1/admin/case-fields/import', 'businessAdmin', { method: 'POST', body: JSON.stringify({ file }) })
+
 /** The one or two fields that name a record (task 0009); an empty list means the default title. */
 export const getRecordTitleFields=(sourceId:string)=>roleApi<string[]>('/api/v1/admin/metadata-sources/'+encodeURIComponent(sourceId)+'/record-title','businessAdmin')
 export const saveRecordTitleFields=(sourceId:string,fieldKeys:string[])=>roleApi<string[]>('/api/v1/admin/metadata-sources/'+encodeURIComponent(sourceId)+'/record-title','businessAdmin',{method:'PUT',body:JSON.stringify({fieldKeys})})

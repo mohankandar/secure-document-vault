@@ -86,6 +86,10 @@ public final class AuditSentences {
             case "BUSINESS_RECORD_OPENED" -> w + " opened a record";
             case "BUSINESS_SEARCH" -> number(d, "resultCount") != null ? w + " searched records and found " + number(d, "resultCount") : w + " searched records";
             case "BUSINESS_RECENT_RECORDS_LISTED" -> w + " looked at Recently viewed";
+            // Task 0077.
+            case "FIELD_SENSITIVITY_CHANGED" -> w + (d.path("sensitive").asBoolean(false) ? " made a search field sensitive" : " made a search field not sensitive");
+            case "FIELD_LIST_EXPORTED" -> w + " exported the field list";
+            case "FIELD_LIST_IMPORTED" -> w + " imported a field list" + (number(d, "created") != null ? " (" + number(d, "created") + " new)" : "");
             // Task 0075.
             case "USAGE_EXPORTED" -> w + " exported the usage file" + (d.path("startedAgain").asBoolean(false) ? " and started a new series" : "");
             // Task 0074.

@@ -490,7 +490,7 @@ It is in the Vero application package: `Update-SDV-Schema.ps1` (Windows) or `upd
 to the application jar (`sdv-web-<version>.jar`; use `-Jar` / `--jar` if it is elsewhere). It needs Java 21 and
 runs the Liquibase bundled in the jar, then, in their own runs with their own history tables, platform-core's
 identity tables (`db/platform/identity`, history `idn_schema_history`) and licensing tables (`db/platform/licensing`,
-history `lic_schema_history`; licensing is not turned on). It always uses the `production` context, so no test data can be
+history `lic_schema_history`) and, since task 0077, case field tables (`fld_…`, history `fld_schema_history`). It always uses the `production` context, so no test data can be
 added, and it can't be changed.
 
 The connection comes from parameters or environment variables:

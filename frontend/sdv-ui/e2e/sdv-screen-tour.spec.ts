@@ -354,6 +354,24 @@ async function searchFieldsChecks(page: Page, testInfo: TestInfo) {
     await choose(originalMatch.startsWith('Contains') ? /^Contains/ : originalMatch.startsWith('Starts') ? /^Starts with/ : /^Exact/)
     await expect(match).toHaveText(originalMatch)
 
+    // Task 0077: a name is sensitive; with documents stored it is locked, and the editor says so before saving.
+    await expect(lastName).toContainText('Sensitive')
+    await lastName.getByRole('button', { name: 'Edit Last Name' }).click()
+    const editor = page.getByRole('dialog', { name: 'Last Name' })
+    await expect(editor.getByRole('switch', { name: 'Sensitive' })).toBeDisabled()
+    await expect(editor.getByText(/are locked[.]$/)).toBeVisible()
+    await capture(page, testInfo, 'search-field-locked')
+    await editor.getByRole('button', { name: 'Cancel' }).click()
+    // The field list: what is exported comes back as "already there"; nothing is imported.
+    const exported = await page.request.get('/api/v1/admin/case-fields/export', { headers: ADMIN_HEADERS })
+    expect(exported.ok()).toBeTruthy()
+    await page.getByLabel('Field list file to import').setInputFiles({ name: 'vero-field-list.json', mimeType: 'application/json', buffer: await exported.body() })
+    const report = page.getByRole('alertdialog', { name: 'Import this field list?' })
+    await expect(report.getByText(/^0 new, [0-9]+ already there, 0 in conflict[.]/)).toBeVisible({ timeout: 15000 })
+    await expect(report.getByRole('button', { name: 'Import new fields' })).toBeDisabled()
+    await capture(page, testInfo, 'field-list-import')
+    await report.getByRole('button', { name: 'Cancel' }).click()
+
     // Drag the last field above the first one.
     const labels = () => table.locator('tbody tr td.lead strong').allInnerTexts()
     const start = await labels()

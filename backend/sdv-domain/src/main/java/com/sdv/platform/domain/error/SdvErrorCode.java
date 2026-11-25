@@ -366,6 +366,14 @@ public enum SdvErrorCode {
     STO_008("SDV-STO-008", false, true),
     /** Task 0074: a storage volume is nearly full, full or can't be used (a check, never an answer). */
     STO_009("SDV-STO-009", true),
+    /** Task 0077: a field's settings are not valid, or not for its type (400). */
+    FLD_001("SDV-FLD-001", false, true),
+    /** Task 0077: the field has values, so its type, its identifier flag and its sensitivity are locked (409). */
+    FLD_002("SDV-FLD-002", false, true),
+    /** Task 0077: the key is taken by another field, differs from one only in capitals, or somebody changed the field meanwhile (409). */
+    FLD_003("SDV-FLD-003", false, true),
+    /** Task 0077: the field list file can't be read (400). Nothing was changed. */
+    FLD_004("SDV-FLD-004", false, true),
     /** Task 0075: the licence doesn't allow intake now (503, no Retry-After); everything else goes on. */
     LIC_001("SDV-LIC-001", true),
     /** Task 0075: the stored licence can't be read or checked, so intake is refused (503, no Retry-After). */

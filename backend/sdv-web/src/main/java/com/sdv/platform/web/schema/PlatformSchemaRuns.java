@@ -1,5 +1,6 @@
 package com.sdv.platform.web.schema;
 
+import com.documentplatform.fields.jdbc.FieldSchema;
 import com.documentplatform.identity.jdbc.IdentitySchema;
 import com.documentplatform.licensing.jdbc.LicensingSchema;
 import org.flywaydb.core.Flyway;
@@ -106,10 +107,10 @@ final class PlatformSchemaRuns {
     }
 
     static List<String> scripts(SchemaVersion.PlatformRun run) {
-        return run == SchemaVersion.IDENTITY ? IdentitySchema.scripts() : LicensingSchema.scripts();
+        return run == SchemaVersion.IDENTITY ? IdentitySchema.scripts() : run == SchemaVersion.LICENSING ? LicensingSchema.scripts() : FieldSchema.scripts();
     }
 
     static String script(SchemaVersion.PlatformRun run, String name) {
-        return run == SchemaVersion.IDENTITY ? IdentitySchema.script(name) : LicensingSchema.script(name);
+        return run == SchemaVersion.IDENTITY ? IdentitySchema.script(name) : run == SchemaVersion.LICENSING ? LicensingSchema.script(name) : FieldSchema.script(name);
     }
 }
