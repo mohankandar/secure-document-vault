@@ -306,8 +306,9 @@ from information_schema.tables where table_schema='public' and table_type='BASE 
         function Paused { $r = Answer '/actuator/health/readiness'; $r -and $r.Status -eq 503 -and $r.Body -match 'ERASE_LOG_RESTORE_DETECTED' -and $r.Body -match 'SDV-ERS-001' }
         function Replay([string]$Name, [string]$Database) {
             Start-App $Name $Database @('--erase-replay')
+            $null = $script:app.Handle # or Windows PowerShell does not know the exit code afterwards
             if (-not $script:app.WaitForExit(180000)) { Stop-App; throw "FAIL: the erase replay did not end; see $run\$Name.out.log" }
-            Assert-That ($script:app.ExitCode -eq 0) "The erase replay on $Database ended with 0: $((Get-Content (Join-Path $run "$Name.out.log") | Select-String 'Erase replay' | Select-Object -First 1).Line)"
+            Assert-That ($script:app.ExitCode -eq 0) "The erase replay on $Database ended with 0: $((Get-Content (Join-Path $run "$Name.out.log") | Select-String '^Erase replay ' | Select-Object -First 1).Line)"
         }
         $steward = As 'local-document-steward' 'DOCUMENT_STEWARD'
         $user = As 'local-business-user' 'BUSINESS_USER'
@@ -358,7 +359,7 @@ from information_schema.tables where table_schema='public' and table_type='BASE 
         Assert-That ($keys.Count -eq 2 -and @($keys | Where-Object { Test-Path (Join-Path $run "storage-a\$_") }).Count -eq 0) 'Their files, which the backup of the files had brought back, are gone'
 
         # While Vero runs, the database is restored under it.
-        $null = Sql $restored 'drop schema public cascade; create schema public;'
+        $null = Sql $restored 'set client_min_messages = warning; drop schema public cascade; create schema public;'
         & docker exec $container pg_restore -U sdv -d $restored "/tmp/$db.dump" 2> $null
         Wait-For 'A restore while Vero runs is noticed' { Paused } 120
         Stop-App
