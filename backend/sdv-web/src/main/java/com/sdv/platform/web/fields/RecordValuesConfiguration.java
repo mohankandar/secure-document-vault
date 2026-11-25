@@ -5,7 +5,6 @@ import com.documentplatform.crypto.CryptoException;
 import com.documentplatform.crypto.CustomerId;
 import com.documentplatform.crypto.KeyService;
 import com.sdv.platform.application.port.RecordValuesPort;
-import com.sdv.platform.persistence.fields.BatchUnwrap;
 import com.sdv.platform.persistence.fields.PlatformRecordValues;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
@@ -20,12 +19,10 @@ import java.util.UUID;
 @Configuration
 class RecordValuesConfiguration {
     @Bean
-    RecordValuesPort recordValues(DataSource dataSource, ObjectProvider<KeyService> keys, ObjectProvider<CustomerId> customer, ObjectProvider<BatchUnwrap> batch,
+    RecordValuesPort recordValues(DataSource dataSource, ObjectProvider<KeyService> keys, ObjectProvider<CustomerId> customer,
                                   @Value("${platform.licensing.tenant-id:}") String tenant) {
         CustomerId own = customer.getIfAvailable(() -> tenant.isBlank() ? CustomerId.of(new UUID(0, 0)) : CustomerId.fromTenantId(tenant));
-        return new PlatformRecordValues(dataSource, own, keys.getIfAvailable(RecordValuesConfiguration::none), batch.getIfAvailable(() -> (c, wrapped) -> {
-            throw new CryptoException(CryptoError.CRYPTO_KEY_SERVICE_UNREACHABLE, "this key service opens no batch");
-        }));
+        return new PlatformRecordValues(dataSource, own, keys.getIfAvailable(RecordValuesConfiguration::none));
     }
 
     private static KeyService none() {

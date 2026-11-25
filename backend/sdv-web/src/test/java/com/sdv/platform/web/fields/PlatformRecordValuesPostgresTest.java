@@ -1,6 +1,7 @@
 package com.sdv.platform.web.fields;
 
 import com.documentplatform.crypto.CustomerId;
+import com.documentplatform.crypto.KeyService;
 import com.documentplatform.crypto.testkit.InMemoryKeyService;
 import com.documentplatform.fields.values.RecordRef;
 import com.documentplatform.fields.FieldScope;
@@ -10,6 +11,7 @@ import com.sdv.platform.application.business.BusinessExperienceService;
 import com.sdv.platform.application.business.BusinessExperienceView;
 import com.sdv.platform.application.port.RecordValuesPort;
 import com.sdv.platform.domain.error.CodedRefusal;
+import com.sdv.platform.domain.error.InternalCheckFailed;
 import com.sdv.platform.domain.error.KeyServiceDown;
 import com.sdv.platform.domain.metadata.MetadataFieldDefinition;
 import com.sdv.platform.domain.metadata.MetadataFieldType;
@@ -17,7 +19,6 @@ import com.sdv.platform.domain.metadata.MetadataNormalization;
 import com.sdv.platform.domain.metadata.MetadataSearchMode;
 import com.sdv.platform.persistence.business.JdbcBusinessRecordRepository;
 import com.sdv.platform.persistence.business.PrimaryIdentifierSql;
-import com.sdv.platform.persistence.fields.BatchUnwrap;
 import com.sdv.platform.persistence.fields.PlatformFieldRepository;
 import com.sdv.platform.persistence.fields.PlatformRecordValues;
 import com.sdv.platform.persistence.foundation.JdbcFoundationRepository;
@@ -30,6 +31,8 @@ import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.transaction.support.TransactionTemplate;
 
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Proxy;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -56,18 +59,17 @@ class PlatformRecordValuesPostgresTest {
     private final TransactionTemplate tx = new TransactionTemplate(new DataSourceTransactionManager(data));
     private final CustomerId customer = CustomerId.of(UUID.randomUUID());
     private final InMemoryKeyService keys = new InMemoryKeyService().createKeysOnDemand();
-    /** Calls the batch's stand-in makes one by one; Vault takes one. */
-    private int counted;
+    /** How many keys each batch asked the key service for. */
     private final List<Integer> batches = new ArrayList<>();
-    private final BatchUnwrap batch = (c, wrapped) -> {
-        int before = keys.calls();
-        Map<String, byte[]> out = new HashMap<>();
-        for (String w : wrapped) out.put(w, keys.unwrap(c, w));
-        batches.add(wrapped.size());
-        counted += keys.calls() - before;
-        return out;
-    };
-    private final PlatformRecordValues values = new PlatformRecordValues(data, customer, keys, batch);
+    private final KeyService seen = (KeyService) Proxy.newProxyInstance(KeyService.class.getClassLoader(), new Class<?>[]{KeyService.class}, (proxy, method, args) -> {
+        if (method.getName().equals("unwrapAll")) batches.add(((List<?>) args[1]).size());
+        try {
+            return method.invoke(keys, args);
+        } catch (InvocationTargetException ex) {
+            throw ex.getCause();
+        }
+    });
+    private final PlatformRecordValues values = new PlatformRecordValues(data, customer, seen);
     private final BusinessExperienceService business = new BusinessExperienceService(foundation, foundation, fields, records, foundation, QuarantineLookup.NONE, values);
     private final UUID entity = UUID.randomUUID(), a = UUID.randomUUID(), b = UUID.randomUUID();
 
@@ -191,7 +193,6 @@ class PlatformRecordValuesPostgresTest {
     void openingARecordIsOneCallAndAResultsPageIsOneBatch() {
         for (int i = 0; i < 30; i++) document(a, deliver(a, person("5000" + i, "Anna" + i, "Patel" + i)), "STANDARD");
         int before = keys.calls();
-        counted = 0;
         batches.clear();
         var page = search(Map.of(), "5000", Clearance.STANDARD_ONLY).records();
         assertEquals(0, page.size(), "an exact identifier isn't found by a part");
@@ -199,7 +200,7 @@ class PlatformRecordValuesPostgresTest {
         assertEquals(30, page.size());
         assertTrue(page.stream().allMatch(r -> r.title().startsWith("Anna")), "the names stay in the list");
         assertEquals(List.of(30), batches, "one batch for the page, never one call per row");
-        assertEquals(before + counted, keys.calls(), "nothing else is asked of the key service");
+        assertEquals(before + 1, keys.calls(), "one call, and nothing else is asked of the key service");
 
         before = keys.calls();
         var opened = business.record(entity, page.getFirst().recordRef(), "maya", "c", Clearance.STANDARD_ONLY);
@@ -207,6 +208,42 @@ class PlatformRecordValuesPostgresTest {
         assertEquals(Map.of("firstName", true, "lastName", true, "loanType", false, "contractNumber", false),
                 opened.metadata().stream().collect(java.util.stream.Collectors.toMap(v -> v.fieldKey(), v -> v.sensitive())), "task 0079: the sensitive ones are marked");
         assertEquals(page.getFirst().title(), opened.title());
+    }
+
+    /** Task 0094: the key service takes {@link KeyService#MAX_BATCH} keys in a call; a longer page is refused before any call. */
+    @Test
+    void aPageIsNeverMoreThanOneCallTakes() {
+        List<UUID> page = new ArrayList<>();
+        for (int i = 0; i < KeyService.MAX_BATCH; i++) page.add(recordOf(deliver(a, person("8800" + i, "Anna", "Patel"))));
+        assertEquals(KeyService.MAX_BATCH, values.openPage(entity, a, page).size());
+        assertEquals(List.of(KeyService.MAX_BATCH), batches);
+        page.add(recordOf(deliver(a, person("8899", "Anna", "Patel"))));
+        int before = keys.calls();
+        assertThrows(InternalCheckFailed.class, () -> values.openPage(entity, a, page));
+        assertEquals(before, keys.calls());
+        assertThrows(CodedRefusal.BadRequest.class, () -> business.search(entity, a, Map.of(), "mortgage", null, null, null, null, false, 1, KeyService.MAX_BATCH + 1, "maya", "c", Clearance.ALL));
+    }
+
+    /** Task 0094: a key that is another customer's, and a record with nothing sealed. */
+    @Test
+    void aRecordThatCantBeOpenedShowsItsIdentifierAndTheOthersTheirNames() {
+        UUID bad = recordOf(deliver(a, person("8501", "Anna", "Patel"))), good = recordOf(deliver(a, person("8502", "Omar", "Haddad")));
+        UUID plain = recordOf(deliver(a, Map.of("contractNumber", "8503", "loanType", "Mortgage")));
+        for (UUID r : List.of(bad, good, plain)) document(a, r, "STANDARD");
+        // The key of another customer's record in the bad one's place.
+        CustomerId stranger = CustomerId.of(UUID.randomUUID());
+        UUID theirs = UUID.randomUUID();
+        tx.executeWithoutResult(s -> {
+            db.update("insert into submissions(submission_id, tenant_id, source_id, source_submission_id, expected_document_count, status) values (?, ?, ?, ?, 1, 'COMPLETE')", theirs, entity, b, theirs.toString());
+            new PlatformRecordValues(data, stranger, keys).store(entity, b, theirs, Map.of("firstName", "Eve"));
+        });
+        assertEquals(1, db.update("update fld_record set envelope = (select envelope from fld_record where entity_uuid = ? and record_id = ?) where entity_uuid = ? and record_id = ?",
+                entity, theirs.toString(), entity, bad.toString()));
+        assertEquals(Map.of("8501", "-", "8502", "Omar Haddad", "8503", "-"), titles(search(Map.of(), "mortgage", Clearance.ALL).records()));
+        assertEquals(List.of(1), batches, "the bad one is refused before the key service is asked");
+        batches.clear();
+        assertEquals(List.of(), values.openPage(entity, a, List.of(plain, UUID.randomUUID())).getOrDefault(plain, List.of()));
+        assertEquals(List.of(), batches, "nothing sealed, no call");
     }
 
     @Test
@@ -250,9 +287,9 @@ class PlatformRecordValuesPostgresTest {
         document(a, deliver(a, person("81", "Anna", "Patel")), "STANDARD");
         document(a, deliver(a, person("82", "Anna", "Okafor")), "STANDARD");
         int before = keys.calls();
-        counted = 0;
+        batches.clear();
         assertEquals(List.of("81"), numbers(search(Map.of("firstName", "ANNA", "lastName", " patel "), null, Clearance.STANDARD_ONLY)));
-        assertEquals(2, keys.calls() - before - counted, "two calls for two sensitive fields");
+        assertEquals(2, keys.calls() - before - batches.size(), "two calls for two sensitive fields");
         assertEquals(List.of(), numbers(search(Map.of("lastName", "Pat"), null, Clearance.STANDARD_ONLY)));
         assertEquals(List.of(), numbers(search(Map.of(), "Patel", Clearance.STANDARD_ONLY)), "free search leaves them out");
         assertEquals(Set.of("81", "82"), Set.copyOf(numbers(search(Map.of("loanType", "ortg"), null, Clearance.STANDARD_ONLY))), "contains, on a field that isn't sensitive");

@@ -1,6 +1,5 @@
 package com.sdv.platform.persistence.fields;
 
-import com.documentplatform.crypto.CryptoError;
 import com.documentplatform.crypto.CryptoException;
 import com.documentplatform.crypto.CustomerId;
 import com.documentplatform.crypto.KeyService;
@@ -18,6 +17,7 @@ import com.documentplatform.fields.values.FieldValuesException;
 import com.documentplatform.fields.values.LegalHolds;
 import com.documentplatform.fields.values.RecordRef;
 import com.documentplatform.fields.values.RecordValues;
+import com.documentplatform.fields.values.SensitiveRead;
 import com.sdv.platform.application.port.RecordValuesPort;
 import com.sdv.platform.domain.error.CodedRefusal;
 import com.sdv.platform.domain.error.InternalCheckFailed;
@@ -29,18 +29,14 @@ import org.apache.commons.logging.LogFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 import javax.sql.DataSource;
-import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Proxy;
 import java.time.Clock;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.Supplier;
@@ -52,7 +48,7 @@ import java.util.function.Supplier;
 public class PlatformRecordValues implements RecordValuesPort {
     private static final Log log = LogFactory.getLog(PlatformRecordValues.class);
     /** Records opened in one call (design chat, 2026-11-25). */
-    public static final int PAGE_MAX = 100;
+    public static final int PAGE_MAX = KeyService.MAX_BATCH;
 
     private final JdbcTemplate db;
     private final CustomerId customer;
@@ -61,24 +57,16 @@ public class PlatformRecordValues implements RecordValuesPort {
     private final LegalHolds holds;
     private final FieldValues values;
     private final Fingerprinter fingerprints;
-    private final KeyService keys;
-    private final BatchUnwrap batch;
 
-    public PlatformRecordValues(DataSource dataSource, CustomerId customer, KeyService keys, BatchUnwrap batch) {
+    public PlatformRecordValues(DataSource dataSource, CustomerId customer, KeyService keys) {
         this.db = new JdbcTemplate(dataSource);
         this.customer = customer;
-        this.keys = keys;
-        this.batch = batch;
         DataSource joined = new JoinedDataSource(dataSource);
         this.fields = new PostgresFieldStore(joined);
         this.store = new PostgresValueStore(joined);
         this.holds = this::held;
-        this.values = values(keys);
+        this.values = new FieldValues(customer, fields, store, keys, Clock.systemUTC(), holds);
         this.fingerprints = new Fingerprinter(keys);
-    }
-
-    private FieldValues values(KeyService service) {
-        return new FieldValues(customer, fields, store, service, Clock.systemUTC(), holds);
     }
 
     private static FieldScope scope(UUID entity) {
@@ -175,25 +163,15 @@ public class PlatformRecordValues implements RecordValuesPort {
     public Map<UUID, List<Opened>> openPage(UUID tenantId, UUID sourceId, Collection<UUID> recordIds) {
         Map<UUID, List<Opened>> out = new LinkedHashMap<>();
         if (recordIds.size() > PAGE_MAX) throw new InternalCheckFailed("A page of records is too long to open.");
-        Map<UUID, String> wrapped = new LinkedHashMap<>();
-        for (UUID id : new LinkedHashSet<>(recordIds)) wrapped(ref(tenantId, sourceId, id)).ifPresent(w -> wrapped.put(id, w));
-        if (wrapped.isEmpty()) return out;
-        Map<String, byte[]> opened = Map.of();
+        List<RecordRef> refs = new LinkedHashSet<>(recordIds).stream().map(id -> ref(tenantId, sourceId, id)).toList();
+        if (refs.isEmpty()) return out;
         try {
-            opened = batch.unwrap(customer, new LinkedHashSet<>(wrapped.values()));
-            Map<String, byte[]> page = opened;
-            // No further call: a key the batch didn't give is missing, and its record is left out.
-            FieldValues reader = values(only((c, w) -> {
-                byte[] key = customer.equals(c) ? page.get(w) : null;
-                if (key == null) throw new CryptoException(CryptoError.CRYPTO_KEY_MISSING, "not in the page's batch");
-                return key.clone();
-            }));
+            List<SensitiveRead> page = values.readSensitive(refs);
             Map<String, SourceField> source = sourceFields(tenantId, sourceId);
-            for (UUID id : wrapped.keySet()) {
-                try {
-                    out.put(id, opened(reader.readSensitive(ref(tenantId, sourceId, id)), source));
-                } catch (CryptoException | FieldValuesException ex) {
-                    log.warn("A record of a results page can't be opened: " + ex.getClass().getSimpleName());
+            for (SensitiveRead read : page) {
+                if (read.ok()) out.put(UUID.fromString(read.ref().recordId()), opened(read.values(), source));
+                else if (!noValues(read.failure())) {
+                    log.warn("A record of a results page can't be opened: " + read.code().map(c -> c.code()).orElse(read.failure().getClass().getSimpleName()));
                 }
             }
             return out;
@@ -201,42 +179,12 @@ public class PlatformRecordValues implements RecordValuesPort {
             // The list goes on without names; a key-service problem shows on the health page.
             log.warn("The names of a results page can't be opened: " + (ex instanceof CryptoException c ? c.code().code() : ex.getClass().getSimpleName()));
             return Map.of();
-        } finally {
-            opened.values().forEach(k -> Arrays.fill(k, (byte) 0));
         }
     }
 
-    /** The record's wrapped data key as the key service takes it; asked of platform-fields itself, so its envelope format stays its own. */
-    private Optional<String> wrapped(RecordRef ref) {
-        if (store.find(ref).map(r -> r.envelope() == null).orElse(true)) return Optional.empty();
-        String[] seen = new String[1];
-        try {
-            values(only((c, w) -> {
-                if (customer.equals(c)) seen[0] = w;
-                throw new CryptoException(CryptoError.CRYPTO_KEY_MISSING, "only looked at");
-            })).readSensitive(ref);
-        } catch (CryptoException | FieldValuesException ex) {
-            // as made to fail
-        }
-        return Optional.ofNullable(seen[0]);
-    }
-
-    @FunctionalInterface
-    private interface Unwrap { byte[] unwrap(CustomerId customer, String wrapped); }
-
-    /** The key service with nothing but unwrap, and that from memory; what doesn't call it out (its ID, a version) stays. */
-    private KeyService only(Unwrap unwrap) {
-        return (KeyService) Proxy.newProxyInstance(KeyService.class.getClassLoader(), new Class<?>[]{KeyService.class}, (proxy, method, args) -> switch (method.getName()) {
-            case "unwrap" -> unwrap.unwrap((CustomerId) args[0], (String) args[1]);
-            case "id", "versionOf", "toString", "hashCode" -> {
-                try {
-                    yield method.invoke(keys, args);
-                } catch (InvocationTargetException ex) {
-                    throw ex.getCause();
-                }
-            }
-            default -> throw new CryptoException(CryptoError.CRYPTO_PERMISSION_DENIED, "not for a results page");
-        });
+    /** A record whose deliveries had no values: nothing to open, no failure. */
+    private static boolean noValues(RuntimeException ex) {
+        return ex instanceof FieldValuesException f && f.code() == FieldValuesError.VALUES_RECORD_UNKNOWN;
     }
 
     // ---- search
