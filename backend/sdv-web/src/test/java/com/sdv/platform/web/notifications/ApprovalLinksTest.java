@@ -148,6 +148,14 @@ class ApprovalLinksTest {
         assertTrue(store.find(NotificationKit.TENANT, UUID.randomUUID()).isEmpty());
     }
 
+    /** Q-4: a link lives as long as a request waits (Vero's pending days), at most the module's 30 days. */
+    @Test
+    void aLinkLivesAsLongAsTheRequestWaitsAtMostThirtyDays() {
+        assertEquals(java.time.Duration.ofDays(7), VeroNotificationsConfiguration.approvalType("print", 7).validFor());
+        assertEquals(java.time.Duration.ofDays(30), VeroNotificationsConfiguration.approvalType("print", 90).validFor());
+        assertEquals(java.time.Duration.ofDays(1), VeroNotificationsConfiguration.approvalType("print", 0).validFor());
+    }
+
     @Test
     void aDecisionOfARequestWithoutLinksChangesNothing() {
         links.decided(NotificationKit.ENTITY, UUID.randomUUID(), true, "ba-1", "Bea", kit.clock.instant());
