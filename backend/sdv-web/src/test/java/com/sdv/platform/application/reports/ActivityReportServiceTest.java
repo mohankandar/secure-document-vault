@@ -70,7 +70,7 @@ class ActivityReportServiceTest {
         when(repo.busiest(eq(T), any(), any(), eq(20))).thenReturn(List.of(
                 new Person("bob@example.test", "Bob Person", "BUSINESS_USER", 30, 5, 0, 35),
                 new Person("dee@example.test", null, "DOCUMENT_STEWARD;DOCUMENT_STEWARD,RESTRICTED_STEWARD", 0, 0, 2, 2)));
-        service = new ActivityReportService(repo, tenants, audit, tx, "UTC", Clock.fixed(NOW, ZoneOffset.UTC));
+        service = new ActivityReportService(repo, tenants, audit, tx, Clock.fixed(NOW, ZoneOffset.UTC));
     }
 
     @Test
@@ -98,7 +98,7 @@ class ActivityReportServiceTest {
     @Test
     void aDayIsKeptOnlyOnceItHasSettled() {
         // 05:05 UTC: midnight in New York was 5 minutes ago, so yesterday isn't settled yet.
-        ActivityReportService early = new ActivityReportService(repo, tenants, audit, tx, "UTC",
+        ActivityReportService early = new ActivityReportService(repo, tenants, audit, tx,
                 Clock.fixed(Instant.parse("2026-11-23T05:05:00Z"), ZoneOffset.UTC));
         ActivityReportService.ActivityReport r = early.report(T, "2026-11-22", "2026-11-23");
         assertNull(r.keptThrough());

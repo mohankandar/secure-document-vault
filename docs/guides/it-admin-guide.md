@@ -76,6 +76,27 @@ restored: backup runbook, "Restore". On Health, "erase-log" shows an erasure tha
 **About** shows the licence, this entity's use this month and **Export usage**. New documents stop only 30 days after the licence
 ended (`SDV-LIC-001` to sending systems); nothing else stops. Renewal and clock reset: the runbook, "The licence".
 
+## Notifications
+
+**IT › Notifications** connects the channels and chooses the technical notifications for the whole customer.
+
+- **Channels** come from the install config (runbook, "Notifications"): the mail server and each Teams or Slack channel, each
+  secret by the path where the key service keeps it. This page shows those paths and each channel's health (working, having
+  problems, down, not used yet, with a code and its reason), never a secret. Give the **address people open Vero on** and
+  save: messages link under it, and nothing is sent before it is saved.
+- **Technical notifications:** documents that could not be stored, deliveries still missing documents, storage nearly full
+  or full, unidentified intake attempts, the key service not reachable, and the licence's technical events. For each: on or
+  off, how often (Immediately, every hour, every 4 hours, once a day at a time), by e-mail and to which channels. Ones that
+  say something is down are always on, Immediately or every hour. A problem that lasts is told once it has lasted 15 minutes
+  (5 for the key service), again every 4 hours while it lasts, and "Recovered" once it is gone.
+- **IT Admins who get e-mail:** the list for the whole customer (user ID and address). Addresses are kept here only, never
+  in the audit or a log; the audit says who changed the list and whose entry.
+- **The customer's time zone:** every entity without its own follows it, for daily summaries, the times in messages and the
+  reports' days.
+
+A message says the event, counts, times and a link into Vero. It never says a title, a name, a file name, a reason or a
+document's level. Teams and Slack messages never name a record.
+
 ## Checks and the diagnostic bundle
 
 **Problems** lists what Vero depends on: database, key service, login system and its keys, licence, storage, intake. A check
@@ -106,6 +127,9 @@ Running it does not.
 4. Replace the application jar, the setup jar and the screens together. Start Vero; readiness turns 200. Run setup again when the release says so.
 
 Before this version in particular:
+- **Time zones are identity's** (task 0081): `SDV_DEFAULT_TIME_ZONE` is gone. Before the upgrade, set the customer's zone
+  to the value it had (IT › Notifications, or the setup file's `timeZone`); an entity's own zone moves by itself. The schema step adds the
+  notifications tables (runbook, "Notifications").
 - **`SDV_ERASE_LOG_FOLDER` is required:** an absolute folder outside the documents and the database's storage, backed up on its
   own (runbook, "The erase log"). After a restore, the erase replay comes before any work (backup runbook, "Restore").
 - `SDV_STORAGE_ALLOWED_ROOTS`, if new volumes will be outside `data`. Existing volumes stay usable.

@@ -17,7 +17,6 @@ import com.sdv.platform.domain.error.CodedRefusal;
 import com.sdv.platform.domain.error.InternalCheckFailed;
 import com.sdv.platform.domain.error.SdvErrorCode;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -78,23 +77,20 @@ public class ActivityReportService {
     private final IntakeReportRepository tenants;
     private final AuditEventPort audit;
     private final TransactionTemplate transactions;
-    private final ZoneId installDefault;
     private final Clock clock;
 
     @Autowired
     public ActivityReportService(ActivityReportRepository activity, IntakeReportRepository tenants, AuditEventPort audit,
-                                 PlatformTransactionManager transactionManager,
-                                 @Value("${sdv.tenant-defaults.time-zone:UTC}") String installDefaultZone) {
-        this(activity, tenants, audit, transactionManager, installDefaultZone, Clock.systemUTC());
+                                 PlatformTransactionManager transactionManager) {
+        this(activity, tenants, audit, transactionManager, Clock.systemUTC());
     }
 
     ActivityReportService(ActivityReportRepository activity, IntakeReportRepository tenants, AuditEventPort audit,
-                          PlatformTransactionManager transactionManager, String installDefaultZone, Clock clock) {
+                          PlatformTransactionManager transactionManager, Clock clock) {
         this.activity = Objects.requireNonNull(activity, "activity");
         this.tenants = Objects.requireNonNull(tenants, "tenants");
         this.audit = Objects.requireNonNull(audit, "audit");
         this.transactions = new TransactionTemplate(Objects.requireNonNull(transactionManager, "transactionManager"));
-        this.installDefault = IntakeReportService.installZone(installDefaultZone);
         this.clock = Objects.requireNonNull(clock, "clock");
     }
 
@@ -344,7 +340,7 @@ public class ActivityReportService {
     }
 
     private TenantZone zone(UUID tenantId) {
-        return TenantZone.of(tenants.findTenantTimeZone(tenantId).orElse(null), installDefault);
+        return TenantZone.of(tenants, tenantId);
     }
 
     private static LocalDate day(String value) {

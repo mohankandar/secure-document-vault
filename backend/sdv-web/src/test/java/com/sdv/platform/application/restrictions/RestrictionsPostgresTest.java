@@ -43,7 +43,7 @@ class RestrictionsPostgresTest {
             System.getenv("SDV_IT_JDBC_URL"), System.getenv("SDV_IT_JDBC_USER"), System.getenv("SDV_IT_JDBC_PASSWORD"));
     private final NamedParameterJdbcTemplate jdbc = new NamedParameterJdbcTemplate(dataSource);
     private final StorageReportService storage = new StorageReportService(new JdbcStorageReportRepository(jdbc),
-            new JdbcIntakeReportRepository(jdbc), new JdbcFoundationRepository(jdbc), "UTC", 900_000L);
+            new JdbcIntakeReportRepository(jdbc), new JdbcFoundationRepository(jdbc), 900_000L);
     private final RestrictionsService service = new RestrictionsService(new JdbcRestrictionsRepository(jdbc), storage);
 
     private void sql(String statement) {

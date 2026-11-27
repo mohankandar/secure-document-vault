@@ -186,11 +186,13 @@ $hasObjectVersionSql = "select count(*) from information_schema.columns where ta
 $objectVersionBefore = if ($has047) { '0' } else { '1' }
 # Task 0078: 048 adds records and drops Vero's own field tables.
 $has048 = $newChangesets -contains '048-records'
+# Task 0081: 049 adds the admins' recipient lists and moves tenants.time_zone to identity (idn_entity.time_zone).
+$has049 = $newChangesets -contains '049-notifications'
 $hasRecordsSql = "select count(*) from information_schema.tables where table_name='records';"
 $oldFieldTablesSql = "select count(*) from information_schema.tables where table_name in ('metadata_field_definitions', 'business_metadata_values', 'metadata_field_display_order', 'record_title_fields');"
 $submissionsOldColumnsSql = "select count(*) || ':' || md5(string_agg((to_jsonb(x) - 'record_id')::text, '|' order by x.submission_id)) from submissions x;"
 $recordsBefore = if ($has048) { '0' } else { '1' }
-$platformRuns = @('identity V1 (platform-core)', 'identity V2 (platform-core)', 'identity V3 (platform-core)', 'identity V4 (platform-core)', 'identity V5 (platform-core)', 'licensing V1 (platform-core)', 'licensing V2 (platform-core)', 'fields V1 (platform-core)', 'fields V2 (platform-core)', 'erase log V1 (platform-core)', 'erase log V2 (platform-core)', 'erase log V3 (platform-core)')
+$platformRuns = @('identity V1 (platform-core)', 'identity V2 (platform-core)', 'identity V3 (platform-core)', 'identity V4 (platform-core)', 'identity V5 (platform-core)', 'licensing V1 (platform-core)', 'licensing V2 (platform-core)', 'fields V1 (platform-core)', 'fields V2 (platform-core)', 'erase log V1 (platform-core)', 'erase log V2 (platform-core)', 'erase log V3 (platform-core)', 'notifications V1 (platform-core)')
 # Task 0033: an uncorrected copy received at the previous version, which 032 must turn into one stored notice.
 $oldCopyEvent = '50000000-0000-0000-0000-0000000000c1'
 $reportIndexes = @('idx_submissions_tenant_created', 'idx_documents_tenant_ingested', 'idx_audit_events_redaction_old_sha')
@@ -264,7 +266,7 @@ function Invoke-SchemaStep([string[]]$StepArgs) {
 $otherTablesSql = @"
 select string_agg(t.relname || '=' || (xpath('/row/c/text()', query_to_xml(format('select count(*) || '':'' || coalesce(md5(string_agg(x::text, ''|'' order by x::text)), '''') as c from %I x', t.relname), false, true, '')))[1]::text, ',' order by t.relname)
   from pg_stat_user_tables t
- where t.relname not like 'idn_%' and t.relname not like 'lic_%' and t.relname not like 'fld_%' and t.relname not like 'erl_%' and t.relname not in ('submissions', 'records', 'metadata_field_definitions', 'business_metadata_values', 'metadata_field_display_order', 'record_title_fields', 'usage_export_anchor', 'usage_named_seats', 'document_crypto_metadata', 'enterprise_identity_connections', 'enterprise_identity_connection_history', 'documents', 'record_sensitivity_levels', 'role_conflict_problems', 'role_group_mappings_seen', 'role_mapping_notices', 'legal_holds', 'access_requests', 'sensitivity_level_changes', 'document_duplicate_receipts', 'tenants', 'steward_notices', 'unidentified_intake_attempts', 'quarantine_incidents', 'quarantined_documents', 'quarantine_release_requests', 'audit_reports', 'report_storage_counts', 'report_activity_counts', 'report_activity_people', 'report_activity_days', 'held_redactions', 'sealed_originals', 'databasechangelog', 'databasechangeloglock');
+ where t.relname not like 'idn_%' and t.relname not like 'lic_%' and t.relname not like 'fld_%' and t.relname not like 'erl_%' and t.relname not like 'notif_%' and t.relname not in ('notification_recipients', 'submissions', 'records', 'metadata_field_definitions', 'business_metadata_values', 'metadata_field_display_order', 'record_title_fields', 'usage_export_anchor', 'usage_named_seats', 'document_crypto_metadata', 'enterprise_identity_connections', 'enterprise_identity_connection_history', 'documents', 'record_sensitivity_levels', 'role_conflict_problems', 'role_group_mappings_seen', 'role_mapping_notices', 'legal_holds', 'access_requests', 'sensitivity_level_changes', 'document_duplicate_receipts', 'tenants', 'steward_notices', 'unidentified_intake_attempts', 'quarantine_incidents', 'quarantined_documents', 'quarantine_release_requests', 'audit_reports', 'report_storage_counts', 'report_activity_counts', 'report_activity_people', 'report_activity_days', 'held_redactions', 'sealed_originals', 'databasechangelog', 'databasechangeloglock');
 "@
 # Task 0032: tenants with every column it had before 030 (030 adds time_zone, null for every existing tenant).
 $tenantsOldColumnsSql = "select count(*) || ':' || md5(string_agg((to_jsonb(x) - 'time_zone')::text, '|' order by x.tenant_id)) from tenants x;"
@@ -453,6 +455,10 @@ insert into unidentified_intake_attempts(attempt_id, tenant_id, occurred_at, cal
     }
     $docsBefore = Get-Value $documentsOldColumnsSql
     $othersBefore = Get-Value $otherTablesSql
+    if ($has049) {
+        # Task 0081: an entity's own zone moves to identity. One tenant with its own zone and its identity row without one.
+        $null = Invoke-Sql -Database $db -AsOwner -Sql "insert into idn_customer(tenant_id, name) values ('TEN-UPGRADE-0049', 'Upgrade 0049') on conflict do nothing; insert into idn_entity(slot_id, entity_uuid, tenant_id, status) values ('ENT-UPGRADE-0049', '10000000-0000-0000-0000-000000000001', 'TEN-UPGRADE-0049', 'NOT_ACTIVATED') on conflict do nothing; update idn_entity set time_zone = null where entity_uuid = '10000000-0000-0000-0000-000000000001'; update tenants set time_zone = 'America/Chicago' where tenant_id = '10000000-0000-0000-0000-000000000001';"
+    }
     $tenantsBefore = Get-Value $tenantsOldColumnsSql
     Assert-That ($tenantsBefore -match '^[1-9][0-9]*:[0-9a-f]{32}$') "tenants fingerprint looks wrong: $tenantsBefore"
     # The fingerprints must really hold the rows, or "unchanged" below would prove nothing.
@@ -572,6 +578,7 @@ insert into unidentified_intake_attempts(attempt_id, tenant_id, occurred_at, cal
             Assert-That ($upgradeText.Contains($c)) "the reviewable SQL lacks $c"
         }
     }
+    if ($has049) { Assert-That ($upgradeText.Contains('create table notification_recipients') -and $upgradeText.Contains('drop column time_zone') -and $upgradeText.Contains('notif_schema_version')) 'the reviewable SQL lacks 049 or the notifications run' }
     if ($has048) { Assert-That ($upgradeText.Contains('create table records') -and $upgradeText.Contains('drop table business_metadata_values')) 'the reviewable SQL lacks records' }
     if ($has047) { Assert-That ($upgradeText.Contains('add column object_version')) 'the reviewable SQL lacks add column object_version' }
     if ($has046) { Assert-That ($upgradeText.Contains('create table usage_named_seats')) 'the reviewable SQL lacks create table usage_named_seats' }
@@ -1006,6 +1013,23 @@ rollback;
             $null = Invoke-Sql -Database $db -AsOwner -Sql "delete from quarantined_documents where incident_id = '$scaleIncident'; delete from quarantine_incidents where incident_id = '$scaleIncident';"
         }
         Write-Step '4q. After 039: quarantine counts on the incident' $w.Elapsed.TotalSeconds 'thirteen new columns, two triggers; rows at 038 get their received time and are counted; level filled, release and new row move the counts; checks refuse a bad level, counts that do not add up, no received time'
+        $w = [System.Diagnostics.Stopwatch]::StartNew()
+    }
+    if ($has049) {
+        Assert-That ((Get-Value $hasTimeZoneSql) -eq '0') 'tenants.time_zone should be gone (task 0081)'
+        Assert-That ((Get-Value "select coalesce(time_zone, '-') from idn_entity where entity_uuid = '10000000-0000-0000-0000-000000000001';") -eq 'America/Chicago') "the entity's own zone should be identity's now"
+        Assert-That ((Get-Value 'select count(*) from notification_recipients;') -eq '0') 'notification_recipients should be there and empty'
+        foreach ($bad in @(
+                "insert into notification_recipients values (gen_random_uuid(), 'TEN-UPGRADE-0049', '10000000-0000-0000-0000-000000000001', 'IT_ADMIN', 'u1', 'u1@example.test', 'test', now());",
+                "insert into notification_recipients values (gen_random_uuid(), 'TEN-UPGRADE-0049', null, 'BUSINESS_ADMIN', 'u1', 'u1@example.test', 'test', now());",
+                "insert into notification_recipients values (gen_random_uuid(), 'TEN-UPGRADE-0049', '10000000-0000-0000-0000-000000000001', 'BUSINESS_ADMIN', 'u 1', 'u1@example.test', 'test', now());",
+                "insert into notification_recipients values (gen_random_uuid(), 'TEN-UPGRADE-0049', '10000000-0000-0000-0000-000000000001', 'BUSINESS_ADMIN', 'u1', 'no address', 'test', now());")) {
+            $r = Invoke-Sql -Database $db -AsOwner -AllowFailure -Sql $bad
+            Assert-That ($r.Code -ne 0) "notification_recipients should refuse: $bad"
+        }
+        Assert-That ((Get-Value 'select max(version) from notif_schema_version;') -eq '1' -and [int](Get-Value 'select count(*) from notif_schema_history where success;') -ge 1) 'the notifications run (task 0081) should be at version 1 and recorded in notif_schema_history'
+        $null = Invoke-Sql -Database $db -AsOwner -Sql "update idn_entity set time_zone = null where slot_id = 'ENT-UPGRADE-0049';"
+        Write-Step '4za. After 049: recipient lists, zones in identity' $w.Elapsed.TotalSeconds 'tenants.time_zone gone and copied to identity; the list table there, empty, its checks refuse a bad scope, user ID and address; notif_ tables at V1'
         $w = [System.Diagnostics.Stopwatch]::StartNew()
     }
     if ($has048) {

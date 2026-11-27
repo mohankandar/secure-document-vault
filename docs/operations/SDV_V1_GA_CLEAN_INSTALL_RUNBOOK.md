@@ -536,7 +536,7 @@ section 5; those with a section of their own above are not repeated.
 | `SDV_ERASE_LOG_FOLDER`, `SDV_BACKUP_RETENTION_DAYS` | none, `35` | "The erase log" above. The folder is required |
 | `SDV_RETENTION_DAILY_AT` | `02:00` | The daily cleanup, HH:mm in the server's time zone |
 | `SDV_RETENTION_CRON` | empty | For check scripts only. Leave empty |
-| `SDV_DEFAULT_TIME_ZONE` | `UTC` | The zone an entity's days are counted in when it has none; an unknown name stops the start |
+| `SDV_NOTIFICATIONS_ENABLED` | `true` | Notifications by e-mail, Teams and Slack ("Notifications" below). `false` switches them off; the schema step makes their tables either way |
 | `SDV_APPROVALS_GRANT_HOURS` | `24` | How long an approved print or download may be used, 1 to 168 |
 | `SDV_APPROVALS_PENDING_DAYS` | `7` | How long a request may wait, 1 to 90 |
 | `SDV_APPROVALS_TENANT_GRANT_HOURS`, `SDV_APPROVALS_TENANT_PENDING_DAYS` | empty | The same for one entity: `entity-id=number,...` |
@@ -548,6 +548,43 @@ Licensing: "The licence" above.
 
 
 **The local development jar** (`sdv-web-<version>-local.jar`) is never installed for a customer.
+
+### Notifications (task 0081)
+
+Vero tells people by e-mail, Microsoft Teams and Slack (platform-core's notifications; its install guide
+`docs/install/notifications.md` at the platform-core release has the details of each step below). Without a channel Vero still
+starts, records notifications and sends nothing.
+
+1. **The tables.** The schema step makes them (`notif_…`). The app user needs select, insert, update and delete on them,
+   select only on `notif_schema_version`; the schema step takes the other rights on that table back. Without the tables
+   Vero stops at the start with `TABLES_MISSING`, `VERSION_OLDER` or `PRIVILEGES_MISSING` and says what to run.
+2. **The secrets** go in the key service's KV store, under `secret/platform/<path>` with the key `value` (Vero's login reads
+   `secret/data/platform/*`, `Setup-SDV-VaultTransit.ps1` gives it that right): the mail password (or the Microsoft 365 app's
+   certificate or secret), each Teams or Slack webhook address. The settings hold only the **path**, never the secret.
+3. **The settings**, in the install config (environment variables shown; YAML works as well):
+
+   | Setting | What |
+   |---|---|
+   | `PLATFORM_NOTIFICATIONS_MAIL_HOST`, `..._MAIL_PORT`, `..._MAIL_SECURITY` | The mail server; STARTTLS on 587 is the default. Leave them out for no e-mail |
+   | `PLATFORM_NOTIFICATIONS_MAIL_USERNAME`, `PLATFORM_NOTIFICATIONS_MAIL_PASSWORDSECRET` | The login and the **path** of its password |
+   | `PLATFORM_NOTIFICATIONS_MAIL_FROMADDRESS`, `..._MAIL_FROMNAME` | The sender |
+   | `PLATFORM_NOTIFICATIONS_MAIL_AUTH=OAUTH2_MICROSOFT` and `..._MAIL_OAUTH_*` | Microsoft 365 without a password (platform-core's guide, section 1a) |
+   | `PLATFORM_NOTIFICATIONS_TEAMS_<ID>`, `PLATFORM_NOTIFICATIONS_SLACK_<ID>` | One per channel: the id (letters and digits in a variable's name: `PLATFORM_NOTIFICATIONS_TEAMS_OPS` is the destination `ops`; ids with `-` go in the YAML file) and the **path** of its webhook address |
+   | `SDV_NOTIFICATIONS_ENABLED` | `false` switches notifications off |
+
+   A wrong setting stops the start and names the setting, never its value.
+4. **In Vero**, the IT Admin opens IT › Notifications, gives the address people open Vero on (links are made under it),
+   chooses the technical notifications and keeps the list of IT Admins who get e-mail. Each Business Admin chooses their
+   entity's notifications and keeps its lists (Business administration › Notifications).
+5. **Links** in messages are paths such as `https://<vero>/governance/approvals`. The web server that serves the screens
+   answers every such path with `index.html`, as it does for `/`; the screens then open the right page.
+6. **Time zones** are identity's: the customer's (IT › Notifications) and an entity's own (Business administration ›
+   Notifications). Daily summaries, the times in messages and the reports' days follow them. `SDV_DEFAULT_TIME_ZONE` is gone:
+   **before upgrading**, set the customer's zone to the value it had (an entity's own zone set before moves by itself).
+
+Health: `/actuator/health/notifications` (and IT › Notifications) shows each destination: working, having problems, down or
+not used yet, with a code and its reason; never an address or a secret. A destination that is down marks the entry
+`DEGRADED`, never Vero as down.
 
 ### Two database users
 
@@ -687,7 +724,7 @@ It is in the Vero application package: `Update-SDV-Schema.ps1` (Windows) or `upd
 to the application jar (`sdv-web-<version>.jar`; use `-Jar` / `--jar` if it is elsewhere). It needs Java 21 and
 runs the Liquibase bundled in the jar, then, in their own runs with their own history tables, platform-core's
 identity tables (`db/platform/identity`, history `idn_schema_history`) and licensing tables (`db/platform/licensing`,
-history `lic_schema_history`) and, since task 0077, case field tables (`fld_…`, history `fld_schema_history`) and, since task 0080, the erase log's table (`erl_position`, history `erl_schema_history`). It always uses the `production` context, so no test data can be
+history `lic_schema_history`) and, since task 0077, case field tables (`fld_…`, history `fld_schema_history`) and, since task 0080, the erase log's table (`erl_position`, history `erl_schema_history`) and, since task 0081, the notifications tables (`notif_…`, history `notif_schema_history`; Vero names it, the module names none). It always uses the `production` context, so no test data can be
 added, and it can't be changed.
 
 The connection comes from parameters or environment variables:

@@ -2,6 +2,9 @@ package com.sdv.platform.application.roles;
 
 import com.sdv.platform.domain.error.InternalCheckFailed;
 import com.sdv.platform.application.port.AuditEventPort;
+import com.sdv.platform.application.notifications.VeroEvent;
+import com.sdv.platform.application.notifications.VeroNotice;
+import com.sdv.platform.application.port.NotificationPort;
 import com.sdv.platform.application.port.RoleGovernancePort;
 import com.sdv.platform.application.port.RoleGovernancePort.RoleConflictProblem;
 import com.sdv.platform.domain.audit.AuditEvent;
@@ -32,9 +35,18 @@ public class RoleConflictService {
     private final AuditEventPort audit;
     private final Clock clock;
 
-    @Autowired
+    /** Task 0081: the entity's Business Admins are told when a sign-in's roles are first withheld. */
+    private NotificationPort notifications = NotificationPort.NONE;
+
+    /** Tells nobody (tests). */
     public RoleConflictService(RoleGovernancePort store, AuditEventPort audit) {
         this(store, audit, Clock.systemUTC());
+    }
+
+    @Autowired
+    public RoleConflictService(RoleGovernancePort store, AuditEventPort audit, NotificationPort notifications) {
+        this(store, audit, Clock.systemUTC());
+        this.notifications = java.util.Objects.requireNonNull(notifications, "notifications");
     }
 
     RoleConflictService(RoleGovernancePort store, AuditEventPort audit, Clock clock) {
@@ -58,6 +70,7 @@ public class RoleConflictService {
                 + ",\"rules\":" + RoleJson.array(brokenRules) + "}";
         audit.append(new AuditEvent(UUID.randomUUID(), tenantId, "USER", subject, AUDIT_ACTION, "USER", subject, now,
                 null, AuditOutcome.DENIED, details, displayName));
+        notifications.publish(VeroNotice.of(VeroEvent.ROLES_WITHHELD, tenantId).count(VeroEvent.COUNT_PEOPLE, 1).build());
     }
 
     /**

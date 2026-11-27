@@ -9,6 +9,9 @@ import com.sdv.platform.application.approvals.ApprovalSettings;
 import com.sdv.platform.application.audit.AuditCsv;
 import com.sdv.platform.application.business.SearchValueNormalizer;
 import com.sdv.platform.application.port.AuditEventPort;
+import com.sdv.platform.application.notifications.VeroEvent;
+import com.sdv.platform.application.notifications.VeroNotice;
+import com.sdv.platform.application.port.NotificationPort;
 import com.sdv.platform.application.port.MetadataFieldDefinitionRepository;
 import com.sdv.platform.application.port.QuarantineRepository;
 import com.sdv.platform.application.port.RecordValuesPort;
@@ -133,11 +136,23 @@ public class QuarantineService {
     private final Clock clock;
     private final RecordValuesPort recordValues;
 
-    @Autowired
+    /** Task 0081: who is told of an incident opened, a release asked and an incident released. */
+    private NotificationPort notifications = NotificationPort.NONE;
+
+    /** Tells nobody (tests). */
     public QuarantineService(QuarantineRepository quarantine, DocumentAccessGuard access,
                              MetadataFieldDefinitionRepository definitions, AuditEventPort audit,
                              ApprovalSettings settings, PlatformTransactionManager transactionManager, RecordValuesPort recordValues) {
         this(quarantine, access, definitions, audit, settings, transactionManager, recordValues, Clock.systemUTC());
+    }
+
+    @Autowired
+    public QuarantineService(QuarantineRepository quarantine, DocumentAccessGuard access,
+                             MetadataFieldDefinitionRepository definitions, AuditEventPort audit,
+                             ApprovalSettings settings, PlatformTransactionManager transactionManager, RecordValuesPort recordValues,
+                             NotificationPort notifications) {
+        this(quarantine, access, definitions, audit, settings, transactionManager, recordValues, Clock.systemUTC());
+        this.notifications = Objects.requireNonNull(notifications, "notifications");
     }
 
     QuarantineService(QuarantineRepository quarantine, DocumentAccessGuard access,
@@ -647,6 +662,7 @@ public class QuarantineService {
             details.put("documentCount", c.inForce());
             details.put("expiresAt", request.expiresAt().toString());
             append(actor, RELEASE_REQUESTED_ACTION, INCIDENT_TARGET, incidentId.toString(), now, details);
+            notifications.publish(VeroNotice.of(VeroEvent.APPROVAL_WAITING, actor.tenantId()).time(VeroEvent.TIME_EXPIRES, request.expiresAt()).build());
         });
         return incident(actor, incidentId.toString());
     }
@@ -697,6 +713,10 @@ public class QuarantineService {
             if (approve) details.put("documentCount", incident.open() ? c.inForce() : 0);
             append(actor, approve ? RELEASE_APPROVED_ACTION : RELEASE_DECLINED_ACTION, INCIDENT_TARGET,
                     incident.incidentId().toString(), now, details);
+            if (approve) {
+                notifications.publish(VeroNotice.of(VeroEvent.INCIDENT_RELEASED, actor.tenantId())
+                        .count(VeroEvent.COUNT_DOCUMENTS, incident.open() ? c.inForce() : 0).build());
+            }
             if (approve && incident.open()) {
                 // The request's reason is the release reason, kept on each row, never in the audit; each document's
                 // release is audited as it is released.
@@ -966,6 +986,7 @@ public class QuarantineService {
         details.put("scope", scope);
         details.put("documentCount", documents);
         append(actor, INCIDENT_CREATED_ACTION, INCIDENT_TARGET, incident.incidentId().toString(), now, details);
+        notifications.publish(VeroNotice.of(VeroEvent.INCIDENT_OPENED, actor.tenantId()).count(VeroEvent.COUNT_DOCUMENTS, documents).build());
         return incident.incidentId();
     }
 

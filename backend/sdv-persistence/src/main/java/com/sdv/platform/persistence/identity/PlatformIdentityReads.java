@@ -93,6 +93,15 @@ public class PlatformIdentityReads {
         return rows.stream().findFirst();
     }
 
+    /** Task 0081: the customer's ACTIVE entity slots, slot ID to entity UUID (licensing notices are per activated slot). */
+    public java.util.Map<String, UUID> activeSlots(String tenantId) {
+        java.util.Map<String, UUID> slots = new java.util.LinkedHashMap<>();
+        jdbc.query("select slot_id, entity_uuid from idn_entity where tenant_id = :tenant and status = 'ACTIVE' order by slot_id",
+                new MapSqlParameterSource("tenant", tenantId),
+                rs -> { slots.put(rs.getString(1), rs.getObject(2, UUID.class)); });
+        return slots;
+    }
+
     private static MapSqlParameterSource params(ConnectionKey key) {
         return new MapSqlParameterSource().addValue("product", VeroProduct.CODE).addValue("provider", key.providerId())
                 .addValue("issuer", key.issuer().toString()).addValue("audience", key.audience());

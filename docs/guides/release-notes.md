@@ -12,8 +12,19 @@
   instead of the name.
 - A record has one set of values: the latest delivery's replace earlier ones.
 
+**For admins**
+
+- **Notifications by e-mail, Teams and Slack.** IT connects the channels and chooses the technical notifications (IT ›
+  Notifications); each Business Admin chooses the entity's (Business administration › Notifications) and keeps the lists of
+  who gets e-mail. An e-mail may name a record, never a Highly Confidential one; Teams and Slack never do.
+- **Time zones are set in Vero:** the customer's (IT) and an entity's own (Business Admin).
+
 **For IT and sending systems**
 
+- **`SDV_DEFAULT_TIME_ZONE` is gone:** zones are identity's. Before upgrading, set the customer's zone to its value. The schema step
+  adds the notifications tables and one table of recipient lists, and moves an entity's own zone to identity.
+- Notifications: mail server, Teams and Slack in the install config, each secret by its path in the key service (runbook, "Notifications").
+  Links in messages are paths: the web server answers them with `index.html`.
 - **New required setting `SDV_ERASE_LOG_FOLDER`** and the erase log: a restored backup is brought up to date (`--erase-replay`) before Vero takes work.
   The schema step adds one table. A document volume can't be the log's folder (`SDV-ERS-002`); probes see `SDV-ERS-001` while it stops work.
 - A record's search field values are erased with its last document.

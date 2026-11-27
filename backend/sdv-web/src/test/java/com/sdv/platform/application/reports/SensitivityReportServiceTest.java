@@ -1,6 +1,5 @@
 package com.sdv.platform.application.reports;
 
-import com.sdv.platform.domain.error.StartupFailure;
 import com.sdv.platform.application.port.AuditEventPort;
 import com.sdv.platform.application.port.IntakeReportRepository;
 import com.sdv.platform.application.port.SensitivityReportRepository;
@@ -41,8 +40,10 @@ class SensitivityReportServiceTest {
     private final FakeTenant tenant = new FakeTenant();
     private final AuditEventPort audit = mock(AuditEventPort.class);
 
-    private SensitivityReportService service(String installDefault) {
-        return new SensitivityReportService(repo, tenant, audit, installDefault, Clock.fixed(NOW, ZoneOffset.UTC));
+    /** Task 0081: the customer's zone in identity (was the install default, gone). */
+    private SensitivityReportService service(String customerZone) {
+        tenant.customerZone = customerZone;
+        return new SensitivityReportService(repo, tenant, audit, Clock.fixed(NOW, ZoneOffset.UTC));
     }
 
     private void seed() {
@@ -75,7 +76,7 @@ class SensitivityReportServiceTest {
         assertEquals(NOW, repo.now, "requests are judged now: waiting or expired");
         assertNull(repo.source);
         assertEquals("America/New_York", r.timeZone());
-        assertEquals("INSTALL_DEFAULT", r.timeZoneSource());
+        assertEquals("CUSTOMER", r.timeZoneSource());
 
         assertEquals(new SensitivityReportService.Documents(1_204_330, 78_412, 26_058, 1_308_800, 412, 4), r.documents());
         assertEquals(List.of("DOWNLOAD", "PRINT", "LOWER_LEVEL", "LOWER_RECORD_LEVEL"),
@@ -100,10 +101,27 @@ class SensitivityReportServiceTest {
         // 1 November in Tokyo is 15:00 UTC on 31 October to 15:00 UTC on 1 November.
         assertEquals(Instant.parse("2026-10-31T15:00:00Z"), repo.from);
         assertEquals(Instant.parse("2026-11-01T15:00:00Z"), repo.to);
-        assertEquals("TENANT", r.timeZoneSource());
+        assertEquals("ENTITY", r.timeZoneSource());
         assertEquals("2026-11-01", r.today(), "11:00 on 1 November in Tokyo");
         assertEquals(RS, repo.source);
         assertEquals(RS, r.sourceId());
+    }
+
+    /** Task 0081: zones are identity's; a day follows summer time in the zone that applies, as before. */
+    @Test
+    void daysFollowSummerTimeInTheZoneIdentityGives() {
+        seed();
+        // 1 November 2026: New York (the customer's zone) leaves summer time, so the day is 25 hours long.
+        SensitivityReportService.SensitivityReport ny = service(NY).report(TENANT, "2026-11-01", "2026-11-01", RS.toString());
+        assertEquals("CUSTOMER", ny.timeZoneSource());
+        assertEquals(Instant.parse("2026-11-01T04:00:00Z"), repo.from);
+        assertEquals(Instant.parse("2026-11-02T05:00:00Z"), repo.to);
+        // The entity's own zone wins: London left summer time on 25 October, a 25-hour day there.
+        tenant.zone = "Europe/London";
+        SensitivityReportService.SensitivityReport london = service(NY).report(TENANT, "2026-10-25", "2026-10-25", RS.toString());
+        assertEquals("ENTITY", london.timeZoneSource());
+        assertEquals(Instant.parse("2026-10-24T23:00:00Z"), repo.from);
+        assertEquals(Instant.parse("2026-10-26T00:00:00Z"), repo.to);
     }
 
     @Test
@@ -121,7 +139,8 @@ class SensitivityReportServiceTest {
         assertEquals("SDV-RPT-004", code(() -> s.report(TENANT, null, null, null)));
         assertEquals("SDV-RPT-004", code(() -> s.export(TENANT, "priya", "c", null, null, null)));
         verifyNoInteractions(audit);
-        assertThrows(StartupFailure.class, () -> service("Not/AZone"), "a wrong install default stops the server (SDV-SYS-010)");
+        tenant.zone = null;
+        assertEquals("SDV-RPT-004", code(() -> service("Not/AZone").report(TENANT, null, null, null)), "a customer's zone that is not one (task 0081)");
     }
 
     @Test
@@ -230,9 +249,11 @@ class SensitivityReportServiceTest {
 
     static final class FakeTenant implements IntakeReportRepository {
         String zone;
+        String customerZone;
         final List<SendingSystem> systems = new ArrayList<>();
 
         @Override public Optional<String> findTenantTimeZone(UUID tenantId) { return Optional.ofNullable(zone); }
+        @Override public Optional<String> findCustomerTimeZone(UUID tenantId) { return Optional.ofNullable(customerZone); }
         @Override public List<SendingSystem> findSendingSystems(UUID tenantId) { return List.copyOf(systems); }
         @Override public List<Item> findItems(UUID tenantId, UUID sourceId, Instant from, Instant to, int limit) { throw new AssertionError(); }
         @Override public java.util.Map<UUID, PrimaryIdentifier> findPrimaryIdentifiers(UUID tenantId, java.util.Collection<UUID> ids) { throw new AssertionError(); }

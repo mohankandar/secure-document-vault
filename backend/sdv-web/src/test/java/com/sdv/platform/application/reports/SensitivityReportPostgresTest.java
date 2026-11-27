@@ -52,7 +52,7 @@ class SensitivityReportPostgresTest {
     private final NamedParameterJdbcTemplate jdbc = new NamedParameterJdbcTemplate(dataSource);
     private final JdbcSensitivityReportRepository repository = new JdbcSensitivityReportRepository(jdbc);
     private final SensitivityReportService service = new SensitivityReportService(repository,
-            new JdbcIntakeReportRepository(jdbc), new JdbcFoundationRepository(jdbc), "UTC", Clock.fixed(NOW, ZoneOffset.UTC));
+            new JdbcIntakeReportRepository(jdbc), new JdbcFoundationRepository(jdbc), Clock.fixed(NOW, ZoneOffset.UTC));
 
     private void sql(String statement) {
         jdbc.getJdbcTemplate().execute(statement);
@@ -160,7 +160,8 @@ class SensitivityReportPostgresTest {
     void everyBlockIsCountedOnPostgres() {
         tenant(T, "sens-0033");
         tenant(TX, "sens-0033-other");
-        sql("update tenants set time_zone='America/New_York' where tenant_id='" + T + "'");
+        // Task 0081: the customer's zone, from identity; the entity has none of its own.
+        IdentityZones.set(jdbc.getJdbcTemplate(), T, null, "America/New_York");
         source(T, RS, "loans", "Redaction Service");
         source(T, LOS, "origination", "Loan Origination System");
         source(TX, XS, "other", "Another tenant system");
@@ -253,7 +254,7 @@ class SensitivityReportPostgresTest {
 
         // ---- All sending systems, November.
         SensitivityReportService.SensitivityReport all = service.report(T, "2026-11-01", "2026-11-30", null);
-        assertEquals("TENANT", all.timeZoneSource());
+        assertEquals("CUSTOMER", all.timeZoneSource());
         assertEquals(new SensitivityReportService.Documents(2, 1, 4, 7, 3, 1), all.documents(),
                 "Standard d8 and d9; Confidential d7 (its submission's record); Highly Confidential d1, d2, d5 (contract C1) and d6; "
                         + "deleted and failed ones left out; one active hold on a stored document");

@@ -14,8 +14,16 @@ import java.util.UUID;
  */
 public interface IntakeReportRepository {
 
-    /** The tenant's own time zone setting (tenants.time_zone, changeset 030); empty when it has none. */
+    /**
+     * Task 0081: the entity's own time zone, from identity (idn_entity.time_zone); empty when it has none and follows
+     * its customer's.
+     */
     Optional<String> findTenantTimeZone(UUID tenantId);
+
+    /** Task 0081: the customer's time zone, from identity (idn_customer.time_zone); empty when none is set. */
+    default Optional<String> findCustomerTimeZone(UUID tenantId) {
+        return Optional.empty();
+    }
 
     /** Every sending system of the tenant, by name. */
     List<SendingSystem> findSendingSystems(UUID tenantId);

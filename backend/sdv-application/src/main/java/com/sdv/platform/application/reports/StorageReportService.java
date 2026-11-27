@@ -69,24 +69,21 @@ public class StorageReportService {
     private final StorageReportRepository storage;
     private final IntakeReportRepository tenants;
     private final AuditEventPort audit;
-    private final ZoneId installDefault;
     private final Clock clock;
     private final int recountMinutes;
     private final Map<UUID, Object> counting = new ConcurrentHashMap<>();
 
     @Autowired
     public StorageReportService(StorageReportRepository storage, IntakeReportRepository tenants, AuditEventPort audit,
-                                @Value("${sdv.tenant-defaults.time-zone:UTC}") String installDefaultZone,
                                 @Value("${sdv.reports.storage.count-delay-ms:900000}") long countDelayMs) {
-        this(storage, tenants, audit, installDefaultZone, Clock.systemUTC(), (int) Math.max(1, countDelayMs / 60_000));
+        this(storage, tenants, audit, Clock.systemUTC(), (int) Math.max(1, countDelayMs / 60_000));
     }
 
     StorageReportService(StorageReportRepository storage, IntakeReportRepository tenants, AuditEventPort audit,
-                         String installDefaultZone, Clock clock, int recountMinutes) {
+                         Clock clock, int recountMinutes) {
         this.storage = Objects.requireNonNull(storage, "storage");
         this.tenants = Objects.requireNonNull(tenants, "tenants");
         this.audit = Objects.requireNonNull(audit, "audit");
-        this.installDefault = IntakeReportService.installZone(installDefaultZone);
         this.clock = Objects.requireNonNull(clock, "clock");
         this.recountMinutes = recountMinutes;
     }
@@ -286,7 +283,7 @@ public class StorageReportService {
     // ------------------------------------------------------------------ inside
 
     private TenantZone zone(UUID tenantId) {
-        return TenantZone.of(tenants.findTenantTimeZone(tenantId).orElse(null), installDefault);
+        return TenantZone.of(tenants, tenantId);
     }
 
     private static String write(Counts counts) {

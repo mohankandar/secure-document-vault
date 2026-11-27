@@ -2,6 +2,9 @@ package com.sdv.platform.application.retention;
 
 import com.sdv.platform.application.json.VeroJson;
 import com.sdv.platform.application.port.AuditEventPort;
+import com.sdv.platform.application.notifications.VeroEvent;
+import com.sdv.platform.application.notifications.VeroNotice;
+import com.sdv.platform.application.port.NotificationPort;
 import com.sdv.platform.application.port.DocumentIntakeRepository;
 import com.sdv.platform.application.port.ErasePort;
 import com.sdv.platform.application.port.EraseRepository;
@@ -10,6 +13,7 @@ import com.sdv.platform.domain.audit.AuditEvent;
 import com.sdv.platform.domain.audit.AuditOutcome;
 import com.sdv.platform.domain.document.Document;
 import com.sdv.platform.domain.document.DocumentStatus;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -39,6 +43,8 @@ public class RetentionDeletionService {
     private final TransactionTemplate transactions;
     private final ObjectMapper json = VeroJson.mapper();
     private final Clock clock = Clock.systemUTC();
+    /** Task 0081: each entity's Business Admins are told of a run that could not delete everything. */
+    private NotificationPort notifications = NotificationPort.NONE;
 
     public RetentionDeletionService(
             RetentionRepository retention,
@@ -55,7 +61,23 @@ public class RetentionDeletionService {
         this.transactions = new TransactionTemplate(transactionManager);
     }
 
+    @Autowired
+    public RetentionDeletionService(RetentionRepository retention, DocumentIntakeRepository documents, ErasePort erase,
+                                    EraseRepository erased, AuditEventPort audit, PlatformTransactionManager transactionManager,
+                                    NotificationPort notifications) {
+        this(retention, documents, erase, erased, audit, transactionManager);
+        this.notifications = java.util.Objects.requireNonNull(notifications, "notifications");
+    }
+
     public SweepResult sweep(int limit) {
+        Map<UUID, Integer> failures = new LinkedHashMap<>();
+        SweepResult result = sweep(limit, failures);
+        failures.forEach((tenantId, count) -> notifications.publish(
+                VeroNotice.of(VeroEvent.CLEANUP_FAILURES, tenantId).count(VeroEvent.COUNT_FAILED, count).build()));
+        return result;
+    }
+
+    private SweepResult sweep(int limit, Map<UUID, Integer> failures) {
         int bounded = Math.max(1, Math.min(limit, 500));
         List<RetentionRepository.DueDocument> due = retention.findDueDocuments(bounded);
         // Task 0027: documents on legal hold are never candidates; the run summary says how many were kept (a count).
@@ -68,19 +90,21 @@ public class RetentionDeletionService {
                 if (expire(candidate.tenantId(), candidate.documentId())) completed++;
             } catch (ErasePort.EraseFailed ex) {
                 failed++;
+                failures.merge(candidate.tenantId(), 1, Integer::sum);
                 if (ex.refused()) continue;
                 stopped = true; // the log goes in order: nothing after it would be erased either
                 break;
             } catch (RuntimeException ex) {
                 failed++;
+                failures.merge(candidate.tenantId(), 1, Integer::sum);
             }
         }
-        if (!stopped) failed += eraseCaseFields(bounded);
+        if (!stopped) failed += eraseCaseFields(bounded, failures);
         return new SweepResult(due.size(), completed, failed, held);
     }
 
     /** The values of records whose last document is gone. Returns the failures. */
-    private int eraseCaseFields(int limit) {
+    private int eraseCaseFields(int limit, Map<UUID, Integer> failures) {
         int failed = 0;
         for (EraseRepository.RecordKey record : erased.findRecordsToErase(limit)) {
             try {
@@ -90,6 +114,7 @@ public class RetentionDeletionService {
                 }));
             } catch (ErasePort.EraseFailed ex) {
                 failed++;
+                failures.merge(record.tenantId(), 1, Integer::sum);
                 if (!ex.refused()) break;
             }
         }

@@ -5,6 +5,9 @@ import com.sdv.platform.domain.error.InternalCheckFailed;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.ObjectMapper;
 import com.sdv.platform.application.access.DocumentAccessGuard;
+import com.sdv.platform.application.notifications.VeroEvent;
+import com.sdv.platform.application.notifications.VeroNotice;
+import com.sdv.platform.application.port.NotificationPort;
 import com.sdv.platform.application.port.AuditEventPort;
 import com.sdv.platform.application.port.LegalHoldRepository;
 import com.sdv.platform.application.port.LegalHoldRepository.DocumentFacts;
@@ -60,10 +63,20 @@ public class LegalHoldService implements com.sdv.platform.application.approvals.
     private final Clock clock;
     private final ObjectMapper json = VeroJson.mapper();
 
-    @Autowired
+    /** Task 0081: who is told of a hold placed or released. */
+    private NotificationPort notifications = NotificationPort.NONE;
+
+    /** Tells nobody (tests). */
     public LegalHoldService(LegalHoldRepository holds, DocumentAccessGuard access, AuditEventPort audit,
                             PlatformTransactionManager transactionManager) {
         this(holds, access, audit, transactionManager, Clock.systemUTC());
+    }
+
+    @Autowired
+    public LegalHoldService(LegalHoldRepository holds, DocumentAccessGuard access, AuditEventPort audit,
+                            PlatformTransactionManager transactionManager, NotificationPort notifications) {
+        this(holds, access, audit, transactionManager, Clock.systemUTC());
+        this.notifications = Objects.requireNonNull(notifications, "notifications");
     }
 
     LegalHoldService(LegalHoldRepository holds, DocumentAccessGuard access, AuditEventPort audit,
@@ -120,7 +133,9 @@ public class LegalHoldService implements com.sdv.platform.application.approvals.
             details.put("holdId", hold.holdId().toString());
             append(tenantId, actorId, actorDisplayName, PLACED_ACTION, documentId, now, correlationId, details);
             SensitivityLevel level = levels(tenantId, List.of(document)).get(documentId);
-            return LegalHoldView.of(hold, document, level);
+            LegalHoldView view = LegalHoldView.of(hold, document, level);
+            tell(VeroEvent.HOLD_PLACED, tenantId, view);
+            return view;
         });
     }
 
@@ -190,10 +205,17 @@ public class LegalHoldService implements com.sdv.platform.application.approvals.
                 hold.placedBy(), hold.placedByName(), hold.placedAt(), actorId, name(actorDisplayName), releasedAt);
         DocumentFacts document = holds.lockDocument(tenantId, hold.documentId()).orElse(null);
         SensitivityLevel level = document == null ? null : levels(tenantId, List.of(document)).get(hold.documentId());
-        return LegalHoldView.of(released, document, level);
+        LegalHoldView view = LegalHoldView.of(released, document, level);
+        tell(VeroEvent.HOLD_RELEASED, tenantId, view);
+        return view;
     }
 
     static final String RELEASED_BY_SOMEONE_ELSE = "This hold was already released.";
+
+    /** Task 0081: after the commit; the e-mail names the record only when its level is known and not Highly Confidential. */
+    private void tell(VeroEvent event, UUID tenantId, LegalHoldView view) {
+        notifications.publish(VeroNotice.of(event, tenantId).record(view.primaryIdentifier(), view.sensitivityLevel()).build());
+    }
 
     /**
      * Task 0037: a release refused with SDV-HLD-008 is audited on its own (the release itself was rolled back), as

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Integrations } from './Integrations'
+import { NotificationsIt } from './NotificationsIt'
 import { Storage } from './Storage'
 import { Problems } from './Problems'
 import { SignIn } from './SignIn'
@@ -14,6 +15,7 @@ const LEDE: Record<string, string> = {
   storage: 'Where Vero keeps your encrypted documents.',
   authentication: 'The sign-in your people use. It is set during installation.',
   integrations: 'The systems that send documents to Vero, and what they send.',
+  notifications: 'Where Vero sends its messages, which technical events go, and who gets them.',
   problems: 'Documents that could not be stored, and deliveries still missing documents. Read only.',
   'audit-report': 'A sealed copy of the audit for a period, to hand to an auditor. Nobody can change what Vero recorded.',
   about: 'The facts support will ask for.',
@@ -34,6 +36,7 @@ export function TenantAdmin() {
       {route.tab === 'storage' && <Storage />}
       {route.tab === 'authentication' && <SignIn />}
       {route.tab === 'integrations' && <Integrations />}
+      {route.tab === 'notifications' && <NotificationsIt />}
       {route.tab === 'problems' && <Problems role="tenantIt" />}
       {route.tab === 'audit-report' && <AuditReports />}
       {route.tab === 'about' && <About role="tenantIt" />}

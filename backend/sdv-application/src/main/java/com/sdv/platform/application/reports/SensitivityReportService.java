@@ -18,7 +18,6 @@ import com.sdv.platform.domain.audit.AuditOutcome;
 import com.sdv.platform.domain.error.CodedRefusal;
 import com.sdv.platform.domain.error.SdvErrorCode;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.nio.charset.StandardCharsets;
@@ -74,22 +73,19 @@ public class SensitivityReportService {
     private final SensitivityReportRepository sensitivity;
     private final IntakeReportRepository tenants;
     private final AuditEventPort audit;
-    private final ZoneId installDefault;
     private final Clock clock;
 
     @Autowired
     public SensitivityReportService(SensitivityReportRepository sensitivity, IntakeReportRepository tenants,
-                                    AuditEventPort audit,
-                                    @Value("${sdv.tenant-defaults.time-zone:UTC}") String installDefaultZone) {
-        this(sensitivity, tenants, audit, installDefaultZone, Clock.systemUTC());
+                                    AuditEventPort audit) {
+        this(sensitivity, tenants, audit, Clock.systemUTC());
     }
 
     SensitivityReportService(SensitivityReportRepository sensitivity, IntakeReportRepository tenants,
-                             AuditEventPort audit, String installDefaultZone, Clock clock) {
+                             AuditEventPort audit, Clock clock) {
         this.sensitivity = Objects.requireNonNull(sensitivity, "sensitivity");
         this.tenants = Objects.requireNonNull(tenants, "tenants");
         this.audit = Objects.requireNonNull(audit, "audit");
-        this.installDefault = IntakeReportService.installZone(installDefaultZone);
         this.clock = Objects.requireNonNull(clock, "clock");
     }
 
@@ -190,7 +186,7 @@ public class SensitivityReportService {
     }
 
     private Scope scope(UUID tenantId, String from, String to, String sourceId) {
-        TenantZone inUse = TenantZone.of(tenants.findTenantTimeZone(tenantId).orElse(null), installDefault);
+        TenantZone inUse = TenantZone.of(tenants, tenantId);
         ZoneId zone = inUse.zone();
         LocalDate today = LocalDate.now(clock.withZone(zone));
         boolean noFrom = from == null || from.isBlank();

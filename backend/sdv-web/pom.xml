@@ -106,6 +106,17 @@
             <groupId>com.documentplatform.platform</groupId>
             <artifactId>platform-erase-log-spring</artifactId>
         </dependency>
+        <!-- Task 0081: notifications by e-mail, Teams and Slack (owner-approved with the task). The testkit's in-memory
+             channel and stores, test scope only, read every message's text in the tests. -->
+        <dependency>
+            <groupId>com.documentplatform.platform</groupId>
+            <artifactId>platform-notifications-spring</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.documentplatform.platform</groupId>
+            <artifactId>platform-notifications-testkit</artifactId>
+            <scope>test</scope>
+        </dependency>
         <!-- Task 0041: the schema step's two platform runs (identity, licensing), each with its own history table.
              Used by SchemaStep only, never at startup (spring.flyway.enabled=false). -->
         <dependency>

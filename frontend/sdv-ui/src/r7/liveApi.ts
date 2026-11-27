@@ -1,4 +1,5 @@
 import type { LicenceView } from './licenceWords'
+import type { BusinessNotifications, EventChange, EventRow, ItNotifications, Recipient, ZoneSource } from './notificationWords'
 import { ApiRequestError, roleApi, contentBinary, contentDownload, contentExport, type RegisteredExport, type SessionInfo, type SearchSchema, type SearchResponse, type BusinessRecord, type RecordSummary, type SearchSource, type SensitivityLevel } from '../api'
 import type { Field, Source, RecordItem, Doc } from './model'
 import type { SignInTestAnswer } from './signInTestWords'
@@ -316,10 +317,10 @@ export type IntakeSystemBlock = { sourceId: string; displayName: string; totals:
 /** failed: after receipt plus (task 0039) failedAtIntake, the intake requests that failed on Vero's side (by code in failedCodes). */
 export type IntakeTotals = { deliveries: number; sendingSystems: number; documents: number; pages: number; duplicates: number; contracts: number; newContracts: number; updatedContracts: number; refused: number; refusedCodes: { code: string; count: number }[]; failed: number; failedAtIntake?: number; failedCodes?: { code: string; count: number }[] }
 /**
- * Counts only: no title, file name or name. from/to/today are days in the tenant's time zone (timeZone, an IANA name);
- * timeZoneSource says whether the tenant set it or the install default applies.
+ * Counts only: no title, file name or name. from/to/today are days in the entity's time zone (timeZone, an IANA name);
+ * timeZoneSource (task 0081): the entity's own zone, else the customer's, else none (UTC).
  */
-export type IntakeReport = { from: string; to: string; today: string; timeZone: string; timeZoneSource: 'TENANT' | 'INSTALL_DEFAULT'; sourceId: string | null; primaryIdentifierLabel: string | null; sendingSystems: { sourceId: string; displayName: string }[]; totals: IntakeTotals; systems: IntakeSystemBlock[]; linesPerSystem: number }
+export type IntakeReport = { from: string; to: string; today: string; timeZone: string; timeZoneSource: ZoneSource; sourceId: string | null; primaryIdentifierLabel: string | null; sendingSystems: { sourceId: string; displayName: string }[]; totals: IntakeTotals; systems: IntakeSystemBlock[]; linesPerSystem: number }
 export type IntakeFilter = { from?: string; to?: string; sourceId?: string }
 const intakeQuery = (f: IntakeFilter) => { const p = new URLSearchParams(); if (f.from) p.set('from', f.from); if (f.to) p.set('to', f.to); if (f.sourceId) p.set('sourceId', f.sourceId); const s = p.toString(); return s ? '?' + s : '' }
 export const intakeReport = (f: IntakeFilter) => roleApi<IntakeReport>('/api/v1/admin/reports/intake' + intakeQuery(f), 'businessAdmin')
@@ -341,7 +342,7 @@ export const markIntakeNoticesRead = (noticeIds: string[]) =>
 
 export type SensitivityRequestKind = 'DOWNLOAD' | 'PRINT' | 'LOWER_LEVEL' | 'LOWER_RECORD_LEVEL'
 export type SensitivityReport = {
-  from: string; to: string; today: string; timeZone: string; timeZoneSource: 'TENANT' | 'INSTALL_DEFAULT'; sourceId: string | null
+  from: string; to: string; today: string; timeZone: string; timeZoneSource: ZoneSource; sourceId: string | null
   primaryIdentifierLabel: string | null; sendingSystems: { sourceId: string; displayName: string }[]
   /** Stored now, by effective level; recordsWithLevel: records (contracts) with a record level. */
   documents: { standard: number; confidential: number; highlyConfidential: number; total: number; recordsWithLevel: number; onLegalHold: number }
@@ -360,7 +361,7 @@ export const sensitivityReportCsv = (f: IntakeFilter) => contentBinary('/api/v1/
 export type StorageTotal = { level: SensitivityLevel | null; documents: number; pages: number; bytes: number }
 export type StorageReport = {
   /** When the counts were worked out (UTC), how long that took, and how often they are worked out again. */
-  countedAt: string; tookMs: number; recountMinutes: number; timeZone: string; timeZoneSource: 'TENANT' | 'INSTALL_DEFAULT'
+  countedAt: string; tookMs: number; recountMinutes: number; timeZone: string; timeZoneSource: ZoneSource
   sendingSystems: { sourceId: string; displayName: string }[]
   stored: { sourceId: string; sendingSystem: string; level: SensitivityLevel; documents: number; pages: number; bytes: number }[]
   totals: StorageTotal[]; total: StorageTotal
@@ -379,7 +380,7 @@ export const storageReportCsv = (): Promise<RegisteredExport> => contentExport('
 
 export type ActivityKind = 'OPENED' | 'PRINTED' | 'DOWNLOADED'
 export type ActivityReport = {
-  from: string; to: string; today: string; timeZone: string; timeZoneSource: 'TENANT' | 'INSTALL_DEFAULT'
+  from: string; to: string; today: string; timeZone: string; timeZoneSource: ZoneSource
   /** The last day read from the counts kept; the rest of the period (today) comes from the audit trail now. */
   keptThrough: string | null
   /** roles empty: not recorded (before task 0054); levelNotRecorded: events without a level. */
@@ -478,3 +479,22 @@ export const generateAuditReport = (r: AuditReportRequest) => roleApi<AuditRepor
 /** The sealed CSV, exactly as generated, or its PDF; each copy is audited. */
 export const auditReportFile = (reportId: string, format: 'csv' | 'pdf'): Promise<RegisteredExport> => contentExport(auditReportPath + '/' + encodeURIComponent(reportId) + '/' + format, 'businessAdmin')
 export const verifyAuditReport = (fingerprint: string) => roleApi<AuditReportVerification>(auditReportPath + '/verify', 'businessAdmin', { method: 'POST', body: JSON.stringify({ fingerprint }) })
+
+/** Task 0081: notifications. IT: channels, technical events and the customer's time zone; Business Admin: this entity's events. */
+const ntfPath = '/api/v1/admin/notifications'
+const put = (body: unknown): RequestInit => ({ method: 'PUT', body: JSON.stringify(body) })
+export const itNotifications = () => roleApi<ItNotifications>(ntfPath + '/it', 'tenantIt')
+export const saveAppAddress = (appAddress: string) => roleApi<ItNotifications>(ntfPath + '/it', 'tenantIt', put({ appAddress }))
+export const itNotificationEvents = () => roleApi<EventRow[]>(ntfPath + '/it/events', 'tenantIt')
+export const saveItNotificationEvent = (id: string, change: EventChange) => roleApi<EventRow>(ntfPath + '/it/events/' + encodeURIComponent(id), 'tenantIt', put(change))
+export const saveCustomerZone = (timeZone: string) => roleApi<ItNotifications>(ntfPath + '/it/time-zone', 'tenantIt', put({ timeZone }))
+export const itRecipients = () => roleApi<Recipient[]>(ntfPath + '/it/recipients', 'tenantIt')
+export const addItRecipient = (userId: string, email: string) => roleApi<Recipient>(ntfPath + '/it/recipients', 'tenantIt', { method: 'POST', body: JSON.stringify({ userId, email }) })
+export const removeItRecipient = (recipientId: string) => roleApi<void>(ntfPath + '/it/recipients/' + encodeURIComponent(recipientId), 'tenantIt', { method: 'DELETE' })
+export const businessNotifications = () => roleApi<BusinessNotifications>(ntfPath + '/business', 'businessAdmin')
+export const saveBusinessNotificationEvent = (id: string, change: EventChange) => roleApi<EventRow>(ntfPath + '/business/events/' + encodeURIComponent(id), 'businessAdmin', put(change))
+/** An empty time zone clears the entity's own, so it follows the customer's. */
+export const saveEntityZone = (timeZone: string) => roleApi<BusinessNotifications>(ntfPath + '/business/time-zone', 'businessAdmin', put({ timeZone }))
+export const businessRecipients = () => roleApi<Recipient[]>(ntfPath + '/business/recipients', 'businessAdmin')
+export const addBusinessRecipient = (role: string, userId: string, email: string) => roleApi<Recipient>(ntfPath + '/business/recipients', 'businessAdmin', { method: 'POST', body: JSON.stringify({ role, userId, email }) })
+export const removeBusinessRecipient = (recipientId: string) => roleApi<void>(ntfPath + '/business/recipients/' + encodeURIComponent(recipientId), 'businessAdmin', { method: 'DELETE' })

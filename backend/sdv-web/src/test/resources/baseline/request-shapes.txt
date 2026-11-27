@@ -1,4 +1,5 @@
 one component: ActivateRequest(name)
+one component: AddressRequest(appAddress)
 one component: CommentRequest(comment)
 one component: ExpectedDocumentRequest(sourceDocumentId)
 one component: File(file)
@@ -12,6 +13,7 @@ one component: SwitchRequest(from)
 one component: TagRequest(tag)
 one component: UpdateRequest(roles)
 one component: VerifyBody(fingerprint)
+one component: ZoneRequest(timeZone)
 primitive: BusinessMetadataBehaviorRequest.businessIdentifier boolean
 primitive: BusinessMetadataBehaviorRequest.searchable boolean
 primitive: CreateStorageVolumeRequest.priority int
