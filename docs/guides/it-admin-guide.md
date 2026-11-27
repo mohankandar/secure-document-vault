@@ -14,10 +14,11 @@ mapping and the sending systems' clients. **IT › Sign-in** shows it read only.
 **Test sign-in** checks that Vero reaches the login system and that its keys and issuer fit, and with a company sign-in
 also your own token. It changes nothing. A failure shows a code such as `IDN_TEST_ISSUER_UNREACHABLE`.
 
-**Changing the sign-in** is the installer's, with the setup command (SETUP.md). Since platform-core 1.2.0 a new login
-connection replaces the one in use only after a test sign-in **with a token** of the new one (`IDN_TEST_SIGN_IN_REQUIRED`
-otherwise); people keep signing in through the one in use meanwhile. To go back to the previous connection, the installer runs
-`setup identity rollback-login-connection` (`SETUP_NO_PREVIOUS_CONNECTION` when there is none).
+**Changing the sign-in** is the installer's, with the setup command ([SETUP.md](../install/SETUP.md), "Changing the sign-in"): a
+changed sign-in file, `plan`, then `apply`. Setup asks for no token: the test sign-in with a token (platform-core 1.2.0,
+`IDN_TEST_SIGN_IN_REQUIRED`) is for a connection switched in an app's own screen, and Vero's screen switches nothing. To go back
+to the previous connection when nobody can sign in, the installer runs `setup identity rollback-login-connection` (same section;
+`SETUP_NO_PREVIOUS_CONNECTION` when there is none).
 
 - People's roles come from their groups. **How long a removed right keeps working:**
   - removed from a group in the login system: until the person's token ends, at most 2 hours (the life your login system

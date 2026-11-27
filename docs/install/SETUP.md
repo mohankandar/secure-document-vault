@@ -126,6 +126,35 @@ The licence keys Vero trusts are inside its jars (task 0067). No file, setting o
   transaction. Running it again is safe. Exit codes: 0 done, 1 failed, 2 refused (nothing changed), 3 done except
   items that need a flag.
 
+### Changing the sign-in
+
+The login connection in use is replaced from the sign-in file. Setup asks for **no** test token and keeps none: the test sign-in
+with a token that platform-core 1.2.0 asks for (`IDN_TEST_SIGN_IN_REQUIRED`) applies only to a connection switched in an app's
+own screen, and Vero's sign-in screen switches nothing (IT › Sign-in shows the connection and tests it).
+
+1. Change the sign-in file (for example the login system's `issuer`, the `browserClientId` or the `apiAudience`; Vero's own
+   settings must match, section 5).
+2. `.\setup.ps1 plan -Licence licence.json -Signin signin.json`: the plan shows what changes for the login connection,
+   everything else `unchanged`. `conflict` means the connection was changed since the last setup some other way; add `--replace-connection`
+   to make it the file's.
+3. `.\setup.ps1 apply …` with the same files. People who are signed in keep their session until their token ends; new
+   sign-ins use the new connection.
+4. On IT › Sign-in, **Test sign-in**.
+
+### Going back to the previous sign-in
+
+When the changed connection lets nobody sign in:
+
+```
+java -jar sdv-setup-<version>.jar identity rollback-login-connection --tenant-id TEN-… --product SDV
+java -jar sdv-setup-<version>.jar identity rollback-login-connection --tenant-id TEN-… --product SDV --apply
+```
+
+It needs only the database settings (`PLATFORM_SETUP_DB_*`), no licence file and no key service. The first line shows the
+connection in use and the one it would go back to and changes nothing; with `--apply` the previous one is in use again, as a new
+version, and the history says `setup rollback, run <run ID>`. `SETUP_NO_PREVIOUS_CONNECTION`: there is none to go back to.
+A later `apply` with a sign-in file that says otherwise shows `conflict` rather than undoing the rollback.
+
 ## 4. Activating entities
 
 Setup stores each entity slot as not activated. A person whose groups give **Business Admin** on a slot activates and
