@@ -19,6 +19,9 @@
   who gets e-mail. An e-mail may name a record, never a Highly Confidential one; Teams and Slack never do.
 - **Time zones are set in Vero:** the customer's (IT) and an entity's own (Business Admin).
 
+- **Approve or decline from the e-mail** (print, download, lowering one document): one click opens Vero, one more decides there,
+  with every check of Approvals. Requests decided in their own review link to it.
+
 **For IT and sending systems**
 
 - **platform-core 1.3.0:** the schema step adds identity V6 and fields V3; stop every instance before it runs. Teams and Slack

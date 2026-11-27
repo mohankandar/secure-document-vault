@@ -90,6 +90,49 @@ public class VeroNotificationsConfiguration {
                 installCustomer);
     }
 
+    // ---- Task 0082: approvals from messages (switched on by platform.notifications.approvals.link-key-secret)
+
+    /** The kinds decided on the link page; each link lives as long as a request waits, at most the module's 30 days. */
+    @Bean
+    com.documentplatform.notifications.approval.ApprovalType veroPrintApproval(@Value("${sdv.approvals.pending-days:7}") int pendingDays) {
+        return approvalType(VeroApprovalLinks.TYPES.get(com.sdv.platform.application.approvals.AccessRequestKind.PRINT), pendingDays);
+    }
+
+    @Bean
+    com.documentplatform.notifications.approval.ApprovalType veroDownloadApproval(@Value("${sdv.approvals.pending-days:7}") int pendingDays) {
+        return approvalType(VeroApprovalLinks.TYPES.get(com.sdv.platform.application.approvals.AccessRequestKind.DOWNLOAD), pendingDays);
+    }
+
+    @Bean
+    com.documentplatform.notifications.approval.ApprovalType veroLowerLevelApproval(@Value("${sdv.approvals.pending-days:7}") int pendingDays) {
+        return approvalType(VeroApprovalLinks.TYPES.get(com.sdv.platform.application.approvals.AccessRequestKind.LOWER_LEVEL), pendingDays);
+    }
+
+    static com.documentplatform.notifications.approval.ApprovalType approvalType(String id, int pendingDays) {
+        return new com.documentplatform.notifications.approval.ApprovalType(id,
+                com.documentplatform.notifications.EventTypeId.of(com.sdv.platform.application.notifications.VeroEvent.APPROVAL_WAITING.id()),
+                com.documentplatform.notifications.EventTypeId.of(com.sdv.platform.application.notifications.VeroEvent.REQUEST_APPROVED.id()),
+                com.documentplatform.notifications.EventTypeId.of(com.sdv.platform.application.notifications.VeroEvent.REQUEST_DECLINED.id()),
+                VeroCatalogue.BUSINESS_ADMIN, java.time.Duration.ofDays(Math.max(1, Math.min(30, pendingDays))));
+    }
+
+    /** Every decision and refusal of a link, in Vero's audit: request, type, who, outcome, code; never a token or the reason. */
+    @Bean
+    com.documentplatform.notifications.approval.ApprovalAudit veroApprovalAudit(com.sdv.platform.application.port.AuditEventPort audit) {
+        return new LinkAudit(audit);
+    }
+
+    @Bean
+    com.sdv.platform.application.port.ApprovalLinkPort approvalLinkPort(
+            ObjectProvider<com.documentplatform.notifications.approval.Approvals> approvals,
+            com.sdv.platform.application.port.AccessRequestRepository requests, NotificationRecipientRepository lists,
+            PlatformIdentityReads identity, NotificationPort notifications) {
+        var a = approvals.getIfAvailable();
+        if (a == null) return com.sdv.platform.application.port.ApprovalLinkPort.NONE;
+        return new VeroApprovalLinks(a, requests, lists, entity -> identity.slotOf(entity).map(PlatformIdentityReads.EntitySlot::tenantId),
+                notifications);
+    }
+
     /** Null when notifications are off: the screens answer SDV-NTF-007 then. */
     @Bean
     NotificationScreens notificationScreens(ObjectProvider<NotificationSettings> settings,

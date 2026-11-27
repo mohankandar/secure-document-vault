@@ -116,6 +116,21 @@ messages and the reports' days follow it.
 
 The bell in Vero (notices in the app) stays as it is.
 
+### Approve or decline from the e-mail
+
+When IT has switched approval links on, the "Approval waiting" e-mail for a print, a download or lowering one document's
+level carries two links, **Approve** and **Decline**. Each Business Admin gets their own e-mail and links, which work only for
+them, and only while they still hold the role. The person who asked never gets one.
+
+- A link opens Vero. After sign-in, **Approvals** shows the request at the top, with what the list shows for it, and one
+  button. Opening a link decides nothing; the button does, with every check of Approvals (never your own request).
+- Someone decided first (in Approvals, or with their link): the page says so and nothing changes. A link that expired, was
+  sent to someone else or names a request of another entity (choose that entity first, `SDV-NTF-008`) can't be used; the
+  refusal is in the audit (`APPROVAL_LINK_USED`), never the link.
+- Lowering a whole record, a redaction on legal hold, the release of a hold or of a quarantine incident are decided in their
+  own review in Approvals: their e-mail links there, without Approve or Decline.
+- A link e-mail never names the record; Approvals shows it after sign-in.
+
 ## Legal holds
 
 Under **Legal holds**, enter the record's identifier and write why. Vero says how many documents the record has and holds

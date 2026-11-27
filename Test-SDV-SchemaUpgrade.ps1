@@ -83,8 +83,8 @@ param(
     [string]$Jar,
     # The first changeset the upgrade applies; the scratch database is built up to the one before it.
     # Task 0078: earlier ones are no longer offered: 048 replaces the record key and drops the field tables they check.
-    [ValidateSet('048', '049')]
-    [string]$From = '049',
+    [ValidateSet('048', '049', '050')]
+    [string]$From = '050',
     # Task 0052: documents in QuarantineScalePostgresTest's one incident (250,000 as in CI; 1,000,000 for the local run).
     [ValidateRange(1000, 5000000)]
     [int]$QuarantineScale = 250000,
@@ -112,7 +112,7 @@ $db = 'sdv_schema_test'
 $owner = 'sdv_schema_owner'
 $hostUrl = 'jdbc:postgresql://localhost:5433/' + $db
 # In order. The upgrade applies every changeset from -From on.
-$checked = @('022-retention-policy-creator-name', '023-document-sensitivity-level', '024-record-sensitivity-levels', '025-role-separation', '026-legal-holds', '027-access-requests', '028-sensitivity-level-changes', '029-document-duplicate-receipts', '030-tenant-time-zone', '031-intake-report-indexes', '032-steward-notices', '033-unidentified-intake-attempts', '034-unidentified-intake-attempt-counts', '035-drop-old-identity', '036-quarantine', '037-sealed-audit', '038-quarantine-filter-blocking', '039-quarantine-scale', '040-report-storage', '041-report-activity', '042-restrictions-indexes', '043-held-redaction', '044-hold-release', '045-usage-export-anchor', '046-usage-named-seats', '047-document-object-version', '048-records', '049-notifications')
+$checked = @('022-retention-policy-creator-name', '023-document-sensitivity-level', '024-record-sensitivity-levels', '025-role-separation', '026-legal-holds', '027-access-requests', '028-sensitivity-level-changes', '029-document-duplicate-receipts', '030-tenant-time-zone', '031-intake-report-indexes', '032-steward-notices', '033-unidentified-intake-attempts', '034-unidentified-intake-attempt-counts', '035-drop-old-identity', '036-quarantine', '037-sealed-audit', '038-quarantine-filter-blocking', '039-quarantine-scale', '040-report-storage', '041-report-activity', '042-restrictions-indexes', '043-held-redaction', '044-hold-release', '045-usage-export-anchor', '046-usage-named-seats', '047-document-object-version', '048-records', '049-notifications', '050-approval-links')
 $start = [array]::IndexOf(($checked | ForEach-Object { $_.Substring(0, 3) }), $From)
 $newChangesets = @($checked[$start..($checked.Count - 1)])
 $newChangeset = $newChangesets[0]
@@ -188,6 +188,8 @@ $objectVersionBefore = if ($has047) { '0' } else { '1' }
 $has048 = $newChangesets -contains '048-records'
 # Task 0081: 049 adds the admins' recipient lists and moves tenants.time_zone to identity (idn_entity.time_zone).
 $has049 = $newChangesets -contains '049-notifications'
+# Task 0082: 050 adds access_requests.link_request_id (the one-click links' request).
+$has050 = $newChangesets -contains '050-approval-links'
 $hasRecordsSql = "select count(*) from information_schema.tables where table_name='records';"
 $oldFieldTablesSql = "select count(*) from information_schema.tables where table_name in ('metadata_field_definitions', 'business_metadata_values', 'metadata_field_display_order', 'record_title_fields');"
 $submissionsOldColumnsSql = "select count(*) || ':' || md5(string_agg((to_jsonb(x) - 'record_id')::text, '|' order by x.submission_id)) from submissions x;"
@@ -580,6 +582,7 @@ insert into unidentified_intake_attempts(attempt_id, tenant_id, occurred_at, cal
             Assert-That ($upgradeText.Contains($c)) "the reviewable SQL lacks $c"
         }
     }
+    if ($has050) { Assert-That ($upgradeText.Contains('add column link_request_id')) 'the reviewable SQL lacks 050' }
     if ($has049) { Assert-That ($upgradeText.Contains('create table notification_recipients') -and $upgradeText.Contains('drop column time_zone') -and $upgradeText.Contains('notif_schema_version')) 'the reviewable SQL lacks 049 or the notifications run' }
     if ($has048) { Assert-That ($upgradeText.Contains('create table records') -and $upgradeText.Contains('drop table business_metadata_values')) 'the reviewable SQL lacks records' }
     if ($has047) { Assert-That ($upgradeText.Contains('add column object_version')) 'the reviewable SQL lacks add column object_version' }
@@ -1017,6 +1020,13 @@ rollback;
         Write-Step '4q. After 039: quarantine counts on the incident' $w.Elapsed.TotalSeconds 'thirteen new columns, two triggers; rows at 038 get their received time and are counted; level filled, release and new row move the counts; checks refuse a bad level, counts that do not add up, no received time'
         $w = [System.Diagnostics.Stopwatch]::StartNew()
     }
+    if ($has050) {
+        Assert-That ((Get-Value "select count(*) from information_schema.columns where table_name = 'access_requests' and column_name = 'link_request_id' and is_nullable = 'YES';") -eq '1') 'access_requests.link_request_id should be there, nullable (task 0082)'
+        Assert-That ((Get-Value 'select count(*) from access_requests where link_request_id is not null;') -eq '0') 'no request had links before'
+        Assert-That ((Get-Value "select count(*) from pg_indexes where indexname = 'uq_access_requests_link_request';") -eq '1') 'the unique index of the links should be there'
+        Write-Step '4zb. After 050: the links of a request' $w.Elapsed.TotalSeconds 'one nullable column, null for every request; one unique index'
+        $w = [System.Diagnostics.Stopwatch]::StartNew()
+    }
     if ($has049) {
         Assert-That ((Get-Value $hasTimeZoneSql) -eq '0') 'tenants.time_zone should be gone (task 0081)'
         if ($script:zoneCopy) { Assert-That ((Get-Value "select coalesce(time_zone, '-') from idn_entity where entity_uuid = '10000000-0000-0000-0000-000000000001';") -eq 'America/Chicago') "the entity's own zone should be identity's now" }
@@ -1120,7 +1130,7 @@ rollback;
         Write-Step '4r. After 040: Storage and retention report counts' $w.Elapsed.TotalSeconds 'table there and empty; checks refuse a negative time, counts not an object, an unknown entity'
         $w = [System.Diagnostics.Stopwatch]::StartNew()
     }
-    if ($has027 -or $has028 -or $has029 -or $has030 -or $has031 -or $has032 -or $has033 -or $has034 -or $has035 -or $has036 -or $has037 -or $has038 -or $has039 -or $has040 -or $has041 -or $has042 -or $has043 -or $has044 -or $has045 -or $has046 -or $has047 -or $has048 -or $has049) {
+    if ($has027 -or $has028 -or $has029 -or $has030 -or $has031 -or $has032 -or $has033 -or $has034 -or $has035 -or $has036 -or $has037 -or $has038 -or $has039 -or $has040 -or $has041 -or $has042 -or $has043 -or $has044 -or $has045 -or $has046 -or $has047 -or $has048 -or $has049 -or $has050) {
 
         # The application's own repositories and services against this database: holds and the retention cleanup
         # (LegalHoldPostgresTest), requests, grants, expiry and the table's checks (AccessRequestPostgresTest), exact

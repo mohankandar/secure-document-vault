@@ -404,6 +404,8 @@ public enum SdvErrorCode {
     NTF_006("SDV-NTF-006", false, true),
     /** Task 0081: notifications are switched off in this install (409). */
     NTF_007("SDV-NTF-007", true),
+    /** Task 0082: an approval link opened in another entity than its request's (409). */
+    NTF_008("SDV-NTF-008", false, true),
     /** Task 0037: no key service is set up: WARN at a local start, and a packaged start refuses. */
     KEY_001("SDV-KEY-001", true),
     /** Task 0078: the key service can't be used now, so a sensitive value can't be stored, searched or opened (503). Nothing was stored. */

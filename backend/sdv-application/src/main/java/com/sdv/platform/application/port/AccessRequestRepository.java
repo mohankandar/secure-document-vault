@@ -59,6 +59,21 @@ public interface AccessRequestRepository {
     /** The request, with its row locked until the transaction ends; empty when unknown. */
     Optional<AccessRequest> lock(UUID tenantId, UUID requestId);
 
+    /** Task 0082: the one-click links' request that belongs to this request (changeset 050). False when it had one. */
+    default boolean setLinkRequest(UUID tenantId, UUID requestId, UUID linkRequestId) {
+        return false;
+    }
+
+    /** Task 0082: the links' request of this request, if it has one. */
+    default Optional<UUID> findLinkRequest(UUID tenantId, UUID requestId) {
+        return Optional.empty();
+    }
+
+    /** Task 0082: the request a links' request belongs to. */
+    default Optional<UUID> findByLinkRequest(UUID tenantId, UUID linkRequestId) {
+        return Optional.empty();
+    }
+
     /**
      * Records a decision on a PENDING request. Task 0037: false when no pending request changed (someone else decided
      * it at the same moment); the caller refuses with SDV-APR-008.

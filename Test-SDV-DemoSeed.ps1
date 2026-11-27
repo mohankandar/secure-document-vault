@@ -160,10 +160,11 @@ try {
     # ---- 3. Second run changes nothing ----
     # Task 0084: without lic_last_seen: the licence clock's latest time seen, which every setup run moves forward by design.
     # Task 0078: nor the usage ledger and the named seats, which the running Vero's own job writes when its time comes.
+    # Task 0082: nor the notifications' state (notif_), which the running Vero's watch and licensing notices write on their own.
     $snapshotSql = @'
 select string_agg(format('select %L || ''='' || count(*) || '':'' || coalesce(md5(string_agg(t::text, ''|'' order by t::text)), ''-'') from %I t', table_name, table_name), ' union all ' order by table_name)
 from information_schema.tables where table_schema='public' and table_type='BASE TABLE' and table_name not like 'databasechangelog%'
-  and table_name not in ('lic_last_seen', 'lic_chain_head', 'lic_usage', 'usage_named_seats');
+  and table_name not like 'notif_%' and table_name not in ('lic_last_seen', 'lic_chain_head', 'lic_usage', 'usage_named_seats');
 '@
     $query = Scalar $snapshotSql
     $before = (Scalar ($query + ';')) -split "`n" | ForEach-Object { $_.Trim() } | Sort-Object

@@ -10,6 +10,7 @@ import com.sdv.platform.application.business.RecordReferences;
 import com.sdv.platform.application.notifications.VeroEvent;
 import com.sdv.platform.application.notifications.VeroNotice;
 import com.sdv.platform.application.port.NotificationPort;
+import com.sdv.platform.application.port.ApprovalLinkPort;
 import com.sdv.platform.application.port.AccessRequestRepository;
 import com.sdv.platform.application.port.AccessRequestRepository.AccessRequest;
 import com.sdv.platform.application.port.AccessRequestRepository.DocumentFacts;
@@ -100,6 +101,8 @@ public class AccessRequestService {
     private final ObjectMapper json = VeroJson.mapper();
     /** Task 0081: who is told (waiting requests to the approvers, the outcome to the requester). */
     private NotificationPort notifications = NotificationPort.NONE;
+    /** Task 0082: one-click links for the requests decided on Vero's link page. */
+    private ApprovalLinkPort links = ApprovalLinkPort.NONE;
 
     /** Tells nobody (tests). */
     public AccessRequestService(AccessRequestRepository requests, DocumentIntakeRepository documents,
@@ -117,10 +120,11 @@ public class AccessRequestService {
                                 BusinessRecordRepository records, RecordSensitivityRepository recordLevels,
                                 SensitiveAccessGrantStore grants, ApprovalSettings settings, AuditEventPort audit,
                                 PlatformTransactionManager transactionManager, HoldReleases holdReleases,
-                                NotificationPort notifications) {
+                                NotificationPort notifications, ApprovalLinkPort links) {
         this(requests, documents, access, recordReferences, records, recordLevels, grants, settings, audit,
                 transactionManager, Clock.systemUTC(), holdReleases);
         this.notifications = Objects.requireNonNull(notifications, "notifications");
+        this.links = Objects.requireNonNull(links, "links");
     }
 
     /** Without legal holds (tests of other kinds). */
@@ -288,6 +292,8 @@ public class AccessRequestService {
      * made at); a whole-record request names its record only with the level it was made at. Any doubt: no identifier.
      */
     private void tell(VeroEvent event, AccessRequest r, SensitivityLevel knownLevel) {
+        // Task 0082: links instead of the plain message, for the kinds decided on the link page (no identifier in them).
+        if (event == VeroEvent.APPROVAL_WAITING && links.offer(r)) return;
         String identifier = null;
         SensitivityLevel level = knownLevel;
         try {
@@ -614,6 +620,7 @@ public class AccessRequestService {
                     append(tenantId, "USER", actorId, actorName, DECLINED_ACTION, targetType(r), targetId(r), now,
                             correlationId, AuditOutcome.SUCCESS, details);
                     tell(VeroEvent.REQUEST_DECLINED, r, null);
+                    links.decided(tenantId, requestId, false, actorId, actorName, now);
                     return new DecisionView(requestId, AccessRequestStatus.DECLINED, null);
                 }
                 Instant grantEnds = null;
@@ -653,6 +660,7 @@ public class AccessRequestService {
                 append(tenantId, "USER", actorId, actorName, APPROVED_ACTION, targetType(r), targetId(r), now,
                         correlationId, AuditOutcome.SUCCESS, details);
                 tell(VeroEvent.REQUEST_APPROVED, r, null);
+                links.decided(tenantId, requestId, true, actorId, actorName, now);
                 return new DecisionView(requestId, AccessRequestStatus.APPROVED, grantEnds);
             });
         } catch (RuntimeException ex) {

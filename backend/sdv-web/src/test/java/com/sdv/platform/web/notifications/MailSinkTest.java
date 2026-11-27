@@ -89,6 +89,56 @@ class MailSinkTest {
         }
     }
 
+    /** Task 0082: a print request's e-mail with its two links, through the real sender to the sink. */
+    @Test
+    void aLinkEmailReachesTheMailSinkWithItsOwnLinksAndNoRecord() throws Exception {
+        try (SmtpSink sink = new SmtpSink()) {
+            NotificationKit.Lists lists = new NotificationKit.Lists();
+            lists.add(NotificationKit.ENTITY, "BUSINESS_ADMIN", "ba-1", "business.admin@example.test");
+            lists.add(NotificationKit.ENTITY, "BUSINESS_ADMIN", "ba-2", "second.admin@example.test");
+            NotificationSettings settings = new NotificationSettings(VeroCatalogue.build(), new InMemorySettingsStore());
+            DestinationId email = NotificationSettingsService.EMAIL;
+            settings.connectChannels(NotificationKit.TENANT, new TenantSettings(URI.create("https://vero.example.test"),
+                    ZoneId.of("America/New_York"), Map.of(email, ChannelKind.EMAIL)));
+            var store = new com.documentplatform.notifications.inmemory.InMemoryApprovalStore();
+            var key = com.documentplatform.notifications.secret.SecretRef.of("notifications/approval-link-key");
+            var tokens = new com.documentplatform.notifications.approval.ActionTokens(
+                    new com.documentplatform.notifications.inmemory.InMemorySecretResolver().put(key, "k".repeat(48)), key);
+            EmailChannel channel = new EmailChannel(MailServerDirectory.of(Map.of(email,
+                    MailServer.relay("127.0.0.1", sink.port(), MailSecurity.NONE, "vero@example.test"))), ref -> Optional.empty());
+            Notifier notifier = Notifier.builder(settings, new ListRecipients(lists)).channel(channel)
+                    .outbox(new InMemoryOutboxStore()).summaries(new InMemorySummaryStore()).conditions(new InMemoryConditionStore())
+                    .actionLinks(new com.documentplatform.notifications.approval.ApprovalLinks(store, tokens,
+                            com.documentplatform.notifications.AppLink.of("/approvals/link")))
+                    .build();
+            var approvals = com.documentplatform.notifications.approval.Approvals.builder(
+                            List.of(VeroNotificationsConfiguration.approvalType("print", 7)), settings.catalogue(), store, tokens, notifier)
+                    .approvers(com.documentplatform.notifications.approval.ApproverCheck.from(new ListRecipients(lists))).audit(e -> { }).build();
+            var requests = new ApprovalLinksTest.Repo();
+            var links = new VeroApprovalLinks(approvals, requests.port, lists, e -> Optional.of(NotificationKit.CUSTOMER),
+                    org.mockito.Mockito.mock(com.sdv.platform.application.port.NotificationPort.class));
+            Instant now = Instant.now();
+            links.offer(new com.sdv.platform.application.port.AccessRequestRepository.AccessRequest(java.util.UUID.randomUUID(),
+                    NotificationKit.ENTITY, com.sdv.platform.application.approvals.AccessRequestKind.PRINT, java.util.UUID.randomUUID(),
+                    null, null, null, "why", "rs-1", "Rae", now, com.sdv.platform.application.approvals.AccessRequestStatus.PENDING,
+                    null, null, null, now.plusSeconds(86400), null));
+            notifier.tick(Instant.now());
+
+            List<SmtpSink.Mail> mails = sink.mails();
+            assertEquals(2, mails.size(), "one e-mail per Business Admin");
+            java.util.Set<String> seen = new java.util.HashSet<>();
+            for (SmtpSink.Mail m : mails) {
+                String text = m.data().replace("=\n", "");
+                assertTrue(text.contains("Approval waiting"), text);
+                assertTrue(text.contains("https://vero.example.test/approvals/link/"), "the links: " + text);
+                java.util.regex.Matcher link = java.util.regex.Pattern.compile("/approvals/link/([A-Za-z0-9_.=-]+)").matcher(text);
+                while (link.find()) assertTrue(seen.add(link.group(1)), "every person has their own links");
+                assertFalse(text.toLowerCase(java.util.Locale.ROOT).contains("confidential"));
+            }
+            assertEquals(4, seen.size(), "Approve and Decline, for each of the two");
+        }
+    }
+
     /** The smallest SMTP server that takes mail on 127.0.0.1 and keeps it in memory. */
     static final class SmtpSink implements AutoCloseable {
         record Mail(String from, List<String> to, String data) { }
