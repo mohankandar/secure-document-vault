@@ -1,9 +1,9 @@
 import { useState, type ReactNode } from 'react'
 import { ApiRequestError } from '../api'
 import { ActionError, actionFailed, type Failure } from './CardError'
-import { Callout, fmtDateTime } from './ui'
+import { Badge, Callout, fmtDateTime } from './ui'
 import {
-  SWITCHED_OFF, allowedFrequencies, byRole, changeOf, channelWords, draftProblem, frequencyName, hasChange, roleListWords, validDailyAt, validEmail, validZone,
+  SWITCHED_OFF, allowedFrequencies, byRole, changeOf, channelWords, confirmedWords, draftProblem, frequencyName, hasChange, roleListWords, validDailyAt, validEmail, validZone,
   type Destination, type EventChange, type EventRow, type Frequency, type Recipient,
 } from './notificationWords'
 
@@ -117,7 +117,7 @@ export function RecipientTable({ people, onRemove, label }: { people: Recipient[
     {people.length === 0 ? <p className="muted ntf-empty">No one is on this list yet.</p> :
       <table className="v-table" aria-label={label}><thead><tr><th>User ID</th><th>E-mail</th><th>Added</th><th><span className="sr-only">Remove</span></th></tr></thead>
         <tbody>{people.map((r) => <tr key={r.recipientId}>
-          <td className="lead mono" data-label="User ID">{r.userId}</td>
+          <td className="lead mono" data-label="User ID">{r.userId}{confirmedWords(r) && <> <span title={confirmedWords(r) ?? undefined}><Badge tone="warn">Not confirmed</Badge></span></>}</td>
           <td data-label="E-mail">{r.email}</td>
           <td data-label="Added" className="faint">{fmtDateTime(r.addedAt)} by <span className="mono">{r.addedBy}</span></td>
           <td data-label="Remove"><button type="button" className="v-btn sm" disabled={!!busy} onClick={() => remove(r)}>{busy === r.recipientId ? 'Removing…' : 'Remove'}</button></td>

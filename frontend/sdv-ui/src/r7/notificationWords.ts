@@ -7,7 +7,7 @@ export type Destination = { id: string; channel: NotificationChannel; secretPath
 export type Channels = { appAddress: string | null; connected: boolean; mailConfigured: boolean; mailAuth: 'PASSWORD' | 'OAUTH2_MICROSOFT' | null; mailSecretPath: string | null; destinations: Destination[] }
 export type EventRow = { id: string; name: string; critical: boolean; continuous: boolean; enabled: boolean; frequency: Frequency; dailyAt: string | null; email: boolean; channels: string[]; withIdentifier: boolean }
 export type EventChange = { enabled?: boolean; frequency?: Frequency; dailyAt?: string | null; email?: boolean; channels?: string[] }
-export type Recipient = { recipientId: string; role: string; userId: string; email: string; addedBy: string; addedAt: string }
+export type Recipient = { recipientId: string; role: string; userId: string; email: string; addedBy: string; addedAt: string; confirmed?: boolean }
 export type ItNotifications = { channels: Channels; customerZone: string | null }
 export type BusinessNotifications = { events: EventRow[]; channels: Destination[]; channelsConnected: boolean; ownZone: string | null; customerZone: string | null }
 export type ZoneSource = 'ENTITY' | 'CUSTOMER' | 'NONE'
@@ -58,6 +58,10 @@ export function appAddressNote(c: Pick<Channels, 'appAddress' | 'connected'>): s
   if (c.connected) return null
   if (!c.appAddress) return 'The app address is not set in this install. IT sets sdv.public-url (SDV_PUBLIC_URL) to the https address people open Vero on, then starts Vero again.'
   return 'Connect the channels to start sending. Until then Vero sends no messages.'
+}
+/** Task 0100 (VSEC-203): an entry gets messages only when its person held the role at their last sign-in. */
+export function confirmedWords(r: Pick<Recipient, 'confirmed'>): string | null {
+  return r.confirmed === false ? 'Not confirmed: this person has not signed in with this role since, so gets no messages.' : null
 }
 export const validEmail = (v: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.trim())
 

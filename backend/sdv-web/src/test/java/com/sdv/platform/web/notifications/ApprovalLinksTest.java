@@ -54,7 +54,7 @@ class ApprovalLinksTest {
     final NotificationKit kit = new NotificationKit();
     final InMemoryApprovalStore store = new InMemoryApprovalStore();
     final ActionTokens tokens = new ActionTokens(new InMemorySecretResolver().put(SecretRef.of(KEY), "k".repeat(48)), SecretRef.of(KEY));
-    final Notifier notifier = Notifier.builder(kit.settings, new ListRecipients(kit.lists))
+    final Notifier notifier = Notifier.builder(kit.settings, new ListRecipients(kit.lists, kit.lists.holders))
             .channels(List.of(kit.email, kit.teams, kit.slack))
             .outbox(new InMemoryOutboxStore()).summaries(new InMemorySummaryStore()).conditions(new InMemoryConditionStore())
             .actionLinks(new ApprovalLinks(store, tokens, AppLink.of("/approvals/link"))).clock(kit.clock).build();
@@ -63,7 +63,7 @@ class ApprovalLinksTest {
                     VeroNotificationsConfiguration.approvalType("print", 7),
                     VeroNotificationsConfiguration.approvalType("download", 7),
                     VeroNotificationsConfiguration.approvalType("lower-level", 7)),
-            kit.settings.catalogue(), store, tokens, notifier).approvers(com.documentplatform.notifications.approval.ApproverCheck.from(new ListRecipients(kit.lists)))
+            kit.settings.catalogue(), store, tokens, notifier).approvers(com.documentplatform.notifications.approval.ApproverCheck.from(new ListRecipients(kit.lists, kit.lists.holders)))
             .audit(audited::add).clock(kit.clock).build();
     final Repo requests = new Repo();
     final NotificationPort plain = mock(NotificationPort.class);

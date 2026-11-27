@@ -44,7 +44,7 @@ final class NotificationKit {
     final InMemoryChannel slack = new InMemoryChannel(ChannelKind.SLACK);
     final Lists lists = new Lists();
     final NotificationSettings settings = new NotificationSettings(VeroCatalogue.build(), new InMemorySettingsStore());
-    final Notifier notifier = Notifier.builder(settings, new ListRecipients(lists))
+    final Notifier notifier = Notifier.builder(settings, new ListRecipients(lists, lists.holders))
             .channels(List.of(email, teams, slack))
             .outbox(new InMemoryOutboxStore()).summaries(new InMemorySummaryStore()).conditions(new InMemoryConditionStore())
             .clock(clock)
@@ -102,10 +102,40 @@ final class NotificationKit {
     }
 
     /** The admins' lists, in memory. */
+    /** Task 0100: who holds which list role, in memory (role_holders). */
+    static final class Holders implements com.sdv.platform.application.port.RoleHolderRepository {
+        /** entity|user to roles; the customer is CUSTOMER. */
+        final Map<String, java.util.Set<String>> seen = new java.util.HashMap<>();
+
+         public java.util.Set<String> roles(UUID entityId, String userId) {
+            return new java.util.TreeSet<>(seen.getOrDefault(entityId + "|" + userId, java.util.Set.of()));
+        }
+
+         public void replace(String customerId, UUID entityId, String userId, java.util.Set<String> roles, Instant seenAt) {
+            seen.put(entityId + "|" + userId, new java.util.TreeSet<>(roles));
+        }
+
+         public java.util.Set<String> holders(String customerId, UUID entityId, String role) {
+            java.util.Set<String> out = new java.util.TreeSet<>();
+            seen.forEach((k, roles) -> {
+                String[] parts = k.split("[|]", 2);
+                if (roles.contains(role) && (entityId == null || parts[0].equals(entityId.toString()))) out.add(parts[1]);
+            });
+            return out;
+        }
+
+        void hold(UUID entity, String role, String user) {
+            seen.computeIfAbsent((entity == null ? ENTITY : entity) + "|" + user, k -> new java.util.TreeSet<>()).add(role);
+        }
+    }
+
     static final class Lists implements NotificationRecipientRepository {
         final List<Entry> entries = new ArrayList<>();
+        /** Everyone added with {@link #add} holds the role (as if they had signed in with it). */
+        final Holders holders = new Holders();
 
         void add(UUID entity, String role, String user, String email) {
+            holders.hold(entity, role, user);
             insert(new Entry(UUID.randomUUID(), CUSTOMER, entity, role, user, email, "admin", Instant.EPOCH));
         }
 

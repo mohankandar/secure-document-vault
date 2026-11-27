@@ -82,7 +82,7 @@ class NotificationSettingsTest {
         lists.add(null, "IT_ADMIN", "ita-1", "it@example.test");
         lists.add(NotificationKit.ENTITY, "BUSINESS_ADMIN", "ba-1", "ba@example.test");
         lists.add(NotificationKit.ENTITY, "DOCUMENT_STEWARD", "ds-1", "ds@example.test");
-        ListRecipients r = new ListRecipients(lists);
+        ListRecipients r = new ListRecipients(lists, lists.holders);
         assertEquals(List.of("ita-1"), r.resolve(NotificationKit.TENANT, ENTITY, VeroCatalogue.IT_ADMIN).stream().map(Recipient::userId).toList(),
                 "the IT Admin is the customer's, also for an entity's event");
         assertEquals(List.of("ba-1"), r.resolve(NotificationKit.TENANT, ENTITY, VeroCatalogue.BUSINESS_ADMIN).stream().map(Recipient::userId).toList());

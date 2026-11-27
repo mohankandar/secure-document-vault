@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   allowedFrequencies, byRole, changeOf, channelWords, chatDestinations, draftProblem, entityZoneWords, frequencyWords, hasChange, roleListWords, stateTone,
-  appAddressNote, validDailyAt, validEmail, validZone, zoneSourceWords, type Destination, type EventRow, type Recipient,
+  appAddressNote, confirmedWords, validDailyAt, validEmail, validZone, zoneSourceWords, type Destination, type EventRow, type Recipient,
 } from './notificationWords'
 
 const row: EventRow = { id: 'APPROVAL_WAITING', name: 'A request is waiting', critical: false, continuous: false, enabled: true, frequency: 'EVERY_HOUR', dailyAt: null, email: true, channels: [], withIdentifier: false }
@@ -57,6 +57,11 @@ describe('channels', () => {
     expect(stateTone('Down')).toBe('bad')
     expect(stateTone('Not used yet')).toBe('')
     expect(stateTone('Something new')).toBe('warn')
+  })
+  it('an entry is marked when its person no longer shows the role', () => {
+    expect(confirmedWords({ confirmed: true })).toBeNull()
+    expect(confirmedWords({})).toBeNull()
+    expect(confirmedWords({ confirmed: false })).toMatch(/^Not confirmed/)
   })
   it('the app address comes from the install: the screen only says why nothing is sent', () => {
     expect(appAddressNote({ appAddress: 'https://vero.example.com', connected: true })).toBeNull()

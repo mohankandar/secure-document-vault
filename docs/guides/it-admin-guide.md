@@ -99,7 +99,9 @@ ended (`SDV-LIC-001` to sending systems); nothing else stops. Renewal and clock 
   off, how often (Immediately, every hour, every 4 hours, once a day at a time), by e-mail and to which channels. Ones that
   say something is down are always on, Immediately or every hour. A problem that lasts is told once it has lasted 15 minutes
   (5 for the key service), again every 4 hours while it lasts, and "Recovered" once it is gone.
-- **IT Admins who get e-mail:** the list for the whole customer (user ID and address). Addresses are kept here only, never
+- **IT Admins who get e-mail:** the list for the whole customer (user ID and address). It takes only someone who has
+  signed in as IT Admin in an entity of the customer; a person no entity shows as IT Admin any more is taken off at their
+  next sign-in (audited, "role gone"), and an entry marked Not confirmed gets nothing (task 0100). Addresses are kept here only, never
   in the audit or a log; the audit says who changed the list and whose entry.
 - **The customer's time zone:** every entity without its own follows it, for daily summaries, the times in messages and the
   reports' days.
