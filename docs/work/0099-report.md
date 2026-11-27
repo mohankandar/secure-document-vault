@@ -57,7 +57,10 @@ Outcome: **DONE**
 
 ## Commits
 
-See the PR.
+- ddb266e docs(work): 0099 task
+- 01d32c6 the whole change (BOM, code, tests, scripts, docs). Its message says "0099 report, the upgrade check's result": the commit meant
+  for the change had stopped in a chained command, and history is never rewritten (no force-push).
+- 7d4d679, and the next: this report
 
 ## Not done, and why
 
