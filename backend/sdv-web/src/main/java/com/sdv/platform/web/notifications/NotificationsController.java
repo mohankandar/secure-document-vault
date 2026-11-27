@@ -39,7 +39,7 @@ import java.util.UUID;
 /**
  * Task 0081: the two notification screens.
  * <ul>
- *   <li>IT Admin ({@code /it}): the channels and their health ({@code GET}), the app address ({@code PUT}), the
+ *   <li>IT Admin ({@code /it}): the channels and their health ({@code GET}), connecting them under the install's app address ({@code PUT}, task 0100: the address is read-only), the
  *       technical events ({@code GET /it/events}, {@code PUT /it/events/{id}}), the customer's time zone
  *       ({@code PUT /it/time-zone}) and the IT Admins' list ({@code /it/recipients}).</li>
  *   <li>Business Admin ({@code /business}): the entity's business events, its own time zone and its lists.</li>
@@ -73,7 +73,6 @@ public class NotificationsController {
         this.audit = audit;
     }
 
-    public record AddressRequest(String appAddress) { }
     public record ZoneRequest(String timeZone) { }
     public record RecipientRequest(String role, String userId, String email) { }
 
@@ -91,10 +90,10 @@ public class NotificationsController {
     }
 
     @PutMapping("/it")
-    public ResponseEntity<ItView> connect(@RequestBody(required = false) AddressRequest request) {
+    public ResponseEntity<ItView> connect() {
+        // Task 0100 (VSEC-204): under the install's address only; an address in the request is not read.
         Scope s = scope(SdvRole.IT_ADMIN);
-        String address = request == null ? null : request.appAddress();
-        var channels = service().connect(s.tenant(), address, ZoneId.of("UTC"));
+        var channels = service().connect(s.tenant(), ZoneId.of("UTC"));
         Map<String, Object> details = new LinkedHashMap<>();
         details.put("appAddress", channels.appAddress());
         details.put("destinations", channels.destinations().size() + (channels.mailConfigured() ? 1 : 0));

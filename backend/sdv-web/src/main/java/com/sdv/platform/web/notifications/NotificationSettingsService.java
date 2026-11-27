@@ -55,11 +55,14 @@ public class NotificationSettingsService {
     private final java.util.function.Supplier<Map<String, Map<String, Object>>> health;
 
     /** @param health the destinations of the module's health entry (id to state, code, reason, lastAttempt) */
+    private final PublicUrl publicUrl;
+
     public NotificationSettingsService(NotificationSettings settings, NotificationsProperties config,
-                                       java.util.function.Supplier<Map<String, Map<String, Object>>> health) {
+                                       java.util.function.Supplier<Map<String, Map<String, Object>>> health, PublicUrl publicUrl) {
         this.settings = settings;
         this.config = config;
         this.health = health;
+        this.publicUrl = java.util.Objects.requireNonNull(publicUrl, "publicUrl");
     }
 
     // ------------------------------------------------------------------------------------------- channels (IT)
@@ -86,24 +89,36 @@ public class NotificationSettingsService {
         String auth = mail ? Optional.ofNullable(config.getMail().getAuth()).orElse("PASSWORD").toUpperCase(java.util.Locale.ROOT) : null;
         String mailSecret = !mail ? null : "OAUTH2_MICROSOFT".equals(auth) ? config.getMail().getOauth().getCredentialSecret()
                 : config.getMail().getPasswordSecret();
-        return new Channels(t.map(x -> x.appBaseUrl().toString()).orElse(null), t.isPresent(), mail, auth, mailSecret, out);
+        // Task 0100 (VSEC-204): the address is the install's; connected only under that address.
+        String address = publicUrl.address().map(URI::toString).orElse(null);
+        boolean connected = t.isPresent() && address != null && address.equals(t.get().appBaseUrl().toString());
+        return new Channels(address, connected, mail, auth, mailSecret, out);
     }
 
     /**
-     * Connects every channel of the install config to the customer, under this app address (the address people open
-     * Vero on; links are made under it). The zone given is the module's own fallback; identity's zones win.
+     * Connects every channel of the install config to the customer, under the install's app address
+     * ({@code sdv.public-url}; links are made under it, and no screen can change it). The zone given is the module's
+     * own fallback; identity's zones win. Without the setting nothing is connected (SDV-NTF-005).
      */
-    public Channels connect(TenantId tenant, String appAddress, ZoneId fallbackZone) {
-        URI address;
-        try {
-            address = URI.create(appAddress == null ? "" : appAddress.trim());
-            new TenantSettings(address, fallbackZone, Map.of());
-        } catch (RuntimeException ex) {
-            throw new CodedRefusal.BadRequest(SdvErrorCode.NTF_005,
-                    "Give the address people open Vero on, such as https://vero.example.com, without a path's query or #.");
-        }
-        settings.connectChannels(tenant, new TenantSettings(address, fallbackZone, configured()));
+    public Channels connect(TenantId tenant, ZoneId fallbackZone) {
+        URI address = publicUrl.address().orElseThrow(() -> new CodedRefusal.BadRequest(SdvErrorCode.NTF_005,
+                "The app address is not set in this install. IT sets sdv.public-url (SDV_PUBLIC_URL) to the https address "
+                        + "people open Vero on, then starts Vero again."));
+        ZoneId zone = settings.tenant(tenant).map(TenantSettings::zone).orElse(fallbackZone);
+        settings.connectChannels(tenant, new TenantSettings(address, zone, configured()));
         return channels(tenant);
+    }
+
+    /**
+     * Task 0100 (VSEC-204): a customer connected under another address (typed on the screen before) is moved to the
+     * install's address, so no message links elsewhere. True when it was moved.
+     */
+    public boolean align(TenantId tenant) {
+        Optional<TenantSettings> t = settings.tenant(tenant);
+        Optional<URI> address = publicUrl.address();
+        if (t.isEmpty() || address.isEmpty() || address.get().toString().equals(t.get().appBaseUrl().toString())) return false;
+        settings.connectChannels(tenant, new TenantSettings(address.get(), t.get().zone(), t.get().destinations()));
+        return true;
     }
 
     private static String text(Object value) {

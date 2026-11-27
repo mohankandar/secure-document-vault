@@ -88,8 +88,12 @@ ended (`SDV-LIC-001` to sending systems); nothing else stops. Renewal and clock 
 
 - **Channels** come from the install config (runbook, "Notifications"): the mail server and each Teams or Slack channel, each
   secret by the path where the key service keeps it. This page shows those paths and each channel's health (working, having
-  problems, down, not used yet, with a code and its reason), never a secret. Give the **address people open Vero on** and
-  save: messages link under it, and nothing is sent before it is saved.
+  problems, down, not used yet, with a code and its reason), never a secret. The **app address** (the address people open
+  Vero on; messages link under it) comes from the install config only (`SDV_PUBLIC_URL`, https; runbook, "Notifications"):
+  this page shows it and can't change it. Press **Connect** once; nothing is sent before.
+- **Approval links:** keep the path `/approvals/link/` out of the web server's access log (exact nginx and IIS lines in the
+  runbook, "Notifications", 4c). A link opens only for its own person, signed in, who may decide the request now; anyone
+  else sees "This request isn't yours to decide".
 - **Technical notifications:** documents that could not be stored, deliveries still missing documents, storage nearly full
   or full, unidentified intake attempts, the key service not reachable, and the licence's technical events. For each: on or
   off, how often (Immediately, every hour, every 4 hours, once a day at a time), by e-mail and to which channels. Ones that

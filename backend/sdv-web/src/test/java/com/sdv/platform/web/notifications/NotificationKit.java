@@ -58,8 +58,8 @@ final class NotificationKit {
         config.getMail().setFromAddress("vero@example.test");
         config.getTeams().put(TEAMS.value(), "notifications/teams-ops");
         config.getSlack().put(SLACK.value(), "notifications/slack-ops");
-        screens = new NotificationSettingsService(settings, config, Map::of);
-        screens.connect(TENANT, "https://vero.example.test", ZoneId.of("UTC"));
+        screens = new NotificationSettingsService(settings, config, Map::of, PublicUrl.of("https://vero.example.test", false));
+        screens.connect(TENANT, ZoneId.of("UTC"));
         lists.add(null, "IT_ADMIN", "ita-1", "it.admin@example.test");
         lists.add(ENTITY, "BUSINESS_ADMIN", "ba-1", "business.admin@example.test");
         lists.add(ENTITY, "BUSINESS_ADMIN", "ba-2", "second.admin@example.test");

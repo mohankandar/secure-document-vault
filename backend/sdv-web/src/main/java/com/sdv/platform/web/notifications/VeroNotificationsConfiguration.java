@@ -150,15 +150,39 @@ public class VeroNotificationsConfiguration {
                 notifications);
     }
 
+    /** Task 0100 (VSEC-204): the app address of every message, from the install configuration only. */
+    @Bean
+    PublicUrl veroPublicUrl(@Value("${sdv.public-url:}") String value, org.springframework.core.env.Environment environment) {
+        return PublicUrl.of(value, environment.acceptsProfiles(org.springframework.core.env.Profiles.of("local")));
+    }
+
+    /**
+     * Task 0100 (VSEC-204): at start, a customer connected under another address (typed on the old screen) is moved to
+     * the install's, so no message links elsewhere.
+     */
+    @Bean
+    org.springframework.boot.ApplicationRunner veroAlignAppAddress(NotificationScreens screens,
+                                                                  @Value("${platform.licensing.tenant-id:}") String installCustomer) {
+        return args -> {
+            if (installCustomer == null || installCustomer.isBlank()) return;
+            screens.get().ifPresent(s -> {
+                if (s.align(com.documentplatform.notifications.TenantId.of(installCustomer.trim()))) {
+                    org.slf4j.LoggerFactory.getLogger(VeroNotificationsConfiguration.class)
+                            .warn("The app address of messages was moved to the install's sdv.public-url.");
+                }
+            });
+        };
+    }
+
     /** Null when notifications are off: the screens answer SDV-NTF-007 then. */
     @Bean
     NotificationScreens notificationScreens(ObjectProvider<NotificationSettings> settings,
-                                            ObjectProvider<NotificationsProperties> config,
+                                            ObjectProvider<NotificationsProperties> config, PublicUrl publicUrl,
                                             org.springframework.context.ApplicationContext context) {
         NotificationSettings s = settings.getIfAvailable();
         NotificationsProperties c = config.getIfAvailable();
         if (s == null || c == null) return new NotificationScreens(null);
-        return new NotificationScreens(new NotificationSettingsService(s, c, () -> destinations(context)));
+        return new NotificationScreens(new NotificationSettingsService(s, c, () -> destinations(context), publicUrl));
     }
 
     @SuppressWarnings("unchecked")

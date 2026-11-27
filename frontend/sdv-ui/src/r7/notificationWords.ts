@@ -53,9 +53,11 @@ export function validZone(zone: string): boolean {
   try { new Intl.DateTimeFormat('en', { timeZone: z }); return true } catch { return false }
 }
 export const validDailyAt = (v: string | null) => !!v && /^([01]\d|2[0-3]):[0-5]\d$/.test(v)
-/** The address people open Vero on; links in messages are made under it. */
-export function validAppAddress(v: string): boolean {
-  try { const u = new URL(v.trim()); return (u.protocol === 'https:' || u.protocol === 'http:') && !u.hash && !u.search } catch { return false }
+/** Task 0100 (VSEC-204): why nothing is sent yet, or null when the channels are connected under the install's address. */
+export function appAddressNote(c: Pick<Channels, 'appAddress' | 'connected'>): string | null {
+  if (c.connected) return null
+  if (!c.appAddress) return 'The app address is not set in this install. IT sets sdv.public-url (SDV_PUBLIC_URL) to the https address people open Vero on, then starts Vero again.'
+  return 'Connect the channels to start sending. Until then Vero sends no messages.'
 }
 export const validEmail = (v: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.trim())
 

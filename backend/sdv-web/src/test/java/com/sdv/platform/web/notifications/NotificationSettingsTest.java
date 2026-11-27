@@ -74,7 +74,6 @@ class NotificationSettingsTest {
                 new NotificationSettingsService.Change(false, "EVERY_HOUR", null, true, List.of()));
         assertTrue(key.enabled(), "a critical event can't be switched off");
         assertEquals("EVERY_HOUR", key.frequency());
-        assertEquals("SDV-NTF-005", code(() -> kit.screens.connect(NotificationKit.TENANT, "vero.example.test/#/home", java.time.ZoneId.of("UTC"))));
     }
 
     @Test

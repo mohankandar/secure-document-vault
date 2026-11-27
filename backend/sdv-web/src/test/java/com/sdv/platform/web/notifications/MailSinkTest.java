@@ -64,7 +64,7 @@ class MailSinkTest {
                     .build();
             VeroNotifications port = new VeroNotifications(notifier, settings, e -> Optional.of(NotificationKit.CUSTOMER), NotificationKit.CUSTOMER);
             // Immediately (the default is every 4 hours).
-            new NotificationSettingsService(settings, new com.documentplatform.notifications.spring.NotificationsProperties(), Map::of)
+            new NotificationSettingsService(settings, new com.documentplatform.notifications.spring.NotificationsProperties(), Map::of, PublicUrl.of("https://vero.example.test", false))
                     .change(NotificationKit.TENANT, com.documentplatform.notifications.EntityId.of(NotificationKit.ENTITY.toString()),
                             VeroEvent.APPROVAL_WAITING.id(), new NotificationSettingsService.Change(true, "IMMEDIATELY", null, true, List.of()));
 
