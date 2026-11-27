@@ -45,3 +45,18 @@ and go to its issue list.
 
 Every finding of task 0061 marked fixed still holds. VSEC-10 (library advisories) has none open today; VSEC-27
 (platform-core version) is done with 1.3.0; VSEC-14 stays open as before.
+
+## Status
+
+| ID | Status | Where |
+|---|---|---|
+| VSEC-201 | Fixed (task 0100) | The link page checks the approver's permission before it looks anything up; platform-core's approver check is the signed-in person's role now, not the mailing list |
+| VSEC-202 | Open | Task 0101 |
+| VSEC-203 | Fixed as far as Vero can see roles (task 0100) | A list takes only people who held the role at their last sign-in; messages go only to them; a sign-in without the role takes them off (audited). A role taken away is seen at the person's next sign-in |
+| VSEC-204 | Fixed (task 0100) | The app address comes from the install configuration (`SDV_PUBLIC_URL`, https); the screen shows it read-only |
+| VSEC-205 | Open | Task 0102 |
+| VSEC-206 | Open | Task 0102 |
+| VSEC-207 | Open | Task 0102 |
+| VSEC-208 | Done (task 0100) | Runbook and IT guide: the exact nginx and IIS lines that keep the link path out of access logs |
+| VSEC-209 | Open | Task 0102 |
+| VSEC-210 | By design | Recorded as a business decision |

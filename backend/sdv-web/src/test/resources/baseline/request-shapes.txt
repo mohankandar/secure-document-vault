@@ -1,5 +1,4 @@
 one component: ActivateRequest(name)
-one component: AddressRequest(appAddress)
 one component: CommentRequest(comment)
 one component: ExpectedDocumentRequest(sourceDocumentId)
 one component: File(file)
