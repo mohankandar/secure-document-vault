@@ -4,6 +4,7 @@ import com.documentplatform.eraselog.jdbc.EraseLogSchema;
 import com.documentplatform.fields.jdbc.FieldSchema;
 import com.documentplatform.identity.jdbc.IdentitySchema;
 import com.documentplatform.licensing.jdbc.LicensingSchema;
+import com.documentplatform.notifications.jdbc.NotificationSchema;
 import org.flywaydb.core.Flyway;
 import org.springframework.jdbc.datasource.SingleConnectionDataSource;
 
@@ -65,7 +66,7 @@ final class PlatformSchemaRuns {
                 writer.write("\n");
             }
         }
-        writer.write("\n-- The rights of other roles on licensing and erase log tables (tasks 0073 and 0080; safe to run again).\n");
+        writer.write("\n-- The rights of other roles on licensing, erase log and notifications tables (tasks 0073, 0080 and 0081; safe to run again).\n");
         writer.write(NARROW_GRANTS);
     }
 
@@ -87,7 +88,8 @@ final class PlatformSchemaRuns {
                       and ((g.table_name = 'lic_last_seen' and g.privilege_type in ('DELETE', 'TRUNCATE'))
                         or (g.table_name = 'lic_clock_reset' and g.privilege_type in ('UPDATE', 'DELETE', 'TRUNCATE'))
                         or (g.table_name = 'erl_position' and g.privilege_type in ('DELETE', 'TRUNCATE'))
-                        or (g.table_name = 'erl_schema_version' and g.privilege_type in ('INSERT', 'UPDATE', 'DELETE', 'TRUNCATE')))
+                        or (g.table_name = 'erl_schema_version' and g.privilege_type in ('INSERT', 'UPDATE', 'DELETE', 'TRUNCATE'))
+                        or (g.table_name = 'notif_schema_version' and g.privilege_type in ('INSERT', 'UPDATE', 'DELETE', 'TRUNCATE')))
                       and g.grantee <> t.tableowner
                 loop
                     if r.grantee = 'PUBLIC' then
@@ -110,10 +112,10 @@ final class PlatformSchemaRuns {
     }
 
     static List<String> scripts(SchemaVersion.PlatformRun run) {
-        return run == SchemaVersion.IDENTITY ? IdentitySchema.scripts() : run == SchemaVersion.LICENSING ? LicensingSchema.scripts() : run == SchemaVersion.FIELDS ? FieldSchema.scripts() : EraseLogSchema.scripts();
+        return run == SchemaVersion.IDENTITY ? IdentitySchema.scripts() : run == SchemaVersion.LICENSING ? LicensingSchema.scripts() : run == SchemaVersion.FIELDS ? FieldSchema.scripts() : run == SchemaVersion.NOTIFICATIONS ? NotificationSchema.scripts() : EraseLogSchema.scripts();
     }
 
     static String script(SchemaVersion.PlatformRun run, String name) {
-        return run == SchemaVersion.IDENTITY ? IdentitySchema.script(name) : run == SchemaVersion.LICENSING ? LicensingSchema.script(name) : run == SchemaVersion.FIELDS ? FieldSchema.script(name) : EraseLogSchema.script(name);
+        return run == SchemaVersion.IDENTITY ? IdentitySchema.script(name) : run == SchemaVersion.LICENSING ? LicensingSchema.script(name) : run == SchemaVersion.FIELDS ? FieldSchema.script(name) : run == SchemaVersion.NOTIFICATIONS ? NotificationSchema.script(name) : EraseLogSchema.script(name);
     }
 }

@@ -4,6 +4,7 @@ import { FailureNotice, describeFailure, exportFailureText, type Failure } from 
 import { intakeReport, intakeReportCsv, sensitivityReport, sensitivityReportCsv, storageReport, storageReportCsv, activityReport, activityReportCsv, type ActivityReport, type IntakeDeliveryLine, type IntakeFilter, type IntakeReport, type IntakeSystemBlock, type SensitivityReport, type SensitivityRequestKind, type StorageReport } from './liveApi'
 import type { SensitivityLevel } from '../api'
 import { bytesWords, countedWords, monthWords, ruleWords } from './storageWords'
+import { zoneSourceWords } from './notificationWords'
 
 /**
  * Task 0032, board Reports-Intake: the Business admin's Reports tab, Daily intake. Task 0033, board
@@ -143,7 +144,7 @@ function DailyIntake({ tabs }: { tabs: ReactNode }) {
           <option value="">All</option>
           {report.sendingSystems.map((s) => <option key={s.sourceId} value={s.sourceId}>{s.displayName}</option>)}
         </select><ChevronDown size={12} strokeWidth={2.4} aria-hidden /></label>}
-      {report && <span className="faint rpt-zone" title={`${report.timeZone}: ${report.timeZoneSource === 'TENANT' ? 'this tenant’s own setting' : 'the default from the install configuration'}. Read-only.`}>{zoneWords(report.timeZone)} (entity)</span>}
+      {report && <span className="faint rpt-zone" title={`${report.timeZone}: ${zoneSourceWords(report.timeZoneSource)}. Read-only.`}>{zoneWords(report.timeZone)} (entity)</span>}
       <button type="button" className="v-btn" disabled={!report || loading || exporting} onClick={() => void exportCsv()}><Download size={15} aria-hidden />{exporting ? 'Exporting…' : 'Export CSV'}</button>
     </div>
     {exportNote && <p role="status" className={exportNote.ok ? 'faint' : 'rpt-bad'} style={{ fontSize: 13, margin: 0 }}>{exportNote.text}</p>}
@@ -398,7 +399,7 @@ function PeriodChip({ report, open, onOpen, onChoose }: { report: SensitivityRep
   const zone = `${zoneWords(report.timeZone)} (entity)`
   return (
     <div className="rpt-daywrap" ref={box}>
-      <button type="button" className="rpt-chip" aria-haspopup="dialog" aria-expanded={open} title={`Days in ${zone}: ${report.timeZone}, ${report.timeZoneSource === 'TENANT' ? 'this tenant’s own setting' : 'the default from the install configuration'}.`} onClick={() => onOpen(!open)}><b>Period</b> {periodWords(report.from, report.to, report.today)} <ChevronDown size={12} strokeWidth={2.4} aria-hidden /></button>
+      <button type="button" className="rpt-chip" aria-haspopup="dialog" aria-expanded={open} title={`Days in ${zone}: ${report.timeZone}, ${zoneSourceWords(report.timeZoneSource)}.`} onClick={() => onOpen(!open)}><b>Period</b> {periodWords(report.from, report.to, report.today)} <ChevronDown size={12} strokeWidth={2.4} aria-hidden /></button>
       {open && <div className="rpt-pop" role="dialog" aria-label="Choose the period">
         <div className="row" style={{ gap: 6, flexWrap: 'wrap' }}>
           <button type="button" className="v-btn sm" onClick={() => onChoose(monthStart(report.today), report.today)}>This month</button>

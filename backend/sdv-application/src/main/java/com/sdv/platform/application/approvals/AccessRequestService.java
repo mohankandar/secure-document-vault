@@ -7,6 +7,9 @@ import tools.jackson.databind.ObjectMapper;
 import com.sdv.platform.application.access.Clearance;
 import com.sdv.platform.application.access.DocumentAccessGuard;
 import com.sdv.platform.application.business.RecordReferences;
+import com.sdv.platform.application.notifications.VeroEvent;
+import com.sdv.platform.application.notifications.VeroNotice;
+import com.sdv.platform.application.port.NotificationPort;
 import com.sdv.platform.application.port.AccessRequestRepository;
 import com.sdv.platform.application.port.AccessRequestRepository.AccessRequest;
 import com.sdv.platform.application.port.AccessRequestRepository.DocumentFacts;
@@ -95,15 +98,29 @@ public class AccessRequestService {
     private final TransactionTemplate transactions;
     private final Clock clock;
     private final ObjectMapper json = VeroJson.mapper();
+    /** Task 0081: who is told (waiting requests to the approvers, the outcome to the requester). */
+    private NotificationPort notifications = NotificationPort.NONE;
 
-    @Autowired
+    /** Tells nobody (tests). */
     public AccessRequestService(AccessRequestRepository requests, DocumentIntakeRepository documents,
                                 DocumentAccessGuard access, RecordReferences recordReferences,
                                 BusinessRecordRepository records, RecordSensitivityRepository recordLevels,
                                 SensitiveAccessGrantStore grants, ApprovalSettings settings, AuditEventPort audit,
                                 PlatformTransactionManager transactionManager, HoldReleases holdReleases) {
         this(requests, documents, access, recordReferences, records, recordLevels, grants, settings, audit,
+                transactionManager, Clock.systemUTC(), holdReleases);    }
+
+    /** Task 0081: the one Spring uses: as above, and tells people. */
+    @Autowired
+    public AccessRequestService(AccessRequestRepository requests, DocumentIntakeRepository documents,
+                                DocumentAccessGuard access, RecordReferences recordReferences,
+                                BusinessRecordRepository records, RecordSensitivityRepository recordLevels,
+                                SensitiveAccessGrantStore grants, ApprovalSettings settings, AuditEventPort audit,
+                                PlatformTransactionManager transactionManager, HoldReleases holdReleases,
+                                NotificationPort notifications) {
+        this(requests, documents, access, recordReferences, records, recordLevels, grants, settings, audit,
                 transactionManager, Clock.systemUTC(), holdReleases);
+        this.notifications = Objects.requireNonNull(notifications, "notifications");
     }
 
     /** Without legal holds (tests of other kinds). */
@@ -252,6 +269,7 @@ public class AccessRequestService {
             details.put("holdId", hold.holdId().toString());
             append(tenantId, "USER", actorId, actorName, CREATED_ACTION, targetType(request), targetId(request), now, correlationId,
                     AuditOutcome.SUCCESS, details);
+            tell(VeroEvent.HOLD_RELEASE_ASKED, request, null);
             return RequestView.of(request);
         });
     }
@@ -261,6 +279,47 @@ public class AccessRequestService {
         requireTenant(tenantId);
         grants.expireDue(tenantId, correlationId);
         return requests.holdReleasesWaiting(tenantId, clock.instant());
+    }
+
+    /**
+     * Task 0081: tells the approvers (a request waits) or the requester (decided). Inside the caller's transaction, so it
+     * goes only once that commits. The record's primary identifier goes with it only when the record's level is known
+     * and not Highly Confidential: a document request reads the document's level now (or takes the one the request was
+     * made at); a whole-record request names its record only with the level it was made at. Any doubt: no identifier.
+     */
+    private void tell(VeroEvent event, AccessRequest r, SensitivityLevel knownLevel) {
+        String identifier = null;
+        SensitivityLevel level = knownLevel;
+        try {
+            if (r.kind().scope() == AccessRequestKind.Scope.DOCUMENT && r.documentId() != null) {
+                List<DocumentFacts> found = requests.findDocumentFacts(r.tenantId(), List.of(r.documentId()));
+                if (found.isEmpty()) {
+                    level = null;
+                } else {
+                    DocumentFacts f = found.getFirst();
+                    identifier = f.primaryIdentifier();
+                    SensitivityLevel now = access.effectiveLevels(r.tenantId(), List.of(new DocumentAccessGuard.DocumentLevelRef(
+                            f.documentId(), f.sourceId(), f.submissionId(), f.ownLevel()))).get(f.documentId());
+                    level = higher(level, now);
+                }
+            } else if (knownLevel != null) {
+                identifier = recordIdentifier(r.tenantId(), r).map(AccessRequestRepository.PrimaryIdentifier::value).orElse(null);
+            }
+        } catch (RuntimeException ex) {
+            identifier = null;
+            level = null;
+        }
+        VeroNotice.Builder notice = VeroNotice.of(event, r.tenantId()).record(identifier, level);
+        if (event == VeroEvent.APPROVAL_WAITING || event == VeroEvent.HOLD_RELEASE_ASKED) notice.time(VeroEvent.TIME_EXPIRES, r.expiresAt());
+        if (event.audience() == VeroEvent.Audience.REQUESTER) notice.to(r.requestedBy());
+        notifications.publish(notice.build());
+    }
+
+    /** The more restricted of two levels; null (unknown) wins, so nothing is named. */
+    private static SensitivityLevel higher(SensitivityLevel a, SensitivityLevel b) {
+        if (a == null) return b;
+        if (b == null) return null;
+        return a.ordinal() >= b.ordinal() ? a : b;
     }
 
     private RequestView create(AccessRequest request, Map<String, Object> extra, String correlationId) {
@@ -280,6 +339,7 @@ public class AccessRequestService {
             append(request.tenantId(), "USER", request.requestedBy(), request.requestedByName(), CREATED_ACTION,
                     targetType(request), targetId(request), request.requestedAt(), correlationId, AuditOutcome.SUCCESS,
                     details);
+            tell(VeroEvent.APPROVAL_WAITING, request, extra.get("level") instanceof String l ? SensitivityLevel.valueOf(l) : null);
             return RequestView.of(request);
         });
     }
@@ -553,6 +613,7 @@ public class AccessRequestService {
                             r.expiresAt()));
                     append(tenantId, "USER", actorId, actorName, DECLINED_ACTION, targetType(r), targetId(r), now,
                             correlationId, AuditOutcome.SUCCESS, details);
+                    tell(VeroEvent.REQUEST_DECLINED, r, null);
                     return new DecisionView(requestId, AccessRequestStatus.DECLINED, null);
                 }
                 Instant grantEnds = null;
@@ -591,6 +652,7 @@ public class AccessRequestService {
                 }
                 append(tenantId, "USER", actorId, actorName, APPROVED_ACTION, targetType(r), targetId(r), now,
                         correlationId, AuditOutcome.SUCCESS, details);
+                tell(VeroEvent.REQUEST_APPROVED, r, null);
                 return new DecisionView(requestId, AccessRequestStatus.APPROVED, grantEnds);
             });
         } catch (RuntimeException ex) {

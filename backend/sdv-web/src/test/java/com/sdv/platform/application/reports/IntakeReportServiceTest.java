@@ -1,6 +1,5 @@
 package com.sdv.platform.application.reports;
 
-import com.sdv.platform.domain.error.StartupFailure;
 import com.sdv.platform.application.port.AuditEventPort;
 import com.sdv.platform.application.port.IntakeReportRepository;
 import com.sdv.platform.application.port.IntakeReportRepository.Item.Kind;
@@ -52,8 +51,10 @@ class IntakeReportServiceTest {
     private final FakeReports repo = new FakeReports();
     private final AuditEventPort audit = mock(AuditEventPort.class);
 
-    private IntakeReportService service(String installDefault) {
-        return new IntakeReportService(repo, audit, installDefault, Clock.fixed(NOW, ZoneOffset.UTC));
+    /** Task 0081: the customer's zone in identity (was the install default, gone). */
+    private IntakeReportService service(String customerZone) {
+        repo.customerZone = customerZone;
+        return new IntakeReportService(repo, audit, Clock.fixed(NOW, ZoneOffset.UTC));
     }
 
     private static String sha(char c) {
@@ -93,7 +94,7 @@ class IntakeReportServiceTest {
         assertEquals("2026-11-20", r.from());
         assertEquals("2026-11-20", r.to());
         assertEquals(NY, r.timeZone());
-        assertEquals("INSTALL_DEFAULT", r.timeZoneSource());
+        assertEquals("CUSTOMER", r.timeZoneSource());
         assertEquals("Contract number", r.primaryIdentifierLabel());
         assertEquals(List.of("Redaction Service", "Loan Origination System"), r.sendingSystems().stream().map(IntakeReportRepository.SendingSystem::displayName).toList());
 
@@ -181,10 +182,10 @@ class IntakeReportServiceTest {
         assertEquals(5 + 7 + 9, a1.pages());
         assertEquals("2026-11-20T04:59", a1.receivedLocal());
 
-        // The tenant's own setting wins over the install default.
+        // The entity's own zone wins over the customer's.
         repo.timeZone = NY;
         IntakeReportService.IntakeReport own = service("UTC").intake(TENANT, "2026-11-20", "2026-11-20", RS.toString());
-        assertEquals("TENANT", own.timeZoneSource());
+        assertEquals("ENTITY", own.timeZoneSource());
         assertEquals(NY, own.timeZone());
         assertEquals(5 + 7 + 1, own.systems().get(0).deliveries().get(0).pages());
 
@@ -192,7 +193,8 @@ class IntakeReportServiceTest {
         IntakeReportService.IntakeReport next = service(NY).intake(TENANT, "2026-11-21", "2026-11-21", null);
         assertEquals(0, next.totals().deliveries());
         // Today in New York at 02:00 UTC on the 21st is still the 20th.
-        IntakeReportService late = new IntakeReportService(repo, audit, NY, Clock.fixed(Instant.parse("2026-11-21T02:00:00Z"), ZoneOffset.UTC));
+        repo.customerZone = NY;
+        IntakeReportService late = new IntakeReportService(repo, audit, Clock.fixed(Instant.parse("2026-11-21T02:00:00Z"), ZoneOffset.UTC));
         assertEquals("2026-11-20", late.intake(TENANT, null, null, null).today());
     }
 
@@ -288,9 +290,11 @@ class IntakeReportServiceTest {
 
         repo.timeZone = "Mars/Olympus_Mons";
         assertEquals("SDV-RPT-004", code(() -> s.intake(TENANT, null, null, null)), "never guessed");
-        assertEquals(com.sdv.platform.domain.error.SdvErrorCode.SYS_010, assertThrows(StartupFailure.class, () -> service("Eastern"),
-                "a wrong install default stops the server").errorCode());
-        assertThrows(StartupFailure.class, () -> service(" "));
+        // Task 0081: a customer's zone that is not a zone refuses the report too; with none at all, UTC.
+        repo.timeZone = null;
+        assertEquals("SDV-RPT-004", code(() -> service("Eastern").intake(TENANT, null, null, null)), "never guessed");
+        assertEquals("NONE", service(null).intake(TENANT, null, null, null).timeZoneSource());
+        assertEquals("UTC", service(null).intake(TENANT, null, null, null).timeZone());
     }
 
     @Test
@@ -305,6 +309,7 @@ class IntakeReportServiceTest {
     /** The repository in memory: the same filters as the SQL (tenant implied, range, sending system, order, limit). */
     static final class FakeReports implements IntakeReportRepository {
         String timeZone;
+        String customerZone;
         boolean overflow;
         final List<SendingSystem> systems = new ArrayList<>();
         final List<Item> items = new ArrayList<>();
@@ -343,6 +348,8 @@ class IntakeReportServiceTest {
         }
 
         @Override public Optional<String> findTenantTimeZone(UUID tenantId) { return Optional.ofNullable(timeZone); }
+
+        @Override public Optional<String> findCustomerTimeZone(UUID tenantId) { return Optional.ofNullable(customerZone); }
 
         @Override public List<SendingSystem> findSendingSystems(UUID tenantId) { return List.copyOf(systems); }
 

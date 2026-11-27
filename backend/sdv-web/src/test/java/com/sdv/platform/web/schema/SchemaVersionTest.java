@@ -19,7 +19,11 @@ class SchemaVersionTest {
         assertEquals(com.documentplatform.fields.jdbc.FieldSchema.VERSION, SchemaVersion.FIELDS.version());
         assertEquals(2, SchemaVersion.FIELDS.version());
         assertEquals(3, SchemaVersion.ERASE_LOG.version());
-        assertEquals(java.util.List.of(SchemaVersion.IDENTITY, SchemaVersion.LICENSING, SchemaVersion.FIELDS, SchemaVersion.ERASE_LOG), SchemaVersion.PLATFORM_RUNS);
+        assertEquals(1, SchemaVersion.NOTIFICATIONS.version());
+        assertEquals("notif_schema_history", SchemaVersion.NOTIFICATIONS.historyTable());
+        assertEquals(1, SchemaVersion.NOTIFICATIONS.version());
+        assertEquals("notif_schema_history", SchemaVersion.NOTIFICATIONS.historyTable());
+        assertEquals(java.util.List.of(SchemaVersion.IDENTITY, SchemaVersion.LICENSING, SchemaVersion.FIELDS, SchemaVersion.ERASE_LOG, SchemaVersion.NOTIFICATIONS), SchemaVersion.PLATFORM_RUNS);
         assertEquals("identity V5", SchemaVersion.IDENTITY.key(5).id());
         assertTrue(com.documentplatform.identity.jdbc.IdentitySchema.scripts().contains("V5__identity_history_and_search_path.sql"));
     }

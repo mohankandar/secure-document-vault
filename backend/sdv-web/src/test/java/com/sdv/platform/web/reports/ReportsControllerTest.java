@@ -113,7 +113,7 @@ class ReportsControllerTest {
     void theBusinessAdminGetsTheReportAndTheCsv() throws Exception {
         signIn(SdvRole.BUSINESS_ADMIN);
         when(reports.intake(TENANT, "2026-11-20", "2026-11-20", null)).thenReturn(new IntakeReportService.IntakeReport(
-                "2026-11-20", "2026-11-20", "2026-11-20", "America/New_York", "INSTALL_DEFAULT", null, "Contract number",
+                "2026-11-20", "2026-11-20", "2026-11-20", "America/New_York", "CUSTOMER", null, "Contract number",
                 List.of(), new IntakeReportService.Totals(0, 0, 0, 0, 0, 0, 0, 0, 0, List.of(), 0, 0, List.of()), List.of(), 50));
         mvc.perform(get("/api/v1/admin/reports/intake").param("from", "2026-11-20").param("to", "2026-11-20"))
                 .andExpect(status().isOk())
@@ -174,7 +174,7 @@ class ReportsControllerTest {
     void theBusinessAdminGetsTheSensitivityReportAndItsCsv() throws Exception {
         signIn(SdvRole.BUSINESS_ADMIN);
         when(sensitivity.report(TENANT, null, null, null)).thenReturn(new SensitivityReportService.SensitivityReport(
-                "2026-11-01", "2026-11-21", "2026-11-21", "America/New_York", "INSTALL_DEFAULT", null, "Contract number",
+                "2026-11-01", "2026-11-21", "2026-11-21", "America/New_York", "CUSTOMER", null, "Contract number",
                 List.of(), new SensitivityReportService.Documents(5, 2, 1, 8, 1, 1),
                 List.of(new SensitivityReportService.RequestRow("DOWNLOAD", 1, 0, 0, 2)),
                 new SensitivityReportRepository.LevelChanges(3, 4, 1),
@@ -266,7 +266,7 @@ class ReportsControllerTest {
     void theBusinessAdminGetsTheStorageReportAndItsRegisteredCsv() throws Exception {
         signIn(SdvRole.BUSINESS_ADMIN);
         when(storage.report(TENANT)).thenReturn(new StorageReportService.StorageReport("2026-11-23T10:00:00Z", 120, 15, "UTC",
-                "INSTALL_DEFAULT", List.of(), List.of(), List.of(), new StorageReportService.Total(null, 3, 9, 300), List.of(),
+                "CUSTOMER", List.of(), List.of(), List.of(), new StorageReportService.Total(null, 3, 9, 300), List.of(),
                 List.of(), List.of(), new StorageReportService.Held(1, 0, 0, 1)));
         mvc.perform(get("/api/v1/admin/reports/storage"))
                 .andExpect(status().isOk())
@@ -288,7 +288,7 @@ class ReportsControllerTest {
     void theBusinessAdminGetsTheActivityReportAndItsRegisteredCsv() throws Exception {
         signIn(SdvRole.BUSINESS_ADMIN);
         when(activity.report(TENANT, "2026-11-17", "2026-11-23")).thenReturn(new com.sdv.platform.application.reports.ActivityReportService.ActivityReport(
-                "2026-11-17", "2026-11-23", "2026-11-23", "UTC", "INSTALL_DEFAULT", "2026-11-22", List.of(), List.of(), List.of(),
+                "2026-11-17", "2026-11-23", "2026-11-23", "UTC", "CUSTOMER", "2026-11-22", List.of(), List.of(), List.of(),
                 List.of(), new com.sdv.platform.application.reports.ActivityReportService.Approvals(2, 1, 0, 1, 1, 0)));
         mvc.perform(get("/api/v1/admin/reports/activity").param("from", "2026-11-17").param("to", "2026-11-23"))
                 .andExpect(status().isOk())

@@ -97,6 +97,12 @@ class IntakeReportPostgresTest {
         }
     }
 
+    /** Task 0081: no zone rows are left for the other tests on this database. */
+    @org.junit.jupiter.api.AfterEach
+    void removeZoneRows() {
+        IdentityZones.removeAll(jdbc.getJdbcTemplate());
+    }
+
     private void sql(String statement) {
         jdbc.getJdbcTemplate().execute(statement);
     }
@@ -168,17 +174,17 @@ class IntakeReportPostgresTest {
 
     @Test
     void reportsAndUncorrectedCopiesOnPostgres() throws Exception {
-        // ---- The schema: the tenant time zone column and its check, and the new indexes.
+        // ---- The schema: the new indexes; task 0081: tenants.time_zone is gone (zones are identity's).
         assertEquals(3, count("select count(*) from pg_indexes where indexname in ('idx_submissions_tenant_created', "
                 + "'idx_documents_tenant_ingested', 'idx_audit_events_redaction_old_sha')"));
         assertEquals(0, count("select count(*) from pg_index i join pg_class c on c.oid=i.indexrelid where not i.indisvalid "
                 + "and c.relname like 'idx_%'"), "no invalid index left by a concurrent build");
-        assertEquals(0, count("select count(*) from tenants where time_zone is not null"), "every existing tenant uses the install default");
+        assertEquals(0, count("select count(*) from information_schema.columns where table_name = 'tenants' and column_name = 'time_zone'"),
+                "task 0081: zones are identity's");
         tenant(T0, "rep-t0");
         tenant(T1, "rep-t1");
-        assertThrows(RuntimeException.class, () -> sql("update tenants set time_zone=' UTC' where tenant_id='" + T1 + "'"), "padded");
-        assertThrows(RuntimeException.class, () -> sql("update tenants set time_zone='' where tenant_id='" + T1 + "'"), "blank");
-        sql("update tenants set time_zone='America/New_York' where tenant_id='" + T1 + "'");
+        IdentityZones.clear(new org.springframework.jdbc.core.JdbcTemplate(dataSource), T0);
+        IdentityZones.set(new org.springframework.jdbc.core.JdbcTemplate(dataSource), T1, "America/New_York", "Europe/London");
 
         uncorrectedCopy();
         seededDay();
@@ -255,7 +261,7 @@ class IntakeReportPostgresTest {
         assertThrows(RuntimeException.class, () -> sql("update steward_notices set read_by='[]'::jsonb where tenant_id='" + T0 + "'"), "read_by is an object");
         assertThrows(RuntimeException.class, () -> sql("insert into steward_notices(notice_id, tenant_id, kind, audit_event_id, created_at) "
                 + "select gen_random_uuid(), tenant_id, kind, audit_event_id, now() from steward_notices where tenant_id='" + T0 + "'"), "one notice per event");
-        IntakeReportService reports = new IntakeReportService(reportRepository, foundation, "UTC", Clock.fixed(now, ZoneOffset.UTC));
+        IntakeReportService reports = new IntakeReportService(reportRepository, foundation, Clock.fixed(now, ZoneOffset.UTC));
 
         // The Daily intake report counts it as a duplicate (today, in UTC: T0 has no zone of its own).
         String yesterday = java.time.LocalDate.now(ZoneOffset.UTC).minusDays(1).toString();
@@ -263,7 +269,7 @@ class IntakeReportPostgresTest {
         IntakeReportService.IntakeReport today = reports.intake(T0, yesterday, tomorrow, S0.toString());
         assertEquals(1, today.totals().duplicates());
         assertEquals(0, today.totals().documents());
-        assertEquals("INSTALL_DEFAULT", today.timeZoneSource());
+        assertEquals("NONE", today.timeZoneSource());
         String csv = new String(reports.export(T0, "admin", "corr-csv", yesterday, tomorrow, S0.toString()).csv(), StandardCharsets.UTF_8);
         assertTrue(csv.contains("\"" + ORIGINAL_SHA + "\",\"again\",\"Redaction Service\",\"" + CONTRACT + "\",\"4\","), csv);
         assertTrue(csv.contains(",\"DUPLICATE_ALREADY_STORED\","), csv);
@@ -301,11 +307,11 @@ class IntakeReportPostgresTest {
         // Another tenant's activity on the same day is never counted.
         refusal(T0, S0, null, "t0-refusal", "BAD_REQUEST", "2026-11-20T12:00:00Z");
 
-        IntakeReportService reports = new IntakeReportService(reportRepository, foundation, "UTC",
+        IntakeReportService reports = new IntakeReportService(reportRepository, foundation,
                 Clock.fixed(Instant.parse("2026-11-20T15:00:00Z"), ZoneOffset.UTC));
         IntakeReportService.IntakeReport r = reports.intake(T1, null, null, null);
         assertEquals("America/New_York", r.timeZone());
-        assertEquals("TENANT", r.timeZoneSource());
+        assertEquals("ENTITY", r.timeZoneSource());
         assertEquals("2026-11-20", r.today());
         assertEquals("Contract number", r.primaryIdentifierLabel());
         IntakeReportService.Totals t = r.totals();

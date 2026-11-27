@@ -136,3 +136,6 @@ databaseChangeLog:
 
   - include:
       file: db/changelog/048-records.yaml
+
+  - include:
+      file: db/changelog/049-notifications.yaml

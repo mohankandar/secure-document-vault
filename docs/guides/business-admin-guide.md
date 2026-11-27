@@ -86,6 +86,36 @@ print is in the audit.
 Nobody decides their own request. A request nobody decides expires (7 days unless your installer changed it), and the
 requester is told. **Decided recently** lists the last 30 days.
 
+## Notifications
+
+**Business administration › Notifications** chooses which of this entity's events people are told about, how often, by
+e-mail and to which Teams or Slack channels (IT connects the channels first).
+
+| Event | Who gets it | Usually |
+|---|---|---|
+| Approval waiting (any request in Approvals) | The entity's Business Admins | Every 4 hours, as one summary |
+| Your request was approved, declined | The person who asked, by e-mail only | At once |
+| Quarantine incident opened, released | Business Admins | At once |
+| Legal hold placed, release asked, released | Business Admins | At once |
+| Roles withheld at sign-in | Business Admins | Every hour |
+| Retention cleanup could not delete everything | Business Admins | Once a day, 08:00 |
+| The licence's events (expiring, grace, use near or over the allowance) | Business Admins | Once a day |
+
+**What a message says:** the event, counts, times and a link into Vero. An e-mail may name the record's identifier (for
+example the contract number), never for a Highly Confidential record. Teams and Slack messages never name a record: anyone in
+the channel reads them. No message says a title, a name, a file name, a reason or a document's level, so nobody learns from
+one that a Highly Confidential document exists.
+
+**Who gets e-mail:** the people on this entity's lists, one list per role. Add a person by the user ID Vero shows for them
+(for example in Approvals) and their address. A requester is told the outcome of a request when they are on one of the
+lists. Each person gets their own e-mail; nobody sees another's address. Every change of a list is in the audit, never the
+address.
+
+**This entity's time zone:** leave it to follow the customer's, or give the entity its own. Daily summaries, the times in
+messages and the reports' days follow it.
+
+The bell in Vero (notices in the app) stays as it is.
+
 ## Legal holds
 
 Under **Legal holds**, enter the record's identifier and write why. Vero says how many documents the record has and holds

@@ -10,6 +10,7 @@ import { Approvals, waitingWithReleases, type WaitingSummary } from './Approvals
 import { LegalHolds } from './LegalHolds'
 import { Restrictions } from './Restrictions'
 import { Licence } from './Licence'
+import { NotificationsBusiness } from './NotificationsBusiness'
 import { incidentReleaseRequests, pendingRequests } from './liveApi'
 import { Reports } from './Reports'
 import { AuditReports } from './AuditReports'
@@ -37,6 +38,7 @@ const LEDE: Record<string, string> = {
   // Task 0032, board Reports-Intake.
   reports: 'Counts only. No document contents, titles or names.',
   licence: 'What your licence allows and how much of it this entity uses.',
+  notifications: 'Which of this entity’s events send a message, how often, by e-mail and to which Teams or Slack channels.',
   // Task 0050: the sealed audit report.
   'audit-report': 'A sealed copy of the audit for a period, to hand to an auditor. Nobody can change what Vero recorded.',
 }
@@ -66,6 +68,7 @@ export function Governance() {
       {route.tab === 'licence' && <Licence role="businessAdmin" />}
       {route.tab === 'metadata' && <SearchFields />}
       {route.tab === 'approvals' && <Approvals onWaiting={setWaiting} />}
+      {route.tab === 'notifications' && <NotificationsBusiness />}
       {route.tab === 'reports' && <Reports />}
       {route.tab === 'audit-report' && <AuditReports />}
     </AreaFrame>

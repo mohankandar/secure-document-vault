@@ -1,0 +1,9 @@
+databaseChangeLog:
+  - changeSet:
+      id: 049-notifications
+      author: sdv
+      changes:
+        - sqlFile:
+            path: db/changelog/049-notifications.sql
+            relativeToChangelogFile: false
+            splitStatements: false

@@ -344,8 +344,9 @@ alter default privileges for role $owner in schema public grant select, insert, 
     Write-Step 'Start the stand-in sign-in key set (task 0038)' $w.Elapsed.TotalSeconds "http://127.0.0.1:$KeysPort/certs, test key for this run"
 
     # ------------------------------------------------------------ 1. start against the empty database
-    # Task 0074 (answer 8): platform-core's tables are missing, so the start stops and says what to do.
-    $t = Assert-StartRefused 'start-1-empty' @{} 'LIC_TABLES_MISSING' -Platform
+    # Task 0074 (answer 8): platform-core's tables are missing, so the start stops and says what to do. Task 0081: the first
+    # module to look may be licensing (LIC_TABLES_MISSING) or notifications (TABLES_MISSING); both name the schema step.
+    $t = Assert-StartRefused 'start-1-empty' @{} 'TABLES_MISSING' -Platform
     $log = Get-Content -Raw (Join-Path $run 'start-1-empty.out.log')
     $older = 'The database is older than this Vero version. Ask your database team to run the schema step (install guide, "Update the database").'
     Assert-That ($log.Contains($older)) 'the startup log does not contain the "older" sentence'
@@ -353,7 +354,7 @@ alter default privileges for role $owner in schema public grant select, insert, 
     Assert-That (-not ($log -match 'RETENTION_SWEEP_FAILED')) 'the cleanup job ran against the empty database'
     $tables = (Invoke-Sql -Database $db -Sql "select count(*) from pg_tables where schemaname = 'public';").Out.Trim()
     Assert-That ($tables -eq '0') "the production start created $tables tables; it must change nothing"
-    Write-Step '1. Start on the empty database: refused' $t 'LIC_TABLES_MISSING and the "older" sentence in the log, exit code not 0, 0 tables created'
+    Write-Step '1. Start on the empty database: refused' $t 'a TABLES_MISSING of platform-core and the "older" sentence in the log, exit code not 0, 0 tables created'
 
     # ------------------------------------------------------------ 2. schema step
     $st = Invoke-SchemaStep @('status')
@@ -376,19 +377,20 @@ alter default privileges for role $owner in schema public grant select, insert, 
     Assert-That ($up.Code -eq 0) "update failed: $($up.Err.Trim()) $($up.Out.Trim())"
     # Task 0041: "would run" counts Vero's changesets and platform-core's identity (V1-V5, task 0067) and licensing (V1-V2) versions.
     $liquibase = (Invoke-Sql -Database $db -Sql "select count(*) from databasechangelog;").Out.Trim()
-    $platform = (Invoke-Sql -Database $db -Sql "select (select max(version) from idn_schema_version) || ' ' || (select max(version) from lic_schema_version) || ' ' || (select count(*) from idn_schema_history where success) || ' ' || (select count(*) from lic_schema_history where success) || ' ' || (select max(version) from fld_schema_version) || ' ' || (select count(*) from fld_schema_history where success) || ' ' || (select max(version) from erl_schema_version) || ' ' || (select count(*) from erl_schema_history where success);").Out.Trim().Split(' ')
+    $platform = (Invoke-Sql -Database $db -Sql "select (select max(version) from idn_schema_version) || ' ' || (select max(version) from lic_schema_version) || ' ' || (select count(*) from idn_schema_history where success) || ' ' || (select count(*) from lic_schema_history where success) || ' ' || (select max(version) from fld_schema_version) || ' ' || (select count(*) from fld_schema_history where success) || ' ' || (select max(version) from erl_schema_version) || ' ' || (select count(*) from erl_schema_history where success) || ' ' || (select max(version) from notif_schema_version) || ' ' || (select count(*) from notif_schema_history where success);").Out.Trim().Split(' ')
     Assert-That ($platform[0] -eq '5' -and $platform[1] -eq '2') "identity tables at version $($platform[0]) (5 expected), licensing at $($platform[1]) (2 expected)"
     Assert-That ([int]$platform[2] -ge 5 -and [int]$platform[3] -ge 2) 'the identity and licensing runs must each record their versions in their own history table'
     Assert-That ($platform[4] -eq '2' -and [int]$platform[5] -ge 2) "case field tables at version $($platform[4]) (2 expected), $($platform[5]) versions recorded"
     Assert-That ($platform[6] -eq '3' -and [int]$platform[7] -ge 3) "erase log table at version $($platform[6]) (3 expected), $($platform[7]) versions recorded"
-    $applied = [int]$liquibase + [int]$platform[0] + [int]$platform[1] + [int]$platform[4] + [int]$platform[6]
+    Assert-That ($platform[8] -eq '1' -and [int]$platform[9] -ge 1) "notifications tables at version $($platform[8]) (1 expected), $($platform[9]) versions recorded (task 0081)"
+    $applied = [int]$liquibase + [int]$platform[0] + [int]$platform[1] + [int]$platform[4] + [int]$platform[6] + [int]$platform[8]
     $seedRows = (Invoke-Sql -Database $db -Sql "select count(*) from databasechangelog where id = '002-local-foundation-seed';").Out.Trim()
     Assert-That ("$applied" -eq $wouldRun -and $seedRows -eq '0') "update applied $applied changesets and platform versions (expected $wouldRun), seed rows $seedRows"
     $oldIdentity = (Invoke-Sql -Database $db -Sql "select count(*) from pg_tables where tablename in ('enterprise_identity_connections', 'enterprise_identity_connection_history', 'role_group_mappings_seen', 'role_mapping_notices');").Out.Trim()
     Assert-That ($oldIdentity -eq '0') "changeset 035 must drop the old identity tables, $oldIdentity left"
     $invalid = (Invoke-Sql -Database $db -Sql "select count(*) from pg_index where not indisvalid;").Out.Trim()
     Assert-That ($invalid -eq '0') "$invalid indexes are invalid after the concurrent index step"
-    Write-Step '2c. Schema step update' $up.Seconds "$liquibase changesets and identity V5, licensing V2, fields V2, erase log V3 applied (own history tables), old identity tables dropped, 018 indexes valid"
+    Write-Step '2c. Schema step update' $up.Seconds "$liquibase changesets and identity V5, licensing V2, fields V2, erase log V3, notifications V1 applied (own history tables), old identity tables dropped, 018 indexes valid"
     $up.Out | Set-Content -Encoding utf8 (Join-Path $run 'schema-update.out.txt')
 
     # Task 0073: the app user's rights on two licensing tables are narrower than the default ones; the rest are there.
@@ -476,11 +478,11 @@ alter default privileges for role $owner in schema public grant select, insert, 
     # ------------------------------------------------------------ 5. task 0037: the database away at start, then back
     $relayUrl = "jdbc:postgresql://127.0.0.1:$RelayPort/$db"
     # Task 0074 (answer 8): a start while the database can't be reached stops; the service manager starts Vero again.
-    $t = Assert-StartRefused 'start-4-database-away' @{ SDV_DB_URL = $relayUrl } 'LIC_CHECK_FAILED' -Platform
+    $t = Assert-StartRefused 'start-4-database-away' @{ SDV_DB_URL = $relayUrl } 'CHECK_FAILED' -Platform  # task 0081: licensing's LIC_CHECK_FAILED or notifications' CHECK_FAILED
     $log = Get-Content -Raw (Join-Path $run 'start-4-database-away.out.log')
     Assert-That ($log -match "ERROR .* SDV-SYS-003 Vero couldn't reach its database at start\..*127\.0\.0\.1:$RelayPort") 'no SDV-SYS-003 ERROR line with the host and port'
     Assert-That (-not $log.Contains($appPassword)) 'the database password is in the log'
-    Write-Step '5a. Start with the database away: stops' $t 'LIC_CHECK_FAILED and SYS-003 with host and port in the log, exit code not 0'
+    Write-Step '5a. Start with the database away: stops' $t 'a CHECK_FAILED of platform-core and SYS-003 with host and port in the log, exit code not 0'
 
     Start-Relay
     $w = [System.Diagnostics.Stopwatch]::StartNew()

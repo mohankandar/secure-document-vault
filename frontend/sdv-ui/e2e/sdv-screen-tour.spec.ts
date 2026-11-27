@@ -2740,6 +2740,7 @@ test.describe('SDV role-based screen capture', () => {
       'Keeping documents',
       'Legal holds',
       'Search fields',
+      'Notifications',
       'Approvals',
       'Reports',
     ])
@@ -2971,6 +2972,7 @@ test.describe('SDV role-based screen capture', () => {
       'Storage',
       'Sign-in',
       'Integrations',
+      'Notifications',
       'Problems',
       'About',
     ])

@@ -39,9 +39,18 @@ public class JdbcIntakeReportRepository implements IntakeReportRepository {
         this.jdbc = jdbc;
     }
 
+    /** Task 0081: identity is the one source of zones; the entity's own (idn_entity.time_zone). */
     @Override
     public Optional<String> findTenantTimeZone(UUID tenantId) {
-        return jdbc.query("select time_zone from tenants where tenant_id=:tenantId",
+        return jdbc.query("select time_zone from idn_entity where entity_uuid=:tenantId",
+                        new MapSqlParameterSource("tenantId", tenantId), (rs, row) -> rs.getString("time_zone"))
+                .stream().filter(java.util.Objects::nonNull).findFirst();
+    }
+
+    /** Task 0081: the zone of the entity's customer (idn_customer.time_zone), which an entity without its own follows. */
+    @Override
+    public Optional<String> findCustomerTimeZone(UUID tenantId) {
+        return jdbc.query("select c.time_zone from idn_entity e join idn_customer c on c.tenant_id = e.tenant_id where e.entity_uuid=:tenantId",
                         new MapSqlParameterSource("tenantId", tenantId), (rs, row) -> rs.getString("time_zone"))
                 .stream().filter(java.util.Objects::nonNull).findFirst();
     }

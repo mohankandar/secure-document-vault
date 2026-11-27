@@ -390,6 +390,20 @@ public enum SdvErrorCode {
     LIC_003("SDV-LIC-003", true),
     /** Task 0075: no finished month is left to export (400). */
     LIC_004("SDV-LIC-004", false, true),
+    /** Task 0081: notification settings need the IT Admin (channels, technical events) or the Business Admin (403). */
+    NTF_001("SDV-NTF-001", false, true),
+    /** Task 0081: a recipient list entry is not valid: role, user ID or e-mail address (400). Nothing was changed. */
+    NTF_002("SDV-NTF-002", false, true),
+    /** Task 0081: the person is on that list for that role already (409). */
+    NTF_003("SDV-NTF-003", false, true),
+    /** Task 0081: no such entry on this list (404). */
+    NTF_004("SDV-NTF-004", false, true),
+    /** Task 0081: an event's setting is refused: unknown event or channel, a frequency the rules forbid, or the app address (400). */
+    NTF_005("SDV-NTF-005", false, true),
+    /** Task 0081: the time zone is not an IANA name Java knows (400). Nothing was changed. */
+    NTF_006("SDV-NTF-006", false, true),
+    /** Task 0081: notifications are switched off in this install (409). */
+    NTF_007("SDV-NTF-007", true),
     /** Task 0037: no key service is set up: WARN at a local start, and a packaged start refuses. */
     KEY_001("SDV-KEY-001", true),
     /** Task 0078: the key service can't be used now, so a sensitive value can't be stored, searched or opened (503). Nothing was stored. */

@@ -35,6 +35,3 @@ sdv:
   # Task 0062: the demo seed keeps its volumes under .runtime.
   storage:
     allowed-roots: ${SDV_STORAGE_ALLOWED_ROOTS:.runtime;data}
-  # Task 0032: the local demo tenant (Acme Lending) counts its days in Eastern time, as on the Reports board.
-  tenant-defaults:
-    time-zone: ${SDV_DEFAULT_TIME_ZONE:America/New_York}

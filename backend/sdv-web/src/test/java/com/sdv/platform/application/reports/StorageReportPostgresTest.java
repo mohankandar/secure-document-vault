@@ -51,7 +51,7 @@ class StorageReportPostgresTest {
     private final NamedParameterJdbcTemplate jdbc = new NamedParameterJdbcTemplate(dataSource);
     private final JdbcStorageReportRepository repository = new JdbcStorageReportRepository(jdbc);
     private final StorageReportService service = new StorageReportService(repository, new JdbcIntakeReportRepository(jdbc),
-            new JdbcFoundationRepository(jdbc), "UTC", Clock.systemUTC(), 15);
+            new JdbcFoundationRepository(jdbc), Clock.systemUTC(), 15);
 
     private void sql(String statement) {
         jdbc.getJdbcTemplate().execute(statement);

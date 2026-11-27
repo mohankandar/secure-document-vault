@@ -48,6 +48,13 @@ platform:
   licensing:
     product-code: SDV
     tenant-id: ${SDV_CUSTOMER_ID:}
+  # Task 0081: notifications by e-mail, Teams and Slack (platform-core's notifications; IT guide, "Notifications"). The mail
+  # server and each Teams or Slack destination come from the install config (PLATFORM_NOTIFICATIONS_MAIL_HOST,
+  # PLATFORM_NOTIFICATIONS_TEAMS_<ID>, ...), each secret by its path in the key service's KV store (secret/platform/<path>,
+  # key "value"), never the secret. Without a channel Vero still records notifications and sends nothing. The notif_
+  # tables come from the schema step; Vero stops at start when they are missing. Off: SDV_NOTIFICATIONS_ENABLED=false.
+  notifications:
+    enabled: ${SDV_NOTIFICATIONS_ENABLED:true}
   # Task 0057: platform-core's safe outbound rules (platform-outbound-spring). Only the IT Admin's read-only "Test
   # sign-in" uses them: platform-core's identity module fetches the login system's discovery document and keys over
   # them (https only, no redirects, no internal or cloud-metadata addresses unless allowed). A local login server on
@@ -190,11 +197,6 @@ sdv:
     pending-days: ${SDV_APPROVALS_PENDING_DAYS:7}
     tenant-grant-hours: ${SDV_APPROVALS_TENANT_GRANT_HOURS:}
     tenant-pending-days: ${SDV_APPROVALS_TENANT_PENDING_DAYS:}
-
-  # Task 0032: the time zone a tenant's days are counted in ("today" in the Daily intake report) when the tenant has no
-  # setting of its own (tenants.time_zone). An IANA name such as America/New_York; an unknown name stops the server.
-  tenant-defaults:
-    time-zone: ${SDV_DEFAULT_TIME_ZONE:UTC}
 
   # Task 0040: unidentified intake attempts (Problems) are one row per key per minute; past this many rows in a minute,
   # new caller addresses share one "(many addresses)" row. A whole number from 1 to 10000; anything else stops the

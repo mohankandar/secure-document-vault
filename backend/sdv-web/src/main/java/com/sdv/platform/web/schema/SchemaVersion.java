@@ -146,8 +146,14 @@ public final class SchemaVersion {
             com.documentplatform.eraselog.jdbc.EraseLogSchema.HISTORY_TABLE,
             com.documentplatform.eraselog.jdbc.EraseLogSchema.VERSION_TABLE,
             com.documentplatform.eraselog.jdbc.EraseLogSchema.VERSION);
+    /** Task 0081. The module names no history table of its own (its install guide, section 4): Vero names it. */
+    public static final PlatformRun NOTIFICATIONS = new PlatformRun("notifications",
+            com.documentplatform.notifications.jdbc.NotificationSchema.LOCATION,
+            "notif_schema_history",
+            com.documentplatform.notifications.jdbc.NotificationSchema.VERSION_TABLE,
+            com.documentplatform.notifications.jdbc.NotificationSchema.VERSION);
     /** In the order the schema step runs them, after Liquibase. */
-    public static final List<PlatformRun> PLATFORM_RUNS = List.of(IDENTITY, LICENSING, FIELDS, ERASE_LOG);
+    public static final List<PlatformRun> PLATFORM_RUNS = List.of(IDENTITY, LICENSING, FIELDS, ERASE_LOG, NOTIFICATIONS);
 
     /** The version a platform run's tables are at: 0 when its version table is missing or empty. */
     public static int platformVersion(Connection connection, PlatformRun run) throws SQLException {

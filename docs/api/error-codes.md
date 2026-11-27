@@ -877,12 +877,12 @@ Sent by the Business Admin's reports: the Daily intake report (task 0032, `GET /
 - **What the user should do:** choose a sending system from the list, or All.
 - **What support should tell the customer:** the sending system may have been removed, or the link was made for another tenant.
 
-### SDV-RPT-004: tenant time zone not valid
+### SDV-RPT-004: time zone not valid
 
 - **HTTP status:** 409. Sent by every report endpoint.
-- **Meaning:** the tenant's time zone setting (`tenants.time_zone`, or the install default `SDV_DEFAULT_TIME_ZONE` when the tenant has none) is not a time zone Vero knows, so "today" can't be worked out. Vero refuses the report rather than guess. Nothing was read.
+- **Meaning:** the time zone the report's days are in is not one Vero knows, so "today" can't be worked out. Since task 0081 it is identity's: the entity's own zone, else the customer's, else UTC. Vero refuses the report rather than guess. Nothing was read.
 - **What the user should do:** tell IT.
-- **What support should tell the customer:** set the time zone to an IANA name such as `America/New_York` or `Europe/London`. A wrong install default also stops the server from starting.
+- **What support should tell the customer:** set the zone to an IANA name such as `America/New_York` or `Europe/London` (IT › Notifications for the customer, Business administration › Notifications for an entity).
 
 ### SDV-RPT-005: too much for one report
 
@@ -890,6 +890,61 @@ Sent by the Business Admin's reports: the Daily intake report (task 0032, `GET /
 - **Meaning:** the range holds more than 200,000 documents, duplicates and refusals, more than one report reads at once. Nothing was returned.
 - **What the user should do:** choose fewer days, or one sending system.
 - **What support should tell the customer:** export the period in parts.
+
+## Notifications (NTF)
+
+Task 0081. Sent by the notification settings, `/api/v1/admin/notifications` (IT › Notifications and Business administration ›
+Notifications). Refusals change nothing and are not logged; every change that is saved is in the audit, never an address or a
+secret.
+
+### SDV-NTF-001: notification settings need the right admin
+
+- **HTTP status:** 403.
+- **Meaning:** the channels, the technical notifications, the customer's time zone and the IT Admins' list are the IT Admin's (`/it…`); an entity's notifications, its time zone and its lists are the Business Admin's (`/business…`). The person doesn't hold that role in this entity.
+- **What the user should do:** ask an IT Admin or a Business Admin of the entity.
+- **What support should tell the customer:** the role comes from the login system's groups (role mapping); give the person the role if they should do this.
+
+### SDV-NTF-002: list entry not valid
+
+- **HTTP status:** 400.
+- **Meaning:** a recipient list entry was refused: the role is not one of the list's (the customer's list is for IT Admins only; an entity's lists are for Business User, Document Steward, Restricted Steward and Business Admin), the user ID has characters other than letters, digits, `.`, `_` and `-` or is longer than 128, or the address is not one e-mail address. The message says which. Nothing was changed.
+- **What the user should do:** correct the entry and add it again.
+- **What support should tell the customer:** one person, one address per entry; the user ID is the one Vero shows for the person.
+
+### SDV-NTF-003: already on the list
+
+- **HTTP status:** 409.
+- **Meaning:** the person is on that list for that role already, or the list has 500 entries, the most it holds. Nothing was changed.
+- **What the user should do:** to change an address, remove the entry and add it again.
+- **What support should tell the customer:** use a role's list for the people who should be told; a mailbox shared by a team can be one entry.
+
+### SDV-NTF-004: no such entry
+
+- **HTTP status:** 404.
+- **Meaning:** the entry is not on this list (removed meanwhile, or another entity's). Nothing was changed.
+- **What the user should do:** reload the page.
+- **What support should tell the customer:** nothing is wrong; somebody else changed the list.
+
+### SDV-NTF-005: notification setting refused
+
+- **HTTP status:** 400.
+- **Meaning:** the setting can't be saved: the event is not one of this screen's, a channel is not one IT connected (or e-mail was named as a channel), a frequency or time of day is not one Vero knows, an event that tells IT something is down was set to anything but Immediately or Every hour, or the app address is not a full `https://` address without a query or `#`. The message says which. Nothing was changed.
+- **What the user should do:** choose again; for a Teams or Slack channel that is missing, ask IT.
+- **What support should tell the customer:** channels are set in the install config (runbook, "Notifications"); IT saves the app address on IT › Notifications first.
+
+### SDV-NTF-006: time zone not valid
+
+- **HTTP status:** 400.
+- **Meaning:** the customer's or the entity's time zone is not an IANA name Java knows, such as `America/New_York` or `Europe/London` (offsets such as `+05:00` are refused: they don't follow summer time). The attempt is audited (`TIME_ZONE_CHANGED`, refused). Nothing was changed.
+- **What the user should do:** type the name of a zone, for example the largest city in it.
+- **What support should tell the customer:** IANA names are listed at the time zone database; the customer's zone can't be cleared, an entity's can (it then follows the customer's).
+
+### SDV-NTF-007: notifications are off
+
+- **HTTP status:** 409.
+- **Meaning:** this install has notifications switched off (`SDV_NOTIFICATIONS_ENABLED=false`), or the entity isn't set up in identity yet. Nothing is sent and nothing can be chosen.
+- **What the user should do:** tell IT.
+- **What support should tell the customer:** switch them on in the install config and start Vero again (runbook, "Notifications").
 
 ## Server (SYS)
 
@@ -1030,9 +1085,9 @@ Task 0037: SYS-003 to SYS-012 are start-up codes. A start that stops prints one 
 - **What the user should do:** nothing; Vero is not running. Tell the IT team.
 - **What support should tell the customer:** the daily cleanup time is written wrongly. Use `HH:mm`, for example `02:00`, and start Vero again.
 
-### SDV-SYS-010: install default time zone not valid
+### SDV-SYS-010: install default time zone not valid (retired)
 
-- **HTTP status:** none; Vero doesn't start. (The same problem in one tenant's own setting is SDV-RPT-004.)
+- **HTTP status:** none. **Retired in task 0081:** `SDV_DEFAULT_TIME_ZONE` is gone (zones are identity's), so this code is no longer sent; it stays listed for older logs.
 - **Meaning:** `SDV_DEFAULT_TIME_ZONE` is empty or not an IANA time zone name. The ERROR block holds the value.
 - **What the user should do:** nothing; Vero is not running. Tell the IT team.
 - **What support should tell the customer:** the default time zone is written wrongly. Set an IANA name such as `America/New_York` and start Vero again.

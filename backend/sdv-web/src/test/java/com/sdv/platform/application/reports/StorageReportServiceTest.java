@@ -65,7 +65,7 @@ class StorageReportServiceTest {
         when(repo.findKept(T)).thenAnswer(inv -> Optional.ofNullable(kept.get()));
         doAnswer(inv -> { kept.set(new Kept(inv.getArgument(1), inv.getArgument(2), inv.getArgument(3))); return null; })
                 .when(repo).keep(eq(T), any(), anyLong(), anyString());
-        service = new StorageReportService(repo, tenants, audit, "UTC", Clock.fixed(NOW, ZoneOffset.UTC), 15);
+        service = new StorageReportService(repo, tenants, audit, Clock.fixed(NOW, ZoneOffset.UTC), 15);
     }
 
     @Test

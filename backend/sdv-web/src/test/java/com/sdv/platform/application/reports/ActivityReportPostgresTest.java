@@ -53,15 +53,23 @@ class ActivityReportPostgresTest {
     private final NamedParameterJdbcTemplate jdbc = new NamedParameterJdbcTemplate(dataSource);
     private final ActivityReportService service = new ActivityReportService(new JdbcActivityReportRepository(jdbc),
             new JdbcIntakeReportRepository(jdbc), new JdbcFoundationRepository(jdbc), new DataSourceTransactionManager(dataSource),
-            "UTC", Clock.systemUTC());
+            Clock.systemUTC());
+
+    /** Task 0081: no zone rows are left for the other tests on this database. */
+    @org.junit.jupiter.api.AfterEach
+    void removeZoneRows() {
+        IdentityZones.removeAll(jdbc.getJdbcTemplate());
+    }
 
     private void sql(String statement) {
         jdbc.getJdbcTemplate().execute(statement);
     }
 
     private void tenant(UUID tenant, String key, String zone) {
-        sql("insert into tenants(tenant_id, tenant_key, display_name, status" + (zone == null ? "" : ", time_zone") + ") values ('"
-                + tenant + "', '" + key + "', '" + key + "', 'ACTIVE'" + (zone == null ? "" : ", '" + zone + "'") + ")");
+        sql("insert into tenants(tenant_id, tenant_key, display_name, status) values ('"
+                + tenant + "', '" + key + "', '" + key + "', 'ACTIVE')");
+        // Task 0081: the entity's own zone is identity's.
+        if (zone != null) IdentityZones.set(jdbc.getJdbcTemplate(), tenant, zone, null);
     }
 
     /** One audit event of the entity: who, action, outcome, when, details (JSON). */
@@ -141,7 +149,7 @@ class ActivityReportPostgresTest {
                 + "and safe_details->>'fingerprint'=:f", new MapSqlParameterSource("t", T).addValue("f", export.fingerprint()), Long.class));
 
         // The other PostgreSQL tests (same database) expect every entity on the install default time zone.
-        sql("update tenants set time_zone = null where tenant_id = '" + T + "'");
+        IdentityZones.clear(jdbc.getJdbcTemplate(), T);
 
         // ------------------------------------------------------------ 2. a busy month at 10,000 agents
         tenant(TB, "activity-0054-busy", null);

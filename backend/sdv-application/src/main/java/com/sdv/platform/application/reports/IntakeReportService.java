@@ -2,7 +2,6 @@ package com.sdv.platform.application.reports;
 
 import com.sdv.platform.application.json.VeroJson;
 import com.sdv.platform.domain.error.SdvErrorCode;
-import com.sdv.platform.domain.error.StartupFailure;
 import com.sdv.platform.domain.error.InternalCheckFailed;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.ObjectMapper;
@@ -16,12 +15,10 @@ import com.sdv.platform.domain.audit.AuditEvent;
 import com.sdv.platform.domain.audit.AuditOutcome;
 import com.sdv.platform.domain.error.CodedRefusal;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
-import java.time.DateTimeException;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
@@ -48,10 +45,9 @@ import java.util.UUID;
  * <b>Counts only.</b> A line shows at most the delivery's request ID (as its sending system sent it), times, the
  * primary identifier and counts. No file name, title, other metadata or content is read.
  * <p>
- * <b>Days are the tenant's.</b> "Today" and every day boundary are in the tenant's time zone: its own setting
- * (tenants.time_zone) or, without one, the install default {@code sdv.tenant-defaults.time-zone}
- * (SDV_DEFAULT_TIME_ZONE, UTC when unset). A wrong install default stops the server from starting; a wrong tenant
- * value refuses the report (SDV-RPT-004). Neither is ever guessed.
+ * <b>Days are the tenant's.</b> "Today" and every day boundary are in the tenant's time zone: the entity's own zone in
+ * identity, else its customer's, else UTC ({@link TenantZone}, task 0081). A stored value that is not a zone refuses the
+ * report (SDV-RPT-004). It is never guessed.
  * <p>
  * <b>What is counted, by when it happened</b> (each in the range [start of the first day, start of the day after the
  * last)):
@@ -86,32 +82,17 @@ public class IntakeReportService {
 
     private final IntakeReportRepository reports;
     private final AuditEventPort audit;
-    private final ZoneId installDefault;
     private final Clock clock;
 
     @Autowired
-    public IntakeReportService(IntakeReportRepository reports, AuditEventPort audit,
-                               @Value("${sdv.tenant-defaults.time-zone:UTC}") String installDefaultZone) {
-        this(reports, audit, installDefaultZone, Clock.systemUTC());
+    public IntakeReportService(IntakeReportRepository reports, AuditEventPort audit) {
+        this(reports, audit, Clock.systemUTC());
     }
 
-    IntakeReportService(IntakeReportRepository reports, AuditEventPort audit, String installDefaultZone, Clock clock) {
+    IntakeReportService(IntakeReportRepository reports, AuditEventPort audit, Clock clock) {
         this.reports = Objects.requireNonNull(reports, "reports");
         this.audit = Objects.requireNonNull(audit, "audit");
-        this.installDefault = installZone(installDefaultZone);
         this.clock = Objects.requireNonNull(clock, "clock");
-    }
-
-    /** The install default, checked when the server starts: an unknown zone stops it. */
-    static ZoneId installZone(String value) {
-        if (value == null || value.isBlank()) {
-            throw new StartupFailure(SdvErrorCode.SYS_010, "sdv.tenant-defaults.time-zone must name a time zone, for example America/New_York.");
-        }
-        try {
-            return ZoneId.of(value.trim());
-        } catch (DateTimeException ex) {
-            throw new StartupFailure(SdvErrorCode.SYS_010, "sdv.tenant-defaults.time-zone is not a time zone Vero knows: " + value.trim(), ex);
-        }
     }
 
     // ------------------------------------------------------------------ the report
@@ -174,7 +155,7 @@ public class IntakeReportService {
     }
 
     private Scope scope(UUID tenantId, String from, String to, String sourceId) {
-        TenantZone inUse = TenantZone.of(reports.findTenantTimeZone(tenantId).orElse(null), installDefault);
+        TenantZone inUse = TenantZone.of(reports, tenantId);
         ZoneId zone = inUse.zone();
         String zoneSource = inUse.source();
         LocalDate today = LocalDate.now(clock.withZone(zone));

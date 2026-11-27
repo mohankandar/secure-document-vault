@@ -1106,3 +1106,14 @@ button.ws-doc.locked { cursor: pointer; text-align: left; font: inherit; color: 
 .ws-unavailable { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 5px; background: var(--attention-box); color: var(--attention); margin-left: 4px; }
 .vw-quarantined { min-height: 48px; background: var(--attention-box); border-color: var(--attention-line); }
 .vw-quarantined > svg { color: var(--attention); margin-left: 8px; flex: none; }
+/* Task 0081: Notifications (IT and Business administration). */
+.ntf-note { display: block; margin-top: 2px; font-size: 12px; }
+.ntf-problem { display: block; margin-top: 4px; font-size: 12px; color: var(--danger); }
+.ntf-events .v-select.ntf-often { width: auto; min-width: 150px; }
+.ntf-events .v-input.ntf-time { width: 84px; }
+.ntf-form { align-items: flex-end; gap: 10px; }
+.ntf-form .v-btn { margin-bottom: 1px; }
+.ntf-empty { margin: 0; padding: 8px 0; }
+.ntf-add { padding: 12px 16px 16px; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 6px; }
+.ntf-lists { padding: 12px 16px; }
+.ntf-foot { margin: 0; padding: 4px 16px 12px; font-size: 13px; }

@@ -24,19 +24,41 @@ export const AREA_TABS: Record<AreaId, { id: string; label: string }[]> = {
   quarantine: [{ id: 'incidents', label: 'Quarantine' }],
   // Labels only; the addresses (#/governance/access …) stay the same.
   // Task 0030: Legal holds after Keeping documents, Approvals (boards Sens-LegalHold and Sens-Approvals). Task 0032: Reports last.
-  governance: [{ id: 'access', label: 'People & roles' }, { id: 'roles', label: 'Roles & permissions' }, { id: 'retention', label: 'Keeping documents' }, { id: 'holds', label: 'Legal holds' }, { id: 'restrictions', label: 'Restrictions' }, { id: 'metadata', label: 'Search fields' }, { id: 'approvals', label: 'Approvals' }, { id: 'reports', label: 'Reports' }, { id: 'audit-report', label: 'Audit report' }, { id: 'licence', label: 'Licence' }],
-  tenant: [{ id: 'storage', label: 'Storage' }, { id: 'authentication', label: 'Sign-in' }, { id: 'integrations', label: 'Integrations' }, { id: 'problems', label: 'Problems' }, { id: 'audit-report', label: 'Audit report' }, { id: 'about', label: 'About' }],
+  governance: [{ id: 'access', label: 'People & roles' }, { id: 'roles', label: 'Roles & permissions' }, { id: 'retention', label: 'Keeping documents' }, { id: 'holds', label: 'Legal holds' }, { id: 'restrictions', label: 'Restrictions' }, { id: 'metadata', label: 'Search fields' }, { id: 'approvals', label: 'Approvals' }, { id: 'notifications', label: 'Notifications' }, { id: 'reports', label: 'Reports' }, { id: 'audit-report', label: 'Audit report' }, { id: 'licence', label: 'Licence' }],
+  tenant: [{ id: 'storage', label: 'Storage' }, { id: 'authentication', label: 'Sign-in' }, { id: 'integrations', label: 'Integrations' }, { id: 'notifications', label: 'Notifications' }, { id: 'problems', label: 'Problems' }, { id: 'audit-report', label: 'Audit report' }, { id: 'about', label: 'About' }],
   operations: [{ id: 'overview', label: 'Overview' }, { id: 'problems', label: 'Problems' }, { id: 'storage', label: 'Storage' }, { id: 'health', label: 'Health' }, { id: 'audit', label: 'Audit' }, { id: 'about', label: 'About' }],
   system: [{ id: 'foundations', label: 'Foundations' }, { id: 'components', label: 'Components' }, { id: 'states', label: 'States' }],
 }
 
-const parseHash = (): Route | null => {
-  const [area, tab] = window.location.hash.replace(/^#\/?/, '').split('/')
-  if (!area || !(area in AREA_TABS)) return null
+const toRoute = (area: string | undefined, tab: string | undefined): Route | null => {
+  if (!area || !Object.prototype.hasOwnProperty.call(AREA_TABS, area)) return null
   const tabs = AREA_TABS[area as AreaId]
   // Old addresses: Intake and Incidents are now Problems (task 0011); Environment and Configuration are now About (task 0012).
   const wanted = area === 'operations' && (tab === 'intake' || tab === 'incidents') ? 'problems' : (tab === 'environment' || tab === 'configuration') ? 'about' : tab
-  return { area: area as AreaId, tab: tabs.some((t) => t.id === wanted) ? wanted : tabs[0].id }
+  return { area: area as AreaId, tab: tabs.some((t) => t.id === wanted) ? wanted! : tabs[0].id }
+}
+const parseHash = (): Route | null => {
+  const [area, tab] = window.location.hash.replace(/^#\/?/, '').split('/')
+  return toRoute(area, tab)
+}
+
+/**
+ * Task 0081: links in e-mail, Teams and Slack are paths (/governance/approvals), as the server can't put a fragment in a
+ * link. A path of one known area, with or without its tab, is that route; anything else is none.
+ */
+export function routeFromPath(pathname: string): Route | null {
+  const parts = pathname.replace(/\/+$/, '').split('/')
+  if (parts[0] !== '' || parts.length < 2 || parts.length > 3) return null
+  const [, area, tab] = parts
+  if (!/^[a-z-]+$/.test(area) || (tab !== undefined && !/^[a-z-]+$/.test(tab))) return null
+  return toRoute(area, tab)
+}
+
+/** Without a route in the address, a link's path becomes the route: /governance/approvals → /#/governance/approvals. */
+export function adoptPathRoute(): void {
+  if (parseHash()) return
+  const route = routeFromPath(window.location.pathname)
+  if (route) window.history.replaceState(null, '', `/#/${route.area}/${route.tab}`)
 }
 
 type Store = ReturnType<typeof useStoreValue>
@@ -75,7 +97,7 @@ function useStoreValue() {
     return () => mq.removeEventListener('change', on)
   }, [])
   // Without an address the person lands on their first area once the session is known (see Shell).
-  const [startedWithoutRoute] = useState(() => parseHash() === null)
+  const [startedWithoutRoute] = useState(() => { adoptPathRoute(); return parseHash() === null })
   const [route, setRouteState] = useState<Route>(() => parseHash() ?? { area: 'home', tab: 'home' })
   const [searchRequest, setSearchRequest] = useState<SearchRequest | null>(null)
   const requestSearch = useCallback((r: Omit<SearchRequest, 'id'>) => { searchRequestSeq += 1; setSearchRequest({ ...r, id: searchRequestSeq }) }, [])
