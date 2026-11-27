@@ -1078,6 +1078,17 @@ async function captureAccountMenu(page: Page, testInfo: TestInfo) {
   await expect(menu).toHaveCount(0)
 }
 
+/** Task 0081 (run in 0082): the Notifications tab loads its panels, not only "Loading". */
+async function notificationsChecks(page: Page, testInfo: TestInfo, area: 'IT' | 'Business administration') {
+  const tabs = page.getByRole('tablist', { name: `${area} sections` })
+  await tabs.getByRole('tab', { name: 'Notifications', exact: true }).click()
+  const first = area === 'IT' ? 'Technical notifications' : 'This entity’s events'
+  await expect(page.getByText(first, { exact: true }).first()).toBeVisible({ timeout: 15000 })
+  await expect(page.getByText(area === 'IT' ? 'IT Admins who get e-mail' : 'Who gets e-mail', { exact: true }).first()).toBeVisible()
+  await page.waitForTimeout(300)
+  await capture(page, testInfo, area === 'IT' ? 'notifications-it' : 'notifications-business')
+}
+
 async function captureSectionTabs(page: Page, testInfo: TestInfo, sectionsLabel: string, tabs: string[]) {
   const tablist = page.getByRole('tablist', { name: sectionsLabel })
   await expect(tablist).toBeVisible({ timeout: 15000 })
@@ -2744,6 +2755,7 @@ test.describe('SDV role-based screen capture', () => {
       'Approvals',
       'Reports',
     ])
+    await notificationsChecks(page, testInfo, 'Business administration')
     await licenceChecks(page, testInfo, 'Business administration')
     await businessAdminChecks(page, testInfo)
     // Settings that change shared rules run once, on the desktop project; the tablet project only tours the screens.
@@ -2980,6 +2992,7 @@ test.describe('SDV role-based screen capture', () => {
     await expect(page.getByRole('tablist', { name: 'IT sections' }).getByRole('tab', { name: 'Audit', exact: true })).toHaveCount(0)
     await expect(page.getByRole('tablist', { name: 'IT sections' }).getByRole('tab', { name: 'Audit report', exact: true })).toHaveCount(1)
     await problemsChecks(page, testInfo, 'IT')
+    await notificationsChecks(page, testInfo, 'IT')
     await licenceChecks(page, testInfo, 'IT')
     await integrationsChecks(page, testInfo)
     await storageChecks(page, testInfo)

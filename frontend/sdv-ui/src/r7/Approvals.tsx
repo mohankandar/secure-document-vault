@@ -1,3 +1,4 @@
+import { ApprovalLink } from './ApprovalLink'
 import { useEffect, useMemo, useState } from 'react'
 import { ChevronDown, ChevronRight, CircleAlert, FileText, Files } from 'lucide-react'
 import type { SensitivityLevel } from '../api'
@@ -195,6 +196,8 @@ export function Approvals({ onWaiting }: { onWaiting: (w: WaitingSummary) => voi
   const summary = and([...tickedByGroup.entries()].map(([g, rs]) => `${rs.length} on ${g} (${kindsOf(rs)})`))
 
   return <>
+    {/* Task 0082: the request of a link from an e-mail, before the list. */}
+    <ApprovalLink onDecided={() => setReload((x) => x + 1)} />
     <div className="apr-toolbar" role="toolbar" aria-label="Approvals filters">
       {KIND_CHIPS.map((c) => <button key={c.id} type="button" className="apr-chip" aria-pressed={kind === c.id} onClick={() => setKind(c.id)}>{c.label} <span className="c">{forRequester.filter((r) => ofKind(r, c.id)).length}</span></button>)}
       <span className="apr-gap" />

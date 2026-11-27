@@ -946,6 +946,13 @@ secret.
 - **What the user should do:** tell IT.
 - **What support should tell the customer:** switch them on in the install config and start Vero again (runbook, "Notifications").
 
+### SDV-NTF-008: the link is another entity's
+
+- **HTTP status:** 409. Sent by the approval link page (`POST /api/v1/approval-links/open`, `/decide`), task 0082.
+- **Meaning:** the Approve or Decline link belongs to a request of another entity than the one chosen in Vero. Nothing was decided. Approval links that are switched off in this install answer `SDV-NTF-007`.
+- **What the user should do:** choose the request's entity (top bar), then open the link again.
+- **What support should tell the customer:** a person who approves for several entities chooses the entity first; the link itself is fine.
+
 ## Server (SYS)
 
 Task 0036. Every error body also carries `reference`: the request's correlation ID, the same as the `X-Correlation-Id` response header. The same ID is on Vero's log line, and on the audit event when one was written. Every 5xx writes one ERROR log line with the code, the reference and the exact cause; the body holds only the plain sentence.

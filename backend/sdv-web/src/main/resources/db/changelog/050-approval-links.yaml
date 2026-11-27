@@ -1,0 +1,9 @@
+databaseChangeLog:
+  - changeSet:
+      id: 050-approval-links
+      author: sdv
+      changes:
+        - sqlFile:
+            path: db/changelog/050-approval-links.sql
+            relativeToChangelogFile: false
+            splitStatements: false

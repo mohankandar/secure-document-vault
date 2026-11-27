@@ -580,6 +580,13 @@ starts, records notifications and sends nothing.
    task 0099): the address guard, the proxy and a private certificate authority of `PLATFORM_OUTBOUND_*` apply, https only. A
    refused address shows `WEBHOOK_OUTBOUND_REFUSED` on IT › Notifications and is not retried. The mail server is reached as
    before.
+4c. **Approval links** (task 0082): put a random key of at least 32 characters (`openssl rand -base64 48` makes one of 64) in the
+   key service at `secret/platform/notifications/approval-link-key` (key `value`) and set
+   `PLATFORM_NOTIFICATIONS_APPROVALS_LINKKEYSECRET=notifications/approval-link-key`. Without it the e-mails carry no Approve and Decline
+   links. Links are `https://<vero>/approvals/link/<token>`: the web server answers that path with `index.html` and **does not log
+   it** (the token is the last part; Vero takes it out of the address at once and never logs it). Replacing the key ends the links
+   already sent; approvers decide in Approvals then. A link lives as long as a request waits (`SDV_APPROVALS_PENDING_DAYS`), at most
+   30 days.
 5. **Links** in messages are paths such as `https://<vero>/governance/approvals`. The web server that serves the screens
    answers every such path with `index.html`, as it does for `/`; the screens then open the right page.
 6. **Time zones** are identity's: the customer's (IT › Notifications) and an entity's own (Business administration ›

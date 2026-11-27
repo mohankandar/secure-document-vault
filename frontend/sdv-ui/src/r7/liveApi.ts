@@ -498,3 +498,8 @@ export const saveEntityZone = (timeZone: string) => roleApi<BusinessNotification
 export const businessRecipients = () => roleApi<Recipient[]>(ntfPath + '/business/recipients', 'businessAdmin')
 export const addBusinessRecipient = (role: string, userId: string, email: string) => roleApi<Recipient>(ntfPath + '/business/recipients', 'businessAdmin', { method: 'POST', body: JSON.stringify({ role, userId, email }) })
 export const removeBusinessRecipient = (recipientId: string) => roleApi<void>(ntfPath + '/business/recipients/' + encodeURIComponent(recipientId), 'businessAdmin', { method: 'DELETE' })
+
+// Task 0082: the page of an Approve or Decline link; the token goes in the body, never in an address.
+type LinkAnswer = import('./approvalLinkWords').LinkView & { request: PendingRequest | null }
+export const approvalLinkOpen = (token: string) => roleApi<LinkAnswer>('/api/v1/approval-links/open', 'businessAdmin', { method: 'POST', body: JSON.stringify({ token }) })
+export const approvalLinkDecide = (token: string) => roleApi<LinkAnswer>('/api/v1/approval-links/decide', 'businessAdmin', { method: 'POST', body: JSON.stringify({ token }) })

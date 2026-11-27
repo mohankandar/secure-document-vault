@@ -139,3 +139,6 @@ databaseChangeLog:
 
   - include:
       file: db/changelog/049-notifications.yaml
+
+  - include:
+      file: db/changelog/050-approval-links.yaml

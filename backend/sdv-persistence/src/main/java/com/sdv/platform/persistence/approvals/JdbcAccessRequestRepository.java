@@ -127,6 +127,26 @@ public class JdbcAccessRequestRepository implements AccessRequestRepository {
     }
 
     @Override
+    public boolean setLinkRequest(UUID tenantId, UUID requestId, UUID linkRequestId) {
+        return jdbc.update("update access_requests set link_request_id=:link where tenant_id=:tenantId and request_id=:id and link_request_id is null",
+                new MapSqlParameterSource().addValue("tenantId", tenantId).addValue("id", requestId).addValue("link", linkRequestId)) == 1;
+    }
+
+    @Override
+    public Optional<UUID> findLinkRequest(UUID tenantId, UUID requestId) {
+        return jdbc.query("select link_request_id from access_requests where tenant_id=:tenantId and request_id=:id and link_request_id is not null",
+                new MapSqlParameterSource().addValue("tenantId", tenantId).addValue("id", requestId),
+                (rs, row) -> rs.getObject(1, UUID.class)).stream().findFirst();
+    }
+
+    @Override
+    public Optional<UUID> findByLinkRequest(UUID tenantId, UUID linkRequestId) {
+        return jdbc.query("select request_id from access_requests where tenant_id=:tenantId and link_request_id=:link",
+                new MapSqlParameterSource().addValue("tenantId", tenantId).addValue("link", linkRequestId),
+                (rs, row) -> rs.getObject(1, UUID.class)).stream().findFirst();
+    }
+
+    @Override
     public Optional<AccessRequest> lock(UUID tenantId, UUID requestId) {
         return jdbc.query("select " + COLUMNS + " from access_requests where tenant_id=:tenantId and request_id=:id for update",
                 new MapSqlParameterSource().addValue("tenantId", tenantId).addValue("id", requestId),
