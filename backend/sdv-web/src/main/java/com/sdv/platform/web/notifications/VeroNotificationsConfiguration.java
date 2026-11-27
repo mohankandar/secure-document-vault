@@ -116,6 +116,23 @@ public class VeroNotificationsConfiguration {
                 VeroCatalogue.BUSINESS_ADMIN, java.time.Duration.ofDays(Math.max(1, Math.min(30, pendingDays))));
     }
 
+    /**
+     * Task 0100 (VSEC-201): who may open and decide a link is the signed-in person's role now, never the mailing list
+     * (without this bean platform-core would take the list as the approver role).
+     */
+    @Bean
+    com.documentplatform.notifications.approval.ApproverCheck veroApprovers(
+            com.sdv.platform.security.auth.CapabilityPolicyService capabilities, PlatformIdentityReads identity) {
+        return new SignedInApprover(VeroNotificationsConfiguration::signedInPerson, capabilities,
+                entity -> identity.slotOf(entity).map(PlatformIdentityReads.EntitySlot::tenantId));
+    }
+
+    private static Optional<com.sdv.platform.security.auth.SdvPrincipal> signedInPerson() {
+        var a = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+        return a != null && a.isAuthenticated() && a.getPrincipal() instanceof com.sdv.platform.security.auth.SdvPrincipal p
+                ? Optional.of(p) : Optional.empty();
+    }
+
     /** Every decision and refusal of a link, in Vero's audit: request, type, who, outcome, code; never a token or the reason. */
     @Bean
     com.documentplatform.notifications.approval.ApprovalAudit veroApprovalAudit(com.sdv.platform.application.port.AuditEventPort audit) {

@@ -115,6 +115,28 @@ class ApprovalLinksTest {
     }
 
     @Test
+    void withVerosApproverCheckAListedPersonWithoutTheRoleNowIsRefused() {
+        // Task 0100 (VSEC-201): platform-core asks Vero's check, not the list.
+        var policies = mock(com.sdv.platform.application.port.RoleCapabilityPolicyPort.class);
+        org.mockito.Mockito.when(policies.findOverrides(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any())).thenReturn(java.util.Map.of());
+        var signedIn = new java.util.concurrent.atomic.AtomicReference<com.sdv.platform.security.auth.SdvPrincipal>();
+        Approvals checked = Approvals.builder(List.of(VeroNotificationsConfiguration.approvalType("print", 7)),
+                        kit.settings.catalogue(), store, tokens, notifier)
+                .approvers(new SignedInApprover(() -> Optional.ofNullable(signedIn.get()),
+                        new com.sdv.platform.security.auth.CapabilityPolicyService(policies), e -> Optional.of(NotificationKit.CUSTOMER)))
+                .audit(audited::add).clock(kit.clock).build();
+        links.offer(request(AccessRequestKind.PRINT, "rs-1"));
+        notifier.tick(kit.clock.instant());
+        OutgoingMessage toFirst = kit.email.sent().stream().filter(m -> m.recipients().iterator().next().userId().equals("ba-1")).findFirst().orElseThrow();
+        String approve = tokensOf(toFirst).getFirst();
+        SignedInPerson first = new SignedInPerson(NotificationKit.TENANT, "ba-1", "Bea Admin");
+        signedIn.set(new com.sdv.platform.security.auth.SdvPrincipal(NotificationKit.ENTITY, "ba-1", java.util.Set.of(com.sdv.platform.security.SdvRole.BUSINESS_USER)));
+        assertEquals(ApprovalRefusal.NOT_AN_APPROVER, ((ApprovalResult.Refused) checked.open(approve, first)).refusal());
+        signedIn.set(new com.sdv.platform.security.auth.SdvPrincipal(NotificationKit.ENTITY, "ba-1", java.util.Set.of(com.sdv.platform.security.SdvRole.BUSINESS_ADMIN)));
+        assertInstanceOf(ApprovalResult.Ready.class, checked.open(approve, first));
+    }
+
+    @Test
     void aDecisionInVeroClosesTheLinksAndIsAuditedWithoutTheToken() {
         AccessRequest r = request(AccessRequestKind.LOWER_LEVEL, "rs-1");
         links.offer(r);
