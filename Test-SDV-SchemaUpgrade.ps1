@@ -359,7 +359,7 @@ revoke all on database $db from public;
     Assert-That ((Get-Value $hasRequestTableSql) -eq $requestTableBefore) "access_requests should $(if ($has027) { 'not ' })exist at the previous version"
     Assert-That ((Get-Value $hasChangeTableSql) -eq $changeTableBefore) "sensitivity_level_changes should $(if ($has028) { 'not ' })exist at the previous version"
     Assert-That ((Get-Value $hasDuplicateTableSql) -eq $duplicateTableBefore) "document_duplicate_receipts should $(if ($has029) { 'not ' })exist at the previous version"
-    Assert-That ((Get-Value $hasTimeZoneSql) -eq $(if ($has030) { '0' } else { '1' })) "tenants.time_zone should $(if ($has030) { 'not ' })exist at the previous version"
+    Assert-That ((Get-Value $hasTimeZoneSql) -eq $(if ((-not $has030) -and $has049) { '1' } else { '0' })) "tenants.time_zone should $(if ($has030 -or -not $has049) { 'not ' })exist at the previous version (030 adds it, 049 drops it)"
     $indexesBefore = if ($has031) { '0' } else { '3' }
     Assert-That ((Get-Value $reportIndexesSql) -eq $indexesBefore) "the report indexes should $(if ($has031) { 'not ' })exist at the previous version"
     Assert-That ((Get-Value $hasNoticeTableSql) -eq $noticeTableBefore) "steward_notices should $(if ($has032) { 'not ' })exist at the previous version"
@@ -622,7 +622,7 @@ insert into unidentified_intake_attempts(attempt_id, tenant_id, occurred_at, cal
     Assert-That ((Get-Value $hasRequestTableSql) -eq $requestTableBefore) 'sql changed the database (access_requests)'
     Assert-That ((Get-Value $hasChangeTableSql) -eq $changeTableBefore) 'sql changed the database (sensitivity_level_changes)'
     Assert-That ((Get-Value $hasDuplicateTableSql) -eq $duplicateTableBefore) 'sql changed the database (document_duplicate_receipts)'
-    Assert-That ((Get-Value $hasTimeZoneSql) -eq $(if ($has030) { '0' } else { '1' })) 'sql changed the database (tenants.time_zone)'
+    Assert-That ((Get-Value $hasTimeZoneSql) -eq $(if ((-not $has030) -and $has049) { '1' } else { '0' })) 'sql changed the database (tenants.time_zone)'
     Assert-That ((Get-Value $reportIndexesSql) -eq $indexesBefore) 'sql changed the database (report indexes)'
     Assert-That ((Get-Value $hasNoticeTableSql) -eq $noticeTableBefore) 'sql changed the database (steward_notices)'
     Assert-That ((Get-Value $hasAttemptTableSql) -eq $attemptTableBefore) 'sql changed the database (unidentified_intake_attempts)'
