@@ -192,7 +192,7 @@ $hasRecordsSql = "select count(*) from information_schema.tables where table_nam
 $oldFieldTablesSql = "select count(*) from information_schema.tables where table_name in ('metadata_field_definitions', 'business_metadata_values', 'metadata_field_display_order', 'record_title_fields');"
 $submissionsOldColumnsSql = "select count(*) || ':' || md5(string_agg((to_jsonb(x) - 'record_id')::text, '|' order by x.submission_id)) from submissions x;"
 $recordsBefore = if ($has048) { '0' } else { '1' }
-$platformRuns = @('identity V1 (platform-core)', 'identity V2 (platform-core)', 'identity V3 (platform-core)', 'identity V4 (platform-core)', 'identity V5 (platform-core)', 'licensing V1 (platform-core)', 'licensing V2 (platform-core)', 'fields V1 (platform-core)', 'fields V2 (platform-core)', 'erase log V1 (platform-core)', 'erase log V2 (platform-core)', 'erase log V3 (platform-core)', 'notifications V1 (platform-core)')
+$platformRuns = @('identity V1 (platform-core)', 'identity V2 (platform-core)', 'identity V3 (platform-core)', 'identity V4 (platform-core)', 'identity V5 (platform-core)', 'identity V6 (platform-core)', 'licensing V1 (platform-core)', 'licensing V2 (platform-core)', 'fields V1 (platform-core)', 'fields V2 (platform-core)', 'fields V3 (platform-core)', 'erase log V1 (platform-core)', 'erase log V2 (platform-core)', 'erase log V3 (platform-core)', 'notifications V1 (platform-core)')
 # Task 0033: an uncorrected copy received at the previous version, which 032 must turn into one stored notice.
 $oldCopyEvent = '50000000-0000-0000-0000-0000000000c1'
 $reportIndexes = @('idx_submissions_tenant_created', 'idx_documents_tenant_ingested', 'idx_audit_events_redaction_old_sha')
@@ -1165,10 +1165,10 @@ rollback;
         Assert-That ((Get-Value "select count(*) from pg_tables where tablename = 'role_conflict_problems';") -eq '1') 'role_conflict_problems must stay'
         Assert-That ((Get-Value 'select max(version) from idn_schema_version;') -eq '5') 'identity tables should be at version 5 (task 0067: platform-core 0.7.0)'
         Assert-That ((Get-Value 'select max(version) from lic_schema_version;') -eq '2') 'licensing tables should be at version 2'
-        Assert-That ([int](Get-Value 'select count(*) from idn_schema_history where success;') -ge 5) 'the identity run should record V1-V5 in idn_schema_history'
+        Assert-That ([int](Get-Value 'select count(*) from idn_schema_history where success;') -ge 6) 'the identity run should record V1-V6 in idn_schema_history'
         Assert-That ([int](Get-Value 'select count(*) from lic_schema_history where success;') -ge 2) 'the licensing run should record V1-V2 in lic_schema_history'
         Assert-That ((Get-Value 'select max(version) from fld_schema_version;') -eq '2' -and [int](Get-Value 'select count(*) from fld_schema_history where success;') -ge 2) 'the case field run (task 0077) should be at version 2 and recorded in fld_schema_history'
-        Write-Step '4k. After 035 and the platform runs' 0 'old identity and watch tables dropped, role conflicts kept; identity V5 and licensing V2, own history tables'
+        Write-Step '4k. After 035 and the platform runs' 0 'old identity and watch tables dropped, role conflicts kept; identity V6 and licensing V2, own history tables'
     }
     Write-Step '4. After: nothing else changed' $w.Elapsed.TotalSeconds 'other document columns and every other table unchanged'
 

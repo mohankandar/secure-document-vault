@@ -136,9 +136,9 @@ class PlatformIdentityPostgresTest {
 
     @Test
     void theSchemaStepMadeTheIdentityAndLicensingTablesWithTheirOwnHistory() {
-        // Task 0067: platform-core 0.7.0's identity schema is version 5, licensing 2.
-        assertEquals(5, IdentitySchema.VERSION);
-        assertEquals(5, db.queryForObject("select max(version) from idn_schema_version", Integer.class));
+        // Task 0099: platform-core 1.3.0's identity schema is version 6 (0.7.0's was 5), licensing 2.
+        assertEquals(6, IdentitySchema.VERSION);
+        assertEquals(6, db.queryForObject("select max(version) from idn_schema_version", Integer.class));
         assertEquals(2, db.queryForObject("select max(version) from lic_schema_version", Integer.class));
         assertTrue(db.queryForObject("select count(*) from idn_schema_history where success", Integer.class) >= 5);
         assertEquals(1, db.queryForObject("select count(*) from pg_tables where tablename = 'idn_platform_grant'", Integer.class));

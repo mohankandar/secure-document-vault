@@ -576,6 +576,10 @@ starts, records notifications and sends nothing.
 4. **In Vero**, the IT Admin opens IT › Notifications, gives the address people open Vero on (links are made under it),
    chooses the technical notifications and keeps the list of IT Admins who get e-mail. Each Business Admin chooses their
    entity's notifications and keeps its lists (Business administration › Notifications).
+4b. **Teams and Slack go through the outbound settings** (`platform.notifications.webhook.via-outbound=true`, Vero's default since
+   task 0099): the address guard, the proxy and a private certificate authority of `PLATFORM_OUTBOUND_*` apply, https only. A
+   refused address shows `WEBHOOK_OUTBOUND_REFUSED` on IT › Notifications and is not retried. The mail server is reached as
+   before.
 5. **Links** in messages are paths such as `https://<vero>/governance/approvals`. The web server that serves the screens
    answers every such path with `index.html`, as it does for `/`; the screens then open the right page.
 6. **Time zones** are identity's: the customer's (IT › Notifications) and an entity's own (Business administration ›
@@ -746,6 +750,9 @@ The password is never a parameter, and Vero never stores any of these. Linux, on
 Exit codes: 0 done, 2 wrong use (nothing was tried), 3 the database is newer than this version, 1 anything else.
 
 ### First install and every upgrade
+
+**platform-core 1.3.0 (task 0099):** the schema step adds identity V6 and fields V3. Stop **every** Vero instance before it runs:
+the earlier version does not start on the new tables (`IDN_VERSION_NEWER`), and this one does not start without them.
 
 1. **Stop Vero** (upgrades only).
 2. **Status:** `.\Update-SDV-Schema.ps1 status -Url jdbc:postgresql://db01:5432/vero -Username vero_owner`

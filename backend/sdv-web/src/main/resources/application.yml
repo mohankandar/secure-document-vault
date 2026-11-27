@@ -55,6 +55,11 @@ platform:
   # tables come from the schema step; Vero stops at start when they are missing. Off: SDV_NOTIFICATIONS_ENABLED=false.
   notifications:
     enabled: ${SDV_NOTIFICATIONS_ENABLED:true}
+    # Task 0099 (platform-core 1.3.0): Teams and Slack posts follow the customer's outbound rules (platform.outbound.*: the
+    # address guard, proxy, private CA, https only). A refused address shows WEBHOOK_OUTBOUND_REFUSED on IT › Notifications.
+    # The mail server is reached as before (SMTP through outbound comes with platform-core 1.4.0).
+    webhook:
+      via-outbound: true
   # Task 0057: platform-core's safe outbound rules (platform-outbound-spring). Only the IT Admin's read-only "Test
   # sign-in" uses them: platform-core's identity module fetches the login system's discovery document and keys over
   # them (https only, no redirects, no internal or cloud-metadata addresses unless allowed). A local login server on

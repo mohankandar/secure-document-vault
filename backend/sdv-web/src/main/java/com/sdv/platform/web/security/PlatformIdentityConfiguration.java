@@ -152,7 +152,7 @@ public class PlatformIdentityConfiguration {
             log.info("This build trusts no licence key: entity activation is refused.");
             return Optional::empty;
         }
-        if (build.get().keys().keyIds().stream().anyMatch(build.get().keys()::isDevelopmentKey)) {
+        if (build.get().isDevelopment()) { // task 0099: platform-core 1.2.0 says it (was: any development key)
             log.warn("This is a DEVELOPMENT build of Vero: it trusts the demo licence. It must never be given to a customer.");
         }
         return LicenceSlots.of(licence);

@@ -21,6 +21,9 @@
 
 **For IT and sending systems**
 
+- **platform-core 1.3.0:** the schema step adds identity V6 and fields V3; stop every instance before it runs. Teams and Slack
+  follow the outbound settings (`WEBHOOK_OUTBOUND_REFUSED` when the guard refuses an address). Changing the sign-in needs a token test
+  of the new one (`IDN_TEST_SIGN_IN_REQUIRED`); `setup identity rollback-login-connection` goes back.
 - **`SDV_DEFAULT_TIME_ZONE` is gone:** zones are identity's. Before upgrading, set the customer's zone to its value. The schema step
   adds the notifications tables and one table of recipient lists, and moves an entity's own zone to identity.
 - Notifications: mail server, Teams and Slack in the install config, each secret by its path in the key service (runbook, "Notifications").

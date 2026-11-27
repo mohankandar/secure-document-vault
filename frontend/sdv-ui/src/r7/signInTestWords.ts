@@ -32,3 +32,14 @@ export function codeWords(a: Pick<SignInTestAnswer, 'code' | 'reason'>): string 
   if (!a.code) return null
   return a.reason ? `${a.code} (${a.reason})` : a.code
 }
+
+/**
+ * Task 0099 (platform-core 1.2.0, LV-23): what to do about a code, in plain words, when there is more to say than the
+ * message. Only the new refusal of a replacement for now; null for every other code.
+ */
+export function codeHint(code: string | null): string | null {
+  if (code === 'IDN_TEST_SIGN_IN_REQUIRED') {
+    return 'A new sign-in replaces the one in use only after a test sign-in with a token of the new one. Your installer runs it with the setup command; people go on signing in as before meanwhile. To go back to the previous sign-in, the installer runs “setup identity rollback-login-connection”.'
+  }
+  return null
+}
