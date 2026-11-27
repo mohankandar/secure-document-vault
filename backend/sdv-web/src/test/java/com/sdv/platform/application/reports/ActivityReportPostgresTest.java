@@ -55,6 +55,12 @@ class ActivityReportPostgresTest {
             new JdbcIntakeReportRepository(jdbc), new JdbcFoundationRepository(jdbc), new DataSourceTransactionManager(dataSource),
             Clock.systemUTC());
 
+    /** Task 0081: no zone rows are left for the other tests on this database. */
+    @org.junit.jupiter.api.AfterEach
+    void removeZoneRows() {
+        IdentityZones.removeAll(jdbc.getJdbcTemplate());
+    }
+
     private void sql(String statement) {
         jdbc.getJdbcTemplate().execute(statement);
     }

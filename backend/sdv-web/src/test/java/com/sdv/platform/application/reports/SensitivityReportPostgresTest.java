@@ -54,6 +54,12 @@ class SensitivityReportPostgresTest {
     private final SensitivityReportService service = new SensitivityReportService(repository,
             new JdbcIntakeReportRepository(jdbc), new JdbcFoundationRepository(jdbc), Clock.fixed(NOW, ZoneOffset.UTC));
 
+    /** Task 0081: no zone rows are left for the other tests on this database. */
+    @org.junit.jupiter.api.AfterEach
+    void removeZoneRows() {
+        IdentityZones.removeAll(jdbc.getJdbcTemplate());
+    }
+
     private void sql(String statement) {
         jdbc.getJdbcTemplate().execute(statement);
     }

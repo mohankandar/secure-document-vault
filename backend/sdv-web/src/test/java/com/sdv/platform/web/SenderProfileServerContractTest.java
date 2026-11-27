@@ -198,8 +198,23 @@ class SenderProfileServerContractTest {
                 secretName.equals(ref.value()) ? Optional.of(Secret.of(CLIENT_SECRET)) : Optional.empty();
         // On premises, with internal addresses allowed: Vero and the login server run on this computer.
         Installation here = new Installation(false, true, false, null, null);
+        // Task 0081: a sender starts once Vero is ready; right after the start the erase log's gate may still be closed (503).
+        for (int i = 0; i < 120 && !readiness().startsWith("200 "); i++) Thread.sleep(500);
         List<ProfileContract.Problem> problems = ProfileContract.checkAgainstServer(profile,
                 URI.create("http://127.0.0.1:" + port), signIn, secrets, here);
-        assertEquals(List.of(), problems, "the sender profile against a running Vero");
+        String readiness = problems.isEmpty() ? "" : readiness();
+        assertEquals(List.of(), problems, "the sender profile against a running Vero; readiness said: " + readiness);
+    }
+
+    /** On a failure, what readiness answered, so the report says which check was not ready. */
+    private static String readiness() {
+        try {
+            var reply = java.net.http.HttpClient.newHttpClient().send(java.net.http.HttpRequest.newBuilder(
+                    URI.create("http://127.0.0.1:" + port + "/actuator/health/readiness")).build(),
+                    java.net.http.HttpResponse.BodyHandlers.ofString());
+            return reply.statusCode() + " " + reply.body();
+        } catch (Exception ex) {
+            return ex.getClass().getSimpleName();
+        }
     }
 }

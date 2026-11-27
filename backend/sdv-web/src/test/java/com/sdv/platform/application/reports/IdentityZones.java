@@ -14,12 +14,18 @@ final class IdentityZones {
 
     /** The entity's own zone (null: none) and its customer's (null: none). */
     static void set(JdbcTemplate db, UUID entity, String entityZone, String customerZone) {
-        String key = entity.toString().replace("-", "").substring(0, 12).toUpperCase(Locale.ROOT);
+        String key = entity.toString().replace("-", "").substring(20).toUpperCase(Locale.ROOT); // the last 12: tests' UUIDs differ there
         String customer = "TEN-ZONES-" + key;
         db.update("insert into idn_customer(tenant_id, name, time_zone) values (?, ?, ?) "
                 + "on conflict (tenant_id) do update set time_zone = excluded.time_zone", customer, "Zones " + key, customerZone);
         db.update("insert into idn_entity(slot_id, entity_uuid, tenant_id, status, time_zone) values (?, ?, ?, 'NOT_ACTIVATED', ?) "
                 + "on conflict (slot_id) do update set time_zone = excluded.time_zone", "ENT-ZONES-" + key, entity, customer, entityZone);
+    }
+
+    /** After a test: the rows of {@link #set} go, so the database holds no customer but the tests' own (setup refuses a second one). */
+    static void removeAll(JdbcTemplate db) {
+        db.update("delete from idn_entity where slot_id like 'ENT-ZONES-%'");
+        db.update("delete from idn_customer where tenant_id like 'TEN-ZONES-%'");
     }
 
     /** As before the test: no zone of its own and none for its customer. */

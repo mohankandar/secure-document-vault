@@ -344,8 +344,9 @@ alter default privileges for role $owner in schema public grant select, insert, 
     Write-Step 'Start the stand-in sign-in key set (task 0038)' $w.Elapsed.TotalSeconds "http://127.0.0.1:$KeysPort/certs, test key for this run"
 
     # ------------------------------------------------------------ 1. start against the empty database
-    # Task 0074 (answer 8): platform-core's tables are missing, so the start stops and says what to do.
-    $t = Assert-StartRefused 'start-1-empty' @{} 'LIC_TABLES_MISSING' -Platform
+    # Task 0074 (answer 8): platform-core's tables are missing, so the start stops and says what to do. Task 0081: the first
+    # module to look may be licensing (LIC_TABLES_MISSING) or notifications (TABLES_MISSING); both name the schema step.
+    $t = Assert-StartRefused 'start-1-empty' @{} 'TABLES_MISSING' -Platform
     $log = Get-Content -Raw (Join-Path $run 'start-1-empty.out.log')
     $older = 'The database is older than this Vero version. Ask your database team to run the schema step (install guide, "Update the database").'
     Assert-That ($log.Contains($older)) 'the startup log does not contain the "older" sentence'
@@ -353,7 +354,7 @@ alter default privileges for role $owner in schema public grant select, insert, 
     Assert-That (-not ($log -match 'RETENTION_SWEEP_FAILED')) 'the cleanup job ran against the empty database'
     $tables = (Invoke-Sql -Database $db -Sql "select count(*) from pg_tables where schemaname = 'public';").Out.Trim()
     Assert-That ($tables -eq '0') "the production start created $tables tables; it must change nothing"
-    Write-Step '1. Start on the empty database: refused' $t 'LIC_TABLES_MISSING and the "older" sentence in the log, exit code not 0, 0 tables created'
+    Write-Step '1. Start on the empty database: refused' $t 'a TABLES_MISSING of platform-core and the "older" sentence in the log, exit code not 0, 0 tables created'
 
     # ------------------------------------------------------------ 2. schema step
     $st = Invoke-SchemaStep @('status')
@@ -477,11 +478,11 @@ alter default privileges for role $owner in schema public grant select, insert, 
     # ------------------------------------------------------------ 5. task 0037: the database away at start, then back
     $relayUrl = "jdbc:postgresql://127.0.0.1:$RelayPort/$db"
     # Task 0074 (answer 8): a start while the database can't be reached stops; the service manager starts Vero again.
-    $t = Assert-StartRefused 'start-4-database-away' @{ SDV_DB_URL = $relayUrl } 'LIC_CHECK_FAILED' -Platform
+    $t = Assert-StartRefused 'start-4-database-away' @{ SDV_DB_URL = $relayUrl } 'CHECK_FAILED' -Platform  # task 0081: licensing's LIC_CHECK_FAILED or notifications' CHECK_FAILED
     $log = Get-Content -Raw (Join-Path $run 'start-4-database-away.out.log')
     Assert-That ($log -match "ERROR .* SDV-SYS-003 Vero couldn't reach its database at start\..*127\.0\.0\.1:$RelayPort") 'no SDV-SYS-003 ERROR line with the host and port'
     Assert-That (-not $log.Contains($appPassword)) 'the database password is in the log'
-    Write-Step '5a. Start with the database away: stops' $t 'LIC_CHECK_FAILED and SYS-003 with host and port in the log, exit code not 0'
+    Write-Step '5a. Start with the database away: stops' $t 'a CHECK_FAILED of platform-core and SYS-003 with host and port in the log, exit code not 0'
 
     Start-Relay
     $w = [System.Diagnostics.Stopwatch]::StartNew()

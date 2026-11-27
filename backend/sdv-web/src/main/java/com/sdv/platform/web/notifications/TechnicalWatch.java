@@ -49,6 +49,7 @@ public class TechnicalWatch {
     private final Clock clock;
     private final Map<UUID, Instant> attemptsSince = new HashMap<>();
 
+    @org.springframework.beans.factory.annotation.Autowired
     public TechnicalWatch(TenantRepository tenants, OperationalRepository operations, StorageVolumeAdminService storage,
                           UnidentifiedIntakeAttemptRepository attempts, KeyServiceHealthProbe keyService,
                           NotificationPort notifications) {

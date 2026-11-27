@@ -83,8 +83,8 @@ param(
     [string]$Jar,
     # The first changeset the upgrade applies; the scratch database is built up to the one before it.
     # Task 0078: earlier ones are no longer offered: 048 replaces the record key and drops the field tables they check.
-    [ValidateSet('048')]
-    [string]$From = '048',
+    [ValidateSet('048', '049')]
+    [string]$From = '049',
     # Task 0052: documents in QuarantineScalePostgresTest's one incident (250,000 as in CI; 1,000,000 for the local run).
     [ValidateRange(1000, 5000000)]
     [int]$QuarantineScale = 250000,
@@ -112,7 +112,7 @@ $db = 'sdv_schema_test'
 $owner = 'sdv_schema_owner'
 $hostUrl = 'jdbc:postgresql://localhost:5433/' + $db
 # In order. The upgrade applies every changeset from -From on.
-$checked = @('022-retention-policy-creator-name', '023-document-sensitivity-level', '024-record-sensitivity-levels', '025-role-separation', '026-legal-holds', '027-access-requests', '028-sensitivity-level-changes', '029-document-duplicate-receipts', '030-tenant-time-zone', '031-intake-report-indexes', '032-steward-notices', '033-unidentified-intake-attempts', '034-unidentified-intake-attempt-counts', '035-drop-old-identity', '036-quarantine', '037-sealed-audit', '038-quarantine-filter-blocking', '039-quarantine-scale', '040-report-storage', '041-report-activity', '042-restrictions-indexes', '043-held-redaction', '044-hold-release', '045-usage-export-anchor', '046-usage-named-seats', '047-document-object-version', '048-records')
+$checked = @('022-retention-policy-creator-name', '023-document-sensitivity-level', '024-record-sensitivity-levels', '025-role-separation', '026-legal-holds', '027-access-requests', '028-sensitivity-level-changes', '029-document-duplicate-receipts', '030-tenant-time-zone', '031-intake-report-indexes', '032-steward-notices', '033-unidentified-intake-attempts', '034-unidentified-intake-attempt-counts', '035-drop-old-identity', '036-quarantine', '037-sealed-audit', '038-quarantine-filter-blocking', '039-quarantine-scale', '040-report-storage', '041-report-activity', '042-restrictions-indexes', '043-held-redaction', '044-hold-release', '045-usage-export-anchor', '046-usage-named-seats', '047-document-object-version', '048-records', '049-notifications')
 $start = [array]::IndexOf(($checked | ForEach-Object { $_.Substring(0, 3) }), $From)
 $newChangesets = @($checked[$start..($checked.Count - 1)])
 $newChangeset = $newChangesets[0]
@@ -456,8 +456,10 @@ insert into unidentified_intake_attempts(attempt_id, tenant_id, occurred_at, cal
     $docsBefore = Get-Value $documentsOldColumnsSql
     $othersBefore = Get-Value $otherTablesSql
     if ($has049) {
-        # Task 0081: an entity's own zone moves to identity. One tenant with its own zone and its identity row without one.
-        $null = Invoke-Sql -Database $db -AsOwner -Sql "insert into idn_customer(tenant_id, name) values ('TEN-UPGRADE-0049', 'Upgrade 0049') on conflict do nothing; insert into idn_entity(slot_id, entity_uuid, tenant_id, status) values ('ENT-UPGRADE-0049', '10000000-0000-0000-0000-000000000001', 'TEN-UPGRADE-0049', 'NOT_ACTIVATED') on conflict do nothing; update idn_entity set time_zone = null where entity_uuid = '10000000-0000-0000-0000-000000000001'; update tenants set time_zone = 'America/Chicago' where tenant_id = '10000000-0000-0000-0000-000000000001';"
+        # Task 0081: an entity's own zone moves to identity. One tenant with its own zone and its identity row without one, when
+        # the previous version's database has identity's tables (every database since task 0041; this script's has Liquibase's only).
+        $script:zoneCopy = (Get-Value "select (to_regclass('idn_entity') is not null)::text;") -eq 'true'
+        if ($script:zoneCopy) { $null = Invoke-Sql -Database $db -AsOwner -Sql "insert into idn_customer(tenant_id, name) values ('TEN-UPGRADE-0049', 'Upgrade 0049') on conflict do nothing; insert into idn_entity(slot_id, entity_uuid, tenant_id, status) values ('ENT-UPGRADE-0049', '10000000-0000-0000-0000-000000000001', 'TEN-UPGRADE-0049', 'NOT_ACTIVATED') on conflict do nothing; update idn_entity set time_zone = null where entity_uuid = '10000000-0000-0000-0000-000000000001'; update tenants set time_zone = 'America/Chicago' where tenant_id = '10000000-0000-0000-0000-000000000001';" }
     }
     $tenantsBefore = Get-Value $tenantsOldColumnsSql
     Assert-That ($tenantsBefore -match '^[1-9][0-9]*:[0-9a-f]{32}$') "tenants fingerprint looks wrong: $tenantsBefore"
@@ -1017,7 +1019,7 @@ rollback;
     }
     if ($has049) {
         Assert-That ((Get-Value $hasTimeZoneSql) -eq '0') 'tenants.time_zone should be gone (task 0081)'
-        Assert-That ((Get-Value "select coalesce(time_zone, '-') from idn_entity where entity_uuid = '10000000-0000-0000-0000-000000000001';") -eq 'America/Chicago') "the entity's own zone should be identity's now"
+        if ($script:zoneCopy) { Assert-That ((Get-Value "select coalesce(time_zone, '-') from idn_entity where entity_uuid = '10000000-0000-0000-0000-000000000001';") -eq 'America/Chicago') "the entity's own zone should be identity's now" }
         Assert-That ((Get-Value 'select count(*) from notification_recipients;') -eq '0') 'notification_recipients should be there and empty'
         foreach ($bad in @(
                 "insert into notification_recipients values (gen_random_uuid(), 'TEN-UPGRADE-0049', '10000000-0000-0000-0000-000000000001', 'IT_ADMIN', 'u1', 'u1@example.test', 'test', now());",
@@ -1028,8 +1030,8 @@ rollback;
             Assert-That ($r.Code -ne 0) "notification_recipients should refuse: $bad"
         }
         Assert-That ((Get-Value 'select max(version) from notif_schema_version;') -eq '1' -and [int](Get-Value 'select count(*) from notif_schema_history where success;') -ge 1) 'the notifications run (task 0081) should be at version 1 and recorded in notif_schema_history'
-        $null = Invoke-Sql -Database $db -AsOwner -Sql "update idn_entity set time_zone = null where slot_id = 'ENT-UPGRADE-0049';"
-        Write-Step '4za. After 049: recipient lists, zones in identity' $w.Elapsed.TotalSeconds 'tenants.time_zone gone and copied to identity; the list table there, empty, its checks refuse a bad scope, user ID and address; notif_ tables at V1'
+        if ($script:zoneCopy) { $null = Invoke-Sql -Database $db -AsOwner -Sql "update idn_entity set time_zone = null where slot_id = 'ENT-UPGRADE-0049';" }
+        Write-Step '4za. After 049: recipient lists, zones in identity' $w.Elapsed.TotalSeconds "tenants.time_zone gone$(if ($script:zoneCopy) { ' and copied to identity' } else { ' (no identity tables before: nothing to copy)' }); the list table there, empty, its checks refuse a bad scope, user ID and address; notif_ tables at V1"
         $w = [System.Diagnostics.Stopwatch]::StartNew()
     }
     if ($has048) {
@@ -1118,7 +1120,7 @@ rollback;
         Write-Step '4r. After 040: Storage and retention report counts' $w.Elapsed.TotalSeconds 'table there and empty; checks refuse a negative time, counts not an object, an unknown entity'
         $w = [System.Diagnostics.Stopwatch]::StartNew()
     }
-    if ($has027 -or $has028 -or $has029 -or $has030 -or $has031 -or $has032 -or $has033 -or $has034 -or $has035 -or $has036 -or $has037 -or $has038 -or $has039 -or $has040 -or $has041 -or $has042 -or $has043 -or $has044 -or $has045 -or $has046 -or $has047 -or $has048) {
+    if ($has027 -or $has028 -or $has029 -or $has030 -or $has031 -or $has032 -or $has033 -or $has034 -or $has035 -or $has036 -or $has037 -or $has038 -or $has039 -or $has040 -or $has041 -or $has042 -or $has043 -or $has044 -or $has045 -or $has046 -or $has047 -or $has048 -or $has049) {
 
         # The application's own repositories and services against this database: holds and the retention cleanup
         # (LegalHoldPostgresTest), requests, grants, expiry and the table's checks (AccessRequestPostgresTest), exact
