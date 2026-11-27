@@ -26,7 +26,7 @@ Outcome: DONE
 3. **VSEC-204.** The app address of every message comes from the install configuration only: `sdv.public-url`
    (`SDV_PUBLIC_URL`). It must be https with no user, query or `#`; plain http is allowed only in a local start, which
    defaults to `http://localhost:5183`. A wrong value stops the start (SDV-SYS-005). If it is not set, Vero starts but
-   sends nothing, and the screen says so. IT âº Notifications shows the address read-only and has a **Connect** button
+   sends nothing, and the screen says so. IT › Notifications shows the address read-only and has a **Connect** button
    only; the edit is removed, and `PUT /it` no longer reads an address. At each start, a customer connected under
    another address is moved to the install's. `Start-SDV-Testers.ps1` sets `SDV_PUBLIC_URL=https://<its host>`.
 4. **VSEC-208.** The runbook ("Notifications", 4c) and the IT guide give the exact lines that keep `/approvals/link/`
