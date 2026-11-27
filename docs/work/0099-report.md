@@ -74,3 +74,13 @@ None.
 ## Suggested next step
 
 0082 (approvals from messages), with the tour left open by 0081.
+
+## Addendum (after Q-2's answer)
+
+- **Setup asks for no token.** platform-core's setup guide (1.3.0, sections 3 and 4a): the connection is replaced from the sign-in file;
+  the token test is for drafts switched in an app's screen. The IT guide said otherwise and is corrected; SETUP.md gets "Changing the
+  sign-in" and "Going back to the previous sign-in" with the exact commands; the Sign-in tab's words for `IDN_TEST_SIGN_IN_REQUIRED` now
+  say that Vero's screen changes nothing. Q-3 in `QUESTIONS.md`.
+- **The proof of replace and rollback on a scratch database was not run:** this machine's permission check refused it (it needs a
+  throwaway dev-mode Vault container, because setup makes the customer's keys). The script is ready; the owner decides (Q-3).
+- Checks: `npm test` 101 passed, typecheck clean (docs and one sentence otherwise).
