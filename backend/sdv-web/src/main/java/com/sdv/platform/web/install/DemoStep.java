@@ -125,14 +125,14 @@ public final class DemoStep {
 
     int apply(DataSource ds, LicenceBuild build, Map<String, String> slots) throws SQLException {
         LicenceService licence = PlatformIdentityConfiguration.readOnlyLicence(ds, build);
-        String keyId;
+        com.documentplatform.licensing.Licence stored;
         try {
-            keyId = licence.status().licence().keyId();
+            stored = licence.status().licence();
         } catch (LicenceException e) {
             err.println("DEMO_NO_LICENCE: no licence that these keys verify is stored (" + e.code() + "). Run setup apply first.");
             return 2;
         }
-        if (!build.keys().isDevelopmentKey(keyId)) {
+        if (!build.isDevelopmentLicence(stored)) { // task 0099: platform-core 1.2.0 (was: the key ID against the build's development keys)
             err.println("DEMO_NOT_A_DEMO_LICENCE: the stored licence is not signed by a development key; the demo step runs only on demo installs.");
             return 2;
         }

@@ -21,3 +21,14 @@ describe('test sign-in words (task 0057)', () => {
     expect(codeWords({ code: 'IDN_TEST_ISSUER_UNREACHABLE', reason: 'OUT_TLS_FAILED' })).toBe('IDN_TEST_ISSUER_UNREACHABLE (OUT_TLS_FAILED)')
   })
 })
+
+// Task 0099: platform-core 1.2.0 refuses a replacement of the connection in use without a token test.
+import { codeHint } from './signInTestWords'
+describe('code hints (task 0099)', () => {
+  it('says what to do about IDN_TEST_SIGN_IN_REQUIRED, and nothing for other codes', () => {
+    expect(codeHint('IDN_TEST_SIGN_IN_REQUIRED')).toContain('setup identity rollback-login-connection')
+    expect(codeHint('IDN_TEST_SIGN_IN_REQUIRED')).toContain('people go on signing in')
+    expect(codeHint('IDN_TEST_KEYS_MISSING')).toBeNull()
+    expect(codeHint(null)).toBeNull()
+  })
+})

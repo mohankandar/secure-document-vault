@@ -3,7 +3,7 @@ import { signInSummary } from '../auth'
 import { identityOverview, testSignIn, type IdentityOverview } from './liveApi'
 import { FailureNotice, loadFailed, type Failure } from './CardError'
 import { Banner } from './ui'
-import { checkedWords, codeWords, outcomeWords, type SignInTestAnswer } from './signInTestWords'
+import { checkedWords, codeHint, codeWords, outcomeWords, type SignInTestAnswer } from './signInTestWords'
 
 // Task 0012 Part F (finding 16, owner 2026-11-18): sign-in is set by a script the installer runs, never on screens.
 // This tab only shows the sign-in in use. Task 0041 (owner answer 6): the installer's setup command loads it into
@@ -63,6 +63,7 @@ function TestResult({ result }: { result: SignInTestAnswer }) {
   return <div role="status" aria-label="Test sign-in result" style={{ marginTop: 10 }}>
     <Banner tone={tone} lead={lead}>{result.message}</Banner>
     {code && <p style={{ margin: '6px 0 0' }}>Code: <span className="mono">{code}</span></p>}
+    {codeHint(result.code) && <p style={{ margin: '6px 0 0' }}>{codeHint(result.code)}</p>}
     {result.outcome !== 'NO_CONNECTION' && <p className="muted" style={{ margin: '6px 0 0' }}>{checkedWords(result.tokenChecked)}</p>}
     <p className="muted" style={{ margin: '6px 0 0' }}>Tested {new Date(result.testedAt).toLocaleString()}{result.connectionId ? `, connection version ${result.configurationVersion}` : ''}.</p>
   </div>

@@ -378,9 +378,9 @@ alter default privileges for role $owner in schema public grant select, insert, 
     # Task 0041: "would run" counts Vero's changesets and platform-core's identity (V1-V5, task 0067) and licensing (V1-V2) versions.
     $liquibase = (Invoke-Sql -Database $db -Sql "select count(*) from databasechangelog;").Out.Trim()
     $platform = (Invoke-Sql -Database $db -Sql "select (select max(version) from idn_schema_version) || ' ' || (select max(version) from lic_schema_version) || ' ' || (select count(*) from idn_schema_history where success) || ' ' || (select count(*) from lic_schema_history where success) || ' ' || (select max(version) from fld_schema_version) || ' ' || (select count(*) from fld_schema_history where success) || ' ' || (select max(version) from erl_schema_version) || ' ' || (select count(*) from erl_schema_history where success) || ' ' || (select max(version) from notif_schema_version) || ' ' || (select count(*) from notif_schema_history where success);").Out.Trim().Split(' ')
-    Assert-That ($platform[0] -eq '5' -and $platform[1] -eq '2') "identity tables at version $($platform[0]) (5 expected), licensing at $($platform[1]) (2 expected)"
-    Assert-That ([int]$platform[2] -ge 5 -and [int]$platform[3] -ge 2) 'the identity and licensing runs must each record their versions in their own history table'
-    Assert-That ($platform[4] -eq '2' -and [int]$platform[5] -ge 2) "case field tables at version $($platform[4]) (2 expected), $($platform[5]) versions recorded"
+    Assert-That ($platform[0] -eq '6' -and $platform[1] -eq '2') "identity tables at version $($platform[0]) (6 expected, task 0099), licensing at $($platform[1]) (2 expected)"
+    Assert-That ([int]$platform[2] -ge 6 -and [int]$platform[3] -ge 2) 'the identity and licensing runs must each record their versions in their own history table'
+    Assert-That ($platform[4] -eq '3' -and [int]$platform[5] -ge 3) "case field tables at version $($platform[4]) (3 expected, task 0099), $($platform[5]) versions recorded"
     Assert-That ($platform[6] -eq '3' -and [int]$platform[7] -ge 3) "erase log table at version $($platform[6]) (3 expected), $($platform[7]) versions recorded"
     Assert-That ($platform[8] -eq '1' -and [int]$platform[9] -ge 1) "notifications tables at version $($platform[8]) (1 expected), $($platform[9]) versions recorded (task 0081)"
     $applied = [int]$liquibase + [int]$platform[0] + [int]$platform[1] + [int]$platform[4] + [int]$platform[6] + [int]$platform[8]
@@ -390,7 +390,7 @@ alter default privileges for role $owner in schema public grant select, insert, 
     Assert-That ($oldIdentity -eq '0') "changeset 035 must drop the old identity tables, $oldIdentity left"
     $invalid = (Invoke-Sql -Database $db -Sql "select count(*) from pg_index where not indisvalid;").Out.Trim()
     Assert-That ($invalid -eq '0') "$invalid indexes are invalid after the concurrent index step"
-    Write-Step '2c. Schema step update' $up.Seconds "$liquibase changesets and identity V5, licensing V2, fields V2, erase log V3, notifications V1 applied (own history tables), old identity tables dropped, 018 indexes valid"
+    Write-Step '2c. Schema step update' $up.Seconds "$liquibase changesets and identity V6, licensing V2, fields V3, erase log V3, notifications V1 applied (own history tables), old identity tables dropped, 018 indexes valid"
     $up.Out | Set-Content -Encoding utf8 (Join-Path $run 'schema-update.out.txt')
 
     # Task 0073: the app user's rights on two licensing tables are narrower than the default ones; the rest are there.

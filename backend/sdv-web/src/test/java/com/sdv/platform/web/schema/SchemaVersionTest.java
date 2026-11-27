@@ -11,13 +11,13 @@ class SchemaVersionTest {
     private static final SchemaVersion.Shipped SHIPPED = SchemaVersion.shipped();
     private static final SchemaVersion.Key SEED = new SchemaVersion.Key("002-local-foundation-seed", "sdv");
 
-    /** Task 0057: platform-core 0.7.0's identity tables are version 5, licensing 2 (task 0067). */
+    /** Task 0099: platform-core 1.3.0: identity 6, licensing 2, fields 3. */
     @Test
-    void theIdentityRunIsAtVersionFiveAndLicensingAtTwo() {
-        assertEquals(5, SchemaVersion.IDENTITY.version());
+    void theIdentityRunIsAtVersionSixAndLicensingAtTwo() {
+        assertEquals(6, SchemaVersion.IDENTITY.version());
         assertEquals(2, SchemaVersion.LICENSING.version());
         assertEquals(com.documentplatform.fields.jdbc.FieldSchema.VERSION, SchemaVersion.FIELDS.version());
-        assertEquals(2, SchemaVersion.FIELDS.version());
+        assertEquals(3, SchemaVersion.FIELDS.version());
         assertEquals(3, SchemaVersion.ERASE_LOG.version());
         assertEquals(1, SchemaVersion.NOTIFICATIONS.version());
         assertEquals("notif_schema_history", SchemaVersion.NOTIFICATIONS.historyTable());

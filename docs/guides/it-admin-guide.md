@@ -14,6 +14,11 @@ mapping and the sending systems' clients. **IT › Sign-in** shows it read only.
 **Test sign-in** checks that Vero reaches the login system and that its keys and issuer fit, and with a company sign-in
 also your own token. It changes nothing. A failure shows a code such as `IDN_TEST_ISSUER_UNREACHABLE`.
 
+**Changing the sign-in** is the installer's, with the setup command (SETUP.md). Since platform-core 1.2.0 a new login
+connection replaces the one in use only after a test sign-in **with a token** of the new one (`IDN_TEST_SIGN_IN_REQUIRED`
+otherwise); people keep signing in through the one in use meanwhile. To go back to the previous connection, the installer runs
+`setup identity rollback-login-connection` (`SETUP_NO_PREVIOUS_CONNECTION` when there is none).
+
 - People's roles come from their groups. **How long a removed right keeps working:**
   - removed from a group in the login system: until the person's token ends, at most 2 hours (the life your login system
     gives it; 15 to 60 minutes advised). Ending the person's session there stops new tokens, not the one in use.
@@ -127,6 +132,9 @@ Running it does not.
 4. Replace the application jar, the setup jar and the screens together. Start Vero; readiness turns 200. Run setup again when the release says so.
 
 Before this version in particular:
+- **platform-core 1.3.0** (task 0099): the schema step adds identity V6 and fields V3. **Stop every instance first**: a Vero of
+  the earlier version does not start on them, and this one does not start without them. Teams and Slack now go through the
+  outbound settings (runbook, "Notifications").
 - **Time zones are identity's** (task 0081): `SDV_DEFAULT_TIME_ZONE` is gone. Before the upgrade, set the customer's zone
   to the value it had (IT › Notifications, or the setup file's `timeZone`); an entity's own zone moves by itself. The schema step adds the
   notifications tables (runbook, "Notifications").
