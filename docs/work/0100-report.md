@@ -61,7 +61,7 @@ Outcome: DONE
 | `Build-SDV-All.ps1` (after the fix and the 30-day rule) | PASS: backend BUILD SUCCESS (sdv-web 774 tests, 0 failures, 54 skipped), frontend built |
 | `Test-SDV-SchemaUpgrade.ps1 -Forks 1` (`-From 051`, the new default) | First run FAIL: "a table other than documents and record_sensitivity_levels changed" (the new `role_holders` was not left out of the unchanged tables; script fixed). Second run PASS, 768 s, incl. "4zc. After 051" and every Postgres test with `RoleHoldersPostgresTest` (step 4f, 743 s: over 5 minutes, as before) |
 | `Test-SDV-CleanInstall.ps1` | PASS, 160 s |
-| `Test-SDV-DemoSeed.ps1 -WithTour -TourSteps "Business Administrator screens|IT Administrator screens|Approvals, legal holds|no-access page|Without a session"` | PASS, 381 s; 5 tour steps passed. IT › Notifications shows the address read-only with Connect (`docs/work/0100-screens/notifications-it.png`) |
+| `Test-SDV-DemoSeed.ps1 -WithTour -TourSteps "<5 steps>"` (Business Administrator screens, IT Administrator screens, Approvals and legal holds, the no-access page, without a session) | PASS, 381 s; 5 tour steps passed. IT › Notifications shows the address read-only with Connect (`docs/work/0100-screens/notifications-it.png`) |
 | PowerShell parse of `Start-SDV-Testers.ps1` | 0 errors |
 
 ## Tests: counts, and any failures with their output
