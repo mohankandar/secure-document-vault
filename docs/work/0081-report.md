@@ -61,7 +61,7 @@ Outcome: **DONE** (screen tour: see "Not done")
 
 ## Files changed
 
-(see below)
+80 files, +4614 / -1047 (`git diff --stat 0b6a852..HEAD`). New: `application/notifications/` (VeroEvent, VeroNotice, RecipientListService), `NotificationPort`, `NotificationRecipientRepository`, `persistence/notifications/`, `web/notifications/` (catalogue, port, recipients, secrets, settings service, controller, watch, configuration), changeset 049, the two screens and their words in `frontend/sdv-ui/src/r7/`, tests. Changed: the approvals, hold, quarantine, role-conflict and cleanup services (hooks), the four report services and `TenantZone` (zones), schema runs, `application.yml`, `pom.xml`, both schema scripts, `Start-SDV-Testers.ps1`, error codes, guides, runbook, release notes.
 
 ## Commits
 
