@@ -61,7 +61,7 @@ export function appAddressNote(c: Pick<Channels, 'appAddress' | 'connected'>): s
 }
 /** Task 0100 (VSEC-203): an entry gets messages only when its person held the role at their last sign-in. */
 export function confirmedWords(r: Pick<Recipient, 'confirmed'>): string | null {
-  return r.confirmed === false ? 'Not confirmed: this person has not signed in with this role since, so gets no messages.' : null
+  return r.confirmed === false ? 'Not confirmed: this person has not signed in with this role in the last 30 days (or ever), so gets no messages. Ask them to sign in.' : null
 }
 export const validEmail = (v: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.trim())
 

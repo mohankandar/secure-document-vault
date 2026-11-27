@@ -114,7 +114,7 @@ address.
 **Only people who hold the role** (task 0100): a list takes a person only once they have signed in to this entity with that
 role; ask them to sign in once first. When a sign-in shows the role gone (it was taken away in the login system), Vero takes
 them off that role's list at once and the audit says so ("role gone"). An entry marked **Not confirmed** (from before, or
-whose person hasn't signed in with the role since) gets no messages and no approval links.
+whose person hasn't signed in with the role for 30 days) gets no messages and no approval links: ask them to sign in.
 
 **This entity's time zone:** leave it to follow the customer's, or give the entity its own. Daily summaries, the times in
 messages and the reports' days follow it.

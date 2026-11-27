@@ -17,6 +17,9 @@ public interface RoleHolderRepository {
     /** The person holds exactly these list roles in the entity now (others are removed). */
     void replace(String customerId, UUID entityId, String userId, Set<String> roles, Instant seenAt);
 
-    /** The user IDs holding the role in the entity, or in any entity of the customer with {@code entityId} null. */
-    Set<String> holders(String customerId, UUID entityId, String role);
+    /**
+     * The user IDs seen holding the role at a sign-in at or after {@code seenSince}, in the entity, or in any entity of
+     * the customer with {@code entityId} null.
+     */
+    Set<String> holders(String customerId, UUID entityId, String role, Instant seenSince);
 }

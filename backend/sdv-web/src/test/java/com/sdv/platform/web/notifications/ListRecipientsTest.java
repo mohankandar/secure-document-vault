@@ -15,7 +15,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 /** Task 0100 (VSEC-203): of a role's list, only those who held the role at their last sign-in get messages. */
 class ListRecipientsTest {
     final NotificationKit.Lists lists = new NotificationKit.Lists();
-    final ListRecipients recipients = new ListRecipients(lists, lists.holders);
+    final ListRecipients recipients = new ListRecipients(lists, lists.holders, NotificationKit.WINDOW);
     final EntityId entity = EntityId.of(NotificationKit.ENTITY.toString());
 
     private List<String> businessAdmins() {
@@ -33,6 +33,27 @@ class ListRecipientsTest {
 
         lists.holders.replace(NotificationKit.CUSTOMER, NotificationKit.ENTITY, "ba-2", Set.of("BUSINESS_USER"), Instant.EPOCH);
         assertEquals(List.of("ba-1"), businessAdmins(), "the role is gone");
+    }
+
+    @Test
+    void someoneNotSeenAtASignInFor31DaysGetsNothing() {
+        // Answer Q-5: the role taken away and no sign-in since; 30 days by default.
+        lists.add(NotificationKit.ENTITY, "BUSINESS_ADMIN", "ba-1", "ba1@example.test");
+        Instant now = NotificationKit.Holders.NOW;
+        lists.holders.replace(NotificationKit.CUSTOMER, NotificationKit.ENTITY, "ba-1", Set.of("BUSINESS_ADMIN"), now.minus(java.time.Duration.ofDays(29)));
+        assertEquals(List.of("ba-1"), businessAdmins(), "seen 29 days ago");
+        lists.holders.replace(NotificationKit.CUSTOMER, NotificationKit.ENTITY, "ba-1", Set.of("BUSINESS_ADMIN"), now.minus(java.time.Duration.ofDays(31)));
+        assertEquals(List.of(), businessAdmins(), "seen 31 days ago");
+    }
+
+    @Test
+    void theWindowIsSevenToNinetyDays() {
+        assertEquals(30, new com.sdv.platform.application.notifications.RoleSeenWindow("30").days());
+        assertEquals(7, new com.sdv.platform.application.notifications.RoleSeenWindow(" 7 ").days());
+        for (String bad : new String[]{"6", "91", "", "thirty"}) {
+            org.junit.jupiter.api.Assertions.assertThrows(com.sdv.platform.domain.error.StartupFailure.class,
+                    () -> new com.sdv.platform.application.notifications.RoleSeenWindow(bad), bad);
+        }
     }
 
     @Test

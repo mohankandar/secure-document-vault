@@ -199,6 +199,11 @@ sdv:
   # a packaged start sends no messages (the IT screen says so); a local start uses http://localhost:5183.
   public-url: ${SDV_PUBLIC_URL:}
 
+  # Task 0100: a person not seen with a list role at a sign-in for this many days (7-90) gets nothing from that role's
+  # lists; a role taken away and no sign-in since stops their messages too.
+  notifications:
+    role-seen-days: ${SDV_NOTIFICATIONS_ROLE_SEEN_DAYS:30}
+
   # Task 0028: approvals. How long an approved Highly Confidential print or download stays usable (hours, 1-168),
   # and how long a request may wait undecided before it expires (days, 1-90). Per tenant: tenant id=number, comma-separated.
   approvals:

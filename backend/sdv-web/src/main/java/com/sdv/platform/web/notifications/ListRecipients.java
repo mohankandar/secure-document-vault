@@ -27,10 +27,13 @@ import java.util.UUID;
 public class ListRecipients implements RecipientResolver {
     private final NotificationRecipientRepository lists;
     private final RoleHolderRepository holders;
+    private final com.sdv.platform.application.notifications.RoleSeenWindow window;
 
-    public ListRecipients(NotificationRecipientRepository lists, RoleHolderRepository holders) {
+    public ListRecipients(NotificationRecipientRepository lists, RoleHolderRepository holders,
+                          com.sdv.platform.application.notifications.RoleSeenWindow window) {
         this.lists = lists;
         this.holders = holders;
+        this.window = window;
     }
 
     @Override
@@ -52,7 +55,7 @@ public class ListRecipients implements RecipientResolver {
             scope = id;
         }
         if (entries.isEmpty()) return Set.of();
-        Set<String> held = holders.holders(tenant.value(), scope, role.value());
+        Set<String> held = holders.holders(tenant.value(), scope, role.value(), window.since());
         Set<Recipient> people = new LinkedHashSet<>();
         for (Entry e : entries) if (held.contains(e.userId())) people.add(new Recipient(e.userId(), e.email()));
         return Set.copyOf(people);

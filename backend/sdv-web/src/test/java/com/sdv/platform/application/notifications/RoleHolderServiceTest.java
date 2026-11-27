@@ -32,7 +32,7 @@ class RoleHolderServiceTest {
     final RecipientListServiceTest.NoTransactions tx = new RecipientListServiceTest.NoTransactions();
     final Clock clock = Clock.fixed(Instant.parse("2026-11-27T12:00:00Z"), ZoneOffset.UTC);
     final RoleHolderService service = new RoleHolderService(holders, store, audit, tx, clock);
-    final RecipientListService lists = new RecipientListService(store, holders, mock(AuditEventPort.class), tx, clock);
+    final RecipientListService lists = new RecipientListService(store, holders, RecipientListServiceTest.WINDOW, mock(AuditEventPort.class), tx, clock);
     final RecipientListService.Actor admin = new RecipientListService.Actor(ENTITY, "ba-1", "Bea Admin", "corr");
 
     @Test

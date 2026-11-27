@@ -2,6 +2,7 @@ package com.sdv.platform.web.notifications;
 
 import com.sdv.platform.application.notifications.RecipientListService;
 import com.sdv.platform.application.notifications.RoleHolderService;
+import com.sdv.platform.application.notifications.RoleSeenWindow;
 import com.sdv.platform.application.port.AuditEventPort;
 import com.sdv.platform.persistence.notifications.JdbcNotificationRecipientRepository;
 import com.sdv.platform.persistence.notifications.JdbcRoleHolderRepository;
@@ -38,7 +39,7 @@ class RoleHoldersPostgresTest {
     private final JdbcNotificationRecipientRepository lists = new JdbcNotificationRecipientRepository(jdbc);
     private final AuditEventPort audit = mock(AuditEventPort.class);
     private final RoleHolderService service = new RoleHolderService(holders, lists, audit, tx);
-    private final RecipientListService screen = new RecipientListService(lists, holders, audit, tx);
+    private final RecipientListService screen = new RecipientListService(lists, holders, new RoleSeenWindow("30"), audit, tx);
     private final RecipientListService.Actor admin = new RecipientListService.Actor(A, "ba-1", "Bea Admin", "corr");
 
     @Test
@@ -49,15 +50,21 @@ class RoleHoldersPostgresTest {
         service.seen(CUSTOMER, A, "u1", Set.of("BUSINESS_ADMIN", "DOCUMENT_STEWARD", "PLATFORM_OPERATIONS_ADMIN"));
         service.seen(CUSTOMER, B, "u1", Set.of("IT_ADMIN"));
         assertEquals(Set.of("BUSINESS_ADMIN", "DOCUMENT_STEWARD"), holders.roles(A, "u1"));
-        assertEquals(Set.of("u1"), holders.holders(CUSTOMER, null, "IT_ADMIN"), "any entity of the customer");
-        assertEquals(Set.of(), holders.holders(CUSTOMER, A, "IT_ADMIN"));
+        assertEquals(Set.of("u1"), holders.holders(CUSTOMER, null, "IT_ADMIN", Instant.EPOCH), "any entity of the customer");
+        assertEquals(Set.of(), holders.holders(CUSTOMER, A, "IT_ADMIN", Instant.EPOCH));
 
         screen.add(admin, CUSTOMER, A, "BUSINESS_ADMIN", "u1", "u1@example.test");
         screen.add(admin, CUSTOMER, null, "IT_ADMIN", "u1", "u1@example.test");
-        var recipients = new ListRecipients(lists, holders);
+        var recipients = new ListRecipients(lists, holders, new RoleSeenWindow("30"));
         var tenant = com.documentplatform.notifications.TenantId.of(CUSTOMER);
         var entity = com.documentplatform.notifications.EntityId.of(A.toString());
         assertEquals(1, recipients.resolve(tenant, entity, VeroCatalogue.BUSINESS_ADMIN).size());
+        // Answer Q-5: not seen at a sign-in for 31 days counts as not confirmed.
+        jdbc.getJdbcTemplate().update("update role_holders set seen_at = now() - interval '31 days' where entity_id = ? and user_id = 'u1'", A);
+        assertTrue(recipients.resolve(tenant, entity, VeroCatalogue.BUSINESS_ADMIN).isEmpty());
+        assertFalse(screen.list(CUSTOMER, A).getFirst().confirmed());
+        service.seen(CUSTOMER, A, "u1", Set.of("BUSINESS_ADMIN", "DOCUMENT_STEWARD"));
+        assertEquals(1, recipients.resolve(tenant, entity, VeroCatalogue.BUSINESS_ADMIN).size(), "a sign-in confirms again");
 
         // The Business Admin role taken away in the login system: the next sign-in shows it.
         var removed = service.seen(CUSTOMER, A, "u1", Set.of("DOCUMENT_STEWARD"));

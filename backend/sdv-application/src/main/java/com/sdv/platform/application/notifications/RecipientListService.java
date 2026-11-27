@@ -49,20 +49,22 @@ public class RecipientListService {
 
     private final NotificationRecipientRepository lists;
     private final RoleHolderRepository holders;
+    private final RoleSeenWindow window;
     private final AuditEventPort audit;
     private final TransactionTemplate transactions;
     private final Clock clock;
 
     @Autowired
-    public RecipientListService(NotificationRecipientRepository lists, RoleHolderRepository holders, AuditEventPort audit,
+    public RecipientListService(NotificationRecipientRepository lists, RoleHolderRepository holders, RoleSeenWindow window, AuditEventPort audit,
                                 PlatformTransactionManager transactionManager) {
-        this(lists, holders, audit, transactionManager, Clock.systemUTC());
+        this(lists, holders, window, audit, transactionManager, Clock.systemUTC());
     }
 
-    public RecipientListService(NotificationRecipientRepository lists, RoleHolderRepository holders, AuditEventPort audit,
+    public RecipientListService(NotificationRecipientRepository lists, RoleHolderRepository holders, RoleSeenWindow window, AuditEventPort audit,
                                 PlatformTransactionManager transactionManager, Clock clock) {
         this.lists = Objects.requireNonNull(lists, "lists");
         this.holders = Objects.requireNonNull(holders, "holders");
+        this.window = Objects.requireNonNull(window, "window");
         this.audit = Objects.requireNonNull(audit, "audit");
         this.transactions = new TransactionTemplate(Objects.requireNonNull(transactionManager, "transactionManager"));
         this.clock = Objects.requireNonNull(clock, "clock");
@@ -85,7 +87,7 @@ public class RecipientListService {
     public List<View> list(String customerId, UUID entityId) {
         Map<String, Set<String>> held = new java.util.HashMap<>();
         return lists.list(customerId, entityId).stream()
-                .map(e -> View.of(e, held.computeIfAbsent(e.role(), r -> holders.holders(customerId, entityId, r)).contains(e.userId())))
+                .map(e -> View.of(e, held.computeIfAbsent(e.role(), r -> holders.holders(customerId, entityId, r, window.since())).contains(e.userId())))
                 .toList();
     }
 
@@ -102,7 +104,7 @@ public class RecipientListService {
             throw new CodedRefusal.BadRequest(SdvErrorCode.NTF_002, "Give one e-mail address, such as name@example.com.");
         }
         // Task 0100 (VSEC-203): only someone who holds the role (seen at their last sign-in) goes on its list.
-        if (!holders.holders(customerId, entityId, r).contains(user)) {
+        if (!holders.holders(customerId, entityId, r, window.since()).contains(user)) {
             throw new CodedRefusal.BadRequest(SdvErrorCode.NTF_002, "This person has not signed in " + (entityId == null ? "" : "to this entity ")
                     + "as " + r + " yet, or no longer holds that role. Ask them to sign in once, then add them.");
         }

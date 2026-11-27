@@ -83,7 +83,7 @@ public class RoleHolderService {
             List<Entry> removed = new java.util.ArrayList<>();
             for (String role : gone) {
                 if (RecipientListService.IT_ADMIN.equals(role)) {
-                    if (holders.holders(customerId, null, role).contains(userId)) continue;
+                    if (holders.holders(customerId, null, role, Instant.EPOCH).contains(userId)) continue;
                     removed.addAll(lists.deleteRole(customerId, null, userId, role));
                 } else {
                     removed.addAll(lists.deleteRole(customerId, entityId, userId, role));

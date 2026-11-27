@@ -101,7 +101,11 @@ ended (`SDV-LIC-001` to sending systems); nothing else stops. Renewal and clock 
   (5 for the key service), again every 4 hours while it lasts, and "Recovered" once it is gone.
 - **IT Admins who get e-mail:** the list for the whole customer (user ID and address). It takes only someone who has
   signed in as IT Admin in an entity of the customer; a person no entity shows as IT Admin any more is taken off at their
-  next sign-in (audited, "role gone"), and an entry marked Not confirmed gets nothing (task 0100). Addresses are kept here only, never
+  next sign-in (audited, "role gone"), and an entry marked Not confirmed gets nothing (task 0100).
+  **The limit:** Vero sees roles only at sign-in (the login system tells it nothing when a role is taken away). So a list
+  entry also counts as not confirmed when its person hasn't signed in with the role for 30 days
+  (`SDV_NOTIFICATIONS_ROLE_SEEN_DAYS`, 7 to 90); within that time a removed person who doesn't sign in may still get
+  messages, though an approval link opens only for someone who may decide now. Addresses are kept here only, never
   in the audit or a log; the audit says who changed the list and whose entry.
 - **The customer's time zone:** every entity without its own follows it, for daily summaries, the times in messages and the
   reports' days.

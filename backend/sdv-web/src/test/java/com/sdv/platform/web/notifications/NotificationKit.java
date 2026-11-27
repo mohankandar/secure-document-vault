@@ -44,7 +44,7 @@ final class NotificationKit {
     final InMemoryChannel slack = new InMemoryChannel(ChannelKind.SLACK);
     final Lists lists = new Lists();
     final NotificationSettings settings = new NotificationSettings(VeroCatalogue.build(), new InMemorySettingsStore());
-    final Notifier notifier = Notifier.builder(settings, new ListRecipients(lists, lists.holders))
+    final Notifier notifier = Notifier.builder(settings, new ListRecipients(lists, lists.holders, NotificationKit.WINDOW))
             .channels(List.of(email, teams, slack))
             .outbox(new InMemoryOutboxStore()).summaries(new InMemorySummaryStore()).conditions(new InMemoryConditionStore())
             .clock(clock)
@@ -102,24 +102,33 @@ final class NotificationKit {
     }
 
     /** The admins' lists, in memory. */
+    /** Task 0100: 30 days, counted from the tests' now. */
+    static final com.sdv.platform.application.notifications.RoleSeenWindow WINDOW =
+            new com.sdv.platform.application.notifications.RoleSeenWindow(30, Clock.fixed(Holders.NOW, ZoneOffset.UTC));
+
     /** Task 0100: who holds which list role, in memory (role_holders). */
     static final class Holders implements com.sdv.platform.application.port.RoleHolderRepository {
         /** entity|user to roles; the customer is CUSTOMER. */
         final Map<String, java.util.Set<String>> seen = new java.util.HashMap<>();
+        /** When each person was last seen (role_holders.seen_at). */
+        final java.util.Map<String, Instant> seenAt = new java.util.HashMap<>();
+        /** What a sign-in by {@code hold} counts as: the tests' now. */
+        static final Instant NOW = Instant.parse("2026-11-27T12:00:00Z");
 
-         public java.util.Set<String> roles(UUID entityId, String userId) {
+        @Override public java.util.Set<String> roles(UUID entityId, String userId) {
             return new java.util.TreeSet<>(seen.getOrDefault(entityId + "|" + userId, java.util.Set.of()));
         }
 
-         public void replace(String customerId, UUID entityId, String userId, java.util.Set<String> roles, Instant seenAt) {
+        @Override public void replace(String customerId, UUID entityId, String userId, java.util.Set<String> roles, Instant at) {
             seen.put(entityId + "|" + userId, new java.util.TreeSet<>(roles));
+            this.seenAt.put(entityId + "|" + userId, at);
         }
 
-         public java.util.Set<String> holders(String customerId, UUID entityId, String role) {
+        @Override public java.util.Set<String> holders(String customerId, UUID entityId, String role, Instant seenSince) {
             java.util.Set<String> out = new java.util.TreeSet<>();
             seen.forEach((k, roles) -> {
                 String[] parts = k.split("[|]", 2);
-                if (roles.contains(role) && (entityId == null || parts[0].equals(entityId.toString()))) out.add(parts[1]);
+                if (roles.contains(role) && !seenAt.getOrDefault(k, NOW).isBefore(seenSince) && (entityId == null || parts[0].equals(entityId.toString()))) out.add(parts[1]);
             });
             return out;
         }

@@ -41,8 +41,9 @@ public class VeroNotificationsConfiguration {
 
     @Bean
     RecipientResolver veroRecipients(NotificationRecipientRepository lists,
-                                      com.sdv.platform.application.port.RoleHolderRepository holders) {
-        return new ListRecipients(lists, holders);
+                                      com.sdv.platform.application.port.RoleHolderRepository holders,
+                                      com.sdv.platform.application.notifications.RoleSeenWindow window) {
+        return new ListRecipients(lists, holders, window);
     }
 
     @Bean

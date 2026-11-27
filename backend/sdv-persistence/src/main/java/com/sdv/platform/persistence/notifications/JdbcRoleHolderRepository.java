@@ -40,10 +40,11 @@ public class JdbcRoleHolderRepository implements RoleHolderRepository {
     }
 
     @Override
-    public Set<String> holders(String customerId, UUID entityId, String role) {
+    public Set<String> holders(String customerId, UUID entityId, String role, Instant seenSince) {
         return new LinkedHashSet<>(jdbc.queryForList("select distinct user_id from role_holders where customer_id = :customer and role = :role"
-                        + " and (cast(:entity as uuid) is null or entity_id = cast(:entity as uuid)) order by user_id",
-                new MapSqlParameterSource("customer", customerId).addValue("role", role).addValue("entity", entityId, java.sql.Types.OTHER),
+                        + " and seen_at >= :since and (cast(:entity as uuid) is null or entity_id = cast(:entity as uuid)) order by user_id",
+                new MapSqlParameterSource("customer", customerId).addValue("role", role).addValue("entity", entityId, java.sql.Types.OTHER)
+                        .addValue("since", Timestamp.from(seenSince)),
                 String.class));
     }
 }

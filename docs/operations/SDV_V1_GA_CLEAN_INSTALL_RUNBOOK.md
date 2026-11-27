@@ -571,6 +571,8 @@ starts, records notifications and sends nothing.
    | `PLATFORM_NOTIFICATIONS_MAIL_AUTH=OAUTH2_MICROSOFT` and `..._MAIL_OAUTH_*` | Microsoft 365 without a password (platform-core's guide, section 1a) |
    | `PLATFORM_NOTIFICATIONS_TEAMS_<ID>`, `PLATFORM_NOTIFICATIONS_SLACK_<ID>` | One per channel: the id (letters and digits in a variable's name: `PLATFORM_NOTIFICATIONS_TEAMS_OPS` is the destination `ops`; ids with `-` go in the YAML file) and the **path** of its webhook address |
    | `SDV_NOTIFICATIONS_ENABLED` | `false` switches notifications off |
+   | `SDV_PUBLIC_URL` | The https address people open Vero on; every message links under it (task 0100, item 4 below) |
+   | `SDV_NOTIFICATIONS_ROLE_SEEN_DAYS` | 7 to 90, 30 by default: a list entry whose person hasn't signed in with that role for this many days gets nothing (task 0100) |
 
    A wrong setting stops the start and names the setting, never its value.
 4. **The app address** (task 0100): set `SDV_PUBLIC_URL` to the https address people open Vero on, such as
