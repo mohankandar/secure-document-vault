@@ -116,7 +116,7 @@ jobs:
         working-directory: backend
         run: |
           node --test ../.github/ci/advisories.test.mjs
-          mvn $MVN_CI_FLAGS -o -q org.apache.maven.plugins:maven-dependency-plugin:3.8.1:list -DoutputFile=target/dependency-list.txt
+          mvn $MVN_CI_FLAGS -o -q compile org.apache.maven.plugins:maven-dependency-plugin:3.8.1:list -DoutputFile=target/dependency-list.txt
           node ../.github/ci/advisories.mjs maven */target/dependency-list.txt
       - name: The release build holds no development licence key
         working-directory: backend
