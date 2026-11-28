@@ -20,12 +20,12 @@
     "ui:compare": "playwright test e2e/ui-compare.spec.ts --project=desktop-chromium"
   },
   "dependencies": {
-    "lucide-react": "^1.57.0",
+    "lucide-react": "^1.79.0",
     "react": "18.3.1",
     "react-dom": "18.3.1"
   },
   "devDependencies": {
-    "@playwright/test": "1.56.1",
+    "@playwright/test": "1.65.1",
     "@types/react": "18.3.18",
     "@types/react-dom": "18.3.5",
     "@vitejs/plugin-react": "6.3.0",
