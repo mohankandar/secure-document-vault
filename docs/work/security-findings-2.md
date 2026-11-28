@@ -54,9 +54,9 @@ Every finding of task 0061 marked fixed still holds. VSEC-10 (library advisories
 | VSEC-202 | Fixed (task 0101) | A search by a sensitive field leaves out, in its one query, every record the person may not open; counting a quarantine filter by a sensitive field needs a Steward who can open every level |
 | VSEC-203 | Fixed as far as Vero can see roles (task 0100) | A list takes only people who held the role at their last sign-in; messages go only to them; a sign-in without the role takes them off (audited). A role taken away is seen at the person's next sign-in |
 | VSEC-204 | Fixed (task 0100) | The app address comes from the install configuration (`SDV_PUBLIC_URL`, https); the screen shows it read-only |
-| VSEC-205 | Open | Task 0102 |
-| VSEC-206 | Open | Task 0102 |
-| VSEC-207 | Open | Task 0102 |
+| VSEC-205 | Fixed (task 0102; this computer's Vault: owner step) | The setup script gives Vero's secret ID 90 days and 20,000 logins, bound to Vero's servers; the policy reads only secret/platform/vero/*; runbook: renewing and narrowing |
+| VSEC-206 | Fixed (task 0102; GitHub's alerts: owner setting) | CI fails on a High or Critical advisory for a shipped Maven or npm library, unless a reviewed suppression accepts it |
+| VSEC-207 | Fixed in Vero (task 0102); platform-core P-2 open | Every key-service setting is taken out of the bundle before it leaves Vero |
 | VSEC-208 | Done (task 0100) | Runbook and IT guide: the exact nginx and IIS lines that keep the link path out of access logs |
-| VSEC-209 | Open | Task 0102 |
+| VSEC-209 | Done (task 0102) | Runbook: the exact icacls and Linux steps |
 | VSEC-210 | By design | Recorded as a business decision |
