@@ -62,7 +62,7 @@ $folder = Join-Path $OutputDirectory $name
 $zip = "$folder.zip"
 if (Test-Path -LiteralPath $folder) { throw "$folder is there already. Move it away, or give another -Version." }
 if (Test-Path -LiteralPath $zip) { throw "$zip is there already. Move it away, or give another -Version." }
-New-Item -ItemType Directory -Force -Path $folder, (Join-Path $folder 'service'), (Join-Path $folder 'docs') | Out-Null
+New-Item -ItemType Directory -Force -Path $folder, (Join-Path $folder 'service') | Out-Null
 
 Copy-Item -LiteralPath $webJar.FullName -Destination (Join-Path $folder "sdv-web-$Version.jar")
 Copy-Item -LiteralPath $setupJar.FullName -Destination (Join-Path $folder "sdv-setup-$Version.jar")
@@ -71,20 +71,18 @@ foreach ($f in 'setup.ps1', 'setup.cmd', 'setup.sh', 'Update-SDV-Schema.ps1', 'u
 }
 Copy-Item -LiteralPath (Join-Path $root 'backend\sdv-security\src\main\resources\setup\product-roles.json') -Destination $folder
 Copy-Item -LiteralPath $screens -Destination (Join-Path $folder 'screens') -Recurse
-$docs = @{
-    'docs\operations\SDV_BACKUP_RESTORE_HA_RUNBOOK.md'   = 'BACKUP-RESTORE-RUNBOOK.md'
-    'docs\install\SETUP.md'                              = 'SETUP.md'
-    'docs\guides\it-admin-guide.md'                      = 'it-admin-guide.md'
-    'docs\guides\business-admin-guide.md'                = 'business-admin-guide.md'
-    'docs\guides\release-notes.md'                       = 'release-notes.md'
-    'docs\api\error-codes.md'                            = 'error-codes.md'
+# The guides keep their paths, so every link and "see ..." between them works in the package too.
+foreach ($d in 'docs\operations\SDV_BACKUP_RESTORE_HA_RUNBOOK.md', 'docs\install\SETUP.md', 'docs\guides\it-admin-guide.md',
+        'docs\guides\business-admin-guide.md', 'docs\guides\release-notes.md', 'docs\api\error-codes.md') {
+    $to = Join-Path $folder $d
+    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $to) | Out-Null
+    Copy-Item -LiteralPath (Join-Path $root $d) -Destination $to
 }
-foreach ($d in $docs.GetEnumerator()) { Copy-Item -LiteralPath (Join-Path $root $d.Key) -Destination (Join-Path $folder "docs\$($d.Value)") }
-# The install runbook from "Before you install" on: what comes before it is the frozen 1.0.0 record, for the owner.
+# The install runbook from "Before you install" on, under its own name: what comes before is the frozen 1.0.0 record, for the owner.
 $runbook = [IO.File]::ReadAllText((Join-Path $root 'docs\operations\SDV_V1_GA_CLEAN_INSTALL_RUNBOOK.md'))
 $start = $runbook.IndexOf('## Before you install')
 if ($start -lt 0) { throw 'The install runbook has no "Before you install" section.' }
-[IO.File]::WriteAllText((Join-Path $folder 'docs\INSTALL-RUNBOOK.md'), "# Vero install runbook`r`n`r`n" + $runbook.Substring($start), (New-Object Text.UTF8Encoding($false)))
+[IO.File]::WriteAllText((Join-Path $folder 'docs\operations\SDV_V1_GA_CLEAN_INSTALL_RUNBOOK.md'), "# Vero install runbook`r`n`r`n" + $runbook.Substring($start), (New-Object Text.UTF8Encoding($false)))
 
 $utf8 = New-Object Text.UTF8Encoding($false)
 [IO.File]::WriteAllText((Join-Path $folder 'service\vero.service'), (@(
@@ -92,12 +90,15 @@ $utf8 = New-Object Text.UTF8Encoding($false)
     'WorkingDirectory=/opt/vero', 'EnvironmentFile=/etc/vero/vero.env', "ExecStart=/usr/bin/java -jar /opt/vero/sdv-web-$Version.jar",
     'SuccessExitStatus=143', 'Restart=always', 'RestartSec=10', '[Install]', 'WantedBy=multi-user.target', '') -join "`n"), $utf8)
 [IO.File]::WriteAllText((Join-Path $folder 'service\vero.env.example'), (@(
-    '# /etc/vero/vero.env (owner root, mode 600). Every value is yours; see INSTALL-RUNBOOK.md, "All settings".',
+    '# /etc/vero/vero.env (owner root, mode 600). Every value is yours; see docs/operations/SDV_V1_GA_CLEAN_INSTALL_RUNBOOK.md, "All settings".',
     'SDV_DB_URL=jdbc:postgresql://<database host>:5432/<database>', 'SDV_DB_USERNAME=<app user>', 'SDV_DB_PASSWORD=<app user password>',
     'SDV_ERASE_LOG_FOLDER=/var/lib/vero/erase-log', 'SDV_STORAGE_ALLOWED_ROOTS=/var/lib/vero/documents',
     'SDV_KEY_SERVICE_ADDRESS=https://<key service>:8200', 'SDV_VAULT_LOGIN_FILE=/etc/vero/vero-vault-login.properties',
     'SDV_AUTH_MODE=enterprise-jwt', 'SDV_AUTH_JWT_ISSUER=https://<login system>/<issuer path>', 'SDV_AUTH_JWT_JWK_SET_URI=https://<login system>/<keys path>',
-    'SDV_AUTH_JWT_AUDIENCE=<Vero API audience>', 'SDV_AUTH_JWT_PROVIDER_ID=customer-oidc', 'SDV_PUBLIC_URL=https://<the address people open Vero on>', '') -join "`n"), $utf8)
+    'SDV_AUTH_JWT_AUDIENCE=<Vero API audience>', 'SDV_AUTH_JWT_PROVIDER_ID=customer-oidc', 'SDV_PUBLIC_URL=https://<the address people open Vero on>',
+    '# When the login system has an internal address (Vero reads its discovery document):', '#SDV_OUTBOUND_ALLOW_INTERNAL_ADDRESSES=true',
+    '# When your own authority signed the certificates of the login system or Vault:', '#JAVA_TOOL_OPTIONS=-Djavax.net.ssl.trustStore=/opt/vero/vero-trust.jks',
+    '#PLATFORM_OUTBOUND_PRIVATE_CA_FILE=/opt/vero/company-ca.pem', '') -join "`n"), $utf8)
 
 # ---- 3. What must never be in it ----
 function Jar-Entries([string]$Path) {

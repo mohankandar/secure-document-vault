@@ -181,10 +181,10 @@ schema step", setup (`docs/install/SETUP.md`), "The first start", activate the e
 | Java | 21, on the path of whoever runs Vero, setup and the schema step. Check: `java -version` |
 | PostgreSQL | 16 is what Vero is tested with. A database of Vero's own and two users. No extension is needed |
 | Vault | 1.17 is what Vero is tested with. Transit and AppRole, reached over https |
-| Login system | OpenID Connect, access tokens signed RS256, a public browser client, an API audience, a groups claim, one client for each sending system |
+| Login system | OpenID Connect over **https** (also for a test: the screens refuse an http login system), access tokens signed RS256, a public browser client, an API audience, a groups claim, one client for each sending system. A worked example for Keycloak: SETUP.md section 2 |
 | Web server | Serves the screens, does TLS, sends `/api/` to Vero |
 | Certificates | For the web address people use. If your own authority signed the certificate of Vault, the database or the login system: that authority's certificate as a PEM file |
-| Files from us | The application jar, the setup jar, `setup.ps1` or `setup.sh`, `Update-SDV-Schema.ps1` or `update-sdv-schema.sh`, `product-roles.json`, the screens (`dist`), your licence |
+| Files from us | The package `vero-<version>.zip` and its `.sha256` (check it first: `Get-FileHash -Algorithm SHA256 vero-<version>.zip`, or `sha256sum -c vero-<version>.zip.sha256`), and your licence. Inside: the application jar, the setup jar, `setup.ps1` or `setup.sh`, `Update-SDV-Schema.ps1` or `update-sdv-schema.sh`, `product-roles.json`, `Setup-SDV-VaultTransit.ps1`, the screens (`screens`), the Linux service file (`service`), these guides (`docs`), `VERSION.txt` and `SHA256SUMS.txt` |
 | A service account | Runs Vero: write in Vero's working folder and the document folders, read on the login file, nothing more |
 | Backups | Database, document folders, Vault and settings together (`SDV_BACKUP_RESTORE_HA_RUNBOOK.md`), arranged before the first document |
 
@@ -457,7 +457,7 @@ running app, local mode and the schema step).
 
 ### Sign-in in the browser, and serving the screens
 
-Vero's screens are the folder `dist` of the build (`frontend/sdv-ui/dist`). Your web server or proxy serves them, sends `/api/` to Vero, and does TLS.
+Vero's screens are the folder `screens` of the package. Your web server or proxy serves them, sends `/api/` to Vero, and does TLS.
 A person signs in at your login system (authorization code with PKCE); the browser then holds the tokens in memory only, so
 a reload or a new tab goes through the login system again, which usually asks nothing.
 
@@ -483,7 +483,33 @@ Permissions-Policy: camera=(), microphone=(), geolocation=()
 ```
 
 Don't pass `/actuator/` on: probes reach Vero directly. The proxy's own limit on a request's size must not be below the sending
-systems' document limit (nginx: `client_max_body_size`). `dev/testers/Caddyfile` is an example for Caddy.
+systems' document limit (nginx: `client_max_body_size`).
+
+For example nginx (task 0097, proven; TLS lines and your certificate left out here, add yours):
+
+```nginx
+server {
+    listen 443 ssl;
+    server_name vero.acme.example;
+    root /srv/vero/screens;
+    client_max_body_size 110m;
+    add_header Content-Security-Policy "<the line above, with your login system's origin>" always;
+    add_header Referrer-Policy no-referrer always;
+    add_header X-Content-Type-Options nosniff always;
+    add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
+    location /api/ {
+        proxy_pass http://127.0.0.1:8280;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+    location /actuator/ { return 404; }
+    location ^~ /approvals/link/ { access_log off; add_header Referrer-Policy no-referrer always; try_files /index.html =404; }
+    location / { try_files $uri /index.html; }
+}
+```
+
+With a proxy in front, set `SDV_TRUSTED_PROXIES` to its address ("Behind a proxy or load balancer").
 
 The two font addresses may be left out: the screens then use fonts of the computer, and nothing is loaded from outside.
 
@@ -818,8 +844,10 @@ After the schema step and setup. Unless `SDV_TENANT_FILE` and `SDV_VAULT_LOGIN_F
 folder**. Without `SDV_STORAGE_ALLOWED_ROOTS`, documents may be kept only in `data` there.
 
 Linux, as a service. `/etc/vero/vero.env` (owner root, mode 600) holds `SDV_DB_URL`, `SDV_DB_USERNAME`, `SDV_DB_PASSWORD`,
-`SDV_ERASE_LOG_FOLDER`, `SDV_KEY_SERVICE_ADDRESS`, `SDV_AUTH_MODE=enterprise-jwt`, the `SDV_AUTH_JWT_*` settings, and `JAVA_TOOL_OPTIONS` if you made a
-trust store:
+`SDV_ERASE_LOG_FOLDER`, `SDV_KEY_SERVICE_ADDRESS`, `SDV_AUTH_MODE=enterprise-jwt`, the `SDV_AUTH_JWT_*` settings, `SDV_PUBLIC_URL`,
+`SDV_OUTBOUND_ALLOW_INTERNAL_ADDRESSES=true` when the login system has an internal address (Vero reads its discovery document),
+and `JAVA_TOOL_OPTIONS` and `PLATFORM_OUTBOUND_PRIVATE_CA_FILE` if your own authority signed its certificate. The package's
+`service/vero.env.example` lists them. Then the service file (also in the package, `service/vero.service`):
 
 ```ini
 [Unit]

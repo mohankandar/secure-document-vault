@@ -58,6 +58,23 @@ key settings (`SETUP_KEY_SERVICE_SETTINGS_MISSING`; `--no-customer-keys` is refu
 - `sources`: one entry per sending system. The `key` is lower case (letters, digits, `.`, `_`, `-`). In Vero, the IT
   Admin creates each sending system with the same key (Integrations).
 
+**Worked example: Keycloak** (task 0097, proven on Keycloak 26). For a realm `acme`, Vero at `https://vero.acme.example`, the
+API audience `vero-api` and one sending system:
+
+1. Realm: access token lifespan 15 minutes (Vero accepts at most 2 hours).
+2. Client `vero-web` (the sign-in file's `browserClientId`): client authentication **off** (public), standard flow **on**,
+   direct access grants **off**; PKCE method `S256`; valid redirect URI and post-logout redirect URI `https://vero.acme.example/`;
+   web origin `https://vero.acme.example`.
+3. On `vero-web`, two mappers: **Audience** (included custom audience `vero-api`, to the access token only) and **Group
+   Membership** (token claim name `groups`, **full group path off**, to the access token only).
+4. One client per sending system, for example `acme-loans`: client authentication **on**, service accounts **on**, standard flow
+   and direct access grants **off**; its own **Audience** mapper `vero-api`. Its client ID goes into the client-binding file; its
+   secret stays with the sending system.
+5. Groups named as in the role mapping file (for example `Vero IT`, `Vero Admins`, `Finance Readers`), people in them.
+
+In the sign-in file: `"issuer": "https://<keycloak>/realms/acme"`, `"browserClientId": "vero-web"`, `"apiAudience": "vero-api"`.
+The login system must be https, also for a test: the screens refuse to talk to one over http.
+
 **Role mapping file**: the complete list of grants for Vero.
 
 ```
@@ -138,7 +155,10 @@ own screen, and Vero's sign-in screen switches nothing (IT › Sign-in shows the
    everything else `unchanged`. `conflict` means the connection was changed since the last setup some other way; add `--replace-connection`
    to make it the file's.
 3. `.\setup.ps1 apply …` with the same files. People who are signed in keep their session until their token ends; new
-   sign-ins use the new connection.
+   sign-ins use the new connection. When the issuer changed, the grants are made again under the new one, and those under
+   the old one are kept (`not removed … live again after a rollback`), so `plan` and `apply` end with exit code 3 ("done except
+   items that need a flag"). That is expected; once the new sign-in works and no rollback is wanted, `apply` with
+   `--remove-unlisted-grants` removes the old ones.
 4. On IT › Sign-in, **Test sign-in**.
 
 ### Going back to the previous sign-in

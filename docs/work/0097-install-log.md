@@ -1,0 +1,21 @@
+# 0097 install log: Vero installed from the package, following the runbook word for word
+
+Each row: the step, what happened, and the fix (in this PR unless it says otherwise). Times are New York.
+
+Package: `vero-1.0.0-rc1-DEVELOPMENT.zip` from `New-SDV-Package.ps1 -Development` (a release package needs the owner's
+release licence keys, which don't exist yet; the development package trusts the development licence and is marked so).
+
+| # | Step | What happened | Fix |
+|---|---|---|---|
+| 1 | Package: the forbidden-content check | It found the setup script's default path on this computer, an error-code note naming a container here, the owner's sections in the install runbook (release licence keys, remote testers, local development), a developer document (platform packages), and the local test sign-in's user IDs in the built screens | All fixed: `-OutFile` required; the note reworded; the owner's sections in `SDV_OWNER_RUNBOOK.md`; the developer document not packaged; the production screens drop the local test identities |
+| 2 | "Before you install", files | The runbook named "the screens (`dist`)" and other file names than the package had | The package keeps the guides' paths; the row lists the package and its checksum |
+| 3 | "Two database users" | Word for word on a new PostgreSQL 16; both checks (`\l vero`, `\ddp`) as the runbook says. 0.7 s | none |
+| 4 | "Keys for a customer" | `Setup-SDV-VaultTransit.ps1 -VeroAddresses <Docker gateway>/32 -OutFile …` on a new dev Vault: done, nothing secret printed. 1.2 s | none (0102's `-VeroAddresses` and this PR's required `-OutFile` are in the runbook) |
+| 5 | Login system (Keycloak 26) | The guides say only "Keycloak: Web origins, and an audience mapper" (0092 gap 15). Needed besides: a groups mapper (`full.path=false`, access token only), the audience mapper on the browser client **and** on each sending system's client, PKCE S256 on the browser client, the post-logout redirect, a token life of 15 minutes | Worked example for Keycloak added to SETUP.md (below) |
+| 6 | "The schema step" | `update` from the package: 67 changesets, 6.5 s | none |
+| 7 | Setup `plan`, `apply` | Done (licence, customer, 2 slots, login connection, 3 grants, client binding, customer keys, `platform-tenant.properties`). 4.8 s | none |
+| 8 | "The first start" (Windows, foreground) | Ready in 10 s; the log says the database matches. Vero needs `SDV_OUTBOUND_ALLOW_INTERNAL_ADDRESSES=true` for a login system at an internal address (the runbook says so in "Sign-in in the browser", not in "The first start") | Said in "The first start" too |
+| 9 | Web server (nginx) | From the runbook's headers and 4c lines: screens served, `/api/` to Vero, `/actuator/` not passed on, **the approval-link path absent from the access log** (0100's lines work). The runbook pointed at `dev/testers/Caddyfile`, which isn't in the package | An nginx server block in the runbook, in place of the Caddy pointer |
+| 10 | Browser sign-in, login system on `http://localhost` | Refused in the browser: the screens' own page sets `connect-src 'self' https:`, so **the login system must be https** even on a test computer (Vero's server accepts http on loopback, the screens don't) | Runbook: "Before you install" says the login system is https, also for a test |
+| 11 | Login system with TLS (a test certificate authority, the runbook's trust store for setup and Vero, `PLATFORM_OUTBOUND_PRIVATE_CA_FILE`) | Setup `plan` with the changed issuer: `update login connection (version 1) -> version 2`, exit 3 because the grants under the old issuer are kept for a rollback (`not removed … run again with --remove-unlisted-grants`). `apply`: done, exit 3 | SETUP.md "Changing the sign-in": exit 3 and the kept grants explained |
+| 12 | Vero with the TLS login system, on this Windows computer | `SDV-AUT-004`, `SSLHandshakeException`: **this computer's antivirus (Norton Web/Mail Shield) intercepts local TLS and re-signs it with its own untrusted root**; curl sees the same. Not a Vero or guide fault; trusting the antivirus root would work around a security product | Owner: an exception for local test ports in the antivirus, or run the people part where it doesn't intercept (the Linux run in containers) |
