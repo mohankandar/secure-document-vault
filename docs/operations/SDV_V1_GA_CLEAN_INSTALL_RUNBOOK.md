@@ -747,8 +747,9 @@ before `SDV_KEY_SERVICE_ADDRESS` and `SDV_KEY_SERVICE_MOUNT`.
 |---|---|
 | Vault is sealed | Unseal it as usual, run again |
 | The role is there, but the file isn't | Run again with `-NewSecretId` |
-| The policy is there with another text | Another product may use it: give `-PolicyPrefix` another name. An install from before task 0102: "Narrowing Vero's login" below |
-| WARNING: the role has no expiry, use limit or address binding | An install from before task 0102: "Narrowing Vero's login" below |
+| The policy is there with another text | Another product may use it: give `-PolicyPrefix` another name. |
+| WARNING: the role has no expiry, use limit or address binding | Add them: `vault write auth/approle/role/<role> secret_id_ttl=2160h secret_id_num_uses=20000 secret_id_bound_cidrs=<addresses> token_bound_cidrs=<addresses>`, then renew the secret ID (below) |
+| SDV-SYS-007 at start, naming a `platform.notifications.…` setting | That secret isn't at `secret/platform/vero/<path>` (key `value`): put it there, start again |
 
 #### Renewing Vero's secret ID
 
@@ -762,22 +763,6 @@ Every 90 days at the latest (or 20,000 logins, or when the file may have been se
    `vault write auth/approle/role/vero/secret-id-accessor/lookup secret_id_accessor=<accessor>` shows each one's
    `creation_time`; destroy the older one with `vault write auth/approle/role/vero/secret-id-accessor/destroy
    secret_id_accessor=<accessor>`. Then delete the old file.
-
-#### Narrowing Vero's login (an install from before task 0102)
-
-Its policy reads every `secret/platform/*` and its secret ID never expires. In this order:
-
-1. **Move Vero's secrets** (the mail password, the Teams and Slack webhooks, the approval link key): for each `<path>` the
-   settings name, `vault kv get -field=value secret/platform/<path>` and `vault kv put secret/platform/vero/<path> value=-`
-   (the value typed or piped in, never on the command line). Vero reads the new place first; until the policy is narrowed it
-   still finds a secret at the old place and says so once in its log ("found at its old place").
-2. **Narrow the policy:** `vault policy write platform-crypto-app -` with the policy text above (the line
-   `secret/data/platform/vero/*` instead of `secret/data/platform/*`).
-3. **Limit the role:** `vault write auth/approle/role/vero secret_id_ttl=2160h secret_id_num_uses=20000
-   secret_id_bound_cidrs=<addresses> token_bound_cidrs=<addresses>`. The limits apply to secret IDs made from now on.
-4. **Renew the secret ID** (above): the old one has no limits until it is destroyed.
-5. Check IT › Notifications shows every destination working, and no "found at its old place" line in the log; then delete
-   the old secrets (`vault kv metadata delete secret/platform/<path>`) unless another product reads them.
 
 Who gets which policy: the running Vero `-app` only (it can't make or delete keys); the setup command `-setup`, as a token for
 that run (`vault token create -policy=platform-crypto-setup -ttl=15m -no-default-policy`); `-offboard` only at a customer's exit.
