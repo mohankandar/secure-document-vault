@@ -178,6 +178,14 @@ public final class OidcJwtAuthenticationConverter implements Converter<Jwt, Abst
 
         /** The slots (ENT-...) not activated yet where these groups give Business Admin. */
         List<String> activatableSlots(ConnectionKey key, Object groups);
+
+        /**
+         * Task 0098: while no entity of the connection's customer is ACTIVE, the slots (ENT-...) where these groups give
+         * IT Admin: such a person may activate the first entity on the first-start screen. Empty once one is ACTIVE.
+         */
+        default List<String> firstStartSlots(ConnectionKey key, Object groups) {
+            return List.of();
+        }
     }
 
     /**
@@ -355,16 +363,18 @@ public final class OidcJwtAuthenticationConverter implements Converter<Jwt, Abst
                                 + key.providerId() + " audience=" + key.audience());
             }
             List<String> activatable = lookups.activatableSlots(key, groups);
-            if (activatable.isEmpty()) {
+            // Task 0098: an IT Admin of a slot may activate the first entity, while none is ACTIVE.
+            List<String> firstStart = lookups.firstStartSlots(key, groups);
+            if (activatable.isEmpty() && firstStart.isEmpty()) {
                 // Task 0039: AUT-007 logs who was refused: the subject, never the token or the groups.
                 throw withSubject(SignInAnswer.of(401, SdvErrorCode.AUT_007, SignInAnswer.NO_ROLE,
                         "no group grant gives a Vero role in an ACTIVE entity"), null, identity.subject());
             }
-            return choice(identity, Set.of(), activatable, details);
+            return choice(identity, Set.of(), activatable, firstStart, details);
         }
         String requested = request.requestedEntity();
         if ((requested == null || requested.isBlank()) && memberships.size() > 1) {
-            return choice(identity, ids(memberships), lookups.activatableSlots(key, groups), details);
+            return choice(identity, ids(memberships), lookups.activatableSlots(key, groups), List.of(), details);
         }
         EntityId entity;
         try {
@@ -428,9 +438,9 @@ public final class OidcJwtAuthenticationConverter implements Converter<Jwt, Abst
     }
 
     private static AbstractAuthenticationToken choice(AuthenticatedIdentity identity, Set<UUID> entities,
-                                                      List<String> activatable, VerifiedSignIn details) {
+                                                      List<String> activatable, List<String> firstStart, VerifiedSignIn details) {
         EntityChoicePrincipal principal = new EntityChoicePrincipal(identity.subject(), identity.displayName(),
-                identity.email(), entities, activatable);
+                identity.email(), entities, activatable, firstStart);
         UsernamePasswordAuthenticationToken token = new UsernamePasswordAuthenticationToken(principal, null,
                 List.of(new SimpleGrantedAuthority(ENTITY_CHOICE_AUTHORITY)));
         token.setDetails(details);

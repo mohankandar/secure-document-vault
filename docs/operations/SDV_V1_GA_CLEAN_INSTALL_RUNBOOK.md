@@ -911,8 +911,8 @@ Vero brings no Windows service of its own.
 | `CRYPTO_SETTINGS_INVALID` | The key service's settings that the log names |
 | `SDV-SYS-005`, `SDV-SYS-006`, `SDV-KEY-001` | The setting the log names ([error codes](../api/error-codes.md)) |
 
-Vero doesn't call Vault when it starts. Afterwards sign in as a Business Admin and activate the entity (SETUP.md section 4); as
-IT Admin run **Test sign-in**, add a storage volume, and look at **Problems**: every check works, the key service too.
+Vero doesn't call Vault when it starts. Afterwards sign in as IT Admin: the first-start screen activates the first entity with
+its name and this install's licence file (SETUP.md section 4; no token by hand). Then, as IT Admin, run **Test sign-in**, add a storage volume, and look at **Problems**: every check works, the key service too.
 
 ### Checking it on a test computer
 

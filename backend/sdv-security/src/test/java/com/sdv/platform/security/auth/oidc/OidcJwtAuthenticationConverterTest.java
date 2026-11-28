@@ -51,6 +51,7 @@ class OidcJwtAuthenticationConverterTest {
     final Map<EntityId, Map<String, Set<String>>> grants = new LinkedHashMap<>();
     boolean connectionActive = true;
     List<String> activatable = List.of();
+    List<String> firstStart = List.of();
     final Map<String, MachineBinding> bindings = new HashMap<>();
     Set<EntityId> admissible = Set.of(EntityId.of(ENTITY_A));
     final Map<String, UUID> sources = new HashMap<>(Map.of(ENTITY_A + "|redaction-service", SOURCE));
@@ -74,6 +75,7 @@ class OidcJwtAuthenticationConverterTest {
         var lookups = new OidcJwtAuthenticationConverter.SignInLookups() {
             @Override public boolean connectionActive(ConnectionKey key) { return connectionActive; }
             @Override public List<String> activatableSlots(ConnectionKey key, Object groups) { return activatable; }
+            @Override public List<String> firstStartSlots(ConnectionKey key, Object groups) { return firstStart; }
         };
         var senders = new OidcJwtAuthenticationConverter.Senders() {
             @Override public Optional<MachineBinding> activeBinding(String clientId) { return Optional.ofNullable(bindings.get(clientId)); }
@@ -169,6 +171,18 @@ class OidcJwtAuthenticationConverterTest {
         assertCode(SdvErrorCode.AUT_010, 409, () -> converter().convert(person(List.of("claims-users"), Map.of())));
         requestedEntity = "not-an-entity";
         assertCode(SdvErrorCode.AUT_010, 409, () -> converter().convert(person(List.of("claims-users"), Map.of())));
+    }
+
+    @Test
+    void anItAdminOfASlotMayActivateTheFirstEntityWhileNoneIsActive() {
+        // Task 0098: before, an IT Admin alone was refused (AUT-007) with no entity active.
+        firstStart = List.of(SLOT_A);
+        Authentication auth = converter().convert(person(List.of("acme-it"), Map.of()));
+        EntityChoicePrincipal choice = assertInstanceOf(EntityChoicePrincipal.class, auth.getPrincipal());
+        assertEquals(List.of(), choice.activatableSlots());
+        assertEquals(List.of(SLOT_A), choice.firstStartSlots());
+        firstStart = List.of();
+        assertCode(SdvErrorCode.AUT_007, 401, () -> converter().convert(person(List.of("acme-it"), Map.of())));
     }
 
     @Test

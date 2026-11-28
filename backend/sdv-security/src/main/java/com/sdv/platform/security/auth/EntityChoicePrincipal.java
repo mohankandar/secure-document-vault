@@ -14,11 +14,18 @@ import java.util.UUID;
  *
  * @param entities         the ACTIVE entities this sign-in may choose (none, or more than one)
  * @param activatableSlots the slots (ENT-...) this person may activate as Business Admin
+ * @param firstStartSlots  task 0098: while no entity is ACTIVE, the slots this person is IT Admin of; they may activate
+ *                         the first entity on the first-start screen
  */
 public record EntityChoicePrincipal(String subject, String displayName, String email, Set<UUID> entities,
-                                    List<String> activatableSlots) {
+                                    List<String> activatableSlots, List<String> firstStartSlots) {
     public EntityChoicePrincipal {
         entities = Set.copyOf(entities);
         activatableSlots = List.copyOf(activatableSlots);
+        firstStartSlots = List.copyOf(firstStartSlots);
+    }
+
+    public EntityChoicePrincipal(String subject, String displayName, String email, Set<UUID> entities, List<String> activatableSlots) {
+        this(subject, displayName, email, entities, activatableSlots, List.of());
     }
 }

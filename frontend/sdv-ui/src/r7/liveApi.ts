@@ -174,6 +174,9 @@ export const testSignIn=()=>roleApi<SignInTestAnswer>('/api/v1/admin/login-conne
 /** Task 0041 (owner answer 5): the entities this sign-in may work in; current is null until one is chosen. */
 export type SessionEntities={current:string|null;entities:{entityId:string;name:string}[];activatableSlots:string[]}
 export const sessionEntities=()=>roleApi<SessionEntities>('/api/v1/session/entities','business')
+// Task 0098: the first-start screen (404 once any entity is active).
+export const firstStart=()=>roleApi<import('./firstStartWords').FirstStart>('/api/v1/first-start','tenantIt')
+export const activateFirstEntity=(slotId:string,name:string,licence:string)=>roleApi<import('./firstStartWords').FirstActivated>('/api/v1/first-start/activate','tenantIt',{method:'POST',body:JSON.stringify({slotId,name,licence})})
 /** Audited by the server (ENTITY_SWITCHED) in the entity switched to, which this request names. */
 export const entitySwitched=(from:string|null)=>roleApi<void>('/api/v1/session/entity-switch','business',{method:'POST',body:JSON.stringify({from})})
 /** databaseSchema: checked once when Vero started. state CURRENT, OLDER, NEWER or UNREACHABLE; message is the plain sentence. */

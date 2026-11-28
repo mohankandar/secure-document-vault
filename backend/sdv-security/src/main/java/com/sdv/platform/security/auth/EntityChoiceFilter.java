@@ -20,6 +20,8 @@ import java.util.regex.Pattern;
 public final class EntityChoiceFilter extends OncePerRequestFilter {
     public static final String ENTITIES_PATH = "/api/v1/session/entities";
     private static final Pattern ACTIVATE_PATH = Pattern.compile("^/api/v1/admin/entities/[^/]{1,80}/activate$");
+    /** Task 0098: the first-start screen (its state and the first activation). */
+    public static final String FIRST_START_PATH = "/api/v1/first-start";
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
@@ -37,7 +39,9 @@ public final class EntityChoiceFilter extends OncePerRequestFilter {
     static boolean allowed(HttpServletRequest request) {
         String path = path(request);
         return ("GET".equals(request.getMethod()) && ENTITIES_PATH.equals(path))
-                || ("POST".equals(request.getMethod()) && path != null && ACTIVATE_PATH.matcher(path).matches());
+                || ("POST".equals(request.getMethod()) && path != null && ACTIVATE_PATH.matcher(path).matches())
+                || ("GET".equals(request.getMethod()) && FIRST_START_PATH.equals(path))
+                || ("POST".equals(request.getMethod()) && (FIRST_START_PATH + "/activate").equals(path));
     }
 
     private static String path(HttpServletRequest request) {

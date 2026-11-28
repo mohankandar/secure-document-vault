@@ -6,6 +6,17 @@ are enough to help.
 
 An IT Admin never also holds a role that opens documents; Vero withholds it if groups give both.
 
+## The first start
+
+Right after the install no entity is active. Sign in with an account whose groups give **IT Admin** on the first entity
+(setup's role mapping): Vero shows **Activate the first entity**. Give the entity its name as people will see it, choose this
+install's licence file (the same file setup stored; nothing is changed by it), and press **Activate**. Vero checks the file
+with its own keys, that it is the stored licence and that it lists the entity. The screen is shown only once: after the first
+entity is active it is gone for good (its address answers "not found"). Refusals: `SDV-ENT-001` (the file or the name can't be
+used) and `SDV-ENT-002` (you are not IT Admin of that entity). The activation is in the new entity's audit
+(`ENTITY_ACTIVATED`), and so are the refused attempts before it (`FIRST_START_REFUSED`). Later entities are activated by their
+Business Admin (SETUP.md section 4).
+
 ## Sign-in
 
 Sign-in is set by the installer ([SETUP.md](../install/SETUP.md)): the login system, Vero's API audience, the role

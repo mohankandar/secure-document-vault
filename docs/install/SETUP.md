@@ -157,24 +157,24 @@ A later `apply` with a sign-in file that says otherwise shows `conflict` rather 
 
 ## 4. Activating entities
 
-Setup stores each entity slot as not activated. A person whose groups give **Business Admin** on a slot activates and
-names it (they can sign in before any entity is active):
+Setup stores each entity slot as not activated.
+
+**The first entity: the first-start screen** (task 0098). Sign in to Vero in the browser with an account whose groups give
+**IT Admin** on that slot (the role mapping's `IT_ADMIN` row for it). While no entity is active, Vero shows **Activate the
+first entity**: give its name and choose this install's licence file (the same file `apply` stored). Vero checks the file with
+the keys of its own build, that it is the stored licence (same ID, not an older version) and that it lists the slot, then
+activates the slot, makes its own row for the entity and audits `ENTITY_ACTIVATED`. Of two people at once only one activates;
+the other sees the screen gone. Once any entity is active the screen and its address (`/api/v1/first-start`) are gone for good.
+No access token is made by hand.
+
+**Every later entity:** a person whose groups give **Business Admin** on its slot activates and names it:
 
 ```
 POST /api/v1/admin/entities/ENT-…/activate      {"name": "Acme Mortgage"}
 ```
 
-For example, with the Business Admin's access token in a file only you can read (one line: `header = "Authorization: Bearer …"`;
-delete it afterwards):
-
-```sh
-curl -i -K token.txt -X POST 'https://<vero>/api/v1/admin/entities/ENT-…/activate' -H 'Content-Type: application/json' -d '{"name": "Acme Mortgage"}'
-```
-
-Vero checks the stored licence (read only, with the keys of its own build), makes
-its own row for the entity and audits `ENTITY_ACTIVATED`. Refusals: `SDV-ENT-001` (not in the licence, already
-activated, name not usable) and `SDV-ENT-002` (not a Business Admin of that slot). The activation screen comes in a
-later release.
+Refusals: `SDV-ENT-001` (not in the licence, already activated, name not usable, or on the first-start screen a licence file
+that isn't this install's) and `SDV-ENT-002` (not IT Admin, or not Business Admin, of that slot).
 
 ## 5. Vero's sign-in settings
 
