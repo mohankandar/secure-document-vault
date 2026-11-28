@@ -145,3 +145,6 @@ databaseChangeLog:
 
   - include:
       file: db/changelog/051-role-holders.yaml
+
+  - include:
+      file: db/changelog/052-first-start-attempts.yaml
