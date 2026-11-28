@@ -158,7 +158,7 @@ exit
 ```
 
 Then, back in PowerShell in the repository: move `C:\dev\sdv\secrets\vero-vault-approle.properties` aside, run
-`.\Setup-SDV-VaultTransit.ps1 -VeroAddresses 172.18.0.1/32 -NewSecretId`, restart Vero, check health, and destroy the
+`.\Setup-SDV-VaultTransit.ps1 -VeroAddresses 172.18.0.1/32 -OutFile C:\dev\sdv\secrets\vero-vault-approle.properties -NewSecretId`, restart Vero, check health, and destroy the
 old accessor (`vault write auth/approle/role/vero/secret-id-accessor/destroy secret_id_accessor=<old accessor>` in the
 container shell). If your mount, role or policy names differ from the defaults, use yours.
 

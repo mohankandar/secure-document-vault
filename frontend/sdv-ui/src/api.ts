@@ -36,6 +36,8 @@ export const setLocalTestPersona = (persona: LocalPersona) => {
 }
 
 const localHeaders = (persona: LocalPersona): Record<string, string> => {
+  // Task 0097: a production build is OIDC only; this line lets the build drop the local test identities from the bundle.
+  if (!import.meta.env.DEV) return {}
   if (!isLocalSecurityMode()) return {}
   // Explicitly local-only testing; production and OIDC never accept a selected test identity.
   const selected = getLocalTestPersona()

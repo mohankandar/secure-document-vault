@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-  The owner's step: makes a release licence signing key (task 0093). Runbook, "Release licence keys".
+  The owner's step: makes a release licence signing key (task 0093). Owner runbook (docs/operations/SDV_OWNER_RUNBOOK.md), "Release licence keys".
 
 .DESCRIPTION
   Run by the owner, on the owner's computer, never by a coding session. It makes an Ed25519 key pair and writes

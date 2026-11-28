@@ -5,7 +5,7 @@
 .DESCRIPTION
   Reads a settings file outside the repository (dev\testers\testers.settings.example.psd1) and fills in the checked
   files of dev\testers. It refuses local mode, a development database, the old key mount, an address that isn't this
-  computer's, and a tunnel configuration other than the checked one. Runbook, "Remote testers".
+  computer's, and a tunnel configuration other than the checked one. Owner runbook (docs/operations/SDV_OWNER_RUNBOOK.md), "Remote testers".
 
   The database password: SDV_TESTERS_DB_PASSWORD, or typed when asked. It is never a parameter and never written.
 
@@ -75,7 +75,7 @@ if ([string]$s.DatabaseUrl -cnotmatch '^jdbc:postgresql://(localhost|127\.0\.0\.
 if ([string]$s.DatabaseUser -cnotmatch '^vero_testers_[a-z]+$') { throw 'DatabaseUser must be the testers'' own database user, vero_testers_...' }
 $storage = Assert-Outside ([string]$s.StorageFolder) 'The storage folder'
 $keys = $s.KeySettings
-if ($keys.Count -eq 0) { throw 'KeySettings is empty: the testers need their own key (runbook, "Remote testers").' }
+if ($keys.Count -eq 0) { throw 'KeySettings is empty: the testers need their own key (owner runbook, "Remote testers").' }
 foreach ($name in $keys.Keys) {
     if ($name -cnotmatch '^(SDV_KEY_|SDV_VAULT_|PLATFORM_CRYPTO_|SPRING_CONFIG_IMPORT$)') { throw "KeySettings: $name is not a key service setting." }
     if ($name -match '(TOKEN|SECRET|SECRET_?ID|PASSWORD)$') { throw "KeySettings: $name would hold a secret. Give the path of a file instead." }
@@ -123,7 +123,7 @@ if ($local.Count -ne 0) { throw 'This jar has the local sign-in. It is never use
 $dist = Join-Path $Root 'frontend\sdv-ui\dist'
 if (-not (Test-Path -LiteralPath (Join-Path $dist 'index.html'))) { throw 'The built screens were not found (Build-SDV-All.ps1).' }
 foreach ($port in 8290, 8292) { if ((Get-Listener $port).Count -gt 0) { throw "Port $port is in use. Run .\Stop-SDV-Testers.ps1." } }
-if ((Get-Listener 8291).Count -eq 0) { throw 'The tester login system is not running on port 8291 (runbook, "Remote testers").' }
+if ((Get-Listener 8291).Count -eq 0) { throw 'The tester login system is not running on port 8291 (owner runbook, "Remote testers").' }
 Assert-Loopback
 New-Item -ItemType Directory -Force -Path $storage | Out-Null
 

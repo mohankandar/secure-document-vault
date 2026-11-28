@@ -20,7 +20,7 @@
   The Vault token is asked for (not shown), or taken from VAULT_TOKEN for this run. It is never stored.
 
 .EXAMPLE
-  .\Setup-SDV-VaultTransit.ps1 -VeroAddresses 10.0.4.21/32,10.0.4.22/32
+  .\Setup-SDV-VaultTransit.ps1 -VeroAddresses 10.0.4.21/32,10.0.4.22/32 -OutFile D:\vero\config\vero-vault-login.properties
 #>
 [CmdletBinding()]
 param(
@@ -29,7 +29,8 @@ param(
     [ValidatePattern('^[a-z][a-z0-9-]{2,40}$')][string]$AppRoleMount = 'approle',
     [ValidatePattern('^[a-z][a-z0-9-]{2,40}$')][string]$PolicyPrefix = 'platform-crypto',
     [ValidatePattern('^[a-z][a-z0-9-]{2,40}$')][string]$RoleName = 'vero',
-    [string]$OutFile = 'C:\dev\sdv\secrets\vero-vault-approle.properties',
+    # Where the login file goes: a full path outside every repository (task 0097: no default; give yours).
+    [Parameter(Mandatory = $true)][string]$OutFile,
     # The role is there but its file is lost: make one more secret ID and write the file again.
     [switch]$NewSecretId,
     # Task 0102 (VSEC-205): the addresses Vault sees Vero's servers come from, as CIDRs (for example 10.0.4.21/32). The

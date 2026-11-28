@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-  The owner's step: signs a Vero licence for a customer or the testers (task 0093). Runbook, "Release licence keys".
+  The owner's step: signs a Vero licence for a customer or the testers (task 0093). Owner runbook (docs/operations/SDV_OWNER_RUNBOOK.md), "Release licence keys".
 
 .DESCRIPTION
   Run by the owner, never by a coding session. It reads a small input file (dev\licence\licence-input.example.json:
