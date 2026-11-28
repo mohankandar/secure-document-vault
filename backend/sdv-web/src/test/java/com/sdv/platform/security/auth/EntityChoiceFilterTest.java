@@ -42,6 +42,11 @@ class EntityChoiceFilterTest {
     void theEntityListAndActivationAreOpen() throws Exception {
         assertEquals(200, call(choice(), "GET", "/api/v1/session/entities").getStatus());
         assertEquals(200, call(choice(), "POST", "/api/v1/admin/entities/ENT-ACME-0001/activate").getStatus());
+        // Task 0098: the first-start screen.
+        assertEquals(200, call(choice(), "GET", "/api/v1/first-start").getStatus());
+        assertEquals(200, call(choice(), "POST", "/api/v1/first-start/activate").getStatus());
+        assertEquals(409, call(choice(), "POST", "/api/v1/first-start").getStatus());
+        assertEquals(409, call(choice(), "GET", "/api/v1/first-start/activate").getStatus());
     }
 
     @Test

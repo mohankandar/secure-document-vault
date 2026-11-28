@@ -114,6 +114,12 @@ public class PlatformIdentityConfiguration {
             public List<String> activatableSlots(ConnectionKey key, Object groups) {
                 return reads.notActivatedSlotsGranting(key, IdentityClaims.values(groups), SdvRole.BUSINESS_ADMIN.name());
             }
+
+            @Override
+            public List<String> firstStartSlots(ConnectionKey key, Object groups) {
+                if (reads.anyEntityActive(key)) return List.of();
+                return reads.notActivatedSlotsGranting(key, IdentityClaims.values(groups), SdvRole.IT_ADMIN.name());
+            }
         };
     }
 

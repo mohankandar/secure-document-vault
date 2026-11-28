@@ -102,6 +102,23 @@ public class PlatformIdentityReads {
         return slots;
     }
 
+    /**
+     * Task 0098: whether the customer of this ACTIVE login connection has any ACTIVE entity. An unknown or inactive
+     * connection answers true (fail closed: no first start through it).
+     */
+    public boolean anyEntityActive(ConnectionKey key) {
+        if (blank(key) || !connectionActive(key)) return true;
+        Boolean any = jdbc.queryForObject("select exists(select 1 from idn_entity e where e.status = 'ACTIVE' and e.tenant_id in "
+                + "(select c.tenant_id " + CONNECTION + "))", params(key), Boolean.class);
+        return !Boolean.FALSE.equals(any);
+    }
+
+    /** Task 0098: whether any entity of this install is ACTIVE (the first-start screen is gone for good then). */
+    public boolean anyEntityActive() {
+        Boolean any = jdbc.queryForObject("select exists(select 1 from idn_entity where status = 'ACTIVE')", new MapSqlParameterSource(), Boolean.class);
+        return !Boolean.FALSE.equals(any);
+    }
+
     private static MapSqlParameterSource params(ConnectionKey key) {
         return new MapSqlParameterSource().addValue("product", VeroProduct.CODE).addValue("provider", key.providerId())
                 .addValue("issuer", key.issuer().toString()).addValue("audience", key.audience());
