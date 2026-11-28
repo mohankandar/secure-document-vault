@@ -300,6 +300,33 @@ class PlatformRecordValuesPostgresTest {
         assertTrue(schema.stream().filter(f -> f.fieldKey().equals("loanType")).noneMatch(BusinessExperienceView.SearchField::sensitive));
     }
 
+    /**
+     * Task 0101 (VSEC-202): a sensitive value of a record above the person's level is "not found", exactly as a value
+     * nobody has; who may open the record finds it. Above by a document, and above by the record's own level.
+     */
+    @Test
+    void aSensitiveValueAboveThePersonsLevelIsNotFoundLikeAValueNobodyHas() {
+        document(a, deliver(a, person("91", "Rae", "Lindqvist")), "HIGHLY_CONFIDENTIAL");
+        UUID byRecord = deliver(a, person("92", "Rae", "Moreau"));
+        document(a, byRecord, "STANDARD");
+        db.update("insert into record_sensitivity_levels(record_level_id, tenant_id, source_id, record_id, sensitivity_level, reason, set_by, set_at, updated_at)"
+                + " values (gen_random_uuid(), ?, ?, ?, 'HIGHLY_CONFIDENTIAL', 'Reason', 'ada', now(), now())", entity, a, recordOf(byRecord));
+        document(a, deliver(a, person("93", "Rae", "Lindqvist")), "STANDARD");
+
+        var nobody = search(Map.of("lastName", "Nobodyhere"), null, Clearance.STANDARD_ONLY);
+        assertEquals(List.of(), nobody.records());
+        assertEquals(nobody, search(Map.of("lastName", "Moreau"), null, Clearance.STANDARD_ONLY), "above by the record's level: the same answer");
+        assertEquals(List.of("93"), numbers(search(Map.of("lastName", "Lindqvist"), null, Clearance.STANDARD_ONLY)),
+                "only the record this person may open; the other is not counted or paged");
+        var lindqvist = search(Map.of("lastName", "Lindqvist", "contractNumber", "91"), null, Clearance.STANDARD_ONLY);
+        assertEquals(nobody, lindqvist, "above by a document: the same answer");
+
+        assertEquals(List.of("92"), numbers(search(Map.of("lastName", "Moreau"), null, Clearance.ALL)), "who may open it finds it");
+        assertEquals(Set.of("91", "93"), Set.copyOf(numbers(search(Map.of("lastName", "Lindqvist"), null, Clearance.ALL))));
+        assertEquals(Set.of("91", "92", "93"), Set.copyOf(numbers(search(Map.of("loanType", "Mortgage 2"), null, Clearance.STANDARD_ONLY))),
+                "a field that isn't sensitive finds them as before, each with its restricted level");
+    }
+
     private static List<String> numbers(BusinessExperienceView.SearchResponse r) {
         return r.records().stream().map(x -> x.identifiers().getFirst().value()).toList();
     }

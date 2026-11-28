@@ -56,11 +56,29 @@ class JdbcBusinessRecordRepositorySearchSqlTest {
 
     @Test
     void aSensitiveFieldIsComparedByItsFingerprintsOnly() {
-        String sql = sqlFor(SearchCriterion.sensitive("lastName", List.of("f1.x", "f2.y")), null, null);
+        var standard = List.of(com.sdv.platform.domain.document.SensitivityLevel.STANDARD);
+        String sql = sqlFor(SearchCriterion.sensitive("lastName", List.of("f1.x", "f2.y"), standard), null, null);
         assertTrue(sql.contains("v.fingerprint in (:c0Prints)") && !sql.contains("search_value"), sql);
         org.mockito.Mockito.reset(jdbc);
-        sql = sqlFor(SearchCriterion.sensitive("lastName", List.of()), null, null);
+        sql = sqlFor(SearchCriterion.sensitive("lastName", List.of(), standard), null, null);
         assertTrue(sql.contains("and (false)"), "a value the field can't have finds nothing: " + sql);
+    }
+
+    @Test
+    void aSensitiveFieldFindsOnlyRecordsThePersonMayOpenInTheSameQuery() {
+        // Task 0101 (VSEC-202): the level condition is part of the one search query; nothing else is asked.
+        var levels = List.of(com.sdv.platform.domain.document.SensitivityLevel.STANDARD, com.sdv.platform.domain.document.SensitivityLevel.CONFIDENTIAL);
+        String sql = sqlFor(SearchCriterion.sensitive("taxId", List.of("f1.x"), levels), null, null);
+        assertTrue(sql.contains("rl.sensitivity_level not in (:c0Levels)"), sql);
+        assertTrue(sql.contains("d.status='AVAILABLE' and d.sensitivity_level not in (:c0Levels)"), sql);
+        org.mockito.Mockito.reset(jdbc);
+        assertEquals(List.of("CONFIDENTIAL", "STANDARD"), paramsFor(SearchCriterion.sensitive("taxId", List.of("f1.x"), levels)).getValue("c0Levels"));
+        org.mockito.Mockito.reset(jdbc);
+        sql = sqlFor(SearchCriterion.sensitive("taxId", List.of("f1.x"), List.of()), null, null);
+        assertTrue(sql.contains("v.fingerprint in (:c0Prints))) and false"), "no levels, nothing: " + sql);
+        org.mockito.Mockito.reset(jdbc);
+        sql = sqlFor(new SearchCriterion("loanType", MetadataSearchMode.EXACT, List.of("car")), null, null);
+        assertFalse(sql.contains("sensitivity_level"), "a field that is not sensitive is searched as before: " + sql);
     }
 
     @SuppressWarnings("unchecked")
