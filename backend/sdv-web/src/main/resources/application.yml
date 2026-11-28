@@ -50,7 +50,7 @@ platform:
     tenant-id: ${SDV_CUSTOMER_ID:}
   # Task 0081: notifications by e-mail, Teams and Slack (platform-core's notifications; IT guide, "Notifications"). The mail
   # server and each Teams or Slack destination come from the install config (PLATFORM_NOTIFICATIONS_MAIL_HOST,
-  # PLATFORM_NOTIFICATIONS_TEAMS_<ID>, ...), each secret by its path in the key service's KV store (secret/platform/<path>,
+  # PLATFORM_NOTIFICATIONS_TEAMS_<ID>, ...), each secret by its path in the key service's KV store (secret/platform/vero/<path>, task 0102;
   # key "value"), never the secret. Without a channel Vero still records notifications and sends nothing. The notif_
   # tables come from the schema step; Vero stops at start when they are missing. Off: SDV_NOTIFICATIONS_ENABLED=false.
   notifications:

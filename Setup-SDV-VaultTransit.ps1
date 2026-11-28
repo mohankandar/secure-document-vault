@@ -8,7 +8,9 @@
       mount and its keys stay as they are;
     - three policies on that mount (docs/design/crypto.md section 7 of platform-core): <prefix>-app (the running Vero: no
       rights to make, change or delete keys), <prefix>-setup (the setup command), <prefix>-offboard (customer exit);
-    - the AppRole method, when there is none at -AppRoleMount, and a role for Vero with <prefix>-app only;
+    - the AppRole method, when there is none at -AppRoleMount, and a role for Vero with <prefix>-app only. Task 0102: its
+      secret ID lasts -SecretIdHours (90 days) and -SecretIdUses logins, and the login and its tokens work only from
+      -VeroAddresses. <prefix>-app reads only Vero's own secrets (secret/platform/vero/*);
     - one file with the role ID and the secret ID (-OutFile), readable by this Windows user only. Nothing secret is
       printed.
   It looks at everything first and changes nothing when something is already there but different: it never changes an
@@ -18,7 +20,7 @@
   The Vault token is asked for (not shown), or taken from VAULT_TOKEN for this run. It is never stored.
 
 .EXAMPLE
-  .\Setup-SDV-VaultTransit.ps1
+  .\Setup-SDV-VaultTransit.ps1 -VeroAddresses 10.0.4.21/32,10.0.4.22/32
 #>
 [CmdletBinding()]
 param(
@@ -29,7 +31,14 @@ param(
     [ValidatePattern('^[a-z][a-z0-9-]{2,40}$')][string]$RoleName = 'vero',
     [string]$OutFile = 'C:\dev\sdv\secrets\vero-vault-approle.properties',
     # The role is there but its file is lost: make one more secret ID and write the file again.
-    [switch]$NewSecretId
+    [switch]$NewSecretId,
+    # Task 0102 (VSEC-205): the addresses Vault sees Vero's servers come from, as CIDRs (for example 10.0.4.21/32). The
+    # login works from nowhere else. Required: there is no safe default (behind Docker, Vault sees the network's gateway).
+    [string[]]$VeroAddresses = @(),
+    # How long a secret ID lasts (hours; 2160 = 90 days), and how many logins it allows. Renew before either runs out
+    # (runbook, "Renewing Vero's secret ID").
+    [ValidateRange(24, 8760)][int]$SecretIdHours = 2160,
+    [ValidateRange(100, 1000000)][int]$SecretIdUses = 20000
 )
 
 $ErrorActionPreference = 'Stop'
@@ -44,6 +53,16 @@ if ($uri.Scheme -ne 'https' -and -not ($uri.Scheme -eq 'http' -and $uri.Host -in
     Refuse 'The Vault address must be https, or http on this computer.'
 }
 if ($TransitMount -eq 'transit') { Refuse 'transit/ holds the old keys. Give the new mount a name of its own.' }
+$cidrs = @($VeroAddresses | ForEach-Object { $_ -split ',' } | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+if ($cidrs.Count -eq 0) { Refuse 'Give -VeroAddresses: the addresses (CIDR) Vault sees Vero''s servers come from. Behind Docker on this computer, the network''s gateway (docker network inspect).' }
+foreach ($c in $cidrs) {
+    $ip, $bits = $c -split '/', 2
+    $parsed = $null
+    if (-not $bits -or -not [Net.IPAddress]::TryParse($ip, [ref]$parsed) -or -not ($bits -match '^\d{1,3}$') -or
+        [int]$bits -gt $(if ($parsed.AddressFamily -eq 'InterNetworkV6') { 128 } else { 32 }) -or [int]$bits -lt 8) {
+        Refuse "'$c' is not an address range such as 10.0.4.21/32 (at least /8)."
+    }
+}
 
 # One call. The body and the token are never written anywhere; of an answer, only the status and Vault's own error words are.
 $script:token = $null
@@ -96,7 +115,7 @@ path "$TransitMount/decrypt/customer-*" { capabilities = ["update"] }
 path "$TransitMount/rewrap/customer-*" { capabilities = ["update"] }
 path "$TransitMount/hmac/customer-*" { capabilities = ["update"] }
 path "$TransitMount/keys/customer-*" { capabilities = ["read"] }
-path "secret/data/platform/*" { capabilities = ["read"] }
+path "secret/data/platform/vero/*" { capabilities = ["read"] }
 "@
     "$PolicyPrefix-setup" = @"
 path "$TransitMount/keys/+" { capabilities = ["create", "update", "read"] }
@@ -145,6 +164,11 @@ if ($authThere) {
         $has = @($role.Json.data.token_policies)
         if ($has.Count -ne 1 -or $has[0] -ne "$PolicyPrefix-app") { Refuse "The role $RoleName is there with other policies. This script changes no role; give -RoleName another name." }
         $roleThere = $true; $kept.Add("Role $RoleName")
+        # Task 0102: a role from before has no limits. This script changes no role; the runbook says how.
+        $d = $role.Json.data
+        $limits = (Has $d 'secret_id_ttl') -and [int]$d.secret_id_ttl -gt 0 -and (Has $d 'secret_id_num_uses') -and [int]$d.secret_id_num_uses -gt 0 -and
+            (Has $d 'secret_id_bound_cidrs') -and @($d.secret_id_bound_cidrs).Count -gt 0 -and (Has $d 'token_bound_cidrs') -and @($d.token_bound_cidrs).Count -gt 0
+        if (-not $limits) { Write-Host "WARNING: the role $RoleName has no expiry, use limit or address binding for its secret ID. Add them (runbook, ""Narrowing Vero's login"")." -ForegroundColor Yellow }
     } elseif ($role.Status -ne 404) { Refuse "The role $RoleName could not be read (status $($role.Status))." }
 }
 if (-not $roleThere) { $todo.Add("Role $RoleName") }
@@ -168,7 +192,8 @@ if (-not $mountThere) { Add-Vault "Transit mount $TransitMount/" 'POST' "sys/mou
 foreach ($name in $missingPolicies) { Add-Vault "Policy $name" 'PUT' "sys/policies/acl/$name" @{ policy = $policies[$name] } }
 if (-not $authThere) { Add-Vault "AppRole method $AppRoleMount/" 'POST' "sys/auth/$AppRoleMount" @{ type = 'approle'; description = 'Sign-in of applications' } }
 if (-not $roleThere) {
-    Add-Vault "Role $RoleName" 'POST' "auth/$AppRoleMount/role/$RoleName" @{ token_policies = @("$PolicyPrefix-app"); token_no_default_policy = $true; bind_secret_id = $true; token_ttl = '1h'; token_max_ttl = '4h' }
+    Add-Vault "Role $RoleName" 'POST' "auth/$AppRoleMount/role/$RoleName" @{ token_policies = @("$PolicyPrefix-app"); token_no_default_policy = $true; bind_secret_id = $true; token_ttl = '1h'; token_max_ttl = '4h'
+        secret_id_ttl = "$($SecretIdHours)h"; secret_id_num_uses = $SecretIdUses; secret_id_bound_cidrs = $cidrs; token_bound_cidrs = $cidrs }
 }
 if (-not $fileThere) {
     $id = Invoke-Vault 'GET' "auth/$AppRoleMount/role/$RoleName/role-id"

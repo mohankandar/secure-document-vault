@@ -582,8 +582,8 @@ starts, records notifications and sends nothing.
 1. **The tables.** The schema step makes them (`notif_…`). The app user needs select, insert, update and delete on them,
    select only on `notif_schema_version`; the schema step takes the other rights on that table back. Without the tables
    Vero stops at the start with `TABLES_MISSING`, `VERSION_OLDER` or `PRIVILEGES_MISSING` and says what to run.
-2. **The secrets** go in the key service's KV store, under `secret/platform/<path>` with the key `value` (Vero's login reads
-   `secret/data/platform/*`, `Setup-SDV-VaultTransit.ps1` gives it that right): the mail password (or the Microsoft 365 app's
+2. **The secrets** go in the key service's KV store, under `secret/platform/vero/<path>` with the key `value` (Vero's login reads
+   `secret/data/platform/vero/*` only, task 0102; `Setup-SDV-VaultTransit.ps1` gives it that right): the mail password (or the Microsoft 365 app's
    certificate or secret), each Teams or Slack webhook address. The settings hold only the **path**, never the secret.
 3. **The settings**, in the install config (environment variables shown; YAML works as well):
 
@@ -612,7 +612,7 @@ starts, records notifications and sends nothing.
    refused address shows `WEBHOOK_OUTBOUND_REFUSED` on IT › Notifications and is not retried. The mail server is reached as
    before.
 4c. **Approval links** (task 0082): put a random key of at least 32 characters (`openssl rand -base64 48` makes one of 64) in the
-   key service at `secret/platform/notifications/approval-link-key` (key `value`) and set
+   key service at `secret/platform/vero/notifications/approval-link-key` (key `value`) and set
    `PLATFORM_NOTIFICATIONS_APPROVALS_LINKKEYSECRET=notifications/approval-link-key`. Without it the e-mails carry no Approve and Decline
    links. Links are `https://<vero>/approvals/link/<token>`: the web server answers that path with `index.html` and **does not log
    it** (the token is the last part; Vero takes it out of the address at once and never logs it). Replacing the key ends the links
@@ -688,8 +688,13 @@ the triggers refuse them anyway.
 Documents are encrypted with the customer's key (task 0076). Whoever looks after Vault runs this once, with a Vault token that may add mounts, policies and an AppRole:
 
 ```powershell
-.\Setup-SDV-VaultTransit.ps1
+.\Setup-SDV-VaultTransit.ps1 -VeroAddresses 10.0.4.21/32,10.0.4.22/32
 ```
+
+`-VeroAddresses` (required, task 0102) are the addresses Vault sees Vero's servers come from: the login and its tokens work
+from nowhere else. Behind Docker on one computer that is the Docker network's gateway (`docker network inspect <network>`),
+not 127.0.0.1. Vero's secret ID lasts 90 days (`-SecretIdHours`) and 20,000 logins (`-SecretIdUses`); renew it before
+either runs out (below). Vero reads only its own secrets, under `secret/platform/vero/`.
 
 It asks for the token (not shown) and adds, only where missing: the Transit mount `vero-transit/`; the policies
 `platform-crypto-app`, `-setup` and `-offboard`; the AppRole method; Vero's role; and one file with the role ID and secret ID
@@ -712,7 +717,7 @@ path "vero-transit/decrypt/customer-*" { capabilities = ["update"] }
 path "vero-transit/rewrap/customer-*" { capabilities = ["update"] }
 path "vero-transit/hmac/customer-*" { capabilities = ["update"] }
 path "vero-transit/keys/customer-*" { capabilities = ["read"] }
-path "secret/data/platform/*" { capabilities = ["read"] }
+path "secret/data/platform/vero/*" { capabilities = ["read"] }
 HCL
 vault policy write platform-crypto-setup - <<'HCL'
 path "vero-transit/keys/+" { capabilities = ["create", "update", "read"] }
@@ -723,7 +728,8 @@ path "vero-transit/keys/+" { capabilities = ["read", "delete"] }
 path "vero-transit/keys/+/config" { capabilities = ["update"] }
 HCL
 vault auth enable approle                   # leave out when "vault auth list" shows approle/
-vault write auth/approle/role/vero token_policies=platform-crypto-app token_no_default_policy=true bind_secret_id=true token_ttl=1h token_max_ttl=4h
+vault write auth/approle/role/vero token_policies=platform-crypto-app token_no_default_policy=true bind_secret_id=true token_ttl=1h token_max_ttl=4h \r
+    secret_id_ttl=2160h secret_id_num_uses=20000 secret_id_bound_cidrs="10.0.4.21/32,10.0.4.22/32" token_bound_cidrs="10.0.4.21/32,10.0.4.22/32"
 ( umask 077; set -C; { echo "platform.crypto.vault.address=$VAULT_ADDR"
   echo "platform.crypto.vault.login=APPROLE"
   echo "platform.crypto.vault.approle-mount=approle"
@@ -741,7 +747,37 @@ before `SDV_KEY_SERVICE_ADDRESS` and `SDV_KEY_SERVICE_MOUNT`.
 |---|---|
 | Vault is sealed | Unseal it as usual, run again |
 | The role is there, but the file isn't | Run again with `-NewSecretId` |
-| The policy is there with another text | Another product may use it: give `-PolicyPrefix` another name |
+| The policy is there with another text | Another product may use it: give `-PolicyPrefix` another name. An install from before task 0102: "Narrowing Vero's login" below |
+| WARNING: the role has no expiry, use limit or address binding | An install from before task 0102: "Narrowing Vero's login" below |
+
+#### Renewing Vero's secret ID
+
+Every 90 days at the latest (or 20,000 logins, or when the file may have been seen by someone else):
+
+1. Move the old login file away (keep it until step 4).
+2. `.\Setup-SDV-VaultTransit.ps1 -VeroAddresses <the same> -NewSecretId` writes a new file with a new secret ID. Without
+   Windows: `vault write -f -field=secret_id auth/approle/role/vero/secret-id` into the file, as above.
+3. Put the new file in Vero's place and restart every Vero; check `/actuator/health` shows the key service up.
+4. Take the old secret ID away: `vault list auth/approle/role/vero/secret-id` lists the accessors;
+   `vault write auth/approle/role/vero/secret-id-accessor/lookup secret_id_accessor=<accessor>` shows each one's
+   `creation_time`; destroy the older one with `vault write auth/approle/role/vero/secret-id-accessor/destroy
+   secret_id_accessor=<accessor>`. Then delete the old file.
+
+#### Narrowing Vero's login (an install from before task 0102)
+
+Its policy reads every `secret/platform/*` and its secret ID never expires. In this order:
+
+1. **Move Vero's secrets** (the mail password, the Teams and Slack webhooks, the approval link key): for each `<path>` the
+   settings name, `vault kv get -field=value secret/platform/<path>` and `vault kv put secret/platform/vero/<path> value=-`
+   (the value typed or piped in, never on the command line). Vero reads the new place first; until the policy is narrowed it
+   still finds a secret at the old place and says so once in its log ("found at its old place").
+2. **Narrow the policy:** `vault policy write platform-crypto-app -` with the policy text above (the line
+   `secret/data/platform/vero/*` instead of `secret/data/platform/*`).
+3. **Limit the role:** `vault write auth/approle/role/vero secret_id_ttl=2160h secret_id_num_uses=20000
+   secret_id_bound_cidrs=<addresses> token_bound_cidrs=<addresses>`. The limits apply to secret IDs made from now on.
+4. **Renew the secret ID** (above): the old one has no limits until it is destroyed.
+5. Check IT › Notifications shows every destination working, and no "found at its old place" line in the log; then delete
+   the old secrets (`vault kv metadata delete secret/platform/<path>`) unless another product reads them.
 
 Who gets which policy: the running Vero `-app` only (it can't make or delete keys); the setup command `-setup`, as a token for
 that run (`vault token create -policy=platform-crypto-setup -ttl=15m -no-default-policy`); `-offboard` only at a customer's exit.
