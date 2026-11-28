@@ -2,7 +2,7 @@
 
 Date: 2026-11-27
 Branch: feat/first-entity-activation
-Outcome: DONE (Q-7 not answered yet; I went on with my recommendation A, below)
+Outcome: DONE (PR #85, merge 674f0d6; follow-up PR for Q-7's answer: the table)
 
 ## What was done
 
@@ -22,8 +22,10 @@ Outcome: DONE (Q-7 not answered yet; I went on with my recommendation A, below)
      `firstStart: true`.
    - **Once any entity is ACTIVE, both addresses answer exactly as an address with nothing behind it** (404, "nothing is
      at this address"), for everyone.
-   - Refused attempts are one WARN line each (who, slot, code; never the file). They are copied into the new entity's
-     audit as `FIRST_START_REFUSED` when the activation succeeds.
+   - Refused attempts are one WARN line each (who, slot, code; never the file), and since the follow-up PR also a row of
+     `first_start_attempts` (changeset 052, answer Q-7). The table is append-only: UPDATE and TRUNCATE are refused, and
+     DELETE is refused while no entity is active. At the first activation its rows are copied into the new entity's audit
+     as `FIRST_START_REFUSED`, and the table is emptied in the same transaction.
 3. **The screen.** With no entity active, the entity chooser asks `GET /api/v1/first-start`. An IT Admin of a slot gets
    **Activate the first entity** (the entity, its name, the licence file, and Activate, which stays off until all three
    are there). A refusal shows the words for its code and the reference. On success the browser chooses the new entity
@@ -44,12 +46,12 @@ Outcome: DONE (Q-7 not answered yet; I went on with my recommendation A, below)
 
 ## Decisions taken
 
-- **Q-7 (what the licence file is for), not answered yet; I went on with A.** The licence is already stored when the
-  screen can show (Vero doesn't start without it, and Vero's licence store is read-only), so the file is a proof of
-  possession besides the sign-in. Nothing new writes licences.
-- **The audit trail before any entity exists:** audit rows belong to an entity, so refused attempts are logged and copied
-  into the first entity's audit on success (Q-7, "Also"). A table of their own would be a changeset; it's not done unless
-  the design chat asks.
+- **Q-7 (what the licence file is for): answered A.** The licence is already stored when the screen can show (Vero
+  doesn't start without it, and Vero's licence store is read-only), so the file is a proof of possession besides the
+  sign-in. Nothing new writes licences.
+- **The audit trail before any entity exists (Q-7, answered: a table, not memory):** PR #85 kept refused attempts in
+  memory. The follow-up PR keeps them in `first_start_attempts` (changeset 052), so a restart loses none. "Append-only
+  like the audit trail" and "emptied at activation" are both met by refusing DELETE only while no entity is active.
 - **Two at once:** a PostgreSQL advisory lock (one key for the install), so it also holds across two Veros of one
   database. The second finds an ACTIVE entity and gets 404.
 - **IT Admin, not Business Admin, on the first start** (as the task says). Later entities stay the Business Admin's,
@@ -102,8 +104,16 @@ See the PR.
 
 ## Questions for the owner
 
-None (Q-7 is the design chat's).
+None.
 
 ## Suggested next step
 
 0103 (release candidate), as the queue says.
+
+## Follow-up (answer Q-7): checks
+
+| Command | Result |
+|---|---|
+| `Build-SDV-All.ps1` | PASS, 128 s (sdv-web 795 tests, 0 failures) |
+| `Test-SDV-SchemaUpgrade.ps1 -Forks 1` (`-From 052`) | PASS, 896 s (over 5 minutes: the Postgres tests, as before), incl. "4zd. After 052" and `FirstStartLockPostgresTest` (2) |
+| `Test-SDV-CleanInstall.ps1` | PASS, 177 s |
