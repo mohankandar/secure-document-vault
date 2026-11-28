@@ -66,8 +66,13 @@ Outcome: DONE (the owner's steps on this computer's real Vault and the GitHub se
 | Proof of the setup script on a throwaway dev-mode Vault (`vero-vault-scratch-0102`, port 18202; never `sdv-vault`) | PASS, 11 of 11: no `-VeroAddresses` refused, nothing made; a range wider than /8 refused; first run made everything, nothing secret printed; the role has 90 days, 20,000 uses, bound login and tokens; the policy reads `platform/vero/*` only; login from the bound address 200; Vero's own secret 200; another app's secret under `platform/` 403; second run "Nothing was changed"; a role bound to another address can't log in from here; a role from before gets the WARNING and is unchanged |
 | `Build-SDV-All.ps1` | PASS, 100 s: backend BUILD SUCCESS (sdv-web 783 tests, 0 failures, 55 skipped), frontend built |
 
-There is no changeset and no screen change, so there is no schema check or tour (speed rules). CI runs the advisory
-check on this PR.
+There is no changeset and no screen change, so there is no schema check or tour (speed rules).
+
+**CI on this PR:** the first run failed in the new advisory step. `dependency:list` alone couldn't resolve Vero's own
+modules, which CI doesn't install (`Could not resolve dependencies … sdv-domain`). It now runs together with `compile`
+in one Maven call, so the reactor supplies them. This was reproduced locally with Vero's snapshots moved out of the local
+Maven repository, then put back. The second run passed, with the check in the log: "maven: 122 libraries checked;
+0 advisories" and "npm: 10 libraries checked; 0 advisories".
 
 **The scratch container is not removed:** `docker rm vero-vault-scratch-0102` was refused by this machine's permission
 check. It is stopped and holds nothing (dev mode, in memory). **Owner:** `docker rm vero-vault-scratch-0102`.
