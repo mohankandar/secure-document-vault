@@ -484,7 +484,8 @@ export const verifyAuditReport = (fingerprint: string) => roleApi<AuditReportVer
 const ntfPath = '/api/v1/admin/notifications'
 const put = (body: unknown): RequestInit => ({ method: 'PUT', body: JSON.stringify(body) })
 export const itNotifications = () => roleApi<ItNotifications>(ntfPath + '/it', 'tenantIt')
-export const saveAppAddress = (appAddress: string) => roleApi<ItNotifications>(ntfPath + '/it', 'tenantIt', put({ appAddress }))
+// Task 0100 (VSEC-204): connects the channels under the install's app address; no address is sent.
+export const connectChannels = () => roleApi<ItNotifications>(ntfPath + '/it', 'tenantIt', put({}))
 export const itNotificationEvents = () => roleApi<EventRow[]>(ntfPath + '/it/events', 'tenantIt')
 export const saveItNotificationEvent = (id: string, change: EventChange) => roleApi<EventRow>(ntfPath + '/it/events/' + encodeURIComponent(id), 'tenantIt', put(change))
 export const saveCustomerZone = (timeZone: string) => roleApi<ItNotifications>(ntfPath + '/it/time-zone', 'tenantIt', put({ timeZone }))

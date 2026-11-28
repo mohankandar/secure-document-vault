@@ -98,6 +98,8 @@ public class ApprovalLinkController {
         String customer = identity.slotOf(p.tenantId()).map(PlatformIdentityReads.EntitySlot::tenantId)
                 .orElseThrow(() -> new CodedRefusal.Conflict(SdvErrorCode.NTF_007, "This entity is not set up in identity yet."));
         TenantId tenant = TenantId.of(customer);
+        // Task 0100 (VSEC-201): the permission first, before anything about the request is looked up or shown.
+        if (!authorization.has(p, Capability.APPROVE_SENSITIVE_ACCESS)) return notYours(tenant, p);
         SignedInPerson person = new SignedInPerson(tenant, p.subject(), p.displayName());
         String token = body == null || body.token() == null ? "" : body.token().trim();
         ApprovalResult result = token.isEmpty() ? new ApprovalResult.Refused(ApprovalRefusal.LINK_INVALID) : a.open(token, person);
@@ -138,6 +140,15 @@ public class ApprovalLinkController {
         audit.record(new ApprovalAudit.Entry(tenant, linkId, EntityId.of(p.tenantId().toString()), type, p.subject(), null,
                 ApprovalAudit.Outcome.REFUSED, refusal, clock.instant(), null));
         return new View("REFUSED", null, refusal.name(), refusal.text(), null, null, null, null);
+    }
+
+    /** Task 0100: no who, why or which record; audited as a refused link (never the token). */
+    static final String NOT_YOURS = "This request isn't yours to decide.";
+
+    private View notYours(TenantId tenant, SdvPrincipal p) {
+        audit.record(new ApprovalAudit.Entry(tenant, null, EntityId.of(p.tenantId().toString()), null, p.subject(), null,
+                ApprovalAudit.Outcome.REFUSED, ApprovalRefusal.NOT_AN_APPROVER, clock.instant(), null));
+        return new View("REFUSED", null, ApprovalRefusal.NOT_AN_APPROVER.name(), NOT_YOURS, null, null, null, null);
     }
 
     private static <T> ResponseEntity<T> noStore(T body) {

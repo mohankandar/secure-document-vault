@@ -54,7 +54,7 @@ class ApprovalLinksTest {
     final NotificationKit kit = new NotificationKit();
     final InMemoryApprovalStore store = new InMemoryApprovalStore();
     final ActionTokens tokens = new ActionTokens(new InMemorySecretResolver().put(SecretRef.of(KEY), "k".repeat(48)), SecretRef.of(KEY));
-    final Notifier notifier = Notifier.builder(kit.settings, new ListRecipients(kit.lists))
+    final Notifier notifier = Notifier.builder(kit.settings, new ListRecipients(kit.lists, kit.lists.holders, NotificationKit.WINDOW))
             .channels(List.of(kit.email, kit.teams, kit.slack))
             .outbox(new InMemoryOutboxStore()).summaries(new InMemorySummaryStore()).conditions(new InMemoryConditionStore())
             .actionLinks(new ApprovalLinks(store, tokens, AppLink.of("/approvals/link"))).clock(kit.clock).build();
@@ -63,7 +63,7 @@ class ApprovalLinksTest {
                     VeroNotificationsConfiguration.approvalType("print", 7),
                     VeroNotificationsConfiguration.approvalType("download", 7),
                     VeroNotificationsConfiguration.approvalType("lower-level", 7)),
-            kit.settings.catalogue(), store, tokens, notifier).approvers(com.documentplatform.notifications.approval.ApproverCheck.from(new ListRecipients(kit.lists)))
+            kit.settings.catalogue(), store, tokens, notifier).approvers(com.documentplatform.notifications.approval.ApproverCheck.from(new ListRecipients(kit.lists, kit.lists.holders, NotificationKit.WINDOW)))
             .audit(audited::add).clock(kit.clock).build();
     final Repo requests = new Repo();
     final NotificationPort plain = mock(NotificationPort.class);
@@ -112,6 +112,28 @@ class ApprovalLinksTest {
         ApprovalResult own = approvals.open(approve, new SignedInPerson(NotificationKit.TENANT, "rs-1", "Rae Steward"));
         assertInstanceOf(ApprovalResult.Refused.class, own, "the requester can't use a link");
         assertTrue(audited.isEmpty(), "opening is not a decision");
+    }
+
+    @Test
+    void withVerosApproverCheckAListedPersonWithoutTheRoleNowIsRefused() {
+        // Task 0100 (VSEC-201): platform-core asks Vero's check, not the list.
+        var policies = mock(com.sdv.platform.application.port.RoleCapabilityPolicyPort.class);
+        org.mockito.Mockito.when(policies.findOverrides(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any())).thenReturn(java.util.Map.of());
+        var signedIn = new java.util.concurrent.atomic.AtomicReference<com.sdv.platform.security.auth.SdvPrincipal>();
+        Approvals checked = Approvals.builder(List.of(VeroNotificationsConfiguration.approvalType("print", 7)),
+                        kit.settings.catalogue(), store, tokens, notifier)
+                .approvers(new SignedInApprover(() -> Optional.ofNullable(signedIn.get()),
+                        new com.sdv.platform.security.auth.CapabilityPolicyService(policies), e -> Optional.of(NotificationKit.CUSTOMER)))
+                .audit(audited::add).clock(kit.clock).build();
+        links.offer(request(AccessRequestKind.PRINT, "rs-1"));
+        notifier.tick(kit.clock.instant());
+        OutgoingMessage toFirst = kit.email.sent().stream().filter(m -> m.recipients().iterator().next().userId().equals("ba-1")).findFirst().orElseThrow();
+        String approve = tokensOf(toFirst).getFirst();
+        SignedInPerson first = new SignedInPerson(NotificationKit.TENANT, "ba-1", "Bea Admin");
+        signedIn.set(new com.sdv.platform.security.auth.SdvPrincipal(NotificationKit.ENTITY, "ba-1", java.util.Set.of(com.sdv.platform.security.SdvRole.BUSINESS_USER)));
+        assertEquals(ApprovalRefusal.NOT_AN_APPROVER, ((ApprovalResult.Refused) checked.open(approve, first)).refusal());
+        signedIn.set(new com.sdv.platform.security.auth.SdvPrincipal(NotificationKit.ENTITY, "ba-1", java.util.Set.of(com.sdv.platform.security.SdvRole.BUSINESS_ADMIN)));
+        assertInstanceOf(ApprovalResult.Ready.class, checked.open(approve, first));
     }
 
     @Test

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   allowedFrequencies, byRole, changeOf, channelWords, chatDestinations, draftProblem, entityZoneWords, frequencyWords, hasChange, roleListWords, stateTone,
-  validAppAddress, validDailyAt, validEmail, validZone, zoneSourceWords, type Destination, type EventRow, type Recipient,
+  appAddressNote, confirmedWords, validDailyAt, validEmail, validZone, zoneSourceWords, type Destination, type EventRow, type Recipient,
 } from './notificationWords'
 
 const row: EventRow = { id: 'APPROVAL_WAITING', name: 'A request is waiting', critical: false, continuous: false, enabled: true, frequency: 'EVERY_HOUR', dailyAt: null, email: true, channels: [], withIdentifier: false }
@@ -58,12 +58,15 @@ describe('channels', () => {
     expect(stateTone('Not used yet')).toBe('')
     expect(stateTone('Something new')).toBe('warn')
   })
-  it('the app address is an http(s) address without a fragment', () => {
-    expect(validAppAddress('https://vero.example.com')).toBe(true)
-    expect(validAppAddress('http://localhost:5183/')).toBe(true)
-    expect(validAppAddress('https://vero.example.com/#/home')).toBe(false)
-    expect(validAppAddress('ftp://vero.example.com')).toBe(false)
-    expect(validAppAddress('vero.example.com')).toBe(false)
+  it('an entry is marked when its person no longer shows the role', () => {
+    expect(confirmedWords({ confirmed: true })).toBeNull()
+    expect(confirmedWords({})).toBeNull()
+    expect(confirmedWords({ confirmed: false })).toMatch(/^Not confirmed/)
+  })
+  it('the app address comes from the install: the screen only says why nothing is sent', () => {
+    expect(appAddressNote({ appAddress: 'https://vero.example.com', connected: true })).toBeNull()
+    expect(appAddressNote({ appAddress: 'https://vero.example.com', connected: false })).toMatch(/^Connect the channels/)
+    expect(appAddressNote({ appAddress: null, connected: false })).toMatch(/sdv.public-url/)
   })
 })
 

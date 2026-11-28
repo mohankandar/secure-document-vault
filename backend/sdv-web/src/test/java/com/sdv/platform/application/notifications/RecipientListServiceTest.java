@@ -22,6 +22,7 @@ import java.util.UUID;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -30,11 +31,14 @@ import static org.mockito.Mockito.verifyNoInteractions;
 /** Task 0081, item 4: the admins' lists; every change audited, never with the address. */
 class RecipientListServiceTest {
     static final String CUSTOMER = "TEN-LISTS";
-    static final UUID ENTITY = UUID.fromString("10000000-0000-0000-0000-0000000b0081");
+    static final UUID ENTITY = UUID.fromString("10000000-0000-0000-0000-0000000b0081");
+    static final RoleSeenWindow WINDOW = new RoleSeenWindow(30, Clock.fixed(Holders.NOW, ZoneOffset.UTC));
 
     private final Store store = new Store();
+    private final Holders holders = new Holders()
+            .hold(ENTITY, "ba-2", "BUSINESS_ADMIN").hold(ENTITY, "x", "BUSINESS_ADMIN").hold(ENTITY, "ita", "IT_ADMIN");
     private final AuditEventPort audit = mock(AuditEventPort.class);
-    private final RecipientListService lists = new RecipientListService(store, audit, new NoTransactions(),
+    private final RecipientListService lists = new RecipientListService(store, holders, WINDOW, audit, new NoTransactions(),
             Clock.fixed(Instant.parse("2026-11-27T12:00:00Z"), ZoneOffset.UTC));
     private final RecipientListService.Actor admin = new RecipientListService.Actor(ENTITY, "ba-1", "Bea Admin", "corr");
 
@@ -80,9 +84,29 @@ class RecipientListServiceTest {
 
     @Test
     void nothingIsAuditedForARefusal() {
-        RecipientListService fresh = new RecipientListService(new Store(), audit, new NoTransactions());
+        RecipientListService fresh = new RecipientListService(new Store(), holders, WINDOW, audit, new NoTransactions());
         code(() -> fresh.add(admin, CUSTOMER, ENTITY, "BUSINESS_ADMIN", "x", "bad"));
         verifyNoInteractions(audit);
+    }
+
+    @Test
+    void onlySomeoneWhoHoldsTheRoleGoesOnItsList() {
+        // Task 0100 (VSEC-203): not signed in with the role (or another role only): refused, nothing written.
+        assertEquals("SDV-NTF-002", code(() -> lists.add(admin, CUSTOMER, ENTITY, "BUSINESS_ADMIN", "anyone", "someone@outside.example")));
+        assertEquals("SDV-NTF-002", code(() -> lists.add(admin, CUSTOMER, ENTITY, "DOCUMENT_STEWARD", "ba-2", "ba2@example.test")), "another role");
+        assertEquals("SDV-NTF-002", code(() -> lists.add(admin, CUSTOMER, null, "IT_ADMIN", "ba-2", "ba2@example.test")), "not an IT Admin anywhere");
+        assertEquals(0, store.entries.size());
+        verifyNoInteractions(audit);
+        assertEquals("ita", lists.add(admin, CUSTOMER, null, "IT_ADMIN", "ita", "it@example.test").userId(), "an IT Admin of any entity");
+    }
+
+    @Test
+    void anEntryWhosePersonNoLongerHoldsTheRoleIsShownNotConfirmed() {
+        var added = lists.add(admin, CUSTOMER, ENTITY, "BUSINESS_ADMIN", "ba-2", "ba2@example.test");
+        assertTrue(added.confirmed());
+        assertTrue(lists.list(CUSTOMER, ENTITY).getFirst().confirmed());
+        holders.replace(CUSTOMER, ENTITY, "ba-2", java.util.Set.of(), Instant.EPOCH);
+        assertFalse(lists.list(CUSTOMER, ENTITY).getFirst().confirmed());
     }
 
     private static String code(Runnable r) {
@@ -102,6 +126,38 @@ class RecipientListServiceTest {
             Optional<Entry> found = list(c, e).stream().filter(x -> x.recipientId().equals(id)).findFirst();
             found.ifPresent(entries::remove);
             return found;
+        }
+    }
+
+    /** Task 0100: role_holders in memory, for one customer. */
+    static final class Holders implements com.sdv.platform.application.port.RoleHolderRepository {
+        final java.util.Map<String, java.util.Set<String>> seen = new java.util.HashMap<>();
+        /** When each person was last seen (role_holders.seen_at). */
+        final java.util.Map<String, Instant> seenAt = new java.util.HashMap<>();
+        /** What a sign-in by {@code hold} counts as: the tests' now. */
+        static final Instant NOW = Instant.parse("2026-11-27T12:00:00Z");
+
+        Holders hold(UUID entity, String user, String role) {
+            seen.computeIfAbsent(entity + "|" + user, k -> new java.util.TreeSet<>()).add(role);
+            return this;
+        }
+
+        @Override public java.util.Set<String> roles(UUID entityId, String userId) {
+            return new java.util.TreeSet<>(seen.getOrDefault(entityId + "|" + userId, java.util.Set.of()));
+        }
+
+        @Override public void replace(String customerId, UUID entityId, String userId, java.util.Set<String> roles, Instant at) {
+            seen.put(entityId + "|" + userId, new java.util.TreeSet<>(roles));
+            this.seenAt.put(entityId + "|" + userId, at);
+        }
+
+        @Override public java.util.Set<String> holders(String customerId, UUID entityId, String role, Instant seenSince) {
+            java.util.Set<String> out = new java.util.TreeSet<>();
+            seen.forEach((k, roles) -> {
+                String[] parts = k.split("[|]", 2);
+                if (roles.contains(role) && !seenAt.getOrDefault(k, NOW).isBefore(seenSince) && (entityId == null || parts[0].equals(entityId.toString()))) out.add(parts[1]);
+            });
+            return out;
         }
     }
 

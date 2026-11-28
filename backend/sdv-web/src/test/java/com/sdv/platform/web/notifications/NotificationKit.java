@@ -44,7 +44,7 @@ final class NotificationKit {
     final InMemoryChannel slack = new InMemoryChannel(ChannelKind.SLACK);
     final Lists lists = new Lists();
     final NotificationSettings settings = new NotificationSettings(VeroCatalogue.build(), new InMemorySettingsStore());
-    final Notifier notifier = Notifier.builder(settings, new ListRecipients(lists))
+    final Notifier notifier = Notifier.builder(settings, new ListRecipients(lists, lists.holders, NotificationKit.WINDOW))
             .channels(List.of(email, teams, slack))
             .outbox(new InMemoryOutboxStore()).summaries(new InMemorySummaryStore()).conditions(new InMemoryConditionStore())
             .clock(clock)
@@ -58,8 +58,8 @@ final class NotificationKit {
         config.getMail().setFromAddress("vero@example.test");
         config.getTeams().put(TEAMS.value(), "notifications/teams-ops");
         config.getSlack().put(SLACK.value(), "notifications/slack-ops");
-        screens = new NotificationSettingsService(settings, config, Map::of);
-        screens.connect(TENANT, "https://vero.example.test", ZoneId.of("UTC"));
+        screens = new NotificationSettingsService(settings, config, Map::of, PublicUrl.of("https://vero.example.test", false));
+        screens.connect(TENANT, ZoneId.of("UTC"));
         lists.add(null, "IT_ADMIN", "ita-1", "it.admin@example.test");
         lists.add(ENTITY, "BUSINESS_ADMIN", "ba-1", "business.admin@example.test");
         lists.add(ENTITY, "BUSINESS_ADMIN", "ba-2", "second.admin@example.test");
@@ -102,10 +102,49 @@ final class NotificationKit {
     }
 
     /** The admins' lists, in memory. */
+    /** Task 0100: 30 days, counted from the tests' now. */
+    static final com.sdv.platform.application.notifications.RoleSeenWindow WINDOW =
+            new com.sdv.platform.application.notifications.RoleSeenWindow(30, Clock.fixed(Holders.NOW, ZoneOffset.UTC));
+
+    /** Task 0100: who holds which list role, in memory (role_holders). */
+    static final class Holders implements com.sdv.platform.application.port.RoleHolderRepository {
+        /** entity|user to roles; the customer is CUSTOMER. */
+        final Map<String, java.util.Set<String>> seen = new java.util.HashMap<>();
+        /** When each person was last seen (role_holders.seen_at). */
+        final java.util.Map<String, Instant> seenAt = new java.util.HashMap<>();
+        /** What a sign-in by {@code hold} counts as: the tests' now. */
+        static final Instant NOW = Instant.parse("2026-11-27T12:00:00Z");
+
+        @Override public java.util.Set<String> roles(UUID entityId, String userId) {
+            return new java.util.TreeSet<>(seen.getOrDefault(entityId + "|" + userId, java.util.Set.of()));
+        }
+
+        @Override public void replace(String customerId, UUID entityId, String userId, java.util.Set<String> roles, Instant at) {
+            seen.put(entityId + "|" + userId, new java.util.TreeSet<>(roles));
+            this.seenAt.put(entityId + "|" + userId, at);
+        }
+
+        @Override public java.util.Set<String> holders(String customerId, UUID entityId, String role, Instant seenSince) {
+            java.util.Set<String> out = new java.util.TreeSet<>();
+            seen.forEach((k, roles) -> {
+                String[] parts = k.split("[|]", 2);
+                if (roles.contains(role) && !seenAt.getOrDefault(k, NOW).isBefore(seenSince) && (entityId == null || parts[0].equals(entityId.toString()))) out.add(parts[1]);
+            });
+            return out;
+        }
+
+        void hold(UUID entity, String role, String user) {
+            seen.computeIfAbsent((entity == null ? ENTITY : entity) + "|" + user, k -> new java.util.TreeSet<>()).add(role);
+        }
+    }
+
     static final class Lists implements NotificationRecipientRepository {
         final List<Entry> entries = new ArrayList<>();
+        /** Everyone added with {@link #add} holds the role (as if they had signed in with it). */
+        final Holders holders = new Holders();
 
         void add(UUID entity, String role, String user, String email) {
+            holders.hold(entity, role, user);
             insert(new Entry(UUID.randomUUID(), CUSTOMER, entity, role, user, email, "admin", Instant.EPOCH));
         }
 

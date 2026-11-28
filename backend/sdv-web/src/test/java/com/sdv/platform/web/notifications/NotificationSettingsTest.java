@@ -74,7 +74,6 @@ class NotificationSettingsTest {
                 new NotificationSettingsService.Change(false, "EVERY_HOUR", null, true, List.of()));
         assertTrue(key.enabled(), "a critical event can't be switched off");
         assertEquals("EVERY_HOUR", key.frequency());
-        assertEquals("SDV-NTF-005", code(() -> kit.screens.connect(NotificationKit.TENANT, "vero.example.test/#/home", java.time.ZoneId.of("UTC"))));
     }
 
     @Test
@@ -83,7 +82,7 @@ class NotificationSettingsTest {
         lists.add(null, "IT_ADMIN", "ita-1", "it@example.test");
         lists.add(NotificationKit.ENTITY, "BUSINESS_ADMIN", "ba-1", "ba@example.test");
         lists.add(NotificationKit.ENTITY, "DOCUMENT_STEWARD", "ds-1", "ds@example.test");
-        ListRecipients r = new ListRecipients(lists);
+        ListRecipients r = new ListRecipients(lists, lists.holders, NotificationKit.WINDOW);
         assertEquals(List.of("ita-1"), r.resolve(NotificationKit.TENANT, ENTITY, VeroCatalogue.IT_ADMIN).stream().map(Recipient::userId).toList(),
                 "the IT Admin is the customer's, also for an entity's event");
         assertEquals(List.of("ba-1"), r.resolve(NotificationKit.TENANT, ENTITY, VeroCatalogue.BUSINESS_ADMIN).stream().map(Recipient::userId).toList());

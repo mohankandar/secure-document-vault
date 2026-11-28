@@ -88,14 +88,24 @@ ended (`SDV-LIC-001` to sending systems); nothing else stops. Renewal and clock 
 
 - **Channels** come from the install config (runbook, "Notifications"): the mail server and each Teams or Slack channel, each
   secret by the path where the key service keeps it. This page shows those paths and each channel's health (working, having
-  problems, down, not used yet, with a code and its reason), never a secret. Give the **address people open Vero on** and
-  save: messages link under it, and nothing is sent before it is saved.
+  problems, down, not used yet, with a code and its reason), never a secret. The **app address** (the address people open
+  Vero on; messages link under it) comes from the install config only (`SDV_PUBLIC_URL`, https; runbook, "Notifications"):
+  this page shows it and can't change it. Press **Connect** once; nothing is sent before.
+- **Approval links:** keep the path `/approvals/link/` out of the web server's access log (exact nginx and IIS lines in the
+  runbook, "Notifications", 4c). A link opens only for its own person, signed in, who may decide the request now; anyone
+  else sees "This request isn't yours to decide".
 - **Technical notifications:** documents that could not be stored, deliveries still missing documents, storage nearly full
   or full, unidentified intake attempts, the key service not reachable, and the licence's technical events. For each: on or
   off, how often (Immediately, every hour, every 4 hours, once a day at a time), by e-mail and to which channels. Ones that
   say something is down are always on, Immediately or every hour. A problem that lasts is told once it has lasted 15 minutes
   (5 for the key service), again every 4 hours while it lasts, and "Recovered" once it is gone.
-- **IT Admins who get e-mail:** the list for the whole customer (user ID and address). Addresses are kept here only, never
+- **IT Admins who get e-mail:** the list for the whole customer (user ID and address). It takes only someone who has
+  signed in as IT Admin in an entity of the customer; a person no entity shows as IT Admin any more is taken off at their
+  next sign-in (audited, "role gone"), and an entry marked Not confirmed gets nothing (task 0100).
+  **The limit:** Vero sees roles only at sign-in (the login system tells it nothing when a role is taken away). So a list
+  entry also counts as not confirmed when its person hasn't signed in with the role for 30 days
+  (`SDV_NOTIFICATIONS_ROLE_SEEN_DAYS`, 7 to 90); within that time a removed person who doesn't sign in may still get
+  messages, though an approval link opens only for someone who may decide now. Addresses are kept here only, never
   in the audit or a log; the audit says who changed the list and whose entry.
 - **The customer's time zone:** every entity without its own follows it, for daily summaries, the times in messages and the
   reports' days.

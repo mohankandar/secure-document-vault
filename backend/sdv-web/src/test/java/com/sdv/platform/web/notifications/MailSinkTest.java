@@ -59,12 +59,12 @@ class MailSinkTest {
                     ZoneId.of("America/New_York"), Map.of(email, ChannelKind.EMAIL)));
             MailServer server = MailServer.relay("127.0.0.1", sink.port(), MailSecurity.NONE, "vero@example.test");
             EmailChannel channel = new EmailChannel(MailServerDirectory.of(Map.of(email, server)), ref -> Optional.empty());
-            Notifier notifier = Notifier.builder(settings, new ListRecipients(lists)).channel(channel)
+            Notifier notifier = Notifier.builder(settings, new ListRecipients(lists, lists.holders, NotificationKit.WINDOW)).channel(channel)
                     .outbox(new InMemoryOutboxStore()).summaries(new InMemorySummaryStore()).conditions(new InMemoryConditionStore())
                     .build();
             VeroNotifications port = new VeroNotifications(notifier, settings, e -> Optional.of(NotificationKit.CUSTOMER), NotificationKit.CUSTOMER);
             // Immediately (the default is every 4 hours).
-            new NotificationSettingsService(settings, new com.documentplatform.notifications.spring.NotificationsProperties(), Map::of)
+            new NotificationSettingsService(settings, new com.documentplatform.notifications.spring.NotificationsProperties(), Map::of, PublicUrl.of("https://vero.example.test", false))
                     .change(NotificationKit.TENANT, com.documentplatform.notifications.EntityId.of(NotificationKit.ENTITY.toString()),
                             VeroEvent.APPROVAL_WAITING.id(), new NotificationSettingsService.Change(true, "IMMEDIATELY", null, true, List.of()));
 
@@ -106,14 +106,14 @@ class MailSinkTest {
                     new com.documentplatform.notifications.inmemory.InMemorySecretResolver().put(key, "k".repeat(48)), key);
             EmailChannel channel = new EmailChannel(MailServerDirectory.of(Map.of(email,
                     MailServer.relay("127.0.0.1", sink.port(), MailSecurity.NONE, "vero@example.test"))), ref -> Optional.empty());
-            Notifier notifier = Notifier.builder(settings, new ListRecipients(lists)).channel(channel)
+            Notifier notifier = Notifier.builder(settings, new ListRecipients(lists, lists.holders, NotificationKit.WINDOW)).channel(channel)
                     .outbox(new InMemoryOutboxStore()).summaries(new InMemorySummaryStore()).conditions(new InMemoryConditionStore())
                     .actionLinks(new com.documentplatform.notifications.approval.ApprovalLinks(store, tokens,
                             com.documentplatform.notifications.AppLink.of("/approvals/link")))
                     .build();
             var approvals = com.documentplatform.notifications.approval.Approvals.builder(
                             List.of(VeroNotificationsConfiguration.approvalType("print", 7)), settings.catalogue(), store, tokens, notifier)
-                    .approvers(com.documentplatform.notifications.approval.ApproverCheck.from(new ListRecipients(lists))).audit(e -> { }).build();
+                    .approvers(com.documentplatform.notifications.approval.ApproverCheck.from(new ListRecipients(lists, lists.holders, NotificationKit.WINDOW))).audit(e -> { }).build();
             var requests = new ApprovalLinksTest.Repo();
             var links = new VeroApprovalLinks(approvals, requests.port, lists, e -> Optional.of(NotificationKit.CUSTOMER),
                     org.mockito.Mockito.mock(com.sdv.platform.application.port.NotificationPort.class));

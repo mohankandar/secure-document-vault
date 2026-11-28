@@ -149,6 +149,8 @@ try {
     $env:SDV_AUTH_JWT_PROVIDER_ID = 'vero-testers'
     $env:SDV_AUTH_JWT_MAX_TOKEN_LIFETIME_SECONDS = '900'
     $env:SDV_TRUSTED_PROXIES = '127.0.0.1'
+    # Task 0100: messages link only under the testers' own address.
+    $env:SDV_PUBLIC_URL = "https://$hostName"
     $env:SDV_STORAGE_ALLOWED_ROOTS = $storage
     # Task 0080: beside the documents' folder, never in it.
     $env:SDV_ERASE_LOG_FOLDER = "$($storage.TrimEnd('\', '/'))-erase-log"

@@ -34,4 +34,13 @@ public interface NotificationRecipientRepository {
 
     /** The entry removed, if it was on this list. */
     Optional<Entry> delete(String customerId, UUID entityId, UUID recipientId);
+
+    /** Task 0100: the person taken off one role's list (an entity's, or the customer's with {@code entityId} null). */
+    default List<Entry> deleteRole(String customerId, UUID entityId, String userId, String role) {
+        List<Entry> removed = new java.util.ArrayList<>();
+        for (Entry e : holders(customerId, entityId, role)) {
+            if (e.userId().equals(userId)) delete(customerId, entityId, e.recipientId()).ifPresent(removed::add);
+        }
+        return List.copyOf(removed);
+    }
 }

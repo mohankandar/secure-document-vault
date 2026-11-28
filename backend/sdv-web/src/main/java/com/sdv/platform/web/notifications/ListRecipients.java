@@ -7,6 +7,7 @@ import com.documentplatform.notifications.RoleId;
 import com.documentplatform.notifications.TenantId;
 import com.sdv.platform.application.port.NotificationRecipientRepository;
 import com.sdv.platform.application.port.NotificationRecipientRepository.Entry;
+import com.sdv.platform.application.port.RoleHolderRepository;
 
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -19,19 +20,28 @@ import java.util.UUID;
  * to a list reaches the next message. The IT Admin is looked up for the whole customer, also for an entity's event.
  * A person (the requester of a request) is found on any of the customer's lists; when the lists give them two
  * different addresses, nobody is chosen (fail closed: the message fails with NO_RECIPIENTS).
+ * <p>
+ * Task 0100 (VSEC-203): of a role's list, only the people who held that role at their last sign-in get messages (and
+ * approval links); an entry whose person never signed in with the role, or no longer holds it, gets nothing.
  */
 public class ListRecipients implements RecipientResolver {
     private final NotificationRecipientRepository lists;
+    private final RoleHolderRepository holders;
+    private final com.sdv.platform.application.notifications.RoleSeenWindow window;
 
-    public ListRecipients(NotificationRecipientRepository lists) {
+    public ListRecipients(NotificationRecipientRepository lists, RoleHolderRepository holders,
+                          com.sdv.platform.application.notifications.RoleSeenWindow window) {
         this.lists = lists;
+        this.holders = holders;
+        this.window = window;
     }
 
     @Override
     public Set<Recipient> resolve(TenantId tenant, EntityId entity, RoleId role) {
-        List<Entry> holders;
+        List<Entry> entries;
+        UUID scope = null;
         if (VeroCatalogue.IT_ADMIN.equals(role)) {
-            holders = lists.holders(tenant.value(), null, role.value());
+            entries = lists.holders(tenant.value(), null, role.value());
         } else if (entity == null) {
             return Set.of();
         } else {
@@ -41,10 +51,13 @@ public class ListRecipients implements RecipientResolver {
             } catch (IllegalArgumentException ex) {
                 return Set.of();
             }
-            holders = lists.holders(tenant.value(), id, role.value());
+            entries = lists.holders(tenant.value(), id, role.value());
+            scope = id;
         }
+        if (entries.isEmpty()) return Set.of();
+        Set<String> held = holders.holders(tenant.value(), scope, role.value(), window.since());
         Set<Recipient> people = new LinkedHashSet<>();
-        for (Entry e : holders) people.add(new Recipient(e.userId(), e.email()));
+        for (Entry e : entries) if (held.contains(e.userId())) people.add(new Recipient(e.userId(), e.email()));
         return Set.copyOf(people);
     }
 

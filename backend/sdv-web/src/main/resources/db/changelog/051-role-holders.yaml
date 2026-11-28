@@ -1,0 +1,9 @@
+databaseChangeLog:
+  - changeSet:
+      id: 051-role-holders
+      author: sdv
+      changes:
+        - sqlFile:
+            path: db/changelog/051-role-holders.sql
+            relativeToChangelogFile: false
+            splitStatements: false

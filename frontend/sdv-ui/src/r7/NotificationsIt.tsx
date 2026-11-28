@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react'
-import { addItRecipient, itNotificationEvents, itNotifications, itRecipients, removeItRecipient, saveAppAddress, saveCustomerZone, saveItNotificationEvent } from './liveApi'
+import { addItRecipient, connectChannels, itNotificationEvents, itNotifications, itRecipients, removeItRecipient, saveCustomerZone, saveItNotificationEvent } from './liveApi'
 import { ActionError, FailureNotice, actionFailed, loadFailed, type Failure } from './CardError'
 import { Callout, Panel, fmtDateTime } from './ui'
 import { AddRecipient, EventsTable, RecipientTable, SwitchedOff, ZoneForm, isSwitchedOff } from './NotificationParts'
-import { channelWords, chatDestinations, mailAuthWords, stateTone, validAppAddress, type Channels, type EventRow, type ItNotifications, type Recipient } from './notificationWords'
+import { channelWords, chatDestinations, mailAuthWords, stateTone, appAddressNote, type Channels, type EventRow, type ItNotifications, type Recipient } from './notificationWords'
 
 // Task 0081: IT › Notifications. The channels (mail, Teams, Slack: set in the install configuration, shown by the path of
 // their secret, never a secret), the customer's time zone, the technical events and the IT Admins who get e-mail.
@@ -44,24 +44,24 @@ export function NotificationsIt() {
 }
 
 function ChannelsPanel({ channels, onSaved }: { channels: Channels; onSaved: (v: ItNotifications) => void }) {
-  const [address, setAddress] = useState(channels.appAddress ?? '')
+  // Task 0100 (VSEC-204): the app address is the install's (sdv.public-url); this screen only shows it and connects.
   const [busy, setBusy] = useState(false)
   const [failure, setFailure] = useState<Failure | null>(null)
-  const typed = address.trim()
-  const save = () => {
-    if (busy || !validAppAddress(typed)) return
+  const note = appAddressNote(channels)
+  const connect = () => {
+    if (busy || !channels.appAddress) return
     setBusy(true); setFailure(null)
-    saveAppAddress(typed).then((v) => { onSaved(v); setAddress(v.channels.appAddress ?? '') }).catch((e) => setFailure(actionFailed('Saving the app address failed', e))).finally(() => setBusy(false))
+    connectChannels().then(onSaved).catch((e) => setFailure(actionFailed('Connecting the channels failed', e))).finally(() => setBusy(false))
   }
   return <Panel title="Channels" description="Mail, Teams and Slack are set in the install configuration by IT (IT admin guide, Notifications). Secrets stay in the key service; this page shows only where they are kept.">
     <div className="stack">
-      {!channels.connected && <Callout tone="warn" title="Nothing is sent yet">Save the app address to connect the channels. Until then Vero sends no messages.</Callout>}
-      {failure && <ActionError title="The app address wasn’t saved" failure={failure} />}
+      {note && <Callout tone="warn" title="Nothing is sent yet">{note}</Callout>}
+      {failure && <ActionError title="The channels weren’t connected" failure={failure} />}
       <div className="row wrap ntf-form">
-        <label className="v-field grow"><span>App address</span>
-          <input className={`v-input mono${typed && !validAppAddress(typed) ? ' invalid' : ''}`} value={address} maxLength={300} placeholder="For example: https://vero.example.com" onChange={(e) => setAddress(e.target.value)} />
-          <small className="faint">The address people open Vero on. Links in messages are made under it.</small></label>
-        <button type="button" className="v-btn sm" disabled={busy || !validAppAddress(typed) || (channels.connected && typed === channels.appAddress)} onClick={save}>{busy ? 'Saving…' : 'Save'}</button>
+        <div className="v-field grow"><span>App address</span>
+          <span className="mono">{channels.appAddress ?? 'Not set'}</span>
+          <small className="faint">The address people open Vero on, from the install configuration (sdv.public-url). Links in messages are made under it.</small></div>
+        {channels.appAddress && !channels.connected && <button type="button" className="v-btn sm" disabled={busy} onClick={connect}>{busy ? 'Connecting…' : 'Connect'}</button>}
       </div>
       <dl className="v-kv">
         <div><dt>Mail server</dt><dd>{channels.mailConfigured ? 'Set up' : 'Not set up'}</dd></div>

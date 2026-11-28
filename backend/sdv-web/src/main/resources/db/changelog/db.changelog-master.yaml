@@ -142,3 +142,6 @@ databaseChangeLog:
 
   - include:
       file: db/changelog/050-approval-links.yaml
+
+  - include:
+      file: db/changelog/051-role-holders.yaml

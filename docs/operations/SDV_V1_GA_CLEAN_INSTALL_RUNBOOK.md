@@ -571,9 +571,16 @@ starts, records notifications and sends nothing.
    | `PLATFORM_NOTIFICATIONS_MAIL_AUTH=OAUTH2_MICROSOFT` and `..._MAIL_OAUTH_*` | Microsoft 365 without a password (platform-core's guide, section 1a) |
    | `PLATFORM_NOTIFICATIONS_TEAMS_<ID>`, `PLATFORM_NOTIFICATIONS_SLACK_<ID>` | One per channel: the id (letters and digits in a variable's name: `PLATFORM_NOTIFICATIONS_TEAMS_OPS` is the destination `ops`; ids with `-` go in the YAML file) and the **path** of its webhook address |
    | `SDV_NOTIFICATIONS_ENABLED` | `false` switches notifications off |
+   | `SDV_PUBLIC_URL` | The https address people open Vero on; every message links under it (task 0100, item 4 below) |
+   | `SDV_NOTIFICATIONS_ROLE_SEEN_DAYS` | 7 to 90, 30 by default: a list entry whose person hasn't signed in with that role for this many days gets nothing (task 0100) |
 
    A wrong setting stops the start and names the setting, never its value.
-4. **In Vero**, the IT Admin opens IT › Notifications, gives the address people open Vero on (links are made under it),
+4. **The app address** (task 0100): set `SDV_PUBLIC_URL` to the https address people open Vero on, such as
+   `https://vero.example.com` (no user, query or `#`). Every message links under it, and no screen can change it. A plain
+   `http` address, or anything else that isn't such an address, stops the start (SDV-SYS-005). Not set: Vero starts but
+   sends no messages, and IT › Notifications says so. At each start, a customer connected under another address is moved
+   to this one.
+4a. **In Vero**, the IT Admin opens IT › Notifications, checks the app address shown there, presses **Connect** once,
    chooses the technical notifications and keeps the list of IT Admins who get e-mail. Each Business Admin chooses their
    entity's notifications and keeps its lists (Business administration › Notifications).
 4b. **Teams and Slack go through the outbound settings** (`platform.notifications.webhook.via-outbound=true`, Vero's default since
@@ -587,6 +594,28 @@ starts, records notifications and sends nothing.
    it** (the token is the last part; Vero takes it out of the address at once and never logs it). Replacing the key ends the links
    already sent; approvers decide in Approvals then. A link lives as long as a request waits (`SDV_APPROVALS_PENDING_DAYS`), at most
    30 days.
+
+   **Keep the link path out of the access logs** (task 0100). The exact lines:
+
+   - **nginx**, in the `server` block that serves the screens:
+
+     ```nginx
+     location ^~ /approvals/link/ {
+         access_log off;
+         add_header Referrer-Policy no-referrer always;
+         try_files /index.html =404;
+     }
+     ```
+
+   - **IIS**, once, in a command prompt run as administrator (`<Vero site>` is the site's name in IIS Manager):
+
+     ```bat
+     %windir%\system32\inetsrv\appcmd.exe set config "<Vero site>/approvals/link" -section:system.webServer/httpLogging /dontLog:"True" /commit:apphost
+     ```
+
+   Check it: open a link, then search the web server's log (nginx: `access.log`; IIS:
+   `%SystemDrive%\inetpub\logs\LogFiles\W3SVC<site id>`) for `approvals/link`; nothing is found. A proxy or load balancer in
+   front of Vero keeps its own log: leave the same path out there too.
 5. **Links** in messages are paths such as `https://<vero>/governance/approvals`. The web server that serves the screens
    answers every such path with `index.html`, as it does for `/`; the screens then open the right page.
 6. **Time zones** are identity's: the customer's (IT › Notifications) and an entity's own (Business administration ›

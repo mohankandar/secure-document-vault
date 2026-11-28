@@ -67,6 +67,7 @@ class ApprovalLinkControllerTest {
 
     private void signedIn(String subject, UUID entity) {
         when(security.requirePrincipal()).thenReturn(new SdvPrincipal(entity, subject, Set.of(SdvRole.BUSINESS_ADMIN), "Bea Admin", null));
+        when(authorization.has(any(), eq(com.sdv.platform.security.Capability.APPROVE_SENSITIVE_ACCESS))).thenReturn(true);
     }
 
     private void waiting() {
@@ -121,6 +122,32 @@ class ApprovalLinkControllerTest {
         var bad = page.open(new ApprovalLinkController.LinkRequest("not-a-token")).getBody();
         assertEquals("REFUSED", bad.state());
         assertTrue(page.open(null).getBody().state().equals("REFUSED"));
+    }
+
+    @Test
+    void someoneWhoMayNotDecideSeesNothingOfTheRequest() {
+        // Task 0100 (VSEC-201): on the list, but without the approver's permission now.
+        String token = approveToken("ba-1");
+        when(security.requirePrincipal()).thenReturn(new SdvPrincipal(NotificationKit.ENTITY, "ba-1", Set.of(SdvRole.BUSINESS_USER), "Bea", null));
+        when(authorization.has(any(), any())).thenReturn(false);
+        waiting();
+        for (var v : List.of(page.open(new ApprovalLinkController.LinkRequest(token)).getBody(),
+                page.decide(new ApprovalLinkController.LinkRequest(token)).getBody())) {
+            assertEquals("REFUSED", v.state());
+            assertEquals(ApprovalRefusal.NOT_AN_APPROVER.name(), v.code());
+            assertEquals("This request isn't yours to decide.", v.message());
+            assertEquals(null, v.request());
+            assertEquals(null, v.action());
+            assertEquals(null, v.decidedByName());
+        }
+        verify(requests, never()).pending(any(), any(), any(), any());
+        verify(requests, never()).decide(any(), any(), any(), any(), any(), any());
+        var entries = org.mockito.ArgumentCaptor.forClass(ApprovalAudit.Entry.class);
+        verify(audit, org.mockito.Mockito.times(2)).record(entries.capture());
+        for (var e : entries.getAllValues()) {
+            assertEquals(ApprovalRefusal.NOT_AN_APPROVER, e.refusal());
+            assertFalse(e.toString().contains(token));
+        }
     }
 
     @Test

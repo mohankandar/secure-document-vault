@@ -928,9 +928,9 @@ secret.
 ### SDV-NTF-005: notification setting refused
 
 - **HTTP status:** 400.
-- **Meaning:** the setting can't be saved: the event is not one of this screen's, a channel is not one IT connected (or e-mail was named as a channel), a frequency or time of day is not one Vero knows, an event that tells IT something is down was set to anything but Immediately or Every hour, or the app address is not a full `https://` address without a query or `#`. The message says which. Nothing was changed.
-- **What the user should do:** choose again; for a Teams or Slack channel that is missing, ask IT.
-- **What support should tell the customer:** channels are set in the install config (runbook, "Notifications"); IT saves the app address on IT › Notifications first.
+- **Meaning:** the setting can't be saved: the event is not one of this screen's, a channel is not one IT connected (or e-mail was named as a channel), a frequency or time of day is not one Vero knows, an event that tells IT something is down was set to anything but Immediately or Every hour, or (Connect on IT › Notifications) the install has no app address (`SDV_PUBLIC_URL`). The message says which. Nothing was changed.
+- **What the user should do:** choose again; for a Teams or Slack channel that is missing, or the app address, ask IT.
+- **What support should tell the customer:** channels and the app address are set in the install config (runbook, "Notifications"); IT presses Connect on IT › Notifications first.
 
 ### SDV-NTF-006: time zone not valid
 
