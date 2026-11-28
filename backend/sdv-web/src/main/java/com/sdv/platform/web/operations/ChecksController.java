@@ -67,13 +67,15 @@ public class ChecksController {
         SdvPrincipal person = requireTechnicalView();
         ByteArrayOutputStream zip = new ByteArrayOutputStream();
         bundles.write(zip);
+        // Task 0102 (VSEC-207): no key-service setting leaves Vero, whatever its file is called.
+        byte[] body = KeyServiceSettingsFilter.filter(zip.toByteArray());
         Instant now = Instant.now();
         audit.append(new AuditEvent(UUID.randomUUID(), person.tenantId(), "USER", person.subject(), ACTION, "INSTALLATION", "vero",
-                now, MDC.get("correlationId"), AuditOutcome.SUCCESS, "{\"bytes\":" + zip.size() + "}", person.displayName()));
+                now, MDC.get("correlationId"), AuditOutcome.SUCCESS, "{\"bytes\":" + body.length + "}", person.displayName()));
         return ResponseEntity.ok().contentType(new MediaType("application", "zip"))
                 .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.attachment()
                         .filename("vero-diagnostics-" + now.toString().substring(0, 10) + ".zip").build().toString())
-                .header(HttpHeaders.CACHE_CONTROL, "no-store").body(zip.toByteArray());
+                .header(HttpHeaders.CACHE_CONTROL, "no-store").body(body);
     }
 
     private SdvPrincipal requireTechnicalView() {
