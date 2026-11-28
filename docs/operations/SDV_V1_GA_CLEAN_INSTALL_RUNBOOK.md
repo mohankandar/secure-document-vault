@@ -427,6 +427,30 @@ the log says what must be erased again before anyone works with the database (ta
 - **The same folder for every Vero of one installation**, and one folder for one database. A test database has its own.
 - Only the service account may write there. Vero makes the folder and its files; nobody edits them: a changed or forged
   entry stops all work (`ERASE_LOG_CHAIN_BROKEN`). The entries are keyed with the customer's key in the key service.
+- **The folder's rights, exactly** (task 0102). Make the folder before the first start and give it to the service account
+  alone (`<service account>` is the account Vero runs as, for example `NT SERVICE\Vero` or `DOMAIN\svc-vero`; `vero` on
+  Linux). Administrators keep read-only access for the backup.
+
+  Windows (a command prompt run as administrator):
+
+  ```bat
+  mkdir D:\vero\erase-log
+  icacls D:\vero\erase-log /inheritance:r
+  icacls D:\vero\erase-log /grant:r "<service account>:(OI)(CI)F" "BUILTIN\Administrators:(OI)(CI)RX"
+  icacls D:\vero\erase-log
+  ```
+
+  The last line must show only those two entries. The backup tool reads as an administrator; if it runs as an account of its
+  own, add that account with `(OI)(CI)RX` too, never with write rights.
+
+  Linux:
+
+  ```sh
+  sudo install -d -o vero -g vero -m 700 /var/lib/vero/erase-log
+  ls -ld /var/lib/vero/erase-log      # drwx------ vero vero
+  ```
+
+  (Vero itself makes the folder `rwx------` on Linux; it can't set the rights on Windows, so the steps above are needed there.)
 - **Moving it:** stop every Vero, move **all** files, change the setting, start. Never start an empty log for a database that
   used one.
 - The app user has no DELETE on `erl_position`; the schema step takes it away.
