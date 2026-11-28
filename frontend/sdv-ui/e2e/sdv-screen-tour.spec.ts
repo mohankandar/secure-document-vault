@@ -2777,6 +2777,30 @@ test.describe('SDV role-based screen capture', () => {
     await expect(areaTab(page, 'Home')).toHaveAttribute('aria-current', 'page')
   })
 
+  test('First start: the IT Admin activates the first entity (task 0098)', async ({ page }, testInfo) => {
+    // No entity active yet and this person is IT Admin of one slot (simulated in the browser only: the seed has entities).
+    await page.route('**/api/v1/session/entities', (route) => route.fulfill({ json: { current: null, entities: [], activatableSlots: [] } }))
+    await page.route('**/api/v1/first-start', (route) => route.fulfill({ json: { slots: ['ENT-ACME-0001'] } }))
+    await openApp(page, '/')
+    await expect(page.getByRole('heading', { name: 'Activate the first entity' })).toBeVisible({ timeout: 15000 })
+    await expect(page.getByRole('button', { name: 'Activate' })).toBeDisabled()
+    await page.getByLabel('Name').fill('Acme Mortgage')
+    await page.getByLabel('Licence file').setInputFiles({ name: 'licence.json', mimeType: 'application/json', buffer: Buffer.from('{"licence":"example"}') })
+    await expect(page.getByRole('button', { name: 'Activate' })).toBeEnabled()
+    await capture(page, testInfo, 'first-start')
+    // A refused licence says so, with the reference.
+    await page.route('**/api/v1/first-start/activate', (route) => route.fulfill({ status: 409, headers: { 'X-Correlation-Id': 'R-FIRSTSTART1' }, json: { code: 'SDV-ENT-001' } }))
+    await page.getByRole('button', { name: 'Activate' }).click()
+    await expect(page.getByRole('alert')).toContainText(/licence file/)
+    await expect(page.getByRole('alert')).toContainText('R-FIRSTSTART1')
+    // Once an entity is active the screen is gone: the server answers 404, the page says who activates.
+    await page.unroute('**/api/v1/first-start')
+    await page.route('**/api/v1/first-start', (route) => route.fulfill({ status: 404, json: { code: null } }))
+    await openApp(page, '/')
+    await expect(page.getByRole('status')).toContainText(/No entity is activated yet/, { timeout: 15000 })
+    await expect(page.getByRole('heading', { name: 'Activate the first entity' })).toHaveCount(0)
+  })
+
   test('Without a session the app shows the error page, never sample data (task 0021)', async ({ page }) => {
     // The server refuses the session (simulated in the browser only).
     await page.route('**/api/v1/session', (route) => route.fulfill({ status: 401, json: { message: 'Not signed in' } }))

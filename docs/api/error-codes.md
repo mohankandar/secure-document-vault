@@ -322,14 +322,14 @@ Sent by the Business Admin's activation address, `POST /api/v1/admin/entities/{s
 ### SDV-ENT-001: entity can't be activated
 
 - **HTTP status:** 409.
-- **Meaning:** platform-core refused the activation: no licence in force, the licence doesn't list the slot, the slot is unknown or already activated, or the name is empty, longer than 200 characters or taken. The message is platform-core's sentence; it names the slot, never the typed name. One INFO line with the reason.
+- **Meaning:** platform-core refused the activation: no licence in force, the licence doesn't list the slot, the slot is unknown or already activated, or the name is empty, longer than 200 characters or taken. On the first-start screen (task 0098) also: the licence file chosen isn't this install's (it doesn't verify with this build's keys, is another licence or an older version, or doesn't list the slot); the reason's code is in the log and, after the activation, in the audit (`FIRST_START_REFUSED`). The message is platform-core's sentence; it names the slot, never the typed name. One INFO line with the reason.
 - **What the user should do:** do what the message says (another name, or ask IT to install the licence).
 - **What support should tell the customer:** the licence must be stored by setup and list the slot; names are unique per customer.
 
-### SDV-ENT-002: not a Business Admin of this entity
+### SDV-ENT-002: not a Business Admin (or, first start, an IT Admin) of this entity
 
 - **HTTP status:** 403.
-- **Meaning:** the person's groups don't give Business Admin on that slot (role mapping file), so they may not activate it. Message: "Only a Business Admin of <slot> can activate it." One INFO line.
+- **Meaning:** the person's groups don't give Business Admin on that slot (role mapping file), so they may not activate it. Message: "Only a Business Admin of <slot> can activate it." On the first-start screen (task 0098): the groups don't give IT Admin on that slot ("Only an IT Admin of <slot> can activate the first entity."). One INFO line.
 - **What the user should do:** ask your IT team for the Business Admin group of that entity.
 - **What support should tell the customer:** add the person's group to the role mapping file as `BUSINESS_ADMIN` for that slot and run setup.
 

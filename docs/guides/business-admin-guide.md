@@ -26,8 +26,9 @@ Restricted Steward with any admin role; Business Admin with Document Steward; IT
 ## Entities
 
 An entity is a part of your organization with its own records, rules and reports. Your installer sets up the places
-(slots); a Business Admin of a slot activates and names it once. There is no screen for it yet: your installer does it
-with you. A person who works in several entities chooses one after signing in and switches in the account menu (audited).
+(slots). IT activates the first one on the first-start screen; a Business Admin of a slot activates and names each later
+one (SETUP.md section 4). A person who works in several entities chooses one after signing in and switches in the account
+menu (audited).
 Nothing is shared between entities.
 
 ## Search fields
