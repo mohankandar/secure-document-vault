@@ -35,7 +35,7 @@
         <maven.surefire.version>3.5.6</maven.surefire.version>
         <pdfbox.version>3.0.8</pdfbox.version>
         <!-- Task 0070: Liquibase 5 has another licence (plan 0059, question 1). -->
-        <liquibase.version>4.33.0</liquibase.version>
+        <liquibase.version>5.0.4</liquibase.version>
     </properties>
 
     <repositories>
