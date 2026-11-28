@@ -347,6 +347,40 @@ class QuickSearchTest {
     }
 
     @Test
+    void aSensitiveFieldIsSearchedOnlyInTheLevelsThePersonMayOpen() {
+        // Task 0101 (VSEC-202): the person's levels go with the criterion into the one search query.
+        com.sdv.platform.application.port.RecordValuesPort values = new com.sdv.platform.application.port.RecordValuesPort() {
+            @Override public UUID store(UUID t, UUID s, UUID sub, Map<String, String> v) { return sub; }
+            @Override public List<com.sdv.platform.application.port.RecordValuesPort.Opened> open(UUID t, UUID s, UUID r) { return List.of(); }
+            @Override public Map<UUID, List<com.sdv.platform.application.port.RecordValuesPort.Opened>> openPage(UUID t, UUID s, java.util.Collection<UUID> r) { return Map.of(); }
+            @Override public java.util.Set<String> sensitiveKeys(UUID t) { return java.util.Set.of("loanType"); }
+            @Override public Map<String, List<String>> fingerprints(UUID t, Map<String, String> v) {
+                Map<String, List<String>> out = new java.util.HashMap<>();
+                v.keySet().forEach(k -> out.put(k, List.of("f1.x")));
+                return out;
+            }
+            @Override public boolean partialSearch() { return true; }
+        };
+        var withValues = new BusinessExperienceService(tenants, sources, definitions, records, audit,
+                com.sdv.platform.application.access.QuarantineLookup.NONE, values, Clock.fixed(NOW, ZoneOffset.UTC));
+        when(records.findMatchingSubmissions(eq(TENANT), eq(SOURCE), anyList(), any(), any(), any(), any(), anyBoolean(), anyInt(), anyInt()))
+                .thenReturn(List.of());
+        Map<com.sdv.platform.application.access.Clearance, List<String>> expected = Map.of(
+                com.sdv.platform.application.access.Clearance.STANDARD_ONLY, List.of("STANDARD"),
+                com.sdv.platform.application.access.Clearance.ALL, List.of("CONFIDENTIAL", "HIGHLY_CONFIDENTIAL", "STANDARD"));
+        for (var e : expected.entrySet()) {
+            org.mockito.Mockito.clearInvocations(records);
+            withValues.search(TENANT, SOURCE, Map.of("loanType", "mortgage"), null, null, null, null, null, false, 1, 25, "maya", "corr", e.getKey());
+            @SuppressWarnings("unchecked")
+            ArgumentCaptor<List<BusinessRecordRepository.SearchCriterion>> sent = ArgumentCaptor.forClass(List.class);
+            verify(records).findMatchingSubmissions(eq(TENANT), eq(SOURCE), sent.capture(), any(), any(), any(), any(), anyBoolean(), anyInt(), anyInt());
+            var criterion = sent.getValue().getFirst();
+            assertEquals(List.of("f1.x"), criterion.fingerprints());
+            assertEquals(e.getValue(), criterion.openableLevels());
+        }
+    }
+
+    @Test
     void matchRankIgnoresCaseOnlyWhenTheFieldSaysSo() {
         var loanType = new AnywhereField("loanType", MetadataSearchMode.EXACT, List.of("mortgage"), false, true);
         var memberId = new AnywhereField("memberId", MetadataSearchMode.EXACT, List.of("ab-12"), true, false);

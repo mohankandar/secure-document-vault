@@ -231,6 +231,12 @@ public class QuarantineService {
     /** The server's count of documents the filter would quarantine now. */
     public MatchCount countMatching(Actor actor, FilterRequest request) {
         Filter filter = filter(actor.tenantId(), request);
+        // Task 0101 (VSEC-202): a count by a sensitive value would tell someone which levels they can't open hold it.
+        // As for quarantining by filter, only who can review every level counts by one (decided by the request, never the data).
+        if (namesSensitiveField(actor.tenantId(), request)
+                && !actor.clearance().canReviewQuarantined(SensitivityLevel.HIGHLY_CONFIDENTIAL)) {
+            throw new CodedRefusal.Forbidden(SdvErrorCode.QUA_002, SENSITIVE_COUNT_REFUSED);
+        }
         return new MatchCount(quarantine.countMatching(actor.tenantId(), filter));
     }
 
@@ -1044,6 +1050,13 @@ public class QuarantineService {
                 r.decidedByName(), r.decidedAt());
     }
 
+    /** Task 0101: the request gives a value for one of the entity's sensitive fields. */
+    private boolean namesSensitiveField(UUID tenantId, FilterRequest request) {
+        if (request == null || request.fields() == null || request.fields().isEmpty()) return false;
+        java.util.Set<String> sensitive = recordValues.sensitiveKeys(tenantId);
+        return request.fields().entrySet().stream().anyMatch(e -> sensitive.contains(e.getKey()) && e.getValue() != null && !e.getValue().isBlank());
+    }
+
     private Filter filter(UUID tenantId, FilterRequest request) {
         FilterRequest f = request == null ? new FilterRequest(null, null, null, null) : request;
         LocalDate from = day(f.receivedFrom());
@@ -1079,7 +1092,9 @@ public class QuarantineService {
             else fields.put(field.fieldKey(), SearchValueNormalizer.searchForm(definitions.storedForms(tenantId, field.fieldKey(), value).stream().findFirst().orElse(normalized)));
         }
         // Task 0078: a sensitive value is kept and compared as its fingerprints only.
-        recordValues.fingerprints(tenantId, asSensitive).forEach((key, prints) -> fields.put(key, "fingerprint:" + String.join("|", prints)));
+        recordValues.fingerprints(tenantId, asSensitive).forEach((key, prints) -> fields.put(key, SENSITIVE_FILTER + String.join("|", prints)));
+        // Task 0101: a sensitive field without fingerprints matches nothing; it is never dropped from the filter (fail closed).
+        asSensitive.keySet().forEach(key -> fields.putIfAbsent(key, SENSITIVE_FILTER));
         return new Filter(from.atStartOfDay(ZoneOffset.UTC).toInstant(),
                 to.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant(), sourceId, fields);
     }
@@ -1191,6 +1206,9 @@ public class QuarantineService {
     static final String NO_INCIDENT = "No quarantine incident has this reference.";
     static final String NO_REQUEST = "No release request has this reference.";
     static final String LEVEL_REFUSED = "Only a Steward who can open this document's level can quarantine, review or release it.";
+    /** Task 0101: how a sensitive value is kept in a filter: its fingerprints, never the value. */
+    static final String SENSITIVE_FILTER = "fingerprint:";
+    static final String SENSITIVE_COUNT_REFUSED = "Only a Steward who can open every level can count or quarantine by a sensitive field.";
     static final String INCIDENT_RELEASED = "This incident was released, so nothing can be added to it.";
     static final String COUNT_CHANGED = "The matching documents changed since they were counted. Count them again.";
     static final String NOT_QUARANTINED = "This document isn't quarantined.";

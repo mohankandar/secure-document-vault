@@ -1,5 +1,7 @@
 package com.sdv.platform.application.quarantine;
 
+import com.sdv.platform.application.port.RecordValuesPort;
+
 import com.sdv.platform.application.access.Clearance;
 import com.sdv.platform.application.access.DocumentAccessGuard;
 import com.sdv.platform.application.approvals.ApprovalSettings;
@@ -176,6 +178,25 @@ class QuarantineServiceTest {
         assertEquals(3, incident.documentsInForce());
         assertEquals(3, count(QuarantineService.QUARANTINED_ACTION));
         assertEquals(0, service.countMatching(restricted, november()).count(), "already quarantined ones no longer match");
+    }
+
+    @Test
+    void countingByASensitiveFieldNeedsEveryLevelToBeOpenable() {
+        // Task 0101 (VSEC-202): the count would say which levels the steward can't open hold the value.
+        RecordValuesPort sensitive = new RecordValuesPort() {
+            @Override public UUID store(UUID t, UUID s, UUID sub, Map<String, String> v) { return sub; }
+            @Override public List<RecordValuesPort.Opened> open(UUID t, UUID s, UUID r) { return List.of(); }
+            @Override public Map<UUID, List<RecordValuesPort.Opened>> openPage(UUID t, UUID s, java.util.Collection<UUID> r) { return Map.of(); }
+            @Override public java.util.Set<String> sensitiveKeys(UUID t) { return java.util.Set.of("contractNumber"); }
+            @Override public Map<String, List<String>> fingerprints(UUID t, Map<String, String> v) { return Map.of(); }
+            @Override public boolean partialSearch() { return true; }
+        };
+        QuarantineService withSensitive = new QuarantineService(store, access, definitions, audit, ApprovalSettings.defaults(), tx, sensitive, clock);
+        refused("SDV-QUA-002", () -> withSensitive.countMatching(as("steward", STEWARD), november()));
+        assertEquals(0, withSensitive.countMatching(as("restricted", RESTRICTED), november()).count(),
+                "who can open every level may count; without fingerprints the field matches nothing, it is never dropped");
+        assertEquals(4, withSensitive.countMatching(as("steward", STEWARD),
+                new QuarantineService.FilterRequest("2026-10-01", "2026-11-30", null, null)).count(), "dates alone, as before");
     }
 
     @Test

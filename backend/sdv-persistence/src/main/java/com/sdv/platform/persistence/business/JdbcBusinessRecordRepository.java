@@ -73,6 +73,7 @@ public class JdbcBusinessRecordRepository implements BusinessRecordRepository {
             if (!criterion.fingerprints().isEmpty()) {
                 sql.append("v.fingerprint in (:").append(prefix).append("Prints)))");
                 params.addValue(prefix + "Prints", criterion.fingerprints());
+                sql.append(openableOnly(criterion, prefix, params));
                 continue;
             }
             if (criterion.normalizedVariants().isEmpty()) {
@@ -94,7 +95,24 @@ public class JdbcBusinessRecordRepository implements BusinessRecordRepository {
         return findAnywhere(anywhere, sql.toString(), params, offset, limit);
     }
 
-    private static final String NEWEST_FIRST = " order by s.created_at desc, s.submission_id offset :offset limit :limit";
+    /**
+     * Task 0101 (VSEC-202): a sensitive field's value finds only records the person may open: the record's level and every
+     * available document's level are among the person's levels, in this same query, so a record they may not open is
+     * "not found", as a value nobody has. A quarantined document counts too (stricter than opening: fail closed). No
+     * levels: nothing matches.
+     */
+    static String openableOnly(SearchCriterion criterion, String prefix, MapSqlParameterSource params) {
+        if (criterion.openableLevels().isEmpty()) return " and false";
+        String levels = prefix + "Levels";
+        params.addValue(levels, criterion.openableLevels());
+        return " and not exists (select 1 from record_sensitivity_levels rl where rl.tenant_id=s.tenant_id and rl.source_id=s.source_id"
+                + " and rl.record_id=s.record_id and rl.sensitivity_level not in (:" + levels + "))"
+                + " and not exists (select 1 from submissions rs join documents d on d.tenant_id=rs.tenant_id and d.submission_id=rs.submission_id"
+                + " where rs.tenant_id=s.tenant_id and rs.source_id=s.source_id and rs.record_id=s.record_id"
+                + " and d.status='AVAILABLE' and d.sensitivity_level not in (:" + levels + "))";
+    }
+
+    private static final String NEWEST_FIRST =" order by s.created_at desc, s.submission_id offset :offset limit :limit";
 
     /** Up to this many records with a rank are read by the value index; more are found newest first (they are many, so soon). */
     static final int RANK_RECORDS_MAX = 5_000;

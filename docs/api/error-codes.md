@@ -435,7 +435,7 @@ Task 0048. A Steward quarantines a document while a suspected leak or wrong deli
 ### SDV-QUA-002: needs a Steward who can open the document's level
 
 - **HTTP status:** 403. Sent by every `/api/v1/quarantine` endpoint.
-- **Meaning:** the person is not a Document Steward or Restricted Steward, or the document (or one in the incident) has a level they can't open. Highly Confidential documents are quarantined, reviewed and released only by a Restricted Steward. Nothing was changed. A missing role is audited as `AUTHORIZATION_DENIED`.
+- **Meaning:** the person is not a Document Steward or Restricted Steward, or the document (or one in the incident) has a level they can't open. Highly Confidential documents are quarantined, reviewed and released only by a Restricted Steward. Counting or quarantining by a filter that names a sensitive field also needs a Restricted Steward (task 0101: the count would tell which levels hold the value). Nothing was changed. A missing role is audited as `AUTHORIZATION_DENIED`.
 - **What the user should do:** ask a Steward who can open the document's level, or a Restricted Steward, to do it.
 - **What support should tell the customer:** this is working as intended. Quarantine is a Steward task, limited to the levels the Steward can open. Role membership comes from the customer's own sign-in groups.
 

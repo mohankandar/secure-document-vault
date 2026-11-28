@@ -130,18 +130,27 @@ public interface BusinessRecordRepository {
             List<String> normalizedVariants,
             boolean ignoreCase,
             /* Task 0078: a sensitive field: what its value is compared with; the variants are then empty. */
-            List<String> fingerprints) {
+            List<String> fingerprints,
+            /*
+             * Task 0101 (VSEC-202): for a sensitive field, the levels the person searching may open. Only records whose
+             * level and every available document are at one of them can match, so "not found" and "not yours" look
+             * the same. Empty for a sensitive field: nothing matches (fail closed).
+             */
+            List<String> openableLevels) {
         public SearchCriterion {
             normalizedVariants = List.copyOf(normalizedVariants);
             fingerprints = List.copyOf(fingerprints);
+            openableLevels = List.copyOf(openableLevels);
         }
 
         public SearchCriterion(String fieldKey, MetadataSearchMode searchMode, List<String> normalizedVariants, boolean ignoreCase) {
-            this(fieldKey, searchMode, normalizedVariants, ignoreCase, List.of());
+            this(fieldKey, searchMode, normalizedVariants, ignoreCase, List.of(), List.of());
         }
 
-        public static SearchCriterion sensitive(String fieldKey, List<String> fingerprints) {
-            return new SearchCriterion(fieldKey, MetadataSearchMode.EXACT, List.of(), false, fingerprints);
+        /** A sensitive field's criterion: its fingerprints, and the levels the person searching may open. */
+        public static SearchCriterion sensitive(String fieldKey, List<String> fingerprints, java.util.Collection<com.sdv.platform.domain.document.SensitivityLevel> openable) {
+            return new SearchCriterion(fieldKey, MetadataSearchMode.EXACT, List.of(), false, fingerprints,
+                    openable.stream().map(Enum::name).sorted().toList());
         }
 
         /** Exact keeps capitals. */

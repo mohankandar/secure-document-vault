@@ -323,7 +323,7 @@ public class BusinessExperienceService {
 
         Set<String> sensitive = values.sensitiveKeys(tenantId);
         boolean partial = values.partialSearch();
-        List<SearchCriterion> criteria = criteria(tenantId, sourceId, current, safeCriteria, sensitive, partial);
+        List<SearchCriterion> criteria = criteria(tenantId, sourceId, current, safeCriteria, sensitive, partial, clearance);
 
         boolean isAnywhere = anywhereText != null;
         AnywhereCriterion anywhereCriterion = isAnywhere ? anywhereCriterion(tenantId, sourceId, anywhereText, sensitive, partial) : null;
@@ -544,7 +544,7 @@ public class BusinessExperienceService {
 
     /** Task 0078: every field checked first, then the sensitive ones' fingerprints in one go (two key-service calls at most). */
     private List<SearchCriterion> criteria(UUID tenantId, UUID sourceId, Map<String, MetadataFieldDefinition> current, Map<String, String> asked,
-                                           Set<String> sensitive, boolean partial) {
+                                           Set<String> sensitive, boolean partial, Clearance clearance) {
         List<SearchCriterion> out = new ArrayList<>();
         Map<String, String> exact = new TreeMap<>();
         for (Map.Entry<String, String> entry : new TreeMap<>(asked).entrySet()) {
@@ -552,7 +552,9 @@ public class BusinessExperienceService {
             if (sensitive.contains(entry.getKey())) exact.put(entry.getKey(), entry.getValue());
             else out.add(criterion);
         }
-        values.fingerprints(tenantId, exact).forEach((key, prints) -> out.add(SearchCriterion.sensitive(key, prints)));
+        // Task 0101 (VSEC-202): a sensitive value finds only records this person may open (in the search's own query).
+        List<SensitivityLevel> openable = java.util.Arrays.stream(SensitivityLevel.values()).filter(clearance::canOpen).toList();
+        values.fingerprints(tenantId, exact).forEach((key, prints) -> out.add(SearchCriterion.sensitive(key, prints, openable)));
         out.sort(Comparator.comparing(SearchCriterion::fieldKey));
         return out;
     }
