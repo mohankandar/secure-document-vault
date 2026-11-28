@@ -78,12 +78,11 @@ function FirstStartForm({ slots }: { slots: string[] }) {
   const [slot, setSlot] = useState(slots.length === 1 ? slots[0] : '')
   const [name, setName] = useState('')
   const [licence, setLicence] = useState<string | null>(null)
-  const [fileName, setFileName] = useState('')
   const [busy, setBusy] = useState(false)
   const [failure, setFailure] = useState<{ text: string; reference?: string } | null>(null)
   const problem = firstStartProblem(slot, name, licence)
   const choose = (file: File | undefined) => {
-    setLicence(null); setFileName(file?.name ?? '')
+    setLicence(null)
     if (file) void file.text().then(setLicence).catch(() => setLicence(null))
   }
   const send = () => {
@@ -112,7 +111,7 @@ function FirstStartForm({ slots }: { slots: string[] }) {
         <input className="v-input" value={name} maxLength={120} placeholder="For example: Acme Mortgage" onChange={(e) => setName(e.target.value)} /></label>
       <label className="v-field"><span>Licence file</span>
         <input type="file" accept=".json,application/json" aria-label="Licence file" onChange={(e) => choose(e.target.files?.[0])} />
-        {fileName && <small className="faint">{fileName}</small>}</label>
+      </label>
       {problem && <small className="muted">{problem}</small>}
       <div><button type="button" className="v-btn primary" disabled={busy || !!problem} onClick={send}>{busy ? 'Activating…' : 'Activate'}</button></div>
     </div>

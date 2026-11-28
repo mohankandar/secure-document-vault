@@ -47,9 +47,21 @@ $mounts = Call 'GET' 'sys/mounts'
 if ($null -eq $mounts.PSObject.Properties['vero-transit/'] -and $null -eq $mounts.data.PSObject.Properties['vero-transit/']) {
     Remove-Item -LiteralPath $loginFile -ErrorAction SilentlyContinue
 }
+# Task 0102: Vero's login works only from where Vault sees it come from: behind Docker, this container network's gateway.
+$gateway = (& docker inspect $name --format '{{range .NetworkSettings.Networks}}{{.Gateway}} {{end}}' | Out-String).Trim().Split(' ')[0]
+if (-not $gateway) { throw 'The scratch Vault''s network gateway could not be read.' }
+# A role and app policy made before task 0102 (no address binding, the wider policy) are made again on this scratch Vault
+# only; setup never changes them. Its keys stay, and so does every document encrypted with them.
+try { $role = Call 'GET' 'auth/approle/role/vero' } catch { $role = $null }
+if ($role -and -not @($role.data.secret_id_bound_cidrs | Where-Object { $_ }).Count) {
+    Call 'DELETE' 'auth/approle/role/vero' | Out-Null
+    Call 'DELETE' 'sys/policies/acl/platform-crypto-app' | Out-Null
+    Remove-Item -LiteralPath $loginFile -ErrorAction SilentlyContinue
+}
 $env:VAULT_TOKEN = [IO.File]::ReadAllText($rootFile).Trim()
 try {
-    $arguments = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', (Join-Path $Root 'Setup-SDV-VaultTransit.ps1'), '-VaultAddress', $address, '-OutFile', $loginFile)
+    $arguments = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', (Join-Path $Root 'Setup-SDV-VaultTransit.ps1'), '-VaultAddress', $address, '-OutFile', $loginFile,
+        '-VeroAddresses', "$gateway/32")
     $before = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
     & powershell.exe @arguments *> (Join-Path $folder 'prepare.log')
     $code = $LASTEXITCODE; $ErrorActionPreference = $before
