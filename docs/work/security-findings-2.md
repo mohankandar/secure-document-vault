@@ -51,7 +51,7 @@ Every finding of task 0061 marked fixed still holds. VSEC-10 (library advisories
 | ID | Status | Where |
 |---|---|---|
 | VSEC-201 | Fixed (task 0100) | The link page checks the approver's permission before it looks anything up; platform-core's approver check is the signed-in person's role now, not the mailing list |
-| VSEC-202 | Open | Task 0101 |
+| VSEC-202 | Fixed (task 0101) | A search by a sensitive field leaves out, in its one query, every record the person may not open; counting a quarantine filter by a sensitive field needs a Steward who can open every level |
 | VSEC-203 | Fixed as far as Vero can see roles (task 0100) | A list takes only people who held the role at their last sign-in; messages go only to them; a sign-in without the role takes them off (audited). A role taken away is seen at the person's next sign-in |
 | VSEC-204 | Fixed (task 0100) | The app address comes from the install configuration (`SDV_PUBLIC_URL`, https); the screen shows it read-only |
 | VSEC-205 | Open | Task 0102 |
