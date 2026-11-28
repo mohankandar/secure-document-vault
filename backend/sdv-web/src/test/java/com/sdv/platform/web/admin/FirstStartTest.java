@@ -54,6 +54,12 @@ class FirstStartTest {
     final TenantRepository tenants = mock(TenantRepository.class);
     final AuditEventPort audit = mock(AuditEventPort.class);
     final ReentrantLock jvmLock = new ReentrantLock();
+    /** first_start_attempts in memory (answer Q-7: a table, not this Vero's memory). */
+    final List<FirstStart.Refused> table = Collections.synchronizedList(new ArrayList<>());
+    final FirstStart.Attempts kept = new FirstStart.Attempts() {
+        @Override public void add(FirstStart.Refused r) { table.add(r); }
+        @Override public List<FirstStart.Refused> takeAll() { List<FirstStart.Refused> all = List.copyOf(table); table.clear(); return all; }
+    };
     final FirstStart.Lock lock = new FirstStart.Lock() {
         @Override public <T> T exclusively(Supplier<T> work) {
             jvmLock.lock();
@@ -64,7 +70,8 @@ class FirstStartTest {
         if (verifyFails != null) throw verifyFails;
         assertEquals("TEN-1", customer, "checked as this customer's");
         return uploaded;
-    }, activation, tenants, audit, lock, Clock.fixed(Instant.parse("2026-11-27T12:00:00Z"), ZoneOffset.UTC));
+    }, activation, tenants, audit, lock, Clock.fixed(Instant.parse("2026-11-27T12:00:00Z"), ZoneOffset.UTC), kept,
+            org.springframework.transaction.support.TransactionOperations.withoutTransaction());
 
     final FirstStart.Person itAdmin = new FirstStart.Person("it-1", "Ivo IT", List.of(SLOT));
     final FirstStart.Person businessAdminOnly = new FirstStart.Person("ba-1", "Bea", List.of());
@@ -125,6 +132,8 @@ class FirstStartTest {
         assertEquals("SDV-ENT-001", code(() -> firstStart.activate(itAdmin, SLOT, "Acme", "x".repeat(FirstStart.MAX_LICENCE_CHARS + 1))));
         verify(activation, never()).activate(anyString(), anyString(), anyString());
         verify(audit, never()).append(any());
+        assertEquals(6, table.size(), "kept in the table, not in memory");
+        assertTrue(table.stream().noneMatch(r -> r.toString().contains("the file")), "never the licence");
 
         // The refused attempts reach the audit of the entity once it exists.
         uploaded = licence("LIC-1", 4, true);
@@ -133,6 +142,7 @@ class FirstStartTest {
         verify(audit, times(7)).append(events.capture());
         assertEquals(6, events.getAllValues().stream().filter(e -> e.action().equals(FirstStart.REFUSED_ACTION)).count());
         assertTrue(events.getAllValues().stream().anyMatch(e -> e.safeDetailsJson().contains("LICENCE_TAMPERED")));
+        assertTrue(table.isEmpty(), "emptied with the copy");
     }
 
     @Test

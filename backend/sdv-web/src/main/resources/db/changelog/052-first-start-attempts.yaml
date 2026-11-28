@@ -1,0 +1,10 @@
+databaseChangeLog:
+  - changeSet:
+      id: 052-first-start-attempts
+      author: sdv
+      changes:
+        # The function and the triggers hold dollar-quoted bodies, so the file is sent as one statement.
+        - sqlFile:
+            path: db/changelog/052-first-start-attempts.sql
+            relativeToChangelogFile: false
+            splitStatements: false

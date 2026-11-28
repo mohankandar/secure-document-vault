@@ -103,7 +103,8 @@ public class FirstStartController {
 
         @Bean
         FirstStart firstStart(PlatformIdentityReads reads, LicenceService licence, ObjectProvider<LicenceBuild> own, SlotActivation activation,
-                              TenantRepository tenants, AuditEventPort audit, DataSource dataSource) {
+                              TenantRepository tenants, AuditEventPort audit, DataSource dataSource,
+                              org.springframework.jdbc.core.JdbcTemplate jdbc, org.springframework.transaction.PlatformTransactionManager transactions) {
             LicenceVerifier verifier = java.util.Optional.ofNullable(own.getIfAvailable()).or(VeroLicenceBuild::load)
                     .map(b -> new LicenceVerifier(b.keys())).orElse(null);
             return new FirstStart(reads::anyEntityActive, () -> {
@@ -115,7 +116,8 @@ public class FirstStartController {
             }, (bytes, customer) -> {
                 if (verifier == null) throw new IllegalStateException("no licence keys in this build");
                 return verifier.verify(bytes, customer);
-            }, activation, tenants, audit, postgresLock(dataSource), Clock.systemUTC());
+            }, activation, tenants, audit, postgresLock(dataSource), Clock.systemUTC(), new JdbcFirstStartAttempts(jdbc),
+                    new org.springframework.transaction.support.TransactionTemplate(transactions));
         }
 
         static FirstStart.Lock postgresLock(DataSource dataSource) {

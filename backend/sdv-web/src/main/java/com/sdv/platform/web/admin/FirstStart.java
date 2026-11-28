@@ -36,13 +36,13 @@ import java.util.function.Supplier;
  * <p>
  * Audit: the activation as ENTITY_ACTIVATED ({@code firstStart: true}) in the new entity. A refused attempt can't be
  * audited yet (an audit row belongs to an entity, and there is none): it is one WARN line (who, slot, code; never the
- * file), and it is copied into the new entity's audit as {@value #REFUSED_ACTION} when the activation succeeds.
+ * file) and a row of {@code first_start_attempts} (answer Q-7, changeset 052), copied into the new entity's audit as
+ * {@value #REFUSED_ACTION} when the activation succeeds; the table is emptied in that same transaction.
  */
 public final class FirstStart {
     private static final Logger log = LoggerFactory.getLogger(FirstStart.class);
     public static final String REFUSED_ACTION = "FIRST_START_REFUSED";
     static final int MAX_LICENCE_CHARS = 200_000;
-    static final int MAX_KEPT_REFUSALS = 200;
 
     /** The address answers "nothing is here": no entity may be activated on the first-start screen any more. */
     public static final class Gone extends RuntimeException {
@@ -61,7 +61,16 @@ public final class FirstStart {
 
     public record Activated(UUID entityId, String slotId, String name) { }
 
-    private record Refused(String subject, String displayName, String slotId, String code, Instant at) { }
+    /** A refused attempt, as kept until the first activation. */
+    public record Refused(String subject, String displayName, String slotId, String code, Instant at) { }
+
+    /** Where refused attempts wait (table first_start_attempts). */
+    public interface Attempts {
+        void add(Refused refused);
+
+        /** Every attempt, oldest first, and none left after (in the caller's transaction). */
+        List<Refused> takeAll();
+    }
 
     private final BooleanSupplier anyEntityActive;
     private final Supplier<Licence> stored;
@@ -71,14 +80,16 @@ public final class FirstStart {
     private final AuditEventPort audit;
     private final Lock lock;
     private final Clock clock;
-    private final List<Refused> refused = new ArrayList<>();
+    private final Attempts attempts;
+    private final org.springframework.transaction.support.TransactionOperations transactions;
 
     /**
      * @param stored the install's licence as stored (null when there is none)
      * @param verify the build's licence check: the file's bytes and the customer ID; throws {@link LicenceException}
      */
     public FirstStart(BooleanSupplier anyEntityActive, Supplier<Licence> stored, BiFunction<byte[], String, Licence> verify,
-                      SlotActivation activation, TenantRepository tenants, AuditEventPort audit, Lock lock, Clock clock) {
+                      SlotActivation activation, TenantRepository tenants, AuditEventPort audit, Lock lock, Clock clock,
+                      Attempts attempts, org.springframework.transaction.support.TransactionOperations transactions) {
         this.anyEntityActive = Objects.requireNonNull(anyEntityActive);
         this.stored = Objects.requireNonNull(stored);
         this.verify = Objects.requireNonNull(verify);
@@ -87,6 +98,8 @@ public final class FirstStart {
         this.audit = Objects.requireNonNull(audit);
         this.lock = Objects.requireNonNull(lock);
         this.clock = Objects.requireNonNull(clock);
+        this.attempts = Objects.requireNonNull(attempts);
+        this.transactions = Objects.requireNonNull(transactions);
     }
 
     /** The slots this person may activate first, or {@link Gone} once an entity is ACTIVE. */
@@ -120,13 +133,15 @@ public final class FirstStart {
                     ? outcome.entity().displayName() : SlotActivation.cleanName(name).orElse(slot);
             tenants.createEntity(entity, slot.toLowerCase(Locale.ROOT), stored);
             Instant now = clock.instant();
-            for (Refused r : refusedSoFar()) {
+            transactions.executeWithoutResult(status -> {
+            for (Refused r : attempts.takeAll()) {
                 audit.append(new AuditEvent(UUID.randomUUID(), entity, "USER", r.subject(), REFUSED_ACTION, "ENTITY", r.slotId(), r.at(),
                         null, AuditOutcome.DENIED, "{\"slotId\":\"" + r.slotId() + "\",\"code\":\"" + r.code() + "\"}", r.displayName()));
             }
             audit.append(new AuditEvent(UUID.randomUUID(), entity, "USER", person.subject(), EntityActivationController.ACTION, "ENTITY", slot,
                     now, org.slf4j.MDC.get("correlationId"), AuditOutcome.SUCCESS,
                     "{\"slotId\":\"" + slot + "\",\"firstStart\":true}", person.displayName()));
+            });
             return new Activated(entity, slot, stored);
         });
     }
@@ -151,17 +166,12 @@ public final class FirstStart {
 
     private RuntimeException refuse(Person person, String slot, String code, RuntimeException answer) {
         log.warn("First start refused: who={} slot={} code={}", person.subject(), slot, code);
-        synchronized (refused) {
-            if (refused.size() < MAX_KEPT_REFUSALS) refused.add(new Refused(person.subject(), person.displayName(), slot, code, clock.instant()));
+        try {
+            attempts.add(new Refused(person.subject(), person.displayName(), slot, code, clock.instant()));
+        } catch (RuntimeException ex) {
+            log.error("A refused first start could not be kept for the audit ({}).", ex.getClass().getSimpleName());
         }
         return answer;
     }
 
-    private List<Refused> refusedSoFar() {
-        synchronized (refused) {
-            List<Refused> out = List.copyOf(refused);
-            refused.clear();
-            return out;
-        }
-    }
 }
