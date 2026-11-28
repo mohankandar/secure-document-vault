@@ -1,0 +1,4 @@
+{
+  "about": "Task 0102 (VSEC-206): known advisories of High or Critical severity that are accepted for a while. Each entry needs the advisory's id, the package, why it doesn't apply to Vero, who reviewed it and when, and a date it must be looked at again (at most 90 days later). An entry past its date fails the check again. Empty: nothing is accepted.",
+  "suppressed": []
+}

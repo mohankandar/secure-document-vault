@@ -126,6 +126,52 @@ class VeroMonitoringTest {
         });
     }
 
+    /**
+     * Task 0102 (VSEC-207): the key-service login in an imported file with a neutral name. platform-core's bundle takes
+     * it (P-2); Vero's filter takes every key-service setting out before the bundle leaves.
+     */
+    @Test
+    void aKeyServiceLoginInANeutrallyNamedFileNeverLeavesInTheBundle() {
+        String roleId = "4f6c2b1e-9a7d-4c3e-8b2f-1d0e9c8b7a65";
+        Map<String, Object> login = Map.of("platform.crypto.vault.role-id", roleId, "platform.crypto.vault.address", "https://keys.internal.example:8200",
+                "platform.crypto.vault.transit-mount", "vero-transit", "spring.cloud.vault.app-role.role-id", roleId,
+                "custom.service.roleId", roleId, "server.port", "8280");
+        runner().withInitializer(c -> c.getEnvironment().getPropertySources().addFirst(new org.springframework.boot.env.OriginTrackedMapPropertySource(
+                "Config resource 'file [D:\\vero\\config\\login.properties]' via location 'optional:file:D:/vero/config/login.properties'", login))).run(context -> {
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            context.getBean(DiagnosticBundles.class).write(out);
+            assertTrue(text(out.toByteArray()).contains(roleId), "platform-core's bundle takes it (P-2); this test shows the filter is needed");
+            byte[] bundle = com.sdv.platform.web.operations.KeyServiceSettingsFilter.filter(out.toByteArray());
+            String filtered = text(bundle);
+            assertFalse(filtered.contains(roleId), filtered);
+            assertFalse(filtered.contains("platform.crypto.vault") || filtered.contains("spring.cloud.vault.app") || filtered.contains("keys.internal")
+                    || filtered.contains("vero-transit"), filtered);
+            assertTrue(filtered.contains("server.port=8280"), "every other setting stays");
+            assertTrue(filtered.contains("checks.txt") && filtered.contains("manifest.txt"), "every other part stays");
+            // The manifest's checksum is the filtered entry's, so the bundle still checks.
+            Map<String, byte[]> entries = new java.util.HashMap<>();
+            try (ZipInputStream zip = new ZipInputStream(new ByteArrayInputStream(bundle))) {
+                for (var e = zip.getNextEntry(); e != null; e = zip.getNextEntry()) entries.put(e.getName(), zip.readAllBytes());
+            }
+            String sum = java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(entries.get("configuration.properties")));
+            assertTrue(new String(entries.get("manifest.txt"), StandardCharsets.UTF_8).contains("sha256 " + sum + "  configuration.properties"));
+        });
+    }
+
+    private static String text(byte[] bundle) throws java.io.IOException {
+        StringBuilder all = new StringBuilder();
+        try (ZipInputStream zip = new ZipInputStream(new ByteArrayInputStream(bundle))) {
+            for (var e = zip.getNextEntry(); e != null; e = zip.getNextEntry()) all.append(e.getName()).append('\n').append(new String(zip.readAllBytes(), StandardCharsets.UTF_8));
+        }
+        return all.toString();
+    }
+
+    @Test
+    void anUnreadableBundleIsRefused() {
+        org.junit.jupiter.api.Assertions.assertThrows(java.io.IOException.class,
+                () -> com.sdv.platform.web.operations.KeyServiceSettingsFilter.filter("not a zip".getBytes(StandardCharsets.UTF_8)));
+    }
+
     private static ApplicationContextRunner runner() {
         return new ApplicationContextRunner().withConfiguration(AutoConfigurations.of(MonitoringAutoConfiguration.class))
                 .withPropertyValues("platform.monitoring.startup-checks=false")
