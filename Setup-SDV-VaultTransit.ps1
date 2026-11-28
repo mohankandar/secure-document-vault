@@ -168,7 +168,7 @@ if ($authThere) {
         $d = $role.Json.data
         $limits = (Has $d 'secret_id_ttl') -and [int]$d.secret_id_ttl -gt 0 -and (Has $d 'secret_id_num_uses') -and [int]$d.secret_id_num_uses -gt 0 -and
             (Has $d 'secret_id_bound_cidrs') -and @($d.secret_id_bound_cidrs).Count -gt 0 -and (Has $d 'token_bound_cidrs') -and @($d.token_bound_cidrs).Count -gt 0
-        if (-not $limits) { Write-Host "WARNING: the role $RoleName has no expiry, use limit or address binding for its secret ID. Add them (runbook, ""Narrowing Vero's login"")." -ForegroundColor Yellow }
+        if (-not $limits) { Write-Host "WARNING: the role $RoleName has no expiry, use limit or address binding for its secret ID. Add them (runbook, ""Keys for a customer"")." -ForegroundColor Yellow }
     } elseif ($role.Status -ne 404) { Refuse "The role $RoleName could not be read (status $($role.Status))." }
 }
 if (-not $roleThere) { $todo.Add("Role $RoleName") }

@@ -4,6 +4,32 @@ Date: 2026-11-27
 Branch: fix/security-7-ops
 Outcome: DONE (the owner's steps on this computer's real Vault and the GitHub setting are below)
 
+## Owner first: move Vero's secrets on this computer's Vault (answer Q-6)
+
+Vero now reads its notification secrets **only** at `secret/platform/vero/<path>` (follow-up PR, branch
+`fix/security-7-ops-followup`). A `platform.notifications.…` setting whose secret isn't there stops the start with
+SDV-SYS-007, naming the setting. No local start script sets such a setting today (`start-local`, `Start-SDV-OwnerTest.ps1`,
+the tour), so they keep working before and after the move; notifications on this computer stay off until you configure
+them. To move what this computer's Vault holds (`sdv-vault`), in a PowerShell window:
+
+```powershell
+docker exec -it -e VAULT_ADDR=http://127.0.0.1:8200 sdv-vault sh
+```
+
+Then in that shell (the token is asked for and not shown; no value is printed: each one goes through a pipe):
+
+```sh
+vault login
+vault kv list secret/platform                 # what is there; Vero's are the paths its settings name, e.g. notifications/
+# for each of Vero's paths <p> (for example notifications/approval-link-key):
+vault kv get -field=value secret/platform/<p> | vault kv put secret/platform/vero/<p> value=-
+vault kv get -field=value secret/platform/vero/<p> >/dev/null && echo "<p> moved"
+exit
+```
+
+Then narrow Vero's login (step A under "Questions for the owner"). Delete the old copies
+(`vault kv metadata delete secret/platform/<p>`) once Vero runs with them in the new place.
+
 ## What was done
 
 1. **VSEC-205: Vero's key-service login.**
@@ -15,12 +41,12 @@ Outcome: DONE (the owner's steps on this computer's real Vault and the GitHub se
    - The app policy reads only `secret/data/platform/vero/*`. The Transit paths were already Vero's own
      (`vero-transit/…/customer-*`).
    - A role from before gets a WARNING and is never changed; the script still changes nothing that is already there.
-   - Vero (`VaultSecrets`) reads its notification secrets under `secret/platform/vero/<path>`. For an install from
-     before, it still finds a secret at the old `secret/platform/<path>` while its login may read it, with one WARN that
-     never names the path or the value. Once the policy is narrowed, the old place counts as "not found", never as a
-     failure.
+   - Vero (`VaultSecrets`) reads its notification secrets only under `secret/platform/vero/<path>`. The first PR (#78)
+     still fell back to the old place; the follow-up removes that, as Q-6 answered. `VeroSecretsCheck` stops the start
+     (SDV-SYS-007) when a configured secret isn't there, naming the setting and never its path or value. When the key
+     service can't be asked at start, the start goes on with a warning.
    - Runbook, "Keys for a customer": the required addresses, the narrowed policy and role in the command-line version,
-     **"Renewing Vero's secret ID"**, and **"Narrowing Vero's login (an install from before task 0102)"**.
+     **"Renewing Vero's secret ID"**, and what to do on the WARNING and on SDV-SYS-007.
 2. **VSEC-207: the support bundle.** Before a bundle leaves Vero, `KeyServiceSettingsFilter` takes out of its
    `configuration.properties` every `platform.crypto.*` and `spring.cloud.vault.*` setting and every setting named like a
    role or secret ID. It rewrites the manifest's checksum of that part, and refuses a bundle it can't read. The test puts
@@ -41,9 +67,10 @@ Outcome: DONE (the owner's steps on this computer's real Vault and the GitHub se
 
 ## Decisions taken
 
-- **Q-6 (where Vero's secrets live), not answered yet; I went on with my recommendation A.** Vero's own subtree
-  `secret/platform/vero/`, with the old place as a fallback during the move, because other apps on platform-core may
-  share `platform/`. If the answer differs, only `VaultSecrets`, the policy line and the runbook change.
+- **Q-6 (where Vero's secrets live): answered A without the fallback**, after #78 had merged with it. No customer
+  install exists, so there is no old place: the follow-up PR removes the fallback and adds the start-up check. A secret
+  missing at start stops the start, but a key service that can't be asked does not (that is the key service's own health,
+  not a setting).
 - `-VeroAddresses` is required, not defaulted (fail closed). A default of 127.0.0.1 would refuse every login behind
   Docker; the proof shows the gateway is what Vault sees.
 - The use limit (20,000) is sized for 90 days of hourly tokens on several servers. Renewal is due at 90 days anyway.

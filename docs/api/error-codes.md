@@ -1074,7 +1074,8 @@ Task 0037: SYS-003 to SYS-012 are start-up codes. A start that stops prints one 
 ### SDV-SYS-007: key service settings not valid
 
 - **HTTP status:** none; Vero doesn't start.
-- **Meaning:** no longer sent (task 0076): the key service's settings (`platform.crypto.*`) are checked by platform-core, which stops the start with `CRYPTO_SETTINGS_INVALID` and every problem with its name; never a token or secret ID.
+- **Meaning:** the key service's own settings (`platform.crypto.*`) are checked by platform-core, which stops the start with `CRYPTO_SETTINGS_INVALID` (task 0076). Since task 0102 Vero sends this code when a notification secret that a `platform.notifications.…` setting names isn't at Vero's place in the key service, `secret/platform/vero/<path>` (key `value`); the message names the setting, never its path or a value. When the key service can't be asked at start, Vero starts and logs a warning instead.
+- **What IT should do:** put the secret at `secret/platform/vero/<path>` (runbook, "Notifications"), then start Vero again.
 - **What the user should do:** nothing; Vero is not running. Tell the IT team.
 - **What support should tell the customer:** a key service setting is wrong; the log names it. Correct it and start Vero again.
 
